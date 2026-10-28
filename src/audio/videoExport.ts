@@ -4,6 +4,8 @@ import { openVideo, seekVideo } from '../store/videoStore';
 import fledgetoneLogo from '../assets/fledgetone.png';
 import { drawShowcase, type ShowcaseLook } from './showcaseDraw';
 import type { ShowcaseData } from '../store/showcase';
+import { holdDecodedPeak, turned } from './decodedPeak';
+import { LIMITER_CEILING_DBTP } from './effects/limiter';
 
 /**
  * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,
@@ -13,7 +15,8 @@ import type { ShowcaseData } from '../store/showcase';
  *
  * H.264 video and AAC sound play everywhere; browsers without those encoders (Chromium builds
  * without the licensed codecs, Firefox on some systems) fall back to VP9 or AV1 video and Opus
- * sound, which browsers, VLC and YouTube play but some older players don't.
+ * sound, which browsers, VLC and YouTube play but some older players don't. The sound is encoded
+ * first, decoded again and measured, and turned down by anything its peaks overshot (decodedPeak.ts).
  *
  * Two shapes: widescreen (1920×1080, YouTube) and portrait (1080×1920, TikTok, Shorts, Reels), at
  * 30 or 60 frames a second (60: the scrolling notes move smoothly). Either picture is drawn in
@@ -85,6 +88,89 @@ export interface VideoOptions {
   fps?: VideoFps;
   /** What's drawn around the picture (all of it if not given) */
   marks?: VideoMarks;
+  /** The true peak (dBTP) the sound is held under once decoded (see encodeSound; default -1). */
+  ceilingDbtp?: number;
+  /** Told how far the sound was turned down after encoding to stay under it (dB; 0: not at all). */
+  onTrim?: (db: number) => void;
+}
+
+/** A video's sound, encoded: the packets with what each came with (the first carries the decoder's setup). */
+type EncodedSound = Array<{ chunk: EncodedAudioChunk; meta?: EncodedAudioChunkMetadata }>;
+
+/** The sound (two channels) turned by `gain`, encoded with `codec` in 0.1 s pieces. */
+async function encodeSoundOnce(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, gain: number): Promise<EncodedSound> {
+  const [l, r] = turned([left, right], gain);
+  const out: EncodedSound = [];
+  let failure: unknown = null;
+  const encoder = new AudioEncoder({ output: (chunk, meta) => out.push({ chunk, meta }), error: (e) => (failure = e) });
+  try {
+    encoder.configure({ codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
+    const piece = Math.round(sampleRate / 10);
+    for (let at = 0; at < l.length; at += piece) {
+      const n = Math.min(piece, l.length - at);
+      const data = new Float32Array(n * 2);
+      data.set(l.subarray(at, at + n));
+      data.set(r.subarray(at, at + n), n);
+      const chunk = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at / sampleRate) * 1e6), data });
+      encoder.encode(chunk);
+      chunk.close();
+    }
+    await encoder.flush();
+  } finally {
+    if (encoder.state !== 'closed') encoder.close();
+  }
+  if (failure) throw failure;
+  return out;
+}
+
+/** The encoded sound decoded again (null where this browser can't decode it). */
+async function decodeSound(sound: EncodedSound): Promise<Float32Array[] | null> {
+  const config = sound.find((p) => p.meta?.decoderConfig)?.meta?.decoderConfig;
+  if (!config || typeof AudioDecoder === 'undefined' || !(await AudioDecoder.isConfigSupported(config).catch(() => null))?.supported) return null;
+  const pieces: Float32Array[][] = [];
+  let failed = false;
+  const decoder = new AudioDecoder({
+    output: (data) => {
+      const chans = Array.from({ length: data.numberOfChannels }, (_, c) => {
+        const ch = new Float32Array(data.numberOfFrames);
+        data.copyTo(ch, { planeIndex: c, format: 'f32-planar' });
+        return ch;
+      });
+      pieces.push(chans);
+      data.close();
+    },
+    error: () => (failed = true),
+  });
+  try {
+    decoder.configure(config);
+    for (const p of sound) decoder.decode(p.chunk);
+    await decoder.flush();
+  } catch {
+    failed = true;
+  } finally {
+    if (decoder.state !== 'closed') decoder.close();
+  }
+  if (failed || !pieces.length) return null;
+  const channels = pieces[0].length;
+  return Array.from({ length: channels }, (_, c) => {
+    const out = new Float32Array(pieces.reduce((n, p) => n + p[c].length, 0));
+    let at = 0;
+    for (const p of pieces) {
+      out.set(p[c], at);
+      at += p[c].length;
+    }
+    return out;
+  });
+}
+
+/**
+ * The video's sound encoded and held under `ceilingDbtp` once decoded: encoding moves its peaks,
+ * so it's decoded and measured, and turned down by any overshoot and encoded again (decodedPeak.ts).
+ */
+async function encodeSound(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, ceilingDbtp: number, onTrim?: (db: number) => void): Promise<EncodedSound> {
+  const { encoded, trimDb } = await holdDecodedPeak((gain) => encodeSoundOnce(left, right, sampleRate, codec, gain), decodeSound, ceilingDbtp);
+  onTrim?.(trimDb);
+  return encoded;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -283,31 +369,18 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     error: (e) => (failure = e),
   });
   videoEncoder.configure({ codec: video.codec, width: size.w, height: size.h, bitrate: BITRATE[fps], framerate: fps, latencyMode: 'quality', ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
-  const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => {
-      const packet = EncodedPacket.fromEncodedChunk(chunk);
-      audioWrites = audioWrites.then(() => audioTrack.add(packet, meta)).catch((e) => void (failure ??= e));
-    },
-    error: (e) => (failure = e),
-  });
-  audioEncoder.configure({ codec: audio.codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
 
-  // Whatever happens (a failure, a cancel), the encoders and the footage are let go of
+  // Whatever happens (a failure, a cancel), the encoder and the footage are let go of
   let footage: HTMLVideoElement | null = null;
   try {
-    // The sound, in 0.1 s pieces
+    // The sound, encoded first (and again, turned down, if its decoded peaks passed the ceiling)
     const left = channels[0];
     const right = channels[1] ?? channels[0];
-    const piece = Math.round(sampleRate / 10);
-    for (let at = 0; at < frames; at += piece) {
-      const n = Math.min(piece, frames - at);
-      const data = new Float32Array(n * 2);
-      data.set(left.subarray(at, at + n));
-      data.set(right.subarray(at, at + n), n);
-      const chunk = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at / sampleRate) * 1e6), data });
-      audioEncoder.encode(chunk);
-      chunk.close();
+    for (const { chunk, meta } of await encodeSound(left, right, sampleRate, audio.codec, opts.ceilingDbtp ?? LIMITER_CEILING_DBTP, opts.onTrim)) {
+      const packet = EncodedPacket.fromEncodedChunk(chunk);
+      audioWrites = audioWrites.then(() => audioTrack.add(packet, meta)).catch((e) => void (failure ??= e));
     }
+    opts.signal?.throwIfAborted();
 
     // The picture
     const mono = new Float32Array(frames);
@@ -358,7 +431,6 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     for (let f = 0; f < total; f++) {
       if (signal?.aborted) {
         videoEncoder.close();
-        audioEncoder.close();
         signal.throwIfAborted();
       }
       if (failure) throw failure;
@@ -441,16 +513,14 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       await encodeFrame(f, t);
     }
     await videoEncoder.flush();
-    await audioEncoder.flush();
     await Promise.all([videoWrites, audioWrites]);
     if (failure) throw failure;
     videoEncoder.close();
-    audioEncoder.close();
     await output.finalize();
     opts.onProgress?.(1);
     return new Blob([target.buffer!], { type: 'video/mp4' });
   } finally {
-    for (const encoder of [videoEncoder, audioEncoder]) if (encoder.state !== 'closed') encoder.close();
+    if (videoEncoder.state !== 'closed') videoEncoder.close();
     if (footage) {
       footage.removeAttribute('src');
       footage.load();

@@ -29,14 +29,15 @@ import {
   stemTracks,
 } from '../../audio/exportWav';
 import { formatDbtp, formatLufs, measureLoudness, sharedGainDb, truePeakOf } from '../../audio/loudness';
+import { fileAgainstHeardDb, heardLoudness } from '../../audio/monitor';
 import { exportCeilingDbtp, limitInPlace } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
-import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
+import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
 import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
-import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
+import { AUDIO_FORMATS, encodeAudio, encodeTogether, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
 import { canExportVideo, DEFAULT_VIDEO_MARKS, renderVideo, VIDEO_SIZES, type VideoFps, type VideoMarks, type VideoShape } from '../../audio/videoExport';
@@ -155,6 +156,43 @@ function TargetPicker({ value, onChange }: { value: string; onChange: (id: strin
         ))}
       </select>
     </label>
+  );
+}
+
+/**
+ * How the file will sound against the song as it played in the app: the listening path matches
+ * every song to about MONITOR_TARGET_LUFS (monitor.ts), a file plays at its own level, so a quiet
+ * mix that sounded fine here can come out quieter than everything else in a player. With the one
+ * click to the Streaming target when it would. Nothing until the song has played a few seconds.
+ */
+function HeardLevelNote({ normalize, target, onMatch }: { normalize: boolean; target: string; onMatch: () => void }) {
+  // (What was heard before the dialog opened: nothing plays while it's open)
+  const [heard] = useState(heardLoudness);
+  if (!heard) return null;
+  const diff = Math.round(fileAgainstHeardDb(heard, normalize ? targetById(target).lufs : heard.lufs));
+  if (Math.abs(diff) < 1) return null;
+  const turned = Math.round(heard.matchDb);
+  return (
+    <p className="pl-6 text-forge-muted" data-testid="heard-level">
+      As it last played, the song measures about {formatLufs(heard.lufs)}
+      {turned ? `, and the listening level turned it ${turned > 0 ? 'up' : 'down'} ${Math.abs(turned)} dB` : ''}: the file will sound about{' '}
+      <span className={diff < 0 ? 'text-amber-300' : 'text-forge-text'}>
+        {Math.abs(diff)} dB {diff < 0 ? 'quieter' : 'louder'}
+      </span>{' '}
+      than you heard it here.
+      {!normalize && diff < 0 && (
+        <>
+          {' '}
+          <button
+            type="button"
+            onClick={onMatch}
+            className="ml-1 px-2 rounded border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-400/70 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+          >
+            Match Streaming (-14 LUFS)
+          </button>
+        </>
+      )}
+    </p>
   );
 }
 
@@ -321,8 +359,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   // (MP3 stops at 48 kHz: a hi-res rate is a WAV's; compressed files get its base rate)
   const exportRate = format === 'wav' ? settings.sampleRate : lossyRate(settings.sampleRate);
   const ext = FORMAT_EXTENSION[format];
-  // MP3, Ogg and a video's sound keep their peaks a little lower: encoding overshoots them
-  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format, loudCrunch(master));
+  // -1 dBTP whatever the format: a compressed file is held under it once decoded (encoders.ts); only
+  // compressed stems, which can't each be turned down, keep their peaks lower
+  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format, what === 'stems');
   const room = useTimelineStore((s) => s.masterReverbRoom);
   const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
   const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
@@ -394,7 +433,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       ...(stemsOnly ? {} : { intensity: { value: s.intensity, curves: s.intensityCurves } }),
       peakCeilingDbtp: ceilingDbtp,
     };
-    const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
+    // What a compressed file was turned down after encoding, to keep its decoded peaks under the ceiling
+    let trimmedDb = 0;
+    const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts), onTrim: (db: number) => (trimmedDb = db) };
+    const trimNote = () => (trimmedDb > 0.05 ? `; turned down ${trimmedDb.toFixed(1)} dB after encoding, so it never passes ${ceilingDbtp} dBTP decoded` : '');
     // A Loud master reaches the target itself: the push into its clipper and limiter is found
     // afresh as the render's master section runs (loudMaster.ts), and kept for live playback
     const loudMatch = !!s.master.loud?.on && settings.normalize;
@@ -438,8 +480,15 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${part.track ? part.track.name : 'the music'}` });
           // (Each stem its own dither, so the stems' dither doesn't add up in step when they're mixed)
           const ditherSeed = part.track ? ditherSeedOf(part.track.id) : 0;
-          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
-          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
+          if (format === 'wav') {
+            files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
+            files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
+          } else {
+            // Intro and loop turned down together if at all, so the intro still runs into the loop at
+            // its level; layers as they are (stems: they must keep adding up)
+            const [intro, loopFile] = await encodeTogether([part.intro, part.loop], sampleRate, format, part.track ? { ceilingDbtp: null } : encodeOpts);
+            files.push({ name: `${name} intro.${ext}`, data: intro }, { name: `${name} loop.${ext}`, data: loopFile });
+          }
           if (format === 'wav' && settings.loopFile) {
             const whole = part.intro.map((ch, c) => {
               const out = new Float32Array(ch.length + part.loop[c].length);
@@ -454,7 +503,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         deliver(await createZip(files), fileName);
-        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(peakDbtp)}${note}` : ''}`);
+        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated - trimmedDb)}, peak ${formatDbtp(peakDbtp)}${note}${trimNote()}` : ''}`);
       } else if (videoOut) {
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
         // cut where its tails die away once it has its final level (see keepRingOut)
@@ -500,18 +549,20 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           marks: settings.marks,
           sections,
           signal: controller.signal,
+          ceilingDbtp,
+          onTrim: (db) => (trimmedDb = db),
           onProgress: (p) => setStatus({ kind: 'rendering', fileName, progress: 0.3 + 0.7 * p, detail: 'Drawing the video' }),
         });
         controller.signal.throwIfAborted();
         deliver(blob, fileName);
         if (loudMatch) keepPush(true);
-        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${loudMatch ? loudNote() : ''}`);
+        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated - trimmedDb)}, peak ${formatDbtp(reading.truePeakMax)}${loudMatch ? loudNote() : ''}${trimNote()}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
           opts,
           settings.bitDepth,
           (progress, stem) => setStatus({ kind: 'rendering', fileName, progress, detail: `Stem ${stem.index + 1} of ${stem.count}: ${stem.track.name}` }),
-          format === 'wav' ? undefined : (channels, sampleRate) => encodeAudio(channels, sampleRate, format, encodeOpts)
+          format === 'wav' ? undefined : (channels, sampleRate) => encodeAudio(channels, sampleRate, format, { ...encodeOpts, ceilingDbtp: null })
         );
         const names = stemFileNames(fileBase, rendered.map((r) => r.track), ext);
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
@@ -548,8 +599,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
           }
           if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: at(0.99), detail: detail(`Encoding ${format.toUpperCase()}`) });
+          trimmedDb = 0;
           const data = format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts);
-          made.push({ name: versionFile(version), data, label, reading, note });
+          if (trimmedDb > 0) reading = { ...reading, integrated: reading.integrated - trimmedDb };
+          made.push({ name: versionFile(version), data, label, reading, note: note + trimNote() });
         }
         if (made.length === 1) {
           const [m] = made;
@@ -835,6 +888,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               </span>
             </label>
             {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
+            {!game && <HeardLevelNote normalize={settings.normalize} target={settings.target} onMatch={() => update({ normalize: true, target: DEFAULT_TARGET })} />}
           </>
         ) : (
           <>
@@ -893,6 +947,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               </span>
             </label>
             {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
+            {!game && <HeardLevelNote normalize={settings.normalize} target={settings.target} onMatch={() => update({ normalize: true, target: DEFAULT_TARGET })} />}
           </>
         )}
       </Section>
@@ -965,7 +1020,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         )}
         <p>
           Stereo. True peaks are kept under {ceilingDbtp} dBTP (between samples too), so nothing clips.
-          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. Compressing nudges the peaks up a little, which is why they start half a dB lower than a WAV\u2019s. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
+          {format !== 'wav' &&
+            (what === 'stems'
+              ? ' MP3 and OGG are compressed: small files that sound the same to most ears. Compressing nudges the peaks up a little, so compressed stems keep theirs a dB lower than WAV stems (each turned down on its own, they wouldn\u2019t add up to the mix).'
+              : ' MP3 and OGG are compressed: a small file that sounds the same to most ears. Compressing nudges the peaks up a little, so the file is played back once it\u2019s made and turned down by anything over the ceiling (usually nothing, at most about a dB). Both play to the exact sample, with no silence added at the start, so loops stay seamless.')}
           {format === 'wav' && !game && cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
               stemsOnly ? 'every file' : 'the file'

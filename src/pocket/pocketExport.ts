@@ -1,7 +1,7 @@
 /**
  * Pocket's one export: the whole song as an MP3 at a loudness target (the studio's Export dialog
  * with its defaults: the song from bar 1, ringing out, matched to the target, peaks held under
- * the lossy ceiling). The target is the Loud master's when it's on (Pocket's Loud button aims it
+ * -1 dBTP, the decoded MP3 too). The target is the Loud master's when it's on (Pocket's Loud button aims it
  * at the drop check's style), else Streaming; the Share screen can pick another. With the Loud
  * master on the push into its clipper and limiter is found afresh (and kept for live playback when
  * the file aims at the Loud master's own target);
@@ -13,7 +13,7 @@ import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOp
 import { measureLoudness } from '../audio/loudness';
 import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
-import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
+import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
@@ -34,7 +34,7 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     const audible = new Set(audibleTracks(s.tracks).map((t) => t.id));
     const songEnd = Math.max(1, ...s.clips.filter((c) => audible.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
     if (songEnd <= 1) return null;
-    const ceilingDbtp = exportCeilingDbtp('mp3', loudCrunch(useTimelineStore.getState().master));
+    const ceilingDbtp = exportCeilingDbtp('mp3');
     const masterFx = {
       reverbDecay: s.masterReverbDecay,
       delayTime: s.masterDelayTime,
@@ -68,8 +68,8 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     let reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
     if (!loud) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, target, undefined, ceilingDbtp)).reading;
     else {
-      // Kept for live playback only when aimed at the Loud master's own target (the whole song, full mix with no solo on)
-      // at the live ceiling: so never from this MP3 (the Loud master's own match keeps Pocket's push)
+      // Kept for live playback only when aimed at the Loud master's own target (the whole song, full mix with no solo on),
+      // limited at the live ceiling as this MP3 now is (it's held under it once decoded: encoders.ts)
       const live = useTimelineStore.getState().master.loud;
       const push = live ? pushToKeep({ wholeSong: true, fullMix: !s.tracks.some((t) => t.isSoloed), exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0, ceilingDbtp }) : null;
       if (push !== null) useTimelineStore.getState().setMasterLoud({ push });

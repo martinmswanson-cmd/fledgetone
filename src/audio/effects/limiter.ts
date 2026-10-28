@@ -26,29 +26,19 @@ export const LIMITER_CEILING_DBTP = -1;
  */
 export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
 /**
- * The ceiling for MP3 and Ogg exports, in dBTP. Encoding overshoots the peaks it was given: on a
- * dense Club-loud drop (clipped and limited), the app's MP3 (LAME at 320 kb/s) decoded 0.45-0.55 dB
- * over the file it was given (ffmpeg's decoder and true peak, and the meter here, agreeing), so a
- * -1.5 dBTP export decoded at -1.0 to -1.1 and the old meter's blind spots took it to -0.5. A
- * dB under the -1 dBTP target keeps the decoded file under it with room to spare (decoded at
- * -1.5 dBTP; scripts/limiter.test.mjs measures it where ffmpeg is installed).
+ * The ceiling for compressed stems, in dBTP. Encoding overshoots the peaks it was given (a dense,
+ * clipped drop's MP3 decoded 0.5 to 1.2 dB over it). A mixdown's MP3 or Ogg is limited at -1 like
+ * a WAV and turned down afterwards by what its decoded file overshot (decodedPeak.ts); stems can't
+ * each be turned down on their own without changing how they add up, so they keep this room.
  */
-export const LOSSY_CEILING_DBTP = -2;
+export const STEM_LOSSY_CEILING_DBTP = -2;
 /**
- * How much lower the compressed exports' ceiling goes with any Crunch (the Loud master clipping on
- * purpose, loudMaster.ts), dB: flat-topped, clipped waves overshoot more once encoded (a crunchy
- * drop at -2 dBTP decoded at -0.7 to -0.8 dBTP; through the band clipper Crunch uses, whose output
- * sits at the ceiling nearly all the time, the app's MP3 decoded 1.1 to 1.2 dB over what it was
- * given at any Crunch), so the decoded file stays under -1 dBTP.
+ * The true-peak ceiling (dBTP) a render for an export in `format` ('wav', 'mp3', 'ogg', 'mp4') is
+ * limited under: -1 for every format (a compressed file is then held under it once decoded, see
+ * decodedPeak.ts), and STEM_LOSSY_CEILING_DBTP for compressed `stems`. (MP3, Ogg and video once
+ * aimed 1 dB lower, 2 with Crunch, which cost them that much loudness and more limiting than the WAV.)
  */
-export const CRUNCH_LOSSY_EXTRA_DB = 1;
-/**
- * The true-peak ceiling (dBTP) for an export in `format` ('wav', 'mp3', 'ogg', 'mp4'): -1, or
- * LOSSY_CEILING_DBTP for the compressed ones, CRUNCH_LOSSY_EXTRA_DB lower with any Crunch on the
- * Loud master (0 to 1). (It once went down with Crunch little by little: at 15% the decoded MP3
- * came within 0.1 dB of -1 dBTP.)
- */
-export const exportCeilingDbtp = (format: string, crunch = 0): number => (format === 'wav' ? LIMITER_CEILING_DBTP : LOSSY_CEILING_DBTP - (crunch > 0 ? CRUNCH_LOSSY_EXTRA_DB : 0));
+export const exportCeilingDbtp = (format: string, stems = false): number => (stems && format !== 'wav' ? STEM_LOSSY_CEILING_DBTP : LIMITER_CEILING_DBTP);
 /** Where the limiter aims for `ceilingDbtp`: a hair under it, as LIMITER_AIM_DBTP is under -1. */
 export const limiterAimDbtp = (ceilingDbtp: number): number => ceilingDbtp + (LIMITER_AIM_DBTP - LIMITER_CEILING_DBTP);
 /** How quickly the gain recovers after a peak (seconds) */
@@ -183,7 +173,7 @@ export const createLimiterKernel = (sampleRate: number): LimiterKernel => limite
  * kernel. An export's master section limits this way after the render, as an AudioWorklet module
  * added to an OfflineAudioContext keeps Chromium from ever freeing it (a whole render kept per
  * export); the export plans for the latency, so the file lines up exactly as it did.
- * `ceilingDbtp` is the export's ceiling (lower for MP3 and Ogg, see exportCeilingDbtp).
+ * `ceilingDbtp` is the export's ceiling (see exportCeilingDbtp).
  */
 export function limitChannels(left: Float32Array, right: Float32Array, sampleRate: number, ceilingDbtp = LIMITER_CEILING_DBTP): void {
   const kernel = createLimiterKernel(sampleRate);

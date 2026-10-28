@@ -38,7 +38,7 @@ const { referencedSoundIds } = await import('/src/store/audioClips.ts');
 const { embedSounds, importEmbeddedSounds } = await import('/src/audio/soundLibrary.ts');
 const sr = 44100;
 const CRUNCH = arg.crunch ?? 0.4;
-const CEIL = exportCeilingDbtp('mp3', CRUNCH);
+const CEIL = exportCeilingDbtp('mp3');
 const LUFS = arg.lufs ?? -9;
 
 if (!paramNamesOf(FLEDGE_URL)) {
@@ -501,7 +501,8 @@ if (arg.levels) {
 const r = await exportSong(p);
 await finish(p, r);
 // Kick and snare times (s) for the hit check, through the tempo map
-const lat = 1105 / sr;
+// (The MP3 decodes to the exact sample: no encoder delay to allow for)
+const lat = 0;
 const t0 = arg.range ? barToSeconds(arg.range[0] + 1, tempo) : 0;
 const sec = (n) => barToSeconds(1 + n.at / 16, tempo) + lat - t0;
 const hitsOf = (keys, row, v = 0) => keys.flatMap((k) => (P[k] ?? []).filter((n) => n.note === row && n.velocity > v).map(sec)).filter((x) => x >= 0).sort((a, b) => a - b);

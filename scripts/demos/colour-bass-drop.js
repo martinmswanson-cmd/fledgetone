@@ -18,7 +18,7 @@ const { encodeAudio } = await import('/src/audio/encoders.ts');
 const { exportCeilingDbtp } = await import('/src/audio/effects/limiter.ts');
 const sr = 44100;
 // The app's MP3 export ceiling (lower with Crunch), unless asked
-const CEIL = arg.ceiling ?? exportCeilingDbtp('mp3', arg.crunch ?? 1);
+const CEIL = arg.ceiling ?? exportCeilingDbtp('mp3');
 const V = arg.variant ?? 'a';
 
 if (!paramNamesOf(FLEDGE_URL)) {
@@ -317,7 +317,7 @@ const file = arg.file ?? 'colour-bass-drop';
 wavs[file + '-mp3'] = await toUrl(await encodeAudio(ch, buf.sampleRate, 'mp3', { bitDepth: 16 }));
 Object.assign(out, { seconds: +(buf.length / buf.sampleRate).toFixed(2), renderMs: Math.round(performance.now() - t0), ...health(ch), lufs: +integratedLufs(ch[0], ch[1], buf.sampleRate).toFixed(2), loud: stats?.loud, limDb: stats?.limiterPeakDb, limBusy: stats?.limiterBusyShare, clip: stats?.clipper });
 // Kick and snare times (s) for the hit check
-const at = (n) => n.startOffset * 2.4 + 1105 / sr;
+const at = (n) => n.startOffset * 2.4;
 out.onsets = { kicks: drums.filter((n) => n.note === 'C1').map(at), snares: drums.filter((n) => n.note === 'D1' && n.velocity > 0.9).map(at) };
 if (arg.stems) {
   // The bass parts alone through the same master settings, push as found (no match): the bass's own movement

@@ -15,8 +15,7 @@ import { embedSounds } from '../../audio/soundLibrary';
 import { audibleTracks, channelsOf, downloadBlob, renderArrangement } from '../../audio/exportWav';
 import { encodeAudio } from '../../audio/encoders';
 import { exportCeilingDbtp } from '../../audio/effects/limiter';
-import { DEFAULT_MASTER_FX, defaultMasterSettings } from '../../store/timelineTypes';
-import { loudCrunch } from '../../audio/effects/loudMaster';
+import { DEFAULT_MASTER_FX } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { showToast } from './toastStore';
 
@@ -97,7 +96,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const p = currentProject();
       const ids = new Set(audibleTracks(p.tracks).map((t) => t.id));
       const end = Math.max(2, ...p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
-      const audio = await renderArrangement({ tracks: p.tracks, clips: p.clips, bpm: p.bpm, tempoPoints: p.tempoPoints, swing: p.swing, masterFx: p.masterFx ?? DEFAULT_MASTER_FX, master: p.master, startBar: 1, endBar: end, ending: 'ringOut', sampleRate: 44100, peakCeilingDbtp: exportCeilingDbtp('mp3', loudCrunch(p.master ?? defaultMasterSettings())), markers: p.markers, intensity: { value: s.intensity, curves: s.intensityCurves } });
+      const audio = await renderArrangement({ tracks: p.tracks, clips: p.clips, bpm: p.bpm, tempoPoints: p.tempoPoints, swing: p.swing, masterFx: p.masterFx ?? DEFAULT_MASTER_FX, master: p.master, startBar: 1, endBar: end, ending: 'ringOut', sampleRate: 44100, peakCeilingDbtp: exportCeilingDbtp('mp3'), markers: p.markers, intensity: { value: s.intensity, curves: s.intensityCurves } });
       const mp3 = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });
       const file = new File([mp3], `${safeFileName(p.name)}.mp3`, { type: 'audio/mpeg' });
       const how = await shareOrDownload(file, p.name);

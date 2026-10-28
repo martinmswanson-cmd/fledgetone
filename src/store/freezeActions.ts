@@ -8,7 +8,7 @@ import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
 import { isAudioKind, isDropKind } from '../audio/instrumentCatalog';
-import { encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
+import { ditherSeedOf, encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
 import type { SampleRate } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { BUS_GAIN, liveMix } from '../audio/engine';
@@ -134,7 +134,9 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
       for (let i = 0; i < out.length; i++) out[i] *= scale;
       return out;
     });
-    const wav = encodeChannels(stored, r.sampleRate, 16, []);
+    // Each track its own dither (ditherSeedOf): frozen tracks that start together would otherwise
+    // add up their dither in step, louder with every track
+    const wav = encodeChannels(stored, r.sampleRate, 16, [], undefined, ditherSeedOf(trackId));
     const meta = await importSoundFile(wav, `${track.name} (${label})`, MAX_FROZEN_BYTES);
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null; // deleted while it rendered
     if (songGeneration() !== song) return null; // another song opened while it rendered

@@ -48,6 +48,7 @@ import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
 import { create, type StateCreator } from 'zustand';
 import { initAudio } from '../audio/engine';
+import { resetHeardLoudness } from '../audio/monitor';
 import {
   formatBarsBeats,
   getAudiblePositionBar,
@@ -3212,6 +3213,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         keepVersion(replaced, 'replaced');
       }
       songCount++;
+      // What the old song was heard at says nothing of this one (the export dialog's level note)
+      resetHeardLoudness();
       replacedListeners.forEach((l) => l());
       // A take in progress belongs to the arrangement being replaced
       discardTake();
