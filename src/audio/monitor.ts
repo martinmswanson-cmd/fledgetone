@@ -56,6 +56,8 @@ export interface MonitorReading {
   shortTerm: number;
   /** The most the safety limiter took off since the last reading, dB. */
   safetyDb: number;
+  /** Whether the last 100 ms had sound in them (not silence: the song is playing). */
+  sounding: boolean;
 }
 
 export interface MonitorKernel {
@@ -111,6 +113,7 @@ export function createMonitorKernel(
   const safetyRelease = 1 - Math.exp(-1 / (0.05 * sampleRate));
   let safetyMost = 1;
   let shortTerm = -Infinity;
+  let sounding = false;
   const blockSeconds = HOP / sampleRate;
 
   /** A 100 ms block has been measured: the next gain. */
@@ -134,6 +137,7 @@ export function createMonitorKernel(
     shortTerm = lufs(mean(SHORT));
     let wanted = gainDb;
     const silent = !(lufs(power) >= c.silence);
+    sounding = !silent;
     if (!p.match) wanted = 0;
     else if (!silent && Number.isFinite(shortTerm)) wanted = Math.max(c.min, Math.min(c.max, p.target - shortTerm));
     let fall = c.fall;
@@ -191,7 +195,7 @@ export function createMonitorKernel(
   };
 
   const read = (): MonitorReading => {
-    const reading = { gainDb, shortTerm, safetyDb: safetyMost < 1 ? -20 * Math.log10(safetyMost) : 0 };
+    const reading = { gainDb, shortTerm, safetyDb: safetyMost < 1 ? -20 * Math.log10(safetyMost) : 0, sounding };
     safetyMost = 1;
     return reading;
   };
@@ -340,6 +344,58 @@ export const listeningVolume = (): number => volumeDb;
 /** Whether the listening path is in place (its worklet loaded). */
 export const monitorInstalled = (): boolean => node !== null;
 
+// ---------- how loud the song was heard (for the export dialog) ----------
+
+/** Readings kept: the last three minutes of the song playing (the worklet posts four a second). */
+const HEARD_READINGS = 3 * 60 * 4;
+/** Fewer than this (5 s of playing) says nothing yet. */
+const HEARD_LEAST = 5 * 4;
+const heardPower = new Float64Array(HEARD_READINGS);
+const heardGain = new Float64Array(HEARD_READINGS);
+let heardCount = 0;
+let heardAt = 0;
+
+/** One reading into the record of what was heard: only while the song plays. */
+function heardReading(r: MonitorReading) {
+  if (!r.sounding || !Number.isFinite(r.shortTerm)) return;
+  heardPower[heardAt] = Math.pow(10, (r.shortTerm + 0.691) / 10);
+  heardGain[heardAt] = r.gainDb;
+  heardAt = (heardAt + 1) % HEARD_READINGS;
+  heardCount = Math.min(HEARD_READINGS, heardCount + 1);
+}
+
+/** Forget what was heard (another song opened). */
+export function resetHeardLoudness(): void {
+  heardCount = 0;
+  heardAt = 0;
+}
+
+/** How the song sounded as it last played (up to three minutes of it): its loudness out of the master (what a file of it measures) and how much the level matching turned it, on average. */
+export interface HeardLoudness {
+  /** The master's loudness, LUFS: about what a file of the song measures. */
+  lufs: number;
+  /** What the level matching added on average, dB (0 with it off). */
+  matchDb: number;
+}
+
+/** What the song was heard at (see HeardLoudness); null before it has played a few seconds. */
+export function heardLoudness(): HeardLoudness | null {
+  if (heardCount < HEARD_LEAST) return null;
+  let p = 0;
+  let g = 0;
+  for (let i = 0; i < heardCount; i++) {
+    p += heardPower[i];
+    g += heardGain[i];
+  }
+  return { lufs: -0.691 + 10 * Math.log10(p / heardCount), matchDb: isMatched(listeningMatched(), status) ? g / heardCount : 0 };
+}
+
+/**
+ * How much louder (+) or quieter (-) a file at `fileLufs` sounds than the song did in the app (dB):
+ * there it played at its own loudness plus what the level matching added; a file plays at its own.
+ */
+export const fileAgainstHeardDb = (heard: HeardLoudness, fileLufs: number): number => fileLufs - (heard.lufs + heard.matchDb);
+
 /**
  * Put the listening path between `output` (the live destination's last node, where the meters
  * listen) and the speakers. Until it's in, and where AudioWorklets can't run, the volume goes to
@@ -363,6 +419,7 @@ export function installMonitor(context: Tone.BaseContext, output: Tone.ToneAudio
       });
       monitor.port.onmessage = (e: MessageEvent<MonitorReading>) => {
         lastReading = e.data;
+        heardReading(e.data);
         notify();
       };
       Tone.connect(monitor, speakers);

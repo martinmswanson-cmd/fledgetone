@@ -99,7 +99,7 @@ export function effectiveWidth(m: Pick<MasterSettings, 'width' | 'monoLow' | 'lo
  * insert's. With Crunch the Loud master's knee hardens towards a flat top, it's the band kind (the
  * whole sound oversampled and clipped twice, so its peaks between samples stay near where it
  * clips: ClipperSettings.band) and it clips a little under the limiter's ceiling (`ceilingDbtp`:
- * live and WAV -1, MP3 lower, see exportCeilingDbtp), so the clipper does all the work and the
+ * -1 live and in exports, see exportCeilingDbtp), so the clipper does all the work and the
  * limiter after it next to none: the mix doesn't pump with the drums. (Before, the plain clipper's
  * output overshot the limiter by up to 6 dB on a dense drop, and the limiter pulled the whole mix
  * down 2 to 5 dB after every kick and snare.)
@@ -215,9 +215,9 @@ export interface LoudMatch {
 /**
  * The push an export should store for live playback, or null to leave the Loud master's push as it
  * is. Only an export of the whole song (not a loop, game loop or underscore / no-drums version) at
- * the Loud master's own target, limited at the live ceiling (-1 dBTP, a WAV's), says what the live push
- * should be: anything else found a push for other music, another loudness, or a lower ceiling (an
- * MP3's, lower still with Crunch, would play live about a dB hotter than the export).
+ * the Loud master's own target, limited at the live ceiling (-1 dBTP, every mixdown's), says what the
+ * live push should be: anything else found a push for other music, another loudness, or a lower
+ * ceiling (one asked for specially, which would play live hotter than the export).
  */
 export function pushToKeep(o: {
   /** The whole song, bar 1 to the end. */

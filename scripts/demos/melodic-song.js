@@ -28,7 +28,7 @@ const { depthOfDb } = await import('/src/audio/effects/duckShape.ts');
 const SR = 44100;
 const BPM = 175;
 const LUFS = arg.lufs ?? -10;
-const CEIL = exportCeilingDbtp('mp3', 0);
+const CEIL = exportCeilingDbtp('mp3');
 const FILE = arg.file ?? 'lanterns';
 const toUrl = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(blob); });
 const health = (chans) => { let bad = 0, peak = 0; for (const c of chans) for (let i = 0; i < c.length; i++) { const v = c[i]; if (!Number.isFinite(v)) bad++; else if (Math.abs(v) > peak) peak = Math.abs(v); } return { nonFinite: bad, peakDb: +(20 * Math.log10(peak + 1e-12)).toFixed(2) }; };
@@ -513,6 +513,6 @@ const r = await renderSong(project);
 wavs[FILE + '-mp3'] = await toUrl(await encodeAudio(r.ch, r.sr, 'mp3', { bitDepth: 16 }));
 Object.assign(out, r.info, { projectBytes: json.length, loud: r.stats?.loud, limBusy: r.stats?.limiterBusyShare });
 // (Where the kicks and snares land, for the hit check)
-const onset = (n) => (n.at / 16) * barS + 1105 / SR;
+const onset = (n) => (n.at / 16) * barS;
 out.onsets = { kicks: P.drums.filter((n) => n.note === 'C1').map(onset), snares: P.drums.filter((n) => n.note === 'D1' && n.velocity > 0.9).map(onset) };
 return { out, wavs };

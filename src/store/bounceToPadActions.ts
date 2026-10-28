@@ -9,7 +9,7 @@ import { create } from 'zustand';
 import { masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
 import type { DrumRack } from './timelineTypes';
 import { tempoAt } from '../audio/tempoMap';
-import { audibleTracks, channelsOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
+import { audibleTracks, channelsOf, ditherSeedOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { liveMix } from '../audio/engine';
 import { ENVELOPE_HOP } from '../audio/slicing';
@@ -122,7 +122,7 @@ export async function bounceRangeToPad(req: BounceRequest): Promise<PadPlaced | 
       for (let i = 0; i < out.length; i++) out[i] *= level.scale;
       return out;
     });
-    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, []), `${req.name}.wav`, MAX_BOUNCE_BYTES);
+    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, [], undefined, ditherSeedOf(req.name)), `${req.name}.wav`, MAX_BOUNCE_BYTES);
     if (songGeneration() !== song) return null; // another song opened while it rendered
     const target = choosePadTarget(useTimelineStore.getState().tracks, req.target);
     return placeOnPad(target, { soundId: meta.id, name: req.name, gainDb: level.gainDb }, BOUNCE_TRACK_NAME);

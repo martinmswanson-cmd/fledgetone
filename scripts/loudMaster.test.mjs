@@ -144,14 +144,12 @@ test('Crunch lets the same mix reach Club by clipping on purpose, under the same
   assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 }), -3).ceiling, -3 - L.CRUNCH_CLIP_UNDER_DB - L.CRUNCH_CLIP_LOWER_DB);
   assert.equal(L.effectiveClipper(loudMaster('club'), -3), L.LOUD_CLIPPER);
   assert.equal(L.LOUD_CLIPPER.band, undefined);
-  // MP3 and Ogg exports keep their peaks lower with Crunch (clipped waves overshoot more once encoded); WAV stays at -1 dBTP
-  const { exportCeilingDbtp, LOSSY_CEILING_DBTP, CRUNCH_LOSSY_EXTRA_DB } = await import('../src/audio/effects/limiter.ts');
-  assert.equal(exportCeilingDbtp('mp3'), LOSSY_CEILING_DBTP);
-  assert.equal(exportCeilingDbtp('mp3', 0), LOSSY_CEILING_DBTP);
-  assert.equal(exportCeilingDbtp('mp3', 1), LOSSY_CEILING_DBTP - CRUNCH_LOSSY_EXTRA_DB);
-  // (all of it at any Crunch: the band clipper's output sits at its ceiling, and encoding overshoots it as much)
-  assert.equal(exportCeilingDbtp('mp3', 0.15), LOSSY_CEILING_DBTP - CRUNCH_LOSSY_EXTRA_DB);
-  assert.equal(exportCeilingDbtp('wav', 1), -1);
+  // Every format's mixdown is limited at -1 dBTP, Crunch or not (a compressed file is held under it once
+  // decoded: encoders.ts); only compressed stems keep their peaks lower
+  const { exportCeilingDbtp, STEM_LOSSY_CEILING_DBTP } = await import('../src/audio/effects/limiter.ts');
+  for (const f of ['wav', 'mp3', 'ogg', 'mp4']) assert.equal(exportCeilingDbtp(f), -1);
+  assert.equal(exportCeilingDbtp('mp3', true), STEM_LOSSY_CEILING_DBTP);
+  assert.equal(exportCeilingDbtp('wav', true), -1);
   // (The Clipper insert, when on, plays as set: Crunch only bends the Loud master's own)
   const insert = { on: true, drive: 3, softness: 0.3, ceiling: -1 };
   assert.equal(L.effectiveClipper({ clipper: insert, loud: { ...T.defaultLoud(), on: true, crunch: 1 } }), insert);
@@ -319,10 +317,11 @@ test('an export keeps its push for live playback only from the whole song, full 
   assert.equal(L.pushToKeep({ ...base, found: undefined }), null);
   assert.equal(L.pushToKeep({ ...base, found: { ...found, lufs: -Infinity } }), null, 'silence found nothing');
   assert.equal(L.pushToKeep({ ...base, currentPush: 4.22 }), null, 'no change worth storing');
-  // An MP3 (or Ogg, MP4) is limited lower, lower still with Crunch: its push would play live hotter than the export
+  // Every format's mixdown is limited at the live ceiling now, so an MP3's push is kept as a WAV's is;
+  // a lower ceiling (compressed stems') would play live hotter than the export
   const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
-  assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('wav', 0.7) }), 4.2);
-  for (const crunch of [0, 0.7]) assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('mp3', crunch) }), null, `MP3, Crunch ${crunch}`);
+  for (const f of ['wav', 'mp3', 'ogg', 'mp4']) assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp(f) }), 4.2, f);
+  assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('mp3', true) }), null, 'a lower ceiling');
 });
 
 test('a Loud match keeps its push only if the Loud master is still the one it rendered (no undo or Crunch press during it)', () => {
@@ -406,7 +405,7 @@ function readFloatWav(file) {
 
 test("a Club-loud MP3 export plays back under -1 dBTP: the app's own encoder, decoded by ffmpeg; the meter reads as ffmpeg does", { skip: !hasFfmpeg && 'ffmpeg is not installed' }, async () => {
   const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
-  const { createMp3Encoder } = await import('wasm-media-encoders');
+  const { encodeAudio } = await import('../src/audio/encoders.ts');
   const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'loud-mp3-'));
   try {
     const [l, r] = drop(8, 0.6, true);
@@ -416,19 +415,27 @@ test("a Club-loud MP3 export plays back under -1 dBTP: the app's own encoder, de
     const ours = dbtp(l, r);
     const theirs = ffmpegTruePeak(pathMod.join(dir, 'master.wav'), dir);
     assert.ok(Math.abs(ours - theirs) <= 0.2, `meter ${ours.toFixed(2)}, ffmpeg ${theirs.toFixed(2)} dBTP`);
-    // As encodeAudio makes it: LAME at 320 kb/s
-    const encoder = await createMp3Encoder();
-    encoder.configure({ sampleRate: SR, channels: 2, bitrate: 320 });
-    const parts = [];
-    for (let at = 0; at < l.length; at += 1 << 16) parts.push(Buffer.from(encoder.encode([l.subarray(at, at + (1 << 16)), r.subarray(at, at + (1 << 16))])));
-    parts.push(Buffer.from(encoder.finalize()));
-    fs.writeFileSync(pathMod.join(dir, 'export.mp3'), Buffer.concat(parts));
+    // As the export makes it: LAME at 320 kb/s, decoded (by ffmpeg here, the browser in the app) and
+    // turned down by what it overshot -1 dBTP
+    let trim = -1;
+    const decode = async (bytes) => {
+      fs.writeFileSync(pathMod.join(dir, 'try.mp3'), Buffer.from(bytes));
+      execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', pathMod.join(dir, 'try.mp3'), '-c:a', 'pcm_f32le', pathMod.join(dir, 'try.wav')]);
+      return readFloatWav(pathMod.join(dir, 'try.wav'));
+    };
+    const mp3 = await encodeAudio([l, r], SR, 'mp3', { bitDepth: 16, decode, onTrim: (db) => (trim = db) });
+    fs.writeFileSync(pathMod.join(dir, 'export.mp3'), Buffer.from(await mp3.arrayBuffer()));
+    // (A dense, clipped drop overshoots by up to about a dB: no more than that comes off)
+    assert.ok(trim >= 0 && trim < 1.5, `turned down ${trim.toFixed(2)} dB`);
     execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', pathMod.join(dir, 'export.mp3'), '-c:a', 'pcm_f32le', pathMod.join(dir, 'decoded.wav')]);
     const decoded = ffmpegTruePeak(pathMod.join(dir, 'decoded.wav'), dir);
     assert.ok(decoded <= -1, `decoded MP3 peaks at ${decoded.toFixed(2)} dBTP`);
     const [dl, dr] = readFloatWav(pathMod.join(dir, 'decoded.wav'));
     assert.ok(dbtp(dl, dr) <= -1, `decoded MP3 by the meter here: ${dbtp(dl, dr).toFixed(2)} dBTP`);
-    assert.ok(Math.abs(lufsOf(l, r) + 6) <= 0.5, `still Club-loud: ${lufsOf(l, r).toFixed(2)} LUFS`);
+    assert.ok(Math.abs(lufsOf(l, r) + 6) <= 0.5, `the master Club-loud: ${lufsOf(l, r).toFixed(2)} LUFS`);
+    assert.ok(lufsOf(dl, dr) > -7.5, `the MP3 still Club-loud: ${lufsOf(dl, dr).toFixed(2)} LUFS`);
+    // Decoded to the exact sample (the Info frame: mp3Gapless.ts)
+    assert.equal(dl.length, l.length);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

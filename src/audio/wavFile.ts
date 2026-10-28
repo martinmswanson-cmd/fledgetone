@@ -102,11 +102,14 @@ export function encodeChannels(
         // TPDF dither (two random values, ±1 step in all): the rounding error becomes a steady,
         // very quiet hiss instead of distortion that follows the music, which a fade or a soft
         // reverb tail would otherwise end in. Digital silence stays silent.
+        // One scale for both halves of the wave, as readers divide by it: scaling the positive half
+        // by one step less bent the wave (a second harmonic at -104 dB). Full scale clips one step
+        // short at the top, as the format has one step fewer there.
         const dither = s === 0 ? 0 : random() - random();
-        view.setInt16(offset, Math.max(-0x8000, Math.min(0x7fff, Math.round((s < 0 ? s * 0x8000 : s * 0x7fff) + dither))), true);
+        view.setInt16(offset, Math.max(-0x8000, Math.min(0x7fff, Math.round(s * 0x8000 + dither))), true);
         offset += 2;
       } else {
-        const v = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff);
+        const v = Math.min(0x7fffff, Math.round(s * 0x800000));
         view.setUint8(offset, v & 0xff);
         view.setUint8(offset + 1, (v >> 8) & 0xff);
         view.setUint8(offset + 2, (v >> 16) & 0xff);

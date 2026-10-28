@@ -25,6 +25,9 @@ signed-off file (MP3 md5 `879feecbaf0fc95744741a8ee0d238a1`). Measured on its dr
 (hit check), decoded true peak −2.0 dBTP, crest 7.0 dB, mids pump −2.6 dB, beat-rate level movement
 0.08, sub dips 3.6 per bar, the master limiter taking off at most 1.1 dB. The reference it was
 measured against: −7.1 LUFS, pump −2.3 dB, beat-rate movement 0.09, 4.1 sub dips per bar.
+Since compressed exports are limited at −1 dBTP like a WAV and MP3s are gapless, the same command makes a
+different MP3: the master reaches −6.1 LUFS at −1 dBTP (distortion −18.1 dB instead of −16.3), and the
+MP3 is turned down 1.3 dB after encoding, decoding at −7.4 LUFS and −1.1 dBTP with its first sample at 0.
 
 What it took, in the order the owner's ears found the problems:
 

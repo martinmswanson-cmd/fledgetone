@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
 import type { Clip, SlicerSettings, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
-import { audibleTracks, channelsOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
+import { audibleTracks, channelsOf, ditherSeedOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
 import { decodeSound, importSoundFile } from '../audio/soundLibrary';
 import { liveMix } from '../audio/engine';
 import { barToSeconds, secondsToBar, tempoAt } from '../audio/tempoMap';
@@ -148,7 +148,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
       return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
     }
 
-    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, []), `${name}.wav`, MAX_BYTES);
+    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, [], undefined, ditherSeedOf(name)), `${name}.wav`, MAX_BYTES);
     if (elsewhere()) return ELSEWHERE;
 
     if (req.target === 'audio') {

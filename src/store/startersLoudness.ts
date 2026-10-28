@@ -51,13 +51,13 @@ export function starterLoudness(id: string, group: string): number {
  * recordings, the limiter run after the render).
  */
 export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: number }>> = {
-  lofi: { trim: 5, lufs: -14.7 }, // -14.7
-  ambient: { trim: 10.5, lufs: -18.6 }, // -18.6
-  celtic: { trim: -1.5, lufs: -14.8 }, // -14.6
-  tavern: { trim: 4, lufs: -14.9 }, // -14.9
-  latin: { trim: -3, lufs: -14.9 }, // -14.2
-  plaza: { trim: 6, lufs: -15.1 },
-  mbiraMorning: { trim: 8, lufs: -15.1 },
+  lofi: { trim: 3.5, lufs: -14.7 }, // -14.7
+  ambient: { trim: 10.5, lufs: -19 }, // -18.6
+  celtic: { trim: -1.5, lufs: -14.9 }, // -14.6
+  tavern: { trim: 4, lufs: -15.3 }, // -14.9
+  latin: { trim: -3, lufs: -15.1 }, // -14.2
+  plaza: { trim: 6.5, lufs: -15 },
+  mbiraMorning: { trim: 8.5, lufs: -15.3 },
   eastern: { trim: 4, lufs: -15.2 }, // -14.8
 };
 

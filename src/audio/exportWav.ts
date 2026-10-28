@@ -140,7 +140,7 @@ export interface RenderOptions {
   ringOutMin?: number;
   /**
    * The true-peak ceiling (dBTP) the master limiter and the final scaling hold the file under.
-   * Default -1; an MP3 or Ogg export passes exportCeilingDbtp's lower one, as encoding overshoots.
+   * Default -1, every mixdown's (see exportCeilingDbtp); compressed stems pass a lower one.
    */
   peakCeilingDbtp?: number;
   /**
@@ -1426,10 +1426,11 @@ export function scaleAudio(audio: AudioBuffer, gainDb: number): void {
 const peakOf = (channels: Float32Array[]): number => truePeakOf(channels);
 
 /**
- * The master limiter catches sample peaks only, so peaks between samples can overshoot 0 dBFS
- * (by 2 dB or more on a loud mix). Exports are scaled down (never up) so their true peaks stay
- * under -1 dBTP (or the lower ceiling an MP3 or Ogg export asks for) instead of clipping. Float WAVs get the
- * same treatment: most players and game engines clip them at full scale anyway.
+ * The master limiter holds the true peak under the ceiling already; this catches what comes out
+ * of a render without it (stems, which skip the master section, and a master that's switched off).
+ * Exports are scaled down (never up) so their true peaks stay under -1 dBTP (or the ceiling the
+ * render asks for) instead of clipping. Float WAVs get the same treatment: most players and game
+ * engines clip them at full scale anyway.
  */
 const peakGain = (peak: number, opts: Pick<RenderOptions, 'peakCeilingDbtp'>) => {
   const ceiling = 10 ** ((opts.peakCeilingDbtp ?? LIMITER_CEILING_DBTP) / 20);

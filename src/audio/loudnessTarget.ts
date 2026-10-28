@@ -35,8 +35,7 @@ export const MAX_LIMITING_DB = 8;
  * Bring `channels` (changed in place) to `target`. Returns the new reading, how many dB the
  * limiter took off the peaks (0: it wasn't needed), how far under the target the file stayed (0:
  * on target), and whether that's because reaching it would have needed more than
- * MAX_LIMITING_DB (`capped`). Peaks stay under `ceilingDbtp` (lower for MP3 and Ogg: see
- * exportCeilingDbtp in limiter.ts).
+ * MAX_LIMITING_DB (`capped`). Peaks stay under `ceilingDbtp` (see exportCeilingDbtp in limiter.ts).
  */
 export async function reachTarget(
   channels: Float32Array[],

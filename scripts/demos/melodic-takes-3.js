@@ -21,7 +21,7 @@ const { depthOfDb } = await import('/src/audio/effects/duckShape.ts');
 const sr = 44100;
 const TAKE = arg.take ?? 'a';
 const CRUNCH = arg.crunch ?? 0;
-const CEIL = arg.ceiling ?? exportCeilingDbtp('mp3', CRUNCH);
+const CEIL = arg.ceiling ?? exportCeilingDbtp('mp3');
 
 if (!paramNamesOf(FLEDGE_URL)) {
   const warm = mkTrack('w', 'plugin', T.defaultTrackFx(), { plugin: { id: 'warm', url: FLEDGE_URL, name: 'Fledge Synth', state: { builtin: 1, program: 0 } } });
@@ -349,7 +349,7 @@ const file = arg.file ?? `melodic-take-${TAKE}`;
 wavs[file + '-mp3'] = await toUrl(await encodeAudio(ch, buf.sampleRate, 'mp3', { bitDepth: 16 }));
 Object.assign(out, { seconds: +(buf.length / buf.sampleRate).toFixed(2), renderMs: Math.round(performance.now() - t0), ...health(ch), lufs: +integratedLufs(ch[0], ch[1], buf.sampleRate).toFixed(2), loud: stats?.loud, limDb: stats?.limiterPeakDb, limBusy: stats?.limiterBusyShare, clip: stats?.clipper });
 const barS = 240 / BPM;
-const at = (n) => n.startOffset * barS + 1105 / sr;
+const at = (n) => n.startOffset * barS;
 out.onsets = { kicks: P.drums.filter((n) => n.note === 'C1').map(at), snares: P.drums.filter((n) => n.note === 'D1' && n.velocity > 0.9).map(at) };
 if (arg.stems) {
   const master = { ...st.master, loud: { ...st.master.loud, push: stats?.loud?.push ?? st.master.loud.push } };

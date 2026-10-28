@@ -22,7 +22,7 @@ const { encodeChannels, ditherSeedOf } = await import('../src/audio/wavFile.ts')
 async function ditherOf(signal, seed) {
   const bytes = new DataView(await encodeChannels([signal], 48000, 16, [], undefined, seed).arrayBuffer());
   const out = new Float64Array(signal.length);
-  for (let i = 0; i < signal.length; i++) out[i] = bytes.getInt16(44 + 2 * i, true) - signal[i] * 0x7fff;
+  for (let i = 0; i < signal.length; i++) out[i] = bytes.getInt16(44 + 2 * i, true) - signal[i] * 0x8000;
   return out;
 }
 
@@ -59,4 +59,27 @@ test('a file without a seed keeps the dither it always had', async () => {
   const zero = new Uint8Array(await encodeChannels([signal], 44100, 16, [], undefined, 0).arrayBuffer());
   assert.deepEqual(plain, zero);
   assert.notEqual(ditherSeedOf('a'), ditherSeedOf('b'));
+});
+
+test('both halves of the wave are scaled alike, so a reader gets the level back exactly', async () => {
+  // A sine at -1 dBFS: no second harmonic from scaling the positive half differently
+  const n = 1 << 14;
+  const signal = new Float32Array(n).map((_, i) => 0.891 * Math.sin((2 * Math.PI * 64 * i) / n));
+  for (const depth of [16, 24]) {
+    const bytes = new DataView(await encodeChannels([signal], 48000, depth).arrayBuffer());
+    const read = (i) => (depth === 16 ? bytes.getInt16(44 + 2 * i, true) / 0x8000 : ((bytes.getInt32(44 + 3 * i - 1, true) >> 8) / 0x800000));
+    let re = 0, im = 0, re1 = 0, im1 = 0;
+    for (let i = 1; i < n; i++) {
+      const x = read(i);
+      re += x * Math.cos((2 * Math.PI * 128 * i) / n);
+      im += x * Math.sin((2 * Math.PI * 128 * i) / n);
+      re1 += x * Math.cos((2 * Math.PI * 64 * i) / n);
+      im1 += x * Math.sin((2 * Math.PI * 64 * i) / n);
+    }
+    const h2 = 20 * Math.log10(Math.hypot(re, im) / Math.hypot(re1, im1));
+    assert.ok(h2 < -115, `${depth}-bit: second harmonic ${h2.toFixed(1)} dB`);
+  }
+  // Full scale: the most each format holds, both ways
+  const full = new DataView(await encodeChannels([Float32Array.of(1, -1, 1.5, -1.5)], 48000, 24).arrayBuffer());
+  assert.deepEqual([0, 1, 2, 3].map((i) => full.getInt32(44 + 3 * i - 1, true) >> 8), [0x7fffff, -0x800000, 0x7fffff, -0x800000]);
 });

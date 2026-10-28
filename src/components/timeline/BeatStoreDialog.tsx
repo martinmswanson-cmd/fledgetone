@@ -16,7 +16,6 @@ import { createZip, type ZipEntry } from '../../audio/zip';
 import { formatDbtp, formatLufs, measureLoudness } from '../../audio/loudness';
 import { LOUDNESS_TARGETS, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { exportCeilingDbtp, limitChannels } from '../../audio/effects/limiter';
-import { loudCrunch } from '../../audio/effects/loudMaster';
 import { beatFileBase, coverExtension, layTag, tagTimes } from '../../audio/beatPack';
 import { producerTagChannels, producerTagSound, setProducerTag } from '../../audio/producerTag';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
@@ -100,10 +99,8 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
     const controller = new AbortController();
     abort.current = controller;
     const step = (what: string, progress: number) => setStatus({ kind: 'busy', what, progress });
-    // The tagged preview is an MP3: its ceiling is lower (lower still with Crunch). With no WAV in the
-    // pack the beat renders straight at it; with one, at the WAV's -1 and the preview is held under its own after
-    const mp3Ceiling = exportCeilingDbtp('mp3', loudCrunch(s.master));
-    const ceiling = opts.wav ? exportCeilingDbtp('wav') : mp3Ceiling;
+    // -1 dBTP for the WAV and the MP3 preview alike (the MP3 is held under it once decoded: encoders.ts)
+    const ceiling = exportCeilingDbtp('mp3');
     try {
       const render: RenderOptions = {
         tracks: s.tracks,
@@ -141,8 +138,8 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
           const preview = channelsOf(audio).map((ch) => ch.slice());
           const tagSound = await producerTagChannels(audio.sampleRate);
           if (tagSound) layTag(preview, audio.sampleRate, tagSound, tagTimes(audio.duration, tagSound[0].length / audio.sampleRate, { atStart: opts.tagAtStart, every: opts.tagEvery }), opts.tagDb);
-          // MP3 encoding pushes peaks up a little: held under the lower lossy ceiling (the tag's peaks too)
-          limitChannels(preview[0], preview[1] ?? preview[0], audio.sampleRate, mp3Ceiling);
+          // The tag's peaks held under the ceiling too
+          limitChannels(preview[0], preview[1] ?? preview[0], audio.sampleRate, ceiling);
           files.push({ name: `${base} (tagged preview).mp3`, data: await encodeAudio(preview, audio.sampleRate, 'mp3', { bitDepth: 16 }) });
         }
       }
