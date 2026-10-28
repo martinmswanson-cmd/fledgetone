@@ -336,6 +336,7 @@ Double-click a clip with the Selection tool (or right-click it and choose **Edit
 - **Delete**: right-click a note, or select notes and press `Delete`.
 - **Select**: click a note. Shift, Ctrl or Cmd-click adds notes; `Ctrl+A` selects them all; `Esc` clears the selection.
 - **Nudge**: arrow keys move selected notes by one grid step or one semitone; Shift with up and down moves an octave.
+- **Copy and paste**: `Ctrl+C` copies the selected notes and `Ctrl+X` cuts them; `Ctrl+V` pastes them at the playhead when it's inside the clip, else where they were copied from, keeping their timing and pitches (into this clip or another one: the copied notes stay until you copy others). `Ctrl+D` duplicates the selected notes straight after themselves. Pasted and duplicated notes are left selected, ready to nudge, and each is one undo step. In the piano roll these keys work on notes only; the timeline's clips are copied and pasted with it closed.
 - **Hear it**: click the keys on the left. Adding or clicking a note plays it, and so does dragging it to a new pitch.
 
 The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4), **NEW NOTE** length (it starts at the length you last drew, stretched or picked for that kind of part in this session: a quarter note for pads and chords, an eighth for other notes, a 16th for drums, a bar for FX; Pocket's piano roll shares it), **VEL** (velocity: how hard new notes are played; with notes selected it changes those notes), **PLAYS** (how often the selected notes play: see below), **FEEL** (this clip's own swing, in place of the song's) and zoom. Click the piano roll's ruler to move the playhead. Close it with **Close** or `Esc` (when no notes are selected).
@@ -1442,6 +1443,9 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 |---|---|
 | `Ctrl+A` | Select all notes |
 | `Delete` or `Backspace` | Delete selected notes |
+| `Ctrl+C` / `Ctrl+X` | Copy / cut the selected notes |
+| `Ctrl+V` | Paste the copied notes (at the playhead if it's in the clip) |
+| `Ctrl+D` | Duplicate the selected notes straight after themselves |
 | Arrow keys | Nudge selected notes (time, or one semitone) |
 | `Shift+Up` / `Shift+Down` | Move selected notes an octave (on drum and slice parts, one row) |
 | `Esc` | Clear the note selection, or close the piano roll |

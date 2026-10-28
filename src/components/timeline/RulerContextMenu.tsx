@@ -9,7 +9,7 @@ import { meterAt, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarCount, formatBarRange } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
 import { openArrange } from './arrangeDialogStore';
 import { suggestBlock } from '../../store/speedUpActions';
@@ -139,7 +139,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
     {
       key: 'speed-up',
       label: 'Speed up into here…',
-      shortcut: speedBlock.source === 'loop' ? 'the loop' : speedBlock.source === 'clips' ? 'selected clips' : `bars ${speedBlock.from}–${speedBlock.to}`,
+      shortcut: speedBlock.source === 'loop' ? 'the loop' : speedBlock.source === 'clips' ? 'selected clips' : formatBarRange(speedBlock.from, speedBlock.to),
       icon: <ChevronsRight className="w-3.5 h-3.5" />,
       onClick: () => {
         onClose();
