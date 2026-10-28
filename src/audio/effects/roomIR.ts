@@ -133,9 +133,9 @@ export function roomSeconds(style: RoomStyle, decay: number): number {
  * The impulse response's two channels for `style` with a middle decay of `decay` seconds (to
  * -60 dB), at `sampleRate`. Its total energy is 1, so changing style or decay keeps the reverb's
  * level about the same. It lasts until every band has fallen 60 dB (see roomSeconds), and ends
- * with a short fade.
+ * with a short fade. `lowLevel`: how loud its lows are against its middle (a room's warmth).
  */
-export function roomChannels(style: RoomStyle, decay: number, sampleRate: number): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
+export function roomChannels(style: RoomStyle, decay: number, sampleRate: number, lowLevel = 1.6): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
   const room = style === 'lush' ? HALL : (ROOM_STYLES[style] ?? HALL);
   const rt = Math.max(0.2, decay);
   const seconds = roomSeconds(style, decay);
@@ -173,7 +173,7 @@ export function roomChannels(style: RoomStyle, decay: number, sampleRate: number
       // The tail swells in over `build`, as reflections pile up
       const k = i - start;
       const swell = k < build ? (k / build) ** 2 : 1;
-      data[i] = swell * (low * eLow * 1.6 + mid * eMid + high * eHigh * 0.8);
+      data[i] = swell * (low * eLow * lowLevel + mid * eMid + high * eHigh * 0.8);
       eLow *= fLow;
       eMid *= fMid;
       eHigh *= fHigh;
@@ -194,5 +194,62 @@ export function roomChannels(style: RoomStyle, decay: number, sampleRate: number
   for (const d of out) for (let i = 0; i < n; i++) energy += d[i] * d[i];
   const scale = energy > 0 ? 1 / Math.sqrt(energy) : 0;
   for (const d of out) for (let i = 0; i < n; i++) d[i] *= scale;
+  return out;
+}
+
+/**
+ * The room a track's own Reverb insert plays (spaceFx.ts): the chamber, a room close and clear,
+ * its highs dying sooner than its middle and its lows a little later, with its early reflections.
+ * (The insert was a plain noise tail fading at one rate at every frequency: a hiss in a tunnel.)
+ */
+export const INSERT_ROOM: RoomStyle = 'chamber';
+
+/**
+ * How loud an impulse response makes a sound with a music-like balance (more in the lows, as
+ * pink noise has, the same power in every octave, but not the sub-bass): its energy through a
+ * pinking filter (an economical three-pole one) and a gentle low cut, run on until both have
+ * rung out.
+ */
+export function pinkEnergy(x: Float32Array, sampleRate = 48000): number {
+  let [b0, b1, b2] = [0, 0, 0];
+  // (Under the bass: a one-pole high-pass at 200 Hz, so the match is made where parts sit)
+  const k = Math.exp((-2 * Math.PI * 200) / sampleRate);
+  let lp = 0;
+  let sum = 0;
+  const n = x.length + 8192;
+  for (let i = 0; i < n; i++) {
+    const w = i < x.length ? x[i] : 0;
+    b0 = 0.99765 * b0 + w * 0.099046;
+    b1 = 0.963 * b1 + w * 0.2965164;
+    b2 = 0.57 * b2 + w * 1.0526913;
+    const p = b0 + b1 + b2 + w * 0.1848;
+    lp = p + (lp - p) * k;
+    const y = p - lp;
+    sum += y * y;
+  }
+  return sum;
+}
+
+/** The pinking filter's own energy (a click's): what a flat, white tail of energy 1 brings through it */
+const pinkWhite = new Map<number, number>();
+
+/**
+ * The insert's impulse response at a middle decay of `decay` seconds: INSERT_ROOM's, scaled to be
+ * as loud on music as the plain noise tail it replaced was (a flat tail of energy 1 a side), so a
+ * song's Reverb inserts keep their level.
+ */
+export function insertRoomChannels(decay: number, sampleRate: number): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
+  // (Its lows no louder than its middle: the plain tail had none extra, and a track's own room
+  // shouldn't make its bass boom more than it did)
+  const out = roomChannels(INSERT_ROOM, decay, sampleRate, 1);
+  let white = pinkWhite.get(sampleRate);
+  if (white === undefined) {
+    const click = new Float32Array(1);
+    click[0] = 1;
+    white = pinkEnergy(click, sampleRate);
+    pinkWhite.set(sampleRate, white);
+  }
+  const g = Math.sqrt((2 * white) / (pinkEnergy(out[0], sampleRate) + pinkEnergy(out[1], sampleRate)));
+  for (const d of out) for (let i = 0; i < d.length; i++) d[i] *= g;
   return out;
 }

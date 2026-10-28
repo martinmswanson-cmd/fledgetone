@@ -948,7 +948,8 @@ pub const PRESETS: &[Preset] = &[
             // Over two bars the band opens and closes a little (free, with the song)
             ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.15),
             ("Drive type", HARD), ("Drive", 10.0), ("Drive tone", 0.3),
-            ("EQ on", 1.0), ("EQ high", 3.0), ("EQ high freq", 5000.0),
+            // (A touch of top: before the drive ran at twice the rate it dulled the highs, and 3 dB here made up for it)
+            ("EQ on", 1.0), ("EQ high", 0.5), ("EQ high freq", 5000.0),
             ("Voices", MONO), ("Glide", 0.04), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.07),
             ("Mod 5 source", M1), ("Mod 5 target", FMT), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.5),

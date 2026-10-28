@@ -3,6 +3,7 @@ import type { TrackFx } from '../../store/timelineTypes';
 import { ECHO_BEATS, REVERB_DECAY_MAX } from '../../store/timelineTypes';
 import { writeTime } from './lightFx';
 import { paramSetter as smoothParamSetter } from './smoothParam';
+import { INSERT_ROOM, insertRoomChannels, ROOM_STYLES, roomSeconds } from './roomIR';
 
 /**
  * The Delay and Reverb inserts: a track's own echoes and room, as against the shared master
@@ -109,43 +110,17 @@ export function createEcho(settings: TrackFx['echo'], bpm: number): EchoUnit {
   };
 }
 
-/** A small deterministic noise source, so a reverb's tail is the same live and in every export. */
-function noise(seed: number): () => number {
-  let x = seed >>> 0 || 1;
-  return () => {
-    // xorshift32
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    return ((x >>> 0) / 4294967296) * 2 - 1;
-  };
-}
-
 /**
- * A reverb's impulse response: decaying noise, different on each side (so the tail is wide),
- * reaching -60 dB at `decay` seconds, faded in over a few milliseconds and scaled so the tail
- * carries the same energy as what goes in, whatever its length (a short room and a long hall
- * at the same mix sound about as loud).
+ * A reverb insert's impulse response at a middle decay of `decay` seconds: a designed room
+ * (roomIR.ts's INSERT_ROOM: early reflections, then a tail whose highs die sooner than its lows,
+ * different on each side), as loud on music as the plain noise tail it took over from.
  */
 export function reverbImpulse(raw: BaseAudioContext, decay: number): AudioBuffer {
   const rate = raw.sampleRate;
-  const seconds = Math.max(0.05, Math.min(REVERB_DECAY_MAX, decay));
-  const length = Math.ceil(seconds * rate);
-  const buffer = raw.createBuffer(2, length, rate);
-  const fadeIn = Math.ceil(0.004 * rate);
-  const k = Math.log(1000) / (seconds * rate);
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buffer.getChannelData(ch);
-    const rand = noise(0x9e3779b9 + ch * 7919);
-    let energy = 0;
-    for (let i = 0; i < length; i++) {
-      const v = rand() * Math.exp(-k * i) * (i < fadeIn ? i / fadeIn : 1);
-      data[i] = v;
-      energy += v * v;
-    }
-    const scale = 1 / Math.sqrt(energy || 1);
-    for (let i = 0; i < length; i++) data[i] *= scale;
-  }
+  const [l, r] = insertRoomChannels(Math.max(0.05, Math.min(REVERB_DECAY_MAX, decay)), rate);
+  const buffer = raw.createBuffer(2, l.length, rate);
+  buffer.copyToChannel(l, 0);
+  buffer.copyToChannel(r, 1);
   return buffer;
 }
 
@@ -186,7 +161,8 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
       decay = d;
       convolver.buffer = reverbImpulse(raw, d);
     }
-    setParam(pre.delayTime, Math.max(0, Math.min(0.2, s.preDelay / 1000)), ramp);
+    // (The room answers after its own short pre-delay: the knob's is the whole of it, where it can be)
+    setParam(pre.delayTime, Math.max(0, Math.min(0.2, s.preDelay / 1000) - ROOM_STYLES[INSERT_ROOM].preDelay), ramp);
     setParam(tone.frequency, s.tone, ramp);
     const [w, dr] = mixGains(s.mix);
     setParam(wet.gain, w, ramp);
@@ -208,7 +184,7 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
 /** How long a track's own Delay and Reverb keep sounding after its last note (seconds). */
 export function insertTailSeconds(fx: Partial<TrackFx>, bpm: number): number {
   let tail = 0;
-  if (fx.reverb?.on && fx.reverb.mix > 0) tail = Math.max(tail, fx.reverb.decay + fx.reverb.preDelay / 1000);
+  if (fx.reverb?.on && fx.reverb.mix > 0) tail = Math.max(tail, roomSeconds(INSERT_ROOM, fx.reverb.decay) + fx.reverb.preDelay / 1000);
   if (fx.echo?.on && fx.echo.mix > 0) {
     const step = (ECHO_BEATS[fx.echo.time] ?? 0.5) * (60 / Math.max(1, bpm));
     const fb = Math.min(0.9, fx.echo.feedback);

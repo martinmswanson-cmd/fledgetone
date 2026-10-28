@@ -131,8 +131,18 @@ export interface LightDistortion extends LightInsert {
 /** How far past full scale the distortion's curve reaches (see createLightDistortion) */
 const CURVE_SPAN = 64;
 
-/** The drive an amount gives: 0 dB at 0 (clean), about 10 dB at 0.3, 32 dB at 1. */
-const driveOf = (amount: number) => Math.pow(10, amount * 1.6);
+/**
+ * The drive an amount gives: 0 dB at 0 (clean), about 10 dB at 0.3, 24 dB from 0.75 up. (It went
+ * on to 32 dB at 1, where a near-square wave's harmonics reach past what 4x oversampling filters
+ * off: a bright note folded fizz back only 20 dB under it. The last quarter of the knob darkens.)
+ */
+const DRIVE_MAX = Math.pow(10, 24 / 20);
+const driveOf = (amount: number) => Math.min(DRIVE_MAX, Math.pow(10, amount * 1.6));
+/**
+ * The low-pass before the clip (Hz): open when it's clean, closing as it's driven harder (as amp
+ * makers voice a pedal), so the top of a bright sound isn't clipped into fizz that folds back.
+ */
+const preToneOf = (amount: number) => 18000 - 10000 * amount;
 
 /**
  * How loud a soft-clipped signal comes out, against how loud it went in, at a typical level
@@ -152,8 +162,9 @@ function driveMakeup(drive: number): number {
 /**
  * A pedal-style overdrive, instead of Tone.Distortion's bare curve: that curve clipped hard at
  * any level, with no tone shaping, so chords turned to buzz and everything came out fizzy and
- * quiet. Here: the lows are tightened (so the bass doesn't turn to mud), the signal is driven
- * into a smooth tanh clip (4x oversampled: no aliasing fizz), the top is rolled off more the
+ * quiet. Here: the lows are tightened (so the bass doesn't turn to mud), the top going in is
+ * softened more the harder it's driven (preToneOf), the signal is driven into a smooth tanh clip
+ * (4x oversampled: no aliasing fizz), the top is rolled off more the
  * harder it's driven (as a speaker does), and the level is made up so the insert is about as
  * loud as what went in. Amount 0 is clean; the drive, tone and makeup glide, so turning the
  * knob while playing is smooth (the curve itself never changes).
@@ -166,6 +177,10 @@ export function createLightDistortion(amount: number): LightDistortion {
   tight.type = 'highpass';
   tight.frequency.value = 90;
   tight.Q.value = 0.7;
+  const preTone = raw.createBiquadFilter();
+  preTone.type = 'lowpass';
+  // A Butterworth: no bump before it rolls off (a low-pass reads its Q in dB, -3 dB is flat)
+  preTone.Q.value = 20 * Math.log10(Math.SQRT1_2);
   const drive = raw.createGain();
   const shaper = raw.createWaveShaper();
   shaper.oversample = '4x';
@@ -182,10 +197,12 @@ export function createLightDistortion(amount: number): LightDistortion {
   const settings = (value: number) => {
     const v = Math.max(0, Math.min(1, value));
     const d = driveOf(v);
-    return { drive: d, tone: 8000 - 4500 * v, makeup: driveMakeup(d) };
+    // (Past the cap, the level a harder drive brought on real parts is made up: 1.6 dB at the top)
+    return { drive: d, preTone: preToneOf(v), tone: 8000 - 4500 * v, makeup: driveMakeup(d) * (Math.pow(10, v * 1.6) / d) ** 0.2 };
   };
   const first = settings(amount);
   drive.gain.value = first.drive / CURVE_SPAN;
+  preTone.frequency.value = first.preTone;
   tone.frequency.value = first.tone;
   makeup.gain.value = first.makeup;
   let applied = amount;
@@ -194,10 +211,11 @@ export function createLightDistortion(amount: number): LightDistortion {
     applied = value;
     const next = settings(value);
     const now = writeTime(raw);
-    for (const [param, target] of [[drive.gain, next.drive / CURVE_SPAN], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) smoothSet(param, target, now, ramp / 3);
+    for (const [param, target] of [[drive.gain, next.drive / CURVE_SPAN], [preTone.frequency, next.preTone], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) smoothSet(param, target, now, ramp / 3);
   };
   input.connect(tight);
-  tight.connect(drive);
+  tight.connect(preTone);
+  preTone.connect(drive);
   drive.connect(shaper);
   shaper.connect(tone);
   tone.connect(makeup);
@@ -207,7 +225,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     output,
     setAmount,
     dispose: () => {
-      [tight, drive, shaper, tone, makeup].forEach((n) => n.disconnect());
+      [tight, preTone, drive, shaper, tone, makeup].forEach((n) => n.disconnect());
       input.dispose();
       output.dispose();
     },
@@ -222,6 +240,9 @@ export interface LightChorus extends LightInsert {
   /** Set the wet/dry mix (0-1), with Tone's equal-power crossfade. */
   setWet: (wet: number, ramp: number) => void;
 }
+
+/** How many points each side of the chorus reads its delay at, a fraction of a sample apart (see createLightChorus). */
+const CHORUS_TAPS = 4;
 
 /** The chorus's wet level against Tone's (see createLightChorus). */
 const WET_LEVEL = Math.SQRT1_2;
@@ -253,8 +274,15 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   const split = raw.createChannelSplitter(2);
   const merge = raw.createChannelMerger(2);
   const now = raw.currentTime;
+  // Each side reads its line at CHORUS_TAPS points a fraction of a sample apart, averaged: a
+  // DelayNode reads between samples along a straight line, which dulls the highs by a different
+  // amount at every point between two samples, and a moving read (as a chorus's is) turned that
+  // into a grainy hiss over bright sounds (28 dB under a 10 kHz tone). Averaged over a quarter
+  // sample apart it sways a quarter as much: 12 to 17 dB less of it, and nothing else changes
   const side = (phaseDeg: number, channel: 0 | 1) => {
-    const delay = raw.createDelay(0.05);
+    const taps = Array.from({ length: CHORUS_TAPS }, () => raw.createDelay(0.05));
+    const sum = raw.createGain();
+    sum.gain.value = 1 / CHORUS_TAPS;
     // Tone builds a phase-shifted sine from the same two coefficients
     const phase = (phaseDeg * Math.PI) / 180;
     const osc = raw.createOscillator();
@@ -262,18 +290,27 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     osc.frequency.value = opts.rate;
     const swing = raw.createGain();
     osc.connect(swing);
-    swing.connect(delay.delayTime);
-    split.connect(delay, channel);
-    delay.connect(merge, 0, channel);
+    for (const delay of taps) {
+      swing.connect(delay.delayTime);
+      split.connect(delay, channel);
+      delay.connect(sum);
+    }
+    sum.connect(merge, 0, channel);
     osc.start(now);
-    return { delay, osc, swing };
+    return { taps, sum, osc, swing };
   };
   const left = side(90 - opts.spread / 2, 0);
   const right = side(90 + opts.spread / 2, 1);
 
+  // Averaged reads are a touch darker at the very top (a dB at 15 kHz): a shelf gives it back
+  const shelf = raw.createBiquadFilter();
+  shelf.type = 'highshelf';
+  shelf.frequency.value = 12000;
+  shelf.gain.value = 2.5;
   input.connect(split);
   input.connect(dry);
-  merge.connect(wet.input as unknown as AudioNode);
+  merge.connect(shelf);
+  shelf.connect(wet.input as unknown as AudioNode);
   dry.connect(output);
   wet.connect(output);
 
@@ -288,7 +325,8 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     const tc = depthSet ? SMOOTH_TC : 0;
     depthSet = true;
     for (const s of [left, right]) {
-      smoothSet(s.delay.delayTime, (min + max) / 2, at, tc);
+      // (Each tap a quarter of a sample after the last)
+      s.taps.forEach((delay, k) => smoothSet(delay.delayTime, (min + max) / 2 + k / (CHORUS_TAPS * raw.sampleRate), at, tc));
       smoothSet(s.swing.gain, (max - min) / 2, at, tc);
     }
   };
@@ -320,10 +358,12 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
         s.osc.stop();
         s.osc.disconnect();
         s.swing.disconnect();
-        s.delay.disconnect();
+        s.taps.forEach((d) => d.disconnect());
+        s.sum.disconnect();
       }
       split.disconnect();
       merge.disconnect();
+      shelf.disconnect();
       [input, output, dry, wet].forEach((n) => n.dispose());
     },
   };

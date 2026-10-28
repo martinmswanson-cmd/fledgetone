@@ -66,3 +66,43 @@ test('every band has fallen 60 dB by the end, which fades to silence, even at th
     }
   }
 });
+
+test("the Reverb insert's room is as loud on music as the plain noise tail it took over from, and its highs die first", async () => {
+  const { insertRoomChannels, pinkEnergy } = await import('../src/audio/effects/roomIR.ts');
+  // The tail the insert had: noise fading at one rate at every frequency, energy 1 a side
+  const flat = (decay) => {
+    const n = Math.ceil(decay * SR);
+    const k = Math.log(1000) / (decay * SR);
+    return [0, 1].map((ch) => {
+      let s = 0x9e3779b9 + ch * 7919 || 1;
+      const x = new Float32Array(n);
+      let e = 0;
+      for (let i = 0; i < n; i++) {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        x[i] = (((s >>> 0) / 4294967296) * 2 - 1) * Math.exp(-k * i);
+        e += x[i] * x[i];
+      }
+      return x.map((v) => v / Math.sqrt(e));
+    });
+  };
+  for (const decay of [0.3, 1, 2.2, 5, 12]) {
+    const [l, r] = insertRoomChannels(decay, SR);
+    const [a, b] = flat(decay);
+    const db = 10 * Math.log10((pinkEnergy(l, SR) + pinkEnergy(r, SR)) / (pinkEnergy(a, SR) + pinkEnergy(b, SR)));
+    assert.ok(Math.abs(db) < 0.3, `${decay} s: ${db.toFixed(2)} dB`);
+  }
+  // Late in the tail there's less top against the body than early on
+  const [l] = insertRoomChannels(2.2, SR);
+  const ratio = (a, b) => {
+    let hi = 0;
+    let all = 0;
+    for (let i = a + 1; i < b; i++) {
+      hi += (l[i] - l[i - 1]) ** 2;
+      all += l[i] * l[i];
+    }
+    return hi / all;
+  };
+  assert.ok(ratio(Math.round(1.2 * SR), Math.round(1.8 * SR)) < ratio(Math.round(0.05 * SR), Math.round(0.4 * SR)) * 0.7);
+});

@@ -59,6 +59,15 @@ pub struct SvfCoef {
 }
 
 impl SvfCoef {
+    /// Moves `s` of the way along `d` (a difference of two coefficient sets): a cutoff gliding a
+    /// step a sample between two settings
+    #[inline]
+    pub fn axpy(&mut self, d: &SvfCoef, s: f32) {
+        self.k += d.k * s;
+        self.a1 += d.a1 * s;
+        self.a2 += d.a2 * s;
+        self.a3 += d.a3 * s;
+    }
     /// For `cutoff` Hz at `sr`, with damping `k` (2 is no resonance, 0 self-oscillates).
     pub fn new(cutoff: f32, sr: f32, k: f32) -> Self {
         let g = (PI * cutoff.clamp(10.0, sr * 0.49) / sr).tan();
@@ -193,6 +202,62 @@ pub fn vowel_formants(vowel: f32) -> [f32; 3] {
         out[k] = VOWELS[i][k] * (VOWELS[i + 1][k] / VOWELS[i][k]).powf(t);
     }
     out
+}
+
+// ---------- twice the sample rate ----------
+
+/// A half-band low-pass as two chains of first-order all-passes (the polyphase IIR form), made for
+/// 90 dB of rejection with its passband up to 0.21 of the doubled rate (20 kHz at 48 kHz): the
+/// coefficients come from the elliptic design (attenuation 90 dB, transition 0.04). Each chain
+/// runs at the base rate, so going up or down costs four first-order all-passes a chain.
+const HALF_BAND: [f32; 8] = [0.040_633_46, 0.150_505_13, 0.300_757_06, 0.460_774_5, 0.609_524_3, 0.738_503_84, 0.849_223_8, 0.949_742_8];
+
+#[derive(Clone, Copy, Default)]
+struct AllPassChain {
+    x: [f32; 4],
+    y: [f32; 4],
+}
+
+impl AllPassChain {
+    #[inline]
+    fn tick(&mut self, odd: usize, mut v: f32) -> f32 {
+        for i in 0..4 {
+            let c = HALF_BAND[2 * i + odd];
+            let y = flush(c * (v - self.y[i]) + self.x[i]);
+            self.x[i] = v;
+            self.y[i] = y;
+            v = y;
+        }
+        v
+    }
+}
+
+/// One sample in, the two of it at twice the rate out (no images above the passband)
+#[derive(Clone, Copy, Default)]
+pub struct Up2 {
+    a: AllPassChain,
+    b: AllPassChain,
+}
+
+impl Up2 {
+    #[inline]
+    pub fn tick(&mut self, x: f32) -> [f32; 2] {
+        [self.a.tick(0, x), self.b.tick(1, x)]
+    }
+}
+
+/// Two samples at twice the rate in, one out (what was above the passband filtered off first)
+#[derive(Clone, Copy, Default)]
+pub struct Down2 {
+    a: AllPassChain,
+    b: AllPassChain,
+}
+
+impl Down2 {
+    #[inline]
+    pub fn tick(&mut self, x: [f32; 2]) -> f32 {
+        0.5 * (self.a.tick(0, x[1]) + self.b.tick(1, x[0]))
+    }
 }
 
 // ---------- the shapers ----------
