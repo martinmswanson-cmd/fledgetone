@@ -15,14 +15,16 @@
  * shave them hard enough for Club loudness on a dense drop, not so hard that the mids crackle.
  * Crunch (LoudSettings.crunch) is the choice to go further on purpose: it lets a match use up to
  * CRUNCH_MAX_DISTORTION_DB of distortion and hardens the clipper's knee towards a flat top, so a
- * dense drop reaches Club loudness and the clipping is heard as crunch. The -1 dBTP limiter stays
- * last either way, and what you hear stays level-matched (monitor.ts).
+ * dense drop reaches Club loudness and the clipping is heard as crunch. With Crunch an export's
+ * match also tries the split clipper (only the sound under 3 kHz clipped) and keeps the cleaner at
+ * the same loudness (matchLoud), the choice kept with the push for live playback. The -1 dBTP
+ * limiter stays last either way, and what you hear stays level-matched (monitor.ts).
  *
  * Plain maths, no Web Audio, so Node tests it; masterAfter.ts runs it in exports and masterChain.ts
  * builds the same path with nodes live.
  */
 import type { ClipperSettings } from './clipper';
-import { clipChannels } from './clipper';
+import { clipChannels, splitCrossover } from './clipper';
 import { createLimiterKernel, LIMITER_CEILING_DBTP, limitChannels } from './limiter';
 import { createLoudnessAnalyser } from '../loudness';
 import type { HitStyleId } from '../hitTargets';
@@ -53,17 +55,21 @@ export const MATCH_TOLERANCE = 0.15;
 /** The most passes a match takes. */
 const MATCH_PASSES = 8;
 /**
- * The most distortion a match allows, dB under the sound (see distortionDb). Measured on the demo
- * drops: -24 dB is a dubstep drop at about -8 LUFS (the clipper shaving the kick and the sub),
- * -20 dB about -6.7 LUFS (the growl starting to fizz); past -18 dB the mids crackle.
+ * The most distortion a match allows without Crunch, dB under the sound (see distortionDb). Measured
+ * on the demo drops: -24 dB is a dubstep drop at about -8 LUFS (the clipper shaving the kick and the
+ * sub), -20 dB about -6.7 LUFS (the growl starting to fizz); past -18 dB the mids crackle. (It was
+ * -21: a clean Loud master now stops before the fizz starts; Crunch is the choice to go past it.)
  */
-export const MAX_DISTORTION_DB = -21;
+export const MAX_DISTORTION_DB = -24;
 /**
  * The most distortion a match allows at full Crunch, dB under the sound: about where a dense drop
  * reaches -6 LUFS with the clipper's flat tops heard as crunch on the kick, the bass and the snare
- * (the reference drops the Loud master was measured against sit near -9 dB of it at -7 LUFS).
+ * (the reference drops the Loud master was measured against sit near -9 dB of it at -7 LUFS). With
+ * MAX_DISTORTION_DB at -24 this keeps what a little Crunch allows about where it was (-17.4 dB at
+ * 40%, was -16.2), so the signed-off colour-bass drop, Crunch 40%, still reaches its -6 LUFS, its
+ * distortion now counted per channel (-9 at full Crunch before).
  */
-export const CRUNCH_MAX_DISTORTION_DB = -9;
+export const CRUNCH_MAX_DISTORTION_DB = -7.5;
 
 /** How much lower the Loud master's clipper clips at full Crunch, dB (under the ceiling it clips at for the limiter's: see effectiveClipper). */
 export const CRUNCH_CLIP_LOWER_DB = 0.5;
@@ -111,7 +117,7 @@ export function effectiveClipper(m: Pick<MasterSettings, 'clipper' | 'loud'>, ce
   // (No Crunch: the Loud master's own, exactly)
   if (!(crunch > 0)) return LOUD_CLIPPER;
   const round = (v: number) => Math.round(v * 1000) / 1000;
-  return { ...LOUD_CLIPPER, softness: round(LOUD_CLIPPER.softness * (1 - crunch)), ceiling: round(ceilingDbtp - CRUNCH_CLIP_UNDER_DB - crunch * CRUNCH_CLIP_LOWER_DB), band: true };
+  return { ...LOUD_CLIPPER, softness: round(LOUD_CLIPPER.softness * (1 - crunch)), ceiling: round(ceilingDbtp - CRUNCH_CLIP_UNDER_DB - crunch * CRUNCH_CLIP_LOWER_DB), band: true, ...(m.loud.split === true ? { split: true } : {}) };
 }
 
 /** The sub tilt in dB (0: none, or not a Loud master). */
@@ -161,23 +167,27 @@ export function distortionDb(inL: Float32Array, inR: Float32Array, outL: Float32
   const block = Math.max(1, Math.round(sampleRate * 0.02));
   let res = 0;
   let sig = 0;
-  for (let start = 0; start + delay < outL.length; start += block) {
-    const end = Math.min(inL.length, start + block, outL.length - delay);
-    let xy = 0;
-    let xx = 0;
-    let yy = 0;
-    for (let i = start; i < end; i++) {
-      const x = inL[i] + inR[i];
-      const y = outL[i + delay] + outR[i + delay];
-      xy += x * y;
-      xx += x * x;
-      yy += y * y;
+  // Each channel on its own (their sum would miss what clipping does to the difference between them)
+  const pairs: Array<[Float32Array, Float32Array]> = inR === inL && outR === outL ? [[inL, outL]] : [[inL, outL], [inR, outR]];
+  for (const [input, output] of pairs) {
+    for (let start = 0; start + delay < output.length; start += block) {
+      const end = Math.min(input.length, start + block, output.length - delay);
+      let xy = 0;
+      let xx = 0;
+      let yy = 0;
+      for (let i = start; i < end; i++) {
+        const x = input[i];
+        const y = output[i + delay];
+        xy += x * y;
+        xx += x * x;
+        yy += y * y;
+      }
+      if (xx <= 1e-12) continue;
+      // y = g x + e, least squares: what's left is e
+      const g = xy / xx;
+      res += Math.max(0, yy - g * xy);
+      sig += g * xy;
     }
-    if (xx <= 1e-12) continue;
-    // y = g x + e, least squares: what's left is e
-    const g = xy / xx;
-    res += Math.max(0, yy - g * xy);
-    sig += g * xy;
   }
   return res > 0 && sig > 0 ? 10 * Math.log10(res / sig) : -Infinity;
 }
@@ -210,6 +220,8 @@ export interface LoudMatch {
   distortionDb: number;
   /** How many times the clipper and limiter ran (over the song, or a long song's sample). */
   passes: number;
+  /** With Crunch: whether the push is for the split kind of clipper (LoudSettings.split), which measured cleaner. */
+  split?: boolean;
 }
 
 /**
@@ -232,11 +244,29 @@ export function pushToKeep(o: {
   /** The export's true-peak ceiling, dBTP (exportCeilingDbtp). */
   ceilingDbtp: number;
 }): number | null {
+  return keepable(o) && Math.abs(o.found!.push - o.currentPush) > 0.05 ? o.found!.push : null;
+}
+
+/** Whether a match says anything about live playback (the conditions in pushToKeep). */
+function keepable(o: Parameters<typeof pushToKeep>[0]): boolean {
   const { found } = o;
-  if (!o.wholeSong || !o.fullMix || !found || !Number.isFinite(found.lufs) || !Number.isFinite(found.push)) return null;
-  if (Math.abs(o.exportTargetLufs - o.loudTargetLufs) > 1e-6) return null;
-  if (Math.abs(o.ceilingDbtp - LIMITER_CEILING_DBTP) > 1e-6) return null;
-  return Math.abs(found.push - o.currentPush) > 0.05 ? found.push : null;
+  if (!o.wholeSong || !o.fullMix || !found || !Number.isFinite(found.lufs) || !Number.isFinite(found.push)) return false;
+  if (Math.abs(o.exportTargetLufs - o.loudTargetLufs) > 1e-6) return false;
+  return Math.abs(o.ceilingDbtp - LIMITER_CEILING_DBTP) <= 1e-6;
+}
+
+/**
+ * What an export should store on the Loud master for live playback (see pushToKeep): the push it
+ * found, and with Crunch the kind of clipper that push is for (LoudSettings.split: true for the
+ * split kind, false for the whole-sound one); null to leave it as it is. `currentSplit` is the
+ * Loud master's now.
+ */
+export function loudToKeep(o: Parameters<typeof pushToKeep>[0] & { currentSplit?: boolean }): { push?: number; split?: boolean } | null {
+  const push = pushToKeep(o);
+  const kind = o.found?.split;
+  const split = kind !== undefined && keepable(o) && kind !== (o.currentSplit === true) ? kind : undefined;
+  if (push === null && split === undefined) return null;
+  return { ...(push !== null ? { push } : {}), ...(split !== undefined ? { split } : {}) };
 }
 
 /**
@@ -347,7 +377,7 @@ const MATCH_SAMPLE_DIST_MARGIN = 0.1;
  * with its lead-in, and the limiter's latency after it) go through the clipper and limiter in one
  * run, and what each piece's own span became is measured, as the whole song is.
  */
-function matchSample(left: Float32Array, right: Float32Array, sampleRate: number, delay: number): { dry: number; measure: (gainDb: number, clipper: ClipperSettings | undefined, ceilingDbtp: number) => { lufs: number; dist: number } } | null {
+function matchSample(left: Float32Array, right: Float32Array, sampleRate: number, delay: number, refL = left, refR = right): { dry: number; measure: (gainDb: number, clipper: ClipperSettings | undefined, ceilingDbtp: number) => { lufs: number; dist: number } } | null {
   if (left.length < MATCH_SAMPLE_FROM * sampleRate) return null;
   const piece = Math.round(MATCH_SAMPLE_PIECE * sampleRate);
   const every = Math.round(MATCH_SAMPLE_EVERY * sampleRate);
@@ -369,8 +399,8 @@ function matchSample(left: Float32Array, right: Float32Array, sampleRate: number
         inR[k * span + i] = right[j];
       }
     }
-    dryL.set(left.subarray(at, at + piece), k * piece);
-    dryR.set(right.subarray(at, at + piece), k * piece);
+    dryL.set(refL.subarray(at, at + piece), k * piece);
+    dryR.set(refR.subarray(at, at + piece), k * piece);
   });
   const outL = new Float32Array(dryL.length);
   const outR = new Float32Array(dryR.length);
@@ -408,9 +438,13 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
     work += passes;
     onProgress?.(Math.min(0.95, work / MATCH_WORK_GUESS));
   };
+  // What the distortion is measured against: the sound as it went in (through the split kind's
+  // crossover, whose phase isn't distortion)
+  const refL = clipper?.on && clipper.split ? splitCrossover(left, sampleRate) : left;
+  const refR = clipper?.on && clipper.split ? (right === left ? refL : splitCrossover(right, sampleRate)) : right;
   const whole = (push: number): Tried => {
     const [l, r] = clipAndLimit(left, right, sampleRate, levelDb + push, clipper, ceilingDbtp);
-    const tried = { push, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(left, right, l, r, sampleRate, delay) };
+    const tried = { push, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(refL, refR, l, r, sampleRate, delay) };
     did(1);
     return tried;
   };
@@ -419,7 +453,7 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
   let passes = 0;
   let found: Tried | null = null;
   let cleanHi = true;
-  const sample = matchSample(left, right, sampleRate, delay);
+  const sample = matchSample(left, right, sampleRate, delay, refL, refR);
   // On the whole song first: most matches take a pass or two (from the push found last time, then
   // one step). A long song that needs more goes on with its sample
   const first = searchPush(whole, targetLufs, maxDist, push, sample ? 2 : MATCH_PASSES);
@@ -490,4 +524,42 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
   const shortDb = Math.max(0, targetLufs - found.lufs);
   const short = shortDb >= MATCH_TOLERANCE;
   return { push: Math.round(found.push * 100) / 100, lufs: found.lufs, targetLufs, shortDb: short ? shortDb : 0, capped: short && (found.push >= LOUD_PUSH_MAX - 1e-9 || !cleanHi), distortionDb: found.dist, passes };
+}
+
+/** How much cleaner (dB less distortion, at the same loudness) the split kind must measure to be chosen over the whole-sound one. */
+export const SPLIT_CLEANER_DB = 0.5;
+
+/**
+ * Of a match with the whole sound clipped and one with the split kind (ClipperSettings.split),
+ * whether to take the split one: the one that gets nearer the target, and where both get there,
+ * the split kind only if it measured SPLIT_CLEANER_DB cleaner (else the whole-sound kind, as
+ * Crunch has always sounded).
+ */
+export function pickSplit(whole: LoudMatch, split: LoudMatch): boolean {
+  if (whole.shortDb - split.shortDb > MATCH_TOLERANCE) return true;
+  if (split.shortDb - whole.shortDb > MATCH_TOLERANCE) return false;
+  return split.distortionDb < whole.distortionDb - SPLIT_CLEANER_DB;
+}
+
+/**
+ * A Loud master's match (see matchPush) for an export: with Crunch it's tried both with the whole
+ * sound clipped and with the split kind, which clips only the sound under 3 kHz (the hats and the
+ * air left out of it), and the cleaner one at the same loudness is kept (pickSplit), its kind in
+ * `split`. Clipping everything flat is the loudest way there on a very dense, very loud drop; on
+ * most songs the split kind gets as loud with less fizz on the top (Night Rails at -9 LUFS: the
+ * distortion 1.3 dB lower, 4.6 dB lower over 2 kHz, a little higher under it; the limiter after it
+ * takes up to about 2 dB now and then). Without Crunch, or with the Clipper insert on, one match.
+ */
+export function matchLoud(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, targetLufs: number, ceilingDbtp: number, onProgress?: (fraction: number) => void): LoudMatch {
+  const maxDist = loudMaxDistortionDb(master);
+  const start = master.loud?.push || undefined;
+  const kind = (split: boolean) => effectiveClipper({ ...master, loud: master.loud && { ...master.loud, split } }, ceilingDbtp);
+  if (!(loudCrunch(master) > 0) || master.clipper?.on) return matchPush(left, right, sampleRate, master.level, targetLufs, kind(false), ceilingDbtp, start, onProgress, maxDist);
+  const stored = master.loud?.split === true;
+  // The kind it played last first (its push is where to start), then the other from where that one got
+  const first = matchPush(left, right, sampleRate, master.level, targetLufs, kind(stored), ceilingDbtp, start, onProgress && ((f) => onProgress(f / 2)), maxDist);
+  const second = matchPush(left, right, sampleRate, master.level, targetLufs, kind(!stored), ceilingDbtp, first.push, onProgress && ((f) => onProgress(0.5 + f / 2)), maxDist);
+  const [whole, split] = stored ? [second, first] : [first, second];
+  const useSplit = pickSplit(whole, split);
+  return { ...(useSplit ? split : whole), split: useSplit, passes: first.passes + second.passes };
 }

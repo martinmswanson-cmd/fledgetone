@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { encodeChannels, ditherSeedOf } = await import('../src/audio/wavFile.ts');
+const { encodeChannels, ditherSeedOf, KEPT_RENDER_BITS } = await import('../src/audio/wavFile.ts');
 
 /** The 16-bit samples of a mono file, minus what an undithered file would hold: the dither alone. */
 async function ditherOf(signal, seed) {
@@ -82,4 +82,22 @@ test('both halves of the wave are scaled alike, so a reader gets the level back 
   // Full scale: the most each format holds, both ways
   const full = new DataView(await encodeChannels([Float32Array.of(1, -1, 1.5, -1.5)], 48000, 24).arrayBuffer());
   assert.deepEqual([0, 1, 2, 3].map((i) => full.getInt32(44 + 3 * i - 1, true) >> 8), [0x7fffff, -0x800000, 0x7fffff, -0x800000]);
+});
+
+test('the sounds the app renders and keeps (freezes, bounces, resamples) are 24-bit: a quiet reverb tail keeps its shape, with no dither under it', async () => {
+  assert.equal(KEPT_RENDER_BITS, 24);
+  // A tail at -110 dBFS: under a 16-bit step (about -96 dBFS) it's only dither there
+  const tail = new Float32Array(48000).map((_, i) => 0.000003 * Math.sin(i / 9));
+  const bytes = new DataView(await encodeChannels([tail], 48000, KEPT_RENDER_BITS).arrayBuffer());
+  assert.equal(bytes.getUint16(34, true), 24);
+  const got = new Float64Array(tail.length);
+  for (let i = 0; i < tail.length; i++) {
+    const at = 44 + 3 * i;
+    const v = bytes.getUint8(at) | (bytes.getUint8(at + 1) << 8) | (bytes.getInt8(at + 2) << 16);
+    got[i] = v / 0x800000;
+  }
+  assert.ok(corr(got, tail) > 0.99, 'the tail is still there');
+  let worst = 0;
+  for (let i = 0; i < tail.length; i++) worst = Math.max(worst, Math.abs(got[i] - tail[i]));
+  assert.ok(worst <= 1 / 0x800000, 'within a 24-bit step');
 });

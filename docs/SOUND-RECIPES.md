@@ -28,6 +28,11 @@ measured against: −7.1 LUFS, pump −2.3 dB, beat-rate movement 0.09, 4.1 sub 
 Since compressed exports are limited at −1 dBTP like a WAV and MP3s are gapless, the same command makes a
 different MP3: the master reaches −6.1 LUFS at −1 dBTP (distortion −18.1 dB instead of −16.3), and the
 MP3 is turned down 1.3 dB after encoding, decoding at −7.4 LUFS and −1.1 dBTP with its first sample at 0.
+With the slower Standard glue (20 ms attack, 150 ms release) and distortion counted per channel, the
+match keeps the whole-sound Crunch clipper (the split kind fell 1 dB short of −6 LUFS here) and lands
+at −6.1 LUFS, push 9.08 dB, distortion −17.5 dB (Crunch 40% now allows −17.4); the MP3 decodes at
+−7.1 LUFS, −1.2 dBTP (MP3 md5 `a2d0869c9e8c45d1c0d333833f1c6808`). Its drop measures as before: crest
+7.9 dB, the same band balance and width to a tenth of a dB.
 
 Since the mix balance pass (see the end of this file) the same command also runs Make space and plays the bass's
 170 Hz bell at +3 dB (was +7) and the drums 2 dB down at 220 Hz; the hats are a little wide in the kit itself. To rebuild
@@ -281,6 +286,14 @@ strings, choir and the violins singing the hook over D Ebmaj9 C Asus4 | Bm7 Eb G
 1:29; build 2 with a fake drop (two beats, then Tape stop, the hook's opening stuttered up into the new key)
 1:50; final drop in E with brass and choir, the hook an octave up 2:03; outro 2:45. Whole song -9.0 LUFS,
 drops -8.2 and -7.4, decoded true peak -1.8 dBTP.
+
+Since the Loud master's match tries the split clipper with Crunch (only the sound under 3 kHz clipped, the
+top passing by it) and keeps it when it measures cleaner, Night Rails (Crunch 20%) plays the split kind:
+push 8.63 dB, −9.0 LUFS, distortion −24.8 dB per channel (the whole-sound kind: −23.6). On the same
+pre-master drop the distortion over 2 kHz is 4.6 dB lower (−18.8 against −14.2), under 2 kHz about 3.5 dB
+higher, the sub and the kick's punch the same; the limiter takes up to 1.8 dB now and then (over 1 dB
+in 0.5% of 50 ms blocks). The MP3 (made without `save`) decodes at −10.1 LUFS, −1.1 dBTP (md5
+`92d49ae7dec6136f4bdcef356bf8ce7b`; before, `3a4af0d9db696405a6aa52adaa922f9e`).
 
 ## Mix balance and width (all three demos)
 

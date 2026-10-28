@@ -216,8 +216,8 @@ async function createOtt(context: Tone.BaseContext, ott: MasterSettings['ott']):
 
 interface ClipperUnit extends Unit {
   set: (clipper: ClipperSettings, ramp: number) => void;
-  /** The band kind (ClipperSettings.band): a change of kind is a new unit, faded over to. */
-  band: boolean;
+  /** The kind (ClipperSettings.band and .split, as clipperKind gives it): a change of kind is a new unit, faded over to. */
+  kind: string;
 }
 
 /** Listeners to the live clipper's readings (the Master tab's meter). */
@@ -228,6 +228,9 @@ export function onClipperReading(listener: (reading: ClipperReading) => void): (
   clipperListeners.add(listener);
   return () => clipperListeners.delete(listener);
 }
+
+/** Which kernel a clipper's settings play through: plain, band, split or split band (a live swap of kind crossfades). */
+const clipperKind = (s: ClipperSettings): string => `${s.band === true ? 'band' : 'plain'}${s.split === true ? '-split' : ''}`;
 
 /** The clipper worklet (clipper.ts), once its module is in the context. */
 async function createClipper(context: Tone.BaseContext, settings: ClipperSettings): Promise<ClipperUnit> {
@@ -241,8 +244,8 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
     channelCountMode: 'explicit',
     channelInterpretation: 'speakers',
     parameterData: p,
-    // Either kind plays at the band kind's delay, so a swap crossfades sounds that line up (padClipperKernel)
-    processorOptions: { band: settings.band === true, padTo: LIVE_CLIPPER_LATENCY },
+    // Every kind plays at the longest kind's delay, so a swap crossfades sounds that line up (padClipperKernel)
+    processorOptions: { band: settings.band === true, split: settings.split === true, padTo: LIVE_CLIPPER_LATENCY },
   });
   node.port.onmessage = (e: MessageEvent<ClipperReading>) => clipperListeners.forEach((l) => l(e.data));
   const raw = context.rawContext as unknown as BaseAudioContext;
@@ -258,7 +261,7 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
     input: node,
     output: node,
     set,
-    band: settings.band === true,
+    kind: clipperKind(settings),
     dispose: () => {
       node.port.onmessage = null;
       node.port.postMessage('dispose');
@@ -387,13 +390,21 @@ function createShelf(context: Tone.BaseContext, db: number): ShelfUnit {
  * The master compressor's styles: how hard it squeezes the whole mix, and how fast. Standard is
  * the one every project had before; Punchy's slow attack lets each drum hit through before
  * holding the rest; Tight is for dense, loud electronic music; Gentle barely touches it.
+ *
+ * The knee (dB over the threshold where it eases into its ratio) is set here, not left to the
+ * library's default, which is the same 30 dB: a wide, soft knee, so the glue leans on the mix
+ * gradually and its automatic makeup gain stays where it was. Standard and Tight once grabbed in
+ * 5 and 3 ms and let go in 100 and 60 ms, fast enough to follow each cycle of a bass: a 50 Hz sine
+ * at -3 dBFS came out with -50 and -42 dB of harmonics, and the colour-bass drop lost 0.75 and 1.3
+ * dB of peak-to-loudness. At 20 / 150 ms and 15 / 120 ms they're -56 and -50 dB, and the drop
+ * keeps 0.4 and 0.6 dB more of its peaks, at the same loudness.
  */
-export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; threshold: number; ratio: number; attack: number; release: number }> = {
-  standard: { name: 'Standard', about: 'Holds the mix together evenly.', threshold: -18, ratio: 4, attack: 0.005, release: 0.1 },
-  gentle: { name: 'Gentle', about: 'Barely touches it: acoustic, orchestral and jazz.', threshold: -14, ratio: 2, attack: 0.03, release: 0.25 },
-  punchy: { name: 'Punchy', about: 'Lets each drum hit through before holding the rest: rock, hip-hop, pop.', threshold: -20, ratio: 4, attack: 0.03, release: 0.08 },
-  tight: { name: 'Tight', about: 'Firm and loud: dubstep, EDM, drum and bass.', threshold: -22, ratio: 6, attack: 0.003, release: 0.06 },
-  off: { name: 'Off', about: 'No master compression (the limiter still catches peaks).', threshold: 0, ratio: 1, attack: 0.005, release: 0.1 },
+export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; threshold: number; ratio: number; attack: number; release: number; knee: number }> = {
+  standard: { name: 'Standard', about: 'Holds the mix together evenly.', threshold: -18, ratio: 4, attack: 0.02, release: 0.15, knee: 30 },
+  gentle: { name: 'Gentle', about: 'Barely touches it: acoustic, orchestral and jazz.', threshold: -14, ratio: 2, attack: 0.03, release: 0.25, knee: 30 },
+  punchy: { name: 'Punchy', about: 'Lets each drum hit through before holding the rest: rock, hip-hop, pop.', threshold: -20, ratio: 4, attack: 0.03, release: 0.08, knee: 30 },
+  tight: { name: 'Tight', about: 'Firm and loud: dubstep, EDM, drum and bass.', threshold: -22, ratio: 6, attack: 0.015, release: 0.12, knee: 30 },
+  off: { name: 'Off', about: 'No master compression (the limiter still catches peaks).', threshold: 0, ratio: 1, attack: 0.02, release: 0.15, knee: 30 },
 };
 
 /**
@@ -414,6 +425,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     comp.ratio.value = g.ratio;
     comp.attack.value = g.attack;
     comp.release.value = g.release;
+    comp.knee.value = g.knee;
   };
   glue(settings.glue);
   const chain = createInsertChain(raw, compressor, level, live);
@@ -523,14 +535,14 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     if (!clipChain) return;
     const clipWanted = effectiveClipper(next);
     if (clipWanted) {
-      const band = clipWanted.band === true;
+      const kind = clipperKind(clipWanted);
       if (clipper) clipper.set(clipWanted, ramp);
-      if ((!clipper || clipper.band !== band) && !clipLoading && !clipUnavailable) {
+      if ((!clipper || clipper.kind !== kind) && !clipLoading && !clipUnavailable) {
         clipLoading = createClipper(context, clipWanted).then(
           (unit) => {
             clipLoading = null;
             const now = effectiveClipper(wanted);
-            if (disposed || !now || (now.band === true) !== unit.band) {
+            if (disposed || !now || clipperKind(now) !== unit.kind) {
               unit.dispose();
               // (Changed again while it started: the one wanted now)
               if (!disposed) syncClipper(wanted, 0);

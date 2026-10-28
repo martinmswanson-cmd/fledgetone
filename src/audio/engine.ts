@@ -44,7 +44,8 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   const busFx = createBusEffects(bus, masterFx, bpm);
 
   // Master mastering chain
-  const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
+  // (Its settings are the glue style's, set by createMasterInserts: GLUE_STYLES in masterChain.ts)
+  const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.02, release: 0.15, knee: 30 });
   // Where the inserts end and the limiter begins: the Level, a plain gain (unity in an export, whose
   // Level is applied after the render, see masterAfter.ts)
   const context = bus.context;

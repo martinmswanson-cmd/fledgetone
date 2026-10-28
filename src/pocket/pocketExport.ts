@@ -13,7 +13,7 @@ import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOp
 import { measureLoudness } from '../audio/loudness';
 import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
-import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
+import { LOUD_TARGETS, loudToKeep, type LoudMatch } from '../audio/effects/loudMaster';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
@@ -71,8 +71,8 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
       // Kept for live playback only when aimed at the Loud master's own target (the whole song, full mix with no solo on),
       // limited at the live ceiling as this MP3 now is (it's held under it once decoded: encoders.ts)
       const live = useTimelineStore.getState().master.loud;
-      const push = live ? pushToKeep({ wholeSong: true, fullMix: !s.tracks.some((t) => t.isSoloed), exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0, ceilingDbtp }) : null;
-      if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
+      const keep = live ? loudToKeep({ wholeSong: true, fullMix: !s.tracks.some((t) => t.isSoloed), exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0, currentSplit: live.split, ceilingDbtp }) : null;
+      if (keep) useTimelineStore.getState().setMasterLoud(keep);
     }
     audio = cutRingOut(audio, opts);
     onProgress(1, 'Making the MP3');

@@ -32,7 +32,7 @@ import { formatDbtp, formatLufs, measureLoudness, sharedGainDb, truePeakOf } fro
 import { fileAgainstHeardDb, heardLoudness } from '../../audio/monitor';
 import { exportCeilingDbtp, limitInPlace } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
-import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
+import { LOUD_TARGETS, loudToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
 import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
@@ -449,10 +449,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     // Stored for live playback only from the whole song's full mix (no solo on) at the Loud master's own target
     const keepPush = (fullMix: boolean) => {
       const live = useTimelineStore.getState().master.loud;
-      const push = live
-        ? pushToKeep({ wholeSong: range === 'song', fullMix: fullMix && !useTimelineStore.getState().tracks.some((t) => t.isSoloed), exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0, ceilingDbtp })
+      const keep = live
+        ? loudToKeep({ wholeSong: range === 'song', fullMix: fullMix && !useTimelineStore.getState().tracks.some((t) => t.isSoloed), exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0, currentSplit: live.split, ceilingDbtp })
         : null;
-      if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
+      if (keep) useTimelineStore.getState().setMasterLoud(keep);
     };
     const loudNote = () =>
       loudFound

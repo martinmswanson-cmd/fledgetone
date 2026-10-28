@@ -62,17 +62,19 @@ const lufsOf = (l, r) => L.integratedLufs(l, r, SR);
 const dbtp = (l, r) => 20 * Math.log10(truePeakOf([l, r]));
 const loudMaster = (target, extra = {}) => ({ ...T.defaultMasterSettings(), loud: { ...T.defaultLoud(), on: true, target, ...extra } });
 
-test('an export with a Loud master lands within 0.5 LU of Streaming, Loud and Club, peaks at or under -1 dBTP', () => {
-  for (const [id, dense] of [['streaming', false], ['loud', false], ['club', true]]) {
+test('an export with a Loud master lands within 0.5 LU of Streaming, Loud and Club (a dense drop with some Crunch), peaks at or under -1 dBTP', () => {
+  // (A dense drop doesn't reach Club cleanly any more: MAX_DISTORTION_DB stops it before the fizz, Crunch takes it there)
+  for (const [id, dense, crunch] of [['streaming', false, 0], ['loud', false, 0], ['club', true, 0.3]]) {
     const [l, r] = drop(8, 0.6, dense);
     const target = L.LOUD_TARGETS[id].lufs;
-    const stats = masterAfter(l, r, SR, loudMaster(id), 0, -1, [], target);
+    const master = loudMaster(id, crunch ? { crunch } : {});
+    const stats = masterAfter(l, r, SR, master, 0, -1, [], target);
     const got = lufsOf(l, r);
     assert.ok(Math.abs(got - target) <= 0.5, `${id}: ${got.toFixed(2)} LUFS`);
     assert.ok(Math.abs(stats.loud.lufs - got) < 0.05, 'what it reports is what the file measures');
     assert.ok(dbtp(l, r) <= -1 + 1e-6, `${id}: true peak ${dbtp(l, r).toFixed(2)} dBTP`);
     assert.equal(stats.loud.shortDb, 0);
-    assert.ok(stats.loud.distortionDb <= L.MAX_DISTORTION_DB);
+    assert.ok(stats.loud.distortionDb <= L.loudMaxDistortionDb(master));
   }
 });
 
@@ -105,7 +107,7 @@ test('a long song is matched on a sample and checked on the whole: what it repor
     assert.ok(m.distortionDb <= L.MAX_DISTORTION_DB, `${target}: ${m.distortionDb.toFixed(2)} dB`);
     assert.ok(20 * Math.log10(truePeakOf([l, r])) <= -1 + 1e-6);
     if (target === -9) assert.ok(Math.abs(got + 9) < L.MATCH_TOLERANCE + 0.02 && m.shortDb === 0, JSON.stringify(m));
-    else assert.ok(m.capped && m.shortDb > 0 && got > -8, JSON.stringify(m));
+    else assert.ok(m.capped && m.shortDb > 0 && got > -8.5, JSON.stringify(m));
   }
 });
 
@@ -472,4 +474,66 @@ test("the export's master section in its Worker comes out exactly as run on the 
     assert.deepEqual(runMasterJob({ left: m1, sampleRate: SR, master, volumeDb: 0, ceilingDbtp: -1, drops: [], matchLufs: target }), masterAfter(m2, m2, SR, master, 0, -1, [], target));
     assert.deepEqual(m1, m2);
   }
+});
+
+test('distortion is measured on each channel: clipping that only changes the difference between them counts', () => {
+  const n = SR;
+  const x = Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin((2 * Math.PI * 100 * i) / SR));
+  const minus = x.map((v) => -v);
+  // Left clipped, right clipped the opposite way: their sum (what the old measure heard) is untouched
+  const clip = (v) => Math.max(-0.3, Math.min(0.3, v));
+  const outL = x.map(clip);
+  const outR = minus.map(clip);
+  const db = L.distortionDb(x, minus, outL, outR, SR, 0);
+  assert.ok(db > -25 && db < -5, `${db} dB`);
+  assert.equal(L.distortionDb(x, minus, x, minus, SR, 0), -Infinity);
+  // One channel (left and right the same arrays) is measured once, the same as two equal channels
+  assert.ok(Math.abs(L.distortionDb(x, x, outL, outL, SR, 0) - L.distortionDb(x, x.slice(), outL, outL.slice(), SR, 0)) < 1e-9);
+});
+
+test('a little Crunch still lets a match reach about as far as before the cap moved; none stops before the fizz', () => {
+  assert.equal(L.MAX_DISTORTION_DB, -24);
+  assert.equal(L.loudMaxDistortionDb(loudMaster('club')), -24);
+  assert.ok(Math.abs(L.loudMaxDistortionDb(loudMaster('club', { crunch: 0.4 })) - -17.4) < 1e-9);
+  assert.equal(L.loudMaxDistortionDb(loudMaster('club', { crunch: 1 })), L.CRUNCH_MAX_DISTORTION_DB);
+});
+
+test('the split or whole-sound kind: the one nearer the target, else the split kind only when clearly cleaner', () => {
+  const m = (shortDb, distortionDb) => ({ push: 5, lufs: -9 - shortDb, targetLufs: -9, shortDb, capped: shortDb > 0, distortionDb, passes: 2 });
+  assert.equal(L.pickSplit(m(0, -22), m(0, -25)), true);
+  assert.equal(L.pickSplit(m(0, -22), m(0, -22.3)), false, 'not by a hair');
+  assert.equal(L.pickSplit(m(0, -22), m(1, -30)), false, 'short of the target');
+  assert.equal(L.pickSplit(m(1, -22), m(0, -20)), true, 'the other one gets there');
+});
+
+test('with Crunch an export tries both kinds of clipper and says which it took; the clipper then plays that kind', () => {
+  const [l, r] = drop(8, 0.6);
+  const master = loudMaster('loud', { crunch: 0.3 });
+  const stats = masterAfter(l, r, SR, master, 0, -1, [], -9);
+  assert.equal(typeof stats.loud.split, 'boolean');
+  assert.ok(Math.abs(stats.loud.lufs - lufsOf(l, r)) < 0.05, 'what it reports is what the file measures');
+  assert.ok(dbtp(l, r) <= -1 + 1e-6);
+  const clip = L.effectiveClipper({ ...master, loud: { ...master.loud, split: true } });
+  assert.equal(clip.split, true);
+  assert.equal(clip.band, true);
+  // Without Crunch there's one kind, and nothing to choose
+  const [a, b] = drop(8, 0.6);
+  assert.equal(masterAfter(a, b, SR, loudMaster('loud'), 0, -1, [], -9).loud.split, undefined);
+  assert.equal(L.effectiveClipper({ ...loudMaster('loud'), loud: { ...loudMaster('loud').loud, split: true } }).split, undefined, 'the split kind is a Crunch one');
+});
+
+test('an export keeps the kind it found for live playback, with its push, under the same conditions', () => {
+  const found = { push: 4.2, lufs: -9, targetLufs: -9, shortDb: 0, capped: false, distortionDb: -25, passes: 2, split: true };
+  const base = { wholeSong: true, fullMix: true, exportTargetLufs: -9, loudTargetLufs: -9, found, currentPush: 0, ceilingDbtp: -1 };
+  assert.deepEqual(L.loudToKeep(base), { push: 4.2, split: true });
+  assert.deepEqual(L.loudToKeep({ ...base, currentPush: 4.2 }), { split: true }, 'the kind alone changed');
+  assert.equal(L.loudToKeep({ ...base, currentPush: 4.2, currentSplit: true }), null);
+  assert.deepEqual(L.loudToKeep({ ...base, found: { ...found, split: false }, currentSplit: true }), { push: 4.2, split: false });
+  assert.equal(L.loudToKeep({ ...base, wholeSong: false }), null);
+  assert.deepEqual(L.loudToKeep({ ...base, found: { ...found, split: undefined } }), { push: 4.2 }, 'no Crunch: the push alone');
+  // Stored and read back with the project; it changes how the master sounds
+  assert.equal(T.normalizeLoud({ on: true, split: true }).split, true);
+  assert.equal('split' in T.normalizeLoud({ on: true, split: 'yes' }), false);
+  const a = loudMaster('loud', { crunch: 0.3 });
+  assert.equal(T.sameMasterSettings(a, { ...a, loud: { ...a.loud, split: true } }), false);
 });

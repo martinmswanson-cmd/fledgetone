@@ -9,7 +9,7 @@ import { create } from 'zustand';
 import { masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
 import type { DrumRack } from './timelineTypes';
 import { tempoAt } from '../audio/tempoMap';
-import { audibleTracks, channelsOf, ditherSeedOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
+import { audibleTracks, channelsOf, encodeChannels, KEPT_RENDER_BITS, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { liveMix } from '../audio/engine';
 import { ENVELOPE_HOP } from '../audio/slicing';
@@ -21,8 +21,8 @@ import { BOUNCE_TRACK_NAME, choosePadTarget, fillPad, padFromClip, padLevel, typ
 /** A bounce under way: how far along (0 to 1), and what of. Null when none is. */
 export const usePadBounce = create<{ fraction: number | null; label: string }>(() => ({ fraction: null, label: '' }));
 
-/** A bounce may be up to this big (16-bit stereo: about 6 minutes at 44.1 kHz). */
-const MAX_BOUNCE_BYTES = 64 * 1024 * 1024;
+/** A bounce may be up to this big (24-bit stereo: about 6 minutes at 44.1 kHz). */
+const MAX_BOUNCE_BYTES = 96 * 1024 * 1024;
 
 export interface BounceRequest {
   /** The bars to bounce, [from, to) */
@@ -124,7 +124,7 @@ export async function bounceRangeToPad(req: BounceRequest): Promise<PadPlaced | 
       for (let i = 0; i < out.length; i++) out[i] *= level.scale;
       return out;
     });
-    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, [], undefined, ditherSeedOf(req.name)), `${req.name}.wav`, MAX_BOUNCE_BYTES);
+    const meta = await importSoundFile(encodeChannels(stored, sampleRate, KEPT_RENDER_BITS), `${req.name}.wav`, MAX_BOUNCE_BYTES);
     if (songGeneration() !== song) return null; // another song opened while it rendered
     const target = choosePadTarget(useTimelineStore.getState().tracks, req.target);
     return placeOnPad(target, { soundId: meta.id, name: req.name, gainDb: level.gainDb }, BOUNCE_TRACK_NAME);
