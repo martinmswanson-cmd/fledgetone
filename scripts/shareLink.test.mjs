@@ -140,3 +140,13 @@ test("a clip's measured groove feel, and one taken from audio, ride along in the
   assert.deepEqual(back.clips[0].groove.feel, { id: 'houseShuffle', amount: 0.7, role: 'lead' });
   assert.deepEqual(back.clips[1].groove.feel.user.roles, user.roles);
 });
+
+test("a clip on a track with Human on keeps its id in the link (each note's drift comes from it), the others' still go short", async () => {
+  const human = { ...SONG.tracks[0], fx: { ...SONG.tracks[0].fx, human: { ...SONG.tracks[0].fx.human, on: true } } };
+  const song = { ...SONG, tracks: [human, SONG.tracks[1]] };
+  const link = await songLink(song, '');
+  const back = await projectFromHash(link);
+  assert.equal(back.clips.find((c) => c.name === 'Tune').id, 'clip-a');
+  assert.notEqual(back.clips.find((c) => c.name === 'Low').id, 'clip-b');
+  assert.deepEqual(canon(back), canon(song));
+});

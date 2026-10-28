@@ -18,7 +18,7 @@ register(
 // A stand-in for the browser's storage
 const stored = new Map();
 globalThis.localStorage = { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, String(v)), removeItem: (k) => stored.delete(k) };
-const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MY_SOUNDS_FORMAT, soundFile, soundFileName, soundRecordingIds } = await import('../src/store/mySounds.ts');
+const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MAX_SOUNDS, MY_SOUNDS_FORMAT, soundFile, soundFileName, soundRecordingIds } = await import('../src/store/mySounds.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 const { presetPatch, SYNTH_PRESETS } = await import('../src/store/synthPatch.ts');
 
@@ -137,4 +137,24 @@ test("a sound file is named after the sound, with only the characters every syst
   assert.equal(soundFileName('..hidden'), 'hidden.fledgetone-sound.json');
   assert.equal(soundFileName('   '), 'sound.fledgetone-sound.json');
   assert.equal(soundFileName('x'.repeat(100)), `${'x'.repeat(60)}.fledgetone-sound.json`);
+});
+
+test('My sounds never lets a sound go to make room: past the most it holds, new ones are counted as left out', () => {
+  const mine = Array.from({ length: MAX_SOUNDS - 1 }, (_, i) => ({ id: `m${i}`, name: `Sound ${i}`, settings: soundOf(track('t', 'piano')) }));
+  const incoming = ['Sound 3', 'New A', 'New B', 'New C'].map((name, i) => ({ id: `f${i}`, name, settings: soundOf(track('t', 'piano')) }));
+  const { sounds, added, replaced, full } = mergeSounds(mine, incoming);
+  assert.deepEqual([added, replaced, full], [1, 1, 2]);
+  assert.equal(sounds.length, MAX_SOUNDS);
+  // The oldest is still there
+  assert.equal(sounds[0].id, 'm0');
+});
+
+test('saving a new sound into a full My sounds says so and keeps every sound (one of a name already used still updates)', () => {
+  const sounds = Array.from({ length: MAX_SOUNDS }, (_, i) => ({ id: `m${i}`, name: `Sound ${i}`, settings: soundOf(track('t', 'piano')) }));
+  useMySounds.setState({ sounds });
+  assert.equal(useMySounds.getState().saveSound('One more', track('a', 'realCello')), 'full');
+  assert.equal(useMySounds.getState().sounds, sounds);
+  assert.equal(useMySounds.getState().saveSound('Sound 0', track('a', 'realCello')), 'replaced');
+  assert.equal(useMySounds.getState().sounds.length, MAX_SOUNDS);
+  useMySounds.setState({ sounds: [] });
 });

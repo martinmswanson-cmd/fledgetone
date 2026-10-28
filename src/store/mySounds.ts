@@ -20,7 +20,8 @@ export const FAVOURITE_INSTRUMENTS_KEY = 'fledgetone.favouriteInstruments';
 export const MY_SOUNDS_KEY = 'fledgetone.mySounds';
 /** A sound bigger than this (a plugin with a huge state) isn't kept: browser storage is small */
 const MAX_SOUND_CHARS = 1_500_000;
-const MAX_SOUNDS = 200;
+/** The most saved sounds kept: past it, a new one waits until one is deleted (none is let go on its own). */
+export const MAX_SOUNDS = 200;
 
 /** The parts of a track that make its sound. */
 const SOUND_FIELDS = [
@@ -124,7 +125,8 @@ function readSounds(): MySound[] {
   return Array.isArray(raw) ? raw.map(parseSound).filter((s): s is MySound => !!s) : [];
 }
 
-export type SaveResult = 'saved' | 'replaced' | 'too-big' | 'not-kept';
+/** 'full': My sounds already holds MAX_SOUNDS (nothing was saved). */
+export type SaveResult = 'saved' | 'replaced' | 'too-big' | 'not-kept' | 'full';
 
 /** What a My sounds file holds (mySoundsFile.ts saves and opens it). */
 export const MY_SOUNDS_FORMAT = 'fledgetone-my-sounds';
@@ -169,23 +171,27 @@ export const soundRecordingIds = (sound: MySound): string[] => referencedSoundId
 
 /**
  * `sounds` added to `mine`: one of the same name (any case) is replaced, as saving it again
- * would; the rest are added after. Returns the list and how many were added and replaced.
+ * would; the rest are added after, while there's room (MAX_SOUNDS). Returns the list and how
+ * many were added, replaced and left out for want of room.
  */
-export function mergeSounds(mine: readonly MySound[], sounds: readonly MySound[]): { sounds: MySound[]; added: number; replaced: number } {
+export function mergeSounds(mine: readonly MySound[], sounds: readonly MySound[]): { sounds: MySound[]; added: number; replaced: number; full: number } {
   const out = [...mine];
   let added = 0;
   let replaced = 0;
+  let full = 0;
   for (const s of sounds) {
     const i = out.findIndex((m) => m.name.toLowerCase() === s.name.toLowerCase());
     if (i >= 0) {
       out[i] = { ...s, id: out[i].id };
       replaced++;
+    } else if (out.length >= MAX_SOUNDS) {
+      full++;
     } else {
       out.push({ ...s, id: uid('sound') });
       added++;
     }
   }
-  return { sounds: out.slice(-MAX_SOUNDS), added, replaced };
+  return { sounds: out, added, replaced, full };
 }
 
 interface MySoundsState {
@@ -197,7 +203,7 @@ interface MySoundsState {
   removeSound: (id: string) => void;
   renameSound: (id: string, name: string) => void;
   /** Add a file's sounds and stars to this browser's (see mergeSounds); false if the browser wouldn't keep them. */
-  importSounds: (sounds: readonly MySound[], favourites: readonly InstrumentKey[]) => { added: number; replaced: number } | false;
+  importSounds: (sounds: readonly MySound[], favourites: readonly InstrumentKey[]) => { added: number; replaced: number; full: number } | false;
 }
 
 export const useMySounds = create<MySoundsState>((set, get) => ({
@@ -214,10 +220,11 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
     const settings = soundOf(track);
     if (JSON.stringify(settings).length > MAX_SOUND_CHARS) return 'too-big';
     const same = get().sounds.find((s) => s.name.toLowerCase() === name.toLowerCase());
+    if (!same && get().sounds.length >= MAX_SOUNDS) return 'full';
     const sound: MySound = { id: same?.id ?? uid('sound'), name, settings };
     const sounds = same
       ? get().sounds.map((s) => (s.id === same.id ? sound : s))
-      : [...get().sounds, sound].slice(-MAX_SOUNDS);
+      : [...get().sounds, sound];
     if (!writeJson(MY_SOUNDS_KEY, sounds)) return 'not-kept';
     set({ sounds });
     return same ? 'replaced' : 'saved';
@@ -233,7 +240,7 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
     if (!writeJson(MY_SOUNDS_KEY, merged.sounds)) return false;
     writeJson(FAVOURITE_INSTRUMENTS_KEY, favourites);
     set({ sounds: merged.sounds, favourites });
-    return { added: merged.added, replaced: merged.replaced };
+    return { added: merged.added, replaced: merged.replaced, full: merged.full };
   },
   renameSound: (id, rawName) => {
     const name = rawName.trim().slice(0, 60);

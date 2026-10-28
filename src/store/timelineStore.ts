@@ -760,6 +760,8 @@ interface TimelineState {
   clipboardInstrument: InstrumentKey | null;
   /** The tempo at the copy: audio clips pasted at another tempo keep their length in seconds. */
   clipboardBpm: number;
+  /** Each copied clip's track's instrument, by track id: a clip goes back only onto a track it fits (another song's track can have the same id) */
+  clipboardTracks: Record<string, InstrumentKey>;
   copySelectedClips: () => void;
   cutSelectedClips: () => void;
   /**
@@ -3023,6 +3025,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     clipboard: [],
     clipboardInstrument: null,
     clipboardBpm: 122,
+    clipboardTracks: {},
 
     copySelectedClips: () => {
       const { clips, tracks, bpm } = get();
@@ -3035,6 +3038,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         // Remembered now, so the clips can still be pasted onto a matching track after theirs is gone
         clipboardInstrument: fromOneTrack ? (tracks.find((t) => t.id === selected[0].trackId)?.instrumentKey ?? null) : null,
         clipboardBpm: bpm,
+        clipboardTracks: Object.fromEntries(tracks.filter((t) => selected.some((c) => c.trackId === t.id)).map((t) => [t.id, t.instrumentKey])),
       });
     },
 
@@ -3044,16 +3048,22 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
 
     pasteClips: (atBar, ontoTrackId) => {
-      const { clipboard, clipboardInstrument, clipboardBpm, tracks, playheadPosition, snapGrid, isPlaying, bpm } = get();
+      const { clipboard, clipboardInstrument, clipboardBpm, clipboardTracks, tracks, playheadPosition, snapGrid, isPlaying, bpm } = get();
       if (clipboard.length === 0) return;
-      const trackIds = new Set(tracks.map((t) => t.id));
+      // Back onto their own tracks: the ones still there with an instrument they fit (in another
+      // song opened since, a track of the same id may be a bus, or play audio)
+      const fits = (c: Clip) => {
+        const track = tracks.find((t) => t.id === c.trackId);
+        const was = clipboardTracks[c.trackId];
+        return !!track && !!was && canMoveClipBetween(was, track.instrumentKey);
+      };
       const at = clampBar(atBar ?? snapBar(playheadPosition, snapGrid, get()));
       const onto = ontoTrackId !== undefined ? tracks.find((t) => t.id === ontoTrackId) : undefined;
       const target = onto && clipboardInstrument && canMoveClipBetween(clipboardInstrument, onto.instrumentKey) ? onto.id : null;
 
       // Audio clips copied at another tempo are as long in seconds as they were
       const pasted: Clip[] = retimeAudioClips(clipboard, clipboardBpm, bpm)
-        .filter((c) => target !== null || trackIds.has(c.trackId))
+        .filter((c) => target !== null || fits(c))
         .map((c) => ({
           ...c,
           id: uid('clip'),
@@ -3189,6 +3199,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       resetWamSession();
       set({ take: null });
       get().stop();
+      // The clip launcher's session was the old song's (its tracks' ids may repeat in this one)
+      useLauncher.setState({ segments: {}, start: null, last: null });
       // One track records at a time: a file with several armed keeps the first
       const armedId = p.tracks.find((t) => t.isArmed)?.id;
       const safeTracks: Track[] = tidyFolders(tidySends(tidyRoutes(p.tracks))).map((t: Track) => ({

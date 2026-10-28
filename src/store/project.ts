@@ -147,6 +147,11 @@ export interface ProjectSnapshot {
   meter?: Meter;
   /** Time signature changes */
   meterPoints?: MeterPoint[];
+  /**
+   * Set by parseProject only: how many tracks and clips of the file couldn't be read and were
+   * left out (from a newer version of the app, or damaged). Absent when everything was read.
+   */
+  unread?: { tracks: number; clips: number };
 }
 
 
@@ -509,6 +514,10 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const parsedTracks = tolerant(raw.tracks, parseTrack);
   if (raw.tracks.length && !parsedTracks.length) parseTrack(raw.tracks[0]); // nothing readable: say why
   const tracks = parsedTracks.filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i);
+  const parsedClips = tolerant(raw.clips, parseClip);
+  // (A track's clips go with it, and clips whose track was deleted long ago are dropped quietly: neither counts here)
+  const unreadTracks = raw.tracks.length - parsedTracks.length;
+  const unreadClips = raw.clips.length - parsedClips.length;
   const trackIds = new Set(tracks.map((t) => t.id));
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
@@ -533,8 +542,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     tracks,
     // A clip whose track is gone can't play or be seen. Older versions could save these (undo
     // after deleting a track), so skip them rather than refuse the whole file.
-    clips: tolerant(raw.clips, parseClip)
-      .filter((c, i, all) => trackIds.has(c.trackId) && all.findIndex((o) => o.id === c.id) === i),
+    clips: parsedClips.filter((c, i, all) => trackIds.has(c.trackId) && all.findIndex((o) => o.id === c.id) === i),
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
@@ -565,6 +573,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
           },
         }
       : {}),
+    ...(unreadTracks || unreadClips ? { unread: { tracks: unreadTracks, clips: unreadClips } } : {}),
   };
 }
 

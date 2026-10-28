@@ -6,7 +6,8 @@ import React, { useEffect, useState } from 'react';
 import { isVideoFile, useVideoStore } from '../store/videoStore';
 import { FolderOpen } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { hasWork, parseProject } from '../store/project';
+import { hasWork } from '../store/project';
+import { openProjectFromFile } from './timeline/projectFile';
 import { showToast } from './timeline/toastStore';
 import { Modal } from './timeline/Modal';
 import { ChoiceButton } from './timeline/ProjectBar';
@@ -112,12 +113,5 @@ export const ProjectDrop: React.FC = () => {
 
 /** Open a project file as the Open button does; a file that can't be read says why at the bottom of the screen. */
 async function openProjectFile(file: File): Promise<void> {
-  try {
-    const project = parseProject(JSON.parse(await file.text()));
-    useTimelineStore.getState().loadProject(project);
-    showToast(`Opened ${file.name}`);
-  } catch (err) {
-    const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
-    showToast(`Couldn't open ${file.name}: ${reason}`);
-  }
+  showToast((await openProjectFromFile(file)) ?? `Opened ${file.name}`);
 }

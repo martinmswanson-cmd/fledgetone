@@ -6,7 +6,7 @@
  * One track's sound can go in a file of its own too (Share this sound, "<name>.fledgetone-sound.json"),
  * to send to someone: opening it adds it to My sounds and puts it on the track it's opened on.
  */
-import { MY_SOUNDS_FORMAT, mySoundIds, parseMySoundsFile, soundFile, soundFileName, soundOf, soundRecordingIds, useMySounds, type MySound, type MySoundsFile } from '../store/mySounds';
+import { MAX_SOUNDS, MY_SOUNDS_FORMAT, mySoundIds, parseMySoundsFile, soundFile, soundFileName, soundOf, soundRecordingIds, useMySounds, type MySound, type MySoundsFile } from '../store/mySounds';
 import { useTimelineStore } from '../store/timelineStore';
 import { uid } from '../store/timelineTypes';
 import { captureWamStates } from '../audio/wamHost';
@@ -38,6 +38,9 @@ export async function exportMySounds(): Promise<void> {
   else showToast(`Saved ${plural(sounds.length, 'sound')} and ${plural(favourites.length, 'favourite')} to ${name}${isNativeApp() ? '' : ' (in your downloads)'}.`);
 }
 
+/** What a message adds when sounds didn't fit in My sounds ('' when they all did). */
+const noRoom = (full: number) => (full ? ` My sounds is full (${MAX_SOUNDS} sounds), so ${plural(full, 'sound')} ${full === 1 ? 'wasn’t' : 'weren’t'} added: delete some you don't need, then open the file again.` : '');
+
 /** Add a My sounds file's sounds and stars to this browser's. Returns what happened, for a message. */
 export async function importMySoundsFile(file: File): Promise<string> {
   try {
@@ -45,7 +48,7 @@ export async function importMySoundsFile(file: File): Promise<string> {
     if (recordings.length) await importEmbeddedSounds(recordings);
     const done = useMySounds.getState().importSounds(sounds, favourites);
     if (!done) return "The browser wouldn't keep them (its storage is full or blocked).";
-    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} and ${plural(favourites.length, 'favourite')} from ${file.name}.`;
+    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} and ${plural(favourites.length, 'favourite')} from ${file.name}.${noRoom(done.full)}`;
   } catch (err) {
     const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
     return `Couldn't open ${file.name}: ${reason}`;
@@ -98,10 +101,10 @@ export async function openSoundFile(file: File, trackId?: string): Promise<strin
     const track = trackId ? useTimelineStore.getState().tracks.find((t) => t.id === trackId) : undefined;
     if (track && sounds.length === 1) {
       useTimelineStore.getState().setTrackSound(track.id, sounds[0]);
-      return `${track.name} plays "${sounds[0].name}" now${done ? ', and it’s in My sounds' : ''} (Undo puts the old sound back).`;
+      return `${track.name} plays "${sounds[0].name}" now${done && !done.full ? ', and it’s in My sounds' : ''} (Undo puts the old sound back).${done ? noRoom(done.full) : ''}`;
     }
     if (!done) return "The browser wouldn't keep them (its storage is full or blocked).";
-    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} to My sounds from ${file.name}.`;
+    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} to My sounds from ${file.name}.${noRoom(done.full)}`;
   } catch (err) {
     const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
     return `Couldn't open ${file.name}: ${reason}`;
