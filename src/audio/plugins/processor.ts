@@ -12,22 +12,41 @@
  * rest as it sounded then; answered with `params`), `table` (Fledge Synth's user table: `frames`
  * cycles of 2048 samples, or none; see userTable.ts), `destroy`.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
- * after a `set` (the parameter's text), `error` if the plugin couldn't be made.
+ * after a `set` (the parameter's text), `error` if the plugin couldn't be made, `fault` (once) if it
+ * blew up (see guard below).
+ *
+ * Options beyond the plugin itself: `ownMemory` gives the plugin a WebAssembly instance of its own
+ * instead of its family's shared one (a family whose code reads memory it never set, left over
+ * from a plugin that was there before it: the Mutable Instruments family), and `limits` holds
+ * parameters (by name) inside the range they're safe in, whatever is set or saved (see
+ * paramLimits.ts).
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
 import { insertTimedEvent } from '../legato';
 
+/** A plugin playing a sample at or past this (+60 dBFS), or NaN, has blown up (see the guard in the processor). */
+export const BLOWN_UP = 1000;
+
 export const BUILTIN_PROCESSOR = 'bb-builtin-plugin';
 
 export const BUILTIN_PROCESSOR_SOURCE = `
 const BLOCK = 128;
+/** Louder than any plugin plays on purpose (+60 dBFS): a sample past it, or NaN, means it blew up */
+const BLOWN = ${BLOWN_UP};
 const families = new Map();
 const insertTimedEvent = ${insertTimedEvent.toString()};
 
 function familyOf(name, module) {
   let fam = families.get(name);
   if (fam) return fam;
+  fam = instantiate(name, module);
+  families.set(name, fam);
+  return fam;
+}
+
+/** A new instance of a family's WebAssembly, with its memory fresh (zeroed). */
+function instantiate(name, module) {
   // The C runtime's few calls out: writing text (it's shown in the console) is done properly, so
   // the runtime doesn't retry it forever; the rest answer "nothing here"
   let e = null;
@@ -53,9 +72,7 @@ function familyOf(name, module) {
   const instance = new WebAssembly.Instance(module, imports);
   e = instance.exports;
   if (e._initialize) e._initialize();
-  fam = { e };
-  families.set(name, fam);
-  return fam;
+  return { e };
 }
 
 function readString(e, ptr) {
@@ -92,11 +109,25 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.prevE = -1;
     this.steady = 0;
     this.port.onmessage = (m) => this.message(m.data);
+    this.familyName = o.family;
+    this.module = o.module;
+    this.index = o.index;
+    this.ownMemory = !!o.ownMemory;
+    this.limitNames = o.limits || null;
+    this.limits = [];
+    // The last preset file and user table it was given, to start it again with after a blow-up
+    this.presetData = null;
+    this.tableData = null;
+    this.tableFrames = 0;
+    // The guard: when it last started the plugin again, and whether it has said so
+    this.resetAt = -Infinity;
+    this.reported = false;
     try {
-      this.e = familyOf(o.family, o.module).e;
+      this.e = (this.ownMemory ? instantiate(o.family, o.module) : familyOf(o.family, o.module)).e;
       this.h = this.e.bb_create(o.index, sampleRate);
       if (!this.h) throw new Error('no plugin ' + o.index + ' in ' + o.family);
       this.n = this.e.bb_params(this.h);
+      this.findLimits();
       // A preset file (Surge's patches) is the starting point: its values are the defaults
       if (o.preset) this.loadData(o.preset);
       const defaults = [];
@@ -105,10 +136,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.programs = this.e.bb_programs ? this.e.bb_programs(this.h) : 0;
       if (this.programs && Number.isInteger(o.program) && o.program >= 0 && o.program < this.programs) this.e.bb_set_program(this.h, o.program);
       const values = o.values || [];
-      for (let i = 0; i < this.n && i < values.length; i++) if (Number.isFinite(values[i])) this.e.bb_set(this.h, i, values[i]);
+      for (let i = 0; i < this.n && i < values.length; i++) if (Number.isFinite(values[i])) this.setParam(i, values[i]);
       // Saved before the plugin had all its parameters: the ones it didn't have yet are set as
       // the sound was then (Fledge Synth's bb_legacy), so it sounds as it did
       if (values.length > 0 && values.length < this.n && this.e.bb_legacy) this.e.bb_legacy(this.h, values.length);
+      this.enforceLimits();
       // Fledge Synth's user table, made from a sound
       if (o.table) this.loadTable(o.table, o.tableFrames);
       this.alive = true;
@@ -132,14 +164,79 @@ class BuiltinPlugin extends AudioWorkletProcessor {
   loadData(buffer) {
     const e = this.e;
     if (!e.bb_alloc) return 0;
+    this.presetData = buffer;
     const bytes = new Uint8Array(buffer);
     const ptr = e.bb_alloc(bytes.length);
     new Uint8Array(e.memory.buffer, ptr, bytes.length).set(bytes);
     const ok = e.bb_load(this.h, ptr, bytes.length);
     e.bb_free(ptr);
     this.n = e.bb_params(this.h);
+    this.findLimits();
+    this.enforceLimits();
     this.views();
     return ok;
+  }
+
+  /** The limited parameters' numbers, from their names (see paramLimits.ts). */
+  findLimits() {
+    this.limits = [];
+    if (!this.limitNames) return;
+    for (let i = 0; i < this.n; i++) {
+      const range = this.limitNames[readString(this.e, this.e.bb_param_name(this.h, i))];
+      if (range) this.limits[i] = range;
+    }
+  }
+
+  /** Set parameter i (0 to 1), inside its limits if it has any. */
+  setParam(i, value) {
+    const range = this.limits[i];
+    this.e.bb_set(this.h, i, range ? Math.max(range[0], Math.min(range[1], value)) : value);
+  }
+
+  /** Put any limited parameter a preset (or an older sound) moved outside its range back inside it. */
+  enforceLimits() {
+    this.limits.forEach((range, i) => {
+      const v = this.e.bb_get(this.h, i);
+      if (v < range[0] || v > range[1]) this.e.bb_set(this.h, i, Math.max(range[0], Math.min(range[1], v)));
+    });
+  }
+
+  /**
+   * The guard: the plugin played NaN or blew up (a model gone unstable, memory it never set).
+   * Its sound never reaches the track (summed with the rest, one NaN silences the whole mix, and a
+   * blow-up is a full-scale blast); it's started again as it was set, at most once a second (in
+   * between it plays nothing), and it says so once.
+   */
+  blewUp() {
+    if (!this.reported) {
+      this.reported = true;
+      this.port.postMessage({ type: 'fault', message: 'played NaN or blew up: started again' });
+    }
+    if (currentFrame - this.resetAt < sampleRate) return;
+    this.resetAt = currentFrame;
+    const e = this.e;
+    const values = [];
+    for (let i = 0; i < this.n; i++) values.push(e.bb_get(this.h, i));
+    const program = this.program();
+    try {
+      e.bb_destroy(this.h);
+    } catch (err) {
+      // (Its memory may be what went wrong: a new instance below)
+    }
+    // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone
+    if (this.ownMemory) this.e = instantiate(this.familyName, this.module).e;
+    this.h = this.e.bb_create(this.index, sampleRate);
+    if (!this.h) {
+      this.alive = false;
+      return;
+    }
+    this.n = this.e.bb_params(this.h);
+    if (this.presetData) this.loadData(this.presetData);
+    if (this.programs && program >= 0) this.e.bb_set_program(this.h, program);
+    for (let i = 0; i < this.n && i < values.length; i++) this.setParam(i, values[i]);
+    if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
+    if (this.bpm > 0 && this.e.bb_tempo) this.e.bb_tempo(this.h, this.bpm);
+    this.views();
   }
 
   /** Fledge Synth's user table (fledge_table_buffer / fledge_table_set): "frames" cycles, or none (null) */
@@ -147,6 +244,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     const e = this.e;
     if (!e.fledge_table_set) return;
     const n = data && frames > 0 ? frames : 0;
+    this.tableData = n ? data : null;
+    this.tableFrames = n;
     if (n) {
       const ptr = e.fledge_table_buffer(this.h, n);
       if (!ptr) return;
@@ -178,12 +277,13 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (d.index >= 0 && d.index < this.n) {
         // (Its lane is gone: what it still had queued goes too, even while the track sleeps)
         if (d.drop) this.events = this.events.filter((ev) => !(ev.type === 'wam-automation' && Number(ev.data.id) === d.index));
-        this.e.bb_set(this.h, d.index, d.value);
+        this.setParam(d.index, d.value);
         this.port.postMessage({ type: 'display', index: d.index, value: this.e.bb_get(this.h, d.index), text: readString(this.e, this.e.bb_param_display(this.h, d.index)) });
       }
     } else if (d.type === 'program') {
       if (d.index >= 0 && d.index < this.programs) {
         this.e.bb_set_program(this.h, d.index);
+        this.enforceLimits();
         this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
       }
     } else if (d.type === 'load') {
@@ -197,6 +297,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (d.type === 'legacy') {
       // (As at the start: an older saved sound with only its first "count" values just went in)
       if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);
+      this.enforceLimits();
       this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
     } else if (d.type === 'table') {
       this.loadTable(d.data, d.frames);
@@ -224,7 +325,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
   apply(ev) {
     if (ev.type === 'wam-automation') {
       const i = Number(ev.data.id);
-      if (i >= 0 && i < this.n) this.e.bb_set(this.h, i, Math.max(0, Math.min(1, ev.data.value)));
+      if (i >= 0 && i < this.n) this.setParam(i, Math.max(0, Math.min(1, ev.data.value)));
     } else if (ev.type === 'wam-midi') {
       const b = ev.data.bytes;
       this.e.bb_midi(this.h, b[0], b[1] || 0, b[2] || 0);
@@ -232,6 +333,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // The song's tempo, for plugins with tempo-synced parts (Fledge Synth's LFOs), and where in
       // the song it is (beats), for plugins that follow it (Fledge Synth's free LFOs and random
       // values: the same notes from the same place sound the same, live or exported)
+      if (ev.data.tempo > 0) this.bpm = ev.data.tempo;
       if (this.e.bb_tempo && ev.data.tempo > 0) this.e.bb_tempo(this.h, ev.data.tempo);
       if (this.e.bb_position && Number.isFinite(ev.data.beat) && ev.data.beat >= 0) this.e.bb_position(this.h, ev.data.beat);
     }
@@ -290,11 +392,27 @@ class BuiltinPlugin extends AudioWorkletProcessor {
         inL.fill(0, 0, n);
         inR.fill(0, 0, n);
       }
-      this.e.bb_process(this.h, n);
+      let blown = false;
+      try {
+        this.e.bb_process(this.h, n);
+      } catch (err) {
+        // (Out of bounds in its memory: as good as blown up)
+        blown = true;
+      }
       // Its memory may have grown while processing
       if (this.mem !== this.e.memory.buffer) this.views();
-      if (out[0]) out[0].set(this.buf[2].subarray(0, n), pos);
-      if (out[1]) out[1].set(this.buf[3].subarray(0, n), pos);
+      const pl = this.buf[2], pr = this.buf[3];
+      // (NaN fails both comparisons)
+      for (let i = 0; i < n && !blown; i++) if (!(pl[i] < BLOWN && pl[i] > -BLOWN && pr[i] < BLOWN && pr[i] > -BLOWN)) blown = true;
+      if (blown) {
+        if (out[0]) out[0].fill(0, pos, end);
+        if (out[1]) out[1].fill(0, pos, end);
+        this.blewUp();
+        if (!this.alive) return false;
+      } else {
+        if (out[0]) out[0].set(pl.subarray(0, n), pos);
+        if (out[1]) out[1].set(pr.subarray(0, n), pos);
+      }
       pos = end;
     }
     if (this.follow) this.followInput(input, out, frames);

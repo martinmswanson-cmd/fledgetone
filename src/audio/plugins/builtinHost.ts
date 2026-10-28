@@ -6,6 +6,7 @@ import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
+import { OWN_MEMORY_FAMILIES, PARAM_LIMITS } from './paramLimits';
 
 /**
  * Built-in plugins: open-source effects and instruments compiled to WebAssembly (see
@@ -200,6 +201,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       // Effects fade out once they go on sounding by themselves after their track has gone quiet
       // (see followInput in processor.ts); the reverbs made to hold a sound forever are left be
       followInput: !ref.info.instrument && !HOLDS_FOREVER.has(ref.info.name),
+      // (A family that mustn't share its memory, and parameters kept inside their safe range: paramLimits.ts)
+      ownMemory: OWN_MEMORY_FAMILIES.has(ref.family.family),
+      limits: PARAM_LIMITS[builtinUrl(ref.family.family, ref.info.name)] ?? null,
     },
   });
 
@@ -267,6 +271,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         programs = files ? files.names : (d.programs ?? []);
         program = files ? (startPreset ? files.names.indexOf(startPreset) : -1) : (d.program ?? -1);
         resolve();
+      } else if (d.type === 'fault') {
+        // (Said once per plugin: it went silent for a moment rather than silencing or blasting the mix)
+        console.warn(`${ref.info.name} ${d.message}`);
       } else if (d.type === 'error') {
         clearTimeout(timer);
         reject(new Error(d.message));
