@@ -200,6 +200,20 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Groove feels, glue styles, vocal chops, resampling, whole-app fixes** (2026.10.28): feels measured from
+  real tracks (`grooveFeels.ts`, `grooveExtract.ts`, applied per part in scheduler.ts, meter-aware via
+  `feelPos`); Glue styles + Group and glue (`glueMix.ts`, `placeBus` keeps folders whole); Vocal Chops
+  instruments + Chop my voice (`voiceChops.ts`, `voiceChopActions.ts`, `barOfSource`); Resample/Mangle/user
+  wavetables (`resample*.ts`, `mangle.ts`, Fledge `user_table`, exact-only "User table" choice). Whole-app
+  bug cycle: audio clips follow the tempo map when it changes inside them (`steadyBetween`), seamless loop
+  limiting is circular, plugin guard + `PARAM_LIMITS`/`OUTPUT_TRIMS_DB` (Piano Model -7 dB) +
+  `OWN_MEMORY_FAMILIES` (mutable; the real fix is zeroed allocation in scripts/plugins/mutable on the next
+  emsdk rebuild), embedded sounds held in memory until stored, Pocket roll keeps untouched notes exactly
+  (`pocketGrid.ts`) and merges cell clips safely (`pocketClips.ts`), piano roll note clipboard
+  (`noteClipboard.ts`), Modal focus trap. Open: Soul chop duplicate round-robins (needs the source
+  recordings), Pocket Tune/Double on take folders, Pocket resample not repeatable across sessions, songs
+  have no stored key, iPhone first-tap audio unchecked on a device.
+
 - **Fledge Synth even across the keyboard** (2026.10.24-2): new params "Even keyboard" (mipmap
   crossfade `tables::level_blend`, random start by step not pitch, chorus spread and lows left dry) and
   "Detune key tracking", both off for states saved before (LEGACY; `tests/data/range_sound.bin` proves
