@@ -611,6 +611,28 @@ struct Drive {
     /// The level in and out (mean squares), for the stages that keep their level by ear
     ein: f32,
     eout: f32,
+    /// What it runs with now (see Drive::plan), and its mix and presence as heard: each eased to
+    /// where it's going a step a sample over a CONTROL stretch (`left` steps still to go), so a
+    /// mix that jumps doesn't click
+    now: DriveNow,
+    mix: f32,
+    mix_step: f32,
+    presence: f32,
+    presence_step: f32,
+    left: u32,
+    /// Planned since it was last reset (a new note), and running
+    started: bool,
+    live: bool,
+    /// How far it has faded in (1: all the way; over FADE_IN), from the sound going in (a stage
+    /// turned on mid-note) or from the stage it was (`from`: a shape turned into a crush or back,
+    /// one late and one on time, both run while it fades)
+    fade: f32,
+    from: Option<DriveNow>,
+    /// It started afresh this stretch (what comes after it should too)
+    restarted: bool,
+    /// The shape's or the crush's state still to be set from the first sample in
+    prime_shape: bool,
+    prime_crush: bool,
 }
 
 /// A stage's numbers for a stretch of samples
@@ -651,14 +673,166 @@ impl DriveNow {
 /// 0.12 dB up to 20 kHz at 48 kHz, where the average alone took 2 dB off)
 const DROOP: f32 = 0.165;
 
+/// How many samples a stage turned on mid-note takes to fade in from the sound going in (its shape
+/// comes out a few samples late: switched straight in, the sound would jump)
+const FADE_IN: usize = 2 * CONTROL;
+
+/// How many samples the band drive takes to fade in, turned on with sound going through (its
+/// split's filters start from nothing, and the lows take a while to settle)
+const BAND_FADE_IN: usize = 512;
+
+/// A shape (run at twice the rate, a few samples late) rather than a crush (on time)
+#[inline]
+fn shapes(kind: u32) -> bool {
+    kind != p::CRUSH_BITS && kind != p::CRUSH_RATE
+}
+
 impl Drive {
+    /// Ready the stage for the next stretch at `d`: false when it leaves the sound alone. Once a
+    /// shape has run in a voice it keeps running till the voice starts afresh, mixed out when it's
+    /// turned off (the clean sound through it, as late as the shaped one), so turning the drive or
+    /// its mix down to nothing and up again mid-note doesn't jump. A crush is on time: once mixed
+    /// out it stops. A stage turned on mid-note starts afresh and fades in.
+    fn plan(&mut self, d: &DriveNow) -> bool {
+        self.plan_on(d, d.on())
+    }
+
+    /// The same, running whenever `on` (whatever its own mix: one band of the band drive runs
+    /// mixed out to keep in step with the others)
+    fn plan_on(&mut self, d: &DriveNow, on: bool) -> bool {
+        let first = !self.started;
+        self.started = true;
+        self.restarted = false;
+        if on {
+            if !self.live {
+                self.restart();
+                // (At a note's start it starts from nothing, as the note does)
+                self.prime_shape = !first;
+                self.prime_crush = !first;
+                self.live = true;
+                self.fade = if first { 1.0 } else { 0.0 };
+                self.presence = if first { 1.0 } else { 0.0 };
+                self.mix = d.mix;
+                self.left = 0;
+            } else if shapes(d.kind) != shapes(self.now.kind) {
+                // From a shape to a crush or back: what it was fades out as the other fades in
+                // (the other's state long out of date, set afresh)
+                self.from = Some(DriveNow { mix: self.mix, ..self.now });
+                self.fade = 0.0;
+                self.mix = d.mix;
+                self.left = 0;
+                if shapes(d.kind) {
+                    self.prime_shape = true;
+                } else {
+                    self.prime_crush = true;
+                }
+            }
+            self.aim(d, 1.0);
+            true
+        } else if self.live {
+            if !shapes(self.now.kind) && self.left == 0 && self.mix == 0.0 && self.fade >= 1.0 {
+                self.live = false;
+                return false;
+            }
+            // Mixed out: as it was (its kind, drive and level keeping), or as it is now if that's
+            // the same kind of stage
+            let base = if d.kind > 0 && shapes(d.kind) == shapes(self.now.kind) { *d } else { self.now };
+            self.aim(&DriveNow { mix: 0.0, ..base }, 0.0);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn aim(&mut self, d: &DriveNow, presence: f32) {
+        self.now = *d;
+        self.left = CONTROL as u32;
+        self.mix_step = (d.mix - self.mix) / CONTROL as f32;
+        self.presence_step = (presence - self.presence) / CONTROL as f32;
+    }
+
+    /// Starts afresh (mid-note: what was there is long out of date)
+    fn restart(&mut self) {
+        let started = self.started;
+        *self = Drive { started, restarted: true, prime_shape: true, prime_crush: true, ..Drive::default() };
+    }
+
+    /// The shape's state as if `x` had come in for ever and it had run on it at `d` (started
+    /// from nothing mid-note, it rose from silence: a jump, even faded in)
+    fn prime_shape(&mut self, d: &DriveNow, x: f32) {
+        self.prime_shape = false;
+        self.up.prime(x);
+        let w = self.shaper.prime(d.kind, x * d.gain) / d.makeup;
+        let m = x + (w - x) * self.mix;
+        self.last = x;
+        self.m1 = m;
+        self.m2 = m;
+        self.down.prime(m);
+    }
+
+    /// The crush's, as if it had just taken `x`
+    fn prime_crush(&mut self, d: &DriveNow, x: f32) {
+        self.prime_crush = false;
+        self.held = (x * d.gain).clamp(-1.0, 1.0);
+        self.count = 0.0;
+    }
+
+    /// One sample through the stage as planned
     #[inline]
+    fn run(&mut self, x: f32) -> f32 {
+        if self.left > 0 {
+            self.left -= 1;
+            if self.left == 0 {
+                self.mix = self.now.mix;
+                self.presence = (self.presence + self.presence_step).clamp(0.0, 1.0);
+            } else {
+                self.mix += self.mix_step;
+                self.presence += self.presence_step;
+            }
+        }
+        let d = self.now;
+        if self.prime_shape && shapes(d.kind) {
+            self.prime_shape(&d, x);
+        }
+        if self.prime_crush && !shapes(d.kind) {
+            self.prime_crush(&d, x);
+        }
+        let mut y = self.mixed(&d, self.mix, x);
+        if self.fade < 1.0 {
+            self.fade = (self.fade + 1.0 / FADE_IN as f32).min(1.0);
+            let was = match self.from {
+                Some(o) => self.mixed(&o, o.mix, x),
+                None => x,
+            };
+            y = was + (y - was) * self.fade;
+            if self.fade >= 1.0 {
+                self.from = None;
+            }
+        }
+        self.kept(&d, x, y)
+    }
+
+    /// How much of what comes after the stage (its cab) is heard: 1 while it's on, easing to 0
+    /// when it's turned off
+    #[inline]
+    fn presence(&self) -> f32 {
+        self.presence
+    }
+
+    #[cfg(test)]
     fn tick(&mut self, d: &DriveNow, x: f32) -> f32 {
-        let y = match d.kind {
+        let y = self.mixed(d, d.mix, x);
+        self.kept(d, x, y)
+    }
+
+    /// `x` through the stage at `mix`
+    #[inline]
+    fn mixed(&mut self, d: &DriveNow, mix: f32, x: f32) -> f32 {
+        match d.kind {
             p::CRUSH_BITS => {
                 let y = (x * d.gain).clamp(-1.0, 1.0);
                 let w = (y * d.step).round() / d.step / d.makeup;
-                x + (w - x) * d.mix
+                x + (w - x) * mix
             }
             p::CRUSH_RATE => {
                 self.count += 1.0;
@@ -666,7 +840,7 @@ impl Drive {
                     self.count -= d.step;
                     self.held = (x * d.gain).clamp(-1.0, 1.0);
                 }
-                x + (self.held / d.makeup - x) * d.mix
+                x + (self.held / d.makeup - x) * mix
             }
             _ => {
                 // Twice the rate: up, shaped, mixed, made flat, down
@@ -677,14 +851,19 @@ impl Drive {
                     // same half-sample step), so a part mix doesn't comb
                     let dry = 0.5 * (u + self.last);
                     self.last = u;
-                    let m = dry + (w - dry) * d.mix;
+                    let m = dry + (w - dry) * mix;
                     out[k] = (1.0 + 2.0 * DROOP) * self.m1 - DROOP * (m + self.m2);
                     self.m2 = self.m1;
                     self.m1 = m;
                 }
                 self.down.tick(out)
             }
-        };
+        }
+    }
+
+    /// `y` (what the stage made of `x`) kept no louder than `x`, if it keeps its level
+    #[inline]
+    fn kept(&mut self, d: &DriveNow, x: f32, y: f32) -> f32 {
         if d.follow > 0.0 {
             self.ein += (x * x - self.ein) * d.follow;
             self.eout += (y * y - self.eout) * d.follow;
@@ -734,12 +913,13 @@ impl CabNow {
 }
 
 impl Cab {
+    /// `x` through the cab, `amount` of it (the drive before it easing it in and out)
     #[inline]
-    fn tick(&mut self, c: &CabNow, x: f32) -> f32 {
+    fn tick(&mut self, c: &CabNow, amount: f32, x: f32) -> f32 {
         let h = self.hp.tick(&c.hp, x).hp;
         let o = self.lp.tick(&c.lp, h);
         let y = self.lp2.tick(&c.lp, o.lp).lp + o.bp * c.push;
-        x + (y - x) * c.mix
+        x + (y - x) * c.mix * amount
     }
 }
 
@@ -754,8 +934,14 @@ struct Band {
     hi: [Svf; 3],
     /// The lows' all-pass at the high split
     ap: Svf,
+    /// The mids and the highs. (The lows stay on time: a few samples against the mids at the low
+    /// split, under 500 Hz, is under 0.1 dB)
     drive: [Drive; 2],
     cab: Cab,
+    /// How far it has faded in from the sound going in (switched on, the split's all-pass and the
+    /// drive's lateness would jump), and running
+    fade: f32,
+    live: bool,
 }
 
 impl Band {
@@ -770,6 +956,33 @@ impl Band {
         let high = self.hi[2].tick(hi, b.hp).hp;
         let p = self.ap.tick(hi, low);
         (p.lp + p.hp - std::f32::consts::SQRT_2 * p.bp, mid, high)
+    }
+
+    /// Ready it for a stretch at `d` (`highs`: how much of the drive the highs get). The highs mix
+    /// in their stage, not after it: mixed after, the clean highs (on time) and the driven ones (a
+    /// few samples late) combed. Turned off, it runs on mixed out till the sound going in falls
+    /// silent (see Synth::process).
+    fn plan(&mut self, d: &DriveNow, highs: f32) {
+        let on = d.on();
+        self.drive[0].plan_on(d, on);
+        self.drive[1].plan_on(&DriveNow { mix: d.mix * highs, ..*d }, on);
+    }
+
+    /// One sample through it, as planned
+    #[inline]
+    fn tick(&mut self, lo: &SvfCoef, hi: &SvfCoef, cab: Option<&CabNow>, x: f32) -> f32 {
+        let (low, mid, high) = self.split(lo, hi, x);
+        let up = self.drive[0].run(mid) + self.drive[1].run(high);
+        let up = match cab {
+            Some(cb) => self.cab.tick(cb, self.drive[0].presence(), up),
+            None => up,
+        };
+        let y = low + up;
+        if self.fade < 1.0 {
+            self.fade = (self.fade + 1.0 / BAND_FADE_IN as f32).min(1.0);
+            return x + (y - x) * self.fade;
+        }
+        y
     }
 }
 
@@ -949,6 +1162,9 @@ pub struct Synth {
     struck_k: [u8; 128],
     strike: (f64, u128),
     band: [Band; 2],
+    /// How loud what goes into the band drive was in the last stretch (turned on with sound going
+    /// in, it fades in)
+    band_in: f32,
     /// The clean sub, mixed in after the effects
     sub_bus: [f32; BLOCK],
     pub out: [[f32; BLOCK]; 2],
@@ -998,6 +1214,7 @@ impl Synth {
             struck_k: [0; 128],
             strike: (f64::NAN, 0),
             band: [Band::default(); 2],
+            band_in: 0.0,
             sub_bus: [0.0; BLOCK],
             out: [[0.0; BLOCK]; 2],
             input: [[0.0; BLOCK]; 2],
@@ -1917,6 +2134,13 @@ impl Synth {
                 } else {
                     DriveNow::default()
                 };
+                // (Each side's stage alike: `&`, not `&&`, so both are planned)
+                let post_run = v.post[0].plan(&post) & v.post[1].plan(&post);
+                if v.post[0].restarted {
+                    v.cab = [Cab::default(); 2];
+                }
+                let pre_run = v.pre[0].plan(&pre) & v.pre[1].plan(&pre);
+                let pre2_run = cfg.f2_used && (v.pre[2].plan(&pre) & v.pre[3].plan(&pre));
                 let vel_gain = 1.0 - cfg.vel * (1.0 - v.vel);
                 let vol = vol_mod(m[d::VOL]);
                 let sub_gain = cfg.sub * vol_mod(m[d::SUB]);
@@ -2040,12 +2264,12 @@ impl Synth {
                         }
                         let mut x2 = bus[1][c] * 0.8;
                         // The drive before the filters (what goes to each)
-                        if pre.on() {
-                            x1 = v.pre[c].tick(&pre, x1);
-                            if cfg.f2_used {
-                                // (Its own state: filter 2's input is another sound)
-                                x2 = v.pre[c + 2].tick(&pre, x2);
-                            }
+                        if pre_run {
+                            x1 = v.pre[c].run(x1);
+                        }
+                        if pre2_run {
+                            // (Its own state: filter 2's input is another sound)
+                            x2 = v.pre[c + 2].run(x2);
                         }
                         let y1 = v.filt[0][c].tick(&c1, x1);
                         let filtered = if cfg.serial {
@@ -2056,10 +2280,10 @@ impl Synth {
                             y1
                         };
                         let y = filtered + bus[2][c] * 0.8;
-                        outc[c] = if post.on() {
-                            let w = v.post[c].tick(&post, y);
+                        outc[c] = if post_run {
+                            let w = v.post[c].run(y);
                             match &cab_post {
-                                Some(cab) => v.cab[c].tick(cab, w),
+                                Some(cab) => v.cab[c].tick(cab, v.post[c].presence(), w),
                                 None => w,
                             }
                         } else {
@@ -2140,29 +2364,39 @@ impl Synth {
             self.out[0][n] = self.dc[0].tick(self.out[0][n], dc_r);
             self.out[1][n] = self.dc[1].tick(self.out[1][n], dc_r);
         }
-        // The multiband drive: lows clean, mids and highs driven
-        if cfg.band.kind > 0 && cfg.band.mix > 0.0 {
+        // The multiband drive: lows clean, mids and highs driven. Turned on, it fades in; turned
+        // off, it runs on mixed out till what goes in is silent (switched out with sound going
+        // through, its all-pass and lateness would jump)
+        let band_on = cfg.band.kind > 0 && cfg.band.mix > 0.0;
+        if band_on && !self.band[0].live {
+            // (From silence it starts as it is: nothing to jump from)
+            let fade = if self.band_in < 1e-6 { 1.0 } else { 0.0 };
+            self.band = [Band { live: true, fade, ..Band::default() }; 2];
+        }
+        if self.band[0].live {
             let lo = SvfCoef::new(cfg.band_split.0, sr, std::f32::consts::SQRT_2);
             let hi = SvfCoef::new(cfg.band_split.1.min(sr * 0.45), sr, std::f32::consts::SQRT_2);
             let cab = if cfg.band.tone > 0.0 { Some(CabNow::new(cfg.band.tone, sr)) } else { None };
+            let mut loud = 0.0f32;
             for b in 0..nblk {
                 let dn = DriveNow::new(cfg.band.kind, cfg.band.db + gm[b][d::BAND_DRIVE] * 24.0, cfg.band.mix, cfg.band.crush).level_kept(sr);
+                for st in self.band.iter_mut() {
+                    st.plan(&dn, cfg.band_high);
+                }
                 for n in b * CONTROL..((b + 1) * CONTROL).min(frames) {
                     for c in 0..2 {
-                        let st = &mut self.band[c];
-                        let (low, mid, high) = st.split(&lo, &hi, self.out[c][n]);
-                        let dm = st.drive[0].tick(&dn, mid);
-                        let dh = high + (st.drive[1].tick(&dn, high) - high) * cfg.band_high;
-                        let up = match &cab {
-                            Some(cb) => st.cab.tick(cb, dm + dh),
-                            None => dm + dh,
-                        };
-                        self.out[c][n] = low + up;
+                        let x = self.out[c][n];
+                        loud = loud.max(x.abs());
+                        self.out[c][n] = self.band[c].tick(&lo, &hi, cab.as_ref(), x);
                     }
                 }
             }
+            if !band_on && loud < 1e-6 {
+                self.band = [Band::default(); 2];
+            }
+            self.band_in = loud;
         } else {
-            self.band = [Band::default(); 2];
+            self.band_in = self.out.iter().flat_map(|o| o[..frames].iter()).fold(0.0f32, |a, &x| a.max(x.abs()));
         }
         self.ott_on = cfg.ott > 0.0;
         if cfg.ott > 0.0 {
@@ -3400,3 +3634,7 @@ mod sound_tests;
 #[cfg(test)]
 #[path = "synth_range_tests.rs"]
 mod range_tests;
+
+#[cfg(test)]
+#[path = "synth_drive_tests.rs"]
+mod drive_tests;
