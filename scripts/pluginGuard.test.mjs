@@ -54,12 +54,12 @@ const moduleOf = (name) => {
   return modules.get(name);
 };
 /** A plugin as builtinHost makes it (its family's memory rule and its limits), unless `opts` says otherwise */
-const make = (fam, name, { Processor = Proc, offline = false, ...opts } = {}) => {
+const make = (fam, name, { Processor = Proc, ...opts } = {}) => {
   sent.length = 0;
   const index = family(fam).plugins.findIndex((p) => p.name === name);
   assert.ok(index >= 0, name);
   const p = new Processor({
-    processorOptions: { family: fam, module: moduleOf(fam), index, ...ownMemoryFor(fam, offline), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, outputGain: 10 ** ((OUTPUT_TRIMS_DB[`builtin:${fam}/${name}`] ?? 0) / 20), ...opts },
+    processorOptions: { family: fam, module: moduleOf(fam), index, ...ownMemoryFor(fam), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, outputGain: 10 ** ((OUTPUT_TRIMS_DB[`builtin:${fam}/${name}`] ?? 0) / 20), ...opts },
   });
   const ready = sent.find((m) => m.type === 'ready');
   assert.ok(ready, `${name} started`);
@@ -255,24 +255,48 @@ test("mda Loudness's output stops at +12 dB, and with both its knobs at the top 
   assert.ok(!sent.some((m) => m.type === 'fault'), 'no blow-up');
 });
 
-test('the Mutable plugins share their instance in a render (made fresh, none deleted), each its own live', () => {
-  assert.deepEqual(ownMemoryFor('mutable', false), { ownMemory: true, freshOnRestart: false });
-  assert.deepEqual(ownMemoryFor('mutable', true), { ownMemory: false, freshOnRestart: true });
-  assert.deepEqual(ownMemoryFor('faust', true), { ownMemory: false, freshOnRestart: false });
-  // A render: a context of its own (a fresh family instance), every plugin made at the start
-  const Render = processorClass();
-  const names = ['Particles', 'String and Reverb', 'Modal Voice', 'Grain Stretch', 'Resonator FM', 'Macro Oscillator'];
-  const plugins = names.map((n) => make('mutable', n, { Processor: Render, offline: true }).p);
-  plugins.forEach((p, i) => {
-    const info = family('mutable').plugins.find((x) => x.name === names[i]);
-    const r = play(p, 0.8, info.instrument ? { notes: [48, 60] } : { input: true });
-    assert.equal(r.bad, false, names[i]);
-    assert.ok(r.peak > 1e-4, `${names[i]} plays`);
-  });
-  assert.ok(new Set(plugins.map((p) => p.e)).size === 1, 'one instance');
+test('each Mutable plugin has an instance of its own, live and in a render: a render plays the same whatever came before', () => {
+  assert.deepEqual(ownMemoryFor('mutable'), { ownMemory: true });
+  assert.deepEqual(ownMemoryFor('faust'), { ownMemory: false });
+  const names = ['Particles', 'String and Reverb', 'Modal Voice'];
+  /** A render (a context of its own) making the plugins in `order`: each one's output by name */
+  const render = (order) => {
+    const Render = processorClass();
+    const made = new Map(order.map((n) => [n, make('mutable', n, { Processor: Render }).p]));
+    assert.equal(new Set([...made.values()].map((p) => p.e)).size, order.length, 'an instance each');
+    const at = scope.currentFrame;
+    return names.map((n) => {
+      scope.currentFrame = at;
+      const out = samples(made.get(n), 0.8, { notes: [48, 60, 79] });
+      for (const ch of out) assert.ok(ch.every(Number.isFinite), n);
+      return out;
+    });
+  };
+  const a = render(names);
+  const b = render([...names].reverse());
+  a.forEach((outs, k) => assert.ok(outs.every((ch, c) => ch.every((v, i) => v === b[k][c][i])), `${names[k]} the same`));
 });
 
-/** The loudest sample of one note (velocity 127) over 1.5 s, held for 1 s */
+test('a plugin let go lets go of its WebAssembly instance (a shared one with the last of its family)', () => {
+  const Ctx = processorClass();
+  const own = make('mutable', 'Particles', { Processor: Ctx }).p;
+  own.message({ type: 'destroy' });
+  assert.equal(own.e, null);
+  assert.equal(own.buf, null);
+  const one = make('faust', 'Marimba Model', { Processor: Ctx }).p;
+  const two = make('faust', 'Flute Model', { Processor: Ctx }).p;
+  const shared = one.e;
+  assert.equal(two.e, shared);
+  one.message({ type: 'destroy' });
+  // (The family stays while a plugin of it is left)
+  assert.equal(make('faust', 'Karplus String', { Processor: Ctx }).p.e, shared);
+  two.message({ type: 'destroy' });
+  sent.length = 0;
+  one.message({ type: 'sync', id: 7 });
+  assert.ok(sent.some((m) => m.type === 'synced' && m.id === 7), 'still answers a sync');
+});
+
+/** The loudest sample of one note (velocity 127) over 3 s, held */
 const notePeak = (fam, name, note, opts = {}) => {
   const { p } = make(fam, name, { Processor: Uncapped, ...opts });
   return play(p, 3, { notes: [note], velocity: 127 }).peak;
@@ -296,6 +320,30 @@ test('the phaser on a narrow notch near the top of its range no longer rings up 
     assert.ok(!r.bad && r.peak < 2, `feedback ${feedback}: ${dbfs(r.peak)} dBFS`);
     assert.ok(!sent.some((m) => m.type === 'fault'), `feedback ${feedback} blew up`);
   }
+});
+
+test("the phaser's resonance at the far ends of its settings keeps a -3 dBFS saw near full scale", () => {
+  const { ready } = make('faust', 'Phaser', { limits: null });
+  const at = (name) => ready.params.findIndex((x) => x.name.startsWith(name));
+  // Its loudest found: the narrowest, fastest notches, full feedback and output (+21 dBFS in vibrato mode before)
+  const values = ready.defaults.slice();
+  Object.entries({ Invert: 1, Speed: 1, 'Notch depth': 0.98, 'Feedback gain': 1, 'Notch width': 0, 'Min notch1': 0, 'Max notch1': 0.8, 'Notch freq ratio': 0.2, 'Phaser output level': 1 }).forEach(([k, v]) => (values[at(k)] = v));
+  // Vibrato mode (the delayed sound alone) plays a saw 2 to 4 dB louder at its defaults too, its peaks higher still
+  for (const [vibrato, most] of [[0, 1.5], [1, 7]])
+    for (const hz of [77, 225, 400, 965]) {
+      values[at('Vibrato')] = vibrato;
+      const { p } = make('faust', 'Phaser', { values, Processor: Uncapped });
+      let peak = 0;
+      for (let b = 0; b < (1.5 * sr) / 128; b++) {
+        const f = scope.currentFrame;
+        const saw = Float32Array.from({ length: 128 }, (_, k) => 0.7 * (2 * (((hz * (f + k)) / sr) % 1) - 1));
+        const out = [new Float32Array(128), new Float32Array(128)];
+        p.process([[saw, saw]], [out]);
+        for (const c of out) for (const v of c) peak = Math.max(peak, Math.abs(v));
+        scope.currentFrame += 128;
+      }
+      assert.ok(peak < 10 ** (most / 20), `vibrato ${vibrato}, ${hz} Hz: ${dbfs(peak)} dBFS`);
+    }
 });
 
 test('Modal Voice bowed hard into strings with full damping plays its notes instead of blowing up', () => {

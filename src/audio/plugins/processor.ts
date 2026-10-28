@@ -20,8 +20,10 @@
  * from a plugin that was there before it: the Mutable Instruments family), and `limits` holds
  * parameters (by name) inside the range they're safe in, whatever is set or saved (see
  * paramLimits.ts), and `outputGain` scales what it plays (a plugin too loud as it was made).
- * `freshOnRestart`: started again after a blow-up in an instance of its own even when it shares
- * one (the family's own-memory rule, in a render: see ownMemoryFor in paramLimits.ts).
+ * On `destroy` the processor lets go of its instance (one of its own, or its share of the
+ * family's, which goes with the family's last plugin), so its memory can be freed: Chromium keeps
+ * an export's OfflineAudioContext and its processors once a worklet module went into it, and only
+ * about 124 WebAssembly memories fit in a page.
  * Whatever it plays is held under OUTPUT_CEILING (+12 dBFS): only samples past it change.
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
@@ -50,12 +52,23 @@ const CEILING = ${OUTPUT_CEILING};
 const families = new Map();
 const insertTimedEvent = ${insertTimedEvent.toString()};
 
+/** The family's shared instance, made with its first plugin; counted, so the last to go lets it go. */
 function familyOf(name, module) {
   let fam = families.get(name);
-  if (fam) return fam;
-  fam = instantiate(name, module);
-  families.set(name, fam);
+  if (!fam) {
+    fam = instantiate(name, module);
+    fam.users = 0;
+    families.set(name, fam);
+  }
+  fam.users++;
   return fam;
+}
+
+/** A plugin of the family has gone: with the last, its instance goes too (a later one starts afresh). */
+function leaveFamily(name, fam) {
+  if (families.get(name) !== fam) return;
+  fam.users--;
+  if (fam.users <= 0) families.delete(name);
 }
 
 /** A new instance of a family's WebAssembly, with its memory fresh (zeroed). */
@@ -126,7 +139,6 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.module = o.module;
     this.index = o.index;
     this.ownMemory = !!o.ownMemory;
-    this.freshOnRestart = !!o.freshOnRestart;
     this.limitNames = o.limits || null;
     this.outputGain = Number.isFinite(o.outputGain) && o.outputGain > 0 ? o.outputGain : 1;
     this.limits = [];
@@ -138,7 +150,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.resetAt = -Infinity;
     this.reported = false;
     try {
-      this.e = (this.ownMemory ? instantiate(o.family, o.module) : familyOf(o.family, o.module)).e;
+      this.fam = this.ownMemory ? null : familyOf(o.family, o.module);
+      this.e = (this.fam || instantiate(o.family, o.module)).e;
       this.h = this.e.bb_create(o.index, sampleRate);
       if (!this.h) throw new Error('no plugin ' + o.index + ' in ' + o.family);
       this.n = this.e.bb_params(this.h);
@@ -164,6 +177,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       for (let i = 0; i < this.programs; i++) programs.push(readString(this.e, this.e.bb_program_name(this.h, i)));
       this.port.postMessage({ type: 'ready', params: this.describe(), defaults, programs, program: this.program() });
     } catch (err) {
+      this.alive = false;
+      this.release();
       this.port.postMessage({ type: 'error', message: String(err && err.message || err) });
     }
   }
@@ -238,16 +253,12 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } catch (err) {
       // (Its memory may be what went wrong: a new instance below)
     }
-    // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone (as
-    // does one of a family that reads memory it never set, sharing its instance in a render: the
-    // memory its destroyed self leaves would be the trouble)
-    if (this.ownMemory || this.freshOnRestart) {
-      this.e = instantiate(this.familyName, this.module).e;
-      this.ownMemory = true;
-    }
+    // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone
+    if (this.ownMemory) this.e = instantiate(this.familyName, this.module).e;
     this.h = this.e.bb_create(this.index, sampleRate);
     if (!this.h) {
       this.alive = false;
+      this.release();
       return;
     }
     this.n = this.e.bb_params(this.h);
@@ -328,8 +339,28 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (d.type === 'destroy') {
       this.alive = false;
       this.events.length = 0;
-      this.e.bb_destroy(this.h);
+      try {
+        this.e.bb_destroy(this.h);
+      } catch (err) {
+        // (Its memory may be what went wrong: it's let go below anyway)
+      }
+      this.release();
     }
+  }
+
+  /**
+   * Let go of everything that holds its WebAssembly memory (its instance, the views into it, the
+   * module, the preset and table it kept), so the memory is freed even while the context stays.
+   */
+  release() {
+    if (this.fam) leaveFamily(this.familyName, this.fam);
+    this.fam = null;
+    this.e = null;
+    this.mem = null;
+    this.buf = null;
+    this.module = null;
+    this.presetData = null;
+    this.tableData = null;
   }
 
   /** Apply the automation events whose time has come (notes wait for process()). */

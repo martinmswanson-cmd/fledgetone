@@ -23,16 +23,25 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
   // Output level -70 to +12 dB (of -70 to +40 dB)
   'builtin:faust/Studio Hall': { Level: [0, 0.7455] },
   'builtin:faust/Plate Reverb': { Level: [0, 0.7455] },
-  // Feedback -0.9 to +0.9 (of -1 to +1); notches no higher than 2885 Hz (Max, of 10000) and 2879 Hz
-  // (Min, of 5000) a ratio of at most 1.68 apart (of 4): its four notches' top one stays under
-  // 14 kHz. Past that the top notches went over half the sample rate, and with any feedback the
-  // phaser rang up to +32 dBFS, or blew up (+60), on a plain tone
+  // Notches no higher than 2885 Hz (Max, of 10000) and 2879 Hz (Min, of 5000) a ratio of at most
+  // 1.68 apart (of 4): its four notches' top one stays under 14 kHz. Past that the top notches went
+  // over half the sample rate, and with any feedback the phaser rang up to +32 dBFS, or blew up (+60),
+  // on a plain tone. Then its resonance: feedback -0.3 to +0.3 (of -1 to +1), notches 416 Hz wide
+  // or more (of 10), sweeping at 3 Hz at most (of 10) and its output at 0 dB at most (of +10): at
+  // the far ends of those a saw at -3 dBFS came out at up to +21 dBFS (narrow, fast notches in
+  // vibrato mode, full feedback); now at most about +0.5 (+6 in vibrato mode, which plays the
+  // delayed sound alone, 2 to 4 dB louder at its defaults too, and +5.8 with no feedback at all).
+  // Its defaults (feedback 0, 1000 Hz wide, 0.5 Hz, 0 dB) are inside
   'builtin:faust/Phaser': {
-    'Feedback gain': [0.05, 0.95],
+    'Feedback gain': [0.35, 0.65],
+    'Notch width': [0.6, 1],
+    Speed: [0, 0.3],
+    'Phaser output level': [0, 0.8572],
     'Min notch1 freq': [0, 0.9],
     'Max notch1 freq': [0, 0.8],
     'Notch freq ratio: notch freq(n+1)/Notch freq(n)': [0, 0.2],
   },
+
   // Output -60 to +12 dB (of -60 to +60 dB: 0.5 is 0 dB, 60 (2v - 1)^2 dB over it)
   'builtin:mda/Loudness': { Output: [0, 0.7236] },
   // Damping 0 to 0.9 (its default is 0.4): bowed (0.9 and up) into a string or strings with the
@@ -54,18 +63,12 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
 export const OWN_MEMORY_FAMILIES: ReadonlySet<string> = new Set(['mutable']);
 
 /**
- * Whether a plugin of `family` gets an instance of its own, in a live context or a render
- * (`offline`). Only live: in a render every plugin is made at the start into the family's fresh
- * (zeroed) instance and none is deleted before the end, so none can find another's leftovers; and
- * Chromium never frees a render's instances (an OfflineAudioContext an AudioWorklet module went
- * into stays), about 124 WebAssembly memories in all fit in a page, so one per plugin per render ran
- * out after some 25 exports of a song with five of them, and every plugin failed to load after.
- * A shared one started again after a blow-up still gets a fresh instance (`freshOnRestart`).
+ * Whether a plugin of `family` gets an instance of its own: the same live and in a render (an
+ * export sounds as the song does, and the same every time; shared in a render, the Mutable models
+ * read what the others had left in memory and three of them exported three ways in four renders).
+ * Each instance is let go when its plugin is (see release in processor.ts).
  */
-export const ownMemoryFor = (family: string, offline: boolean): { ownMemory: boolean; freshOnRestart: boolean } => {
-  const own = OWN_MEMORY_FAMILIES.has(family);
-  return { ownMemory: own && !offline, freshOnRestart: own && offline };
-};
+export const ownMemoryFor = (family: string): { ownMemory: boolean } => ({ ownMemory: OWN_MEMORY_FAMILIES.has(family) });
 
 /**
  * Built-in plugins turned down as a whole (dB), by address: ones whose loudest notes stood far
