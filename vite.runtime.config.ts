@@ -4,8 +4,14 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   publicDir: false,
   // Library mode leaves these for the bundler that uses it; this file runs as it is in a browser
-  // (VITE_BOS_RUNTIME: the plugins' WebAssembly is found next to bos-player.js, see pluginSources.ts)
-  define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'import.meta.env.VITE_BOS_RUNTIME': JSON.stringify('1') },
+  // (VITE_BOS_RUNTIME: the plugins' WebAssembly is found next to bos-player.js, see pluginSources.ts.
+  // VITE_GPL_PLUGINS: it knows the GPL-licensed families too, so it plays one a kit carries (with its
+  // licence: see runtimeKit.ts); it downloads only the plugins a song plays)
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'import.meta.env.VITE_BOS_RUNTIME': JSON.stringify('1'),
+    'import.meta.env.VITE_GPL_PLUGINS': JSON.stringify('1'),
+  },
   build: {
     outDir: 'dist-runtime',
     emptyOutDir: true,

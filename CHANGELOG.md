@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **GPL plugins in the web runtime kit**: a song that plays Surge XT, Dragonfly, Plateau or the Tonewheel Organ no longer stops the kit. A small window says what the GPL asks of a game, who made the plugin and how to reach them, and lets you export with it or cancel; the kit then plays it, with its licence and a notice of where its source is. A **GPL** tag marks these plugins in the plugin browser, the Plugins menu and their windows.
+
 ## 2026.10.28-3 — Two tabs, keyboard clips, game states on bar lines and more fixes
 
 - **Two tabs, one song**: if the song is also open in another tab, that tab's changes are kept as a version ("from another tab" in **File › Versions**) instead of being written over, and the project bar says so. **Free unused** keeps the sounds a song in another tab uses, and **Save** tells you if a sound the song uses couldn't go in the file.

@@ -26,6 +26,7 @@ import { LESSONS } from '../../tour/lessons';
 import { useTourStore } from '../../tour/tourStore';
 import { installApp, usePwa } from '../../pwa/pwa';
 import { chooseInterface } from '../../pocket/pocketMode';
+import { GPL_TAG_TIP } from '../../audio/plugins/gplCredits';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -297,7 +298,8 @@ const MENUS: MenuDef[] = [
         { label: fxTrack ? `Add effect to “${fxTrack.name}”…` : 'Add effect to a track…', run: browse(), disabled: !fxTrack },
         ...PLUGIN_SHORTCUTS.map((c, i) => ({ label: `${c.label}…`, run: c.category === 'Instruments' ? () => ui().setPluginBrowser({ trackId: null, category: c.category }) : browse(c.category), divider: i === 0 })),
         ...favourites.map((e, i) => ({
-          label: `★ ${e.info.name}${e.info.instrument ? ' (new track)' : fxTrack ? ` on “${fxTrack.name}”` : ''}`,
+          label: `★ ${e.info.name}${e.family.gpl ? ' · GPL' : ''}${e.info.instrument ? ' (new track)' : fxTrack ? ` on “${fxTrack.name}”` : ''}`,
+          ...(e.family.gpl ? { title: GPL_TAG_TIP } : {}),
           run: () => (e.info.instrument || fxTrack ? void addBuiltinPlugin(e, fxTrack?.id ?? null) : NEED_TRACK),
           divider: i === 0,
         })),

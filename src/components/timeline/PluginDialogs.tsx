@@ -18,6 +18,8 @@ import {
 import { showToast } from './toastStore';
 import { freezeIsCurrent } from '../../store/freeze';
 import { useSoundLibrary } from '../../audio/soundLibrary';
+import { GplTag } from '../GplTag';
+import { findBuiltin } from '../../audio/plugins/builtinHost';
 
 /**
  * Web Audio Module plugins in the app: the dialog that adds one by URL (as a new Plugin track's
@@ -256,6 +258,7 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
       <div className="flex items-center gap-2 px-3 h-8 border-b border-forge-border cursor-move select-none" onPointerDown={drag}>
         <Plug className="w-3.5 h-3.5 text-fuchsia-300" />
         <span className="text-xs font-semibold text-forge-text truncate">{plugin.name}</span>
+        {findBuiltin(plugin.url)?.family.gpl && <GplTag />}
         <span className="text-[10px] text-forge-muted truncate">on {track?.name}</span>
         <div className="ml-auto flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
           {isFx && (
