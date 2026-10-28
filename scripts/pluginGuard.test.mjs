@@ -322,6 +322,30 @@ test('the phaser on a narrow notch near the top of its range no longer rings up 
   }
 });
 
+test("the phaser's resonance at the far ends of its settings keeps a -3 dBFS saw near full scale", () => {
+  const { ready } = make('faust', 'Phaser', { limits: null });
+  const at = (name) => ready.params.findIndex((x) => x.name.startsWith(name));
+  // Its loudest found: the narrowest, fastest notches, full feedback and output (+21 dBFS in vibrato mode before)
+  const values = ready.defaults.slice();
+  Object.entries({ Invert: 1, Speed: 1, 'Notch depth': 0.98, 'Feedback gain': 1, 'Notch width': 0, 'Min notch1': 0, 'Max notch1': 0.8, 'Notch freq ratio': 0.2, 'Phaser output level': 1 }).forEach(([k, v]) => (values[at(k)] = v));
+  // Vibrato mode (the delayed sound alone) plays a saw 2 to 4 dB louder at its defaults too, its peaks higher still
+  for (const [vibrato, most] of [[0, 1.5], [1, 7]])
+    for (const hz of [77, 225, 400, 965]) {
+      values[at('Vibrato')] = vibrato;
+      const { p } = make('faust', 'Phaser', { values, Processor: Uncapped });
+      let peak = 0;
+      for (let b = 0; b < (1.5 * sr) / 128; b++) {
+        const f = scope.currentFrame;
+        const saw = Float32Array.from({ length: 128 }, (_, k) => 0.7 * (2 * (((hz * (f + k)) / sr) % 1) - 1));
+        const out = [new Float32Array(128), new Float32Array(128)];
+        p.process([[saw, saw]], [out]);
+        for (const c of out) for (const v of c) peak = Math.max(peak, Math.abs(v));
+        scope.currentFrame += 128;
+      }
+      assert.ok(peak < 10 ** (most / 20), `vibrato ${vibrato}, ${hz} Hz: ${dbfs(peak)} dBFS`);
+    }
+});
+
 test('Modal Voice bowed hard into strings with full damping plays its notes instead of blowing up', () => {
   const { ready } = make('mutable', 'Modal Voice', { limits: null });
   const values = ready.defaults.slice();
