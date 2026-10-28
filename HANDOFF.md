@@ -213,6 +213,17 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Bug cycle round 2** (2026.10.28-3): audio clip edits along the tempo map (`playsAlongMap`,
+  `soundShift`, `barsForSeconds`, retime too); two-tab autosave (`tab` id, 'otherTab' versions,
+  `useOtherTab`); share-link notes sorted by tick only; Pocket section jumps (`sectionJump`), linked
+  copies cut at section edges (`cutAtEdges`), shared sections memo; Edit menu routed to the roll
+  (`pianoPanel` note actions), `actionSelect` for action menus, keyboard clips (roving tabindex per
+  lane); game kit `gridTimes` (barTimes/beatTimes/tempoChanges in manifests and all players),
+  measure-based sections, runtime kit bundles plugin wasm; plugin limits for Phaser/Modal/Ominous +
+  output trims (setBfree, mda EPiano, Analog Snare, Modal Voice), choir loud-layer cents. Open: Phaser
+  vibrato mode reaches about +6 dBFS; seek doesn't release sounding notes; Wwise has one tempo per
+  state; Piano Model's first render after load differs from later ones.
+
 - **Hotfix** (2026.10.28-2): game intro+loop normalize capped by the intro's true peak too (`sharedGainDb`);
   plugin output clamped to ±4 after the guard; mda Loudness Output limit; Mutable own memory only in live
   contexts (`ownMemoryFor`); superseded by 2026.10.28-3 (own memory everywhere, freed on destroy).
