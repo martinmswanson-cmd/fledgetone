@@ -37,6 +37,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   const zoom = useTimelineStore((s) => s.zoom);
   // Only this track's clips: an edit on another track doesn't re-render this lane
   const trackClips = useTimelineStore(useShallow((s) => s.clips.filter((c) => c.trackId === track.id)));
+  // The lane's one Tab stop: its selected clip, else its first (Ctrl+arrows go along the lane)
+  const tabStopId = (trackClips.find((c) => c.isSelected) ?? trackClips.reduce<(typeof trackClips)[number] | undefined>((first, c) => (!first || c.startBar < first.startBar ? c : first), undefined))?.id;
   const dragging = useTimelineStore((s) => s.draggingInstrument);
   // Faint lines on every 16th when zoomed in for detail work (once they're 16px apart). A whole zoom
   // makes that a whole number of 1/64 px, so a repeating background stays exact. With Frame snap,
@@ -136,7 +138,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       <LaneFrameGrid />
       {!plainMeter && <LaneMeterGrid />}
       {trackClips.map((clip) => (
-        <ClipView key={clip.id} clip={clip} track={track} originRef={originRef} onOpenMenu={onOpenMenu} />
+        <ClipView key={clip.id} clip={clip} track={track} originRef={originRef} onOpenMenu={onOpenMenu} tabStop={clip.id === tabStopId} />
       ))}
       {automation?.open && <AutomationLane track={track} param={automation.param} />}
 

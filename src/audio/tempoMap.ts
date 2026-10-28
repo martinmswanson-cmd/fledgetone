@@ -348,3 +348,39 @@ export function beatsBetween(from: number, to: number, map: MeterMap): Array<{ b
   }
   return out;
 }
+
+/**
+ * Where the bar lines and beats of [from, to) fall, in seconds from `from`, when the tempo or the
+ * time signature changes in there, or it starts part-way through a measure (a game player can't
+ * find them from one beat length then); null when they run evenly from `from`. A beat is the
+ * meter's own (an eighth in 6/8).
+ */
+export function gridTimes(
+  from: number,
+  to: number,
+  tempo: Tempo,
+  meter: MeterMap
+): { barTimes: number[]; beatTimes: number[]; tempoChanges: Array<{ seconds: number; bpm: number; timeSignature: [number, number] }> } | null {
+  // (From the measure `from` is in: its later beats are the state's too)
+  const all = measuresBetween(measureAt(from + EPS, meter).start, to, meter);
+  const measures = all.filter((m) => m.bar >= from - 1e-6);
+  const at = (bar: number) => +secondsBetween(from, bar, tempo).toFixed(6);
+  const beats = all.flatMap((m) => Array.from({ length: m.meter.num }, (_, k) => m.bar + k / m.meter.den)).filter((b) => b >= from - 1e-6 && b < to - 1e-6);
+  const barTimes = measures.map((m) => at(m.bar));
+  const beatTimes = beats.map(at);
+  const even = beatTimes.every((x, i) => i < 2 || Math.abs(x - beatTimes[i - 1] - (beatTimes[1] - beatTimes[0])) < 1e-5);
+  const oneMeter = measures.every((m) => m.meter.num === measures[0].meter.num && m.meter.den === measures[0].meter.den);
+  // (A state starting part-way through a measure has its bar lines off its start, too)
+  const steady = even && oneMeter && measures.length > 0 && Math.abs(measures[0].bar - from) < 1e-6;
+  if (steady) return null;
+  // Where the tempo or time signature changes, a bar at a time (a glide, as each bar's own tempo),
+  // for tools that keep tempo markers (FMOD)
+  const tempoChanges: Array<{ seconds: number; bpm: number; timeSignature: [number, number] }> = [];
+  measures.forEach((m, i) => {
+    const end = measures[i + 1]?.bar ?? Math.min(to, m.bar + m.meter.num / m.meter.den);
+    const bpm = +(((end - m.bar) * 240) / Math.max(1e-9, secondsBetween(m.bar, end, tempo))).toFixed(2);
+    const last = tempoChanges[tempoChanges.length - 1];
+    if (!last || Math.abs(last.bpm - bpm) > 0.005 || last.timeSignature[0] !== m.meter.num || last.timeSignature[1] !== m.meter.den) tempoChanges.push({ seconds: barTimes[i], bpm, timeSignature: [m.meter.num, m.meter.den] });
+  });
+  return { barTimes, beatTimes, tempoChanges };
+}

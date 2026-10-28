@@ -74,4 +74,29 @@ test('state names: a song without markers has phrase states, and names that make
   // A lone marker at bar 1 doesn't make sections of its own
   assert.deepEqual(stateNames(songSections([clip], [{ id: 'm', name: 'Explore', bar: 1, anchor: 'bar' }])), ['Bars 1-8', 'Bars 9-16']);
   assert.deepEqual(stateNames([{ name: 'Boss/Fight' }, { name: 'Boss-Fight' }, { name: 'Calm' }]), ['Boss/Fight', 'Boss-Fight 2', 'Calm']);
+  // Names that differ only in case make one file on Windows and macOS
+  assert.deepEqual(stateNames([{ name: 'Drop' }, { name: 'drop' }]), ['Drop', 'drop 2']);
+});
+
+test('a 4/4 song without markers has the same phrases as ever, with or without its meter', () => {
+  // (How they were made before measures counted: 8 bars, or 4 in a song under 16 bars)
+  const before = (end) => {
+    const phrase = end - 1 >= 16 ? 8 : 4;
+    const out = [];
+    for (let b = 1; b < end; b += phrase) out.push({ name: `Bars ${b}-${Math.min(end, b + phrase) - 1}`, from: b, to: Math.min(end, b + phrase) });
+    return out;
+  };
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  for (let len = 0.5; len <= 70; len += 0.75) {
+    const c = [{ id: 'c', trackId: 't', name: '', startBar: 1, lengthBars: len, notes: [], isSelected: false }];
+    const want = before(songEnd(c));
+    for (const meter of [undefined, four]) assert.deepEqual(songSections(c, [], meter).map(({ name, from, to }) => ({ name, from, to })), want, `${len} bars`);
+  }
+});
+
+test('in 3/4 a song without markers is cut into phrases of whole measures', () => {
+  const c = [{ id: 'c', trackId: 't', name: '', startBar: 1, lengthBars: 18, notes: [], isSelected: false }];
+  // 18 bars of 4/4 are 24 measures of 3/4 (0.75 of a bar each)
+  const s = songSections(c, [], { base: { num: 3, den: 4 }, points: [] });
+  assert.deepEqual(s.map(({ name, from, to }) => [name, from, to]), [['Bars 1-8', 1, 7], ['Bars 9-16', 7, 13], ['Bars 17-24', 13, 19]]);
 });

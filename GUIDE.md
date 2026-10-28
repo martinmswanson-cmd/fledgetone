@@ -1354,7 +1354,7 @@ What's inside:
 - `stems/<state>/`: when tracks have stem groups, the same loop split by group (tracks without a group go in **Main**), every stem exactly the same length: played together at full level they make the mix.
 - `transitions/`: the fill, riser and impact sounds your rules use (a fill or a riser starts just before the switch; an impact on it) and the bridges (`bridge into <state>.wav`: it plays on the switch and the state comes in after it), and `stingers/`: every stinger.
 - `sfx/`: the song's sound effects (added with **Add to game** in the Sound FX tab), each with its variations (`sword_hit_01.wav`, `sword_hit_02.wav`...). Looping ones (an engine, the rain) carry loop points.
-- `audio_manifest.json`: the tempo, the time signature, the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code, and every sound effect with its files.
+- `audio_manifest.json`: the tempo, the time signature, the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples, and where its bar lines and beats are when the tempo or time signature changes inside it, which the players switch on), the transition rules by state name, every stinger (with how many bars it bridges), each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code, and every sound effect with its files.
 - Ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity, sound effects): `adaptive-music.js` for a web game, `AdaptiveMusic.gd` for Godot 4, and `AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger`, `playSfx` / `play_sfx` / `PlaySfx` (a different variation each time, never the same one twice in a row; a looping sound plays until stopped), `stopSfx` / `stop_sfx` / `StopSfx`, and `stop`. Sound effects have their own volume (`setSfxVolume`, `sfxVolume`, or Godot's `sfx_bus`).
 - A README that says how to drop it in, with your own state, stinger and sound names in the examples.
 
@@ -1435,6 +1435,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Shift / Ctrl / Cmd + click | Add to or remove from the selection |
 | Double-click empty lane (Selection tool) | New 1-bar clip |
 | Double-click a clip (Selection tool) | Edit its notes (with the Razor, right-click > Edit notes) |
+| `Tab` to a clip (one stop per track; `Ctrl+←` / `Ctrl+→` for the one before or after on the track) | `Enter` opens it, `Delete` deletes it, `←` / `→` move it a grid step (Shift: a bar), the menu key or `Shift+F10` opens its menu |
 | Double-click a VOL or PAN slider | Reset it |
 | Double-click the Swing slider | Set swing to 0% |
 

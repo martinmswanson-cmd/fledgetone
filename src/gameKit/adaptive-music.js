@@ -138,12 +138,21 @@ export class AdaptiveMusic {
    * The audio time of the next line of the state playing now: a 'bar' or 'beat', a 'phrase'
    * (every `phraseBars` bars from the state's start), or the 'end' of its loop (or piece).
    */
-  nextLine(unit = 'bar', phraseBars = 4) {
+  nextLine(unit = 'bar', phraseBars = 4, ahead = 0) {
     const now = this.ctx.currentTime + 0.02;
     if (!this.current || unit === 'now') return now;
     // Where the bar lines run from: the piece playing now (or, in a silence, the next one)
     const from = this.current.gridStart(now);
     if (from >= now) return from;
+    // A state whose tempo or time signature changes inside it: its own bar lines and beats
+    const lines = this.gridLines(unit, phraseBars);
+    if (lines) {
+      const piece = this.current.pieces?.find((p) => now >= p.at - 1e-3 && now < p.end);
+      const pos = piece ? this.current.bounds[piece.index][0] + (now - piece.at) : (now - from) % this.current.seconds;
+      const at = now + AdaptiveMusic.untilLine(lines, this.current.seconds, pos, ahead);
+      // (The next piece, which may be any of them, starts on a bar line)
+      return piece && ahead <= piece.end - now ? Math.min(at, piece.end) : at;
+    }
     if (unit === 'end') {
       const piece = this.current.pieces?.find((p) => now >= p.at - 1e-3 && now < p.end);
       if (piece) return piece.end;
@@ -151,6 +160,27 @@ export class AdaptiveMusic {
     }
     const line = this.lineFor(unit, phraseBars);
     return from + Math.ceil((now - from) / line - 1e-6) * line;
+  }
+
+  /**
+   * The lines of `unit` in the state playing now, in seconds into its loop as the costume on now
+   * plays it, when the manifest gives them (barTimes, beatTimes: a state whose tempo or time
+   * signature changes inside it); null when one line length finds them.
+   */
+  gridLines(unit, phraseBars = 4) {
+    const st = this.current && this.data.states.find((s) => s.name === this.current.name);
+    const times = unit === 'beat' ? st?.beatTimes : unit === 'bar' || unit === 'phrase' ? st?.barTimes : null;
+    if (!times?.length) return null;
+    const tempo = this.current.tempo ?? 1;
+    return times.filter((_, i) => unit !== 'phrase' || i % phraseBars === 0).map((t) => t / tempo);
+  }
+
+  /** Seconds from `pos` (seconds into a loop `loop` long) to the first of `lines` at least `ahead` on, going round the loop. */
+  static untilLine(lines, loop, pos, ahead = 0) {
+    const target = pos + ahead - 1e-6;
+    const base = Math.floor(target / loop) * loop;
+    const t = lines.find((x) => x >= target - base);
+    return (t !== undefined ? base + t : base + loop + lines[0]) - pos;
   }
 
   /** How long a line of `unit` is in the state playing now. */
@@ -282,7 +312,7 @@ export class AdaptiveMusic {
       g.connect(bus);
       groups.set(group, g);
     }
-    const playing = { name: state.name, startTime: at, fade, tempo, bus, groups, sources: new Set(), pieces: [], gridStart: () => at };
+    const playing = { name: state.name, startTime: at, fade, tempo, seconds, bus, groups, sources: new Set(), pieces: [], gridStart: () => at };
     if (!state.shuffleBars && !state.gap) {
       const offset = (from % 1) * seconds;
       for (const { file, group } of parts) {
@@ -299,13 +329,17 @@ export class AdaptiveMusic {
     }
     // Pieces: bar-line boundaries a few bars (measures of the state's own time signature) apart,
     // the whole loop when it isn't shuffled
-    const bars = AdaptiveMusic.measures(state, this.data);
+    // (On the state's own bar lines where the manifest gives them: its tempo changes inside it)
+    const lines = state.barTimes?.length ? state.barTimes.map((t) => (t * seconds) / state.seconds) : null;
+    const bars = lines ? lines.length : AdaptiveMusic.measures(state, this.data);
     const each = state.shuffleBars && state.shuffleBars < bars ? state.shuffleBars : bars;
+    const lineAt = (b) => (b >= bars ? seconds : !lines ? (b / bars) * seconds : b === 0 ? 0 : lines[b]);
     const bounds = [];
-    for (let b = 0; b < bars - 1e-6; b += each) bounds.push([(b / bars) * seconds, (Math.min(bars, b + each) / bars) * seconds]);
+    for (let b = 0; b < bars - 1e-6; b += each) bounds.push([lineAt(b), lineAt(Math.min(bars, b + each))]);
     playing.bounds = bounds;
     // The piece `from` falls in, then the rest of the pass in order (or shuffled)
-    const first = Math.min(bounds.length - 1, Math.floor((from % 1) * bars / each));
+    let first = 0;
+    while (first + 1 < bounds.length && bounds[first + 1][0] <= (from % 1) * seconds + 1e-9) first++;
     const startIn = (from % 1) * seconds - bounds[first][0];
     playing.queue = [first, ...this.order(bounds.length, first, state.shuffleBars).filter((i) => i !== first)];
     playing.next = at - startIn;
@@ -452,9 +486,9 @@ export class AdaptiveMusic {
     const r = this.rule(name);
     const q = unit ?? r.quantize ?? 'bar';
     const line = q === 'end' && this.current.loopSeconds ? this.current.loopSeconds : this.lineFor(q, r.phraseBars);
-    let at = this.nextLine(q, r.phraseBars);
     const lead = r.leadInSeconds ?? 0;
     // A riser needs its whole lead-in: wait another line if there isn't room
+    let at = this.nextLine(q, r.phraseBars, this.gridLines(q, r.phraseBars) ? lead : 0);
     while (at - this.ctx.currentTime < lead) at += line;
     const old = this.current;
     if (r.kind === 'crossfade') {

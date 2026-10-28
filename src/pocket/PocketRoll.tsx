@@ -27,6 +27,7 @@ import { penBars, rememberPen } from '../store/penLength';
 import { PocketSteps, POCKET_LANE_H } from './PocketSteps';
 import { bendSupport, slideOf, withDive, withSlide } from '../store/slides';
 import { showToast } from '../components/timeline/toastStore';
+import { scrollBehavior } from '../components/reducedMotion';
 
 const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
@@ -352,7 +353,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track); const next = PEN_LENS.find(([l]) => l > len)?.[0] ?? PEN_LENS[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
               {lenName(penSteps(track))}
             </button>
-            <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: 'smooth' }); }}>
+            <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: scrollBehavior() }); }}>
               <Home className="w-4 h-4" />
             </button>
             {!slices && (

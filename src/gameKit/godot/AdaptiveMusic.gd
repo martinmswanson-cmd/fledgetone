@@ -245,16 +245,41 @@ func _curve_level(group, x: float) -> float:
 			return float(c[c.size() - 1][1])
 	return 1.0
 
-## Seconds from now to the next bar (or "beat") line of the state playing now.
+## Seconds from now to the next bar (or "beat") line of the state playing now, at least `ahead` away.
 ## A "phrase" is `phrase_bars` bars from the state's start; "end" is where its loop comes round.
-func time_to_next(unit := "bar", phrase_bars := 4) -> float:
+func time_to_next(unit := "bar", phrase_bars := 4, ahead := 0.0) -> float:
 	if _voices.is_empty() or unit == "now":
 		return 0.0
 	var line := _line(unit, phrase_bars)
 	var p: AudioStreamPlayer = _voices[0].player
 	var pos := p.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()
+	# A state whose tempo or time signature changes inside it: its own bar lines and beats
+	var lines := _grid_lines(unit, phrase_bars)
+	if not lines.is_empty():
+		var loop := float(_dressed(_current_state())[1])
+		return _until_line(lines, loop, fmod(pos, loop), maxf(ahead, 0.01))
 	var left := line - fmod(pos, line)
 	return left if left > 0.01 else left + line
+
+## The lines of `unit` in the state playing now (seconds into its loop, as the costume on now plays
+## it) when the manifest gives them (barTimes, beatTimes); empty when one line length finds them.
+func _grid_lines(unit: String, phrase_bars := 4) -> Array:
+	var st := _current_state()
+	var times: Array = st.get("beatTimes", []) if unit == "beat" else (st.get("barTimes", []) if unit == "bar" or unit == "phrase" else [])
+	var out := []
+	for i in times.size():
+		if unit != "phrase" or i % maxi(phrase_bars, 1) == 0:
+			out.append(float(times[i]) / _tempo)
+	return out
+
+## Seconds from `pos` (seconds into a loop `loop` long) to the first of `lines` at least `ahead` on.
+static func _until_line(lines: Array, loop: float, pos: float, ahead := 0.0) -> float:
+	var target := pos + ahead - 1e-6
+	var base := floorf(target / loop) * loop
+	for t in lines:
+		if float(t) >= target - base:
+			return base + float(t) - pos
+	return base + loop + float(lines[0]) - pos
 
 ## A state as the costume on now dresses it: [parts ([file, group] each), seconds, tempo].
 func _dressed(s: Dictionary) -> Array:
@@ -333,14 +358,25 @@ func _order(n: int, last: int, shuffle: bool) -> Array:
 
 ## Play a state piece by piece (shuffled, or with silences between passes) until another starts.
 func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
-	# Bars are measures of the state's own time signature
+	# Bars are measures of the state's own time signature (at its own bar lines, barTimes, when its
+	# tempo or time signature changes inside it)
+	var lines: Array = s.get("barTimes", [])
 	var bar_len := float(s.get("beatsPerBar", data.beatsPerBar)) * float(s.get("beatSeconds", data.get("beatSeconds", 0.0)))
-	var bars := maxf(1.0, round(float(s.seconds) / bar_len)) if bar_len > 0.0 else maxf(1.0, round(float(s.bars)))
+	var bars := float(lines.size()) if not lines.is_empty() else (maxf(1.0, round(float(s.seconds) / bar_len)) if bar_len > 0.0 else maxf(1.0, round(float(s.bars))))
 	var shuffle := int(s.get("shuffleBars", 0)) > 0
 	var each := float(s.shuffleBars) if shuffle and float(s.shuffleBars) < bars else bars
 	var count := int(ceil(bars / each - 1e-6))
-	var first := mini(count - 1, int(floor(fmod(from, 1.0) * bars / each)))
-	var skip := fmod(from, 1.0) * bars - first * each
+	# Where bar `n` starts, as a share of the loop
+	var share := func(n: float) -> float:
+		if n >= bars:
+			return 1.0
+		if lines.is_empty():
+			return n / bars
+		return 0.0 if n == 0.0 else float(lines[int(n)]) / float(s.seconds)
+	var first := 0
+	while first + 1 < count and share.call((first + 1) * each) <= fmod(from, 1.0) + 1e-9:
+		first += 1
+	var skip_share := fmod(from, 1.0) - share.call(first * each)
 	var queue := [first]
 	for i in _order(count, first, shuffle):
 		if i != first:
@@ -360,12 +396,12 @@ func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
 		# The costume on now dresses each piece (so a costume change comes in with the next one)
 		var d := _dressed(s)
 		_tempo = d[2]
-		var per_bar := float(d[1]) / bars
-		var a := k * each
-		var b := minf(bars, a + each)
+		var a: float = share.call(k * each) * float(d[1])
+		var b: float = share.call(minf(bars, k * each + each)) * float(d[1])
+		var skip := skip_share * float(d[1])
 		var players := []
 		for part in d[0]:
-			var p := _new_player(part[0], part[1], 0.0, (a + skip) * per_bar)
+			var p := _new_player(part[0], part[1], 0.0, a + skip)
 			players.append(p)
 			voices.append({ "player": p, "group": part[1] })
 			# A piece starting while the state fades out fades with it
@@ -374,8 +410,8 @@ func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
 				var whole := maxf(float(_fade_length.get(id, 1.0)), 0.01)
 				p.volume_db = linear_to_db(maxf(level(part[1]) * clampf(left / whole, 0.0, 1.0), 0.0001))
 				_fade(p, 0.0, left, true)
-		await get_tree().create_timer((b - a - skip) * per_bar, true, false, true).timeout
-		skip = 0.0
+		await get_tree().create_timer(b - a - skip, true, false, true).timeout
+		skip_share = 0.0
 		for p in players:
 			for v in voices.duplicate():
 				if v.player == p:
@@ -420,8 +456,8 @@ func set_state(name: String, unit := "") -> void:
 	var q: String = unit if unit != "" else String(r.get("quantize", "bar"))
 	var phrase := int(r.get("phraseBars", 4))
 	var line := _line(q, phrase)
-	var wait := time_to_next(q, phrase)
 	var lead := float(r.get("leadInSeconds", 0.0))
+	var wait := time_to_next(q, phrase, lead if not _grid_lines(q, phrase).is_empty() else 0.0)
 	while wait < lead:
 		wait += line
 	_pending = name

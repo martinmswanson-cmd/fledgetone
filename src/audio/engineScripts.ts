@@ -7,13 +7,18 @@ import type { AudioManifest } from './gameKit';
 
 export type EngineTarget = 'fmod' | 'wwise' | 'both';
 
-/** Where each state sits on one timeline (seconds), states end to end with a bar's gap. */
-export function stateLayout(m: AudioManifest): Array<{ name: string; start: number; length: number; bpm: number; num: number; den: number }> {
+/**
+ * Where each state sits on one timeline (seconds), states end to end with a bar's gap, and the
+ * tempo or time signature changes inside it (`changes`, on the same timeline).
+ */
+export function stateLayout(m: AudioManifest): Array<{ name: string; start: number; length: number; bpm: number; num: number; den: number; changes: Array<{ at: number; bpm: number; num: number; den: number }> }> {
   let at = 0;
   return m.states.map((s) => {
     // Each state at its own tempo and time signature (older manifests: the song's)
     const [num, den] = s.timeSignature ?? m.timeSignature ?? [4, 4];
-    const entry = { name: s.name, start: +at.toFixed(6), length: s.seconds, bpm: s.bpm ?? m.bpm, num, den };
+    const start = +at.toFixed(6);
+    const changes = (s.tempoChanges ?? []).filter((c) => c.seconds > 1e-6).map((c) => ({ at: +(start + c.seconds).toFixed(6), bpm: c.bpm, num: c.timeSignature[0], den: c.timeSignature[1] }));
+    const entry = { name: s.name, start, length: s.seconds, bpm: s.bpm ?? m.bpm, num, den, changes };
     at += s.seconds + (60 / entry.bpm) * (4 / den) * num;
     return entry;
   });
@@ -115,15 +120,17 @@ function bbImport() {
   });
 
   // Tempo, a marker and a loop region per state
-  // A tempo marker where each state starts, at its tempo and time signature
+  // A tempo marker where each state starts, at its tempo and time signature, and at each change inside it
   DATA.layout.forEach(function (s) {
-    bbTry('tempo ' + s.bpm + ' BPM, ' + s.num + '/' + s.den + ' at ' + s.name, function () {
-      var tempo = studio.project.create('TempoMarker');
-      tempo.timeline = event.timeline;
-      tempo.position = s.start;
-      tempo.tempo = s.bpm;
-      tempo.timeSignatureNumerator = s.num;
-      tempo.timeSignatureDenominator = s.den;
+    [{ at: s.start, bpm: s.bpm, num: s.num, den: s.den }].concat(s.changes || []).forEach(function (c) {
+      bbTry('tempo ' + c.bpm + ' BPM, ' + c.num + '/' + c.den + ' in ' + s.name + ' at ' + c.at + ' s', function () {
+        var tempo = studio.project.create('TempoMarker');
+        tempo.timeline = event.timeline;
+        tempo.position = c.at;
+        tempo.tempo = c.bpm;
+        tempo.timeSignatureNumerator = c.num;
+        tempo.timeSignatureDenominator = c.den;
+      });
     });
   });
   var markerTrack = bbTry('a marker track', function () { return event.addMarkerTrack(); });

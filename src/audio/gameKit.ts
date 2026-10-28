@@ -1,4 +1,4 @@
-import { FOUR_FOUR, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
+import { FOUR_FOUR, gridTimes, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
@@ -110,6 +110,14 @@ export interface AudioManifest {
     shuffleBars?: number;
     /** Leave a silence between plays, `min` to `max` seconds (picked at random each time) */
     gap?: { min: number; max: number };
+    /**
+     * Where its bar lines and beats are (seconds from its start), when the tempo or time signature
+     * changes inside it or it starts part-way through a measure: one beat length can't find them then
+     */
+    barTimes?: number[];
+    beatTimes?: number[];
+    /** With those: where the tempo or time signature changes (seconds from its start; a glide, bar by bar) */
+    tempoChanges?: Array<{ seconds: number; bpm: number; timeSignature: [number, number] }>;
   }>;
   /**
    * `quantize` 'phrase': the next `phraseBars` bars counted from the state's start; 'end': where its
@@ -252,6 +260,7 @@ export async function buildGameKitParts(
       ...(dressed.length ? { costumes: dressed } : {}),
       ...(opts?.shuffleBars ? { shuffleBars: opts.shuffleBars } : {}),
       ...(opts?.gap ? { gap: opts.gap } : {}),
+      ...(gridTimes(sec.from, sec.to, tempo, meterMap) ?? {}),
     });
   }
 
