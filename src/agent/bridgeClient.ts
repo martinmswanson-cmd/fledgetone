@@ -8,12 +8,17 @@
  * (`changed`), of what the musician selects if they allow it (`view`), and of every suggestion
  * answered (`suggestion`); the song watch (songWatch.ts) keeps the suggestions true to the song
  * meanwhile. All of that stops when the connection does.
+ *
+ * It also carries the musician's messages to the agent (sendToAgent, only when they press Send or
+ * Retry) and the helper's word on them (received, seen by the agent); a message still on its way
+ * when the connection goes, or sent with none open, is "Not sent" until the musician retries it.
  */
 import { songParts, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { APP_VERSION } from '../version';
 import { closeMessage, createBridgeClient, type BridgeClient, type BridgeInfo } from './bridgeProtocolClient';
-import { DEFAULT_PERMISSIONS, type Permissions } from './protocol';
+import { CONVERSATION, DEFAULT_PERMISSIONS, readUserMessage, USER_MESSAGE_STATUS, type Permissions, type UserMessageStatusParams } from './protocol';
+import { addOwn, failSending, newUserMessageId, NO_ANSWER_REASON, selectionContext, setDelivery, useConversation, type OwnMessage } from './conversation';
 import { RevisionCounter } from './revision';
 import { useSuggestions } from './suggestionsStore';
 import { watchSong } from './songWatch';
@@ -102,6 +107,12 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     onState: (info) => {
       if (client === c) setInfo(info);
     },
+    onEvent: (method, params) => {
+      if (client !== c || method !== USER_MESSAGE_STATUS || typeof params !== 'object' || !params) return;
+      const p = params as Partial<UserMessageStatusParams>;
+      const ids = Array.isArray(p.ids) ? p.ids.filter((x): x is string => typeof x === 'string').slice(0, CONVERSATION.keep) : [];
+      if (ids.length && (p.status === 'received' || p.status === 'seen')) setDelivery(ids, p.status === 'seen' ? 'seen' : 'sent');
+    },
   });
   client = c;
   ws.onmessage = (e) => {
@@ -111,6 +122,7 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     if (client !== c) return;
     c.closed(closeMessage(e.code, c.state));
     stopTracking();
+    failSending();
   };
   ws.onerror = () => {
     // The close event follows with the reason
@@ -133,7 +145,50 @@ export function disconnectAgent(reason = 'The musician disconnected.'): void {
   if (c) c.disconnect(reason);
   socket = null;
   stopTracking();
+  failSending();
   setInfo({ state: 'closed', ...(c ? { message: reason } : {}) });
+}
+
+/** Hand a message to the helper (only paired, on an open socket); it's "Not sent" if the helper doesn't say it has it in time. */
+function deliver(m: OwnMessage): void {
+  const { status: _s, reason: _r, ...params } = m;
+  const ok = !!client && client.state === 'paired' && socket?.readyState === WebSocket.OPEN && client.emit('user_message', params);
+  if (!ok) {
+    setDelivery([m.id], 'not_sent');
+    return;
+  }
+  const c = client;
+  window.setTimeout(() => {
+    const now = useConversation.getState().mine.find((x) => x.id === m.id);
+    if (now?.status === 'sending') setDelivery([m.id], 'not_sent', client === c ? NO_ANSWER_REASON : undefined);
+  }, CONVERSATION.ackMs);
+}
+
+/**
+ * The musician pressed Send: their text (made plain, at most CONVERSATION.textMaxChars), the
+ * suggestion it asks about, and their selection only if they ticked "Include what I've selected"
+ * and allow the agent to see it. Added to the conversation whatever happens, and sent if an agent
+ * is connected (else "Not sent", with Retry). Returns the message, or null if there's nothing to send.
+ */
+export function sendToAgent(text: string, opts: { about?: string | null; include?: boolean } = {}): OwnMessage | null {
+  const st = useSuggestions.getState();
+  const t = useTimelineStore.getState();
+  const context = opts.include && st.permissions.see ? selectionContext(t) : undefined;
+  const about = opts.about && st.suggestions.some((s) => s.id === opts.about) ? opts.about : undefined;
+  const read = readUserMessage({ id: newUserMessageId(), text, at: Date.now(), ...(about ? { suggestionId: about } : {}), ...(context ? { context } : {}) });
+  if (!read) return null;
+  const m: OwnMessage = { ...read, status: 'sending' };
+  addOwn(m);
+  deliver(m);
+  return m;
+}
+
+/** Retry: the same message (its id and words) sent again, now. */
+export function retryMessage(id: string): void {
+  const m = useConversation.getState().mine.find((x) => x.id === id);
+  if (!m || m.status !== 'not_sent') return;
+  setDelivery([id], 'sending');
+  deliver({ ...m, status: 'sending' });
 }
 
 /** Whether a connection is open or opening. */

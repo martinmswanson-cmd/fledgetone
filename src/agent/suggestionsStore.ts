@@ -84,11 +84,12 @@ export interface Suggestion {
   createdAt: number;
 }
 
-/** A message from the agent (say), shown as plain text, attributed to it. */
+/** A message from the agent (say), shown as plain text, attributed to it; `replyTo`: the musician's message it answers (conversation.ts). */
 export interface AgentMessage {
   id: string;
   text: string;
   about?: string;
+  replyTo?: string;
   at: number;
 }
 
