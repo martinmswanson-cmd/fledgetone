@@ -1120,7 +1120,9 @@ async function renderGraphHeld(
   // each recorded instrument's for the notes it plays here (see songSamples.ts)
   // A download that hangs gives up by itself (recordingStore.ts), and anything else that holds an
   // instrument up (its kept copies, decoding) gives up after SAMPLE_WAIT_MS, naming the instrument
-  for (const [key, loading] of songSampleLoads(tracks, clips, sampleRate)) {
+  // (each note's longest hold at the song's slowest tempo: how much of a recording its copies need)
+  const slowestBar = 240 / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+  for (const [key, loading] of songSampleLoads(tracks, clips, sampleRate, true, slowestBar)) {
     const name = INSTRUMENTS[key].name;
     try {
       await withTimeout(loading, SAMPLE_WAIT_MS, `the ${name} recordings took too long to download. Check your internet connection and try again.`, signal);

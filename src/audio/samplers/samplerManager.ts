@@ -18,10 +18,10 @@ import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTL
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
-import { decodedBytes, setDecodedBytes } from './setSizes';
+import { decodedBytes, decodedOf, setDecodedBytes } from './setSizes';
 import { BLEND_ZONE, chooseExportDecodes, COPY_SEMITONES, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, layersInReach, lowMemoryDevice, neededPitches, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes, TrackPlan } from './songSamples';
-import { clearCopies, copyBytes, copySet, dropCopy, makeCopy, onCopyMade, setCopyCap, type CopySet, type CopyWish } from './pitchedCopies';
+import { clearCopies, copyBytes, copySet, dropCopy, forgetCopiesOf, makeCopy, onCopyMade, setCopyCap, type CopySet, type CopyWish } from './pitchedCopies';
 import { stretchOutline } from './resampler';
 
 /**
@@ -138,6 +138,12 @@ type RatePlan = 'live' | 'once' | 'twice';
  * export's rate, or from the live recordings when even that doesn't fit.
  */
 const EXPORT_DECODE_BYTES = 512e6;
+/**
+ * What an export's re-pitched copies may take on a device with little memory (bytes): there it
+ * plays live playback's recordings (it decodes none of its own), so its copies come on top of
+ * those and are held for the whole render. Notes past it play their recordings stretched.
+ */
+const LOW_MEMORY_EXPORT_COPY_BYTES = 64e6;
 
 /**
  * Recordings decoded for an export at its sample rate, where the live ones won't do (another
@@ -186,7 +192,8 @@ export function holdRecordingsAt(rate: number, recordings: RenderRecordings = 'f
       if (held.holds > 0 || atRate.get(rate) !== held) return;
       atRate.delete(rate);
       // ...and the re-pitched copies its renders made (live playback makes its own as it needs them)
-      for (const [source, key] of held.made) if (!liveRecordings.has(source)) dropCopy(source, key);
+      // (a copy of a recording live playback has is kept for it, unless it's only the start of one: live playback never asks for those)
+      for (const [source, key] of held.made) if (!liveRecordings.has(source) || isHeadCopy(key)) dropCopy(source, key);
       for (const [id, ref] of decoded) if (!ref.deref()) decoded.delete(id);
     }, RATE_KEEP_MS);
   };
@@ -216,7 +223,7 @@ function loadingAt(key: InstrumentKey, rate: number, offline = true): Loading {
  *   while they fit in EXPORT_DECODE_BYTES with what the export already decodes; at the live rate
  *   the live ones rather than a copy at the same rate; past the budget, the live ones.
  */
-function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonly [InstrumentKey, Iterable<string>, Iterable<string>]>): void {
+function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonly [InstrumentKey, Iterable<string>, number]>): void {
   const atLive = rate === liveRate();
   const file = entry.files > 0;
   const costs: Array<[InstrumentKey, number]> = [];
@@ -224,10 +231,10 @@ function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonl
     if (entry.plans.has(key)) continue;
     const source = INSTRUMENTS[key].samples!;
     if (LOW_MEMORY || (atLive && (!file || oversampledLive(source)))) entry.plans.set(key, 'live');
-    // (with the re-pitched copies its notes play, each about as big as its recording at the
-    // export's rate, or at the recording's for an instrument whose notes bend: see wishOf and
+    // (with the re-pitched copies its notes play, `copies` bytes at the export's rate (see
+    // copiesCost), at the recording's for an instrument whose notes bend: see wishOf and
     // copyAllowed; the cost is doubled at twice the rate, a copy at the export's rate isn't)
-    else costs.push([key, decodedBytes(source, names, rate) + decodedBytes(source, copies, rate) / (bendsByDesign(INSTRUMENTS[key]) ? 1 : OVERSAMPLE)]);
+    else costs.push([key, decodedBytes(source, names, rate) + copies / (bendsByDesign(INSTRUMENTS[key]) ? 1 : OVERSAMPLE)]);
   }
   let spent = 0;
   for (const [key, l] of Object.entries(entry.loadings) as Array<[InstrumentKey, Loading]>) spent += decodedBytes(l.source, l.have.keys(), entry.plans.get(key) === 'twice' ? decodeRateOf(rate) : rate);
@@ -239,6 +246,30 @@ function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonl
     entry.plans.set(key, plan);
   }
 }
+
+/**
+ * About how many bytes the copies `pitches` describes take at `rate` (each copy once): a whole
+ * copy of each recording at its other pitch, or, for notes of a known length, as much of it as
+ * they play with their release (as the sampler's prepare makes them), in stereo: on the safe
+ * side, so an instrument doesn't lose its twice-the-rate decode to copies that would never be
+ * made that big.
+ */
+function copiesCost(source: SampleSource, pitches: Map<string, Map<number, number>>, rate: number): number {
+  const release = source.release ?? 1;
+  let bytes = 0;
+  for (const [name, row] of pitches) {
+    const whole = decodedOf(source, name);
+    for (const [semis, seconds] of row) {
+      const ratio = 2 ** (semis / 12);
+      const head = Number.isFinite(seconds) ? ((seconds + release + 0.2) * 1.1 * ratio + 0.1) * 48000 * 4 * 2 : Infinity;
+      bytes += Math.min(whole, head) / ratio;
+    }
+  }
+  return bytes * (rate / 48000);
+}
+
+/** How an export at `rate` plays each instrument, while one holds its recordings (see planExport): for the checks. */
+export const exportPlansAt = (rate: number): Record<string, RatePlan> => Object.fromEntries(atRate.get(rate)?.plans ?? []);
 
 /** Whether an offline render at `rate` decodes the user's own sounds at twice its rate (see decodePitchedSound): a file's, not on a device with little memory. */
 function soundsTwiceAt(rate: number): boolean {
@@ -261,13 +292,16 @@ function copyAllowed(rate: number, source: AudioBuffer, key: string, bytes: numb
   if (done?.has(key)) return true;
   let spent = entry.copyBytes;
   for (const l of Object.values(entry.loadings)) spent += bytesOf(l);
-  if (spent + bytes > EXPORT_DECODE_BYTES) return false;
+  if (spent + bytes > (LOW_MEMORY ? LOW_MEMORY_EXPORT_COPY_BYTES : EXPORT_DECODE_BYTES)) return false;
   entry.copyBytes += bytes;
   entry.made.push([source, key]);
   if (done) done.add(key);
   else entry.copied.set(source, new Set([key]));
   return true;
 }
+
+/** Whether a copy's key (copyKey) is of a stretch of its recording (an export's start of one, a slice), not the whole. */
+const isHeadCopy = (key: string) => key.split('|').length > 3;
 
 /** Whether `l` is live playback's (with loading badges and background filling), not an export's. */
 const isLive = (l: Loading) => l.live;
@@ -343,7 +377,7 @@ export function loadQuick(key: InstrumentKey): Promise<SampleSet> {
 }
 
 /** What each instrument plays in these tracks' clips (see songSamples.ts). */
-function songsOf(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1]) {
+function songsOf(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], barSeconds?: number) {
   const midiOf = (note: string) => {
     try {
       return midiOfNote(note);
@@ -351,7 +385,7 @@ function songsOf(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Par
       return NaN; // (not a note: skipped)
     }
   };
-  return songNotesByInstrument(tracks, clips, midiOf);
+  return songNotesByInstrument(tracks, clips, midiOf, barSeconds);
 }
 
 /** The recordings `song` needs of an instrument (see songSamples.ts). */
@@ -387,10 +421,13 @@ export function loadSongSamples(tracks: Parameters<typeof songNotesByInstrument>
  * recording stretched, as before, and the copy is there the next time.
  */
 function liveCopies(key: InstrumentKey, l: Loading, song: SongNotes): void {
+  // (on a device with little memory a song's copies seldom fit: a note's copy is made when it's played)
+  if (LOW_MEMORY) return;
   for (const [name, semis] of neededPitches(l.index, song.notes, INSTRUMENTS[key].dynamics ? song.wheel : null)) {
     const audio = l.have.get(name)?.get();
     if (!audio) continue;
-    for (const st of semis) void makeCopy(audio, wishOf(audio, 2 ** (st / 12), l.rate, bendsByDesign(INSTRUMENTS[key])));
+    // (planned: only while they fit in the cap, see pitchedCopies.ts roomFor)
+    for (const st of semis.keys()) void makeCopy(audio, wishOf(audio, 2 ** (st / 12), l.rate, bendsByDesign(INSTRUMENTS[key])), false, false, true);
   }
 }
 
@@ -440,7 +477,12 @@ onCopyMade((source, copy, wish) => {
   audibleEnds.set(audio, Math.min(audio.duration, audibleEnd(source) / r));
   if (fullDurations.has(source)) fullDurations.set(audio, recordedDuration(source) / r);
   if (copy.loop) loopsOf.set(audio, copy.loop);
+  // (the start of a recording that loops has no loop of its own, but its notes are held ones: see releaseNow)
+  else if (loopsOf.has(source)) heldCopies.add(audio);
 });
+
+/** Copies of only the start of a recording that loops (see onCopyMade). */
+const heldCopies = new WeakSet<AudioBuffer>();
 
 /**
  * Everything these tracks' clips play, for an export at `rate` (default: the live context's): each
@@ -448,8 +490,8 @@ onCopyMade((source, copy, wish) => {
  * live rate the export plays the same recordings live playback does once every recording is in;
  * at another rate, held by holdRecordingsAt, recordings decoded at that rate.
  */
-export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], rate = liveRate(), offline = true): Array<[InstrumentKey, Promise<unknown>]> {
-  const songs = songsOf(tracks, clips);
+export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], rate = liveRate(), offline = true, barSeconds?: number): Array<[InstrumentKey, Promise<unknown>]> {
+  const songs = songsOf(tracks, clips, barSeconds);
   const keys = [...new Set(tracks.map((t) => t.instrumentKey))].filter(hasRecordings);
   // An export: how it plays each instrument, from what the song needs of each
   const entry = offline ? atRate.get(rate) : undefined;
@@ -460,13 +502,11 @@ export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>
       keys.map((key) => {
         const source = INSTRUMENTS[key].samples!;
         const names = namesOf(source);
-        if (!isSamplerKey(key)) return [key, names, []] as const;
+        if (!isSamplerKey(key)) return [key, names, 0] as const;
         const index = indexRecordings(names, midiOfNote, source.layers ?? [1]);
         const wheel = INSTRUMENTS[key].dynamics ? (songs.get(key)?.wheel ?? null) : null;
         const notes = songs.get(key)?.notes ?? [];
-        // (each recording once for every other pitch the song plays it at)
-        const copies = [...neededPitches(index, notes, wheel)].flatMap(([name, semis]) => [...semis].map(() => name));
-        return [key, neededSamples(index, notes, wheel), copies] as const;
+        return [key, neededSamples(index, notes, wheel), copiesCost(source, neededPitches(index, notes, wheel), rate)] as const;
       })
     );
   }
@@ -1685,7 +1725,7 @@ function samplerVoice(
     const ring = feel?.ring;
     if (!ring || ring <= tail) return { tc: releaseTc, tail, hold: 0 };
     // (held: its recording has a loop, whether or not this note was long enough to reach it)
-    return s.looping || loopsOf.has(s.buffer) ? { tc: ring / 6.9, tail: ring, hold: 0 } : { tc: releaseTc, tail: ring + tail, hold: ring };
+    return s.looping || loopsOf.has(s.buffer) || heldCopies.has(s.buffer) ? { tc: ring / 6.9, tail: ring, hold: 0 } : { tc: releaseTc, tail: ring + tail, hold: ring };
   };
   /** Seconds a note can be held before the player runs out of breath, as the track has it now */
   const breathNow = () => (feel?.breathe === false ? undefined : breath);
@@ -2207,7 +2247,7 @@ function samplerVoice(
         if (!row) needs.set(buffer, (row = new Map()));
         // A note's hold and release (with room to spare), read `ratio` times as fast, past a bowed note's skip
         const ratio = 2 ** (interval / 12);
-        const most = Number.isFinite(seconds) && !plan.bends ? ((seconds + afterRelease() + 0.1) * 1.1 * ratio + Math.max(bowed?.skip ?? 0, bowed ? LEGATO_SKIP : 0)) : Infinity;
+        const most = Number.isFinite(seconds) && !plan.glides ? ((seconds + afterRelease() + 0.1) * 1.1 * ratio + Math.max(bowed?.skip ?? 0, bowed ? LEGATO_SKIP : 0)) : Infinity;
         row.set(interval, Math.max(row.get(interval) ?? 0, most));
       };
       const tops = bank.tops ?? [1];
@@ -2237,8 +2277,9 @@ function samplerVoice(
       for (const [buffer, row] of needs) {
         for (const [interval, most] of row) {
           const whole = wishOf(buffer, 2 ** (interval / 12), playRate, wide);
-          // Only the start of a recording that doesn't loop, where that's well short of all of it
-          const wish: CopyWish = most < 0.8 * buffer.duration && !whole.loop ? { ...whole, region: [0, most] } : whole;
+          // Only the start of a recording, where that's well short of all of it (and of one that
+          // loops, short of where a note held that long would loop: the start has no loop)
+          const wish: CopyWish = most < 0.8 * buffer.duration && (!whole.loop || most < audibleEnd(buffer) - 0.6 * whole.ratio) ? { ...whole, region: [0, most] } : whole;
           let r = readied.get(buffer);
           if (!r) readied.set(buffer, (r = new Map()));
           r.set(interval, wish);
@@ -2422,6 +2463,9 @@ export function decodedSampleBytes(): number {
 
 /** Let go of an instrument's recordings: they load again when next needed. */
 function forget(key: InstrumentKey): void {
+  // ...and its recordings' copies, made or still to make
+  const l = loadings[key];
+  if (l) forgetCopiesOf([...l.have.values()].flatMap((b) => b.get() ?? []));
   delete loadings[key];
   const at = backlog.indexOf(key);
   if (at >= 0) backlog.splice(at, 1);

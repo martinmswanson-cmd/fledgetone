@@ -19,7 +19,10 @@
 //   lofi,latin,celtic,plaza,eastern; "none" for none.
 // THREADS sets how many parts a mix may render in at once (1: in one piece; default: the
 // browser's choice). Each line also carries a hash of the render, so two runs of this script (say
-// with THREADS=1 and without, or in two fresh pages) can be compared too.
+// with THREADS=1 and without) can be compared too. PAGES (default 2) also renders every case once
+// more in each of that many fresh pages after the first, the cases in the opposite order, and
+// checks each comes out as in the first page ("pages": its hashes there): a render mustn't depend
+// on what the page made before it (a kernel kept from an earlier copy once changed one).
 // It exits with 1 when any case differs. APP_URL overrides http://localhost:5200/. Needs Playwright
 // with Chromium.
 let playwright;
@@ -127,9 +130,12 @@ const RENDER = async ({ c, runs, threads }) => {
   return { maxDiffDb: worst ? Math.round(200 * Math.log10(worst)) / 10 : null, ...(worst ? { firstAt: at(firstAt), worstAt: at(worstAt) } : {}), sameWav, sameLength, peakDb: Math.round(200 * Math.log10(peak || 1e-10)) / 10, hashes: renders.map((r) => r.hash) };
 };
 
+const PAGES = Math.max(1, Number(process.env.PAGES || 2));
+
 (async () => {
   const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
-  const page = await browser.newPage();
+  const openPage = async () => {
+  const page = await (await browser.newContext()).newPage();
   // gleitz.github.io is the same files as the repository's gh-pages branch, which some networks reach when the site isn't
   for (const [re, base] of [[/tonejs\.github\.io\/audio\/(.+)$/, 'https://raw.githubusercontent.com/Tonejs/audio/master/'], [/gleitz\.github\.io\/midi-js-soundfonts\/(.+)$/, 'https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/']]) {
     await page.route(re, async (r) => {
@@ -144,6 +150,9 @@ const RENDER = async ({ c, runs, threads }) => {
   await page.addInitScript(() => localStorage.setItem('bosBeatbox.welcomeSeen', 'true'));
   await page.goto(APP, { waitUntil: 'networkidle' });
   page.setDefaultTimeout(1800000);
+  return page;
+  };
+  const page = await openPage();
 
   const catalog = await page.evaluate(async () => {
     const { INSTRUMENTS, INSTRUMENT_KEYS } = await import('/src/audio/instrumentCatalog.ts');
@@ -157,17 +166,39 @@ const RENDER = async ({ c, runs, threads }) => {
     ...list(process.env.STARTERS, ['lofi', 'latin', 'celtic', 'plaza', 'eastern']).map((id) => ({ kind: 'starter', id, bars: Number(process.env.STARTER_BARS || 8), label: `starter:${id}` })),
   ];
   const threads = process.env.THREADS ? Number(process.env.THREADS) : undefined;
-  let differs = 0;
+  const results = new Map();
   for (const c of cases) {
     try {
-      const r = await page.evaluate(RENDER, { c, runs: RUNS, threads });
-      const same = r.maxDiffDb === null && r.sameWav && r.sameLength;
-      if (!same) differs++;
-      console.log(JSON.stringify({ case: c.label, same, ...r }));
+      results.set(c.label, await page.evaluate(RENDER, { c, runs: RUNS, threads }));
     } catch (e) {
-      differs++;
-      console.log(JSON.stringify({ case: c.label, error: String(e.message || e).slice(0, 300) }));
+      results.set(c.label, { error: String(e.message || e).slice(0, 300) });
     }
+  }
+  // Fresh pages, the cases the other way round: each render as in the first page
+  const pages = new Map(cases.map((c) => [c.label, []]));
+  for (let p = 1; p < PAGES; p++) {
+    const fresh = await openPage();
+    for (const c of [...cases].reverse()) {
+      try {
+        pages.get(c.label).push((await fresh.evaluate(RENDER, { c, runs: 1, threads })).hashes[0]);
+      } catch (e) {
+        pages.get(c.label).push(`error: ${String(e.message || e).slice(0, 100)}`);
+      }
+    }
+    await fresh.close();
+  }
+  let differs = 0;
+  for (const c of cases) {
+    const r = results.get(c.label);
+    if (r.error) {
+      differs++;
+      console.log(JSON.stringify({ case: c.label, error: r.error }));
+      continue;
+    }
+    const others = pages.get(c.label);
+    const same = r.maxDiffDb === null && r.sameWav && r.sameLength && others.every((h) => h === r.hashes[0]);
+    if (!same) differs++;
+    console.log(JSON.stringify({ case: c.label, same, ...r, ...(others.length ? { pages: others } : {}) }));
   }
   console.log(`${cases.length - differs} of ${cases.length} cases render the same every time`);
   await browser.close();
