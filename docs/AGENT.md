@@ -86,7 +86,7 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, or a suggestion accepted or dismissed |
-| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Live only for now, one at a time, 10 a minute, and only if you allow listening |
+| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). Live only for now, one at a time, 10 a minute, never while the song plays ("busy"), and only if you allow listening |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
 | `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |

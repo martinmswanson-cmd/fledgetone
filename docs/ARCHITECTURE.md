@@ -233,13 +233,14 @@ ops and the security model):
   `src/agent/protocol.ts`; the helper's end in `tools/cli/src/bridgeServer.ts`).
 - **In the studio**: `AgentMount` (in the main bundle, tiny) loads `AgentStudio` as a chunk of its
   own when the Suggestions panel or "Let an agent connect…" opens (not precached; if it can't load,
-  an error boundary shows Retry, then Reload, and the studio carries on). `bridgeClient.ts` wires a
+  an error boundary closes the panel and shows a note with Reload, and the studio carries on). `bridgeClient.ts` wires a
   WebSocket to the protocol client (`bridgeProtocolClient.ts`) and the handlers (`handlers.ts`,
   with the reading ones in `studioReads.ts`). Suggestions live in `suggestionsStore.ts` (never
   saved): each is the ops applied to the song with an id base of its own (`ops.ts`), so what's
   heard is what's accepted.
 - **Hearing it**: `auditionPlayer.ts` renders the same bars of the song now and as suggested
-  (`listen.ts`, which the Mix check shares) and plays each looped after the master, crossfading
+  (`listen.ts`, which the Mix check shares; from a run-in of up to 8 bars or 20 s when notes are
+  held into the range, then trimmed: `preRollStart` in `auditionMath.ts`) and plays each looped after the master, crossfading
   20 ms between them; a switch starts the other at the same bar (`auditionMath.ts`), so a tempo
   change still switches in step. Renders are kept by the suggestion's version. The store isn't
   touched.
@@ -247,8 +248,9 @@ ops and the security model):
   from (`songGeneration`, its `songParts` and the swing and intensity, which undo doesn't keep).
   At most every 150 ms after a change, while connected, while the panel is open or while one
   waits, each is checked by fingerprints only: another song (it can never go in), out of date,
-  or changed (made again, a new version, only when it's heard or accepted); an accepted one an
-  undo took out says undone. Hearing makes it again first and notes the version heard; Accept
+  or changed (made again, a new version, only when it's heard or accepted); an accepted one says
+  undone when its undo step (named at Accept: `tagLastStep`, `stepPlace`) moves to the redo
+  history, and accepted again when it comes back. Hearing makes it again first and notes the version heard; Accept
   takes it in one press only as heard, otherwise the first press offers "Accept without
   listening" and a separate second press (0.7 to 5 s later, never a double-click or Space) accepts.
 - **Accept** (`accept.ts`): one undo step (a checkpoint, then one change of the tracks, clips,

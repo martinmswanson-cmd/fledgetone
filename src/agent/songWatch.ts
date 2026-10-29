@@ -10,7 +10,7 @@
  * Hearing a suggestion lives here too (hearSuggestion): it's made again on the song as it is now
  * first, so what's heard is what Accept would put in, and the version heard is noted.
  */
-import { currentProject, onProjectReplaced, songGeneration, songParts, useTimelineStore } from '../store/timelineStore';
+import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
 import { checkSuggestion, extKey, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
@@ -38,7 +38,7 @@ export function refreshSuggestions(ctx = songContext()): void {
   const list = useSuggestions.getState().suggestions;
   if (!list.length) return;
   const now = currentProject();
-  const next = list.map((s) => undoCheck(checkSuggestion(s, now, ctx), now, ctx.epoch));
+  const next = list.map((s) => undoCheck(checkSuggestion(s, now, ctx), s.step ? stepPlace(s.step) : null, ctx.epoch));
   if (next.some((x, i) => x !== list[i])) useSuggestions.setState({ suggestions: next });
   stopIfClosed(next);
 }

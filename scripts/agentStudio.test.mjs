@@ -22,9 +22,10 @@ register(
 }`)
 );
 const { partsChanged, RevisionCounter } = await import('../src/agent/revision.ts');
-const { acceptDecision, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, appliedRecord, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
+const { closeMessage } = await import('../src/agent/bridgeProtocolClient.ts');
+const { acceptDecision, keepSuggestions, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
 const { AGENT_NAME_MAX, agentName, fromAgent, readsAs, typedCode } = await import('../src/agent/protocol.ts');
-const { sameBarOffset } = await import('../src/audio/auditionMath.ts');
+const { preRollStart, sameBarOffset, PRE_ROLL_MAX_BARS } = await import('../src/audio/auditionMath.ts');
 const { followTracks } = await import('../src/store/drumFollow.ts');
 const { newKitDesign } = await import('../src/store/drumDesign.ts');
 const { applyOps } = await import('../src/agent/ops.ts');
@@ -102,6 +103,24 @@ test('Accept: one press only for what was heard; unheard, a separate second pres
   assert.equal(next.suggestion.armed.version, 2);
   // Heard: one press
   assert.deepEqual(acceptDecision({ ...s, heard: 1 }, p, ctxOf(p), t0).apply, s.song);
+});
+
+test("the helper's reasons for closing, in plain words", () => {
+  assert.match(closeMessage(4009, 'waiting'), /Another tab or studio is already connected/);
+  assert.match(closeMessage(4001, 'wrong_code'), /Too many wrong codes/);
+  assert.match(closeMessage(4003, 'proving'), /didn’t match/);
+  assert.match(closeMessage(4010, 'proving'), /isn’t waiting for a code/);
+  assert.match(closeMessage(1006, 'waiting'), /isn’t answering on that port/);
+  assert.match(closeMessage(4000, 'paired'), /ended the connection/);
+  assert.equal(closeMessage(1006, 'paired'), undefined);
+});
+
+test('the list keeps every waiting suggestion: only the oldest answered ones go', () => {
+  const mk = (id, status) => ({ id, status });
+  const list = [mk('a', 'accepted'), mk('b', 'waiting'), mk('c', 'dismissed'), mk('d', 'changed'), mk('e', 'out_of_date')];
+  assert.deepEqual(keepSuggestions(list, 3).map((s) => s.id), ['b', 'd', 'e']);
+  assert.deepEqual(keepSuggestions(list, 2).map((s) => s.id), ['b', 'd'], 'never fewer than the waiting ones');
+  assert.deepEqual(keepSuggestions(list, 10).map((s) => s.id), ['a', 'b', 'c', 'd', 'e']);
 });
 
 test('what is said to screen readers: short, and merged', () => {
@@ -218,23 +237,20 @@ test('another song opened: the suggestion is for another song and can never go i
   assert.equal(acceptDecision(other, p, ctxOf(p, 2)).apply, null);
 });
 
-test('accepted, then undone (and redone): the status follows the song', () => {
+test('accepted, then undone (and redone): by where its undo step is, not by what the song holds', () => {
   const p = base();
-  const keys = p.tracks[0].id;
-  const ops = [{ op: 'set_track', trackId: keys, volumeDb: -20 }, { op: 'add_track', instrument: 'synthDesigner', ref: 't' }, { op: 'add_clip', trackId: '$t', startBar: 1, lengthBars: 1 }];
-  const s = makeSuggestion(p, ctxOf(p), { title: 'Pad', explanation: '', ops }).suggestion;
-  const accepted = { ...s, status: 'accepted', applied: appliedRecord(s, p) };
-  assert.ok(accepted.applied.keys.includes(`track:${keys}`));
-  assert.ok(accepted.applied.keys.some((k) => k.startsWith('clip:')), 'the new clip counts');
-  assert.equal(undoCheck(accepted, s.song, 1), accepted, 'still in');
-  const undone = undoCheck(accepted, p, 1);
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys down', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -20 }] }).suggestion;
+  const accepted = { ...s, status: 'accepted', step: 'sg@1' };
+  assert.equal(undoCheck(accepted, 'done', 1), accepted, 'still in');
+  const undone = undoCheck(accepted, 'undone', 1);
   assert.equal(undone.status, 'undone');
-  assert.equal(undoCheck(undone, s.song, 1).status, 'accepted', 'redo');
-  // Edited after: neither before nor after, it stays as it was
-  const later = { ...s.song, tracks: s.song.tracks.map((t, i) => (i === 0 ? { ...t, pan: 0.3 } : t)) };
-  assert.equal(undoCheck(accepted, later, 1), accepted);
-  assert.equal(undoCheck(s, p, 1), s, 'only accepted ones');
-  assert.equal(undoCheck(accepted, p, 2), accepted, 'another song opened: it says nothing of this one');
+  assert.equal(undoCheck(undone, 'done', 1).status, 'accepted', 'redo');
+  // The step gone from the history (a new song, the history trimmed): it stays as it was
+  assert.equal(undoCheck(accepted, null, 1), accepted);
+  assert.equal(undoCheck(undone, null, 1), undone);
+  assert.equal(undoCheck(s, 'undone', 1), s, 'only accepted ones');
+  assert.equal(undoCheck({ ...s, status: 'accepted' }, 'undone', 1).status, 'accepted', 'no step: nothing to tell');
+  assert.equal(undoCheck(accepted, 'undone', 2), accepted, 'another song opened: it says nothing of this one');
 });
 
 test('what a suggestion is heard over stays within 90 seconds', () => {
@@ -258,6 +274,24 @@ test('a switch between before and after lands on the same bar when the tempo dif
   const m = { tempo: map, seconds: 4 + 8 };
   assert.equal(sameBarOffset(4, 1, m, a), 4, 'bar 3 is 4 s into the steady one');
   assert.equal(sameBarOffset(8, 1, m, a), 6, 'bar 4 (4 s into the slow part) is 6 s into the steady one');
+});
+
+test('a stretch is rendered from the earliest note still held into it (capped), so held notes are heard', () => {
+  const track = { id: 'pad', name: 'Pad', instrumentKey: 'synthDesigner', isMuted: false, isSoloed: false, volume: 0, pan: 0 };
+  const song = (notes, bpm = 120) => ({ tracks: [track], clips: [{ id: 'c', trackId: 'pad', startBar: 3, lengthBars: 20, notes }], bpm, tempoPoints: [] });
+  const note = (startOffset, duration) => ({ id: `n${startOffset}`, note: 'C4', startOffset, duration, velocity: 0.8 });
+  // A four-bar note from bar 5 is still sounding at bar 7: start at 5
+  assert.equal(preRollStart(song([note(2, '4m')]), 7), 5);
+  // One that ended before: nothing to run in
+  assert.equal(preRollStart(song([note(2, '1m')]), 7), 7);
+  // Starting at the bar itself: nothing either
+  assert.equal(preRollStart(song([note(4, '4m')]), 7), 7);
+  // A very long one: at most PRE_ROLL_MAX_BARS earlier
+  assert.equal(preRollStart(song([note(0, '16m')]), 15), 15 - PRE_ROLL_MAX_BARS);
+  // ...and at most 20 seconds (at 40 BPM a bar is 6 s: just over 3 bars)
+  assert.ok(Math.abs(preRollStart(song([note(0, '16m')], 40), 15) - (15 - 20 / 6)) < 1e-9);
+  // A muted track's notes don't count
+  assert.equal(preRollStart({ ...song([note(2, '4m')]), tracks: [{ ...track, isMuted: true }] }, 7), 7);
 });
 
 test('a Designed Kit follows the song in the suggestion as it does in the studio', () => {

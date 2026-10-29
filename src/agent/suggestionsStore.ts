@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
 import { barToSeconds } from '../audio/tempoMap';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
-import { classifySuggestion, hashesOf, keysOfOps, touchedHashes, touchedNames } from './suggestion';
+import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
 import type { BarRange } from './songDiff';
@@ -79,8 +79,8 @@ export interface Suggestion {
   audition: BarRange;
   /** Out of date: what changed under it. */
   outOfDate?: string[];
-  /** Accepted: what it touched, before and after, to tell an undo (and a redo). */
-  applied?: { keys: string[]; before: Record<string, string | null>; after: Record<string, string | null> };
+  /** Accepted: the name of its undo step (tagLastStep), to tell an undo (and a redo). */
+  step?: string;
   createdAt: number;
 }
 
@@ -139,6 +139,21 @@ export const isOpen = (s: Pick<Suggestion, 'status'>): boolean => s.status === '
 
 /** How many of the agent's messages the musician hasn't had on screen yet. */
 export const unreadCount = (st: Pick<SuggestionsState, 'messages' | 'messagesSeenAt'>): number => st.messages.filter((m) => m.at > st.messagesSeenAt).length;
+
+/**
+ * `list` kept to at most `max`: the oldest answered ones go first (never one still waiting, so
+ * the agent's suggestions are never lost before the musician answers them).
+ */
+export function keepSuggestions(list: readonly Suggestion[], max = 50): Suggestion[] {
+  let over = list.length - max;
+  if (over <= 0) return [...list];
+  const out: Suggestion[] = [];
+  for (const s of list) {
+    if (over > 0 && !isOpen(s)) over--;
+    else out.push(s);
+  }
+  return out;
+}
 
 /** How many suggestions wait for the musician. */
 export const waitingCount = (list: readonly Suggestion[]): number => list.filter(isOpen).length;
@@ -272,25 +287,16 @@ export function acceptDecision(
   return { apply: null, suggestion: { ...fresh, armed: { version: fresh.version, at } }, message };
 }
 
-/** What an accepted suggestion touched (the things its ops name and the new things it made), before and after. */
-export function appliedRecord(s: Suggestion, before: ProjectSnapshot): NonNullable<Suggestion['applied']> {
-  const had = new Set([...before.tracks.map((t) => `track:${t.id}`), ...before.clips.map((c) => `clip:${c.id}`), ...(before.markers ?? []).map((m) => `marker:${m.id}`)]);
-  const made = [...s.song.tracks.map((t) => `track:${t.id}`), ...s.song.clips.map((c) => `clip:${c.id}`), ...(s.song.markers ?? []).map((m) => `marker:${m.id}`)].filter((k) => !had.has(k));
-  const keys = [...new Set([...keysOfOps(s.ops), ...made])];
-  return { keys, before: hashesOf(before, keys), after: hashesOf(s.song, keys) };
-}
-
-const same = (a: Record<string, string | null>, b: Record<string, string | null>) => Object.keys(a).every((k) => a[k] === b[k]);
-
 /**
- * An accepted suggestion an undo took out (the song is back as before it), or a redo put back.
- * Only in the song it went into (`epoch`): another song says nothing about it.
+ * An accepted suggestion that Undo took out (its undo step, named `step` at Accept, is now in the
+ * redo history: `place` 'undone'), or that Redo put back ('done'). Only in the song it went into
+ * (`epoch`); a step gone from the history says nothing. Decided by the step, not by what the song
+ * holds, so putting the old values back by hand (or by another suggestion) isn't an undo.
  */
-export function undoCheck(s: Suggestion, now: ProjectSnapshot, epoch: number): Suggestion {
-  if (!s.applied || (s.status !== 'accepted' && s.status !== 'undone') || s.epoch !== epoch) return s;
-  const h = hashesOf(now, s.applied.keys);
-  if (s.status === 'accepted' && same(h, s.applied.before)) return { ...s, status: 'undone' };
-  if (s.status === 'undone' && same(h, s.applied.after)) return { ...s, status: 'accepted' };
+export function undoCheck(s: Suggestion, place: 'done' | 'undone' | null, epoch: number): Suggestion {
+  if (!s.step || (s.status !== 'accepted' && s.status !== 'undone') || s.epoch !== epoch || !place) return s;
+  if (s.status === 'accepted' && place === 'undone') return { ...s, status: 'undone' };
+  if (s.status === 'undone' && place === 'done') return { ...s, status: 'accepted' };
   return s;
 }
 

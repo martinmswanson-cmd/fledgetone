@@ -4,8 +4,9 @@
  * - a card that has just appeared or moved on screen (a new suggestion, a card above it growing,
  *   the list scrolled by anything but the musician) ignores them for SETTLE_MS;
  * - a pointer's press counts only if it went down and came up on the same button with the card
- *   where it was; a key's only if Enter went down on that button just now (not held). Space never
- *   presses Accept, and a double-click's second click is never a press.
+ *   where it was; a key's only if Enter went down on that button just now (not held); a click with
+ *   nothing behind it is an assistive tool's (a screen reader's, voice control's) and counts.
+ *   Space never presses Accept, and a double-click's second click is never a press.
  *
  * So a click aimed at one card never lands on another that slid under the pointer, and the second
  * press that accepts without listening is always a separate one.
@@ -70,6 +71,14 @@ export function guardDown(e: React.PointerEvent): void {
   down = { button: e.currentTarget, top: cardTop(e.currentTarget), key: false };
 }
 
+/** A key is held down on a guarded button (auto-repeating): its clicks never count, until it's let go. */
+let repeating = false;
+
+/** On a guarded button's keyup: a held key let go. */
+export function guardKeyUp(): void {
+  repeating = false;
+}
+
 /** On a guarded button's keydown: Enter (not held) starts a press; Space does nothing (and doesn't play the song). */
 export function guardKey(e: React.KeyboardEvent): void {
   if (e.key === ' ' || e.code === 'Space') {
@@ -77,23 +86,39 @@ export function guardKey(e: React.KeyboardEvent): void {
     e.stopPropagation();
     return;
   }
-  if (e.key === 'Enter') down = e.repeat ? null : { button: e.currentTarget, top: cardTop(e.currentTarget), key: true };
+  if (e.key !== 'Enter') return;
+  if (e.repeat) repeating = true;
+  down = e.repeat ? null : { button: e.currentTarget, top: cardTop(e.currentTarget), key: true };
 }
 
 /** On another guarded button's keydown (Dismiss): Enter or Space, not held, starts a press. */
 export function guardKeyPress(e: React.KeyboardEvent): void {
-  if (e.key === 'Enter' || e.key === ' ') down = e.repeat ? null : { button: e.currentTarget, top: cardTop(e.currentTarget), key: true };
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.repeat) repeating = true;
+  down = e.repeat ? null : { button: e.currentTarget, top: cardTop(e.currentTarget), key: true };
 }
 
 /**
- * Whether a click on a guarded button of card `id` should count: 'ignore' (a double-click's
- * second click, or no fresh press behind it), 'unsettled' (the card just appeared or moved), or 'ok'.
+ * Whether a click on a guarded button of card `id` should count:
+ *
+ * - a pointer's click: only one that went down and came up on this button, the card settled and
+ *   where it was ('unsettled' if it had just appeared or moved), never a double-click's second;
+ * - a key's click (Enter, or Space on Dismiss): one that went down on this button, not held;
+ * - a click with no pointer or key behind it (what screen readers, voice control and switch
+ *   access send): a press too, unless a key is being held.
+ *
+ * Presses from keys and assistive tools aren't checked for settling: nothing slides under them.
  */
 export function guardClick(e: React.MouseEvent, id: string): 'ok' | 'unsettled' | 'ignore' {
   const start = down;
   down = null;
   if (e.detail > 1) return 'ignore';
-  if (!start || start.button !== e.currentTarget || start.key !== (e.detail === 0)) return 'ignore';
+  if (e.detail === 0) {
+    if (repeating) return 'ignore';
+    // (Enter's press must be this button's; no press at all is an assistive tool's click)
+    return !start || (start.key && start.button === e.currentTarget) ? 'ok' : 'ignore';
+  }
+  if (!start || start.key || start.button !== e.currentTarget) return 'ignore';
   if (!cardSettled(id)) return 'unsettled';
   return Math.abs(start.top - cardTop(e.currentTarget)) <= 1 ? 'ok' : 'unsettled';
 }

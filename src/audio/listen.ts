@@ -3,7 +3,8 @@
  * the store (so a suggested version of the song renders the same way as the song itself): the
  * render options the Mix check, the before-and-after of a suggestion and an agent's listen all
  * share (renderOptionsFor), the render itself (renderRange: through the master section, with the
- * recordings live playback has, exactly the bars asked for), and its measurement (measureRender:
+ * recordings live playback has, exactly the bars asked for, notes held over from before
+ * included), and its measurement (measureRender:
  * integrated and loudest-3-seconds loudness, true peak, crest and the balance across the
  * spectrum). No store here: callers pass the song.
  */
@@ -12,7 +13,8 @@ import { createLoudnessAnalyser } from './loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAnalysis';
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
-import type { TempoPoint } from './tempoMap';
+import { barToSeconds, type TempoPoint } from './tempoMap';
+import { preRollStart } from './auditionMath';
 import type { IntensityCurve } from '../store/intensity';
 
 /** The parts of a song a render needs. */
@@ -55,14 +57,30 @@ export function musicEnd(song: Pick<ListenSnapshot, 'tracks' | 'clips'>): number
   return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
 }
 
-/** Render bars [from, to) of `song` through the master section. `onMasterStats` hears what the master did. */
-export function renderRange(
+/** `audio` without its first `frames` frames. */
+function trimStart(audio: AudioBuffer, frames: number): AudioBuffer {
+  if (frames <= 0) return audio;
+  const out = new AudioBuffer({ numberOfChannels: audio.numberOfChannels, length: Math.max(1, audio.length - frames), sampleRate: audio.sampleRate });
+  for (let c = 0; c < audio.numberOfChannels; c++) out.copyToChannel(audio.getChannelData(c).subarray(frames), c);
+  return out;
+}
+
+/**
+ * Render bars [from, to) of `song` through the master section, as they sound in the song: from a
+ * run-in (preRollStart) so notes held over from before are heard, then trimmed to start exactly at
+ * `fromBar`. `onMasterStats` hears what the master did.
+ */
+export async function renderRange(
   song: ListenSnapshot,
   fromBar: number,
   toBar: number,
   opts: { signal?: AbortSignal; progress?: RenderProgress; onMasterStats?: (s: MasterStats) => void } = {}
 ): Promise<AudioBuffer> {
-  return renderArrangement({ ...renderOptionsFor(song, fromBar, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
+  const start = preRollStart(song, fromBar);
+  const audio = await renderArrangement({ ...renderOptionsFor(song, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
+  if (start >= fromBar) return audio;
+  const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
+  return trimStart(audio, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate));
 }
 
 /** What a render measures. Silence (or under 0.4 s) has no loudness or balance: -Infinity and no regions. */

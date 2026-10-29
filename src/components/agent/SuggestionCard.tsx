@@ -13,7 +13,8 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { hearSuggestion } from '../../agent/songWatch';
 import { announce, ARMED_MS, isArmed, isOpen, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
-import { guardClick, guardDown, guardKey, guardKeyPress } from './cardGuard';
+import { guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp } from './cardGuard';
+import { focusAfterAnswer } from './returnFocus';
 import { fromYourAgent, louderWords, STATUS_WORDS } from './words';
 
 /** An agent's title in quotes, once (one that poses as the app comes quoted already). */
@@ -159,6 +160,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
               disabled={!open}
               onPointerDown={guardDown}
               onKeyDown={guardKey}
+              onKeyUp={guardKeyUp}
               onClick={(e) => {
                 const press = guardClick(e, s.id);
                 if (press === 'ignore') return;
@@ -166,6 +168,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
                 const answer = acceptSuggestion(s.id, e.nativeEvent);
                 // ('' : a second press too soon to be a separate one)
                 if (answer !== '') say(answer);
+                if (answer === null && e.detail === 0) focusAfterAnswer(s.id);
               }}
               data-accept={s.id}
               className="h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
@@ -176,10 +179,13 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
               type="button"
               onPointerDown={guardDown}
               onKeyDown={guardKeyPress}
+              onKeyUp={guardKeyUp}
               onClick={(e) => {
                 const press = guardClick(e, s.id);
-                if (press === 'ok') dismissSuggestion(s.id, e.nativeEvent);
-                else if (press === 'unsettled') say(unsettled);
+                if (press === 'ok') {
+                  dismissSuggestion(s.id, e.nativeEvent);
+                  if (e.detail === 0) focusAfterAnswer(s.id);
+                } else if (press === 'unsettled') say(unsettled);
               }}
               data-dismiss={s.id}
               className="h-8 px-3 rounded-md border border-forge-border text-[12px] text-forge-text hover:border-red-400/60 flex items-center gap-1"

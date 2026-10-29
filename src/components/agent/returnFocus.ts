@@ -15,3 +15,20 @@ export function returnFocus(opener: HTMLElement | null): void {
     to?.focus({ preventScroll: true });
   }, 0);
 }
+
+/**
+ * After a card was answered from the keyboard or an assistive tool (its buttons gone), focus
+ * goes on: to the next open card's first button, else an earlier one's, else the panel. Never
+ * left on nothing.
+ */
+export function focusAfterAnswer(cardId: string): void {
+  window.setTimeout(() => {
+    const now = document.activeElement;
+    if (now && now !== document.body && now.isConnected) return;
+    const cards = [...document.querySelectorAll<HTMLElement>('[data-agent-panel] [data-suggestion]')];
+    const at = cards.findIndex((c) => c.dataset.suggestion === cardId);
+    const order = [...cards.slice(at + 1), ...cards.slice(0, Math.max(0, at)).reverse()];
+    const next = order.map((c) => c.querySelector<HTMLElement>('button:not([disabled])')).find(Boolean);
+    (next ?? document.querySelector<HTMLElement>('[data-agent-panel]'))?.focus({ preventScroll: false });
+  }, 0);
+}

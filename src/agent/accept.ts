@@ -7,13 +7,13 @@
  * of instruments the suggestion chose. Only a real click or key press accepts: a click made by a
  * script (an event that isn't trusted) does nothing.
  */
-import { currentProject, masterFxOf, useTimelineStore } from '../store/timelineStore';
+import { currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
 import type { ProjectSnapshot } from '../store/project';
 import { liveMix } from '../audio/engine';
 import { setLiveStripTempo } from '../audio/liveTracks';
 import { hasRecordings, loadQuick } from '../audio/samplers/samplerManager';
 import { forgetAudition, stopAudition, useAudition } from '../audio/auditionPlayer';
-import { acceptDecision, appliedRecord, isOpen, updateSuggestion, useSuggestions, type Suggestion } from './suggestionsStore';
+import { acceptDecision, isOpen, updateSuggestion, useSuggestions, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 
 /** Put `song`'s edited parts into the store as one undo step. */
@@ -61,8 +61,11 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
     return decision.message;
   }
   if (useAudition.getState().key === id) stopAudition();
-  updateSuggestion(id, { ...decision.suggestion, status: 'accepted', applied: appliedRecord(decision.suggestion, before) });
+  // (its undo step is named, so an undo or redo of exactly that step is told apart from the old values coming back)
+  const step = `${id}@${Date.now()}`;
+  updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step });
   applyAsOneStep(decision.apply);
+  tagLastStep(step);
   forgetAudition(id);
   return null;
 }

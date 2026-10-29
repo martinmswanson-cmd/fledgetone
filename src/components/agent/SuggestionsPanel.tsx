@@ -169,28 +169,36 @@ export const SuggestionsPanel: React.FC = () => {
         )}
       </section>
 
-      {unread > 0 && (
-        <button type="button" onClick={toMessages} data-agent-unread="" className="mx-3 mt-2 h-7 rounded-md border border-cyan-500/50 bg-cyan-500/10 text-[12px] text-cyan-100 hover:bg-cyan-500/20">
-          {unread} new message{unread === 1 ? '' : 's'} from your agent, below
-        </button>
-      )}
-      <div ref={list} onWheel={noteOwnInput} onTouchMove={noteOwnInput} onPointerDown={noteOwnInput} onKeyDown={noteOwnInput} className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-        {suggestions.length === 0 ? (
-          <p className="text-[12px] text-forge-muted">
-            {connected ? 'No suggestions yet. Ask your agent for one: it appears here for you to hear before and after, then accept or dismiss.' : 'Suggestions from an agent you connect appear here. Nothing changes in your song until you accept one.'}
-          </p>
-        ) : (
-          suggestions.map((s) => <SuggestionCard key={s.id} suggestion={s} agent={agent} />)
-        )}
-        {messages.length > 0 && (
-          <section aria-label="Messages from your agent" className="flex flex-col gap-1.5">
-            {messages.slice(-20).map((m) => (
-              <figure key={m.id} ref={m === latest ? lastMessage : undefined} className="rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5">
-                <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</figcaption>
-                <blockquote className="mt-0.5 text-[12px] text-forge-text whitespace-pre-wrap break-words">{m.text}</blockquote>
-              </figure>
-            ))}
-          </section>
+      {/* (the new-messages button floats over the list's foot, so it never moves the cards) */}
+      <div className="relative flex-1 min-h-0">
+        <div ref={list} onWheel={noteOwnInput} onTouchMove={noteOwnInput} onPointerDown={noteOwnInput} onKeyDown={noteOwnInput} className="h-full overflow-y-auto p-3 pb-12 flex flex-col gap-3">
+          {suggestions.length === 0 ? (
+            <p className="text-[12px] text-forge-muted">
+              {connected ? 'No suggestions yet. Ask your agent for one: it appears here for you to hear before and after, then accept or dismiss.' : 'Suggestions from an agent you connect appear here. Nothing changes in your song until you accept one.'}
+            </p>
+          ) : (
+            suggestions.map((s) => <SuggestionCard key={s.id} suggestion={s} agent={agent} />)
+          )}
+          {messages.length > 0 && (
+            <section aria-label="Messages from your agent" className="flex flex-col gap-1.5">
+              {messages.slice(-20).map((m) => (
+                <figure key={m.id} ref={m === latest ? lastMessage : undefined} className="rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5">
+                  <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</figcaption>
+                  <blockquote className="mt-0.5 text-[12px] text-forge-text whitespace-pre-wrap break-words">{m.text}</blockquote>
+                </figure>
+              ))}
+            </section>
+          )}
+        </div>
+        {unread > 0 && (
+          <button
+            type="button"
+            onClick={toMessages}
+            data-agent-unread=""
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 h-7 px-3 rounded-full border border-cyan-500/50 bg-forge-panel text-[12px] text-cyan-100 shadow-lg shadow-black/50 hover:bg-cyan-500/20"
+          >
+            {unread} new message{unread === 1 ? '' : 's'} from your agent, below
+          </button>
         )}
       </div>
     </aside>

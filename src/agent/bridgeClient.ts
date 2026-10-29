@@ -12,7 +12,7 @@
 import { songParts, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { APP_VERSION } from '../version';
-import { createBridgeClient, type BridgeClient, type BridgeInfo } from './bridgeProtocolClient';
+import { closeMessage, createBridgeClient, type BridgeClient, type BridgeInfo } from './bridgeProtocolClient';
 import { DEFAULT_PERMISSIONS, type Permissions } from './protocol';
 import { RevisionCounter } from './revision';
 import { useSuggestions } from './suggestionsStore';
@@ -107,10 +107,9 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
   ws.onmessage = (e) => {
     if (typeof e.data === 'string') void c.receive(e.data);
   };
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     if (client !== c) return;
-    const was = c.state;
-    c.closed(was === 'waiting' ? 'The helper isn’t answering on that port. Check your agent started it (fledgetone mcp) and the port matches.' : undefined);
+    c.closed(closeMessage(e.code, c.state));
     stopTracking();
   };
   ws.onerror = () => {

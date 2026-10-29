@@ -20,7 +20,7 @@ import { HandlerError, type Handler } from './bridgeProtocolClient';
 import { fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
 import { songReadHandlers } from './studioReads';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, isOpen, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 
@@ -75,7 +75,7 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (!made.ok) throw new HandlerError('bad_ops', made.message, { errors: made.errors });
       // Added at the end (what's on the panel doesn't move), and only counted on the header's
       // button: the panel isn't opened for it, nor is anything focused or applied
-      useSuggestions.setState((x) => ({ suggestions: [...x.suggestions, made.suggestion].slice(-50) }));
+      useSuggestions.setState((x) => ({ suggestions: keepSuggestions([...x.suggestions, made.suggestion]) }));
       announce(`New suggestion from your agent: ${shortText(made.suggestion.title)}.`);
       return view(made.suggestion);
     },
@@ -115,6 +115,9 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       const tempo = songTempo({ bpm: song.bpm, tempoPoints: song.tempoPoints ?? [] });
       if (barToSeconds(toBar, tempo) - barToSeconds(fromBar, tempo) > LIMITS.listenMaxSeconds) throw new HandlerError('too_long', `At most ${LIMITS.listenMaxSeconds} seconds at a time.`);
       if (listening) throw new HandlerError('busy', 'One listen at a time.');
+      // (rendering while the song plays could make it stutter)
+      const t = useTimelineStore.getState();
+      if (t.isPlaying || t.loadingToPlay) throw new HandlerError('busy', 'The song is playing; ask again when it stops.');
       slow(listenRate, 'listens');
       listening = true;
       try {

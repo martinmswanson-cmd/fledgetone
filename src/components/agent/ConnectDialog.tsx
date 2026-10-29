@@ -9,7 +9,7 @@ import { Modal } from '../timeline/Modal';
 import { agentOpeners, useUiStore } from '../../store/uiStore';
 import { connectAgent, DEFAULT_PORT, disconnectAgent, retryCode, setAgentPermissions } from '../../agent/bridgeClient';
 import { useSuggestions } from '../../agent/suggestionsStore';
-import { normalizeCode, typedCode, type Permissions } from '../../agent/protocol';
+import { DEFAULT_PERMISSIONS, normalizeCode, typedCode, type Permissions } from '../../agent/protocol';
 import { returnFocus } from './returnFocus';
 
 /** The privacy line, word for word (also in the guide and the command line's help). */
@@ -45,7 +45,8 @@ export const ConnectDialog: React.FC = () => {
   const [code, setCode] = React.useState('');
   const [portText, setPortText] = React.useState(() => String(readPort()));
   const port = portOf(portText);
-  const [ask, setAsk] = React.useState<Permissions>(() => ({ ...permissions }));
+  // (a new pairing starts from reading only, whatever a previous agent was allowed)
+  const [ask, setAsk] = React.useState<Permissions>(() => (info.state === 'paired' ? { ...permissions } : { ...DEFAULT_PERMISSIONS }));
   const connected = info.state === 'paired';
   const busy = info.state === 'waiting' || info.state === 'proving';
   const valid = normalizeCode(code) !== null && port !== null;
