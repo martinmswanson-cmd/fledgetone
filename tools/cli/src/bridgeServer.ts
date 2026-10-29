@@ -70,6 +70,9 @@ export class BridgeError extends Error {
   }
 }
 
+/** What an event filter returns to keep an event out of the ring buffer (see BridgeServer.eventFilter). */
+export const DROP = Symbol('drop');
+
 /** The message every live tool gives when no studio is paired. */
 export const NOT_CONNECTED = 'No studio is connected — call connect_studio and ask the user to type the code in Fledgetone.';
 
@@ -116,6 +119,8 @@ export class BridgeServer {
   private readonly listeners = new Set<(e: StudioEventRecord) => void>();
   private readonly opts: BridgeServerOptions;
   port = 0;
+  /** Looks at each studio event before it's kept: its params as kept, or DROP (the conversation's check of user_message, conversation.ts). */
+  eventFilter: ((event: string, params: unknown) => unknown) | null = null;
 
   constructor(opts: BridgeServerOptions) {
     this.opts = opts;
@@ -225,7 +230,9 @@ export class BridgeServer {
     if (m.kind === 'event') {
       if (!(STUDIO_EVENTS as readonly string[]).includes(m.method!)) return;
       if (m.method === 'permissions' && conn.studio && typeof m.params === 'object' && m.params) conn.studio.permissions = { ...(m.params as Permissions), read: true };
-      this.record(m.method!, m.params);
+      const params = this.eventFilter ? this.eventFilter(m.method!, m.params) : m.params;
+      if (params === DROP) return;
+      this.record(m.method!, params);
       if (m.method === 'bye') conn.ws.close(4000, 'Bye');
       return;
     }
@@ -368,6 +375,11 @@ export class BridgeServer {
     for (const w of waiting) w();
   }
 
+  /** Drop every kept event of this kind from the ring buffer (the musician's messages, when the studio disconnects). */
+  forget(event: string): void {
+    for (let i = this.events.length - 1; i >= 0; i--) if (this.events[i].event === event) this.events.splice(i, 1);
+  }
+
   /** Be told of every event the studio sends (and of pairing and disconnecting). Returns the way to stop. */
   subscribe(listener: (e: StudioEventRecord) => void): () => void {
     this.listeners.add(listener);
@@ -433,6 +445,14 @@ export class BridgeServer {
       });
     }
     return { events: after(), last: this.seq };
+  }
+
+  /** Tell the paired studio something (an event); false with no studio. */
+  notify(method: string, params: unknown): boolean {
+    const conn = this.paired;
+    if (!conn) return false;
+    this.send(conn, { kind: 'event', method, params });
+    return true;
   }
 
   /** Ask the paired studio; resolves with its answer. Throws BridgeError (not_connected, timeout, or the studio's own error). */

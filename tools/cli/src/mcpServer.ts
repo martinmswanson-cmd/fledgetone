@@ -28,6 +28,7 @@ import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED } from './bridge
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
 import { checkProblems, suggestionIdBase } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
+import { Conversation, CONVERSATION_INSTRUCTIONS, registerConversationTools } from './conversation';
 
 export interface McpOptions {
   root: string;
@@ -60,7 +61,8 @@ Read the fledgetone://docs/ops resource for the ops and their units before you s
 
 /** The MCP server with every tool and resource. */
 export function createMcpServer({ root, bridge }: McpOptions): McpServer {
-  const server = new McpServer({ name: 'fledgetone', version: APP_VERSION }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer({ name: 'fledgetone', version: APP_VERSION }, { instructions: `${SERVER_INSTRUCTIONS}\n\n${CONVERSATION_INSTRUCTIONS}` });
+  const conversation = new Conversation(bridge);
 
   const songFile = (file: string) => readSong(fileInRoot(root, file, { types: SONG_TYPES, mustExist: true }));
   const live = (method: StudioMethod, params: Record<string, unknown> = {}, timeoutMs?: number) => bridge.request(method, params, timeoutMs);
@@ -181,11 +183,16 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
     'wait_for_changes',
     {
       title: 'Wait for changes',
-      description: `Wait (up to ${LIMITS.waitForChangesMaxSeconds} seconds) for something to happen in the studio: an edit (with its new revision), a selection, a suggestion accepted or dismissed, pairing or disconnecting. Pass the "last" you got back as "since" next time.`,
+      description: `Wait (up to ${LIMITS.waitForChangesMaxSeconds} seconds) for something to happen in the studio: an edit (with its new revision), a selection, a suggestion accepted or dismissed, a message from the musician (user_message: answer it with say and replyTo), pairing or disconnecting. Pass the "last" you got back as "since" next time.`,
       inputSchema: { since: z.number().int().min(0).optional(), timeoutSeconds: z.number().min(0).max(LIMITS.waitForChangesMaxSeconds).optional() },
       annotations: { readOnlyHint: true },
     },
-    ({ since, timeoutSeconds }) => guard(() => bridge.waitForEvents(since ?? 0, (timeoutSeconds ?? 10) * 1000))
+    ({ since, timeoutSeconds }) =>
+      guard(async () => {
+        const out = await bridge.waitForEvents(since ?? 0, (timeoutSeconds ?? 10) * 1000);
+        conversation.seenIn(out.events);
+        return out;
+      })
   );
 
   server.registerTool(
@@ -321,16 +328,20 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
     'say',
     {
       title: 'Say something',
-      description: `A short message to the musician on the Suggestions panel (plain text, at most ${LIMITS.sayMaxChars} characters, one a second). "about" ties it to a suggestion.`,
-      inputSchema: { text: z.string().min(1).max(LIMITS.sayMaxChars), about: z.string().optional() },
+      description: `A short message to the musician on the Suggestions panel (plain text, at most ${LIMITS.sayMaxChars} characters, one a second). "about" ties it to a suggestion; "replyTo" (the id of one of their messages) shows it as your answer to that message.`,
+      inputSchema: { text: z.string().min(1).max(LIMITS.sayMaxChars), about: z.string().optional(), replyTo: z.string().max(64).optional() },
     },
-    ({ text, about }) =>
-      guard(() => {
+    ({ text, about, replyTo }) =>
+      guard(async () => {
         needStudio();
+        if (replyTo && !conversation.hasMusicianMessage(replyTo)) throw new Error('replyTo must be the id of one of the musician\'s messages (see get_messages).');
         limited(sayRate, 'say');
-        return live('say', { text, ...(about ? { about } : {}) });
+        const res = (await live('say', { text, ...(about ? { about } : {}), ...(replyTo ? { replyTo } : {}) })) as { id?: unknown } | null;
+        conversation.addAgent(typeof res?.id === 'string' ? res.id : `m${Date.now().toString(36)}`, text, { ...(replyTo ? { replyTo } : {}), ...(about ? { about } : {}) });
+        return res;
       })
   );
+  registerConversationTools(server, conversation, guard);
 
   server.registerTool(
     'point_at',

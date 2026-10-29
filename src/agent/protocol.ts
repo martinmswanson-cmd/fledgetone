@@ -121,9 +121,10 @@ export const DEFAULT_PERMISSIONS: Permissions = { read: true, see: false, sugges
 /**
  * What the studio tells the helper without being asked (events): the song changed (its new
  * revision), the view or selection changed, a suggestion's status changed (accepted, dismissed,
- * out of date, withdrawn), the permissions changed, or it's leaving.
+ * out of date, withdrawn), the permissions changed, it's leaving, or the musician sent the agent a
+ * message (user_message, only when they press Send: see readUserMessage).
  */
-export const STUDIO_EVENTS = ['changed', 'view', 'suggestion', 'permissions', 'bye'] as const;
+export const STUDIO_EVENTS = ['changed', 'view', 'suggestion', 'permissions', 'bye', 'user_message'] as const;
 export type StudioEvent = (typeof STUDIO_EVENTS)[number];
 
 export const isStudioMethod = (m: unknown): m is StudioMethod => typeof m === 'string' && Object.hasOwn(STUDIO_METHODS, m);
@@ -354,4 +355,92 @@ export function typedCode(text: string): string {
   const unlabelled = (text.includes(':') ? text.slice(text.lastIndexOf(':') + 1) : text).replace(/^\s*(pairing\s+)?code\b\s*[=-]?/i, '');
   const plain = [...unlabelled.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')].filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, CODE_LENGTH);
   return plain.replace(/(.{4})(?=.)/g, '$1-');
+}
+
+// ---------- The conversation ----------
+
+/**
+ * The musician's side of the conversation: what they write to their agent on the Suggestions
+ * panel. Kept in memory only, on both ends (never saved with the song or to disk): the studio
+ * keeps it for the tab, the helper until the studio disconnects.
+ */
+export const CONVERSATION = {
+  /** A message the musician writes: at most this many characters. */
+  textMaxChars: 2_000,
+  /** Messages kept each way (the oldest go first). */
+  keep: 200,
+  /** get_messages gives at most this many at a time. */
+  pageMax: 50,
+  /** How long the studio waits for the helper to say it has a message, else it's "Not sent", ms. */
+  ackMs: 5_000,
+  /** Clips listed in a message's context, at most. */
+  contextClips: 50,
+} as const;
+
+/** What the musician chose to send along with a message ("Include what I've selected"). */
+export interface UserMessageContext {
+  selectedTrackId?: string;
+  selectedClipIds?: string[];
+  editingClipId?: string;
+  /** The bars the selected clips cover (song bars, toBar not included). */
+  bars?: { fromBar: number; toBar: number };
+}
+
+/** The `user_message` event's params (studio to helper): one message the musician sent. */
+export interface UserMessage {
+  id: string;
+  text: string;
+  /** When it was written (ms since 1970). */
+  at: number;
+  /** The suggestion it asks about ("Ask about this" on a card). */
+  suggestionId?: string;
+  context?: UserMessageContext;
+}
+
+/** The helper's event (helper to studio) telling the studio it has the musician's messages (`received`), or the agent has read them (`seen`). */
+export const USER_MESSAGE_STATUS = 'user_message_status';
+export interface UserMessageStatusParams {
+  ids: string[];
+  status: 'received' | 'seen';
+}
+
+const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const shortId = (v: unknown) => (typeof v === 'string' && MESSAGE_ID.test(v) ? v : undefined);
+const bar = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 10_000 ? v : undefined);
+
+/** A message's context as either end keeps it: only the fields it may have, ids checked, at most CONVERSATION.contextClips clips. Undefined if nothing is left. */
+export function readContext(c: unknown): UserMessageContext | undefined {
+  if (typeof c !== 'object' || c === null || Array.isArray(c)) return undefined;
+  const o = c as Record<string, unknown>;
+  const out: UserMessageContext = {};
+  const track = shortId(o.selectedTrackId);
+  if (track) out.selectedTrackId = track;
+  if (Array.isArray(o.selectedClipIds)) {
+    const clips = o.selectedClipIds.map(shortId).filter((x): x is string => !!x).slice(0, CONVERSATION.contextClips);
+    if (clips.length) out.selectedClipIds = clips;
+  }
+  const editing = shortId(o.editingClipId);
+  if (editing) out.editingClipId = editing;
+  const b = o.bars as Record<string, unknown> | undefined;
+  const from = bar(b?.fromBar);
+  const to = bar(b?.toBar);
+  if (from !== undefined && to !== undefined && to > from) out.bars = { fromBar: from, toBar: to };
+  return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * A `user_message` event's params as both ends keep them, or null if it isn't one: an id of
+ * letters, digits, - and _; the text plain (no control or direction characters), trimmed, not
+ * empty, at most CONVERSATION.textMaxChars; a time; the suggestion's id and the context only if
+ * they're well formed (anything else is left out).
+ */
+export function readUserMessage(p: unknown): UserMessage | null {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) return null;
+  const o = p as Record<string, unknown>;
+  const id = shortId(o.id);
+  const text = plainAgentText(o.text, CONVERSATION.textMaxChars).trim();
+  if (!id || !text || typeof o.at !== 'number' || !Number.isFinite(o.at)) return null;
+  const suggestionId = shortId(o.suggestionId);
+  const context = readContext(o.context);
+  return { id, text, at: o.at, ...(suggestionId ? { suggestionId } : {}), ...(context ? { context } : {}) };
 }
