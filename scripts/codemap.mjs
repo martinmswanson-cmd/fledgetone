@@ -32,7 +32,7 @@ const FOLDERS = {
   'src/components/video': 'Scoring to a reference video: its lane, its preview window and the Video tab.',
   'src/gameKit': 'The adaptive music players shipped in the game kit (web, Unity, Godot), copied into its .zip as they are, and the web player\'s types.',
   'src/pwa': 'Fledgetone as an installed app: the service worker (sw.js, filled in by the production build), its registration and updates, the install prompt and instructions.',
-  'src/runtime': 'bos-player.js: plays a saved project in a web game, built separately (vite.runtime.config.ts).',
+  'src/runtime': 'Built separately into dist-runtime/ (npm run build:runtime), outside the app: bos-player.js plays a saved project in a web game (vite.runtime.config.ts); fledgetone-render.js renders and measures a song file for the command line, in a headless browser (vite.render.config.ts).',
   'src/search': 'The search palette (Ctrl+K) and instrument search.',
   'src/store':
     'The app\'s state and the music logic. timelineStore.ts holds the song and the actions that change it (with undo); timelineTypes.ts defines the data; project.ts saves and loads it. Most other files are pure functions on that data (markers, tempo, takes, notation, smart tools, starters...), unit-tested under Node.',
