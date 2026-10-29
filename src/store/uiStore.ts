@@ -113,6 +113,13 @@ interface UiState {
   openDock: (tab: DockTab) => void;
   setDockOpen: (open: boolean) => void;
   setDockHeight: (height: number) => void;
+  /** The agent's Suggestions panel (see src/components/agent/), and the Let an agent connect dialog */
+  agentPanelOpen: boolean;
+  agentConnectOpen: boolean;
+  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name) */
+  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string };
+  setAgentPanelOpen: (open: boolean) => void;
+  setAgentConnectOpen: (open: boolean) => void;
 }
 
 const dock = loadDock();
@@ -170,6 +177,11 @@ export const useUiStore = create<UiState>((set, get) => ({
     const s = get();
     saveDock({ tab: s.dockTab, open: s.dockOpen, height: s.dockHeight });
   },
+  agentPanelOpen: false,
+  agentConnectOpen: false,
+  agentStatus: { state: 'off' },
+  setAgentPanelOpen: (agentPanelOpen) => set({ agentPanelOpen }),
+  setAgentConnectOpen: (agentConnectOpen) => set({ agentConnectOpen }),
   setDockHeight: (height) => {
     set({ dockHeight: Math.round(Math.max(DOCK_MIN, Math.min(DOCK_MAX, height))) });
     const s = get();
