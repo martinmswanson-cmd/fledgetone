@@ -544,7 +544,7 @@ export const OfflinePanel: React.FC = () => {
           <button
             type="button"
             onClick={() => void start()}
-            title="Download every instrument's recordings and the built-in plugins now (about 280 MB), so they all work offline"
+            title="Download every instrument's recordings and the built-in plugins now (about 650 MB), so they all work offline"
             className="flex-1 py-1 rounded border border-sky-400/60 bg-sky-500/15 text-sky-100 text-[11px] font-mono font-bold hover:bg-sky-500/25"
           >
             Download all

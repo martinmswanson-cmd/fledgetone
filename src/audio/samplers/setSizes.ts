@@ -25,7 +25,7 @@ const OTHER_FILE_BYTES = 60e3;
 /**
  * About how many bytes of memory a byte of a recording's MP3 takes decoded, at 48 kHz, for one
  * that isn't hosted (a soundfont's note). A hosted set says how much sound its files hold
- * (HostedSet.audio), so its recordings are reckoned from that instead: by their files' bytes the
+ * (HostedSet.audio, HostedSet.tenths), so its recordings are reckoned from that instead: by their files' bytes the
  * sets differ too much (from 15 for the grand piano's to 44 for the hand chimes', since their
  * files were encoded at higher quality) for one figure to be right for all.
  */
@@ -51,17 +51,37 @@ export function fileBytesOf(source: Pick<SampleSource, 'baseUrl' | 'samples' | '
   return set ? set.bytes / fileCount(folder!) : OTHER_FILE_BYTES;
 }
 
+const PITCH: Record<string, number> = { C: 0, Cs: 1, D: 2, Ds: 3, E: 4, F: 5, Fs: 6, G: 7, Gs: 8, A: 9, As: 10, B: 11 };
+
 /**
- * About how many bytes of memory one of `source`'s recordings takes decoded at 48 kHz: its set's
- * sound (seconds, each channel counted, as 32-bit samples) shared between its files, never less
- * than the sampler keeps (it cuts silent tails, so this is on the safe side).
+ * A hosted file's seconds of sound (each channel counted, HostedSet.tenths), from its name
+ * ("Cs4_1_0.mp3": the note, loudness layer and take); undefined for a name that isn't one.
+ */
+function fileSeconds(folder: string, url: string): number | undefined {
+  const set = HOSTED_SETS[folder];
+  const m = /\/([A-G]s?)(-?\d+)_(\d+)_(\d+)\.mp3$/.exec(url);
+  if (!set || !m) return undefined;
+  const note = set.notes.indexOf(12 * (Number(m[2]) + 1) + PITCH[m[1]]);
+  const layer = Number(m[3]);
+  const take = Number(m[4]);
+  if (note < 0 || layer >= set.layers || take >= set.takes) return undefined;
+  const tenths = set.tenths[(note * set.layers + layer) * set.takes + take];
+  return tenths ? tenths / 10 : undefined;
+}
+
+/**
+ * About how many bytes of memory one of `source`'s recordings takes decoded at 48 kHz: its file's
+ * sound (seconds, each channel counted, as 32-bit samples; rounded up), never less than the
+ * sampler keeps (it cuts silent tails, so this is on the safe side). Not the set's average: a
+ * low note's recording can be half as long again as its set's average (the grand piano's below
+ * C4), a pizzicato's twice, so a few low notes' would come in under.
  */
 export function decodedOf(source: Sized, name: string): number {
   const release = name.startsWith('rel|');
   const url = release ? `${source.releases?.baseUrl ?? ''}${source.releases?.samples[name.slice(4)] ?? ''}` : `${source.baseUrl}${source.samples[name] ?? ''}`;
   const folder = folderOf(url);
   const set = folder ? HOSTED_SETS[folder] : undefined;
-  if (set) return (set.audio * 48000 * 4) / fileCount(folder!);
+  if (set) return (fileSeconds(folder!, url) ?? set.audio / fileCount(folder!)) * 48000 * 4;
   return Math.max(OTHER_FILE_BYTES * DECODED_PER_FILE_BYTE, release ? 0 : lengthenedBytes(source));
 }
 
@@ -90,16 +110,24 @@ export function decodedBytes(source: Sized, names: Iterable<string>, decodeRate:
 
 /**
  * About how many bytes of memory `source`'s recordings (its notes, not its release sounds) take
- * decoded at 48 kHz, every one of them: a hosted set's, or the parts of the sets an ensemble plays,
- * each file once. Not hosted: 0 (the soundfonts and the like are small).
+ * decoded at 48 kHz, every one of them: a hosted set's (its whole sound, HostedSet.audio), or the
+ * parts of the sets an ensemble plays, each file once. Not hosted: 0 (the soundfonts and the like
+ * are small).
  */
 export function setDecodedBytes(source: Sized): number {
-  let bytes = 0;
+  const parts = new Map<string, { files: number; bytes: number }>();
   const files = new Set<string>();
   for (const [name, file] of Object.entries(source.samples)) {
     if (files.has(file)) continue;
     files.add(file);
-    if (folderOf(`${source.baseUrl}${file}`)) bytes += decodedOf(source, name);
+    const folder = folderOf(`${source.baseUrl}${file}`);
+    if (!folder) continue;
+    const part = parts.get(folder) ?? { files: 0, bytes: 0 };
+    part.files++;
+    part.bytes += decodedOf(source, name);
+    parts.set(folder, part);
   }
+  let bytes = 0;
+  for (const [folder, part] of parts) bytes += part.files >= fileCount(folder) ? HOSTED_SETS[folder].audio * 48000 * 4 : part.bytes;
   return bytes;
 }
