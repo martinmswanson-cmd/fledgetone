@@ -59,8 +59,11 @@ export interface Suggestion {
   /** Goes up each time `song` is made again; `heard` is the one last heard. */
   version: number;
   heard: number | null;
-  /** The version Accept was pressed for unheard once: a second press accepts it. */
-  confirmUnheard: number | null;
+  /**
+   * Accept pressed once for a version not heard: when, and for which version. A second, separate
+   * press (CONFIRM_AFTER_MS to ARMED_MS later, same version) accepts it without listening.
+   */
+  armed: { version: number; at: number } | null;
   /** The song moved on since `song` was made (it still fits): made again before it's heard or accepted. */
   stale: boolean;
   touchedHashes: Record<string, string>;
@@ -109,6 +112,8 @@ export interface SuggestionsState {
   focusId: string | null;
   /** The last thing worth saying aloud (screen readers): one live region for the panel. */
   announcement: string;
+  /** The time of the last message the musician has had on screen (later ones are new). */
+  messagesSeenAt: number;
 }
 
 export const useSuggestions = create<SuggestionsState>(() => ({
@@ -120,6 +125,7 @@ export const useSuggestions = create<SuggestionsState>(() => ({
   highlight: null,
   focusId: null,
   announcement: '',
+  messagesSeenAt: 0,
 }));
 
 /** A suggestion's own id: random, so its new things' ids never meet another's. */
@@ -130,6 +136,9 @@ export function newSuggestionId(): string {
 
 /** Still up to the musician (waiting, or changed and waiting again). */
 export const isOpen = (s: Pick<Suggestion, 'status'>): boolean => s.status === 'waiting' || s.status === 'changed';
+
+/** How many of the agent's messages the musician hasn't had on screen yet. */
+export const unreadCount = (st: Pick<SuggestionsState, 'messages' | 'messagesSeenAt'>): number => st.messages.filter((m) => m.at > st.messagesSeenAt).length;
 
 /** How many suggestions wait for the musician. */
 export const waitingCount = (list: readonly Suggestion[]): number => list.filter(isOpen).length;
@@ -191,7 +200,7 @@ export function makeSuggestion(
       ext: ctx.ext,
       version: 1,
       heard: null,
-      confirmUnheard: null,
+      armed: null,
       stale: false,
       touchedHashes: touchedHashes(base, ops),
       touchedNames: touchedNames(base, ops),
@@ -211,8 +220,8 @@ export function checkSuggestion(s: Suggestion, now: ProjectSnapshot, ctx: SongCo
   if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
   if (sameSong(s, ctx)) return s;
   const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
-  if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed };
-  return s.status === 'changed' && s.stale ? s : { ...s, status: 'changed', stale: true };
+  if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed, armed: null };
+  return s.status === 'changed' && s.stale && !s.armed ? s : { ...s, status: 'changed', stale: true, armed: null };
 }
 
 /** A suggestion made again on the song now, if the song moved on since it was made (else as it is). */
@@ -221,23 +230,46 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   if (!isOpen(checked) || (!checked.stale && sameSong(checked, ctx))) return checked;
   const again = applyOps(now, { opsVersion: OPS_VERSION, ops: s.ops }, { idBase: s.idBase });
   if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: again.errors.map((e) => e.message) };
-  return { ...checked, status: 'changed', stale: false, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again) };
+  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again) };
 }
 
+/** A second press of Accept counts only this long after the first at the earliest, ms (a double-click doesn't confirm). */
+export const CONFIRM_AFTER_MS = 700;
+/** ...and at the latest, ms: after that the button is Accept again. */
+export const ARMED_MS = 5000;
+
+/** Whether Accept is waiting for its second press ("Accept without listening") at `at`. */
+export const isArmed = (s: Pick<Suggestion, 'armed' | 'version'>, at = Date.now()): boolean => !!s.armed && s.armed.version === s.version && at - s.armed.at <= ARMED_MS;
+
 /**
- * What Accept should do: apply this song, or nothing (and why). A suggestion the song moved on
- * under goes in only as last heard; if this version wasn't heard, the first press says so and a
- * second press accepts it unheard. One never heard at all, unchanged, goes in (it's what the card
- * describes; the card says it wasn't heard).
+ * What Accept should do at time `at`: apply this song, or nothing (and why). Only what was heard
+ * goes in with one press: the version the musician heard last, as the song is now. Otherwise the
+ * first press says so and turns the button into "Accept without listening", and a second,
+ * separate press (CONFIRM_AFTER_MS to ARMED_MS later, nothing changed meanwhile) accepts it
+ * unheard. A press sooner than that is ignored (`ignored`).
  */
-export function acceptDecision(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): { apply: ProjectSnapshot; suggestion: Suggestion } | { apply: null; suggestion: Suggestion; message: string } {
+export function acceptDecision(
+  s: Suggestion,
+  now: ProjectSnapshot,
+  ctx: SongContext,
+  at = Date.now()
+): { apply: ProjectSnapshot; suggestion: Suggestion } | { apply: null; suggestion: Suggestion; message: string; ignored?: boolean } {
   if (!isOpen(s)) return { apply: null, suggestion: s, message: 'This suggestion is no longer waiting.' };
   const fresh = freshen(s, now, ctx);
   if (fresh.status === 'other_song') return { apply: null, suggestion: fresh, message: 'This suggestion was made for another song: it can’t go in this one.' };
   if (fresh.status === 'out_of_date') return { apply: null, suggestion: fresh, message: `Out of date: ${fresh.outOfDate?.join('; ') ?? 'the song changed'}.` };
-  if (fresh.status === 'changed' && fresh.heard !== fresh.version && fresh.confirmUnheard !== fresh.version)
-    return { apply: null, suggestion: { ...fresh, confirmUnheard: fresh.version }, message: 'The song changed since this was suggested, and this version hasn’t been heard. Hear it first, or press Accept again to accept it without hearing it.' };
-  return { apply: fresh.song, suggestion: fresh };
+  if (fresh.heard === fresh.version) return { apply: fresh.song, suggestion: { ...fresh, armed: null } };
+  if (isArmed(fresh, at)) {
+    if (at - fresh.armed!.at >= CONFIRM_AFTER_MS) return { apply: fresh.song, suggestion: { ...fresh, armed: null } };
+    return { apply: null, suggestion: fresh, message: '', ignored: true };
+  }
+  const message =
+    fresh.status === 'changed' && fresh.heard !== null
+      ? 'The song changed since you heard this, so what would go in hasn’t been heard. Hear it again, or press Accept without listening.'
+      : fresh.status === 'changed'
+        ? 'You haven’t heard this, and the song changed since it was suggested. Hear it first, or press Accept without listening.'
+        : 'You haven’t heard this yet. Hear it first, or press Accept without listening.';
+  return { apply: null, suggestion: { ...fresh, armed: { version: fresh.version, at } }, message };
 }
 
 /** What an accepted suggestion touched (the things its ops name and the new things it made), before and after. */
@@ -265,4 +297,56 @@ export function undoCheck(s: Suggestion, now: ProjectSnapshot, epoch: number): S
 /** Change one suggestion in the store. */
 export function updateSuggestion(id: string, patch: Partial<Suggestion> | ((s: Suggestion) => Suggestion)): void {
   useSuggestions.setState((st) => ({ suggestions: st.suggestions.map((s) => (s.id === id ? (typeof patch === 'function' ? patch(s) : { ...s, ...patch }) : s)) }));
+}
+
+/** At most one announcement for screen readers this often, ms (what comes meanwhile is said together after). */
+export const ANNOUNCE_EVERY_MS = 4000;
+/** An agent's words are said only this far, characters. */
+export const ANNOUNCE_MAX_CHARS = 80;
+
+/** `text` cut to `max` characters on a word, with an ellipsis if cut. */
+export function shortText(text: string, max = ANNOUNCE_MAX_CHARS): string {
+  const one = text.replace(/\s+/g, ' ').trim();
+  if (one.length <= max) return one;
+  const cut = one.slice(0, max);
+  return `${cut.slice(0, cut.lastIndexOf(' ') > max / 2 ? cut.lastIndexOf(' ') : max).trimEnd()}…`;
+}
+
+/** What waits to be said together: in order, each once. */
+export function mergeAnnouncements(texts: readonly string[]): string {
+  const once = [...new Set(texts)];
+  if (once.length <= 2) return once.join(' ');
+  return `${once.slice(0, 2).join(' ')} And ${once.length - 2} more update${once.length === 3 ? '' : 's'} from your agent.`;
+}
+
+let lastSaid = -Infinity;
+let waiting: string[] = [];
+let sayTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushAnnouncements() {
+  sayTimer = null;
+  if (!waiting.length) return;
+  const wait = lastSaid + ANNOUNCE_EVERY_MS - Date.now();
+  if (wait > 0) {
+    sayTimer = setTimeout(flushAnnouncements, wait);
+    return;
+  }
+  const text = mergeAnnouncements(waiting);
+  waiting = [];
+  lastSaid = Date.now();
+  useSuggestions.setState({ announcement: text });
+}
+
+/**
+ * Say `text` in the live region: at most one announcement every ANNOUNCE_EVERY_MS, what comes
+ * meanwhile merged into the next. `now`: the answer to the musician's own press, said at once.
+ */
+export function announce(text: string, now = false): void {
+  if (now) {
+    lastSaid = Date.now();
+    useSuggestions.setState({ announcement: text });
+    return;
+  }
+  waiting.push(text);
+  if (!sayTimer) flushAnnouncements();
 }

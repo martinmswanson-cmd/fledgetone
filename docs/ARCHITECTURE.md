@@ -232,7 +232,8 @@ ops and the security model):
   WebSocket server on 127.0.0.1 that a studio pairs with by a code (pairing in
   `src/agent/protocol.ts`; the helper's end in `tools/cli/src/bridgeServer.ts`).
 - **In the studio**: `AgentMount` (in the main bundle, tiny) loads `AgentStudio` as a chunk of its
-  own when the Suggestions panel or "Let an agent connect…" opens. `bridgeClient.ts` wires a
+  own when the Suggestions panel or "Let an agent connect…" opens (not precached; if it can't load,
+  an error boundary shows Retry, then Reload, and the studio carries on). `bridgeClient.ts` wires a
   WebSocket to the protocol client (`bridgeProtocolClient.ts`) and the handlers (`handlers.ts`,
   with the reading ones in `studioReads.ts`). Suggestions live in `suggestionsStore.ts` (never
   saved): each is the ops applied to the song with an id base of its own (`ops.ts`), so what's
@@ -248,7 +249,8 @@ ops and the security model):
   waits, each is checked by fingerprints only: another song (it can never go in), out of date,
   or changed (made again, a new version, only when it's heard or accepted); an accepted one an
   undo took out says undone. Hearing makes it again first and notes the version heard; Accept
-  wants that version heard, or a second press.
+  takes it in one press only as heard, otherwise the first press offers "Accept without
+  listening" and a separate second press (0.7 to 5 s later, never a double-click or Space) accepts.
 - **Accept** (`accept.ts`): one undo step (a checkpoint, then one change of the tracks, clips,
   markers, tempo and master), only from a real click on a card that stayed where it was
   (`cardGuard.ts`). The suggestion is marked accepted first, so the agent never hears it out of

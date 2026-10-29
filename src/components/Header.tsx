@@ -24,7 +24,8 @@ const AgentChip: React.FC = () => {
   const waiting = status.waiting ?? 0;
   if (status.state !== 'connected' && waiting === 0) return null;
   const who = status.agent ? `Your agent (${status.agent})` : 'Your agent';
-  const count = waiting ? `${waiting} suggestion${waiting === 1 ? '' : 's'} waiting` : '';
+  const unread = status.unread ?? 0;
+  const count = [waiting && `${waiting} suggestion${waiting === 1 ? '' : 's'} waiting`, unread && `${unread} new message${unread === 1 ? '' : 's'}`].filter(Boolean).join(', ');
   return (
     <button
       type="button"
@@ -40,6 +41,7 @@ const AgentChip: React.FC = () => {
           {waiting}
         </span>
       )}
+      {unread > 0 && <span className="w-1.5 h-1.5 rounded-full bg-cyan-300" data-agent-unread-dot="" aria-hidden />}
     </button>
   );
 };

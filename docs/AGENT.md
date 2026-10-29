@@ -89,7 +89,7 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Live only for now, one at a time, 10 a minute, and only if you allow listening |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, accepted, dismissed, out of date, changed), or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |
 | `say {text, about?}` | A short message on your panel (plain text, 4000 characters, one a second) |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
 | `list_instruments`, `list_presets`, `list_starters`, `list_params`, `list_inserts`, `list_master` | What there is to choose from, with keys, defaults and ranges |
@@ -372,9 +372,12 @@ song).
 
 `touchedHashes` are fingerprints of what the ops touch, as it was when the suggestion was made.
 When it's applied (or accepted in the studio): the song unchanged, it applies; changed elsewhere
-but not in what it touches, it applies again to the song as it is now (in the studio: "The song
-changed: listen again?"); something it touches changed or went, it's out of date and isn't
-applied. The same ops on the same song always give the same new ids, so what you heard is what
+but not in what it touches, it applies again to the song as it is now (in the studio it's made
+again when the musician hears it); something it touches changed or went, it's out of date and
+isn't applied. In the studio, Accept takes a suggestion in one press only as the musician last
+heard it, on the song as it is; otherwise the first press offers "Accept without listening" and
+a second, separate press accepts it. A suggestion made before another song was opened can't be
+accepted at all. The same ops on the same song always give the same new ids, so what you heard is what
 you get. Applied to a song that already holds ids made for it (the same suggestion applied a
 second time), they get new ones (`<id base>~2`, `~3`...), so no two things ever share an id.
 
@@ -424,7 +427,10 @@ seeing your selection for `get_view`; suggesting for the suggestion requests; li
 `listen`. Otherwise the studio answers `not_allowed`.
 
 **Events** (studio to helper): `changed` (a new revision), `view`, `suggestion` (`{id, status}`:
-accepted, dismissed, out of date, changed, withdrawn), `permissions`, `bye`.
+accepted, undone (Undo took it out; a redo makes it accepted again), dismissed, out of date,
+changed, other song (another song was opened), withdrawn), `permissions`, `bye`. Suggestions,
+messages and `point_at` never open the panel or take the keyboard focus, and `point_at` can't
+point at anything in the Suggestions panel.
 
 **Limits:** frames up to 2 MB; a ping every 15 seconds (no answer: the connection is dropped);
 requests time out after 15 seconds (listening after 2 minutes); and the tools' own limits above.

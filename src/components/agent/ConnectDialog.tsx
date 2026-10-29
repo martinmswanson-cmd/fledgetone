@@ -95,7 +95,7 @@ export const ConnectDialog: React.FC = () => {
 
   return (
     <Modal title={connected ? 'Agent connected' : 'Let an agent connect'} onClose={close}>
-      <form onSubmit={submit} className="flex flex-col gap-3 p-4 text-[13px] text-forge-muted max-w-md">
+      <form onSubmit={submit} data-agent-ui="" className="flex flex-col gap-3 p-4 text-[13px] text-forge-muted max-w-md">
         {connected ? (
           <p className="text-forge-text">
             Connected to your agent{info.agent ? <> (<span className="font-semibold">{info.agent}</span>)</> : null}. It can read this song{ask.suggest ? ' and suggest changes' : ''}{ask.listen ? ', and listen' : ''}.

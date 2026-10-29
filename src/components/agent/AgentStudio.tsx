@@ -8,7 +8,7 @@ import { useUiStore } from '../../store/uiStore';
 import { SuggestionsPanel } from './SuggestionsPanel';
 import { ConnectDialog } from './ConnectDialog';
 import { TimelineHighlight } from './TimelineHighlight';
-import { useSuggestions, waitingCount } from '../../agent/suggestionsStore';
+import { unreadCount, useSuggestions, waitingCount } from '../../agent/suggestionsStore';
 import { watchSong } from '../../agent/songWatch';
 import { useTimelineStore } from '../../store/timelineStore';
 import { stopAudition } from '../../audio/auditionPlayer';
@@ -39,9 +39,11 @@ const AgentStudio: React.FC = () => {
   // How many suggestions wait, for the header's button (the panel isn't opened for them)
   React.useEffect(() => {
     const count = () => {
-      const waiting = waitingCount(useSuggestions.getState().suggestions);
+      const sg = useSuggestions.getState();
+      const waiting = waitingCount(sg.suggestions);
+      const unread = unreadCount(sg);
       const st = useUiStore.getState().agentStatus;
-      if ((st.waiting ?? 0) !== waiting) useUiStore.setState({ agentStatus: { ...st, waiting } });
+      if ((st.waiting ?? 0) !== waiting || (st.unread ?? 0) !== unread) useUiStore.setState({ agentStatus: { ...st, waiting, unread } });
     };
     count();
     const unsubS = useSuggestions.subscribe(count);

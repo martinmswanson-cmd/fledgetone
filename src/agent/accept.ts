@@ -44,7 +44,7 @@ const find = (id: string): Suggestion | undefined => useSuggestions.getState().s
 
 /**
  * Accept suggestion `id`. `event` is the click or key press that asked: one a script made isn't
- * an answer. Returns null when accepted, else what to tell the musician. The suggestion is marked
+ * an answer. Returns null when accepted, '' when the press is ignored, else what to tell the musician. The suggestion is marked
  * accepted before the song changes, so nothing (and no agent) ever sees it out of date on the way.
  */
 export function acceptSuggestion(id: string, event: { isTrusted: boolean } | null): string | null {
@@ -52,8 +52,10 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
   const s = find(id);
   if (!s) return 'That suggestion is gone.';
   const before = currentProject();
-  const decision = acceptDecision(s, before, songContext());
+  const decision = acceptDecision(s, before, songContext(), Date.now());
   if (!decision.apply) {
+    // (a second press too soon after the first: not a separate, deliberate press)
+    if (decision.ignored) return '';
     updateSuggestion(id, decision.suggestion);
     if (!isOpen(decision.suggestion)) forgetAudition(id);
     return decision.message;

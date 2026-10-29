@@ -45,7 +45,8 @@ export const useAudition = create<AuditionState>(() => ({ key: null, phase: 'idl
 type Side = 'a' | 'b';
 
 interface Playing {
-  sources: Record<Side, AudioBufferSourceNode>;
+  /** Each side's source now, through a fade of its own (a restart fades the old one out). */
+  voices: Record<Side, Voice>;
   /** When each source's loop began (context time). */
   began: Record<Side, number>;
   tempo: Record<Side, Tempo>;
@@ -85,9 +86,9 @@ export function stopAudition(): void {
   if (p) {
     ramp(p.master.gain, 0, FADE_SECONDS);
     const end = raw().currentTime + FADE_SECONDS + 0.02;
-    for (const s of Object.values(p.sources)) {
+    for (const v of Object.values(p.voices)) {
       try {
-        s.stop(end);
+        v.src.stop(end);
       } catch {
         // Already stopped
       }
@@ -97,13 +98,39 @@ export function stopAudition(): void {
   useAudition.setState({ phase: 'idle', progress: 0 });
 }
 
-function loopSource(ctx: AudioContext, buffer: AudioBuffer, out: GainNode, at: number, offset: number) {
+interface Voice {
+  src: AudioBufferSourceNode;
+  fade: GainNode;
+}
+
+/** A side's looped source from `offset` at `at`, through its own fade (from silence over SWITCH_SECONDS if `fadeIn`). */
+function loopVoice(ctx: AudioContext, buffer: AudioBuffer, out: GainNode, at: number, offset: number, fadeIn: boolean): Voice {
+  const fade = ctx.createGain();
+  fade.gain.setValueAtTime(fadeIn ? 0 : 1, at);
+  if (fadeIn) fade.gain.linearRampToValueAtTime(1, at + SWITCH_SECONDS);
+  fade.connect(out);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = true;
-  src.connect(out);
+  src.connect(fade);
   src.start(at, offset);
-  return src;
+  return { src, fade };
+}
+
+/** Fade a voice out over SWITCH_SECONDS from `at`, then stop it: never cut while it may still be heard. */
+function retire(v: Voice, at: number) {
+  v.fade.gain.cancelScheduledValues(at);
+  v.fade.gain.setValueAtTime(v.fade.gain.value, at);
+  v.fade.gain.linearRampToValueAtTime(0, at + SWITCH_SECONDS);
+  try {
+    v.src.stop(at + SWITCH_SECONDS + 0.01);
+  } catch {
+    // Already stopped
+  }
+  v.src.onended = () => {
+    v.src.disconnect();
+    v.fade.disconnect();
+  };
 }
 
 /** Switch between A (now) and B (suggested), crossfading in SWITCH_SECONDS at the same place in the music. */
@@ -116,14 +143,9 @@ export function hearAudition(which: Side): void {
   const at = ctx.currentTime + 0.01;
   // The side switched to starts again where the other is now
   const offset = sameBarOffset(Math.max(0, at - p.began[from]), p.fromBar, { tempo: p.tempo[from], seconds: p.buffers[from].duration }, { tempo: p.tempo[which], seconds: p.buffers[which].duration });
-  const old = p.sources[which];
-  try {
-    old.stop();
-  } catch {
-    // Already stopped
-  }
-  old.disconnect();
-  p.sources[which] = loopSource(ctx, p.buffers[which], p.gains[which], at, offset);
+  // (the old source of that side may still be fading from a switch a moment ago: it fades out as the new one fades in)
+  retire(p.voices[which], at);
+  p.voices[which] = loopVoice(ctx, p.buffers[which], p.gains[which], at, offset, true);
   p.began[which] = at - offset;
   p.heard = which;
   ramp(p.gains.a.gain, which === 'a' ? 1 : 0, SWITCH_SECONDS);
@@ -179,10 +201,10 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     gains.b.connect(master);
     // Both start at the top of the range (a switch puts the other at the same bar again)
     const at = ctx.currentTime + 0.05;
-    const sources = { a: loopSource(ctx, pair.a, gains.a, at, 0), b: loopSource(ctx, pair.b, gains.b, at, 0) };
+    const voices = { a: loopVoice(ctx, pair.a, gains.a, at, 0, false), b: loopVoice(ctx, pair.b, gains.b, at, 0, false) };
     master.gain.setValueAtTime(0, at);
     master.gain.linearRampToValueAtTime(1, at + FADE_SECONDS);
-    playing = { sources, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, fromBar: opts.fromBar, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master };
+    playing = { voices, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, fromBar: opts.fromBar, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master };
     const diff = pair.diff;
     useAudition.setState({
       phase: 'playing',

@@ -120,8 +120,8 @@ interface UiState {
   /** The agent's Suggestions panel (see src/components/agent/), and the Let an agent connect dialog */
   agentPanelOpen: boolean;
   agentConnectOpen: boolean;
-  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name), and how many suggestions wait */
-  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string; waiting?: number };
+  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name), and how many suggestions wait and messages are new */
+  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string; waiting?: number; unread?: number };
   setAgentPanelOpen: (open: boolean) => void;
   setAgentConnectOpen: (open: boolean) => void;
 }

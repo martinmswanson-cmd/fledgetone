@@ -79,9 +79,10 @@ export const VideoPreview: React.FC = () => {
   };
 
   const s = useVideoStore.getState();
+  // (z-46: above the Suggestions panel, under dialogs)
   return (
     <div
-      className="fixed z-40 rounded-lg overflow-hidden border border-forge-borderLight bg-black shadow-2xl"
+      className="fixed z-[46] rounded-lg overflow-hidden border border-forge-borderLight bg-black shadow-2xl"
       style={{ right: pos.right, bottom: pos.bottom, width }}
       role="region"
       aria-label="Video preview"

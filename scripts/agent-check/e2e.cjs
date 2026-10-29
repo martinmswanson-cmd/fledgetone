@@ -15,10 +15,17 @@
 //   8. a suggestion whose clip is edited meanwhile goes out of date (Accept off), and the agent hears
 //      so; one being heard stops; one heard before the swing changed is heard again before Accept
 //   9. listen gives a finite loudness and true peak; the agent takes no focus and opens no panel;
-//      a new card goes at the end, ignores presses for a second, and Space presses its buttons
+//      a new card goes at the end, ignores presses for a second, and Space presses its buttons when
+//      reached from the keyboard
 //  10. point_at rings a track (said in the live region); another song opened: the suggestion can't
 //      go in, and stops being heard
 //  11. closing the tab disconnects
+//  12. the agent's chunk failing to load leaves the studio up, with a note and Retry
+//
+// Along the way (0, 9d-9h): focus goes back somewhere sensible when the panel closes; a suggestion
+// not heard needs a separate second press ("Accept without listening": never a double-click, never
+// Space, gone after 5 seconds); point_at can't reach the panel; quick switches keep playing; the
+// live region says agents' words short and at most one every few seconds; new messages are marked.
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default), Playwright's Chromium,
 // and tools/cli's packages (npm install in tools/cli):
@@ -122,6 +129,10 @@ async function until(check, ms, what) {
       return { drums, bass, clav, brass, d, b, c, r };
     });
     await page.getByLabel('Close the Suggestions panel').click();
+    // (opened from the View menu, with no Suggestions button in the header yet: focus goes to the View menu's button)
+    await page.waitForTimeout(100);
+    const back = await page.evaluate(() => ({ role: document.activeElement?.getAttribute('role'), text: document.activeElement?.textContent?.trim() }));
+    step('0 closing the panel gives focus back somewhere sensible', back.role === 'menuitem' && back.text === 'View', JSON.stringify(back));
 
     const A = (fn, arg) => page.evaluate(fn, arg);
     const sgOf = (sid) => A((x) => window.__fledgetoneAgent.sg.useSuggestions.getState().suggestions.find((s) => s.id === x), sid);
@@ -312,6 +323,7 @@ async function until(check, ms, what) {
     await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().setSwing(0.45));
     await statusIs(fourth.id, 'changed');
     const pastSwing = await pastLen();
+    await settle();
     await page.locator(`[data-suggestion="${fourth.id}"] [data-accept]`).click();
     const refused = { past: await pastLen(), s: await sgOf(fourth.id), text: await page.locator(`[data-suggestion="${fourth.id}"] [data-card-status]`).textContent() };
     await hear(fourth.id);
@@ -327,7 +339,7 @@ async function until(check, ms, what) {
     const accepted4 = { s: await sgOf(fourth.id), now: await A(() => window.__fledgetoneAgent.tl.currentProject()) };
     step(
       '8c the swing changed: heard again before it goes in',
-      heard1 === 1 && refused.past === pastSwing && refused.s.status === 'changed' && /hasn’t been heard/.test(refused.text) && s4.heard === s4.version && s4.version === 2 && moved > 1e-4 && accepted4.s.status === 'accepted' && strip(accepted4.now) === strip(expect4) && accepted4.now.swing === 0.45,
+      heard1 === 1 && refused.past === pastSwing && refused.s.status === 'changed' && /Accept without listening/.test(refused.text) && s4.heard === s4.version && s4.version === 2 && moved > 1e-4 && accepted4.s.status === 'accepted' && strip(accepted4.now) === strip(expect4) && accepted4.now.swing === 0.45,
       `version ${s4.version}, B rendered again (differs by ${moved.toFixed(4)})${process.env.VERBOSE ? JSON.stringify({ heard1, refused: [refused.past, pastSwing, refused.s.status, refused.text], s4: [s4.heard, s4.version], acc: accepted4.s.status, same: strip(accepted4.now) === strip(expect4), swing: accepted4.now.swing }) : ''}`
     );
 
@@ -360,17 +372,94 @@ async function until(check, ms, what) {
     const layout = await A(([a, b]) => ({ a: document.querySelector(`[data-suggestion="${a}"]`).offsetTop, b: document.querySelector(`[data-suggestion="${b}"]`).offsetTop }), [fifth.id, sixth.id]);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'two-cards.png') });
     await settle();
-    await sixthCard.locator('[data-dismiss]').focus();
+    // (reached from the keyboard: Tab from Accept)
+    await sixthCard.locator('[data-accept]').focus();
+    await page.keyboard.press('Tab');
     await page.keyboard.press('Space');
     await statusIs(sixth.id, 'dismissed');
     const playing = await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().isPlaying);
     step('9c appended, a fresh card ignores presses, Space presses', layout.a === topBefore && layout.b > layout.a && early.s.status === 'waiting' && /just appeared/.test(early.text) && !playing, `first card at ${topBefore} → ${layout.a}, new at ${layout.b}`);
 
+    // 9d. Not heard: one press of Accept doesn't accept, it offers "Accept without listening"; a
+    // double-click never accepts; Space plays the song (focus left the button) and never accepts;
+    // after 5 seconds it's Accept again; a separate second press accepts
+    const seventh = await suggest({ title: 'Brass a little lower', explanation: '', ops: [{ op: 'set_track', trackId: ids.brass, volumeDb: -14 }] });
+    const seventhCard = page.locator(`[data-suggestion="${seventh.id}"]`);
+    const accept7 = seventhCard.locator('[data-accept]');
+    await seventhCard.waitFor();
+    await settle();
+    await accept7.click();
+    const armedText = (await accept7.textContent()).trim();
+    if (SHOTS) await seventhCard.screenshot({ path: path.join(SHOTS, 'card-accept-without-listening.png') });
+    const armedStatus = (await sgOf(seventh.id)).status;
+    await page.keyboard.press('Space');
+    const spacePlays = await until(() => A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().isPlaying), 2000, 'playback').catch(() => false);
+    await page.keyboard.press('Space');
+    await until(() => A(() => !window.__fledgetoneAgent.tl.useTimelineStore.getState().isPlaying), 2000, 'the stop').catch(() => false);
+    const afterSpace = (await sgOf(seventh.id)).status;
+    await page.waitForTimeout(4500);
+    const expired = await until(async () => ((await accept7.textContent()).trim() === 'Accept' ? 'Accept' : null), 2000, 'Accept again').catch(async () => (await accept7.textContent()).trim());
+    // (the card changed back, and may have moved: let it settle)
+    await settle();
+    await accept7.dblclick();
+    await page.waitForTimeout(300);
+    const afterDouble = { status: (await sgOf(seventh.id)).status, text: (await accept7.textContent()).trim() };
+    // The agent can't point at (or scroll) anything in the panel
+    const scrollBefore = await A(() => document.querySelector('[data-agent-panel] .overflow-y-auto').scrollTop);
+    const pointed = await call('point_at', { target: { control: 'Suggestion from your agent' } }).then(() => 'found', (e) => (/No control/.test(e.message) ? 'not found' : e.message));
+    const scrollAfter = await A(() => document.querySelector('[data-agent-panel] .overflow-y-auto').scrollTop);
+    await page.waitForTimeout(800);
+    await accept7.click();
+    await statusIs(seventh.id, 'accepted').catch(async () => {
+      throw new Error(`9d: the second press didn't accept: "${(await accept7.textContent()).trim()}", ${await seventhCard.locator('[data-card-status]').textContent()}`);
+    });
+    step(
+      '9d unheard: "Accept without listening", a separate second press',
+      armedText === 'Accept without listening' && armedStatus === 'waiting' && spacePlays && afterSpace === 'waiting' && expired === 'Accept' && afterDouble.status === 'waiting' && afterDouble.text === 'Accept without listening',
+      `first press: "${armedText}" (${armedStatus}), space played: ${spacePlays} (${afterSpace}), after 5 s: "${expired}", after a double-click: ${afterDouble.status} "${afterDouble.text}"`
+    );
+    step('9e point_at never reaches the panel', pointed === 'not found' && scrollBefore === scrollAfter, pointed);
+
+    // 9f. A quick run of switches between Now and Suggested keeps playing (each restart fades)
+    await hear(fifth.id);
+    for (let i = 0; i < 6; i++) await page.locator(`[data-suggestion="${fifth.id}"] [data-hear="${i % 2 ? 'suggested' : 'now'}"]`).click({ delay: 0 });
+    const quick = await A(() => window.__fledgetoneAgent.audition.useAudition.getState());
+    step('9f quick switches', quick.phase === 'playing' && quick.hearing === 'b', `${quick.phase}, hearing ${quick.hearing}${quick.error ? `, ${quick.error}` : ''}`);
+
+    // 9g. What's said to screen readers: an agent's long message is said short, a burst merged
+    await A(() => {
+      window.__live = [];
+      const el = document.querySelector('[data-agent-live]');
+      new MutationObserver(() => window.__live.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    await page.waitForTimeout(4100);
+    await call('say', { text: `Here is a long thought: ${'the bass could move more '.repeat(60)}` });
+    for (let i = 0; i < 3; i++) {
+      await page.waitForTimeout(1050);
+      await call('say', { text: `Short note ${i}.` });
+    }
+    await page.waitForTimeout(300);
+    const live = await A(() => window.__live);
+    await page.waitForTimeout(4500);
+    const liveAfter = await A(() => window.__live);
+    step('9g live region: short, at most one a few seconds', live.length === 1 && live[0].length < 140 && /^Your agent sent a message/.test(live[0]) && liveAfter.length === 2 && /Short note 0/.test(liveAfter[1]), JSON.stringify(liveAfter).slice(0, 200));
+
+    // 9h. A message while the panel is closed shows on the header's button until it's been seen
+    await page.getByLabel('Close the Suggestions panel').click();
+    await page.waitForTimeout(1100);
+    await call('say', { text: 'One more thing: the clav is a touch bright.' });
+    const dot = await until(() => page.locator('[data-agent-unread-dot]').count(), 3000, 'the unread dot').catch(() => 0);
+    await page.locator('[data-agent-chip]').click();
+    const newButton = page.locator('[data-agent-unread]');
+    if (await newButton.count()) await newButton.click();
+    const cleared = await until(async () => (await page.locator('[data-agent-unread-dot]').count()) === 0, 3000, 'the dot to clear').catch(() => false);
+    step('9h unread messages marked, then seen', dot > 0 && !!cleared);
+
     // 10. point_at a track
     await page.waitForTimeout(1100);
     await call('point_at', { target: { track: ids.bass }, note: 'The bass' });
     const ringed = await until(() => page.locator('[data-agent-highlight] .border-2').count(), 3000, 'the track ring').catch(() => 0);
-    const said = await until(() => A(() => /points at a track/.test(document.querySelector('[data-agent-live]')?.textContent ?? '')), 3000, 'the live region').catch(() => false);
+    const said = await until(() => A(() => /points at a track/.test(document.querySelector('[data-agent-live]')?.textContent ?? '')), 6000, 'the live region').catch(() => false);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at.png') });
     step('10 point_at', ringed > 0 && !!said);
 
@@ -397,6 +486,32 @@ async function until(check, ms, what) {
     const gone = await until(async () => !(await call('studio_status')).connected, 5000, 'the disconnect').catch(() => false);
     step('11 closing the tab disconnects', !!gone);
     step('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+    // 12. The agent's chunk can't be loaded (offline): a plain note with Retry, the studio carries on
+    const page2 = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await page2.addInitScript(() => localStorage.setItem('bosBeatbox.welcomeSeen', 'true'));
+    await page2.route(/components\/agent\/AgentStudio\.tsx/, (r) => r.abort('internetdisconnected'));
+    await page2.goto(APP, { waitUntil: 'networkidle' });
+    await page2.getByRole('menuitem', { name: 'View', exact: true }).first().click();
+    await page2.locator('[role^="menuitem"]', { hasText: 'Suggestions' }).first().click();
+    const note = await page2.locator('[data-agent-failed]').waitFor({ timeout: 10000 }).then(() => true, () => false);
+    const studioUp = await page2.locator('[data-timeline-scroll]').count();
+    if (SHOTS) await page2.screenshot({ path: path.join(SHOTS, 'chunk-failed.png') });
+    await page2.unroute(/components\/agent\/AgentStudio\.tsx/);
+    await page2.getByRole('button', { name: 'Retry' }).click();
+    // (a browser that remembers the failed download offers Reload next; the song is kept)
+    const panelOrReload = await Promise.race([
+      page2.locator('[data-agent-panel]').waitFor({ timeout: 15000 }).then(() => 'panel'),
+      page2.getByRole('button', { name: 'Reload' }).waitFor({ timeout: 15000 }).then(() => 'reload'),
+    ]).catch(() => 'neither');
+    if (panelOrReload === 'reload') {
+      await Promise.all([page2.waitForNavigation({ waitUntil: 'networkidle' }), page2.getByRole('button', { name: 'Reload' }).click()]);
+      await page2.getByRole('menuitem', { name: 'View', exact: true }).first().click();
+      await page2.locator('[role^="menuitem"]', { hasText: 'Suggestions' }).first().click();
+    }
+    const loaded = panelOrReload !== 'neither' && (await page2.locator('[data-agent-panel]').waitFor({ timeout: 15000 }).then(() => true, () => false));
+    step('12 the chunk fails to load: a note, Retry, the studio stays', note && studioUp > 0 && loaded, `note ${note}, studio ${studioUp > 0}, then ${panelOrReload}: loaded ${loaded}`);
+    await page2.close();
   } catch (err) {
     failures++;
     console.log(`FAIL ${err.message}`);

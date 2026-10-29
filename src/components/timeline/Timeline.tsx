@@ -60,8 +60,12 @@ import { installLiveInput } from '../../audio/liveInput';
 
 // A plugin that fails to load says why
 onPluginError((message) => showToast(message));
-/** What takes Space itself when focused: a checkbox or switch ticks with it, and a button of the Suggestions panel presses with it (Space there never plays the song). */
-const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"], [data-agent-panel] button';
+/**
+ * What takes Space itself when focused: a checkbox or switch ticks with it, and a Suggestions
+ * panel button reached from the keyboard presses with it (after a click, focus is on the panel
+ * and Space plays the song as everywhere).
+ */
+const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"], [data-agent-panel] button:focus-visible';
 
 const closePluginWindow = () => useUiStore.getState().setPluginWindow(null);
 

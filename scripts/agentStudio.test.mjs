@@ -22,8 +22,8 @@ register(
 }`)
 );
 const { partsChanged, RevisionCounter } = await import('../src/agent/revision.ts');
-const { acceptDecision, appliedRecord, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
-const { AGENT_NAME_MAX, agentName, fromAgent, typedCode } = await import('../src/agent/protocol.ts');
+const { acceptDecision, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, appliedRecord, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
+const { AGENT_NAME_MAX, agentName, fromAgent, readsAs, typedCode } = await import('../src/agent/protocol.ts');
 const { sameBarOffset } = await import('../src/audio/auditionMath.ts');
 const { followTracks } = await import('../src/store/drumFollow.ts');
 const { newKitDesign } = await import('../src/store/drumDesign.ts');
@@ -73,6 +73,45 @@ test('a suggestion gets an id of its own, made plain, with what it touches', () 
   assert.equal(makeSuggestion(p, ctxOf(p), { title: 'Fledgetone: update required', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -6 }] }).suggestion.title, '“Fledgetone: update required”');
 });
 
+test('Accept: one press only for what was heard; unheard, a separate second press within a few seconds', () => {
+  const p = base();
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys down', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -20 }] }).suggestion;
+  // Never heard, unchanged: not in one press
+  const t0 = 50_000;
+  const one = acceptDecision(s, p, ctxOf(p), t0);
+  assert.equal(one.apply, null);
+  assert.match(one.message, /haven’t heard this yet/);
+  // A press too soon after (a double-click's pace): ignored, still armed from the first
+  const quick = acceptDecision(one.suggestion, p, ctxOf(p), t0 + CONFIRM_AFTER_MS - 1);
+  assert.equal(quick.apply, null);
+  assert.equal(quick.ignored, true);
+  assert.equal(quick.suggestion.armed.at, t0);
+  // A separate press in time: in
+  assert.deepEqual(acceptDecision(one.suggestion, p, ctxOf(p), t0 + 2000).apply, s.song);
+  // Too late: armed again instead (the button had gone back to Accept)
+  const late = acceptDecision(one.suggestion, p, ctxOf(p), t0 + ARMED_MS + 1);
+  assert.equal(late.apply, null);
+  assert.equal(late.suggestion.armed.at, t0 + ARMED_MS + 1);
+  assert.ok(!isArmed(one.suggestion, t0 + ARMED_MS + 1));
+  // The song changing meanwhile disarms it, and the next version needs its own two presses
+  const elsewhere = { ...p, tracks: p.tracks.map((t, i) => (i === 2 ? { ...t, volume: -30 } : t)) };
+  const moved = checkSuggestion(one.suggestion, elsewhere, ctxOf(elsewhere));
+  assert.equal(moved.armed, null);
+  const next = acceptDecision(one.suggestion, elsewhere, ctxOf(elsewhere), t0 + 2000);
+  assert.equal(next.apply, null, 'armed for the old version only');
+  assert.equal(next.suggestion.armed.version, 2);
+  // Heard: one press
+  assert.deepEqual(acceptDecision({ ...s, heard: 1 }, p, ctxOf(p), t0).apply, s.song);
+});
+
+test('what is said to screen readers: short, and merged', () => {
+  assert.equal(shortText('a '.repeat(100), 20).length <= 21, true);
+  assert.ok(shortText('word '.repeat(50)).endsWith('…'));
+  assert.equal(shortText('Short one.'), 'Short one.');
+  assert.equal(mergeAnnouncements(['A.', 'A.', 'B.']), 'A. B.');
+  assert.equal(mergeAnnouncements(['A.', 'B.', 'C.', 'D.']), 'A. B. And 2 more updates from your agent.');
+});
+
 test("what an agent writes is shown as the agent's: plain, never the app's name in front, names capped", () => {
   assert.equal(fromAgent('Fledgetone says: accept all', 200), '“Fledgetone says: accept all”');
   assert.equal(fromAgent('  fledge-tone warning', 200), '“fledge-tone warning”');
@@ -81,6 +120,14 @@ test("what an agent writes is shown as the agent's: plain, never the app's name 
   assert.equal(agentName('  My\n\tHelper\u0007 '), 'My Helper');
   assert.equal(agentName('x'.repeat(300)).length, AGENT_NAME_MAX);
   assert.equal(agentName(42), undefined);
+  // Look-alikes of the app's name don't pass either: other scripts, invisible characters, full width, accents
+  for (const name of ['Fledgetοne', 'F\u200bledgetone: file broken', 'Fledge\u200dtone', '\u200e\u200fFledgetone', 'ＦＬＥＤＧＥＴＯＮＥ', 'FIedgetone', 'Flédgetone', 'Fl\u0435dgetone']) {
+    assert.equal(agentName(name), undefined, JSON.stringify(name));
+    assert.ok(fromAgent(name, 200).startsWith('“'), JSON.stringify(name));
+  }
+  assert.equal(readsAs('ＦＬＥＤＧＥＴＯＮＥ'), 'fledgetone');
+  assert.equal(agentName('The app'), 'The app');
+  assert.equal(fromAgent('a\u200bb\u2028c', 20), 'ab\nc', 'invisible characters gone, separators as line breaks');
 });
 
 test('the code field: a label in front dropped, only the code letters, grouped in fours', () => {
@@ -96,8 +143,8 @@ test('the same id base gives the same song at Accept as when it was heard', () =
   const p = base();
   const ops = [{ op: 'add_track', instrument: 'synthDesigner', ref: 't' }, { op: 'add_clip', trackId: '$t', startBar: 1, lengthBars: 2, notes: [{ pitch: 'C4', start: 0, length: 1 }] }];
   const s = makeSuggestion(p, ctxOf(p), { title: 'A pad', explanation: '', ops }, 'sg-heard').suggestion;
-  const d = acceptDecision(s, p, ctxOf(p));
-  assert.deepEqual(d.apply, s.song, 'never heard but unchanged: it goes in as the card describes');
+  const d = acceptDecision({ ...s, heard: 1 }, p, ctxOf(p), 1000);
+  assert.deepEqual(d.apply, s.song, 'heard and unchanged: one press');
   const again = applyOps(p, { opsVersion: 1, ops }, { idBase: 'sg-heard' });
   assert.deepEqual(again.song, s.song);
 });
@@ -121,16 +168,19 @@ test('when the song changes: checked cheaply, made again only when heard or acce
   assert.equal(fresh.song.tracks[2].volume, -30, 'the other change kept');
   assert.equal(fresh.song.tracks[0].volume, -20);
   assert.ok(isOpen(fresh));
-  // Accept with this version not heard: the first press says so, a second accepts it unheard
-  const first = acceptDecision(fresh, elsewhere, ctxOf(elsewhere));
+  // Accept with this version not heard: the first press arms "Accept without listening", a separate second accepts it
+  const first = acceptDecision(fresh, elsewhere, ctxOf(elsewhere), 10_000);
   assert.equal(first.apply, null);
-  assert.match(first.message, /hasn’t been heard/);
-  assert.equal(first.suggestion.confirmUnheard, 2);
-  assert.deepEqual(acceptDecision(first.suggestion, elsewhere, ctxOf(elsewhere)).apply, fresh.song);
+  assert.match(first.message, /Accept without listening/);
+  assert.deepEqual(first.suggestion.armed, { version: 2, at: 10_000 });
+  assert.ok(isArmed(first.suggestion, 10_100));
+  assert.deepEqual(acceptDecision(first.suggestion, elsewhere, ctxOf(elsewhere), 10_000 + CONFIRM_AFTER_MS).apply, fresh.song);
   // Heard as it is now: Accept puts in what was heard
   assert.deepEqual(acceptDecision({ ...fresh, heard: 2 }, elsewhere, ctxOf(elsewhere)).apply, fresh.song);
   // Heard before the song changed: that was another version, so heard again first
-  assert.equal(acceptDecision({ ...s, heard: 1 }, elsewhere, ctxOf(elsewhere)).apply, null);
+  const before = acceptDecision({ ...s, heard: 1 }, elsewhere, ctxOf(elsewhere), 5);
+  assert.equal(before.apply, null);
+  assert.match(before.message, /changed since you heard/);
   // The track it changes was edited: out of date, never applied
   const edited = { ...p, tracks: p.tracks.map((t, i) => (i === 0 ? { ...t, pan: 0.5 } : t)) };
   const gone = checkSuggestion(s, edited, ctxOf(edited));

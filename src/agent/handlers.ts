@@ -20,7 +20,7 @@ import { HandlerError, type Handler } from './bridgeProtocolClient';
 import { fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
 import { songReadHandlers } from './studioReads';
 import { applyOps, OPS_VERSION } from './ops';
-import { freshen, isOpen, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, isOpen, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 
@@ -75,7 +75,8 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (!made.ok) throw new HandlerError('bad_ops', made.message, { errors: made.errors });
       // Added at the end (what's on the panel doesn't move), and only counted on the header's
       // button: the panel isn't opened for it, nor is anything focused or applied
-      useSuggestions.setState((x) => ({ suggestions: [...x.suggestions, made.suggestion].slice(-50), announcement: `New suggestion from your agent: ${made.suggestion.title}` }));
+      useSuggestions.setState((x) => ({ suggestions: [...x.suggestions, made.suggestion].slice(-50) }));
+      announce(`New suggestion from your agent: ${shortText(made.suggestion.title)}.`);
       return view(made.suggestion);
     },
 
@@ -150,7 +151,8 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (!text) throw new HandlerError('bad_request', 'say needs some text.');
       slow(sayRate, 'messages');
       const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), at: Date.now() };
-      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-100), announcement: `Your agent says: ${text}` }));
+      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-100) }));
+      announce(`Your agent sent a message: ${shortText(text)}`);
       return { ok: true };
     },
 
@@ -186,7 +188,8 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
         return { ok: true, shown: 'control' };
       }
       const what = target.track ? 'a track' : target.clip ? 'a clip' : target.marker ? 'a marker' : 'some bars';
-      useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 }, announcement: `Your agent points at ${what} on the timeline${note ? `: ${note}` : '.'}` });
+      useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 } });
+      announce(`Your agent points at ${what} on the timeline${note ? `: ${shortText(note)}` : '.'}`);
       return { ok: true, shown: given[0] };
     },
 

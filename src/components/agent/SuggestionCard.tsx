@@ -12,9 +12,12 @@ import { Check, Headphones, Square, X } from 'lucide-react';
 import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { hearSuggestion } from '../../agent/songWatch';
-import { isOpen, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
-import { guardClick, guardDown } from './cardGuard';
+import { announce, ARMED_MS, isArmed, isOpen, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { guardClick, guardDown, guardKey, guardKeyPress } from './cardGuard';
 import { fromYourAgent, louderWords, STATUS_WORDS } from './words';
+
+/** An agent's title in quotes, once (one that poses as the app comes quoted already). */
+const quoted = (t: string) => (t.startsWith('“') && t.endsWith('”') ? t : `“${t}”`);
 
 const bars = (r: { fromBar: number; toBar: number }) => {
   const a = Math.floor(r.fromBar);
@@ -25,7 +28,7 @@ const bars = (r: { fromBar: number; toBar: number }) => {
 /** The line under the buttons: where it is, and whether what Accept puts in was heard. */
 function statusLine(s: Suggestion): string {
   if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : 'The song changed since it was suggested: hear it again before you accept.';
-  if (s.status === 'waiting') return s.heard === null ? 'Not heard yet.' : 'Heard.';
+  if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : 'Not heard yet.';
   const words = STATUS_WORDS[s.status];
   return words[0].toUpperCase() + words.slice(1) + '.';
 }
@@ -35,15 +38,24 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
   const mine = audition.key === s.id;
   // The last press's answer, kept only until the suggestion's status or version moves on
   const [said, setSaid] = React.useState<{ text: string; at: string } | null>(null);
-  const here = `${s.status}:${s.version}`;
+  const key = (x: Pick<Suggestion, 'status' | 'version' | 'armed'>) => `${x.status}:${x.version}:${x.armed?.at ?? ''}`;
+  const here = key(s);
   const message = said && said.at === here ? said.text : null;
   // An answer to a press: shown on the card, and said for screen readers (one live region for the panel)
   const say = (text: string | null) => {
     // (kept for the suggestion as the press left it: Accept may have made it again)
     const after = useSuggestions.getState().suggestions.find((x) => x.id === s.id);
-    setSaid(text ? { text, at: after ? `${after.status}:${after.version}` : here } : null);
-    useSuggestions.setState({ announcement: text ?? `“${s.title}” accepted.` });
+    setSaid(text ? { text, at: after ? key(after) : here } : null);
+    announce(text ?? `${quoted(s.title)} accepted.`, true);
   };
+  // "Accept without listening" lasts ARMED_MS: then it's Accept again
+  const armed = isOpen(s) && isArmed(s);
+  React.useEffect(() => {
+    const at = s.armed?.at;
+    if (at === undefined) return;
+    const t = window.setTimeout(() => updateSuggestion(s.id, (x) => (x.armed?.at === at ? { ...x, armed: null } : x)), Math.max(0, at + ARMED_MS - Date.now()));
+    return () => window.clearTimeout(t);
+  }, [s.id, s.armed?.at]);
   const open = isOpen(s);
   const range = s.focus ?? s.audition;
   const playing = mine && audition.phase === 'playing';
@@ -69,7 +81,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
       <header className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <p className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</p>
-          <h3 className="text-[13px] font-semibold text-forge-text break-words">“{s.title}”</h3>
+          <h3 className="text-[13px] font-semibold text-forge-text break-words">{quoted(s.title)}</h3>
         </div>
         <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wider ${s.status === 'out_of_date' || s.status === 'other_song' ? 'text-amber-300' : 'text-forge-muted'}`}>{s.status.replace(/_/g, ' ')}</span>
       </header>
@@ -146,16 +158,29 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
               type="button"
               disabled={!open}
               onPointerDown={guardDown}
-              onClick={(e) => say(guardClick(e, s.id) ? acceptSuggestion(s.id, e.nativeEvent) : unsettled)}
+              onKeyDown={guardKey}
+              onClick={(e) => {
+                const press = guardClick(e, s.id);
+                if (press === 'ignore') return;
+                if (press === 'unsettled') return say(unsettled);
+                const answer = acceptSuggestion(s.id, e.nativeEvent);
+                // ('' : a second press too soon to be a separate one)
+                if (answer !== '') say(answer);
+              }}
               data-accept={s.id}
               className="h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
             >
-              <Check className="w-3.5 h-3.5" aria-hidden /> {open && s.confirmUnheard === s.version && s.heard !== s.version ? 'Accept unheard' : 'Accept'}
+              <Check className="w-3.5 h-3.5" aria-hidden /> {armed ? 'Accept without listening' : 'Accept'}
             </button>
             <button
               type="button"
               onPointerDown={guardDown}
-              onClick={(e) => (guardClick(e, s.id) ? dismissSuggestion(s.id, e.nativeEvent) : say(unsettled))}
+              onKeyDown={guardKeyPress}
+              onClick={(e) => {
+                const press = guardClick(e, s.id);
+                if (press === 'ok') dismissSuggestion(s.id, e.nativeEvent);
+                else if (press === 'unsettled') say(unsettled);
+              }}
               data-dismiss={s.id}
               className="h-8 px-3 rounded-md border border-forge-border text-[12px] text-forge-text hover:border-red-400/60 flex items-center gap-1"
             >

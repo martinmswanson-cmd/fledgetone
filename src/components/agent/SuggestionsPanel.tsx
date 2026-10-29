@@ -11,13 +11,13 @@
 import React from 'react';
 import { MessagesSquare, X } from 'lucide-react';
 import { agentOpeners, useUiStore } from '../../store/uiStore';
-import { useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, shortText, unreadCount, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { disconnectAgent } from '../../agent/bridgeClient';
 import { watchSong } from '../../agent/songWatch';
 import { SuggestionCard } from './SuggestionCard';
 import { fromYourAgent, STATUS_WORDS } from './words';
 import { stopAudition } from '../../audio/auditionPlayer';
-import { noteCardPlaces } from './cardGuard';
+import { noteCardPlaces, noteListScroll, noteOwnInput } from './cardGuard';
 import { returnFocus } from './returnFocus';
 
 /** "can read, suggest, listen": what the musician allowed, in words. */
@@ -31,7 +31,7 @@ function statusNews(before: readonly Suggestion[], after: readonly Suggestion[])
   const was = new Map(before.map((s) => [s.id, s.status]));
   return after
     .filter((s) => was.has(s.id) && was.get(s.id) !== s.status && s.status !== 'accepted' && s.status !== 'dismissed')
-    .map((s) => `“${s.title}”: ${STATUS_WORDS[s.status]}.`)
+    .map((s) => `“${shortText(s.title, 60)}”: ${STATUS_WORDS[s.status]}.`)
     .join(' ');
 }
 
@@ -40,6 +40,8 @@ export const SuggestionsPanel: React.FC = () => {
   const messages = useSuggestions((s) => s.messages);
   const info = useSuggestions((s) => s.connection);
   const permissions = useSuggestions((s) => s.permissions);
+  const unread = useSuggestions(unreadCount);
+  const lastMessage = React.useRef<HTMLElement>(null);
   const ui = useUiStore.getState();
   const close = () => ui.setAgentPanelOpen(false);
   const panel = React.useRef<HTMLElement>(null);
@@ -77,11 +79,34 @@ export const SuggestionsPanel: React.FC = () => {
     watchCards();
     const mo = new MutationObserver(watchCards);
     mo.observe(el, { childList: true, subtree: true });
+    // A scroll the musician didn't make (anything but their wheel, touch, keys or a press) moves the cards
+    const onScroll = () => noteListScroll(el);
+    el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       ro.disconnect();
       mo.disconnect();
+      el.removeEventListener('scroll', onScroll);
     };
   }, []);
+
+  // The agent's messages count as seen once the latest has been on screen
+  const latest = messages.at(-1);
+  React.useEffect(() => {
+    const el = lastMessage.current;
+    if (!el || !latest || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (seen) => {
+        if (seen.some((x) => x.isIntersecting)) useSuggestions.setState((st) => (st.messagesSeenAt >= latest.at ? st : { messagesSeenAt: latest.at }));
+      },
+      { root: list.current, threshold: 0.5 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [latest]);
+  const toMessages = () => {
+    noteOwnInput();
+    lastMessage.current?.scrollIntoView({ block: 'end' });
+  };
 
   // Statuses that change (out of date, for another song, undone...) are said together
   React.useEffect(
@@ -89,7 +114,7 @@ export const SuggestionsPanel: React.FC = () => {
       useSuggestions.subscribe((s, prev) => {
         if (s.suggestions === prev.suggestions) return;
         const news = statusNews(prev.suggestions, s.suggestions);
-        if (news) useSuggestions.setState({ announcement: news });
+        if (news) announce(news);
       }),
     []
   );
@@ -100,6 +125,11 @@ export const SuggestionsPanel: React.FC = () => {
       tabIndex={-1}
       aria-label="Suggestions"
       data-agent-panel=""
+      onClick={(e) => {
+        // After a pointer's press on a button, focus goes to the panel itself: Space then plays
+        // the song as everywhere, rather than pressing that button again
+        if (e.detail > 0 && (e.target as Element).closest('button') && document.activeElement !== panel.current) panel.current?.focus({ preventScroll: true });
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') {
           e.stopPropagation();
@@ -139,7 +169,12 @@ export const SuggestionsPanel: React.FC = () => {
         )}
       </section>
 
-      <div ref={list} className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+      {unread > 0 && (
+        <button type="button" onClick={toMessages} data-agent-unread="" className="mx-3 mt-2 h-7 rounded-md border border-cyan-500/50 bg-cyan-500/10 text-[12px] text-cyan-100 hover:bg-cyan-500/20">
+          {unread} new message{unread === 1 ? '' : 's'} from your agent, below
+        </button>
+      )}
+      <div ref={list} onWheel={noteOwnInput} onTouchMove={noteOwnInput} onPointerDown={noteOwnInput} onKeyDown={noteOwnInput} className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
         {suggestions.length === 0 ? (
           <p className="text-[12px] text-forge-muted">
             {connected ? 'No suggestions yet. Ask your agent for one: it appears here for you to hear before and after, then accept or dismiss.' : 'Suggestions from an agent you connect appear here. Nothing changes in your song until you accept one.'}
@@ -150,7 +185,7 @@ export const SuggestionsPanel: React.FC = () => {
         {messages.length > 0 && (
           <section aria-label="Messages from your agent" className="flex flex-col gap-1.5">
             {messages.slice(-20).map((m) => (
-              <figure key={m.id} className="rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5">
+              <figure key={m.id} ref={m === latest ? lastMessage : undefined} className="rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5">
                 <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</figcaption>
                 <blockquote className="mt-0.5 text-[12px] text-forge-text whitespace-pre-wrap break-words">{m.text}</blockquote>
               </figure>
