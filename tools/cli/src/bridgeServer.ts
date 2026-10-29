@@ -8,12 +8,14 @@
  * the code for a new one; one proof is worked out at a time), and
  * serves one paired studio at a time. Once paired, `request` sends the studio a request and waits
  * for its answer (or a timeout), and the studio's events are kept in a ring buffer that
- * `waitForEvents` reads from, for the agent's wait_for_changes. It logs to stderr only.
+ * `waitForEvents` reads from, for the agent's wait_for_changes (the musician's messages kept apart
+ * from the rest, so edits never push one out; a reader that fell behind is told it missed some). It logs to stderr only.
  */
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import {
   agentName,
+  CONVERSATION,
   encodeMessage,
   hostAllowed,
   LIMITS,
@@ -114,6 +116,8 @@ export class BridgeServer {
   private nextId = 0;
   private readonly events: StudioEventRecord[] = [];
   private seq = 0;
+  /** The newest event pushed out of the ring buffer unread (wait_for_changes from before it missed something). */
+  private dropped = 0;
   private waiters: Array<() => void> = [];
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(e: StudioEventRecord) => void>();
@@ -369,10 +373,32 @@ export class BridgeServer {
         // a listener's trouble isn't the connection's
       }
     }
-    while (this.events.length > LIMITS.eventBuffer) this.events.shift();
+    this.trim();
     const waiting = this.waiters;
     this.waiters = [];
     for (const w of waiting) w();
+  }
+
+  /**
+   * The ring buffer kept to LIMITS.eventBuffer events of other kinds, the oldest first, and the
+   * musician's messages (user_message) to CONVERSATION.keep of their own: a burst of edits never
+   * pushes out a message. What goes is noted, so wait_for_changes can say something was missed.
+   */
+  private trim() {
+    const over = (kind: (e: StudioEventRecord) => boolean, max: number) => {
+      let count = this.events.filter(kind).length;
+      for (let i = 0; count > max && i < this.events.length; ) {
+        if (!kind(this.events[i])) {
+          i++;
+          continue;
+        }
+        this.dropped = Math.max(this.dropped, this.events[i].seq);
+        this.events.splice(i, 1);
+        count--;
+      }
+    };
+    over((e) => e.event !== 'user_message', LIMITS.eventBuffer);
+    over((e) => e.event === 'user_message', CONVERSATION.keep);
   }
 
   /** Drop every kept event of this kind from the ring buffer (the musician's messages, when the studio disconnects). */
@@ -432,8 +458,11 @@ export class BridgeServer {
     return this.paired !== null;
   }
 
-  /** Events after `since` (a seq), waiting up to `ms` for one if there are none yet. */
-  async waitForEvents(since: number, ms: number): Promise<{ events: StudioEventRecord[]; last: number }> {
+  /**
+   * Events after `since` (a seq), waiting up to `ms` for one if there are none yet. `missed`: some
+   * after `since` were pushed out of the ring buffer before they were read (with a hint).
+   */
+  async waitForEvents(since: number, ms: number): Promise<{ events: StudioEventRecord[]; last: number; missed?: true; hint?: string }> {
     const after = () => this.events.filter((e) => e.seq > since);
     if (!after().length && ms > 0) {
       await new Promise<void>((resolve) => {
@@ -444,7 +473,8 @@ export class BridgeServer {
         });
       });
     }
-    return { events: after(), last: this.seq };
+    const out = { events: after(), last: this.seq };
+    return since < this.dropped ? { ...out, missed: true, hint: 'Some events after "since" were dropped before you read them: call get_messages for the musician\'s messages (check "unanswered") and get_song for the song as it is.' } : out;
   }
 
   /** Tell the paired studio something (an event); false with no studio. */

@@ -59,6 +59,7 @@ test('the musician writes, the agent reads it and replies to it', { skip, timeou
   try {
     assert.match(agent.getInstructions(), /replyTo/);
     assert.match(agent.getInstructions(), /ask before suggesting big changes/);
+    assert.match(agent.getInstructions(), /"missed".*get_messages.*"unanswered"/s);
     const { tools } = await agent.listTools();
     const getMessages = tools.find((t) => t.name === 'get_messages');
     assert.ok(getMessages, 'a get_messages tool');

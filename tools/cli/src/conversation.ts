@@ -34,7 +34,7 @@ export interface ConversationEntry {
 }
 
 /** What the agent is told about working with the musician (added to the server's instructions). */
-export const CONVERSATION_INSTRUCTIONS = `The musician can write to you from their Suggestions panel. Their messages come through wait_for_changes (event "user_message") and get_messages reads the whole conversation. Answer with say, passing replyTo (their message's id). Work alongside them, not for them: answer their questions, ask before suggesting big changes, and keep each suggestion small.`;
+export const CONVERSATION_INSTRUCTIONS = `The musician can write to you from their Suggestions panel. Their messages come through wait_for_changes (event "user_message") and get_messages reads the whole conversation. Answer with say, passing replyTo (their message's id). If wait_for_changes says "missed", or now and then anyway, call get_messages and answer what's in "unanswered". Work alongside them, not for them: answer their questions, ask before suggesting big changes, and keep each suggestion small.`;
 
 export class Conversation {
   private entries: ConversationEntry[] = [];
