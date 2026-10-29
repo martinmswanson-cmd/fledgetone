@@ -46,7 +46,7 @@ npx tsc -p tools/cli                # type check
 | `measure <file.wav> [--json]` | An export's loudness (LUFS, and the loudest 3 seconds), true peak, crest and balance across the spectrum |
 | `link <song> [--base <url>]` | A share link that opens the song in Fledgetone |
 | `from-link <link> -o <out>` | The song in a share link, as a file |
-| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` |
+| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` |
 
 Exit codes: 0 done; 1 done with something to fix, or refused (an out-of-date suggestion); 2 a
 mistake in the command or a file that can't be read. Nothing but the command's output goes to

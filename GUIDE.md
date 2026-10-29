@@ -1516,6 +1516,28 @@ After you've opened Fledgetone once from fledgetone.com (in Chrome, Edge, Safari
 
 **Keeping your work.** Browsers can clear a website's storage when the disk is nearly full. Fledgetone asks the browser to keep it (when you install the app, or once you've made a song); Master tab › **Instruments offline** shows **Storage: protected**, or **may be cleared by the browser if the disk gets full** with a **Protect** button to ask again. Browsers decide for themselves; installing Fledgetone usually lets it keep your storage. Whatever the browser says, **File › Save** your songs to files: that's the copy nothing can clear.
 
+## Working with an agent (optional)
+
+Fledgetone has no AI built in, no account and no keys. If you already use an AI agent that works with MCP (Claude Code or Claude Desktop, for example), you can let it read your song and **suggest** changes: notes, clips, levels, effects, automation, tempo and markers. You hear every suggestion before and after, then accept it or not. The agent never changes your song itself, and nothing is accepted for you. It's entirely optional: nothing about it runs until you ask.
+
+**Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.** Connect only an agent you'd show the song to.
+
+**Setting it up.** The agent talks to a small helper, `fledgetone mcp`, that runs on your computer (it comes with Fledgetone's source: see `docs/AGENT.md` there for the two commands that build it and how to add it to your agent). Then:
+
+1. Ask your agent to connect to Fledgetone. It gives you a code like `K7QM-3XPD-9TBW`.
+2. In Fledgetone, choose **View › Let an agent connect…** (or search for it), type the code, and tick what the agent may do: it can always **read the song**; it can also **see what you select**, **suggest changes** and **listen** (render a few bars and measure their loudness and balance; nothing plays). Leave the port at 47123 unless your agent says another.
+3. **Connect**. The header shows **Agent connected**; click it, or **View › Suggestions**, for the Suggestions panel.
+
+**Suggestions.** Each one arrives as a card on the Suggestions panel: what the agent called it and why, **What changes** in plain words, cautions in amber (a track much louder, the master pushed, a delay feeding back), and notes. Move the pointer over a card to see its tracks and bars tinted on the timeline.
+
+- **Hear**: **Suggested** and **Now** play the same few bars looped, switching in step, so you hear exactly what changes. Your song's playback stops first, and nothing in your song changes while you listen (no undo step, no autosave). A suggestion much louder than your song plays turned down to 6 LU over it, and the card says so.
+- **Accept** puts it in your song as one step: **Edit › Undo** (Ctrl+Z) takes it all back out. **Dismiss** throws it away.
+- If you edit the song while a suggestion waits, it's checked again: if what it changes is untouched it's applied to your song as it is now ("listen again"); if you edited something it changes, it's **out of date** and can't be accepted.
+
+The agent can also leave you messages on the panel and point at a track, a clip, some bars or a control. **Disconnect** on the panel ends the connection; closing the tab does too.
+
+**If it doesn't connect.** Chrome may ask whether the page can reach devices on your local network: allow it (the helper is on your computer). Safari and Brave may block the connection to a helper on your computer; a `fledgetone studio` mode that opens the studio from the helper itself is coming. The phone apps don't connect to agents.
+
 ## Tips and limits
 
 - Songs can be up to 400 bars long, with any number of tempo changes (40 to 240 BPM, to 0.01 BPM) and time signatures. The shortest loop is a 16th note.

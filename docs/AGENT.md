@@ -61,6 +61,7 @@ Options of `fledgetone mcp`:
 | `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one. If 47123 is taken it picks a free one and the pairing message says which. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-null-origin` | Also let a page opened from a file on disk connect (the one-file build). |
+| `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
 
 ## Two ways to work
 

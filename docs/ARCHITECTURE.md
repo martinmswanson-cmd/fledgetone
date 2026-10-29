@@ -223,6 +223,28 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - Anything that replaces the song (New, Open, a link, Restore) goes through `loadProject`, which
   tells `onProjectReplaced` listeners (for example, to forget which file Save writes to).
 
+### An agent suggests a change
+
+Optional, and nothing of it loads until the musician asks (docs/AGENT.md has the protocol, the
+ops and the security model):
+
+- **The helper** (`tools/cli/`, `fledgetone mcp`): an MCP server on stdio for the agent, and a
+  WebSocket server on 127.0.0.1 that a studio pairs with by a code (pairing in
+  `src/agent/protocol.ts`; the helper's end in `tools/cli/src/bridgeServer.ts`).
+- **In the studio**: `AgentMount` (in the main bundle, tiny) loads `AgentStudio` as a chunk of its
+  own when the Suggestions panel or "Let an agent connect…" opens. `bridgeClient.ts` wires a
+  WebSocket to the protocol client (`bridgeProtocolClient.ts`) and the handlers (`handlers.ts`,
+  with the reading ones in `studioReads.ts`). Suggestions live in `suggestionsStore.ts` (never
+  saved): each is the ops applied to the song with an id base of its own (`ops.ts`), so what's
+  heard is what's accepted.
+- **Hearing it**: `auditionPlayer.ts` renders the same bars of the song now and as suggested
+  (`listen.ts`, which the Mix check shares) and plays both looped and in step after the master,
+  crossfading 20 ms between them. The store isn't touched.
+- **Accept** (`accept.ts`): one undo step (a checkpoint, then one change of the tracks, clips,
+  markers, tempo and master), only from a real click. While a suggestion waits, every edit
+  (`revision.ts`, counting changes of `songParts`) checks it again: still fits, applied again to
+  the song now, or out of date.
+
 ## The instruments
 
 `createInstrument(key, output, options)` in `instruments.ts` builds any instrument as a
