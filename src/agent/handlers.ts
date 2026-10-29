@@ -162,9 +162,10 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (!text) throw new HandlerError('bad_request', 'say needs some text.');
       // A reply names one of the musician's messages (that the agent has, so it has read it)
       const replyTo = str(p.replyTo, 64);
-      if (replyTo && !useConversation.getState().mine.some((m) => m.id === replyTo && m.status !== 'not_sent')) throw new HandlerError('not_found', 'There is no message from the musician with that id (replyTo).');
+      const conv = useConversation.getState();
+      if (replyTo && !conv.mine.some((m) => m.id === replyTo && m.connection === conv.connection && m.status !== 'not_sent')) throw new HandlerError('not_found', 'There is no message from the musician with that id (replyTo).');
       slow(sayRate, 'messages');
-      const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), ...(replyTo ? { replyTo } : {}), at: Date.now() };
+      const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), ...(replyTo ? { replyTo } : {}), connection: conv.connection, ...(useSuggestions.getState().connection.agent ? { agent: useSuggestions.getState().connection.agent } : {}), at: Date.now() };
       useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-CONVERSATION.keep) }));
       if (replyTo) setDelivery([replyTo], 'seen');
       announce(`${replyTo ? 'Your agent replied' : 'Your agent sent a message'}: ${shortText(text)}`);

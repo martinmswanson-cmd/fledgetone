@@ -143,7 +143,8 @@ export const SuggestionsPanel: React.FC = () => {
         if (e.detail > 0 && t.closest('button') && !t.closest('[data-keep-focus]') && document.activeElement !== panel.current) panel.current?.focus({ preventScroll: true });
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+        // (Esc while an input method composes text is the method's)
+        if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
           e.stopPropagation();
           close();
         }
@@ -200,7 +201,7 @@ export const SuggestionsPanel: React.FC = () => {
             data-agent-unread=""
             className="absolute bottom-2 left-1/2 -translate-x-1/2 h-7 px-3 rounded-full border border-cyan-500/50 bg-forge-panel text-[12px] text-cyan-100 shadow-lg shadow-black/50 hover:bg-cyan-500/20"
           >
-            {unread} new message{unread === 1 ? '' : 's'} from your agent, below
+            Jump to {unread} new message{unread === 1 ? '' : 's'} from your agent
           </button>
         )}
       </div>

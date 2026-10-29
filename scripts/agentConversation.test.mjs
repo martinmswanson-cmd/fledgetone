@@ -1,9 +1,9 @@
 // The conversation between the musician and their agent: the user_message event's shape
-// (src/agent/protocol.ts), the studio's delivery states and selection context
-// (src/agent/conversation.ts), and the helper's side (tools/cli/src/conversation.ts) with the
+// (src/agent/protocol.ts) and the musician's text kept as written, the studio's delivery states,
+// what goes at each send and retry, new pairings and the selection context (src/agent/conversation.ts), and the helper's side (tools/cli/src/conversation.ts) with the
 // real helper and studio client paired in this process: messages kept and acknowledged, a retry
-// kept once, paging and caps, seen when the agent reads them or replies, and nothing left once
-// the studio disconnects. The parts with the real helper need tools/cli's dependencies (npm
+// kept once, never pushed out of the ring buffer by edits, paging and caps, seen when the agent
+// reads them or replies, and nothing left once the studio disconnects. The parts with the real helper need tools/cli's dependencies (npm
 // install in tools/cli) and are skipped without them. Run with `npm test`.
 import { register, createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -50,6 +50,52 @@ test('a user_message: only its own fields, plain text, capped, with a well-forme
   // A bad suggestion id or an empty context is left out, the message kept
   assert.deepEqual(P.readUserMessage({ id: 'u-1', text: 'hi', at: 1, suggestionId: '<b>', context: { bars: { fromBar: 5, toBar: 2 } } }), { id: 'u-1', text: 'hi', at: 1 });
   assert.equal(P.readContext({ selectedClipIds: Array.from({ length: 80 }, (_, i) => `c${i}`) }).selectedClipIds.length, P.CONVERSATION.contextClips);
+});
+
+test("the musician's own text keeps joiners and direction marks; controls and overrides go; nothing visible, nothing sent", () => {
+  const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+  const persian = 'می\u200Cخواهم';
+  const marks = 'abc \u200F\u05D0\u200E x \u061C';
+  assert.equal(P.plainUserText(family, 100), family, 'an emoji family keeps its joiners');
+  assert.equal(P.plainUserText(persian, 100), persian, 'a Persian word keeps its non-joiner');
+  assert.equal(P.plainUserText(marks, 100), marks, 'LRM, RLM and ALM stay');
+  assert.equal(P.plainUserText('a\u202Eb\u202Ac\u2066d\u2069e\u0007f\u0085g\u2028h', 100), 'abcdefg\nh');
+  assert.equal(P.readUserMessage({ id: 'u-1', text: `${family} ${persian}`, at: 1 }).text, `${family} ${persian}`);
+  for (const t of ['\u200B\u200D \u200E', '\u202E\u2066', ' \n\t ']) assert.equal(P.readUserMessage({ id: 'u-1', text: t, at: 1 }), null, JSON.stringify(t));
+  assert.equal(P.hasVisibleText('\u200D\u200F'), false);
+  assert.equal(P.hasVisibleText('\u200Dx'), true);
+});
+
+test('what goes with a message is decided at each send and retry: the selection only while allowed, the suggestion only while on the panel', () => {
+  const m = { id: 'u-1', text: 'hi', at: 5, suggestionId: 'sg-1', context: { selectedClipIds: ['c1'] } };
+  assert.deepEqual(C.outgoing(m, { see: true, onPanel: () => true }), m);
+  assert.deepEqual(C.outgoing(m, { see: false, onPanel: () => true }), { id: 'u-1', text: 'hi', at: 5, suggestionId: 'sg-1' }, 'no selection once "see" is off');
+  assert.deepEqual(C.outgoing(m, { see: true, onPanel: () => false }), { id: 'u-1', text: 'hi', at: 5, context: { selectedClipIds: ['c1'] } }, 'no suggestion that is gone');
+  assert.deepEqual(C.outgoing({ id: 'u-2', text: 'x', at: 1 }, { see: true, onPanel: () => true }), { id: 'u-2', text: 'x', at: 1 }, 'never a selection not ticked');
+});
+
+test('a new pairing: messages not sent before it lose Retry (said so), and the next message starts plain', () => {
+  C.useConversation.setState({ mine: [], connection: 0, about: 'sg-1', include: true, draft: 'keep me' });
+  const n0 = (id, status, connection) => ({ id, text: id, at: 1, status, connection });
+  C.useConversation.setState({ mine: [n0('before', 'not_sent', 0)] });
+  const one = C.newConnection();
+  assert.equal(one, 1);
+  let st = C.useConversation.getState();
+  assert.deepEqual({ about: st.about, include: st.include, draft: st.draft }, { about: null, include: false, draft: 'keep me' });
+  assert.deepEqual([st.mine[0].ended, st.mine[0].reason], [true, C.BEFORE_REASON]);
+  C.addOwn(n0('seen', 'seen', 1));
+  C.addOwn(n0('lost', 'not_sent', 1));
+  C.addOwn(n0('going', 'sending', 1));
+  C.newConnection();
+  st = C.useConversation.getState();
+  const by = Object.fromEntries(st.mine.map((m) => [m.id, m]));
+  assert.equal(by.seen.status, 'seen', 'what was seen stays seen');
+  assert.ok(!by.seen.ended);
+  assert.deepEqual([by.lost.status, by.lost.ended, by.lost.reason], ['not_sent', true, C.ENDED_REASON]);
+  assert.deepEqual([by.going.status, by.going.ended], ['not_sent', true]);
+  // An ended message never moves again (no retry, no late word)
+  assert.equal(C.withDelivery(st.mine, ['lost'], 'sending').find((m) => m.id === 'lost').status, 'not_sent');
+  assert.equal(C.withDelivery(st.mine, ['lost'], 'seen').find((m) => m.id === 'lost').status, 'not_sent');
 });
 
 test("the studio's delivery: never goes back, not sent only from sending, and Retry or a late answer moves it on", () => {
@@ -162,6 +208,26 @@ test('the helper keeps the musician\'s messages for wait_for_changes, made plain
     const after = await helper.waitForEvents(0, 0);
     assert.ok(!after.events.some((x) => x.event === 'user_message'), 'no user_message left in the ring buffer');
   } finally {
+    await helper.close();
+  }
+});
+
+test("a burst of edits never pushes the musician's message out of the ring buffer; a reader that fell behind is told", { skip: skipCli }, async () => {
+  const { helper, client } = await pairedStudio();
+  try {
+    const since = helper.status().lastEvent;
+    say(client, 'u-keep', 'Please keep this');
+    for (let i = 0; i < P.LIMITS.eventBuffer + 50; i++) client.emit('changed', { revision: i });
+    await until(() => helper.status().lastEvent >= since + P.LIMITS.eventBuffer + 51, 5000, 'every event');
+    const out = await helper.waitForEvents(since, 0);
+    assert.ok(out.events.some((e) => e.event === 'user_message' && e.params.id === 'u-keep'), 'the message is still there');
+    assert.equal(out.events.filter((e) => e.event === 'changed').length, P.LIMITS.eventBuffer);
+    assert.equal(out.missed, true);
+    assert.match(out.hint, /get_messages/);
+    const fresh = await helper.waitForEvents(out.last - 5, 0);
+    assert.equal(fresh.missed, undefined, 'a reader keeping up misses nothing');
+  } finally {
+    client.disconnect();
     await helper.close();
   }
 });

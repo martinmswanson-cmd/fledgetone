@@ -11,14 +11,15 @@
  *
  * It also carries the musician's messages to the agent (sendToAgent, only when they press Send or
  * Retry) and the helper's word on them (received, seen by the agent); a message still on its way
- * when the connection goes, or sent with none open, is "Not sent" until the musician retries it.
+ * when the connection goes, or sent with none open, is "Not sent" until the musician retries it
+ * (within that connection only: a new pairing starts a new one, see conversation.ts).
  */
 import { songParts, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { APP_VERSION } from '../version';
 import { closeMessage, createBridgeClient, type BridgeClient, type BridgeInfo } from './bridgeProtocolClient';
 import { CONVERSATION, DEFAULT_PERMISSIONS, readUserMessage, USER_MESSAGE_STATUS, type Permissions, type UserMessageStatusParams } from './protocol';
-import { addOwn, failSending, newUserMessageId, NO_ANSWER_REASON, selectionContext, setDelivery, useConversation, type OwnMessage } from './conversation';
+import { addOwn, failSending, newConnection, newUserMessageId, NO_ANSWER_REASON, outgoing, selectionContext, setDelivery, useConversation, type OwnMessage } from './conversation';
 import { RevisionCounter } from './revision';
 import { useSuggestions } from './suggestionsStore';
 import { watchSong } from './songWatch';
@@ -34,6 +35,8 @@ let tracking: (() => void) | null = null;
 
 /** The connection as the panel shows it. */
 function setInfo(info: BridgeInfo) {
+  // A new pairing is a new connection: what wasn't sent before it can't be retried into it
+  if (info.state === 'paired' && useSuggestions.getState().connection.state !== 'paired') newConnection();
   useSuggestions.setState({ connection: info });
   const state = info.state === 'paired' ? 'connected' : info.state === 'waiting' || info.state === 'proving' || info.state === 'wrong_code' ? 'connecting' : 'off';
   useUiStore.setState({ agentStatus: { state, ...(info.agent ? { agent: info.agent } : {}) } });
@@ -135,6 +138,8 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
 export function setAgentPermissions(permissions: Permissions): void {
   const p = { ...permissions, read: true };
   useSuggestions.setState({ permissions: p });
+  // (the tick goes with the permission: allowing it again doesn't tick it again)
+  if (!p.see) useConversation.setState({ include: false });
   client?.setPermissions(p);
 }
 
@@ -151,7 +156,12 @@ export function disconnectAgent(reason = 'The musician disconnected.'): void {
 
 /** Hand a message to the helper (only paired, on an open socket); it's "Not sent" if the helper doesn't say it has it in time. */
 function deliver(m: OwnMessage): void {
-  const { status: _s, reason: _r, ...params } = m;
+  // What goes is decided now: the selection only while the agent may see it, the suggestion only while it's on the panel
+  const st = useSuggestions.getState();
+  const params = outgoing(m, { see: st.permissions.see, onPanel: (id) => st.suggestions.some((s) => s.id === id) });
+  // (and the conversation shows what went, no more)
+  if (params.context !== m.context || params.suggestionId !== m.suggestionId)
+    useConversation.setState((c) => ({ mine: c.mine.map((x) => (x.id === m.id ? { ...x, context: params.context, suggestionId: params.suggestionId } : x)) }));
   const ok = !!client && client.state === 'paired' && socket?.readyState === WebSocket.OPEN && client.emit('user_message', params);
   if (!ok) {
     setDelivery([m.id], 'not_sent');
@@ -177,16 +187,17 @@ export function sendToAgent(text: string, opts: { about?: string | null; include
   const about = opts.about && st.suggestions.some((s) => s.id === opts.about) ? opts.about : undefined;
   const read = readUserMessage({ id: newUserMessageId(), text, at: Date.now(), ...(about ? { suggestionId: about } : {}), ...(context ? { context } : {}) });
   if (!read) return null;
-  const m: OwnMessage = { ...read, status: 'sending' };
+  const m: OwnMessage = { ...read, status: 'sending', connection: useConversation.getState().connection };
   addOwn(m);
   deliver(m);
   return m;
 }
 
-/** Retry: the same message (its id and words) sent again, now. */
+/** Retry: the same message (its id and words) sent again, now, within the connection it was written in (else nothing). */
 export function retryMessage(id: string): void {
-  const m = useConversation.getState().mine.find((x) => x.id === id);
-  if (!m || m.status !== 'not_sent') return;
+  const c = useConversation.getState();
+  const m = c.mine.find((x) => x.id === id);
+  if (!m || m.status !== 'not_sent' || m.ended || m.connection !== c.connection) return;
   setDelivery([id], 'sending');
   deliver({ ...m, status: 'sending' });
 }

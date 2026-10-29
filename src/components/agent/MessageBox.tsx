@@ -5,12 +5,14 @@
  * message to that suggestion (shown above the box, with a way to untie it); "Include what I've
  * selected" sends the selection along with the next message only, and only while the agent may
  * see the selection. Keys typed in the box stay in it (Space, letters, Delete, Ctrl+Z: none reaches
- * the studio's shortcuts); Esc still closes the panel, and what was typed is kept for when it opens
- * again. The agent never moves the focus here.
+ * the studio's shortcuts), but Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches as everywhere; Esc
+ * still closes the panel (not while an input method is composing), and what was typed is kept for
+ * when it opens again. Text with nothing visible in it can't be sent. The agent never moves the
+ * focus here.
  */
 import React from 'react';
 import { Send, X } from 'lucide-react';
-import { CONVERSATION } from '../../agent/protocol';
+import { CONVERSATION, hasVisibleText, plainUserText } from '../../agent/protocol';
 import { useConversation } from '../../agent/conversation';
 import { announce, shortText, useSuggestions } from '../../agent/suggestionsStore';
 import { sendToAgent } from '../../agent/bridgeClient';
@@ -24,7 +26,8 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
   const connected = useSuggestions((s) => s.connection.state === 'paired');
   const aboutTitle = useSuggestions((s) => (about ? s.suggestions.find((x) => x.id === about)?.title : undefined));
   const box = React.useRef<HTMLTextAreaElement>(null);
-  const empty = !draft.trim();
+  // (only spaces or invisible characters: nothing to send)
+  const empty = !hasVisibleText(plainUserText(draft, CONVERSATION.textMaxChars));
   const left = CONVERSATION.textMaxChars - draft.length;
 
   const send = () => {
@@ -38,9 +41,15 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
     box.current?.focus({ preventScroll: true });
   };
 
-  // (a key typed here is the box's: the studio's shortcuts never see it; Esc goes on to close the panel)
+  // A key typed here is the box's: the studio's shortcuts never see it. Esc goes on to close the
+  // panel (except while composing text with an input method: then it's the method's), and
+  // Ctrl/Cmd+S (save the song, never the page) and Ctrl/Cmd+K (search) work as everywhere.
   const keep = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Escape') e.stopPropagation();
+    const composing = e.nativeEvent.isComposing || e.keyCode === 229;
+    if (e.key === 'Escape' && !composing) return;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 's' || (k === 'k' && !e.shiftKey))) return;
+    e.stopPropagation();
   };
 
   return (

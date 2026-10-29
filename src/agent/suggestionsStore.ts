@@ -90,6 +90,9 @@ export interface AgentMessage {
   text: string;
   about?: string;
   replyTo?: string;
+  /** The connection it came in (conversation.ts), and the agent's name then. */
+  connection?: number;
+  agent?: string;
   at: number;
 }
 

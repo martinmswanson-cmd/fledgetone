@@ -14,8 +14,13 @@
 //      only) and the agent may see the selection: never once that's switched off
 //   6. at 360 px wide the panel fits (nothing in it scrolls sideways or goes past the edge, the box
 //      and Send on screen)
-//   7. sent with no agent connected: "Not sent — the agent isn't connected" with Retry, and it
-//      stays not sent after a new connection until Retry, which sends it
+//   1b. Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches from the box; Esc while an input
+//      method composes doesn't close the panel; text with nothing visible can't be sent
+//   5b. "see" allowed again doesn't tick the box again; a message the helper never got, retried
+//      after "see" is off, goes without the selection
+//   7. sent with no agent connected: "Not sent — the agent isn't connected" with Retry; another
+//      agent pairs: no Retry into that connection ("that connection ended", put it back in the box
+//      and send it as a new message), and the earlier agent's messages keep its name under a line
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default), Playwright's Chromium,
 // and tools/cli's packages (npm install in tools/cli):
@@ -63,25 +68,32 @@ async function until(check, ms, what) {
   const { Client } = await import(pathToFileURL(path.join(SDK, 'client', 'index.js')).href);
   const { StdioClientTransport } = await import(pathToFileURL(path.join(SDK, 'client', 'stdio.js')).href);
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'fledgetone-e2e2-'));
-  const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ['--import', path.join(CLI, 'src', 'tsHook.mjs'), path.join(CLI, 'src', 'fledgetone.ts'), 'mcp', '--port', '0', '--root', work, '--allow-origin', APP.replace(/\/$/, '')],
-    cwd: ROOT,
-    stderr: 'pipe',
-  });
-  transport.stderr?.on('data', (d) => process.env.VERBOSE && process.stderr.write(`[helper] ${d}`));
-  const agent = new Client({ name: 'E2E agent', version: '1' });
-  await agent.connect(transport);
-  const call = async (name, args = {}) => {
-    const r = await agent.callTool({ name, arguments: args });
-    const text = r.content.map((c) => c.text).join('');
-    if (r.isError) throw new Error(`${name}: ${text}`);
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text;
-    }
+  // An agent: its own helper, driven by the MCP SDK's client under `name`
+  const startAgent = async (name) => {
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', path.join(CLI, 'src', 'tsHook.mjs'), path.join(CLI, 'src', 'fledgetone.ts'), 'mcp', '--port', '0', '--root', work, '--allow-origin', APP.replace(/\/$/, '')],
+      cwd: ROOT,
+      stderr: 'pipe',
+    });
+    transport.stderr?.on('data', (d) => process.env.VERBOSE && process.stderr.write(`[${name}] ${d}`));
+    const client = new Client({ name, version: '1' });
+    await client.connect(transport);
+    const call = async (tool, args = {}) => {
+      const r = await client.callTool({ name: tool, arguments: args });
+      const text = r.content.map((c) => c.text).join('');
+      if (r.isError) throw new Error(`${tool}: ${text}`);
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    };
+    return { client, call };
   };
+  const first = await startAgent('E2E agent');
+  const agents = [first.client];
+  const call = first.call;
   // (say and suggest keep to one a second and one every 3 seconds)
   const patiently = async (name, args) => {
     for (;;) {
@@ -119,14 +131,14 @@ async function until(check, ms, what) {
     });
     await page.getByLabel('Close the Suggestions panel').click();
 
-    const pair = async (ticks) => {
-      const { code, port } = await call('connect_studio');
+    const pair = async (ticks, by = call) => {
+      const { code, port } = await by('connect_studio');
       await menu('Let an agent connect…');
       await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(code);
       await page.getByLabel('Port the helper listens on').fill(String(port));
       for (const name of ticks) await page.getByRole('checkbox', { name }).check();
       await page.getByRole('button', { name: 'Connect', exact: true }).click();
-      await until(async () => (await call('studio_status')).connected, 15000, 'pairing');
+      await until(async () => (await by('studio_status')).connected, 15000, 'pairing');
       if (await page.getByRole('button', { name: 'Done' }).count()) await page.getByRole('button', { name: 'Done' }).click();
       if (!(await page.locator('[data-agent-panel]').count())) await page.locator('[data-agent-chip]').click();
       await page.waitForSelector('[data-agent-panel]');
@@ -166,6 +178,34 @@ async function until(check, ms, what) {
       '1 keys typed in the box stay there',
       !during.playing && during.past === before.past && during.clips === before.clips && during.vol === before.vol && during.focus === 'TEXTAREA' && /qwerty\nsecond line$/.test(typed) && (await ownCount()) === 0,
       `playing ${during.playing}, undo steps ${before.past} → ${during.past}, clips ${before.clips} → ${during.clips}, volume ${before.vol} → ${during.vol}, ${JSON.stringify(typed)}`
+    );
+
+    // 1b. Ctrl+S saves the song (never the page) and Ctrl+K searches, as everywhere; Esc while an
+    // input method composes stays the method's; text with nothing visible can't be sent
+    await A(() => {
+      // (no real file picker in the check: Save says it couldn't, which is enough)
+      window.showSaveFilePicker = () => Promise.reject(new DOMException('cancelled', 'AbortError'));
+      window.__keysSeen = [];
+      window.addEventListener('keydown', (e) => (e.ctrlKey || e.metaKey) && window.__keysSeen.push({ key: e.key, prevented: e.defaultPrevented }));
+    });
+    await box.focus();
+    await page.keyboard.press('Control+s');
+    await page.keyboard.press('Control+k');
+    const palette = await page.locator('[role="dialog"]').filter({ has: page.locator('input') }).count();
+    const keysSeen = await A(() => window.__keysSeen);
+    await page.keyboard.press('Escape');
+    await box.focus();
+    await A(() => document.querySelector('[data-agent-compose] textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true })));
+    await page.waitForTimeout(100);
+    const openAfterIme = await page.locator('[data-agent-panel]').count();
+    const keepDraft = await box.inputValue();
+    await box.fill('\u200b\u200d \u200e ');
+    const invisibleOff = await page.getByRole('button', { name: 'Send', exact: true }).isDisabled();
+    await box.fill(keepDraft);
+    step(
+      '1b Ctrl+S saves the song, Ctrl+K searches; Esc while composing keeps the panel; nothing visible, no Send',
+      keysSeen.some((k) => k.key === 's' && k.prevented) && keysSeen.some((k) => k.key === 'k' && k.prevented) && palette > 0 && openAfterIme === 1 && invisibleOff && (await ownCount()) === 0,
+      `${JSON.stringify(keysSeen)}, palette ${palette}, panel open ${openAfterIme}, Send off for invisible text ${invisibleOff}`
     );
 
     // 2. Enter sends it
@@ -262,6 +302,44 @@ async function until(check, ms, what) {
       `plain ${JSON.stringify(plain?.context)}, ticked ${JSON.stringify(withSel?.context)}, unticked after ${!afterTick}, off ${disabled} ${JSON.stringify(notPermitted?.context)}`
     );
 
+    // 5b. "See" allowed again: the box isn't ticked again by itself. A message the helper never got
+    // (dropped on its way), retried after "see" is switched off: it goes without the selection
+    const allowSee = async (on) => {
+      await page.locator('[data-agent-panel]').getByRole('button', { name: 'Change' }).click();
+      await page.getByRole('checkbox', { name: /^See what I select/ }).setChecked(on);
+      await page.getByRole('button', { name: 'Done' }).click();
+      await until(async () => (await call('studio_status')).permissions.see === on, 5000, `"see" ${on ? 'on' : 'off'}`);
+    };
+    await allowSee(true);
+    const reticked = await include.isChecked();
+    await A(() => {
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (d) {
+        if (window.__dropMessages && typeof d === 'string' && d.includes('"user_message"')) return;
+        return send.call(this, d);
+      };
+      window.__dropMessages = true;
+    });
+    await include.check();
+    await box.fill('With my selection, lost on the way');
+    await page.keyboard.press('Enter');
+    const dropped = lastOwn();
+    const droppedId = await dropped.getAttribute('data-own-message');
+    await until(async () => (await dropped.getAttribute('data-delivery')) === 'not_sent', 8000, 'no answer from the helper');
+    const noAnswer = await dropped.locator('[data-delivery-words]').textContent();
+    await allowSee(false);
+    await A(() => (window.__dropMessages = false));
+    since = (await call('studio_status')).lastEvent;
+    await dropped.locator('[data-retry]').click();
+    const retriedEv = (await call('wait_for_changes', { since, timeoutSeconds: 5 })).events.find((e) => e.event === 'user_message' && e.params.id === droppedId);
+    since = (await call('studio_status')).lastEvent;
+    const droppedShown = await dropped.textContent();
+    step(
+      '5b allowed again: not ticked again; a retry after "see" is off goes without the selection',
+      !reticked && /didn’t answer/.test(noAnswer) && !!retriedEv && !retriedEv.params.context && !/With your selection/.test(droppedShown),
+      `ticked again ${reticked}; ${noAnswer}; retried ${JSON.stringify(retriedEv?.params)}`
+    );
+
     // 6. At 360 px
     await page.setViewportSize({ width: 360, height: 780 });
     await page.waitForTimeout(300);
@@ -279,7 +357,9 @@ async function until(check, ms, what) {
     step('6 at 360 px the panel fits', !narrow.sideways && narrow.panel === 360 && narrow.send && narrow.box && narrow.wide === 0, JSON.stringify(narrow));
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    // 7. Not connected: Not sent, with Retry; nothing goes by itself on the next connection
+    // 7. Not connected: Not sent, with Retry. Then another agent pairs: the message can't be
+    // retried into that connection (put back in the box instead, sent as a new message only when
+    // the musician sends it), and the earlier agent's messages keep its name under a line
     await page.locator('[data-agent-panel]').getByRole('button', { name: 'Disconnect' }).click();
     await until(async () => !(await call('studio_status')).connected, 5000, 'the disconnect');
     await box.fill('Are you still there?');
@@ -287,24 +367,41 @@ async function until(check, ms, what) {
     const lost = lastOwn();
     const lostId = await lost.getAttribute('data-own-message');
     const lostWords = await lost.locator('[data-delivery-words]').textContent();
-    const retry = lost.locator('[data-retry]');
-    const retryShown = await retry.isVisible();
+    const retryShown = await lost.locator('[data-retry]').isVisible();
     const focusAfterSend = await A(() => document.activeElement?.matches('[data-agent-compose] textarea'));
     if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-not-sent-1280.png') });
-    await pair([]);
+    step('7 not connected: Not sent, with Retry', lostWords === 'Not sent — the agent isn’t connected' && retryShown && focusAfterSend, lostWords);
+
+    const second = await startAgent('Second agent');
+    agents.push(second.client);
+    await pair([], second.call);
     await page.waitForTimeout(1500);
-    const stillLost = await lost.getAttribute('data-delivery');
-    const fresh = await call('get_messages');
-    const quiet = await call('wait_for_changes', { since: (await call('studio_status')).lastEvent, timeoutSeconds: 1 });
-    await retry.click();
-    await until(async () => ['sent', 'seen'].includes(await lost.getAttribute('data-delivery')), 6000, 'the retry');
-    const retried = await call('get_messages');
+    const ended = {
+      status: await lost.getAttribute('data-delivery'),
+      words: await lost.locator('[data-delivery-words]').textContent(),
+      retry: await lost.locator('[data-retry]').count(),
+      putBack: await lost.locator('[data-put-back]').count(),
+    };
+    const helperB = await second.call('get_messages');
+    const quietB = await second.call('wait_for_changes', { since: 0, timeoutSeconds: 1 });
+    const oldLabel = await page.locator(`[data-agent-message][data-reply-to="${sentId}"] figcaption`).textContent();
+    await lost.locator('[data-put-back]').click();
+    // (the box takes the focus, with the words in it: nothing is sent until Enter)
+    await page.waitForFunction(() => document.activeElement?.matches('[data-agent-compose] textarea'), null, { timeout: 3000 });
+    const putBack = await box.inputValue();
+    const sinceB = (await second.call('studio_status')).lastEvent;
+    await page.keyboard.press('Enter');
+    // (other events may come first: wait until the message is among them)
+    const resent = await until(async () => (await second.call('wait_for_changes', { since: sinceB, timeoutSeconds: 2 })).events.find((e) => e.event === 'user_message'), 8000, 'the message sent anew');
+    const lines = await page.locator('[data-connection-line]').allTextContents();
     step(
-      '7 not connected: Not sent with Retry; nothing goes until Retry',
-      lostWords === 'Not sent — the agent isn’t connected' && retryShown && focusAfterSend && stillLost === 'not_sent' && fresh.messages.length === 0 && !quiet.events.some((e) => e.event === 'user_message') && retried.messages.some((m) => m.id === lostId && m.text === 'Are you still there?'),
-      `${lostWords}; after reconnecting ${stillLost}, the helper had ${fresh.messages.length}; after Retry ${retried.messages.length}`
+      '7b another pairing: no Retry into it, put back and sent anew; names and a line for the earlier connection',
+      ended.status === 'not_sent' && ended.words === 'Not sent — that connection ended' && ended.retry === 0 && ended.putBack === 1 && helperB.messages.length === 0 && !quietB.events.some((e) => e.event === 'user_message') &&
+        /E2E agent/.test(oldLabel) && lines.some((l) => /Earlier, with your agent \(E2E agent\)/i.test(l)) && lines.some((l) => /This connection: your agent \(Second agent\)/i.test(l)) &&
+        putBack === 'Are you still there?' && resent?.params.text === 'Are you still there?' && resent.params.id !== lostId && !resent.params.context,
+      `${JSON.stringify(ended)}; helper B had ${helperB.messages.length}; old label ${oldLabel}; lines ${JSON.stringify(lines)}; sent anew ${resent?.params.id}`
     );
-    if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-retry-1280.png') });
+    if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-new-connection-1280.png') });
     step('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } catch (err) {
     failures++;
@@ -312,7 +409,7 @@ async function until(check, ms, what) {
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'failure2.png') }).catch(() => {});
   } finally {
     await browser.close();
-    await agent.close();
+    for (const a of agents) await a.close();
     fs.rmSync(work, { recursive: true, force: true });
   }
   console.log(failures ? `${failures} failed` : 'all passed');

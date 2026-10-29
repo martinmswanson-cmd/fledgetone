@@ -429,17 +429,37 @@ export function readContext(c: unknown): UserMessageContext | undefined {
 }
 
 /**
+ * The musician's own text made plain (at most `max` characters): control characters and the
+ * direction embeddings, overrides and isolates go, line and paragraph separators become line
+ * breaks. Unlike an agent's text it keeps the joiners (U+200C, U+200D: emoji sequences, Persian
+ * and Indic words) and the direction marks (LRM, RLM, ALM) that their writing needs.
+ */
+export function plainUserText(text: unknown, max: number): string {
+  if (typeof text !== 'string') return '';
+  return (
+    text
+      .replace(/[\u2028\u2029]/g, '\n')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
+      .slice(0, max)
+  );
+}
+
+/** Whether text has anything to see (not only spaces and invisible characters). */
+export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}]/u.test(text);
+
+/**
  * A `user_message` event's params as both ends keep them, or null if it isn't one: an id of
- * letters, digits, - and _; the text plain (no control or direction characters), trimmed, not
- * empty, at most CONVERSATION.textMaxChars; a time; the suggestion's id and the context only if
+ * letters, digits, - and _; the text plain (plainUserText), trimmed, with something visible in
+ * it, at most CONVERSATION.textMaxChars; a time; the suggestion's id and the context only if
  * they're well formed (anything else is left out).
  */
 export function readUserMessage(p: unknown): UserMessage | null {
   if (typeof p !== 'object' || p === null || Array.isArray(p)) return null;
   const o = p as Record<string, unknown>;
   const id = shortId(o.id);
-  const text = plainAgentText(o.text, CONVERSATION.textMaxChars).trim();
-  if (!id || !text || typeof o.at !== 'number' || !Number.isFinite(o.at)) return null;
+  const text = plainUserText(o.text, CONVERSATION.textMaxChars).trim();
+  if (!id || !hasVisibleText(text) || typeof o.at !== 'number' || !Number.isFinite(o.at)) return null;
   const suggestionId = shortId(o.suggestionId);
   const context = readContext(o.context);
   return { id, text, at: o.at, ...(suggestionId ? { suggestionId } : {}), ...(context ? { context } : {}) };
