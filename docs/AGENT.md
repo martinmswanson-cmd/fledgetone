@@ -85,7 +85,7 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `get_notes {file?, trackId?, clipId?, fromBar?, toBar?, cursor?}` | Notes with their ids, 2000 at a time |
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
-| `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`) |
+| `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`). The helper keeps the last 200 events, and your messages apart from them (an edit never pushes one out); if some after `since` were dropped unread, the answer has `missed: true` and a hint: call `get_messages` and answer its `unanswered` |
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). Live only for now, one at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
@@ -113,13 +113,22 @@ replied to it), or *Not sent — the agent isn't connected* with **Retry**. A me
 sent is never sent later by itself; Retry sends it again with the same id, and the helper keeps it
 once.
 
+Each pairing is a connection of its own. A message not sent in one connection can be retried
+only in it: after a new pairing it says *Not sent — that connection ended*, and the musician can
+put it back in the box to send it as a new message. What goes with a message is decided at each
+send and retry: the selection only while the agent may see it, the suggestion's id only while
+that suggestion is on the panel. On the panel an earlier connection's messages are set off by a
+line ("Earlier, with your agent (name)"), each agent's message with the name it came with. The
+musician's text is kept as they wrote it, less control characters and direction overrides
+(joiners and direction marks stay, for emoji and scripts that need them).
+
 Nothing of the conversation is saved: the studio keeps it for the tab (a reload clears it), the
 helper in memory until the studio disconnects, the last 200 messages each way. Neither writes it
 to the song or to disk.
 
 **Etiquette.** The agent works alongside the musician, not for them:
 
-- answer their questions first, plainly, with `say` and `replyTo`;
+- answer their questions first, plainly, with `say` and `replyTo`, and check `get_messages`' `unanswered` now and then (always after `missed`);
 - ask before suggesting big changes (a new part, a new arrangement, the tempo, the whole mix);
 - keep each suggestion small, one idea at a time, and say why in plain words;
 - don't flood the panel: a message or two, then wait for them (`wait_for_changes`).
