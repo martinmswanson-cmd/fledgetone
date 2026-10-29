@@ -4,6 +4,7 @@
  * take's, panned left and right and lower). Each is one undo step. The maths is in
  * vocalChains.ts and vocalDouble.ts; this file only applies it.
  */
+import { withClipHeld } from './clipJobs';
 import { useTimelineStore } from './timelineStore';
 import { withVocalChain, vocalChain, type VocalChainId } from './vocalChains';
 import { uid, type Clip, type Track } from './timelineTypes';
@@ -50,7 +51,7 @@ export function addAdlibTrack(afterTrackId?: string): string {
  * sound (one per side), with the take's chain, DOUBLE_LEVEL_DB lower. Returns a message for the
  * person.
  */
-export async function doubleClip(clipId: string): Promise<string> {
+async function doubleClipNow(clipId: string): Promise<string> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip?.audio) return 'Pick a recorded take (an audio clip) to double.';
@@ -105,6 +106,11 @@ export async function doubleClip(clipId: string): Promise<string> {
     return { tracks: [...st.tracks.slice(0, at), track, ...st.tracks.slice(at)], clips: [...st.clips, copy] };
   });
   return `Doubled "${still.name}" onto "${track.name}": left and right, ${-DOUBLE_LEVEL_DB} dB lower. Undo takes it away.`;
+}
+
+/** (Holding the clip while it works: see clipJobs.ts) */
+export function doubleClip(clipId: string): Promise<string> {
+  return withClipHeld(clipId, () => doubleClipNow(clipId));
 }
 
 /** The chain's name, for messages. */

@@ -13,7 +13,7 @@
  *
  * Plain arrays, so Node can unit-test it.
  */
-import { sincAt } from './resample';
+import { SINC_HALF, sincTaps } from './resample';
 
 export interface PitchFrame {
   /** Seconds into the sound */
@@ -191,7 +191,7 @@ function fundamentalPhase(x: Float32Array, at: number, period: number): { phase:
 }
 
 /** An analysis mark: a point of the sound (fractional samples) and the period there (UNVOICED marks: none). */
-interface Mark {
+export interface Mark {
   at: number;
   period: number;
   voiced: boolean;
@@ -233,7 +233,8 @@ export function pitchMarks(x: Float32Array, sampleRate: number, frames: readonly
     }
     // A cycle on: the lag (near the tracked period) at which the waveform repeats best, between samples
     const len = 2 * Math.round(period);
-    const reach = Math.max(2, Math.round(period * 0.03));
+    // (The tracked period is close: a percent either way, and the fundamental's phase does the rest)
+    const reach = Math.max(2, Math.round(period * 0.01));
     const base = Math.round(period);
     let bestLag = base;
     let bestScore = -Infinity;
@@ -293,15 +294,16 @@ export function pitchMarks(x: Float32Array, sampleRate: number, frames: readonly
 
 /**
  * Sing `x` again with the pitch moved by `shift` semitones (one value per frame of `frames`),
- * keeping its timing (TD-PSOLA). Unvoiced stretches are copied as they are. Every slice is read
+ * keeping its timing (TD-PSOLA), on its cycles (`cycles`, from pitchMarks; found here if not given). Unvoiced stretches are copied as they are. Every slice is read
  * and laid down to a fraction of a sample, so the slices' joins don't scatter noise over the highs.
  */
-export function psola(x: Float32Array, sampleRate: number, frames: readonly PitchFrame[], shift: readonly number[]): Float32Array {
+export function psola(x: Float32Array, sampleRate: number, frames: readonly PitchFrame[], shift: readonly number[], cycles?: readonly Mark[]): Float32Array {
   const n = x.length;
   const out = new Float32Array(n);
   const weight = new Float32Array(n);
   const frameAt = (t: number) => Math.max(0, Math.min(frames.length - 1, Math.round((t / sampleRate - (frames[0]?.time ?? 0)) / HOP_SECONDS)));
-  const marks = pitchMarks(x, sampleRate, frames);
+  const marks = cycles ?? pitchMarks(x, sampleRate, frames);
+  const taps = new Float64Array(2 * SINC_HALF);
   // Synthesis: a mark every (period / ratio), each taking the slice of the nearest analysis mark
   let m = 0;
   let s = 0;
@@ -312,13 +314,24 @@ export function psola(x: Float32Array, sampleRate: number, frames: readonly Pitc
     const p = mark.period;
     // A two-period Hann slice around the analysis mark, laid down centred on s
     const offset = mark.at - s;
-    const whole = Number.isInteger(offset);
-    for (let dst = Math.max(0, Math.ceil(s - p)); dst < Math.min(n, s + p); dst++) {
+    // Every sample of the slice is read the same fraction of a sample off: work its sinc taps out once
+    const base = Math.floor(offset);
+    const frac = offset - base;
+    if (frac > 1e-9) sincTaps(frac, taps);
+    const lo = Math.max(0, Math.ceil(s - p));
+    const hi = Math.min(n, s + p);
+    for (let dst = lo; dst < hi; dst++) {
       const i = dst - s;
       const w = 0.5 + 0.5 * Math.cos((Math.PI * i) / p);
       if (w <= 0) continue;
-      const src = dst + offset;
-      const v = whole ? (src >= 0 && src < n ? x[src] : 0) : sincAt(x, src);
+      const at = dst + base;
+      let v = 0;
+      if (frac <= 1e-9) v = at >= 0 && at < n ? x[at] : 0;
+      else if (at - SINC_HALF + 1 >= 0 && at + SINC_HALF < n) for (let k = 0; k < 2 * SINC_HALF; k++) v += x[at - SINC_HALF + 1 + k] * taps[k];
+      else for (let k = 0; k < 2 * SINC_HALF; k++) {
+        const j = at - SINC_HALF + 1 + k;
+        if (j >= 0 && j < n) v += x[j] * taps[k];
+      }
       out[dst] += v * w;
       weight[dst] += w;
     }
@@ -335,5 +348,7 @@ export function tuneChannels(channels: readonly Float32Array[], sampleRate: numb
   for (const ch of channels) for (let i = 0; i < mix.length; i++) mix[i] += ch[i] / channels.length;
   const frames = detectPitch(mix, sampleRate);
   const shift = corrections(frames, s);
-  return { channels: channels.map((ch) => psola(ch, sampleRate, frames, shift)), frames, shift };
+  // (The cycles found once, on the mix, so every channel is cut in the same places)
+  const marks = pitchMarks(mix, sampleRate, frames);
+  return { channels: channels.map((ch) => psola(ch, sampleRate, frames, shift, marks)), frames, shift };
 }

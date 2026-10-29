@@ -4,13 +4,14 @@
  * re-pitch (shiftVersion.ts) is made again from its original with the current one, in the
  * background (a Worker does the work), one clip at a time, and swapped in with no undo step: the
  * song is the same, it just sounds cleaner. A clip whose original isn't in this browser is left as
- * it is. (Time-stretched clips need nothing: their stretched copies are made as they play, by the
+ * it is, and so is one with work under way on its sound (clipJobs.ts). (Time-stretched clips need nothing: their stretched copies are made as they play, by the
  * current stretch.)
  */
 import { useTimelineStore } from './timelineStore';
 import { SHIFT_VERSION, staleShifts } from './shiftVersion';
 import { shiftedSound } from './flipActions';
 import { soundStatus } from '../audio/soundLibrary';
+import { clipHeld } from './clipJobs';
 
 /** Sounds made again this session, by original and shift: clips sharing them share the new copy. */
 const made = new Map<string, Promise<string>>();
@@ -20,7 +21,7 @@ let busy = false;
 
 async function upgradeOne(): Promise<void> {
   const s = useTimelineStore.getState();
-  const next = staleShifts(s.clips).find((c) => !failed.has(c.from) && soundStatus(c.from) !== 'missing' && soundStatus(c.from) !== 'error');
+  const next = staleShifts(s.clips).find((c) => !clipHeld(c.clipId) && !failed.has(c.from) && soundStatus(c.from) !== 'missing' && soundStatus(c.from) !== 'error');
   if (!next) return;
   busy = true;
   const key = `${next.from}|${next.shift}`;
@@ -32,6 +33,8 @@ async function upgradeOne(): Promise<void> {
       made.set(key, promise);
     }
     const soundId = await promise;
+    // (Work started on the clip meanwhile: left for the next round)
+    if (clipHeld(next.clipId)) return;
     // Swapped in only if the clip still plays what it did (not edited meanwhile); no undo step
     useTimelineStore.setState((st) => ({
       clips: st.clips.map((c) =>

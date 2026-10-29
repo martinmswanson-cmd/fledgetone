@@ -5,6 +5,7 @@
  * plays the syllables where they were sung (now in tune), to start from. One undo step; the
  * original take is left as it is. Pocket and the studio both use this.
  */
+import { withClipHeld } from './clipJobs';
 import { songTempo, useTimelineStore } from './timelineStore';
 import { barsToDuration, uid, type Clip, type MultiZone } from './timelineTypes';
 import { midiName } from './sampleKits';
@@ -40,7 +41,7 @@ interface Heard extends Syllable {
  * for none; unset, the song's, when its notes say one). `comp`: a take folder is chopped as its
  * comp plays (Pocket, which has no Takes to flatten it with), else it's refused.
  */
-export async function chopVoiceToKeys(clipId: string, opts: { scale?: ChopScale | null; comp?: boolean } = {}): Promise<VoiceChopResult> {
+async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | null; comp?: boolean } = {}): Promise<VoiceChopResult> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip?.audio) return { error: 'Pick a recorded or imported vocal (an audio clip) to chop.' };
@@ -141,4 +142,9 @@ export async function chopVoiceToKeys(clipId: string, opts: { scale?: ChopScale 
     chops: zones.length,
     message: `Chopped "${clip.name}" into ${zones.length} syllable${zones.length === 1 ? '' : 's'}, each tuned onto a key (${lo} to ${hi}) of a new track, "${useTimelineStore.getState().tracks.find((t) => t.id === trackId)?.name ?? ''}": play them from the keys. Undo takes it away.`,
   };
+}
+
+/** (Holding the clip while it works: see clipJobs.ts) */
+export function chopVoiceToKeys(clipId: string, opts: { scale?: ChopScale | null; comp?: boolean } = {}): Promise<VoiceChopResult> {
+  return withClipHeld(clipId, () => chopVoiceToKeysNow(clipId, opts));
 }

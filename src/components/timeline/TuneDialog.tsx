@@ -6,7 +6,8 @@ import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import { detectKey, NOTE_NAMES } from '../../store/songKey';
 import { hzToMidi, type PitchFrame } from '../../audio/vocalTune';
-import { runDsp } from '../../audio/dspRun';
+import { runDsp, runDspFull } from '../../audio/dspRun';
+import { holdClip } from '../../store/clipJobs';
 import { hardTuneChannels, msToSpeed, speedToMs, TUNE_SCALE_NAMES, TUNE_SCALES, type TuneScale } from '../../audio/hardTune';
 import { useUiStore } from '../../store/uiStore';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../../audio/soundLibrary';
@@ -61,18 +62,30 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
   // The part of the sound the clip plays
   const from = audio?.offset ?? 0;
   const to = clip ? from + audioSourceSeconds(clip, bpm) : 0;
-  // Worked out a moment after the settings stop moving (it takes a little while on a long take)
+  // Worked out a moment after the settings stop moving, in a Worker (it takes a little while on a
+  // long take); a result for settings moved on from since is dropped
   const [result, setResult] = useState<ReturnType<typeof hardTuneChannels> | null>(null);
+  const generation = useRef(0);
   useEffect(() => {
     if (!source) return;
+    const mine = ++generation.current;
     const timer = window.setTimeout(() => {
       const a = Math.floor(from * RATE);
       const b = Math.min(source.length, Math.ceil(to * RATE));
-      const part = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c).slice(a, b));
-      setResult(hardTuneChannels(part, RATE, { root, steps, strength, speed }));
+      const part = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c).subarray(a, b));
+      runDspFull({ kind: 'tune', settings: { root, steps, strength, speed } }, part, RATE, { wanted: () => generation.current === mine }).then(
+        (r) => {
+          if (generation.current === mine && r.frames && r.shift) setResult({ channels: r.channels, frames: r.frames, shift: r.shift });
+        },
+        () => {}
+      );
     }, 200);
     return () => clearTimeout(timer);
   }, [source, from, to, root, steps, strength, speed]);
+  // While it's open nothing else swaps the clip's sound (its Untune goes back to the one it opened on)
+  useEffect(() => holdClip(clipId), [clipId]);
+  // (Closing the dialog drops what's still being worked out)
+  useEffect(() => () => void generation.current++, []);
 
   if (!clip || !audio || !track) return null;
 
