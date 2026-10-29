@@ -1,6 +1,6 @@
 /**
  * Files for the command line and the agent tools: reading and writing songs (.fledgetone.json),
- * suggestion files, and WAV audio; and the agent tools' rule that a file must be inside the
+ * suggestion files, and audio (WAV read and written, MP3 written); and the agent tools' rule that a file must be inside the
  * folder the helper was started for (--root), with a song, suggestion or audio extension.
  */
 import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
@@ -41,7 +41,7 @@ export function readJson(path: string): unknown {
  * Write a file, never through a symbolic link: a link where the file goes (even one pointing at
  * nothing yet) is refused, so a planted link can't send the write somewhere else.
  */
-export function writeFileSafe(path: string, text: string): void {
+export function writeFileSafe(path: string, text: string | Uint8Array): void {
   const linkError = () => new Error(`${path} is a link: write to a plain file`);
   let link = false;
   try {
@@ -68,7 +68,8 @@ export function writeFileSafe(path: string, text: string): void {
     if (there.isSymbolicLink() || !opened.isFile() || there.dev !== opened.dev || there.ino !== opened.ino) throw linkError();
     if (realpathSync.native(dirname(resolve(path))) !== parent) throw new Error(`the folder of ${path} changed while it was being written`);
     ftruncateSync(fd, 0);
-    writeSync(fd, text);
+    if (typeof text === 'string') writeSync(fd, text);
+    else for (let at = 0; at < text.length; ) at += writeSync(fd, text, at, text.length - at);
   } finally {
     closeSync(fd);
   }

@@ -4,7 +4,9 @@
  *
  * - File mode: tools given a `file` read a song from the folder the helper was started for
  *   (--root, the current folder by default), and `suggest` with `file` and `out` writes a
- *   suggestion file there for `fledgetone apply` (or, later, the studio) to take in.
+ *   suggestion file there for `fledgetone apply` (or, later, the studio) to take in. `listen`
+ *   with a file and `render_file` render it on this computer, in a headless browser, by the
+ *   app's own export (renderCommands.ts, browserRender.ts).
  * - Live mode: the musician pairs the studio (connect_studio gives the code), and the tools read
  *   the song as it is on screen and put suggestions on the studio's Suggestions panel, where the
  *   musician hears them before and after and accepts or dismisses them. There is no accept tool:
@@ -28,11 +30,18 @@ import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED } from './bridge
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
 import { checkProblems, suggestionIdBase } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
+import { audioFormatOf, opsToHear, listenSongFile, renderSongFile, secondsBetween, songEndBar } from './renderCommands';
+import type { BrowserOptions } from './browserRender';
 
 export interface McpOptions {
   root: string;
   bridge: BridgeServer;
+  /** How song files are rendered and listened to (render_file, listen with a file). */
+  render?: BrowserOptions;
 }
+
+/** The longest render_file makes, seconds (a song; listen keeps to LIMITS.listenMaxSeconds). */
+export const RENDER_FILE_MAX_SECONDS = 600;
 
 const SONG_TYPES = ['.fledgetone.json', '.json'];
 
@@ -56,10 +65,12 @@ export const SERVER_INSTRUCTIONS = `Fledgetone is a music studio. These tools le
 
 Two ways to work: with files (pass "file" to read a .fledgetone.json song from the working folder; suggest with "file" and "out" writes a suggestion file), or live with the studio (call connect_studio, tell the musician the code, call connect_studio again with waitSeconds to wait for them; then get_song reads the song on screen and suggest puts a suggestion on their Suggestions panel).
 
+With files you can also hear the song without the studio: listen with "file" measures bars of it (with "suggestion" or "ops", before and after), and render_file writes a WAV or MP3 file, both rendered on this computer as the app's Export renders.
+
 Read the fledgetone://docs/ops resource for the ops and their units before you suggest. Try ops with preview_suggestion first. Keep suggestions small and say why in plain words.`;
 
 /** The MCP server with every tool and resource. */
-export function createMcpServer({ root, bridge }: McpOptions): McpServer {
+export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpServer {
   const server = new McpServer({ name: 'fledgetone', version: APP_VERSION }, { instructions: SERVER_INSTRUCTIONS });
 
   const songFile = (file: string) => readSong(fileInRoot(root, file, { types: SONG_TYPES, mustExist: true }));
@@ -192,22 +203,88 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
     'listen',
     {
       title: 'Listen',
-      description: `Render a stretch of the song in the studio and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, and findings. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute. With suggestionId (or ops), it measures the song as that suggestion would make it. Live only for now: it needs the studio, and the musician must allow listening.`,
-      inputSchema: { file: z.string().optional(), fromBar: z.number().min(1), toBar: z.number().min(1), suggestionId: z.string().optional(), ops: opsSchema.optional() },
+      description: `Render a stretch of the song and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, what the master's limiter and clipper did, the loudness bar by bar, and findings in plain words. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute (toBar not included). Live: in the studio (the musician must allow listening); with suggestionId (or ops) it measures the song as that suggestion would make it. With "file": a song file in the working folder, rendered on this computer with no studio open; perTrack adds each track's own loudness and balance (and the mix findings that name tracks), and "suggestion" (a suggestion file) or "ops" gives a before-and-after: both reports and the difference bar by bar, so you can tell which bars change.`,
+      inputSchema: {
+        file: z.string().optional(),
+        fromBar: z.number().min(1),
+        toBar: z.number().min(1),
+        perTrack: z.boolean().optional().describe('File mode: each track measured too'),
+        suggestion: z.string().optional().describe('File mode: a suggestion file (.json) in the working folder, to hear before and after'),
+        suggestionId: z.string().optional(),
+        ops: opsSchema.optional(),
+      },
       annotations: { readOnlyHint: true },
     },
-    ({ file, fromBar, toBar, suggestionId, ops }) =>
+    ({ file, fromBar, toBar, perTrack, suggestion, suggestionId, ops }) =>
       guard(async () => {
-        if (file) throw new Error('Listening needs the studio for now: connect it with connect_studio (listening to a file comes later).');
-        needStudio();
         if (toBar <= fromBar) throw new Error('toBar must come after fromBar (toBar not included).');
         if (toBar - fromBar > LIMITS.listenMaxBars) throw new Error(`At most ${LIMITS.listenMaxBars} bars at a time.`);
-        if (suggestionId && ops) throw new Error('Give suggestionId or ops, not both.');
+        if ([suggestionId, ops, suggestion].filter((x) => x !== undefined).length > 1) throw new Error('Give one of suggestionId, suggestion or ops.');
+        if (file) {
+          if (suggestionId) throw new Error('suggestionId is a suggestion on the studio’s panel: with a file, give "suggestion" (a suggestion file) or "ops".');
+          const songPath = fileInRoot(root, file, { types: SONG_TYPES, mustExist: true });
+          const song = readSong(songPath);
+          const hearWith = suggestion ? opsToHear(song, { suggestion: fileInRoot(root, suggestion, { types: ['.json'], mustExist: true }) }) : ops ? { ops, idBase: 'listen' } : null;
+          if (listening) throw new Error('One listen at a time: wait for the one under way.');
+          limited(listenRate, 'listen');
+          listening = true;
+          try {
+            return await listenSongFile(songPath, { fromBar, toBar, perTrack, with: hearWith, limits: { maxBars: LIMITS.listenMaxBars, maxSeconds: LIMITS.listenMaxSeconds } }, render);
+          } finally {
+            listening = false;
+          }
+        }
+        if (perTrack || suggestion) throw new Error('perTrack and suggestion files are for listening to a file (give "file"); the studio’s listen measures the mix.');
+        needStudio();
         if (listening) throw new Error('One listen at a time: wait for the one under way.');
         limited(listenRate, 'listen');
         listening = true;
         try {
           return await live('listen', { fromBar, toBar, ...(suggestionId ? { suggestionId } : {}), ...(ops ? { opsVersion: OPS_VERSION, ops } : {}) }, LIMITS.listenTimeoutMs);
+        } finally {
+          listening = false;
+        }
+      })
+  );
+
+  server.registerTool(
+    'render_file',
+    {
+      title: 'Render a song file',
+      description: `Render a song file in the working folder to a WAV or MP3 file there, as the app's Export makes it (on this computer, no studio needed): the whole song, or bars fromBar to toBar (toBar not included). At most ${RENDER_FILE_MAX_SECONDS / 60} minutes of audio, one render or listen at a time. Gives back the file's length, loudness and true peak. It never writes over a file unless overwrite is true, and only .wav and .mp3 files.`,
+      inputSchema: {
+        file: z.string(),
+        out: z.string().describe('The .wav or .mp3 file to write, in the working folder'),
+        fromBar: z.number().min(1).optional(),
+        toBar: z.number().min(1).optional(),
+        format: z.enum(['wav', 'mp3']).optional().describe('Default: from the extension of out'),
+        sampleRate: z.union([z.literal(44100), z.literal(48000)]).optional(),
+        bitDepth: z.union([z.literal(16), z.literal(24), z.literal(32)]).optional().describe('WAV: 16, 24 (default) or 32 (float)'),
+        overwrite: z.boolean().optional(),
+      },
+    },
+    ({ file, out, fromBar, toBar, format, sampleRate, bitDepth, overwrite }) =>
+      guard(async () => {
+        const songPath = fileInRoot(root, file, { types: SONG_TYPES, mustExist: true });
+        const outPath = fileInRoot(root, out, { types: ['.wav', '.mp3'], write: true });
+        const kind = audioFormatOf(outPath)!;
+        if (format && format !== kind) throw new Error(`"out" is a .${kind} file but format says ${format}.`);
+        if (existsSync(outPath) && overwrite !== true) throw new Error(`${out} exists: choose another name, or pass overwrite: true.`);
+        if ((fromBar === undefined) !== (toBar === undefined)) throw new Error('Give both fromBar and toBar, or neither (the whole song).');
+        const song = readSong(songPath);
+        const from = fromBar ?? 1;
+        const to = toBar ?? songEndBar(song);
+        if (to <= from) throw new Error(fromBar === undefined ? 'The song has no clips on a track that sounds: there is nothing to render.' : 'toBar must come after fromBar.');
+        if (secondsBetween(song, from, to) > RENDER_FILE_MAX_SECONDS) throw new Error(`At most ${RENDER_FILE_MAX_SECONDS / 60} minutes at a time: give fromBar and toBar.`);
+        if (listening) throw new Error('One render or listen at a time: wait for the one under way.');
+        listening = true;
+        try {
+          const done = await renderSongFile(
+            { song: songPath, out: { path: outPath, format: kind }, ...(fromBar !== undefined ? { fromBar, toBar } : {}), sampleRate: sampleRate ?? 44100, bitDepth: bitDepth ?? 24, overwrite: overwrite === true },
+            render
+          );
+          const r = done.mix!;
+          return { written: out, seconds: r.seconds, range: r.range, format: r.format, sampleRate: r.sampleRate, bitDepth: r.bitDepth, lufs: r.lufs, truePeakDbtp: r.truePeakDbtp, target: r.target, notes: r.notes };
         } finally {
           listening = false;
         }

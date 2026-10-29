@@ -104,7 +104,7 @@ export interface CompareBar {
   lufsChange: number | null;
   /**
    * The level of what changed (the after's samples minus the before's), dBFS: null where the two
-   * are the same sample for sample, or can't be lined up (the tempo changed).
+   * are the same (to under SAME_DB: only rounding), or can't be lined up (the tempo changed).
    */
   differenceDb: number | null;
   /** Whether the bar sounds different (its difference is above HEARD_DIFFERENCE_DB, or the tempo changed). */
@@ -113,6 +113,8 @@ export interface CompareBar {
 
 /** A difference quieter than this (dBFS) is taken as no change: far under anything heard in a mix. */
 export const HEARD_DIFFERENCE_DB = -70;
+/** A difference quieter than this (dBFS) is only the rounding of two renders: reported as none. */
+export const SAME_DB = -120;
 
 export interface ListenComparison {
   before: ListenReport;
@@ -144,7 +146,7 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
       beforeLufs: b.lufs,
       afterLufs: a?.lufs ?? null,
       lufsChange: minus(a?.lufs ?? null, b.lufs),
-      differenceDb: d === 'tempo' ? null : tenth(d ?? null),
+      differenceDb: d === 'tempo' || d === null || d === undefined || d < SAME_DB ? null : tenth(d),
       changed: d === 'tempo' || (typeof d === 'number' && d > HEARD_DIFFERENCE_DB),
     };
   });

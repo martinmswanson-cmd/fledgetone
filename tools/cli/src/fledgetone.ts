@@ -11,6 +11,8 @@ import * as cmd from './commands';
 import { BridgeServer, DEFAULT_PORT } from './bridgeServer';
 import { createMcpServer } from './mcpServer';
 import { APP_VERSION } from './meta';
+import * as rc from './renderCommands';
+import { findAppBuild, NO_BUILD, startStudio, STUDIO_PORT } from './studioServer';
 
 const HELP = `fledgetone ${APP_VERSION}: Fledgetone songs on the command line, and the connection for your own agent.
 
@@ -31,17 +33,45 @@ Songs
   from-link <link> -o <out>             The song in a share link, as a file
   measure <file.wav> [--json]           Loudness (LUFS), true peak and balance of an export
 
+Rendering (in a headless browser on this computer, by the app's own export)
+  render <song> -o <out.wav|out.mp3> [--bars 1-16] [--rate 44100|48000] [--bits 16|24|32f]
+         [--stems <folder>] [--target <id>|none] [--json]
+                                        The song as a WAV or MP3 file, as Export makes it
+  listen <song> [--bars 9-16] [--per-track] [--suggestion <s.json> | --ops <ops.json>] [--json]
+                                        Bars rendered and measured: loudness, peaks, balance,
+                                        bar by bar, findings; with a suggestion, before and after
+
 Lists
   list instruments|presets|starters|params|inserts|master [query] [--json]
 
 Your agent
   mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>]
+      [--studio [--studio-port <n>]]
                                         The agent tools, as an MCP server on stdio. Files are read
                                         and written only inside --root (default: this folder).
                                         The studio connects on 127.0.0.1:${DEFAULT_PORT} (--port 0: any free port).
+                                        --studio also serves the app here (as fledgetone studio)
+                                        and lets it connect
+  studio [--port ${STUDIO_PORT}] [--app <folder>]   A built copy of the app on 127.0.0.1, for browsers
+                                        that won't let fledgetone.com reach the helper (Safari, Brave)
 
 Options
   -o, --out <file>    The file to write (never the input unless --overwrite)
+  --overwrite         Write over a file that's there
+Rendering and listening
+  --bars 9-16         Bars 9 to 16, 16 included (default: the whole song)
+  --format wav|mp3    The stems' format without -o (default wav)
+  --target <id>       Match a loudness target (streaming, loud, club, game, podcast, broadcast;
+                      none: don't). Default as Export: the Loud master's own target when it's on
+  --suggestion <file> Listen before and after a suggestion file (--force: even if it's out of date)
+  --samples <folder>  Instrument recordings laid out as public/fledgetone-samples (default: that
+                      folder in this copy of the repository); others download from fledgetone.com
+                      once and are kept in ~/.cache/fledgetone (FLEDGETONE_CACHE)
+  --offline           Download nothing
+  --browser <path>    The browser to render with (else Chrome, Playwright's Chromium, Edge...)
+  --app-url <url>     Render with a running dev server's code (working on Fledgetone)
+  --timeout <s>       Give up after this many seconds (default 600)
+  --verbose           Say what the page logs and refuses
   -h, --help          This help
   -v, --version       The version
 
@@ -73,6 +103,24 @@ async function main(argv: string[]): Promise<number> {
       dev: { type: 'boolean' },
       'allow-null-origin': { type: 'boolean' },
       'allow-origin': { type: 'string', multiple: true },
+      stems: { type: 'string' },
+      rate: { type: 'string' },
+      bits: { type: 'string' },
+      format: { type: 'string' },
+      target: { type: 'string' },
+      'per-track': { type: 'boolean' },
+      suggestion: { type: 'string' },
+      ops: { type: 'string' },
+      samples: { type: 'string' },
+      offline: { type: 'boolean' },
+      browser: { type: 'string' },
+      'app-url': { type: 'string' },
+      timeout: { type: 'string' },
+      verbose: { type: 'boolean' },
+      quiet: { type: 'boolean' },
+      studio: { type: 'boolean' },
+      'studio-port': { type: 'string' },
+      app: { type: 'string' },
     },
   });
   const flags: cmd.Flags = { ...values, o: values.o ?? values.out };
@@ -106,6 +154,12 @@ async function main(argv: string[]): Promise<number> {
       return cmd.link(args, flags);
     case 'from-link':
       return cmd.fromLink(args, flags);
+    case 'render':
+      return rc.render(args, flags);
+    case 'listen':
+      return rc.listen(args, flags);
+    case 'studio':
+      return studio(values);
     case 'mcp':
       return mcp(values);
     default:
@@ -113,12 +167,52 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
+/** A port number from an option, or `fallback`. */
+function portOf(text: string | undefined, fallback: number | undefined, what: string): number | undefined {
+  if (text === undefined) return fallback;
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new cmd.UsageError(`${what} takes a port number (0: any free one)`);
+  return port;
+}
+
+/** Until the process is asked to stop (Ctrl+C), or `also` happens. */
+function untilStopped(also?: (stop: () => void) => void): Promise<void> {
+  return new Promise<void>((done) => {
+    const stop = () => done();
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+    also?.(stop);
+  });
+}
+
+/** `fledgetone studio`: a built app on 127.0.0.1, until Ctrl+C. */
+async function studio(values: { port?: string; app?: string }): Promise<number> {
+  const build = findAppBuild(values.app);
+  if (!build) throw new cmd.UsageError(values.app ? `${values.app} isn't a built app (a folder with index.html and assets/)` : NO_BUILD);
+  const { server, url } = await startStudio(portOf(values.port, STUDIO_PORT, '--port')!, build);
+  process.stdout.write(
+    `Fledgetone is at ${url} (on this computer only). Open it in your browser.\n` +
+      `To let it connect to your agent, start the helper with --allow-origin ${server.origin}, or start both together: fledgetone mcp --studio.\n` +
+      `Songs and settings kept here are this address's own, apart from fledgetone.com's. Ctrl+C stops it.\n`
+  );
+  await untilStopped();
+  await server.close();
+  return 0;
+}
+
 /** The agent tools: an MCP server on stdio and the studio connection, until stdin closes. */
-async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow-null-origin'?: boolean; 'allow-origin'?: string[] }): Promise<number> {
+async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow-null-origin'?: boolean; 'allow-origin'?: string[]; studio?: boolean; 'studio-port'?: string; app?: string; samples?: string; offline?: boolean; browser?: string; timeout?: string }): Promise<number> {
   const root = resolve(values.root ?? process.cwd());
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new cmd.UsageError(`--root ${root} isn't a folder`);
-  const port = values.port === undefined ? undefined : Number(values.port);
-  if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) throw new cmd.UsageError('--port takes a port number (0: any free one)');
+  const port = portOf(values.port, undefined, '--port');
+  // --studio: the app served here too, and let in (its address is known only once it's serving)
+  let studioServer: Awaited<ReturnType<typeof startStudio>> | null = null;
+  if (values.studio) {
+    const build = findAppBuild(values.app);
+    if (!build) throw new cmd.UsageError(NO_BUILD);
+    studioServer = await startStudio(portOf(values['studio-port'], STUDIO_PORT, '--studio-port')!, build);
+  }
+  const render = rc.browserOptions({ ...values, quiet: true });
   // stdout is the MCP protocol's alone: anything else written there would break it
   console.log = console.info = console.warn = (...a: unknown[]) => process.stderr.write(a.map(String).join(' ') + '\n');
   let server: ReturnType<typeof createMcpServer> | null = null;
@@ -126,7 +220,7 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
     port,
     dev: values.dev === true,
     allowNull: values['allow-null-origin'] === true,
-    studioOrigins: (values['allow-origin'] ?? []).map((o) => {
+    studioOrigins: [...(studioServer?.origins ?? []), ...(values['allow-origin'] ?? [])].map((o) => {
       // An exact origin (scheme, host and port), as a page reports it
       let url: URL;
       try {
@@ -140,19 +234,18 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
     agentName: () => server?.server.getClientVersion()?.name,
   });
   await bridge.start();
-  server = createMcpServer({ root, bridge });
+  server = createMcpServer({ root, bridge, render });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   process.stderr.write(`fledgetone: agent tools ready (files in ${root})\n`);
-  await new Promise<void>((done) => {
-    const stop = () => done();
+  if (studioServer) process.stderr.write(`fledgetone: the studio is at ${studioServer.url} (it may connect)\n`);
+  await untilStopped((stop) => {
     process.stdin.once('end', stop);
     process.stdin.once('close', stop);
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
   });
   await bridge.close();
   await server.close();
+  await studioServer?.server.close();
   return 0;
 }
 
