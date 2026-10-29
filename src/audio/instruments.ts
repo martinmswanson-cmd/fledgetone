@@ -44,22 +44,10 @@ import { createBass808Designer } from './presets/bass808Designer';
 import { createSubLayer } from './subLayer';
 import { isPitched } from '../store/keyChange';
 import type { TrackPlan } from './samplers/songSamples';
+import { DRUM_NOTES } from '../store/drumNotes';
 
-/** Drum note map (GM-style). Drum clips store one note name per voice. */
-export const DRUM_NOTES = {
-  kick: 'C1',
-  snare: 'D1',
-  closedHat: 'F#1',
-  openHat: 'A#1',
-  cowbell: 'G#2',
-  // Added later, on the General MIDI pads an octave down like the others
-  clap: 'D#1',
-  tomLow: 'F1',
-  tomMid: 'B1',
-  tomHigh: 'D2',
-  crash: 'C#2',
-  ride: 'D#2',
-} as const;
+/** Drum note map (GM-style), kept in store/drumNotes.ts so Node can read it. */
+export { DRUM_NOTES };
 export type DrumRow = keyof typeof DRUM_NOTES;
 const ROW_OF = new Map(Object.entries(DRUM_NOTES).map(([row, note]) => [note as string, row as DrumRow]));
 
