@@ -9,6 +9,7 @@
 import { create } from 'zustand';
 import { useTimelineStore, masterFxOf, songTempo } from '../store/timelineStore';
 import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions } from './exportWav';
+import { musicEnd, renderOptionsFor, type ListenSnapshot } from './listen';
 import { measureLoudness } from './loudness';
 import { bandEnvelope, bandSpectrum, type BandSpectrum } from './mixAnalysis';
 import { checkMix, trackRole, type Finding, type TrackMeasure } from './mixCheck';
@@ -62,30 +63,17 @@ export function cancelMixRender(): void {
   running?.abort();
 }
 
+/** The song now, as listen.ts renders it. */
+function storeSnapshot(): ListenSnapshot {
+  const s = useTimelineStore.getState();
+  return { tracks: s.tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: s.swing, masterFx: masterFxOf(s), master: s.master, intensity: { value: s.intensity, curves: s.intensityCurves } };
+}
+
 /** The song as the export would render it, bar 1 to the end (at most ANALYSE_SECONDS). */
 function songOptions(signal: AbortSignal): RenderOptions {
-  const s = useTimelineStore.getState();
-  const ids = new Set(audibleTracks(s.tracks).map((t) => t.id));
-  const end = Math.max(2, ...s.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
-  const most = 1 + Math.max(1, Math.floor((ANALYSE_SECONDS * s.bpm) / 240));
-  return {
-    // (measured, not saved: the recordings as live playback has them)
-    recordings: 'playback',
-    tracks: s.tracks,
-    clips: s.clips,
-    bpm: s.bpm,
-    tempoPoints: s.tempoPoints,
-    swing: s.swing,
-    startBar: 1,
-    endBar: Math.min(end, most),
-    masterFx: masterFxOf(s),
-    master: s.master,
-    ending: 'exact',
-    sampleRate: 44100,
-    markers: [],
-    intensity: { value: s.intensity, curves: s.intensityCurves },
-    signal,
-  };
+  const song = storeSnapshot();
+  const most = 1 + Math.max(1, Math.floor((ANALYSE_SECONDS * song.bpm) / 240));
+  return renderOptionsFor(song, 1, Math.min(musicEnd(song), most), signal);
 }
 
 /** Whether a track is ducked to the kick already: a Pump on it or on a bus it plays through. */
