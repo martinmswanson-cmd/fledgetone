@@ -17,6 +17,23 @@ cd ../.. && npm run build:cli   # writes tools/cli/dist/fledgetone.mjs
 node tools/cli/dist/fledgetone.mjs --help
 ```
 
+Rendering song files (`render`, `listen`, and the helper's `render_file` and `listen` with a
+file) also needs the app's renderer and something to drive a browser with:
+
+```sh
+npm run build:runtime                          # writes dist-runtime/fledgetone-render.js
+cd tools/cli && npm install playwright-core    # downloads no browser
+```
+
+An installed Google Chrome or Chromium is used (or Edge); without one, `npx playwright-core install
+chromium` in `tools/cli` downloads one, or `--browser <path>` names one. The browser is started for
+each render with no window and closed when it ends; it opens only a page this command line serves
+on `127.0.0.1`, and reaches nothing else but fledgetone.com, for the recordings of instruments the
+song uses (the same files and addresses the app downloads them from). Those are kept in
+`~/.cache/fledgetone` (`FLEDGETONE_CACHE` for another folder), so each downloads once; in a copy
+of the repository the recordings in `public/fledgetone-samples` are used first, and `--samples
+<folder>` gives another such folder. `--offline` downloads nothing.
+
 `tools/cli/dist/` is build output: it isn't committed (the repository's `.gitignore` leaves out
 every `dist`), so build it after each pull. The bundle holds the app's own plain-logic code it
 uses (the project format, the starters, the instrument list, the ops), the version and the agent
@@ -44,9 +61,18 @@ npx tsc -p tools/cli                # type check
 | `new --starter <id> -o <out> [--name <name>]` | A new song from a starter |
 | `apply <song> <suggestion.json> -o <out> [--overwrite] [--force]` | Applies a suggestion file to a song, writing a new song. It never writes over the song it reads (unless `--overwrite`) and refuses a suggestion whose song has changed since, or that was made for another song (unless `--force`) |
 | `measure <file.wav> [--json]` | An export's loudness (LUFS, and the loudest 3 seconds), true peak, crest and balance across the spectrum |
+| `render <song> -o <out.wav\|out.mp3> [--bars 1-16] [--rate 44100\|48000] [--bits 16\|24\|32f] [--stems <folder>] [--target <id>\|none] [--json]` | The song as Export makes it: WAV (24-bit by default; 32f is float) or MP3 (320 kb/s), ringing out at the end. `--stems` writes one file per track into a folder (without the master section, as Export's stems), as well as or instead of `-o`. `--target` matches a loudness target (`streaming`, `loud`, `club`, `game`, `podcast`, `broadcast`); by default, as Export: the Loud master's own when it's on, else none. 88.2 and 96 kHz too, for WAV. Never writes over a file unless `--overwrite` |
+| `listen <song> [--bars 9-16] [--per-track] [--suggestion <file> \| --ops <file>] [--json]` | Bars rendered as the studio's listen renders them and measured: loudness, the loudest 3 seconds, true peak, crest, balance, what the master's limiter and clipper did, bar by bar, each track with `--per-track`, and the Mix check's findings. With a suggestion file (or a file of ops), before and after, and which bars sound different. `--json` gives what the agent reads (see docs/AGENT.md) |
+| `studio [--port 47200] [--app <folder>]` | A built copy of the app (`npm run build` or `build:site` first) on `127.0.0.1`, for Safari and Brave, which won't let fledgetone.com reach the helper. `mcp --studio` starts it with the helper and lets it connect |
 | `link <song> [--base <url>]` | A share link that opens the song in Fledgetone |
 | `from-link <link> -o <out>` | The song in a share link, as a file |
-| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` |
+| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>] [--studio [--studio-port <n>]]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` (and with `--studio`, the studio itself) |
+
+`--bars 9-16` is bars 9 to 16, 16 included (as `notes --bars`); without it, the whole song. The
+render and listen options `--samples`, `--offline`, `--browser`, `--timeout <seconds>` (default
+600) and `--verbose` (what the page logs and what it was refused) work for `mcp` too. `--app-url
+http://localhost:5200/` renders with a running dev server's code instead of the build, for
+working on Fledgetone.
 
 Exit codes: 0 done; 1 done with something to fix, or refused (an out-of-date suggestion); 2 a
 mistake in the command or a file that can't be read. Nothing but the command's output goes to
@@ -63,12 +89,16 @@ The command line is part of Fledgetone (GPL-3.0-or-later). Its packages, as pinn
 | `ws` | 8.22.0 | MIT |
 | `zod` | 4.6.7 | MIT |
 | `@types/ws` (type checking only) | 8.18.1 | MIT |
+| `playwright-core` (for rendering; installed by hand for now) | 1.56 | Apache-2.0 |
 
 Everything they bring in is MIT, ISC, BSD-2-Clause or BSD-3-Clause, all compatible with
 GPL-3.0-or-later. None of it is in the app the website serves.
 
 ## Tests
 
-`npm test` at the repository's root runs `scripts/cli.test.mjs` and `scripts/mcpServer.test.mjs`
-(and the live part of `scripts/agentProtocol.test.mjs`) from the source here. Without
-`tools/cli/node_modules` they're skipped, with a message saying so.
+`npm test` at the repository's root runs `scripts/cli.test.mjs`, `scripts/mcpServer.test.mjs`
+and `scripts/cliRender.test.mjs` (and the live part of `scripts/agentProtocol.test.mjs`) from the
+source here. Without `tools/cli/node_modules` they're skipped, with a message saying so.
+`scripts/renderBrowser.test.mjs` renders a small song of built-in synths in a headless browser
+(offline, with a cache folder of its own it deletes): skipped, saying why, without a browser,
+playwright-core or the built renderer.
