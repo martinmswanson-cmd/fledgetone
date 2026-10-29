@@ -14,8 +14,8 @@
 //      only) and the agent may see the selection: never once that's switched off
 //   6. at 360 px wide the panel fits (nothing in it scrolls sideways or goes past the edge, the box
 //      and Send on screen)
-//   1b. Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches from the box (Esc there gives the focus
-//      back to the box); Esc while an input
+//   1b. Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches from the box (Esc or Ctrl+K again gives
+//      the focus back to the box; opened from the Help menu, back to its button); Esc while an input
 //      method composes doesn't close the panel; text with nothing visible can't be sent
 //   5b. "see" allowed again doesn't tick the box again; a message the helper never got, retried
 //      after "see" is off, goes without the selection
@@ -197,7 +197,21 @@ async function until(check, ms, what) {
     await page.keyboard.press('Escape');
     // (the palette gives the focus back to the box it was opened from)
     await page.waitForTimeout(100);
-    const backToBox = await A(() => document.activeElement?.matches('[data-agent-compose] textarea'));
+    const inBox = () => A(() => !!document.activeElement?.matches('[data-agent-compose] textarea'));
+    const backToBox = await inBox();
+    // Ctrl+K again closes it: back to the box too
+    await page.keyboard.press('Control+k');
+    await page.waitForTimeout(100);
+    await page.keyboard.press('Control+k');
+    await page.waitForTimeout(150);
+    const backAfterToggle = await inBox();
+    // Opened from the Help menu (its item gone once the menu closes): back to that menu's button
+    await page.getByRole('menuitem', { name: 'Help', exact: true }).first().click();
+    await page.locator('[role^="menuitem"]', { hasText: 'Search everything' }).first().click();
+    await page.waitForTimeout(150);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    const toMenu = await A(() => ({ role: document.activeElement?.getAttribute('role'), text: document.activeElement?.textContent?.trim() }));
     await box.focus();
     await A(() => document.querySelector('[data-agent-compose] textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true })));
     await page.waitForTimeout(100);
@@ -208,8 +222,8 @@ async function until(check, ms, what) {
     await box.fill(keepDraft);
     step(
       '1b Ctrl+S saves the song, Ctrl+K searches; Esc while composing keeps the panel; nothing visible, no Send',
-      keysSeen.some((k) => k.key === 's' && k.prevented) && keysSeen.some((k) => k.key === 'k' && k.prevented) && palette > 0 && backToBox && openAfterIme === 1 && invisibleOff && (await ownCount()) === 0,
-      `${JSON.stringify(keysSeen)}, palette ${palette} (focus back to the box ${backToBox}), panel open ${openAfterIme}, Send off for invisible text ${invisibleOff}`
+      keysSeen.some((k) => k.key === 's' && k.prevented) && keysSeen.some((k) => k.key === 'k' && k.prevented) && palette > 0 && backToBox && backAfterToggle && toMenu.role === 'menuitem' && toMenu.text === 'Help' && openAfterIme === 1 && invisibleOff && (await ownCount()) === 0,
+      `${JSON.stringify(keysSeen)}, palette ${palette} (focus back to the box ${backToBox}, after Ctrl+K again ${backAfterToggle}, from the Help menu to ${JSON.stringify(toMenu)}), panel open ${openAfterIme}, Send off for invisible text ${invisibleOff}`
     );
 
     // 2. Enter sends it
