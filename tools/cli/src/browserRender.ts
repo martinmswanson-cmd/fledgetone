@@ -16,9 +16,9 @@
  * fails or takes too long (the browser is killed by its process if it won't close).
  */
 import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { StaticServer } from './staticServer';
 
@@ -147,7 +147,27 @@ function browserCandidates(asked?: string): Array<{ label: string; options: Reco
 export const NO_BROWSER =
   'No browser to render with was found. Install Google Chrome or Chromium, or run `npx playwright-core install chromium` in tools/cli, or give one with --browser <path to its program> (or FLEDGETONE_BROWSER).';
 
-async function launch(chromium: PwChromium, asked: string | undefined, timeoutMs: number): Promise<Launched> {
+/**
+ * `fn`, with the temporary folder pointed at `dir` meanwhile: Playwright makes the browser's
+ * profile and its own working folder in the temporary folder as it launches, and the folder
+ * they're in is deleted (whole) when the browser is closed, so nothing of it is left behind.
+ */
+async function withTempDir<T>(dir: string, fn: () => Promise<T>): Promise<T> {
+  const keys = ['TMPDIR', 'TMP', 'TEMP'] as const;
+  const before = keys.map((k) => process.env[k]);
+  for (const k of keys) process.env[k] = dir;
+  try {
+    return await fn();
+  } finally {
+    keys.forEach((k, i) => (before[i] === undefined ? delete process.env[k] : (process.env[k] = before[i])));
+  }
+}
+
+async function launch(chromium: PwChromium, asked: string | undefined, timeoutMs: number, tempDir: string): Promise<Launched> {
+  return withTempDir(tempDir, () => launchIn(chromium, asked, timeoutMs));
+}
+
+async function launchIn(chromium: PwChromium, asked: string | undefined, timeoutMs: number): Promise<Launched> {
   const why: string[] = [];
   for (const c of browserCandidates(asked)) {
     let server: PwBrowserServer | null = null;
@@ -248,13 +268,15 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
     }
   );
   await server.start(0);
+  // The browser's profile and Playwright's working folder go in here, deleted at the end
+  const tempDir = mkdtempSync(join(tmpdir(), 'fledgetone-browser-'));
   let launched: Launched | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onSignal: (() => void) | undefined;
   const pageErrors: string[] = [];
   try {
     const run = (async () => {
-      launched = await launch(chromium, opts.browser, Math.min(60_000, timeoutMs));
+      launched = await launch(chromium, opts.browser, Math.min(60_000, timeoutMs), tempDir);
       const { browser } = launched;
       const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false });
       const appOrigin = opts.appUrl ? new URL(opts.appUrl).origin : null;
@@ -357,6 +379,7 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
     }
     await closeBrowser(launched);
     await server.close();
+    rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
   }
 }
 
@@ -387,7 +410,12 @@ function contentType(path: string): string {
 export async function canRender(opts: Pick<BrowserOptions, 'browser'> = {}): Promise<string | null> {
   try {
     const chromium = await loadChromium();
-    await closeBrowser(await launch(chromium, opts.browser, 30_000));
+    const tempDir = mkdtempSync(join(tmpdir(), 'fledgetone-browser-'));
+    try {
+      await closeBrowser(await launch(chromium, opts.browser, 30_000, tempDir));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+    }
     return null;
   } catch (err) {
     return (err as Error).message;
