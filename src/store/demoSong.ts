@@ -1,4 +1,4 @@
-import { DRUM_NOTES } from '../audio/scheduler';
+import { DRUM_NOTES } from './drumNotes';
 import { compatibleInstruments, FX_NOTES } from '../audio/instrumentCatalog';
 import type { Clip, InstrumentKey, NoteEvent, Track, WobbleRate } from './timelineTypes';
 import { defaultTrackFx, uid } from './timelineTypes';

@@ -1,4 +1,4 @@
-import { DRUM_NOTES } from '../audio/scheduler';
+import { DRUM_NOTES } from './drumNotes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import type { ProjectSnapshot } from './project';
 import type { AutomationLane, Clip, InstrumentKey, MasterSettings, Track, TrackFx, WobbleRate } from './timelineTypes';

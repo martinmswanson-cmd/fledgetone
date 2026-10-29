@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Fledgetone on the command line**: a new program for people who work with song files, or with an AI agent of their own. It describes a song, lists its notes, checks a file, compares two songs, starts one from a starter, applies a suggested change to make a new song (never over the old one), measures an export's loudness, and turns a song into a share link and back. An agent you already use can read a song file through it and suggest changes, which you apply yourself. Fledgetone sends nothing anywhere; your agent sends what it reads to whoever runs it. How to set it up is in the agent guide in the repository.
+
 ## 2026.10.29 — Studio-quality sound: cleaner exports, recordings, pitch and stretch
 
 - **Cleaner time-stretch, Move to key, Tune and Mangle**, in new songs and the ones you already have:

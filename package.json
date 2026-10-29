@@ -8,6 +8,7 @@
     "dev": "npm run build:runtime && vite",
     "build": "npm run build:runtime && tsc -b && vite build",
     "build:runtime": "vite build -c vite.runtime.config.ts",
+    "build:cli": "vite build -c vite.cli.config.ts",
     "lint": "oxlint",
     "test": "node --test scripts/*.test.mjs",
     "codemap": "node scripts/codemap.mjs",

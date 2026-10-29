@@ -16,7 +16,7 @@
  * Studio FX, Clips, Ripple edits, Clipboard, Selection, Project, Creating and editing clips, Piano
  * roll, Recording, Automation, and the rest after.
  *
- * 3. Helpers the actions share: splitClipAt, makeTrack, copyClip, selectionBlock, viewShowing,
+ * 3. Helpers the actions share: splitClipAt, copyClip, selectionBlock, viewShowing,
  * tidyMeters, and onProjectReplaced (listeners told when New, Open, a link or Restore replaces the
  * song).
  *
@@ -41,7 +41,6 @@ import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
 import { applyGlue, groupAndGlue, removeGlue } from './glueMix';
 import { duckToKick, hasKick, type DuckStyle } from './duckToKick';
-import { startSends } from './partKind';
 import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
@@ -100,10 +99,10 @@ import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
-import { newKitDesign } from './drumDesign';
+import { makeTrack } from './trackFactory';
 import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
@@ -156,6 +155,8 @@ import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns'
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
 export { TOTAL_BARS };
+// New tracks are made in trackFactory.ts (pure, so the agent tools make them the same way); much of the app imports makeTrack from here
+export { makeTrack };
 export const MIN_ZOOM = 12;
 /** Deep enough for frame-level work: a 30 fps frame is 21px wide at 120 BPM. */
 export const MAX_ZOOM = 1280;
@@ -246,6 +247,16 @@ const historyEntry = (s: TimelineState): HistoryEntry => ({
   gameParams: s.gameParams,
   intensityCurves: s.intensityCurves,
 });
+
+/** The song's parts an undo step holds (historyEntry's fields, without a step's ripple and plugins). */
+export type SongParts = Omit<HistoryEntry, 'ripple' | 'plugins'>;
+
+/**
+ * The song's parts as undo sees them, read from the store now: each field is the same object until
+ * an edit replaces it (masterFx excepted: it's built on each read, so compare it by value, as
+ * changesHistory does). For telling whether the song changed, e.g. the agent tools' revision count.
+ */
+export const songParts = (s: TimelineState): SongParts => historyEntry(s);
 
 let tempoMemo: { bpm: number; points: TempoPoint[]; map: TempoMap } | null = null;
 /** The song's tempo map (the same object while the tempo doesn't change). */
@@ -945,50 +956,6 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
   const takes = splitTakes(clip, rel, clip.audio ? soundShift(clip, rel, tempo) : 0, () => uid('note'));
   if (takes) return [{ ...left, ...takes[0] }, { ...right, ...takes[1] }];
   return [left, right];
-}
-
-/** A track for `instrumentKey` with the usual starting settings, named after it (numbered after those already there). */
-export function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: string): Track {
-  const meta = INSTRUMENTS[instrumentKey];
-  const count = existing.filter((t) => t.instrumentKey === instrumentKey).length;
-  // The sends its kind of part starts with (partKind.ts): pads and leads in the room, a lead's echo
-  const start = startSends(instrumentKey, instrumentKey === 'return' ? returnFx() : withHumanFeel(instrumentKey, defaultTrackFx()));
-  return {
-    id: uid('track'),
-    name: name || (count > 0 ? `${meta.name} ${count + 1}` : meta.name),
-    color: meta.color,
-    instrumentKey,
-    isMuted: false,
-    isSoloed: false,
-    isArmed: false,
-    volume: 0,
-    // An orchestral instrument takes its usual seat on the stage (seatOf)
-    pan: seatOf(instrumentKey)?.pan ?? 0,
-    ...(seatOf(instrumentKey) ? { distance: seatOf(instrumentKey)!.distance } : {}),
-    eq: { low: 0, mid: 0, high: 0 },
-    fx: start.fx,
-    // An orchestral instrument plays in the hall (a recording of one has as much of the room as of
-    // the instrument); anything else as its kind of part starts
-    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : start.reverbSend,
-    delaySend: 0,
-    expressive: true,
-    // A new Designed Kit starts on the modern kick and snare (NEW_KIT_PRESETS)
-    ...(instrumentKey === 'designedKit' ? { drumDesign: newKitDesign() } : {}),
-  };
-}
-/** A new orchestral track's reverb send (its distance adds to it: see distance.ts) */
-const SEATED_SEND = 0.35;
-
-/** A recorded instrument starts with a player's feel (the Human insert, see playerFeel in the catalog). */
-function withHumanFeel(key: InstrumentKey, fx: Track['fx']): Track['fx'] {
-  const feel = playerFeel(key);
-  return feel ? { ...fx, human: { ...fx.human, on: true, ...feel, pitch: 0 } } : fx;
-}
-
-/** A return's effects start fully wet (the dry sound plays from the tracks that send to it), so its Delay and Reverb show the mix they'll use. */
-function returnFx(): Track['fx'] {
-  const fx = defaultTrackFx();
-  return { ...fx, echo: { ...fx.echo, mix: 1 }, reverb: { ...fx.reverb, mix: 1 } };
 }
 
 /** A selected copy of a clip `offset` bars later, with fresh clip and note ids. */
