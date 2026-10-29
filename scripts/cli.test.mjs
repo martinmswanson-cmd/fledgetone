@@ -123,37 +123,103 @@ test('notes, list and new', { skip }, async () => {
   assert.equal((await cli('new', '--starter', 'celtic', '-o', made)).code, 2, 'no overwriting without --overwrite');
 });
 
-test('measure: the loudness of a WAV file', { skip }, async () => {
-  // One second of a 1 kHz sine at half scale, 16-bit stereo
-  const rate = 48000;
-  const frames = rate * 2;
-  const buf = Buffer.alloc(44 + frames * 4);
+/** A 16-bit WAV of a 1 kHz sine at half scale in every channel. */
+function makeWav({ channels = 2, rate = 48000, seconds = 2, truncate } = {}) {
+  const frames = Math.round(rate * seconds);
+  const size = frames * channels * 2;
+  const buf = Buffer.alloc(44 + size);
   buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + frames * 4, 4);
+  buf.writeUInt32LE(36 + size, 4);
   buf.write('WAVEfmt ', 8);
   buf.writeUInt32LE(16, 16);
   buf.writeUInt16LE(1, 20);
-  buf.writeUInt16LE(2, 22);
+  buf.writeUInt16LE(channels, 22);
   buf.writeUInt32LE(rate, 24);
-  buf.writeUInt32LE(rate * 4, 28);
-  buf.writeUInt16LE(4, 32);
+  buf.writeUInt32LE(rate * channels * 2, 28);
+  buf.writeUInt16LE(channels * 2, 32);
   buf.writeUInt16LE(16, 34);
   buf.write('data', 36);
-  buf.writeUInt32LE(frames * 4, 40);
+  buf.writeUInt32LE(size, 40);
   for (let i = 0; i < frames; i++) {
     const v = Math.round(0.5 * Math.sin((2 * Math.PI * 1000 * i) / rate) * 32767);
-    buf.writeInt16LE(v, 44 + i * 4);
-    buf.writeInt16LE(v, 46 + i * 4);
+    for (let c = 0; c < channels; c++) buf.writeInt16LE(v, 44 + (i * channels + c) * 2);
   }
+  return truncate ? buf.subarray(0, truncate) : buf;
+}
+
+test('measure: the loudness of a WAV file', { skip }, async () => {
   const wav = join(tmp, 'sine.wav');
-  writeFileSync(wav, buf);
+  writeFileSync(wav, makeWav());
   const r = await cli('measure', wav, '--json');
   assert.equal(r.code, 0, r.stderr);
   const m = JSON.parse(r.stdout);
-  // A half-scale 1 kHz sine in both channels: about -3.0 LUFS less 6 dB, a peak of -6 dBTP
+  // A half-scale 1 kHz sine in both channels: -6 LUFS, a peak of -6 dBTP
   assert.ok(Math.abs(m.lufs - -6.0) < 0.6, `lufs ${m.lufs}`);
   assert.ok(Math.abs(m.truePeakDbtp - -6.0) < 0.3, `true peak ${m.truePeakDbtp}`);
   assert.ok(Math.abs(m.crestDb - 3.0) < 0.2, `crest ${m.crestDb}`);
   assert.equal(m.regions[3].name, 'mids (500 Hz-2 kHz)');
   assert.ok(m.regions[3].db > -1, 'the sine is in the mids');
+});
+
+test('measure: mono as one channel, more than two said, silence and damaged files in plain words', { skip }, async () => {
+  const measureOf = async (name, wav) => {
+    const path = join(tmp, name);
+    writeFileSync(path, wav);
+    return cli('measure', path, '--json');
+  };
+  // Mono is one channel (BS.1770): 3 dB under the same sine in both
+  const mono = JSON.parse((await measureOf('mono.wav', makeWav({ channels: 1 }))).stdout);
+  assert.ok(Math.abs(mono.lufs - -9.0) < 0.6, `mono lufs ${mono.lufs}`);
+  const six = JSON.parse((await measureOf('six.wav', makeWav({ channels: 6 }))).stdout);
+  assert.match(six.note, /only the first two of its 6 channels/);
+  const empty = JSON.parse((await measureOf('empty.wav', makeWav({ seconds: 0 }))).stdout);
+  assert.equal(empty.silent, true);
+  assert.deepEqual(empty.regions, []);
+  const text = await measureOf('empty2.wav', makeWav({ seconds: 0 }));
+  assert.equal(text.code, 0);
+  for (const [name, wav, re] of [
+    ['cut.wav', makeWav({ truncate: 30 }), /damaged or cut short/],
+    ['slow.wav', makeWav({ rate: 4, seconds: 2 }), /sample rate is 4 Hz/],
+  ]) {
+    const r = await cli('measure', ...[join(tmp, name)].map((p) => (writeFileSync(p, wav), p)));
+    assert.equal(r.code, 2, name);
+    assert.match(r.stderr, re, name);
+    assert.doesNotMatch(r.stderr, /DataView|RangeError|at /, name);
+  }
+});
+
+test('writes never go through a link, a hard link is the same file, and -o never writes over a file unasked', { skip }, async () => {
+  const { symlinkSync, linkSync, existsSync } = await import('node:fs');
+  const input = join(tmp, 'linked.fledgetone.json');
+  copyFileSync(SONG, input);
+  // A hard link to the song is the song
+  const hard = join(tmp, 'hard.fledgetone.json');
+  linkSync(input, hard);
+  const r = await cli('apply', input, SUGGESTION, '-o', hard);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /is the song itself/);
+  // A link pointing at nothing yet, where the output goes: refused, nothing made where it points
+  const target = join(tmp, 'elsewhere.fledgetone.json');
+  const dangling = join(tmp, 'dangling.fledgetone.json');
+  symlinkSync(target, dangling);
+  const viaLink = await cli('apply', input, SUGGESTION, '-o', dangling, '--overwrite');
+  assert.equal(viaLink.code, 2);
+  assert.match(viaLink.stderr, /is a link/);
+  assert.ok(!existsSync(target));
+  // An existing file isn't written over without --overwrite
+  const taken = join(tmp, 'taken.fledgetone.json');
+  writeFileSync(taken, 'mine');
+  const over = await cli('apply', input, SUGGESTION, '-o', taken);
+  assert.equal(over.code, 2);
+  assert.match(over.stderr, /already exists/);
+  assert.equal(readFileSync(taken, 'utf8'), 'mine');
+  assert.equal((await cli('apply', input, SUGGESTION, '-o', taken, '--overwrite')).code, 0);
+});
+
+test('from-link: a damaged link is a plain error, exit 2', { skip }, async () => {
+  for (const link of ['https://fledgetone.com/app/#s=%%%***', 'https://fledgetone.com/app/#s=AAAA']) {
+    const r = await cli('from-link', link, '-o', join(tmp, 'bad-link.fledgetone.json'));
+    assert.equal(r.code, 2, link);
+    assert.match(r.stderr, /^fledgetone: that link can't be read/, link);
+  }
 });

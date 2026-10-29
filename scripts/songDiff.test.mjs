@@ -76,3 +76,14 @@ test('the audition starts a bar before the change and is at most AUDITION_MAX_BA
   assert.deepEqual(auditionRange({ fromBar: 1, toBar: 3 }, { clips: [] }), { fromBar: 1, toBar: 3 });
   assert.deepEqual(auditionRange({ fromBar: 5, toBar: 80 }, { clips: [] }), { fromBar: 4, toBar: 4 + AUDITION_MAX_BARS });
 });
+
+test('a marker moved by the suggestion is said even when the tempo changes too; one only retimed is not', () => {
+  const a = base();
+  const marker = a.markers[1];
+  const timed = { ...a, markers: [...a.markers, { id: 'hit', name: 'Hit', anchor: 'time', bar: 9, seconds: a.markers[2].seconds }] };
+  // The tempo doubles: the timed marker moves to bar 17 by itself, the bar marker is moved by hand
+  const b = { ...timed, bpm: 164, markers: timed.markers.map((m) => (m.id === marker.id ? { ...m, bar: 6 } : m.id === 'hit' ? { ...m, bar: 17 } : m)) };
+  const t = texts(diffSongs(timed, b));
+  assert.ok(t.includes('Moves the marker "Groove" from bar 5 to bar 6.'), t.join('\n'));
+  assert.ok(!t.some((x) => /"Hit"/.test(x)), t.join('\n'));
+});

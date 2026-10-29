@@ -159,6 +159,11 @@ export interface ApplyResult {
   diff: SongDiff;
   /** The ids the ops' `ref` names stand for. */
   refs: Record<string, string>;
+  /**
+   * The id base the new ids were made from: the one asked for, or, when the song already holds ids
+   * made from it (the same suggestion applied before), the first free one after it ("<base>~2"...).
+   */
+  idBase: string;
   /** How many ops ran, and how many notes they added. */
   stats: { ops: number; addedNotes: number };
 }
@@ -325,8 +330,11 @@ const tempoOf = (w: Pick<Work, 'bpm' | 'tempoPoints'>): TempoMap => ({ bpm: w.bp
 
 /**
  * Apply `doc` (`{ opsVersion: 1, ops }`) to `base`. Never changes `base`. `idBase` makes the new
- * objects' ids (use the suggestion's id, e.g. "sg-<id>", so applying it again later gives the same
- * ids). Errors (shape, or the first op that can't be applied) come back with the op's index.
+ * objects' ids: the studio gives each suggestion one of its own, unique to it ("sg-<random id>"),
+ * and uses it again at Accept, so what was heard is what's applied. If `base` already holds ids
+ * made from it, the next free one is used ("<idBase>~2"; the result's `idBase` says which), so no
+ * id is ever given twice. Errors (shape, or the first op that can't be applied) come back with the
+ * op's index.
  */
 export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: string }): ApplyOutcome {
   const shape = checkOpsShape(doc);
@@ -348,9 +356,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     master: base.master ?? normalizeMasterSettings(undefined),
   };
 
+  const idBase = freeIdBase(base, opts.idBase);
+  const notesBefore = base.clips.reduce((n, c) => n + c.notes.length, 0);
   let index = 0;
   try {
-    withStableIds(opts.idBase, () => {
+    withStableIds(idBase, () => {
       for (; index < ops.length; index++) {
         const before = w.clips;
         applyOne(ops[index], `ops[${index}]`);
@@ -505,6 +515,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         } else {
           copy = { ...unlinked(clip), id: uid('clip'), trackId, startBar, isSelected: false, notes: clip.notes.map((n) => ({ ...n, id: uid('note') })) };
         }
+        // A copy's notes are notes the suggestion adds (a linked copy plays them too)
+        countNotes(clip.notes.length, `${at}.clipId`);
         w.clips = [...w.clips, copy];
         remember(op.ref, 'clip', copy.id);
         return;
@@ -558,18 +570,25 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const insert = op.insert as InsertName;
         const defaults = insertDefaults(insert);
         for (const [k, v] of Object.entries(op.settings)) {
-          if (!(k in defaults) && !(insert === 'pump' && ['source', 'shape', 'points'].includes(k))) throw new OpFail(`${at}.settings.${k}`, `the ${insert} insert has no setting "${k}" (it has ${Object.keys(defaults).join(', ')})`);
+          if (!Object.hasOwn(defaults, k) && !(insert === 'pump' && ['source', 'shape', 'points'].includes(k))) throw new OpFail(`${at}.settings.${k}`, `the ${insert} insert has no setting "${k}" (it has ${Object.keys(defaults).join(', ')})`);
           const want = defaults[k];
           if (want !== undefined && typeof v !== typeof want && !(Array.isArray(want) && Array.isArray(v))) throw new OpFail(`${at}.settings.${k}`, `expected ${typeof want === 'number' ? 'a number' : typeof want === 'boolean' ? 'true or false' : Array.isArray(want) ? 'a list' : 'text'}`);
         }
-        if (insert === 'pump' && typeof op.settings.source === 'string') trackRef(op.settings.source, `${at}.settings.source`);
+        const settings = { ...op.settings };
+        if (insert === 'pump' && settings.source !== undefined) {
+          if (typeof settings.source !== 'string') throw new OpFail(`${at}.settings.source`, 'expected the id of the track the Pump ducks to');
+          const source = trackRef(settings.source, `${at}.settings.source`);
+          if (source.id === track.id) throw new OpFail(`${at}.settings.source`, `"${track.name}" can't duck to itself: give another track`);
+          // The id itself, never the "$ref" it was given as
+          settings.source = source.id;
+        }
         const current = (track.fx[insert] as unknown as Record<string, unknown> | undefined) ?? defaults;
-        const merged = { ...current, ...op.settings };
+        const merged = { ...current, ...settings };
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
-        for (const [k, v] of Object.entries(op.settings)) {
+        for (const [k, v] of Object.entries(settings)) {
           if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`"${track.name}" ${insert} ${k} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
-          if (typeof v === 'string' && out[k] !== v) warn(`"${track.name}" ${insert} ${k} ${JSON.stringify(v)} isn't one of its choices: kept ${JSON.stringify(out[k])}.`);
+          if (typeof v === 'string' && out[k] !== v) warn(`"${track.name}" ${insert} ${k} ${JSON.stringify(v)} isn't one of its choices: ${out[k] === undefined ? 'left as it was' : `kept ${JSON.stringify(out[k])}`}.`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -703,7 +722,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           const given = op[key];
           if (!given) return;
           for (const [k, v] of Object.entries(given)) {
-            if (!(k in start)) throw new OpFail(`${at}.${key}.${k}`, `the master ${key} has no setting "${k}" (it has ${Object.keys(start).join(', ')})`);
+            if (!Object.hasOwn(start, k)) throw new OpFail(`${at}.${key}.${k}`, `the master ${key} has no setting "${k}" (it has ${Object.keys(start).join(', ')})`);
             if (typeof v !== typeof start[k]) throw new OpFail(`${at}.${key}.${k}`, `expected ${typeof start[k] === 'number' ? 'a number' : typeof start[k] === 'boolean' ? 'true or false' : 'text'}`);
           }
           next[key] = { ...start, ...given };
@@ -802,7 +821,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
 
   function readPitch(value: unknown, path: string, track: Track): string {
     if (typeof value !== 'string') throw new OpFail(path, 'expected a pitch like "C#3" (or a drum row like "kick" on a drum track)');
-    if (isDrumKind(track.instrumentKey) && value in DRUM_NOTES) return DRUM_NOTES[value as keyof typeof DRUM_NOTES];
+    if (isDrumKind(track.instrumentKey) && Object.hasOwn(DRUM_NOTES, value)) return DRUM_NOTES[value as keyof typeof DRUM_NOTES];
     const m = midiOf(value);
     if (!Number.isFinite(m) || m < 0 || m > 127) throw new OpFail(path, `${JSON.stringify(value)} isn't a pitch: write it as a note name and octave, like "C4" (middle C), "F#2" or "Bb3"`);
     const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
@@ -834,8 +853,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
 
   function readNotes(list: unknown[], path: string, clip: Pick<Clip, 'lengthBars' | 'name'>, track: Track): NoteEvent[] {
     if (isDropKind(track.instrumentKey) || isAudioKind(track.instrumentKey) || isMixTrack(track)) throw new OpFail(path, `"${track.name}" doesn't play notes a suggestion can add`);
-    addedNotes += list.length;
-    if (addedNotes > MAX_ADDED_NOTES) throw new OpFail(path, `too many notes: at most ${MAX_ADDED_NOTES} added by one suggestion`);
+    countNotes(list.length, path);
     return list.map((raw, i) => {
       const at = `${path}[${i}]`;
       if (!isObj(raw)) throw new OpFail(at, 'expected { "pitch": "C4", "start": 0, "length": 0.25, "velocity": 0.8 }');
@@ -849,6 +867,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         velocity: raw.velocity === undefined ? 0.8 : readVelocity(raw.velocity, `${at}.velocity`),
       };
     });
+  }
+
+  function countNotes(n: number, path: string) {
+    addedNotes += n;
+    if (addedNotes > MAX_ADDED_NOTES) throw new OpFail(path, `too many notes: at most ${MAX_ADDED_NOTES} added by one suggestion (copies of clips count)`);
   }
 
   function readClipLength(value: number, path: string, max = TOTAL_BARS): number {
@@ -923,6 +946,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     return { ok: false, errors: [{ op: -1, path: '', message: `the result isn't a song that could be saved: ${(err as Error).message}` }] };
   }
   if (gated.unread) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${gated.unread.tracks} tracks and ${gated.unread.clips} clips a saved file couldn't keep` }] };
+  // A saved file keeps the first of repeated ids and drops the rest quietly: nothing may be lost that way
+  const lost = idTrouble(song, gated);
+  if (lost) return { ok: false, errors: [{ op: -1, path: '', message: `the result can't be saved as it is: ${lost}` }] };
+  const notesAfter = song.clips.reduce((n, c) => n + c.notes.length, 0);
+  if (notesAfter - notesBefore > MAX_ADDED_NOTES) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${notesAfter - notesBefore} more notes: at most ${MAX_ADDED_NOTES} more in one suggestion` }] };
   song = withFileValues(base, song, gated, warn);
 
   for (const text of checkSafety(base, song)) warn(text);
@@ -933,6 +961,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     warnings,
     diff,
     refs: Object.fromEntries([...refs].map(([k, v]) => [k, v.id])),
+    idBase,
     stats: { ops: ops.length, addedNotes },
   };
 }
@@ -966,4 +995,42 @@ function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: Pro
   });
   const markers = song.markers === base.markers || stableJson(gated.markers) === stableJson(song.markers) ? song.markers : gated.markers;
   return { ...song, tracks, clips, markers };
+}
+
+/** Every id in a song: tracks, clips, notes, markers, tempo and meter changes, patterns. */
+function songIds(p: ProjectSnapshot): string[] {
+  const out: string[] = [];
+  for (const t of p.tracks) out.push(t.id);
+  for (const c of p.clips) {
+    out.push(c.id);
+    if (c.pattern) out.push(c.pattern);
+    for (const n of c.notes) out.push(n.id);
+  }
+  for (const m of p.markers ?? []) out.push(m.id);
+  for (const t of p.tempoPoints ?? []) out.push(t.id);
+  for (const m of p.meterPoints ?? []) out.push(m.id);
+  return out;
+}
+
+/**
+ * `wanted`, or the first of "<wanted>~2", "~3"... that no id in the song was made from. Applying a
+ * suggestion to a song it was applied to before would otherwise make the same ids again.
+ */
+export function freeIdBase(song: ProjectSnapshot, wanted: string): string {
+  const ids = songIds(song);
+  const taken = (b: string) => ids.some((id) => id.includes(`-${b}-`));
+  if (!taken(wanted)) return wanted;
+  for (let i = 2; ; i++) if (!taken(`${wanted}~${i}`)) return `${wanted}~${i}`;
+}
+
+/** Why a song would lose something to repeated ids when saved (null: it wouldn't). */
+function idTrouble(song: ProjectSnapshot, gated: ProjectSnapshot): string | null {
+  if (gated.tracks.length !== song.tracks.length) return `${song.tracks.length - gated.tracks.length} tracks share an id with another`;
+  if (gated.clips.length !== song.clips.length) return `${song.clips.length - gated.clips.length} clips share an id with another`;
+  const repeated = (ids: string[]) => ids.length !== new Set(ids).size;
+  if (repeated((song.markers ?? []).map((m) => m.id))) return 'two markers share an id';
+  if (repeated((song.tempoPoints ?? []).map((t) => t.id))) return 'two tempo changes share an id';
+  const clip = song.clips.find((c) => repeated(c.notes.map((n) => n.id)));
+  if (clip) return `two notes in "${clip.name}" share an id`;
+  return null;
 }

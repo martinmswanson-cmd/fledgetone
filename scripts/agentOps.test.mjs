@@ -258,3 +258,58 @@ test('the bars to hear a suggestion in start one bar before the change', () => {
   const out = mustApply(base(), [{ op: 'add_notes', clipId: BASS_CLIP, notes: [{ pitch: 'D2', start: 4, length: 1 }] }]);
   assert.deepEqual(out.diff.audition, { fromBar: 8, toBar: 10 });
 });
+
+test('the same suggestion applied twice makes new ids the second time, and nothing is lost to repeated ids', () => {
+  const ops = [
+    { op: 'add_track', instrument: 'synthDesigner', ref: 't' },
+    { op: 'add_clip', trackId: '$t', startBar: 1, lengthBars: 2, ref: 'c', notes: [{ pitch: 'C4', start: 0, length: 1 }] },
+    { op: 'add_marker', bar: 13, name: 'Again' },
+  ];
+  const once = mustApply(base(), ops, 'sg-same');
+  assert.equal(once.idBase, 'sg-same');
+  const twice = mustApply(once.song, ops.slice(0, 2), 'sg-same');
+  assert.equal(twice.idBase, 'sg-same~2');
+  const ids = (list) => list.map((x) => x.id);
+  for (const list of [twice.song.tracks, twice.song.clips, twice.song.markers, twice.song.clips.flatMap((c) => c.notes)]) assert.equal(new Set(ids(list)).size, list.length);
+  const back = parseProject(JSON.parse(JSON.stringify(serializeProject(twice.song))));
+  assert.equal(back.tracks.length, twice.song.tracks.length);
+  assert.equal(back.clips.length, twice.song.clips.length);
+  // A third time: the next free base
+  assert.equal(mustApply(twice.song, ops.slice(0, 1), 'sg-same').idBase, 'sg-same~3');
+});
+
+test('copies of clips count against the notes a suggestion may add', () => {
+  const notes = Array.from({ length: 3000 }, (_, i) => ({ pitch: 'C4', start: (i % 64) / 16, length: 1 / 16 }));
+  const made = mustApply(base(), [{ op: 'add_clip', trackId: KEYS, startBar: 17, lengthBars: 4, notes, ref: 'c' }]);
+  const clipId = made.refs.c;
+  const one = run(made.song, [{ op: 'duplicate_clip', clipId, toBar: 21 }]);
+  assert.ok(one.ok);
+  for (const linked of [false, true]) {
+    const two = run(made.song, [{ op: 'duplicate_clip', clipId, toBar: 21, linked }, { op: 'duplicate_clip', clipId, toBar: 25, linked }]);
+    assert.equal(two.ok, false, `linked: ${linked}`);
+    assert.deepEqual([two.errors[0].op, two.errors[0].path], [1, 'ops[1].clipId']);
+    assert.match(two.errors[0].message, /too many notes/);
+  }
+});
+
+test('a Pump ducking to a track made by an earlier op saves its id; ducking to itself is refused', () => {
+  const out = mustApply(base(), [{ op: 'add_track', instrument: 'drums', ref: 'k' }, { op: 'set_insert', trackId: KEYS, insert: 'pump', settings: { on: true, trigger: 'track', source: '$k' } }]);
+  assert.equal(out.song.tracks.find((t) => t.id === KEYS).fx.pump.source, out.refs.k);
+  const self = run(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'pump', settings: { on: true, source: KEYS } }]);
+  assert.equal(self.ok, false);
+  assert.match(self.errors[0].message, /can't duck to itself/);
+});
+
+test("names an object has by inheritance aren't pitches or settings", () => {
+  for (const name of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    const pitch = run(base(), [{ op: 'add_notes', clipId: DRUM_CLIP, notes: [{ pitch: name, start: 0, length: 0.25 }] }]);
+    assert.equal(pitch.ok, false, name);
+    assert.match(pitch.errors[0].message, /isn't a pitch/);
+  }
+  const insert = run(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { toString: 1 } }]);
+  assert.match(insert.errors[0].message, /has no setting "toString"/);
+  const master = run(base(), [{ op: 'set_master', ott: { constructor: 1 } }]);
+  assert.match(master.errors[0].message, /has no setting "constructor"/);
+  // A drum row's own name still works
+  assert.ok(run(base(), [{ op: 'add_notes', clipId: DRUM_CLIP, notes: [{ pitch: 'kick', start: 0, length: 0.25 }] }]).ok);
+});

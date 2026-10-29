@@ -4,7 +4,8 @@
  *
  * It refuses any page not from an allowed origin and any Host but its own address, caps frames
  * at LIMITS.frameBytes, pings every LIMITS.heartbeatMs (no answer: the connection is dropped),
- * counts wrong codes (five on a connection close it, twenty retire the code for a new one), and
+ * counts tries to pair before it works out any proof (five on a connection close it, twenty retire
+ * the code for a new one; one proof is worked out at a time), and
  * serves one paired studio at a time. Once paired, `request` sends the studio a request and waits
  * for its answer (or a timeout), and the studio's events are kept in a ring buffer that
  * `waitForEvents` reads from, for the agent's wait_for_changes. It logs to stderr only.
@@ -71,10 +72,30 @@ export class BridgeError extends Error {
 /** The message every live tool gives when no studio is paired. */
 export const NOT_CONNECTED = 'No studio is connected — call connect_studio and ask the user to type the code in Fledgetone.';
 
+/** A pairing code and what's been spent of it. */
+interface CodeRecord {
+  plain: string;
+  shown: string;
+  expires: number;
+  /** Tries to pair with it so far (each is a proof the helper gives away, see protocol.ts) */
+  tries: number;
+  /** Replaced by another, or used to pair: it pairs no more */
+  done: boolean;
+  /** Twenty tries spent: no more tries with it (the last one's answer can still be confirmed) */
+  retired: boolean;
+}
+
 interface Conn {
   ws: WebSocket;
+  /** The nonce the next try is bound to (a fresh one after every try) */
   nonce: string;
-  wrong: number;
+  tries: number;
+  /** An HMAC is being worked out for it: any other pairing frame meanwhile is refused unworked */
+  busy: boolean;
+  /** Over its budget: nothing more it sends is read */
+  dead: boolean;
+  /** The last try the helper answered, waiting for the studio's proof */
+  exchange: { code: CodeRecord; serverNonce: string; studioNonce: string; params: Partial<PairParams> } | null;
   paired: boolean;
   alive: boolean;
   studio?: { app: { name: string; version: string }; permissions: Permissions };
@@ -84,7 +105,7 @@ export class BridgeServer {
   private wss: WebSocketServer | null = null;
   private readonly conns = new Set<Conn>();
   private paired: Conn | null = null;
-  private code: { plain: string; shown: string; expires: number; wrong: number } | null = null;
+  private code: CodeRecord | null = null;
   private readonly pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private nextId = 0;
   private readonly events: StudioEventRecord[] = [];
@@ -157,7 +178,7 @@ export class BridgeServer {
       ws.close(4009, 'A studio is already connected');
       return;
     }
-    const conn: Conn = { ws, nonce: newNonce(), wrong: 0, paired: false, alive: true };
+    const conn: Conn = { ws, nonce: newNonce(), tries: 0, busy: false, dead: false, exchange: null, paired: false, alive: true };
     this.conns.add(conn);
     ws.on('pong', () => (conn.alive = true));
     ws.on('message', (data, isBinary) => {
@@ -173,11 +194,21 @@ export class BridgeServer {
     if (conn.ws.readyState === conn.ws.OPEN) conn.ws.send(encodeMessage(m));
   }
 
+  /** Stop reading a connection and close it (over its budget, or misbehaving). */
+  private drop(conn: Conn, code: number, reason: string) {
+    // (Frames still arriving are dropped unread, see onMessage; a peer that doesn't answer the close is cut off)
+    conn.dead = true;
+    conn.ws.close(code, reason);
+    setTimeout(() => conn.ws.terminate(), 1000).unref?.();
+  }
+
   private async onMessage(conn: Conn, text: string) {
+    if (conn.dead) return;
     const m = parseMessage(text);
     if (!m) return conn.ws.close(4002, 'Not a Fledgetone message');
     if (!conn.paired) {
       if (m.kind === 'req' && m.method === 'pair') return this.onPair(conn, m);
+      if (m.kind === 'req' && m.method === 'pair_confirm') return this.onConfirm(conn, m);
       if (m.kind === 'req') this.send(conn, { kind: 'res', id: m.id, error: { code: 'not_paired', message: 'Pair first.' } });
       return;
     }
@@ -200,49 +231,95 @@ export class BridgeServer {
     this.send(conn, { kind: 'res', id: m.id, error: { code: 'unknown_method', message: 'The helper takes no requests.' } });
   }
 
+  /**
+   * The first step of pairing: the helper proves it knows the code, bound to the studio's nonce
+   * and its own. Every try is counted before any HMAC is worked out (and while one is, any other
+   * pairing frame is refused unworked and counted too), so a burst of tries costs one HMAC and
+   * spends the budget: five a connection, twenty a code.
+   */
   private async onPair(conn: Conn, m: Message) {
     const p = (m.params ?? {}) as Partial<PairParams>;
     const fail = (code: string, message: string, extra: Record<string, unknown> = {}) => this.send(conn, { kind: 'res', id: m.id, error: { code, message, ...extra } });
     if (p.protocol !== PROTOCOL_VERSION) return fail('version', 'This helper speaks another version: update Fledgetone or its command line tools.');
-    if (typeof p.nonce !== 'string' || p.nonce.length < 16 || p.nonce.length > 128 || typeof p.proof !== 'string') return fail('bad_request', 'A pair request needs a nonce and a proof.');
+    if (typeof p.nonce !== 'string' || p.nonce.length < 16 || p.nonce.length > 128) return fail('bad_request', 'A pair request needs a nonce.');
     const code = this.code;
-    if (!code || code.expires < Date.now()) {
+    if (!code || code.done || code.retired || code.expires < Date.now()) {
       this.code = null;
-      return fail('no_code', 'There’s no code waiting: ask your agent to connect again for a new one.');
+      fail('no_code', 'There’s no code waiting: ask your agent to connect again for a new one.');
+      return this.drop(conn, 4010, 'No code waiting');
     }
-    const expected = await studioProof(code.plain, conn.nonce, p.nonce);
-    if (!sameProof(p.proof, expected)) {
-      conn.wrong++;
-      code.wrong++;
-      this.log(`a wrong code was typed (${conn.wrong} on this connection)`);
-      if (code.wrong >= LIMITS.wrongCodesPerCode) {
-        this.code = null;
-        this.record('code_retired', { reason: 'too many wrong codes' });
-        fail('too_many_tries', 'Too many wrong codes: ask your agent for a new one.');
-        return conn.ws.close(4001, 'Too many wrong codes');
-      }
-      if (conn.wrong >= LIMITS.wrongCodesPerConnection) {
-        fail('too_many_tries', 'Too many wrong codes: connect again.');
-        return conn.ws.close(4001, 'Too many wrong codes');
-      }
-      // A fresh nonce for the next try, so no proof is ever checked twice against the same one
-      conn.nonce = newNonce();
-      return fail('wrong_code', 'That isn’t the code.', { attemptsLeft: Math.min(LIMITS.wrongCodesPerConnection - conn.wrong, LIMITS.wrongCodesPerCode - code.wrong), nonce: conn.nonce });
+    // The budget, taken now, before anything is awaited
+    if (conn.tries >= LIMITS.triesPerConnection) {
+      fail('too_many_tries', 'Too many tries: connect again.');
+      return this.drop(conn, 4001, 'Too many tries');
     }
+    conn.tries++;
+    code.tries++;
+    if (conn.busy) return fail('busy', 'One try at a time.');
+    const serverNonce = conn.nonce;
+    // A fresh nonce for the next try, so no two tries are bound to the same pair of nonces
+    conn.nonce = newNonce();
+    conn.exchange = { code, serverNonce, studioNonce: p.nonce, params: p };
+    const attemptsLeft = Math.min(LIMITS.triesPerConnection - conn.tries, LIMITS.triesPerCode - code.tries);
+    if (code.tries >= LIMITS.triesPerCode) this.retire(code);
+    conn.busy = true;
+    try {
+      const proof = await serverProof(code.plain, serverNonce, p.nonce);
+      if (conn.dead) return;
+      this.send(conn, { kind: 'res', id: m.id, result: { proof, nonce: conn.nonce, attemptsLeft } });
+    } finally {
+      conn.busy = false;
+    }
+  }
+
+  /** The second step: the studio proves it knows the code (it checked the helper's proof first). */
+  private async onConfirm(conn: Conn, m: Message) {
+    const fail = (code: string, message: string) => this.send(conn, { kind: 'res', id: m.id, error: { code, message } });
+    const ex = conn.exchange;
+    conn.exchange = null;
+    if (!ex || conn.busy) return fail('bad_request', 'Pair first.');
+    if (ex.code.done || ex.code.expires < Date.now()) return fail('no_code', 'That code is no longer waiting: ask your agent to connect again for a new one.');
     if (this.paired) return fail('busy', 'A studio is already connected.');
-    const proof = await serverProof(code.plain, conn.nonce, p.nonce);
+    const proof = (m.params as { proof?: unknown } | undefined)?.proof;
+    conn.busy = true;
+    let ok: boolean;
+    try {
+      ok = sameProof(proof, await studioProof(ex.code.plain, ex.serverNonce, ex.studioNonce));
+    } finally {
+      conn.busy = false;
+    }
+    if (conn.dead) return;
+    if (!ok) {
+      // An honest studio only confirms a code it has checked: this one is guessing
+      this.log('a connection failed to prove it knows the code');
+      fail('refused', 'That proof is wrong.');
+      return this.drop(conn, 4003, 'Wrong proof');
+    }
+    if (this.paired || ex.code.done) return fail('busy', 'A studio is already connected.');
     // The code is used up: another page can't pair with it
-    this.code = null;
+    ex.code.done = true;
+    if (this.code === ex.code) this.code = null;
     conn.paired = true;
+    const p = ex.params;
     const app = p.app && typeof p.app === 'object' ? { name: String(p.app.name ?? 'Fledgetone').slice(0, 64), version: String(p.app.version ?? '').slice(0, 40) } : { name: 'Fledgetone', version: '' };
     const permissions = { read: true, see: p.permissions?.see === true, suggest: p.permissions?.suggest === true, listen: p.permissions?.listen === true };
     conn.studio = { app, permissions };
     this.paired = conn;
-    this.send(conn, { kind: 'res', id: m.id, result: { proof, server: { name: 'fledgetone', version: this.opts.version }, ...(this.opts.agentName?.() ? { agent: this.opts.agentName!()!.slice(0, LIMITS.nameMaxChars) } : {}) } });
+    const agent = this.opts.agentName?.();
+    this.send(conn, { kind: 'res', id: m.id, result: { server: { name: 'fledgetone', version: this.opts.version }, ...(agent ? { agent: agent.slice(0, LIMITS.nameMaxChars) } : {}) } });
     // Other pages waiting to pair are let go
     for (const other of this.conns) if (other !== conn) other.ws.close(4009, 'Another studio connected');
     this.log(`paired with ${app.name} ${app.version}`);
     this.record('paired', { app, permissions });
+  }
+
+  /** A code that pairs no more, said once. */
+  private retire(code: CodeRecord) {
+    if (code.retired) return;
+    code.retired = true;
+    if (this.code === code) this.code = null;
+    this.log('the code was retired after too many tries');
+    this.record('code_retired', { reason: 'too many tries' });
   }
 
   private onClose(conn: Conn) {
@@ -297,9 +374,10 @@ export class BridgeServer {
 
   /** A new pairing code (the one waiting, if it's still fresh and `fresh` isn't asked). */
   pairingCode(fresh = false): { code: string; expiresAt: string } {
-    if (fresh || !this.code || this.code.expires < Date.now()) {
+    if (fresh || !this.code || this.code.done || this.code.retired || this.code.expires < Date.now()) {
+      if (this.code) this.code.done = true;
       const shown = newPairingCode();
-      this.code = { plain: normalizeCode(shown)!, shown, expires: Date.now() + LIMITS.codeLifetimeMs, wrong: 0 };
+      this.code = { plain: normalizeCode(shown)!, shown, expires: Date.now() + LIMITS.codeLifetimeMs, tries: 0, done: false, retired: false };
     }
     return { code: this.code.shown, expiresAt: new Date(this.code.expires).toISOString() };
   }
@@ -315,7 +393,7 @@ export class BridgeServer {
       port: this.port,
       connected: this.paired !== null,
       ...(this.paired?.studio ? { studio: this.paired.studio } : {}),
-      ...(this.code && this.code.expires > Date.now() ? { codeWaiting: true } : {}),
+      ...(this.code && !this.code.done && !this.code.retired && this.code.expires > Date.now() ? { codeWaiting: true } : {}),
       lastEvent: this.seq,
     };
   }

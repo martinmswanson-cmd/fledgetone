@@ -10,6 +10,7 @@ import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../
 import { durationToBars } from '../store/timelineTypes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
+import { secondsToBar } from '../audio/tempoMap';
 import { stableJson } from './fingerprint';
 
 /** One change, in plain words, with what it touches. */
@@ -144,7 +145,9 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
     if (!old) add({ text: `Adds the marker "${m.name}" at bar ${r1(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1 });
     else {
       if (old.name !== m.name) add({ text: `Renames the marker "${old.name}" to "${m.name}".`, markerId: m.id });
-      if (Math.abs(old.bar - m.bar) > 1e-6 && !tempoChanged) add({ text: `Moves the marker "${m.name}" from bar ${r1(old.bar)} to bar ${r1(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1 });
+      // A tempo change moves a marker held to its time by itself: only a move beyond that is the suggestion's
+      const retimed = old.anchor === 'time' ? secondsToBar(old.seconds, { bpm: after.bpm, points: after.tempoPoints ?? [] }) : old.bar;
+      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker "${m.name}" from bar ${r1(old.bar)} to bar ${r1(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1 });
     }
   }
   for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker "${m.name}" (bar ${r1(m.bar)}).`, markerId: m.id });

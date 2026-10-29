@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -72,11 +72,19 @@ test('the tools, file mode, the live tools without a studio, and the guide', { s
       assert.equal(text(r), 'No studio is connected — call connect_studio and ask the user to type the code in Fledgetone.', name);
     }
     const connect = JSON.parse(text(await client.callTool({ name: 'connect_studio', arguments: {} })));
-    assert.match(connect.code, /^[2-9A-Z]{4}-[2-9A-Z]{4}$/);
+    assert.match(connect.code, /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
     assert.match(connect.say, new RegExp(connect.code));
     const again = JSON.parse(text(await client.callTool({ name: 'connect_studio', arguments: { waitSeconds: 0.2 } })));
     assert.equal(again.connected, false);
     assert.equal(again.code, connect.code, 'the same code until it is used');
+
+    // A link planted where the suggestion goes (pointing out of the folder, at nothing yet) is refused
+    const outside = mkdtempSync(join(tmpdir(), 'fledgetone-outside-'));
+    symlinkSync(join(outside, 'planted.json'), join(work, 'planted.suggestion.json'));
+    const planted = await client.callTool({ name: 'suggest', arguments: { file: 'song.fledgetone.json', out: 'planted.suggestion.json', title: 'x', explanation: '', ops } });
+    assert.ok(planted.isError);
+    assert.ok(!existsSync(join(outside, 'planted.json')), 'nothing written outside the folder');
+    rmSync(outside, { recursive: true, force: true });
 
     // Files outside the folder the helper works in, or of other kinds, are refused
     for (const file of ['../outside.fledgetone.json', '/etc/passwd', 'notes.txt']) {

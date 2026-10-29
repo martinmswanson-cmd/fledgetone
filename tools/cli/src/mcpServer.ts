@@ -99,7 +99,7 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
     {
       title: 'Connect to the studio',
       description:
-        'Get a pairing code for the musician to type in Fledgetone ("Let an agent connect…"). Call it once with waitSeconds 0 to get the code and tell the musician (say it as it is, e.g. K7QM-3XPD); then call it again with waitSeconds (up to 60) to wait for them. The same code is kept until it is used or expires (10 minutes); newCode asks for another.',
+        'Get a pairing code for the musician to type in Fledgetone ("Let an agent connect…"). Call it once with waitSeconds 0 to get the code and tell the musician (say it as it is, e.g. K7QM-3XPD-9TBW); then call it again with waitSeconds (up to 60) to wait for them. The same code is kept until it is used or expires (10 minutes); newCode asks for another.',
       inputSchema: { waitSeconds: z.number().min(0).max(LIMITS.connectWaitMaxSeconds).optional(), newCode: z.boolean().optional() },
     },
     ({ waitSeconds, newCode }) =>
@@ -247,7 +247,7 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
         if (file || out) {
           if (!file || !out) throw new Error('File mode needs both "file" (the song) and "out" (the suggestion file to write).');
           const songPath = fileInRoot(root, file, { types: SONG_TYPES, mustExist: true });
-          const outPath = fileInRoot(root, out, { types: ['.json'] });
+          const outPath = fileInRoot(root, out, { types: ['.json'], write: true });
           if (outPath.endsWith('.fledgetone.json') || sameFile(outPath, songPath)) throw new Error('"out" is a suggestion file (name it like change.suggestion.json), never the song itself.');
           if (existsSync(outPath)) {
             const old = (() => {

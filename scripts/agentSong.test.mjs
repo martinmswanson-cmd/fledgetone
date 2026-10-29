@@ -108,3 +108,25 @@ test('automation lanes with every point', () => {
   assert.equal(lanes[0].label, 'Volume');
   assert.equal(toAgentSong(q).tracks[1].automation[0].pointCount, 2);
 });
+
+test('a song with very many tracks or markers still fits, with tracks and clips both in it and what was left out said', () => {
+  const p = createStarter('lofi');
+  const tracks = Array.from({ length: 205 }, (_, i) => ({ ...p.tracks[0], id: `t${i}`, name: `Track number ${i} with a long-ish name` }));
+  const clips = tracks.map((t, i) => ({ ...p.clips[0], id: `c${i}`, trackId: t.id, startBar: 1 + i, notes: p.clips[0].notes.slice(0, 1) }));
+  const big = toAgentSong({ ...p, tracks, clips });
+  assert.ok(bytes(big) <= AGENT_SONG_MAX_BYTES, `${bytes(big)} bytes`);
+  assert.ok(big.tracks.length > 0 && big.clips.length > 0, 'tracks and clips both listed');
+  assert.ok(big.clips.every((c) => big.tracks.some((t) => t.id === c.trackId)), "no clip of a track that isn't listed");
+  assert.ok(big.omitted.some((o) => /^\d+ of 205 tracks, from "Track number \d+/.test(o)), big.omitted.join('\n'));
+
+  const markers = Array.from({ length: 400 }, (_, i) => ({ id: `m${i}`, name: `Marker with a fairly long name ${i}`, bar: 1 + i, seconds: i * 2, anchor: 'bar' }));
+  const marked = toAgentSong({ ...p, markers });
+  assert.ok(bytes(marked) <= AGENT_SONG_MAX_BYTES, `${bytes(marked)} bytes`);
+  assert.equal(marked.clips.length, p.clips.length, 'the clips are all there');
+  assert.ok(marked.omitted.some((o) => /^\d+ of 400 markers, from bar \d+ on$/.test(o)), marked.omitted.join('\n'));
+
+  // Clips crowded out entirely are said so plainly
+  const tiny = toAgentSong(p, { maxBytes: 2600 });
+  assert.ok(bytes(tiny) <= 2600, `${bytes(tiny)} bytes`);
+  if (!tiny.clips.length) assert.ok(tiny.omitted.some((o) => /^all \d+ clips/.test(o)), tiny.omitted.join('\n'));
+});

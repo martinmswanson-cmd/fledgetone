@@ -131,6 +131,7 @@ export function check(args: string[], flags: Flags): number {
   if (flags.fix) {
     const out = need(flags.o as string | undefined, 'the file to write (-o)');
     if (sameFile(out, path) && !flags.overwrite) throw new UsageError(`-o ${out} is the file being checked: give another file, or --overwrite`);
+    if (existsSync(out) && !flags.overwrite) throw new UsageError(`${out} already exists: give another file, or --overwrite`);
     writeSong(out, fixed);
     if (!flags.json) say(`Wrote the repaired song to ${out}.`);
     return 0;
@@ -244,6 +245,7 @@ export function apply(args: string[], flags: Flags): number {
   const out = need(flags.o as string | undefined, 'the file to write (-o)');
   if (sameFile(out, songPath) && !flags.overwrite) throw new UsageError(`-o ${out} is the song itself: write the result to another file (or pass --overwrite)`);
   if (sameFile(out, suggestionPath)) throw new UsageError(`-o ${out} is the suggestion file`);
+  if (existsSync(out) && !flags.overwrite) throw new UsageError(`${out} already exists: give another file, or --overwrite`);
   const song = readSong(songPath);
   let suggestion;
   try {
@@ -255,7 +257,7 @@ export function apply(args: string[], flags: Flags): number {
     say(`This suggestion was made for another song. Nothing was written (--force applies it anyway).`);
     return 1;
   }
-  const fresh = classifySuggestion({ touchedHashes: suggestion.touchedHashes }, { song });
+  const fresh = classifySuggestion({ touchedHashes: suggestion.touchedHashes, touchedNames: suggestion.touchedNames }, { song });
   if (fresh.status === 'out_of_date' && !flags.force) {
     say(`The song changed since this suggestion was made (${fresh.changed.join('; ')}). Nothing was written (--force applies it anyway).`);
     return 1;
@@ -271,13 +273,21 @@ export function apply(args: string[], flags: Flags): number {
   return 0;
 }
 
-/** Loudness and balance of rendered audio: what `measure` prints. */
+/**
+ * Loudness and balance of rendered audio: what `measure` prints. Mono is measured as one channel
+ * (as BS.1770 does: not as the same sound twice, which reads 3 dB louder); of more than two
+ * channels only the first two are measured, and `note` says so. Silence has no balance.
+ */
 export function measureAudio(channels: Float32Array[], sampleRate: number) {
-  const left = channels[0];
-  const right = channels[1] ?? channels[0];
+  if (!(sampleRate >= 8000)) throw new UsageError(`a sample rate of ${sampleRate} Hz can't be measured (8 kHz and up)`);
+  const used = channels.slice(0, 2);
+  const left = used[0] ?? new Float32Array(0);
+  const right = used[1] ?? new Float32Array(left.length);
+  const notes: string[] = [];
+  if (channels.length > 2) notes.push(`only the first two of its ${channels.length} channels were measured (as left and right)`);
   const analyser = createLoudnessAnalyser(sampleRate);
   // Fed in tenths of a second, so the loudest 3 seconds (short-term) can be read on the way
-  const hop = Math.round(sampleRate / 10);
+  const hop = Math.max(1, Math.round(sampleRate / 10));
   let shortTermMax = -Infinity;
   for (let i = 0; i < left.length; i += hop) {
     const n = Math.min(hop, left.length - i);
@@ -288,23 +298,34 @@ export function measureAudio(channels: Float32Array[], sampleRate: number) {
   const reading = analyser.read();
   let peak = 0;
   let sum = 0;
-  for (const ch of [left, right]) for (const v of ch) {
+  for (const ch of used) for (const v of ch) {
     const a = Math.abs(v);
     if (a > peak) peak = a;
     sum += v * v;
   }
-  const rmsDb = 10 * Math.log10(sum / Math.max(1, 2 * left.length) || 1e-12);
-  const peakDb = 20 * Math.log10(peak || 1e-12);
-  const spectrum = bandSpectrum([left, right], sampleRate);
-  const bands = totalBands(spectrum);
-  const total = sumDb(bands);
+  const silent = peak === 0;
+  if (!left.length) notes.push('it holds no audio');
+  else if (silent) notes.push('it is silent');
+  else if (left.length < sampleRate * 0.4) notes.push('it is shorter than 0.4 seconds, too short for a loudness reading');
+  const rmsDb = 10 * Math.log10(sum / Math.max(1, used.length * left.length));
+  const peakDb = 20 * Math.log10(peak);
+  let regions: Array<{ name: string; db: number }> = [];
+  if (!silent) {
+    const spectrum = bandSpectrum(used, sampleRate);
+    const bands = totalBands(spectrum);
+    const total = sumDb(bands);
+    if (Number.isFinite(total)) regions = REGIONS.map((x) => ({ name: x.name, db: Math.round((levelBetween(spectrum, bands, x.lo, x.hi) - total) * 10) / 10 }));
+  }
   return {
     seconds: Math.round((left.length / sampleRate) * 100) / 100,
+    channels: channels.length,
+    silent,
     lufs: reading.integrated,
     shortTermMaxLufs: shortTermMax,
     truePeakDbtp: reading.truePeakMax,
-    crestDb: peakDb - rmsDb,
-    regions: REGIONS.map((x) => ({ name: x.name, db: Math.round((levelBetween(spectrum, bands, x.lo, x.hi) - total) * 10) / 10 })),
+    crestDb: silent ? null : peakDb - rmsDb,
+    regions,
+    ...(notes.length ? { note: notes.join('; ') } : {}),
   };
 }
 
@@ -314,13 +335,15 @@ export function measure(args: string[], flags: Flags): number {
   const { sampleRate, channels } = readWav(path);
   const m = measureAudio(channels, sampleRate);
   if (flags.json) json(m);
+  else if (m.silent) say([`${path}: ${clock(m.seconds)}, silent: nothing to measure.`, ...(m.note ? [`(${m.note})`] : [])].join('\n'));
   else
     say(
       [
-        `${path}: ${clock(m.seconds)}`,
-        `Loudness ${r1(m.lufs)} LUFS (loudest 3 seconds ${r1(m.shortTermMaxLufs)} LUFS), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb)} dB`,
+        `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
+        `Loudness ${r1(m.lufs)} LUFS (loudest 3 seconds ${r1(m.shortTermMaxLufs)} LUFS), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
         'Balance (each part of the spectrum against the whole):',
         ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`),
+        ...(m.note ? [`(Note: ${m.note}.)`] : []),
       ].join('\n')
     );
   return 0;
@@ -338,7 +361,13 @@ export async function fromLink(args: string[], flags: Flags): Promise<number> {
   const out = need(flags.o as string | undefined, 'the file to write (-o)');
   if (existsSync(out) && !flags.overwrite) throw new UsageError(`${out} already exists: give another file, or --overwrite`);
   const hash = text.includes('#') ? text.slice(text.indexOf('#')) : text.startsWith('s=') ? `#${text}` : text;
-  const song = await projectFromHash(hash);
+  let song;
+  try {
+    song = await projectFromHash(hash);
+  } catch (err) {
+    const why = err instanceof Error && err.message && !/^(The string|Failed|Invalid|The input|.*base64)/i.test(err.message) ? `: ${err.message}` : '';
+    throw new UsageError(`that link can't be read (it may be cut short or changed)${why}`);
+  }
   if (!song) throw new UsageError("that isn't a Fledgetone song link (it has #s=... in it)");
   writeSong(out, song);
   say(`Wrote ${out}: "${song.name}".`);

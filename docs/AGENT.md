@@ -74,7 +74,7 @@ node tools/cli/dist/fledgetone.mjs apply song.fledgetone.json more-bass.suggesti
 `apply` never writes over the song it reads, and refuses a suggestion whose song has changed
 since (see [Suggestion files](#suggestion-files)).
 
-**Live.** The agent calls `connect_studio` and tells you an 8-character code, like `K7QM-3XPD`. In
+**Live.** The agent calls `connect_studio` and tells you a 12-character code, like `K7QM-3XPD-9TBW`. In
 Fledgetone, choose *Let an agent connect…* and type it, and tick what the agent may do: read the
 song (always), see what you select, suggest changes, listen. Then the agent reads the song as it
 is on screen, and its suggestions appear on the Suggestions panel with a title, an explanation,
@@ -139,9 +139,12 @@ op that makes something can name it with `ref`, and later ops in the same sugges
 **Errors** name the op (counting from 0) and the field, like `ops[3].notes[1].pitch: "H2" isn't a
 pitch`, and nothing is applied. **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
-than 6 dB, the master by more than 3, the Loud master or the clipper switched on. Every result
-is checked the way a saved song is when it opens, so a suggestion can never hold what a song file
-couldn't.
+than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, or
+its fader, buses and the master together), a track unmuted, a Distortion or Saturation driven much
+harder, a Delay fed back at 80% or more, automation of any of those drawn high, the master up by
+more than 3 dB, the Loud master or the clipper switched on. Every result is checked the way a
+saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
+suggestion adds at most 5000 notes, copies of clips (linked or not) included.
 
 Linked clips (clips that share a pattern, `linkedTo` in the song summary) follow each other: change
 the notes of one and its copies change too, as in the studio.
@@ -375,7 +378,9 @@ song).
 When it's applied (or accepted in the studio): the song unchanged, it applies; changed elsewhere
 but not in what it touches, it applies again to the song as it is now (in the studio: "The song
 changed: listen again?"); something it touches changed or went, it's out of date and isn't
-applied. The same ops always give the same new ids, so what you heard is what you get.
+applied. The same ops on the same song always give the same new ids, so what you heard is what
+you get. Applied to a song that already holds ids made for it (the same suggestion applied a
+second time), they get new ones (`<id base>~2`, `~3`...), so no two things ever share an id.
 
 ## The connection
 
@@ -392,17 +397,29 @@ An error answer is `"error": {"code", "message"}` in place of `result`.
 
 **Pairing**, once per connection, before anything else:
 
-1. The helper makes a code (8 characters from `23456789ABCDEFGHJKMNPQRSTWXYZ`, shown as
-   `K7QM-3XPD`) and the agent tells you. It lasts 10 minutes, and is used up once a studio pairs.
+1. The helper makes a code (12 characters of Crockford's base 32, `0123456789ABCDEFGHJKMNPQRSTVWXYZ`:
+   60 bits, shown as `K7QM-3XPD-9TBW`; typed O counts as 0, I and L as 1) and the agent tells
+   you. It lasts 10 minutes, and is used up once a studio pairs.
 2. The studio connects; the helper sends `hello` with its nonce S: `{protocol: 1, nonce, server}`.
-3. The studio sends a `pair` request: `{protocol: 1, nonce: C, proof: HMAC-SHA-256(code, "S.C.studio"), app, permissions}`.
-4. The helper checks the proof and answers `{proof: HMAC-SHA-256(code, "C.S.server"), server, agent}`.
-5. The studio checks the helper's proof **before sending anything about the song**. A helper that
-   can't prove it knows the code is refused and the connection closed.
+3. The studio sends a `pair` request with its nonce C and nothing about the code: `{protocol: 1, nonce: C, app, permissions}`.
+4. The helper proves first: `{proof: HMAC-SHA-256(code, "C.S.server"), nonce: <S for the next try>, attemptsLeft}`.
+5. The studio checks that proof against the code you typed. If it doesn't match (a typo, or a
+   program that isn't the helper your agent started), it says so and sends nothing more; you can
+   type the code again (a new try, bound to the new nonces).
+6. Only if it matched does the studio send `pair_confirm` with `{proof: HMAC-SHA-256(code, "S.C.studio")}`.
+   The helper checks it and answers `{server, agent}`: paired. No song data moves before this.
 
-The code itself never travels. A wrong code is answered `wrong_code` with the tries left and a
-new nonce; five wrong on a connection close it; twenty on one code retire the code (ask the agent
-for a new one).
+The code itself never travels. Every try is counted before the helper works anything out, and
+it works out one at a time: five tries on a connection close it, twenty on one code retire the
+code (ask the agent for a new one). A `pair_confirm` with a wrong proof closes the connection.
+
+**What's left to guess at.** Without a password-authenticated key exchange, one side has to prove
+it knows the code first, and that proof could be tried against guesses offline. Here it's the
+helper, to whatever connects to it: a program on your computer could collect up to twenty such
+proofs per code. A 60-bit code that lasts ten minutes is far beyond guessing that way, but it's
+why the code is long, why it's good for one pairing only, and why the studio never proves itself
+to anything that hasn't proved itself first (so a program waiting on the port gets nothing it
+could guess from).
 
 **Requests** (helper to studio): `get_song`, `get_notes`, `get_automation`, `get_view`,
 `preview_suggestion`, `suggest`, `get_suggestion`, `withdraw_suggestion`, `listen`, `say`,
@@ -429,8 +446,9 @@ requests time out after 15 seconds (listening after 2 minutes); and the tools' o
   must be `https://fledgetone.com`, the dev server with `--dev`, or a file on disk with
   `--allow-null-origin`), any address but `127.0.0.1:<port>` exactly (so another site can't reach
   it through a name of its own pointed at your computer), and a second studio while one is paired.
-- **Only the helper you started.** The pairing proof works both ways: a program that took the
-  port first can't pass for the helper, and the studio sends it nothing.
+- **Only the helper you started.** The pairing proof works both ways, the helper's first: a program
+  that took the port first can't pass for the helper, and the studio sends it nothing about the
+  code or the song.
 - **Files stay in their folder.** The agent's file tools reach only `--root`, and only songs,
   suggestion files and audio. `apply` never writes over the song it reads.
 - **What an agent writes is shown as plain text**, its names cut to 64 characters.

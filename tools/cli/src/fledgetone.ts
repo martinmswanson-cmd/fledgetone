@@ -156,8 +156,10 @@ main(process.argv.slice(2)).then(
     process.exitCode = code;
   },
   (err: unknown) => {
-    const usage = err instanceof cmd.UsageError || (err as { code?: string }).code?.startsWith('ERR_PARSE_ARGS');
-    process.stderr.write(`fledgetone: ${(err as Error).message}\n${usage ? 'fledgetone --help lists the commands.\n' : ''}`);
+    const code = (err as { code?: unknown } | null)?.code;
+    const usage = err instanceof cmd.UsageError || (typeof code === 'string' && code.startsWith('ERR_PARSE_ARGS'));
+    const message = (err instanceof Error && err.message) || String(err) || 'something went wrong';
+    process.stderr.write(`fledgetone: ${message}\n${usage ? 'fledgetone --help lists the commands.\n' : ''}`);
     process.exitCode = 2;
   }
 );

@@ -7,13 +7,20 @@
  * Messages are JSON text frames: `{ v: 1, id, kind: 'req' | 'res' | 'event', method, params }`,
  * a response carrying the request's id and `result` or `error: { code, message }`.
  *
- * Pairing (once per connection, before anything else): the helper shows the agent an 8-character
- * code (K7QM-3XPD), the agent asks the musician to type it in the studio. Neither end ever sends
- * the code. The helper opens with a `hello` event carrying its nonce S; the studio answers with a
- * `pair` request carrying its nonce C and HMAC-SHA-256(code, S.C.studio); the helper checks it and
- * answers with HMAC(code, C.S.server). The studio checks that before it sends any song data, so a
- * program that doesn't know the code can't pass for the helper. Five wrong codes on a connection
- * close it; twenty on one code retire the code.
+ * Pairing (once per connection, before anything else): the helper shows the agent a 12-character
+ * code (K7QM-3XPD-9TBW, 60 bits), the agent asks the musician to type it in the studio. Neither
+ * end ever sends the code. The helper opens with a `hello` event carrying its nonce S. The studio
+ * sends a `pair` request with its nonce C and no proof; the helper answers with its own proof,
+ * HMAC-SHA-256(code, C.S.server), and a fresh nonce for any next try. The studio checks that
+ * proof against the code it was given: only if it matches does it send `pair_confirm` with
+ * HMAC(code, S.C.studio), and the helper pairs once that checks out. So the studio never gives
+ * anything about the code to a program that hasn't proved it knows it (a program squatting on
+ * the port learns nothing), and nothing about the song goes out before both have proved it.
+ *
+ * Without a PAKE, one side has to prove first, and its proof could be guessed at offline: here
+ * that's the helper, to whatever connects. It answers at most five tries a connection and twenty
+ * a code (the budget is taken before any HMAC is worked out, one at a time), a code lasts ten
+ * minutes, and 60 bits is far beyond guessing in that time.
  *
  * Only pages from the allowed origins may connect (the published app, and the dev server with
  * --dev), and only at 127.0.0.1:<port> by that exact Host (so another site's DNS name pointed at
@@ -50,10 +57,10 @@ export const LIMITS = {
   frameBytes: 2 * 1024 * 1024,
   /** A ping this often; no answer by the next one closes the connection. */
   heartbeatMs: 15_000,
-  /** Wrong codes on one connection before it's closed. */
-  wrongCodesPerConnection: 5,
-  /** Wrong codes in all before the code is replaced by a new one. */
-  wrongCodesPerCode: 20,
+  /** Tries to pair on one connection before it's closed. */
+  triesPerConnection: 5,
+  /** Tries to pair in all before the code is retired (the agent asks for a new one). */
+  triesPerCode: 20,
   /** How long a code waits to be typed in. */
   codeLifetimeMs: 10 * 60_000,
   /** How long the studio waits for the helper's proof. */
@@ -145,24 +152,26 @@ export function parseMessage(text: unknown): Message | null {
 
 // ---------- Pairing ----------
 
-/** The code's letters: no 0/O, 1/I/L or U/V lookalikes, so it reads aloud and types cleanly. */
-export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTWXYZ';
-export const CODE_LENGTH = 8;
+/**
+ * The code's letters: Crockford's base 32 (digits and capitals without I, L, O and U), so it
+ * reads aloud and types cleanly; typed O is read as 0, and I or L as 1.
+ */
+export const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** 12 letters of 32: 60 bits. */
+export const CODE_LENGTH = 12;
 
 const random = (n: number) => globalThis.crypto.getRandomValues(new Uint8Array(n));
 
-/** A new pairing code, shown as "K7QM-3XPD". */
+/** A new pairing code, shown as "K7QM-3XPD-9TBW". */
 export function newPairingCode(): string {
-  let out = '';
-  // Rejection sampling keeps every letter equally likely
-  const limit = 256 - (256 % CODE_ALPHABET.length);
-  while (out.length < CODE_LENGTH) for (const b of random(16)) if (b < limit && out.length < CODE_LENGTH) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
-  return `${out.slice(0, 4)}-${out.slice(4)}`;
+  // 32 letters: each random byte's low five bits are one, equally likely
+  const out = [...random(CODE_LENGTH)].map((b) => CODE_ALPHABET[b & 31]).join('');
+  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
 }
 
-/** A code as typed ("k7qm 3xpd", "K7QM-3XPD") in its plain form ("K7QM3XPD"), or null if it can't be one. */
+/** A code as typed ("k7qm 3xpd 9tbw", "K7QM-3XPD-9TBW") in its plain form ("K7QM3XPD9TBW"), or null if it can't be one. */
 export function normalizeCode(text: string): string | null {
-  const plain = text.toUpperCase().replace(/[\s-]+/g, '');
+  const plain = text.toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1');
   if (plain.length !== CODE_LENGTH || [...plain].some((c) => !CODE_ALPHABET.includes(c))) return null;
   return plain;
 }
@@ -204,18 +213,28 @@ export interface HelloParams {
   server: { name: string; version: string };
 }
 
-/** The `pair` request's params (studio to helper). */
+/** The `pair` request's params (studio to helper): the studio's nonce, no proof yet. */
 export interface PairParams {
   protocol: number;
   nonce: string;
-  proof: string;
   app: { name: string; version: string };
   permissions: Permissions;
 }
 
-/** The `pair` response's result (helper to studio). */
-export interface PairResult {
+/** The `pair` response's result: the helper's proof for this try, and its nonce for the next one. */
+export interface PairChallenge {
   proof: string;
+  nonce: string;
+  attemptsLeft: number;
+}
+
+/** The `pair_confirm` request's params (studio to helper, once the helper's proof checked out). */
+export interface ConfirmParams {
+  proof: string;
+}
+
+/** The `pair_confirm` response's result (helper to studio): paired. */
+export interface PairResult {
   server: { name: string; version: string };
   /** The agent's own name for itself, as its MCP client gave it (cut to LIMITS.nameMaxChars). */
   agent?: string;

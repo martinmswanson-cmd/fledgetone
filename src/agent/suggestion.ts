@@ -26,6 +26,8 @@ export interface SuggestionFile {
   songId?: string;
   /** Fingerprints of what the ops touch, as they were (see touchedHashes). */
   touchedHashes: Record<string, string>;
+  /** Their names then, to say which one went if one is deleted (see touchedNames). */
+  touchedNames?: Record<string, string>;
   title: string;
   explanation: string;
   opsVersion: typeof OPS_VERSION;
@@ -36,8 +38,15 @@ export interface SuggestionFile {
 export type Freshness = 'unchanged' | 'reapply' | 'out_of_date';
 
 const fileClip = ({ isSelected: _s, ...rest }: Clip) => rest;
-/** A track as it sounds and holds clips (whether it's armed to record doesn't count). */
-const trackPart = ({ isArmed: _a, ...rest }: Track) => rest;
+/**
+ * A track as it sounds and holds clips. What only the screen or the moment holds doesn't count:
+ * armed to record, its folder folded or not, its MIDI knobs, a freeze (it sounds the same frozen).
+ */
+const trackPart = ({ isArmed: _a, freezing: _f, frozen: _z, midiMap: _m, folder, ...rest }: Track) => {
+  if (!folder) return rest;
+  const { collapsed: _c, ...open } = folder;
+  return { ...rest, folder: open };
+};
 
 /** The ids an op names that are existing things (not "$ref"s to things earlier ops make). */
 function keysOf(op: Op): string[] {
@@ -135,12 +144,29 @@ export function touchedHashes(song: ProjectSnapshot, ops: readonly Op[]): Record
   return out;
 }
 
-/** What a touched key is, in plain words, for saying why a suggestion is out of date. */
-function describeKey(song: ProjectSnapshot, key: string): string {
+/** The names of what `ops` touch in `song`, by touched key, kept with the fingerprints so a deleted one can still be named. */
+export function touchedNames(song: ProjectSnapshot, ops: readonly Op[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(touchedHashes(song, ops))) {
+    const name = nameOf(song, key);
+    if (name) out[key] = name;
+  }
+  return out;
+}
+
+function nameOf(song: ProjectSnapshot, key: string): string | undefined {
   const id = key.slice(key.indexOf(':') + 1);
-  if (key.startsWith('clip:')) return `the clip "${song.clips.find((c) => c.id === id)?.name ?? id}"`;
-  if (key.startsWith('track:') || key.startsWith('kind:')) return `the track "${song.tracks.find((t) => t.id === id)?.name ?? id}"`;
-  if (key.startsWith('marker:')) return `the marker "${song.markers?.find((m) => m.id === id)?.name ?? id}"`;
+  if (key.startsWith('clip:')) return song.clips.find((c) => c.id === id)?.name;
+  if (key.startsWith('track:') || key.startsWith('kind:')) return song.tracks.find((t) => t.id === id)?.name;
+  if (key.startsWith('marker:')) return song.markers?.find((m) => m.id === id)?.name;
+  return undefined;
+}
+
+/** What a touched key is, in plain words, for saying why a suggestion is out of date. */
+function describeKey(song: ProjectSnapshot, key: string, names: Record<string, string> = {}): string {
+  const name = nameOf(song, key) ?? names[key];
+  const what = key.startsWith('clip:') ? 'clip' : key.startsWith('marker:') ? 'marker' : 'track';
+  if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${name}"` : `a ${what} it changes`;
   if (key === 'markers') return 'the markers';
   if (key === 'tempo') return 'the tempo';
   if (key === 'master') return 'the master';
@@ -153,15 +179,15 @@ function describeKey(song: ProjectSnapshot, key: string): string {
  * names what moved on, in plain words.
  */
 export function classifySuggestion(
-  made: { revision?: number; touchedHashes: Record<string, string> },
+  made: { revision?: number; touchedHashes: Record<string, string>; touchedNames?: Record<string, string> },
   now: { revision?: number; song: ProjectSnapshot }
 ): { status: Freshness; changed: string[] } {
   if (made.revision !== undefined && made.revision === now.revision) return { status: 'unchanged', changed: [] };
   const changed: string[] = [];
   for (const [key, hash] of Object.entries(made.touchedHashes)) {
     const part = partOf(now.song, key);
-    if (part === undefined) changed.push(`${describeKey(now.song, key)} is gone`);
-    else if (fingerprint(part) !== hash) changed.push(`${describeKey(now.song, key)} changed`);
+    if (part === undefined) changed.push(`${describeKey(now.song, key, made.touchedNames)} is gone`);
+    else if (fingerprint(part) !== hash) changed.push(`${describeKey(now.song, key, made.touchedNames)} changed`);
   }
   if (changed.length) return { status: 'out_of_date', changed };
   return { status: made.revision === undefined ? 'unchanged' : 'reapply', changed: [] };
@@ -174,6 +200,7 @@ export function makeSuggestionFile(song: ProjectSnapshot, s: { title: string; ex
     version: SUGGESTION_VERSION,
     ...(song.songId ? { songId: song.songId } : {}),
     touchedHashes: touchedHashes(song, s.ops),
+    touchedNames: touchedNames(song, s.ops),
     title: s.title.slice(0, 80),
     explanation: s.explanation.slice(0, 2000),
     opsVersion: OPS_VERSION,
@@ -195,6 +222,9 @@ export function parseSuggestionFile(raw: unknown): SuggestionFile {
     version: SUGGESTION_VERSION,
     ...(typeof o.songId === 'string' && o.songId ? { songId: o.songId } : {}),
     touchedHashes: Object.fromEntries(Object.entries(hashes).filter((e): e is [string, string] => typeof e[1] === 'string')),
+    ...(typeof o.touchedNames === 'object' && o.touchedNames !== null
+      ? { touchedNames: Object.fromEntries(Object.entries(o.touchedNames as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string').map(([k, v]) => [k, v.slice(0, 64)])) }
+      : {}),
     title: typeof o.title === 'string' ? o.title.slice(0, 80) : 'Suggestion',
     explanation: typeof o.explanation === 'string' ? o.explanation.slice(0, 2000) : '',
     opsVersion: OPS_VERSION,

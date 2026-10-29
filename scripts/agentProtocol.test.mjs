@@ -40,26 +40,32 @@ async function until(check, ms = 3000, what = 'the condition') {
 
 // ---------- Pure parts ----------
 
-test('pairing codes: 8 unambiguous letters and digits, typed any way', () => {
-  for (let i = 0; i < 50; i++) {
+test('pairing codes: 12 letters of 32 (60 bits), typed any way', () => {
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) {
     const code = P.newPairingCode();
-    assert.match(code, /^[2-9A-HJKMNP-TW-Z]{4}-[2-9A-HJKMNP-TW-Z]{4}$/);
-    assert.equal(P.normalizeCode(code.toLowerCase().replace('-', ' ')), code.replace('-', ''));
+    assert.match(code, /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+    assert.equal(P.normalizeCode(code.toLowerCase().replace(/-/g, ' ')), code.replace(/-/g, ''));
+    for (const c of code.replace(/-/g, '')) seen.add(c);
   }
-  assert.equal(P.normalizeCode('K7QM3XP'), null);
-  assert.equal(P.normalizeCode('K7QM-3XP0'), null, '0 is not in the alphabet');
-  assert.equal(P.normalizeCode('IL1O-UV00'), null);
+  assert.equal(P.CODE_ALPHABET.length ** P.CODE_LENGTH >= 2 ** 60, true);
+  assert.equal(seen.size, 32, 'every letter turns up');
+  assert.equal(P.normalizeCode('K7QM-3XPD-9TB'), null);
+  assert.equal(P.normalizeCode('K7QM-3XPD-9TBU'), null, 'U is not in the alphabet');
+  // Lookalikes are read as what they look like
+  assert.equal(P.normalizeCode('KOQM-3XPD-9TBI'), 'K0QM3XPD9TB1');
+  assert.equal(P.normalizeCode('k7qm-3xpd-9tbl'), 'K7QM3XPD9TB1');
 });
 
 test('proofs: the studio and the helper prove the same code differently, and a wrong code proves nothing', async () => {
-  const code = 'K7QM-3XPD';
+  const code = 'K7QM-3XPD-9TBW';
   const s = P.newNonce();
   const c = P.newNonce();
   const studio = await P.studioProof(code, s, c);
   const server = await P.serverProof(code, s, c);
   assert.notEqual(studio, server);
-  assert.equal(await P.studioProof('k7qm 3xpd', s, c), studio);
-  assert.notEqual(await P.studioProof('K7QM-3XPE', s, c), studio);
+  assert.equal(await P.studioProof('k7qm 3xpd 9tbw', s, c), studio);
+  assert.notEqual(await P.studioProof('K7QM-3XPD-9TBX', s, c), studio);
   assert.notEqual(await P.studioProof(code, P.newNonce(), c), studio);
   assert.ok(P.sameProof(studio, studio));
   assert.ok(!P.sameProof(studio, server));
@@ -110,23 +116,33 @@ function memoryStudio({ handlers = {}, permissions } = {}) {
 }
 const msg = (m) => P.encodeMessage(m);
 
-test('a helper that can\'t prove it knows the code is refused, and no handler ever runs', async () => {
+test('a helper that can\'t prove it knows the code gets nothing from the code, and no handler ever runs', async () => {
   let reads = 0;
   const { client, sent, closes } = memoryStudio({ handlers: { get_song: () => (reads++, { secret: true }) } });
-  client.pair('K7QM-3XPD');
+  client.pair('K7QM-3XPD-9TBW');
   await client.receive(msg({ kind: 'event', method: 'hello', params: { protocol: 1, nonce: P.newNonce(), server: { name: 'fledgetone', version: 'x' } } }));
   await until(() => sent.length === 1, 1000, 'the pair request');
   assert.equal(sent[0].method, 'pair');
+  // The studio's first step carries only its nonce: nothing worked out from the code
+  assert.deepEqual(Object.keys(sent[0].params).sort(), ['app', 'nonce', 'permissions', 'protocol']);
   // Asked for the song before pairing is done: refused, the handler not run
   await client.receive(msg({ kind: 'req', id: 'early', method: 'get_song', params: {} }));
   assert.deepEqual(sent[1], { v: 1, kind: 'res', id: 'early', error: { code: 'not_paired', message: 'Not paired yet.' } });
-  // A rogue helper answers the pair request with a proof it can't have made
-  await client.receive(msg({ kind: 'res', id: sent[0].id, result: { proof: 'A'.repeat(43), server: { name: 'fledgetone', version: 'x' } } }));
+  // A rogue helper answers with a proof it can't have made: the studio doesn't prove itself back
+  await client.receive(msg({ kind: 'res', id: sent[0].id, result: { proof: 'A'.repeat(43), nonce: P.newNonce(), attemptsLeft: 4 } }));
+  assert.equal(client.state, 'wrong_code');
+  assert.equal(sent.length, 2);
+  // Typing it again: a new first step, still no proof, and when the tries run out it's refused
+  client.pair('K7QM-3XPD-9TBW');
+  await until(() => sent.length === 3, 1000, 'the second pair request');
+  assert.ok(!('proof' in sent[2].params));
+  await client.receive(msg({ kind: 'res', id: sent[2].id, result: { proof: 'B'.repeat(43), nonce: P.newNonce(), attemptsLeft: 0 } }));
   assert.equal(client.state, 'refused');
   assert.equal(closes.length, 1);
   await client.receive(msg({ kind: 'req', id: 'late', method: 'get_song', params: {} }));
   assert.equal(reads, 0);
-  assert.equal(sent.length, 2);
+  assert.equal(sent.length, 3);
+  assert.ok(sent.every((m) => m.method !== 'pair_confirm'), 'never a proof from the studio');
   assert.ok(!client.emit('changed', { revision: 1 }));
 });
 
@@ -138,9 +154,14 @@ test('an honest helper pairs; requests then reach the handlers the musician allo
   client.pair(code);
   await until(() => sent.length === 1, 1000, 'the pair request');
   const pair = sent[0];
-  assert.ok(P.sameProof(pair.params.proof, await P.studioProof(code, nonce, pair.params.nonce)));
   assert.deepEqual(pair.params.permissions, P.DEFAULT_PERMISSIONS);
-  await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: await P.serverProof(code, nonce, pair.params.nonce), server: { name: 'fledgetone', version: 'x' }, agent: 'An agent' } }));
+  await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: await P.serverProof(code, nonce, pair.params.nonce), nonce: P.newNonce(), attemptsLeft: 4 } }));
+  await until(() => sent.length === 2, 1000, 'the confirm');
+  const confirm = sent[1];
+  assert.equal(confirm.method, 'pair_confirm');
+  assert.ok(P.sameProof(confirm.params.proof, await P.studioProof(code, nonce, pair.params.nonce)));
+  assert.equal(client.state, 'proving');
+  await client.receive(msg({ kind: 'res', id: confirm.id, result: { server: { name: 'fledgetone', version: 'x' }, agent: 'An agent' } }));
   assert.equal(client.state, 'paired');
   assert.equal(client.info().agent, 'An agent');
   await client.receive(msg({ kind: 'req', id: 'r1', method: 'get_song', params: {} }));
@@ -271,9 +292,9 @@ test('a wrong code: told so with the tries left, then the right code pairs', { s
   try {
     const { code } = helper.pairingCode();
     const s = await studio(helper.port);
-    s.client.pair(code === 'AAAA-AAAA' ? 'BBBB-BBBB' : 'AAAA-AAAA');
+    s.client.pair(code === 'AAAA-AAAA-AAAA' ? 'BBBB-BBBB-BBBB' : 'AAAA-AAAA-AAAA');
     await until(() => s.client.state === 'wrong_code', 3000, 'the wrong code answer');
-    assert.equal(s.client.info().attemptsLeft, P.LIMITS.wrongCodesPerConnection - 1);
+    assert.equal(s.client.info().attemptsLeft, P.LIMITS.triesPerConnection - 1);
     s.client.pair(code);
     await until(() => s.client.state === 'paired', 3000, 'pairing');
     s.client.disconnect();
@@ -282,36 +303,77 @@ test('a wrong code: told so with the tries left, then the right code pairs', { s
   }
 });
 
-/** Raw wrong tries on one connection until it closes; resolves with how many were answered and the close code. */
+/** Raw tries on one connection, one after another, until it closes: how many answers came, and the close code. */
 async function wrongTries(port) {
   const { ws } = await openSocket(port);
   let answers = 0;
   return new Promise((resolve) => {
-    const tryOnce = (nonce) => ws.send(msg({ kind: 'req', id: `p${answers}`, method: 'pair', params: { protocol: 1, nonce: P.newNonce(), proof: 'A'.repeat(43), app: { name: 'x', version: 'x' }, permissions: P.DEFAULT_PERMISSIONS }, nonceSeen: nonce }));
+    const tryOnce = () => ws.send(msg({ kind: 'req', id: `p${answers}`, method: 'pair', params: { protocol: 1, nonce: P.newNonce(), app: { name: 'x', version: 'x' }, permissions: P.DEFAULT_PERMISSIONS } }));
     ws.listen((t) => {
       const m = JSON.parse(t);
-      if (m.method === 'hello') return tryOnce(m.params.nonce);
+      if (m.method === 'hello') return tryOnce();
       answers++;
-      if (m.error?.code === 'wrong_code') tryOnce(m.error.nonce);
+      if (m.result?.proof) tryOnce();
     });
     ws.on('close', (code) => resolve({ answers, code }));
   });
 }
 
-test('five wrong codes close the connection; twenty retire the code', { skip: skipCli }, async () => {
+test('five tries close a connection; twenty retire the code', { skip: skipCli }, async () => {
   const { helper } = await startHelper();
   try {
     const { code } = helper.pairingCode();
-    for (let i = 0; i < 3; i++) assert.deepEqual(await wrongTries(helper.port), { answers: 5, code: 4001 });
-    assert.ok(helper.status().codeWaiting, 'still waiting after 15 wrong tries');
-    assert.deepEqual(await wrongTries(helper.port), { answers: 5, code: 4001 });
+    // Five proofs given, then the sixth try is refused and the connection closed
+    for (let i = 0; i < 3; i++) assert.deepEqual(await wrongTries(helper.port), { answers: 6, code: 4001 });
+    assert.ok(helper.status().codeWaiting, 'still waiting after 15 tries');
+    // The last five tries spend the code: the sixth finds none waiting
+    assert.deepEqual(await wrongTries(helper.port), { answers: 6, code: 4010 });
     assert.ok(!helper.status().codeWaiting, 'retired after 20');
+    const { events } = await helper.waitForEvents(0, 0);
+    assert.equal(events.filter((e) => e.event === 'code_retired').length, 1, 'retired once');
     // The old code no longer pairs
     const s = await studio(helper.port);
     s.client.pair(code);
     await until(() => s.client.state === 'refused' || s.client.state === 'closed', 3000, 'the refusal');
     assert.match(s.client.info().message, /no code waiting/i);
     assert.notEqual(helper.pairingCode().code, code);
+  } finally {
+    await helper.close();
+  }
+});
+
+test('a burst of tries sent at once costs one proof and spends the budget', { skip: skipCli }, async () => {
+  const { helper } = await startHelper();
+  try {
+    const { code } = helper.pairingCode();
+    const { ws } = await openSocket(helper.port);
+    const got = [];
+    const closed = new Promise((r) => ws.on('close', (c) => r(c)));
+    ws.listen((t) => {
+      const m = JSON.parse(t);
+      if (m.method !== 'hello') return got.push(m);
+      ws._socket.cork();
+      for (let i = 0; i < 40; i++) ws.send(msg({ kind: 'req', id: `b${i}`, method: 'pair', params: { protocol: 1, nonce: P.newNonce(), app: { name: 'x', version: 'x' }, permissions: P.DEFAULT_PERMISSIONS } }));
+      ws._socket.uncork();
+    });
+    assert.equal(await closed, 4001);
+    assert.ok(got.filter((m) => m.result?.proof).length <= 1, 'at most one proof given');
+    assert.ok(got.length <= P.LIMITS.triesPerConnection + 1, `${got.length} answers`);
+    assert.deepEqual(got.filter((m) => m.error).map((m) => m.error.code), ['busy', 'busy', 'busy', 'busy', 'too_many_tries']);
+    // A guessing studio's confirm is refused and the connection closed
+    const second = await openSocket(helper.port);
+    const secondClosed = new Promise((r) => second.ws.on('close', (c) => r(c)));
+    second.ws.listen((t) => {
+      const m = JSON.parse(t);
+      if (m.method === 'hello') return second.ws.send(msg({ kind: 'req', id: 'q', method: 'pair', params: { protocol: 1, nonce: P.newNonce(), app: { name: 'x', version: 'x' }, permissions: P.DEFAULT_PERMISSIONS } }));
+      if (m.result?.proof) second.ws.send(msg({ kind: 'req', id: 'c', method: 'pair_confirm', params: { proof: 'A'.repeat(43) } }));
+    });
+    assert.equal(await secondClosed, 4003);
+    // The code still pairs a real studio (it was never confirmed)
+    const s = await studio(helper.port);
+    s.client.pair(code);
+    await until(() => s.client.state === 'paired', 3000, 'pairing');
+    s.client.disconnect();
   } finally {
     await helper.close();
   }

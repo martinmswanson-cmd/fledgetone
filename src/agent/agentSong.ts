@@ -178,7 +178,7 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
     revision: opts.revision ?? 0,
     app: { version: opts.appVersion ?? 'unknown', projectVersion: PROJECT_VERSION },
     ...(p.songId ? { songId: p.songId } : {}),
-    name: p.name,
+    name: p.name.slice(0, 200),
     tempo: { bpm: p.bpm, changes: (p.tempoPoints ?? []).map((t) => ({ id: t.id, bar: r(t.bar), bpm: t.bpm, ramp: t.ramp === true })) },
     meter: { base: formatMeter(meterMap.base), changes: meterMap.points.map((m) => ({ bar: r(m.bar), meter: formatMeter(m) })) },
     key: key?.name ?? null,
@@ -218,25 +218,70 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
 
 const size = (s: AgentSong) => new TextEncoder().encode(JSON.stringify(s)).length;
 
-/** Leave out detail, least useful first, until the song fits in `max` bytes. */
-function fitSize(song: AgentSong, max: number): AgentSong {
-  if (size(song) <= max) return song;
-  let s: AgentSong = { ...song, tracks: song.tracks.map((t) => ({ ...t, inserts: t.inserts.map((i) => ({ insert: i.insert })) })), omitted: [...song.omitted, "inserts' settings (only their names are listed)"] };
-  if (size(s) <= max) return s;
-  s = { ...s, tracks: s.tracks.map((t) => ({ ...t, automation: t.automation.map(({ points: _p, ...rest }) => rest) })), omitted: [...s.omitted, 'automation points (get_automation has them)'] };
-  if (size(s) <= max) return s;
-  s = { ...s, clips: s.clips.map(({ range: _r, ...rest }) => rest), omitted: [...s.omitted, "clips' note ranges"] };
-  if (size(s) <= max) return s;
-  // Still too big: as many clips as fit, in song order
-  const clips = [...s.clips].sort((a, b) => a.startBar - b.startBar);
+/** The longest prefix of `list` for which `build(prefix)` fits in `max` bytes. */
+function fitPrefix<T>(list: readonly T[], build: (part: T[]) => AgentSong, max: number): number {
   let lo = 0;
-  let hi = clips.length;
+  let hi = list.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (size({ ...s, clips: clips.slice(0, mid) }) <= max) lo = mid;
+    if (size(build(list.slice(0, mid))) <= max) lo = mid;
     else hi = mid - 1;
   }
-  return { ...s, clips: clips.slice(0, lo), omitted: [...s.omitted, `${clips.length - lo} clips after bar ${lo ? clips[lo - 1].startBar : 1} (get_notes reads any clip by id)`] };
+  return lo;
+}
+
+/**
+ * Leave out detail, least useful first, until the song fits in `max` bytes: the inserts'
+ * settings, the automation points, the clips' ranges, the tracks' inserts and automation; then,
+ * if lists are still too long, the markers and sections past a share of the room, the tracks past
+ * theirs, and the clips (of the tracks kept, in song order) past what's left. It always fits.
+ */
+function fitSize(song: AgentSong, max: number): AgentSong {
+  if (size(song) <= max) return song;
+  const omit = (s: AgentSong, what: string): AgentSong => ({ ...s, omitted: [...s.omitted, what] });
+  let s = omit({ ...song, tracks: song.tracks.map((t) => ({ ...t, inserts: t.inserts.map((i) => ({ insert: i.insert })) })) }, "inserts' settings (only their names are listed)");
+  if (size(s) <= max) return s;
+  s = omit({ ...s, tracks: s.tracks.map((t) => ({ ...t, automation: t.automation.map(({ points: _p, ...rest }) => rest) })) }, 'automation points (get_automation has them)');
+  if (size(s) <= max) return s;
+  s = omit({ ...s, clips: s.clips.map(({ range: _r, ...rest }) => rest) }, "clips' note ranges");
+  if (size(s) <= max) return s;
+  s = omit({ ...s, tracks: s.tracks.map((t) => ({ ...t, inserts: [], automation: [] })) }, "the tracks' inserts and automation (get_automation has the automation)");
+  if (size(s) <= max) return s;
+
+  // The lists themselves. Their room: what's left after everything else
+  const bare: AgentSong = { ...s, markers: [], sections: [], tracks: [], clips: [], omitted: [...s.omitted, 'x'.repeat(240)] };
+  const room = Math.max(0, max - size(bare));
+  const bytes = (patch: Partial<AgentSong>) => size({ ...bare, ...patch }) - size(bare);
+  const restBytes = bytes({ tracks: s.tracks, clips: s.clips });
+  // Markers and sections get what the tracks and clips don't need, and at least a share of the room
+  const markerRoom = Math.max(room * 0.15, room - restBytes - bytes({ sections: s.sections }));
+  const markers = s.markers.slice(0, bytes({ markers: s.markers }) > markerRoom ? fitPrefix(s.markers, (x) => ({ ...bare, markers: x }), size(bare) + markerRoom) : s.markers.length);
+  const sectionRoom = Math.max(room * 0.05, room - restBytes - bytes({ markers }));
+  const sections = s.sections.slice(0, bytes({ sections: s.sections }) > sectionRoom ? fitPrefix(s.sections, (x) => ({ ...bare, sections: x }), size(bare) + sectionRoom) : s.sections.length);
+  const lists: AgentSong = { ...bare, omitted: s.omitted, markers, sections };
+  // Tracks get up to half of what's left, unless the clips need less
+  // (as many as fit with all their clips, or half the room for the tracks alone, whichever is more)
+  const clipsOf = (t: AgentTrack[]) => {
+    const ids = new Set(t.map((x) => x.id));
+    return s.clips.filter((c) => ids.has(c.trackId));
+  };
+  const whole = fitPrefix(s.tracks, (t) => ({ ...lists, tracks: t, clips: clipsOf(t) }), max - 240);
+  const half = fitPrefix(s.tracks, (t) => ({ ...lists, tracks: t }), size(lists) + (max - size(lists)) * 0.5);
+  const tracks = s.tracks.slice(0, Math.max(whole, half));
+  const kept = new Set(tracks.map((t) => t.id));
+  const clips = s.clips.filter((c) => kept.has(c.trackId)).sort((a, b) => a.startBar - b.startBar);
+  const withTracks: AgentSong = { ...lists, tracks };
+  const nClips = fitPrefix(clips, (c) => ({ ...withTracks, clips: c }), max - 240);
+  let out: AgentSong = { ...withTracks, clips: clips.slice(0, nClips) };
+  if (markers.length < s.markers.length) out = omit(out, `${s.markers.length - markers.length} of ${s.markers.length} markers, from bar ${s.markers[markers.length].bar} on`);
+  if (sections.length < s.sections.length) out = omit(out, `${s.sections.length - sections.length} of ${s.sections.length} sections, from bar ${s.sections[sections.length].fromBar} on`);
+  if (tracks.length < s.tracks.length) out = omit(out, `${s.tracks.length - tracks.length} of ${s.tracks.length} tracks, from "${s.tracks[tracks.length].name}" on, and their clips (get_notes with a trackId reads a track's notes, with their clips' ids)`);
+  const clipCount = s.clips.filter((c) => kept.has(c.trackId)).length;
+  if (nClips < clipCount)
+    out = omit(out, nClips === 0 ? `all ${clipCount} clips (get_notes reads the notes, with their clips' ids)` : `${clipCount - nClips} of ${clipCount} clips, those after bar ${clips[nClips - 1].startBar} (get_notes reads the notes, with their clips' ids)`);
+  // The omitted list was given room above; should a pathological song still not fit, the lists go
+  if (size(out) > max) out = { ...out, markers: [], sections: [], clips: [], tracks: out.tracks.slice(0, fitPrefix(out.tracks, (t) => ({ ...out, markers: [], sections: [], clips: [], tracks: t }), max)) };
+  return out;
 }
 
 /** One note as an agent reads it: its id, clip, pitch, where it starts (in the clip and in the song) and how long it is, in bars. */
@@ -260,7 +305,7 @@ export function agentNotes(
   p: ProjectSnapshot,
   q: { trackId?: string; clipId?: string; fromBar?: number; toBar?: number; cursor?: string; limit?: number } = {}
 ): { notes: AgentNote[]; total: number; next?: string } {
-  const limit = Math.max(1, Math.min(MAX_NOTES_PER_CALL, q.limit ?? MAX_NOTES_PER_CALL));
+  const limit = Number.isFinite(q.limit) ? Math.max(1, Math.min(MAX_NOTES_PER_CALL, Math.floor(q.limit!))) : MAX_NOTES_PER_CALL;
   const all: AgentNote[] = [];
   for (const c of p.clips) {
     if (q.clipId && c.id !== q.clipId) continue;

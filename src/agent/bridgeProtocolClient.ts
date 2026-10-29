@@ -4,9 +4,9 @@
  * and one that closes the connection. The studio wires it to a WebSocket and its handlers to the
  * store; tests wire it straight to the helper in the same process.
  *
- * Pairing (see protocol.ts): it waits for the helper's `hello`, sends `pair` with its nonce and
- * proof, and checks the helper's proof before anything else: a helper that can't prove it knows
- * the code is refused and the connection closed, before any handler has run. Until then every
+ * Pairing (see protocol.ts): it waits for the helper's `hello`, sends `pair` with its nonce only,
+ * and checks the helper's proof before it sends its own (`pair_confirm`): a helper that can't
+ * prove it knows the code gets nothing about the code, and no handler runs. Until paired every
  * request is answered "not_paired". Once paired, each request goes to its handler if the musician
  * allowed what it needs (STUDIO_METHODS), else it's answered "not_allowed".
  */
@@ -24,6 +24,7 @@ import {
   STUDIO_METHODS,
   studioProof,
   type HelloParams,
+  type PairChallenge,
   type PairResult,
   type Permissions,
   type ProtocolError,
@@ -111,7 +112,8 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
   let permissions: Permissions = { ...(opts.permissions ?? DEFAULT_PERMISSIONS), read: true };
   let serverNonce: string | null = null;
   let code: string | null = null;
-  let pending: { id: string; nonce: string; code: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** The request under way: the first step (`pair`, the helper proves) or the second (`pair_confirm`, the studio does), with the nonces it's bound to. */
+  let pending: { step: 'pair' | 'confirm'; id: string; serverNonce: string; nonce: string; code: string; timer: ReturnType<typeof setTimeout> } | null = null;
   let pairCount = 0;
 
   const setState = (next: BridgeState, extra: Partial<BridgeInfo> = {}) => {
@@ -144,18 +146,16 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
   /** Pairing can't start now: one is under way, or it's done or over. */
   const busy = () => pending !== null || state === 'paired' || state === 'refused' || state === 'closed';
 
-  const sendPair = async () => {
+  const startTimer = () => setTimeout(() => refuse('The helper didn’t answer. Check it’s running, then try again.'), LIMITS.pairTimeoutMs);
+
+  /** The first step: the studio's nonce, no proof. The helper has to prove itself first. */
+  const sendPair = () => {
     if (!serverNonce || !code || busy()) return;
     const nonce = newNonce();
     const id = `pair-${++pairCount}`;
-    const forCode = code;
-    const proof = await studioProof(forCode, serverNonce, nonce);
-    // (the state may have moved on while the proof was made)
-    if (busy()) return;
-    const timer = setTimeout(() => refuse('The helper didn’t answer. Check it’s running, then try again.'), LIMITS.pairTimeoutMs);
-    pending = { id, nonce, code: forCode, timer };
+    pending = { step: 'pair', id, serverNonce, nonce, code, timer: startTimer() };
     setState('proving');
-    sendRaw({ kind: 'req', id, method: 'pair', params: { protocol: PROTOCOL_VERSION, nonce, proof, app: { name: opts.app.name ?? 'Fledgetone', version: opts.app.version }, permissions } });
+    sendRaw({ kind: 'req', id, method: 'pair', params: { protocol: PROTOCOL_VERSION, nonce, app: { name: opts.app.name ?? 'Fledgetone', version: opts.app.version }, permissions } });
   };
 
   const onPairAnswer = async (result: unknown, error: ProtocolError | undefined) => {
@@ -163,21 +163,29 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     clearTimeout(p.timer);
     pending = null;
     if (error) {
-      if (error.code === 'wrong_code') {
-        if (typeof error.nonce === 'string') serverNonce = error.nonce;
-        setState('wrong_code', { attemptsLeft: typeof error.attemptsLeft === 'number' ? error.attemptsLeft : undefined, message: 'That code isn’t the one your agent gave. Check it and type it again.' });
-        return;
-      }
       refuse(error.message || 'The helper refused the connection.');
       return;
     }
-    const r = (result ?? {}) as Partial<PairResult>;
-    const expected = await serverProof(p.code, serverNonce!, p.nonce);
-    if (!sameProof(r.proof, expected)) {
-      // Not the helper the agent started (it doesn't know the code): nothing has been sent to it
-      refuse('This connection didn’t prove it knows the code, so nothing was sent. Start the connection again from your agent.');
+    if (p.step === 'pair') {
+      const r = (result ?? {}) as Partial<PairChallenge>;
+      if (typeof r.nonce === 'string' && r.nonce.length >= 16) serverNonce = r.nonce;
+      const expected = await serverProof(p.code, p.serverNonce, p.nonce);
+      if (!sameProof(r.proof, expected)) {
+        // A mistyped code, or not the helper the agent started: either way nothing about the code went to it
+        const left = typeof r.attemptsLeft === 'number' ? r.attemptsLeft : 0;
+        if (left <= 0) refuse('That code doesn’t match, and there are no tries left. Ask your agent to connect again for a new code.');
+        else setState('wrong_code', { attemptsLeft: left, message: 'That code doesn’t match the one your agent gave. Check it and type it again. (If it’s right, this isn’t the helper your agent started: nothing was sent to it.)' });
+        return;
+      }
+      // The helper knows the code: now the studio proves it does too
+      const proof = await studioProof(p.code, p.serverNonce, p.nonce);
+      if (state !== 'proving') return;
+      const id = `pair-${++pairCount}`;
+      pending = { ...p, step: 'confirm', id, timer: startTimer() };
+      sendRaw({ kind: 'req', id, method: 'pair_confirm', params: { proof } });
       return;
     }
+    const r = (result ?? {}) as Partial<PairResult>;
     const server = r.server && typeof r.server.name === 'string' ? { name: r.server.name.slice(0, LIMITS.nameMaxChars), version: String(r.server.version ?? '').slice(0, 40) } : info.server;
     setState('paired', { server, agent: typeof r.agent === 'string' ? r.agent.slice(0, LIMITS.nameMaxChars) : undefined, message: undefined });
   };
@@ -209,11 +217,11 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     pair(text: string) {
       const plain = normalizeCode(text);
       if (!plain) {
-        setState(state === 'proving' ? 'proving' : 'wrong_code', { message: 'A code is 8 letters and digits, like K7QM-3XPD.' });
+        setState(state === 'proving' ? 'proving' : 'wrong_code', { message: 'A code is 12 letters and digits, like K7QM-3XPD-9TBW.' });
         return;
       }
       code = plain;
-      void sendPair();
+      sendPair();
     },
     async receive(text: string) {
       if (state === 'closed' || state === 'refused') return;
@@ -233,7 +241,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
         if (serverNonce) return;
         serverNonce = h.nonce;
         if (h.server && typeof h.server.name === 'string') info = { ...info, server: { name: h.server.name.slice(0, LIMITS.nameMaxChars), version: String(h.server.version ?? '').slice(0, 40) } };
-        await sendPair();
+        sendPair();
         return;
       }
       if (m.kind === 'res') {
