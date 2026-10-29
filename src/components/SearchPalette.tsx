@@ -159,10 +159,19 @@ export const SearchPalette: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Where focus was as it opens (Ctrl+K, the menu, a button), noted before its own field takes the
+  // focus: closing it puts the focus back there (the field you were typing in, say)
+  useEffect(
+    () =>
+      useUiStore.subscribe((s, prev) => {
+        if (s.paletteOpen && !prev.paletteOpen) opener.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+      }),
+    []
+  );
+
   // Esc closes it before anything else hears the key (the piano roll, a dialog under it)
   useEffect(() => {
     if (!open) return;
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();

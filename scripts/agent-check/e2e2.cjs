@@ -14,13 +14,14 @@
 //      only) and the agent may see the selection: never once that's switched off
 //   6. at 360 px wide the panel fits (nothing in it scrolls sideways or goes past the edge, the box
 //      and Send on screen)
-//   1b. Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches from the box; Esc while an input
+//   1b. Ctrl/Cmd+S saves the song and Ctrl/Cmd+K searches from the box (Esc there gives the focus
+//      back to the box); Esc while an input
 //      method composes doesn't close the panel; text with nothing visible can't be sent
 //   5b. "see" allowed again doesn't tick the box again; a message the helper never got, retried
 //      after "see" is off, goes without the selection
 //   7. sent with no agent connected: "Not sent — the agent isn't connected" with Retry; another
 //      agent pairs: no Retry into that connection ("that connection ended", put it back in the box
-//      and send it as a new message), and the earlier agent's messages keep its name under a line
+//      after what's being written, and send it as a new message), and the earlier agent's messages keep its name under a line
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default), Playwright's Chromium,
 // and tools/cli's packages (npm install in tools/cli):
@@ -194,6 +195,9 @@ async function until(check, ms, what) {
     const palette = await page.locator('[role="dialog"]').filter({ has: page.locator('input') }).count();
     const keysSeen = await A(() => window.__keysSeen);
     await page.keyboard.press('Escape');
+    // (the palette gives the focus back to the box it was opened from)
+    await page.waitForTimeout(100);
+    const backToBox = await A(() => document.activeElement?.matches('[data-agent-compose] textarea'));
     await box.focus();
     await A(() => document.querySelector('[data-agent-compose] textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true })));
     await page.waitForTimeout(100);
@@ -204,8 +208,8 @@ async function until(check, ms, what) {
     await box.fill(keepDraft);
     step(
       '1b Ctrl+S saves the song, Ctrl+K searches; Esc while composing keeps the panel; nothing visible, no Send',
-      keysSeen.some((k) => k.key === 's' && k.prevented) && keysSeen.some((k) => k.key === 'k' && k.prevented) && palette > 0 && openAfterIme === 1 && invisibleOff && (await ownCount()) === 0,
-      `${JSON.stringify(keysSeen)}, palette ${palette}, panel open ${openAfterIme}, Send off for invisible text ${invisibleOff}`
+      keysSeen.some((k) => k.key === 's' && k.prevented) && keysSeen.some((k) => k.key === 'k' && k.prevented) && palette > 0 && backToBox && openAfterIme === 1 && invisibleOff && (await ownCount()) === 0,
+      `${JSON.stringify(keysSeen)}, palette ${palette} (focus back to the box ${backToBox}), panel open ${openAfterIme}, Send off for invisible text ${invisibleOff}`
     );
 
     // 2. Enter sends it
@@ -385,10 +389,13 @@ async function until(check, ms, what) {
     const helperB = await second.call('get_messages');
     const quietB = await second.call('wait_for_changes', { since: 0, timeoutSeconds: 1 });
     const oldLabel = await page.locator(`[data-agent-message][data-reply-to="${sentId}"] figcaption`).textContent();
+    // (what the musician is writing stays: the old words come after it)
+    await box.fill('First, a new question');
     await lost.locator('[data-put-back]').click();
     // (the box takes the focus, with the words in it: nothing is sent until Enter)
     await page.waitForFunction(() => document.activeElement?.matches('[data-agent-compose] textarea'), null, { timeout: 3000 });
     const putBack = await box.inputValue();
+    const caretAtEnd = await box.evaluate((el) => el.selectionStart === el.value.length && el.selectionEnd === el.value.length);
     const sinceB = (await second.call('studio_status')).lastEvent;
     await page.keyboard.press('Enter');
     // (other events may come first: wait until the message is among them)
@@ -398,7 +405,7 @@ async function until(check, ms, what) {
       '7b another pairing: no Retry into it, put back and sent anew; names and a line for the earlier connection',
       ended.status === 'not_sent' && ended.words === 'Not sent — that connection ended' && ended.retry === 0 && ended.putBack === 1 && helperB.messages.length === 0 && !quietB.events.some((e) => e.event === 'user_message') &&
         /E2E agent/.test(oldLabel) && lines.some((l) => /Earlier, with your agent \(E2E agent\)/i.test(l)) && lines.some((l) => /This connection: your agent \(Second agent\)/i.test(l)) &&
-        putBack === 'Are you still there?' && resent?.params.text === 'Are you still there?' && resent.params.id !== lostId && !resent.params.context,
+        putBack === 'First, a new question\n\nAre you still there?' && caretAtEnd && resent?.params.text === putBack && resent.params.id !== lostId && !resent.params.context,
       `${JSON.stringify(ended)}; helper B had ${helperB.messages.length}; old label ${oldLabel}; lines ${JSON.stringify(lines)}; sent anew ${resent?.params.id}`
     );
     if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-new-connection-1280.png') });
