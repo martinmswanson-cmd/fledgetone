@@ -78,7 +78,7 @@ export async function renderRange(
 ): Promise<AudioBuffer> {
   const start = preRollStart(song, fromBar);
   // (notes held from before the run-in begin again at its start, for what's left of them)
-  const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start) } : song;
+  const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
   const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
   if (start >= fromBar) return audio;
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };

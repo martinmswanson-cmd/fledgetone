@@ -372,6 +372,34 @@ async function until(check, ms, what) {
     const droneAt = [];
     for (const at of [5, 12, 30]) droneAt.push((await call('listen', { fromBar: at, toBar: at + 1, ops: drone })).mix.lufs);
     step('9a a drone held for 40 bars is heard the same anywhere', droneAt.every((v) => Number.isFinite(v)) && Math.max(...droneAt) - Math.min(...droneAt) < 1.5, droneAt.join(', '));
+    // Heard from part way, the start sounds as in the song: a crash over before bar 5 isn't struck
+    // again (only a bass note held into it begins again, in the run-in)
+    const oneShot = await A(async (ids) => {
+      const X = window.__fledgetoneAgent;
+      const tm = await import('/src/audio/tempoMap.ts');
+      const ops = [
+        { op: 'set_track', trackId: ids.clav, mute: true },
+        { op: 'set_track', trackId: ids.brass, mute: true },
+        { op: 'remove_notes', clipId: ids.d, all: true },
+        { op: 'add_notes', clipId: ids.d, notes: [{ pitch: 'crash', start: 3, length: 0.9, velocity: 1 }] },
+        { op: 'remove_notes', clipId: ids.b, all: true },
+        { op: 'add_notes', clipId: ids.b, notes: [{ pitch: 'C2', start: 3.75, length: 2, velocity: 0.05 }] },
+      ];
+      const d = X.ops.applyOps(X.tl.currentProject(), { opsVersion: 1, ops }, { idBase: 'oneshot' });
+      const snap = X.snap.listenSnapshot(d.song);
+      const tempo = { bpm: snap.bpm, points: snap.tempoPoints ?? [] };
+      const full = await X.listen.renderRange(snap, 1, 7);
+      const part = await X.listen.renderRange(snap, 5, 7);
+      const off = Math.round((tm.barToSeconds(5, tempo) - tm.barToSeconds(1, tempo)) * full.sampleRate);
+      const n = Math.round(0.5 * full.sampleRate);
+      const db = (x) => {
+        let e = 0;
+        for (const v of x) e += v * v;
+        return 20 * Math.log10(Math.sqrt(e / x.length));
+      };
+      return { song: db(full.getChannelData(0).subarray(off, off + n)), heard: db(part.getChannelData(0).subarray(0, n)) };
+    }, ids);
+    step('9a from part way, the start sounds as in the song (no one-shot struck again)', Math.abs(oneShot.song - oneShot.heard) < 1, `song ${oneShot.song.toFixed(1)} dB, heard ${oneShot.heard.toFixed(1)} dB`);
     // Play pressed during a listen: the listen stops (busy), the song plays
     const playLate = call('listen', { fromBar: 1, toBar: 30 }).then(() => 'answered', (e) => e.message);
     await page.waitForTimeout(400);

@@ -295,23 +295,35 @@ test('a stretch is rendered from the earliest note still held into it (capped), 
   assert.equal(preRollStart({ ...song([note(2, '4m')]), tracks: [{ ...track, isMuted: true }] }, 7), 7);
 });
 
-test('a note held from before the run-in begins again at its start, for what is left of it', () => {
+test('a note held from before the run-in begins again at its start, for what is left of it (only if still sounding at the range)', () => {
   const note = (id, startOffset, duration) => ({ id, note: 'C2', startOffset, duration, velocity: 0.8 });
   const clips = [
-    { id: 'drone', trackId: 't', startBar: 1, lengthBars: 40, notes: [note('d', 0, '40m'), note('short', 1, '1m'), note('later', 30, '2m')] },
+    { id: 'drone', trackId: 't', startBar: 1, lengthBars: 40, notes: [note('d', 0, '40m'), note('short', 1, '1m'), note('later', 30, '2m'), note('crash', 20, '4m')] },
     { id: 'after', trackId: 't', startBar: 25, lengthBars: 4, notes: [note('x', 0, '4m')] },
   ];
-  const out = restartHeldNotes(clips, 22);
+  const out = restartHeldNotes(clips, 22, 30);
   const d = out[0].notes.find((n) => n.id === 'd');
   assert.equal(out[0].startBar + d.startOffset, 22, 'begins at the run-in');
   assert.ok(Math.abs(durationToBars(d.duration) - 19) < 1e-9, 'for the 19 bars left of it');
+  assert.equal(d.heldFrom, 1, 'keeping where it really begins (its drift, chance and accent are its own)');
   assert.equal(out[0].notes.find((n) => n.id === 'short'), clips[0].notes[1], 'notes over by then are as they were');
   assert.equal(out[0].notes.find((n) => n.id === 'later'), clips[0].notes[2], 'and those after it');
+  // Held over the run-in's start but over before the range (a cymbal ringing to bar 25): never struck again
+  assert.equal(out[0].notes.find((n) => n.id === 'crash'), clips[0].notes[3]);
   assert.equal(out[1], clips[1], 'a clip after it untouched');
-  assert.equal(restartHeldNotes(clips, 1), clips, 'nothing held over bar 1: the same clips');
+  assert.equal(restartHeldNotes(clips, 1, 5), clips, 'nothing held over bar 1: the same clips');
+  assert.equal(restartHeldNotes([{ ...clips[0], notes: [note('crash', 20, '4m')] }], 22, 30)[0].notes[0].startOffset, 20, 'a one-shot over before the range stays put');
   // Cut at its clip's end
-  const cut = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 10, notes: [note('n', 0, '40m')] }], 5);
+  const cut = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 10, notes: [note('n', 0, '40m')] }], 5, 8);
   assert.ok(Math.abs(durationToBars(cut[0].notes[0].duration) - 6) < 1e-9);
+});
+
+test("a restarted note's Human seed and feel come from where it really begins", () => {
+  const src = readFileSync(new URL('../src/audio/scheduler.ts', import.meta.url), 'utf8');
+  assert.match(src, /const own = note\.heldFrom !== undefined \? barToTicks\(note\.heldFrom\) : tick;/);
+  assert.match(src, /noteSeed\(clip\.id, note\.note, own\)/);
+  assert.match(src, /feelVelocity\(feel, note\.velocity, own,/);
+  assert.match(src, /posOf\(own\)/);
 });
 
 test('a Designed Kit follows the song in the suggestion as it does in the studio', () => {

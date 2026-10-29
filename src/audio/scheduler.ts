@@ -144,14 +144,16 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
   notes.forEach((note, i) => {
     const tick = ticks[i];
     const feel = rows?.[note.note];
-    const fx = amount > 0 ? feelNote(measured, amount, partOf(note.note), posOf(tick)) : null;
+    // (where the note really begins: a note begun again part way through, by a render, keeps its own place's drift, chance and accent)
+    const own = note.heldFrom !== undefined ? barToTicks(note.heldFrom) : tick;
+    const fx = amount > 0 ? feelNote(measured, amount, partOf(note.note), posOf(own)) : null;
     const shift = (feel?.shift ?? 0) + (fx?.shift ?? 0);
     const key = `${tick}|${note.duration}${feel ? `|${note.note}` : ''}${fx?.shift ? `|${fx.shift}` : ''}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
     let playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
-    if (feel && (feel.vel !== undefined || feel.offbeat !== undefined)) playable = { ...playable, velocity: feelVelocity(feel, note.velocity, tick, liveTransport.PPQ) };
+    if (feel && (feel.vel !== undefined || feel.offbeat !== undefined)) playable = { ...playable, velocity: feelVelocity(feel, note.velocity, own, liveTransport.PPQ) };
     if (fx && fx.vel !== 1) playable = { ...playable, velocity: Math.max(0.05, Math.min(1, playable.velocity * fx.vel)) };
-    const seed = noteSeed(clip.id, note.note, tick);
+    const seed = noteSeed(clip.id, note.note, own);
     const cond = isConditional(note) ? { chance: note.chance, cond: note.cond } : null;
     const group = groups.get(key);
     if (group) {
