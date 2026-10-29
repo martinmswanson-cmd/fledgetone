@@ -1539,6 +1539,12 @@ The agent never opens the panel or moves the keyboard focus. The header's **Agen
 
 The agent can also leave you messages on the panel (marked as from your agent, in quotes) and point at a track, a clip, some bars or a control: a ring for a few seconds, nothing pressed and the keyboard left where it was. **Disconnect** on the panel ends the connection; closing the tab does too.
 
+**Replying to your agent.** You can write back: type in **Message your agent…** at the foot of the Suggestions panel and press **Send** (or Enter; Shift+Enter starts a new line). Ask a question, say what you'd like, or tell it to slow down. Your messages are marked **You**, the agent's **From your agent**, and an answer to one of yours shows which. **Ask about this** on a suggestion ties your next message to it. While you type, keys stay in the box: Space, letters, Delete and Ctrl+Z don't touch your song.
+
+- **What gets sent:** only what you type, only when you press Send, and only to your agent's helper on your computer (your agent then sends it to whoever runs it, as with everything it reads). Your selection goes along only if you tick **Include what I've selected** for that message, and only if you let the agent see what you select.
+- **Where it is:** each of your messages says **Sent**, then **Seen by your agent** once the agent has read it. With no agent connected it says **Not sent — the agent isn't connected** with **Retry**: it's never sent later without you pressing Retry.
+- **Nothing is saved:** the conversation is kept only while the tab is open (the helper forgets it when you disconnect). It's never put in your song or on disk.
+
 **If it doesn't connect.** Chrome may ask whether the page can reach devices on your local network: allow it (the helper is on your computer). Safari and Brave may block the connection to a helper on your computer; a `fledgetone studio` mode that opens the studio from the helper itself is coming. If another tab already has your agent connected, the dialog says so: disconnect it there first. If the Suggestions panel itself can't load (you're offline, say) or stops working, a note at the top offers **Reload** (your song is kept); **Close** puts it away until you open the panel again. The phone apps don't connect to agents.
 
 ## Tips and limits

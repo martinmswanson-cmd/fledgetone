@@ -85,17 +85,44 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `get_notes {file?, trackId?, clipId?, fromBar?, toBar?, cursor?}` | Notes with their ids, 2000 at a time |
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
-| `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, or a suggestion accepted or dismissed |
+| `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`) |
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). Live only for now, one at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
 | `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |
-| `say {text, about?}` | A short message on your panel (plain text, 4000 characters, one a second) |
+| `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
+| `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
 | `list_instruments`, `list_presets`, `list_starters`, `list_params`, `list_inserts`, `list_master` | What there is to choose from, with keys, defaults and ranges |
 | `check_file {file}`, `diff_files {a, b}` | What the app would change opening a file; what changed between two |
 
 There is no tool to accept a suggestion, and there never will be: only you accept.
+
+### Talking with the musician
+
+The musician can write to the agent from the message box at the foot of the Suggestions panel. A
+message goes only when they press Send (or Enter), only to the paired helper, and carries only
+what they chose: the text (at most 2000 characters), the suggestion they asked about ("Ask about
+this" on a card gives `suggestionId`), and their selection if they ticked "Include what I've
+selected" while the agent may see it (`context: {selectedTrackId?, selectedClipIds?, editingClipId?, bars?}`).
+
+The agent gets each message from `wait_for_changes` (event `user_message`) and can read the whole
+conversation with `get_messages`. Each message on the panel says where it is: *Sent* (the helper
+has it), *Seen by your agent* (it came back from `wait_for_changes` or `get_messages`, or the agent
+replied to it), or *Not sent — the agent isn't connected* with **Retry**. A message that wasn't
+sent is never sent later by itself; Retry sends it again with the same id, and the helper keeps it
+once.
+
+Nothing of the conversation is saved: the studio keeps it for the tab (a reload clears it), the
+helper in memory until the studio disconnects, the last 200 messages each way. Neither writes it
+to the song or to disk.
+
+**Etiquette.** The agent works alongside the musician, not for them:
+
+- answer their questions first, plainly, with `say` and `replyTo`;
+- ask before suggesting big changes (a new part, a new arrangement, the tempo, the whole mix);
+- keep each suggestion small, one idea at a time, and say why in plain words;
+- don't flood the panel: a message or two, then wait for them (`wait_for_changes`).
 
 When no studio is connected, the live tools answer: *No studio is connected — call
 connect_studio and ask the user to type the code in Fledgetone.*
@@ -422,13 +449,18 @@ could guess from).
 
 **Requests** (helper to studio): `get_song`, `get_notes`, `get_automation`, `get_view`,
 `preview_suggestion`, `suggest`, `get_suggestion`, `withdraw_suggestion`, `listen`, `say`,
-`point_at`. Each needs what you allowed: reading for the gets, previews, `say` and `point_at`;
+`point_at`. Each needs what you allowed: reading for the gets, previews, `say` (with `replyTo`) and `point_at`;
 seeing your selection for `get_view`; suggesting for the suggestion requests; listening for
 `listen`. Otherwise the studio answers `not_allowed`.
 
 **Events** (studio to helper): `changed` (a new revision), `view`, `suggestion` (`{id, status}`:
 accepted, undone (Undo took it out; a redo makes it accepted again), dismissed, out of date,
-changed, other song (another song was opened), withdrawn), `permissions`, `bye`. Suggestions,
+changed, other song (another song was opened), withdrawn), `permissions`, `bye`, and
+`user_message` (`{id, text, at, suggestionId?, context?}`, sent only when the musician presses
+Send; the helper keeps it plain text, drops one that isn't well formed, and keeps a retried id
+once). **Helper to studio:** `user_message_status` (`{ids, status}`: `received` once the helper
+has a message, `seen` once the agent has read it); the studio marks a message *Not sent* if no
+`received` comes within 5 seconds or the connection goes. Suggestions,
 messages and `point_at` never open the panel or take the keyboard focus, and `point_at` can't
 point at anything in the Suggestions panel.
 
@@ -454,4 +486,7 @@ requests time out after 15 seconds (listening after 2 minutes); and the tools' o
 - **Files stay in their folder.** The agent's file tools reach only `--root`, and only songs,
   suggestion files and audio. `apply` never writes over the song it reads.
 - **What an agent writes is shown as plain text**, its names cut to 64 characters.
+- **What you write to the agent** goes only when you press Send, only to the paired helper, and
+  carries your selection only if you tick "Include what I've selected" (and allow it to see what
+  you select). It's kept in memory only (the tab, and the helper until you disconnect), never saved.
 - **Logs** go to stderr, never into the protocol.
