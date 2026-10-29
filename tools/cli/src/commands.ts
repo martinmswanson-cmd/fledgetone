@@ -20,7 +20,7 @@ import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../../..
 import { readJson, readSong, readWav, sameFile, writeSong } from './files';
 import { APP_VERSION } from './meta';
 
-export type Flags = Record<string, string | boolean | undefined>;
+export type Flags = Record<string, string | string[] | boolean | undefined>;
 type Out = (text: string) => void;
 
 const say: Out = (text) => process.stdout.write(text.endsWith('\n') ? text : text + '\n');

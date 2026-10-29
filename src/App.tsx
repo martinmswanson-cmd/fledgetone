@@ -1,7 +1,8 @@
 /**
  * The app's layout: the header, the arrangement timeline and the dock under it, the footer, and
  * the dialogs and overlays that can open over any of them (search, report a problem, cut to
- * length, the FMOD / Wwise package, Versions, the tour, the phone notice, project drops and shared links).
+ * length, the FMOD / Wwise package, Versions, the tour, the phone notice, project drops and shared links,
+ * and the agent's Suggestions panel when it's asked for).
  */
 import React from 'react';
 import { startPerfMonitor } from './audio/perfMonitor';
@@ -35,6 +36,7 @@ import { GuidePanel } from './components/guide/GuidePanel';
 import { APP_BUILT, APP_VERSION, versionLabel } from './version';
 import { splitSections } from './components/guide/markdown';
 import { escapeOpenDialog, onBack } from './native/backButton';
+import { AgentMount } from './components/agent/AgentMount';
 
 /** A computer-sized screen (the phone notice covers small touch screens instead). */
 const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
@@ -119,8 +121,10 @@ export const App: React.FC = () => {
   React.useState(() => !/^#(s|song)=/.test(location.hash) && reopenLastSong());
   // The phone app's Back closes the dialog that's open (else the app goes to the background)
   React.useEffect(() => onBack(escapeOpenDialog), []);
+  // The Suggestions panel takes the right of the window (on a wide one: on a narrow one it covers it)
+  const agentPanel = useUiStore((s) => s.agentPanelOpen);
   return (
-    <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
+    <div className={`min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30 ${agentPanel ? 'sm:pr-[380px]' : ''}`}>
       {/* Top DAW Header */}
       <Header />
       <ProjectDrop />
@@ -139,6 +143,7 @@ export const App: React.FC = () => {
       <WhatsNew />
       <Terms />
       <Learn />
+      <AgentMount />
 
       {/* Main Workstation Canvas: the arrangement, and the dock under it */}
       <main className="flex-1 w-full max-w-[1920px] mx-auto p-3 sm:p-4 flex flex-col gap-3">

@@ -1124,6 +1124,13 @@ export interface NoteEvent {
   chance?: number;
   /** It plays only on pass `n` of every `of` (1st of 2, 4th of 4...; see noteChance.ts) */
   cond?: NoteCond;
+  /**
+   * Only in a render's copy of the song, never saved: the song bar this note really begins at,
+   * when the render begins it again later (a note held into a stretch heard from part way,
+   * restartHeldNotes in auditionMath.ts). What's decided by a note's place (its Human drift and
+   * chance, its feel's accent) is decided by this place, so it sounds as it does in the song.
+   */
+  heldFrom?: number;
 }
 
 /** A step condition: play on pass `n` (1-based) of every `of` passes of the clip. */

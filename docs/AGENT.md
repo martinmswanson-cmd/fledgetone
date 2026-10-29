@@ -1,7 +1,7 @@
 # Working with your own agent
 
-Fledgetone has no assistant built in, no account and no keys. Instead, an AI agent you already
-use (one that speaks MCP, the Model Context Protocol) can read your song and **suggest** changes.
+Fledgetone has no assistant built in, no account and no keys. Instead, an agent you already
+use (one that can use MCP tools, the Model Context Protocol) can read your song and **suggest** changes.
 You hear each suggestion before and after, and accept it (one undo step) or dismiss it. The agent
 never changes the song itself, and nothing is accepted for you.
 
@@ -33,14 +33,8 @@ node tools/cli/dist/fledgetone.mjs --help
 The helper is `fledgetone mcp`: an MCP server your agent starts and talks to over stdio. Point
 `--root` at the folder with your songs (the agent can read and write files only there).
 
-**Claude Code** (from the folder with your songs):
-
-```sh
-claude mcp add fledgetone -- node /path/to/fledgetone/tools/cli/dist/fledgetone.mjs mcp --root .
-```
-
-**Claude Desktop** (Settings, Developer, Edit Config: `claude_desktop_config.json`), or any agent
-that takes an MCP server in a JSON file:
+Add it to your agent's MCP settings as a server started by a command. An agent whose MCP
+servers are listed in a JSON file takes something like this:
 
 ```json
 {
@@ -61,6 +55,7 @@ Options of `fledgetone mcp`:
 | `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one. If 47123 is taken it picks a free one and the pairing message says which. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-null-origin` | Also let a page opened from a file on disk connect (the one-file build). |
+| `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
 
 ## Two ways to work
 
@@ -91,10 +86,10 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, or a suggestion accepted or dismissed |
-| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Live only for now, one at a time, 10 a minute, and only if you allow listening |
+| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). Live only for now, one at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, accepted, dismissed, out of date, changed), or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |
 | `say {text, about?}` | A short message on your panel (plain text, 4000 characters, one a second) |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
 | `list_instruments`, `list_presets`, `list_starters`, `list_params`, `list_inserts`, `list_master` | What there is to choose from, with keys, defaults and ranges |
@@ -377,9 +372,12 @@ song).
 
 `touchedHashes` are fingerprints of what the ops touch, as it was when the suggestion was made.
 When it's applied (or accepted in the studio): the song unchanged, it applies; changed elsewhere
-but not in what it touches, it applies again to the song as it is now (in the studio: "The song
-changed: listen again?"); something it touches changed or went, it's out of date and isn't
-applied. The same ops on the same song always give the same new ids, so what you heard is what
+but not in what it touches, it applies again to the song as it is now (in the studio it's made
+again when the musician hears it); something it touches changed or went, it's out of date and
+isn't applied. In the studio, Accept takes a suggestion in one press only as the musician last
+heard it, on the song as it is; otherwise the first press offers "Accept without listening" and
+a second, separate press accepts it. A suggestion made before another song was opened can't be
+accepted at all. The same ops on the same song always give the same new ids, so what you heard is what
 you get. Applied to a song that already holds ids made for it (the same suggestion applied a
 second time), they get new ones (`<id base>~2`, `~3`...), so no two things ever share an id.
 
@@ -429,7 +427,10 @@ seeing your selection for `get_view`; suggesting for the suggestion requests; li
 `listen`. Otherwise the studio answers `not_allowed`.
 
 **Events** (studio to helper): `changed` (a new revision), `view`, `suggestion` (`{id, status}`:
-accepted, dismissed, out of date, changed, withdrawn), `permissions`, `bye`.
+accepted, undone (Undo took it out; a redo makes it accepted again), dismissed, out of date,
+changed, other song (another song was opened), withdrawn), `permissions`, `bye`. Suggestions,
+messages and `point_at` never open the panel or take the keyboard focus, and `point_at` can't
+point at anything in the Suggestions panel.
 
 **Limits:** frames up to 2 MB; a ping every 15 seconds (no answer: the connection is dropped);
 requests time out after 15 seconds (listening after 2 minutes); and the tools' own limits above.

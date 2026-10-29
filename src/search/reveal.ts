@@ -42,6 +42,23 @@ export async function reveal(selector: string): Promise<boolean> {
   return true;
 }
 
+/** The agent's own parts of the page (the Suggestions panel, its dialog, the highlight, the header button): never pointed at by the agent. */
+export const AGENT_UI = '[data-agent-panel], [data-agent-ui], [data-agent-highlight], [data-agent-chip], [data-agent-live]';
+
+/**
+ * Ring the control `selector` finds where it is, scrolled into view but not focused and nothing
+ * opened: for an agent pointing something out without taking the keyboard. Never anything in the
+ * agent's own parts of the page (AGENT_UI: their labels hold the agent's words, and scrolling
+ * them could move a card under the pointer). Resolves false if there's no such control.
+ */
+export async function ring(selector: string): Promise<boolean> {
+  const el = [...document.querySelectorAll<HTMLElement>(selector)].find((x) => !x.closest(AGENT_UI) && x.getClientRects().length > 0);
+  if (!el) return false;
+  el.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() });
+  flash(el);
+  return true;
+}
+
 /** Click the button `selector` finds (to open what it opens), after bringing it into view. */
 export async function press(selector: string): Promise<boolean> {
   const el = await waitFor(selector, 2);

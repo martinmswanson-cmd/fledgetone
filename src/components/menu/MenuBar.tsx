@@ -1,3 +1,4 @@
+import { isNativeApp } from '../../native/nativeApp';
 import { BUS_PRESETS } from '../../store/busPresets';
 import { isBus } from '../../store/buses';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type BuiltinEntry } from '../../store/builtinPlugins';
@@ -405,6 +406,13 @@ const MENUS: MenuDef[] = [
         tab('sfx', 'Sound effects'),
         { label: u.dockOpen ? 'Hide the bottom panel' : 'Show the bottom panel', run: () => u.setDockOpen(!u.dockOpen), divider: true },
         { label: 'Inspector & FX rack', run: () => s.toggleInspector(), checked: s.isInspectorOpen },
+        // (Not in the phone apps: an agent connects to the studio on a computer)
+        ...(isNativeApp()
+          ? []
+          : [
+              { label: 'Suggestions', run: () => u.setAgentPanelOpen(!u.agentPanelOpen), checked: u.agentPanelOpen, title: 'Suggestions from an agent you connect: hear each one, then accept or dismiss it' },
+              { label: 'Let an agent connect…', run: () => u.setAgentConnectOpen(true), title: 'Pair an agent you already use with this song, by the code it gives you' },
+            ]),
         { label: 'Zoom in', shortcut: '+', run: () => s.setZoom(s.zoom * 1.25), divider: true },
         { label: 'Zoom out', shortcut: '-', run: () => s.setZoom(s.zoom / 1.25) },
         { label: 'Ruler in bars', run: () => s.setRulerUnits('bars'), checked: s.rulerUnits === 'bars', divider: true },

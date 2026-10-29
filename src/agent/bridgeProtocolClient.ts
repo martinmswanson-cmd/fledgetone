@@ -17,6 +17,7 @@ import {
   LIMITS,
   newNonce,
   normalizeCode,
+  agentName,
   parseMessage,
   PROTOCOL_VERSION,
   sameProof,
@@ -103,6 +104,31 @@ export interface BridgeClient {
   closed(reason?: string): void;
 }
 
+/**
+ * Why the helper's connection closed, in plain words, from its close code (see the helper's
+ * bridgeServer.ts): `was` is where the pairing had got to. Undefined: say nothing more.
+ */
+export function closeMessage(code: number, was: BridgeState): string | undefined {
+  switch (code) {
+    case 4009:
+      return 'Another tab or studio is already connected to your agent. Disconnect it there (or close that tab), then connect here.';
+    case 4001:
+      return 'Too many wrong codes. Ask your agent to connect again: it gives you a new code.';
+    case 4003:
+      return 'That code didn’t match. Ask your agent to connect again for a new code.';
+    case 4010:
+      return 'Your agent’s helper isn’t waiting for a code. Ask your agent to connect again: it gives you a new code.';
+    case 4004:
+      return 'The helper speaks another version of the connection. Update Fledgetone’s command line tools.';
+    case 4002:
+      return 'The helper and the studio didn’t understand each other. Update Fledgetone’s command line tools.';
+    case 4000:
+      return was === 'paired' ? 'Your agent’s helper ended the connection.' : undefined;
+  }
+  if (was === 'waiting') return 'The helper isn’t answering on that port. Check your agent started it (fledgetone mcp) and the port matches.';
+  return undefined;
+}
+
 /** Close codes the client uses. */
 export const CLOSE = { refused: 4003, version: 4004, leaving: 4000, protocol: 4002 } as const;
 
@@ -187,7 +213,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     }
     const r = (result ?? {}) as Partial<PairResult>;
     const server = r.server && typeof r.server.name === 'string' ? { name: r.server.name.slice(0, LIMITS.nameMaxChars), version: String(r.server.version ?? '').slice(0, 40) } : info.server;
-    setState('paired', { server, agent: typeof r.agent === 'string' ? r.agent.slice(0, LIMITS.nameMaxChars) : undefined, message: undefined });
+    setState('paired', { server, agent: agentName(r.agent), message: undefined });
   };
 
   const answer = (id: string, result: unknown) => sendRaw({ kind: 'res', id, result: result ?? null });

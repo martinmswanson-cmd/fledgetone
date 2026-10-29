@@ -223,6 +223,43 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - Anything that replaces the song (New, Open, a link, Restore) goes through `loadProject`, which
   tells `onProjectReplaced` listeners (for example, to forget which file Save writes to).
 
+### An agent suggests a change
+
+Optional, and nothing of it loads until the musician asks (docs/AGENT.md has the protocol, the
+ops and the security model):
+
+- **The helper** (`tools/cli/`, `fledgetone mcp`): an MCP server on stdio for the agent, and a
+  WebSocket server on 127.0.0.1 that a studio pairs with by a code (pairing in
+  `src/agent/protocol.ts`; the helper's end in `tools/cli/src/bridgeServer.ts`).
+- **In the studio**: `AgentMount` (in the main bundle, tiny) loads `AgentStudio` as a chunk of its
+  own when the Suggestions panel or "Let an agent connect…" opens (not precached; if it can't load,
+  an error boundary closes the panel and shows a note with Reload, and the studio carries on). `bridgeClient.ts` wires a
+  WebSocket to the protocol client (`bridgeProtocolClient.ts`) and the handlers (`handlers.ts`,
+  with the reading ones in `studioReads.ts`). Suggestions live in `suggestionsStore.ts` (never
+  saved): each is the ops applied to the song with an id base of its own (`ops.ts`), so what's
+  heard is what's accepted.
+- **Hearing it**: `auditionPlayer.ts` renders the same bars of the song now and as suggested
+  (`listen.ts`, which the Mix check shares; from a run-in of up to 8 bars or 20 s when notes are
+  held into the range, notes held from before that and still sounding at the range begun again
+  at its start (keeping their own Human seed and feel: `heldFrom`), then trimmed:
+  `preRollStart` and `restartHeldNotes` in `auditionMath.ts`) and plays each looped after the master, crossfading
+  20 ms between them; a switch starts the other at the same bar (`auditionMath.ts`), so a tempo
+  change still switches in step. Renders are kept by the suggestion's version. The store isn't
+  touched.
+- **Keeping suggestions true** (`songWatch.ts`): each suggestion records the song it was made
+  from (`songGeneration`, its `songParts` and the swing and intensity, which undo doesn't keep).
+  At most every 150 ms after a change, while connected, while the panel is open or while one
+  waits, each is checked by fingerprints only: another song (it can never go in), out of date,
+  or changed (made again, a new version, only when it's heard or accepted); an accepted one says
+  undone when its undo step (named at Accept: `tagLastStep`, `stepPlace`) moves to the redo
+  history, and accepted again when it comes back. Hearing makes it again first and notes the version heard; Accept
+  takes it in one press only as heard, otherwise the first press offers "Accept without
+  listening" and a separate second press (0.7 to 5 s later, never a double-click or Space) accepts.
+- **Accept** (`accept.ts`): one undo step (a checkpoint, then one change of the tracks, clips,
+  markers, tempo and master), only from a real click on a card that stayed where it was
+  (`cardGuard.ts`). The suggestion is marked accepted first, so the agent never hears it out of
+  date on the way. `revision.ts` counts changes of `songParts` for the agent's `changed` events.
+
 ## The instruments
 
 `createInstrument(key, output, options)` in `instruments.ts` builds any instrument as a

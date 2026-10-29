@@ -15,6 +15,10 @@ export const MOD_KEY = isMac ? '⌘' : 'Ctrl+';
  * The panels of the dock under the timeline. The Mixer, Game and Sound effects used to be
  * dialogs: asking for one of those as a dialog opens its dock tab instead.
  */
+/** Where focus was when the Suggestions panel or the Let an agent connect dialog was opened: it goes back there when they close. */
+export const agentOpeners: { panel: HTMLElement | null; connect: HTMLElement | null } = { panel: null, connect: null };
+const focusedNow = () => (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null);
+
 export type DockTab = 'mixer' | 'launcher' | 'eq' | 'game' | 'video' | 'sfx';
 export const DOCK_TABS: readonly DockTab[] = ['mixer', 'launcher', 'eq', 'game', 'video', 'sfx'];
 const isDockTab = (d: string | null): d is DockTab => d !== null && (DOCK_TABS as readonly string[]).includes(d);
@@ -113,6 +117,17 @@ interface UiState {
   openDock: (tab: DockTab) => void;
   setDockOpen: (open: boolean) => void;
   setDockHeight: (height: number) => void;
+  /** The agent's Suggestions panel (see src/components/agent/), and the Let an agent connect dialog */
+  agentPanelOpen: boolean;
+  agentConnectOpen: boolean;
+  /** The agent's side of the studio couldn't be loaded, or stopped working (AgentMount shows a note) */
+  agentLoadFailed: null | 'load' | 'crash';
+  /** The note was closed: the agent's side stays away until the panel or the connect dialog is opened again */
+  agentSuppressed: boolean;
+  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name), and how many suggestions wait and messages are new */
+  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string; waiting?: number; unread?: number };
+  setAgentPanelOpen: (open: boolean) => void;
+  setAgentConnectOpen: (open: boolean) => void;
 }
 
 const dock = loadDock();
@@ -169,6 +184,19 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ dockOpen });
     const s = get();
     saveDock({ tab: s.dockTab, open: s.dockOpen, height: s.dockHeight });
+  },
+  agentPanelOpen: false,
+  agentConnectOpen: false,
+  agentLoadFailed: null,
+  agentSuppressed: false,
+  agentStatus: { state: 'off' },
+  setAgentPanelOpen: (agentPanelOpen) => {
+    if (agentPanelOpen && !get().agentPanelOpen) agentOpeners.panel = focusedNow();
+    set(agentPanelOpen ? { agentPanelOpen, agentSuppressed: false } : { agentPanelOpen });
+  },
+  setAgentConnectOpen: (agentConnectOpen) => {
+    if (agentConnectOpen && !get().agentConnectOpen) agentOpeners.connect = focusedNow();
+    set(agentConnectOpen ? { agentConnectOpen, agentSuppressed: false } : { agentConnectOpen });
   },
   setDockHeight: (height) => {
     set({ dockHeight: Math.round(Math.max(DOCK_MIN, Math.min(DOCK_MAX, height))) });

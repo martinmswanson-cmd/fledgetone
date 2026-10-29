@@ -13,6 +13,7 @@
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import {
+  agentName,
   encodeMessage,
   hostAllowed,
   LIMITS,
@@ -305,8 +306,9 @@ export class BridgeServer {
     const permissions = { read: true, see: p.permissions?.see === true, suggest: p.permissions?.suggest === true, listen: p.permissions?.listen === true };
     conn.studio = { app, permissions };
     this.paired = conn;
-    const agent = this.opts.agentName?.();
-    this.send(conn, { kind: 'res', id: m.id, result: { server: { name: 'fledgetone', version: this.opts.version }, ...(agent ? { agent: agent.slice(0, LIMITS.nameMaxChars) } : {}) } });
+    // (the agent's name as its MCP client gave it, made plain: the studio checks it again)
+    const agent = agentName(this.opts.agentName?.());
+    this.send(conn, { kind: 'res', id: m.id, result: { server: { name: 'fledgetone', version: this.opts.version }, ...(agent ? { agent } : {}) } });
     // Other pages waiting to pair are let go
     for (const other of this.conns) if (other !== conn) other.ws.close(4009, 'Another studio connected');
     this.log(`paired with ${app.name} ${app.version}`);

@@ -13,6 +13,7 @@ import { instrumentFields } from './instrumentSearch';
 import type { SearchFields } from './searchCore';
 import { openAndReveal, press, reveal } from './reveal';
 import { pickProjectFile } from '../components/timeline/projectFile';
+import { isNativeApp } from '../native/nativeApp';
 
 /**
  * Everything the search palette (Ctrl+K) can find: the app's tools and settings, every
@@ -96,6 +97,8 @@ const TOOLS: Item[] = [
   { title: 'Report a problem', keywords: 'report problem bug broken crash error issue help contact support email feedback', detail: 'Tell Two Birds Workshop something went wrong.', run: () => ui().setDialog('report') },
   { title: 'Tour and tutorials', keywords: 'learn tutorial tour lesson help beginner intermediate expert getting started how to teach walkthrough onboarding', detail: 'A one-minute tour and hands-on tutorials for beginner, intermediate and expert users.', run: () => ui().setDialog('learn') },
   { title: 'Guide', keywords: 'guide help manual how docs documentation tutorial', detail: 'How everything works.', run: () => ui().openGuide() },
+  { title: 'Suggestions', keywords: 'suggestions agent assistant ideas mcp panel accept dismiss', detail: 'Suggestions from an agent you connect: hear each one before and after, then accept or dismiss it.', run: () => (isNativeApp() ? 'An agent connects to the studio on a computer, not in the phone app.' : ui().setAgentPanelOpen(true)) },
+  { title: 'Let an agent connect…', keywords: 'agent connect pair code mcp assistant helper fledgetone mcp', detail: 'Pair an agent you already use with this song, by the code it gives you.', run: () => (isNativeApp() ? 'An agent connects to the studio on a computer, not in the phone app.' : ui().setAgentConnectOpen(true)) },
   { title: 'Play / pause', keywords: 'play pause start transport space k', run: () => void timeline().togglePlay() },
   { title: 'Stop', keywords: 'stop transport return', run: () => timeline().stop() },
   { title: 'Loop on / off', keywords: 'loop repeat cycle l', run: () => timeline().toggleLoop() },

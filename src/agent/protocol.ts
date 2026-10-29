@@ -286,6 +286,72 @@ export class RateLimiter {
 /** Text from an agent as the studio shows it: plain text without control or text-direction characters, at most `max` characters. */
 export function plainAgentText(text: unknown, max: number): string {
   if (typeof text !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/g, '').slice(0, max);
+  return (
+    text
+      // (line and paragraph separators as plain line breaks; invisible format characters, as zero-width spaces and direction marks, gone)
+      .replace(/[\u2028\u2029]/g, '\n')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\p{Cf}]/gu, '')
+      .slice(0, max)
+  );
+}
+
+/** Letters that look like Latin ones (Cyrillic, Greek, digits and the like), as those letters. */
+const LOOK_ALIKES: Record<string, string> = {
+  а: 'a', е: 'e', ё: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', к: 'k', т: 't', н: 'h', м: 'm', в: 'b', г: 'r', ԁ: 'd', ԍ: 'g', ɡ: 'g', ӏ: 'l', і: 'l', ї: 'l', ј: 'j', ѕ: 's', ԛ: 'q', ԝ: 'w', һ: 'h',
+  α: 'a', β: 'b', ε: 'e', η: 'n', ι: 'l', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', γ: 'y', δ: 'd',
+  '0': 'o', '1': 'l', '3': 'e', '|': 'l', i: 'l', ı: 'l', ł: 'l', ƒ: 'f', ſ: 'f', ɢ: 'g', ᴛ: 't', ᴏ: 'o', ᴇ: 'e', ꜰ: 'f', ʟ: 'l', ɴ: 'n', ᴅ: 'd',
+};
+
+/**
+ * What `text` reads as at a glance: compatibility forms folded (full-width, ligatures), invisible
+ * characters and accents dropped, look-alike letters as the Latin ones (i and l alike), lower
+ * case, letters only. For telling text that would pass for the app's name.
+ */
+export function readsAs(text: string): string {
+  return [
+    ...text
+      .normalize('NFKD')
+      .replace(/[\p{Cf}\p{M}]/gu, '')
+      .toLowerCase(),
+  ]
+    .map((c) => LOOK_ALIKES[c] ?? c)
+    .join('')
+    .replace(/[^a-z]/g, '');
+}
+
+/** The app's own name at the start of an agent's text: it could pass for the app speaking. */
+const posesAsApp = (text: string) => readsAs(text).startsWith(readsAs('Fledgetone'));
+
+/**
+ * Text from an agent made safe to show as the agent's (plainAgentText, trimmed): text that starts
+ * with the app's name is shown in quotes, so it never reads as the app's own words.
+ */
+export function fromAgent(text: unknown, max: number): string {
+  const plain = plainAgentText(text, max).replace(/\s+/g, (w) => (w.includes('\n') ? w : ' ')).trim();
+  return posesAsApp(plain) ? `“${plain}”` : plain;
+}
+
+/** The longest agent name shown. */
+export const AGENT_NAME_MAX = 40;
+
+/**
+ * An agent's name for itself as the studio shows it: plain, on one line, at most AGENT_NAME_MAX
+ * characters; none (the studio says "your agent") if it's empty or starts with the app's name.
+ */
+export function agentName(text: unknown): string | undefined {
+  const plain = plainAgentText(text, 200).replace(/\s+/g, ' ').trim().slice(0, AGENT_NAME_MAX).trim();
+  return plain && !posesAsApp(plain) ? plain : undefined;
+}
+
+/**
+ * What's typed or pasted in the code field, as it's shown there: a label in front ("Code: ...")
+ * dropped, O read as 0 and I or L as 1, anything else not in the code's letters left out, at most
+ * CODE_LENGTH of them, grouped in fours ("K7QM-3XPD-9TBW").
+ */
+export function typedCode(text: string): string {
+  // (a code never has a colon in it, nor starts with the word "code")
+  const unlabelled = (text.includes(':') ? text.slice(text.lastIndexOf(':') + 1) : text).replace(/^\s*(pairing\s+)?code\b\s*[=-]?/i, '');
+  const plain = [...unlabelled.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')].filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, CODE_LENGTH);
+  return plain.replace(/(.{4})(?=.)/g, '$1-');
 }

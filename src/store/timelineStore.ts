@@ -205,6 +205,8 @@ interface HistoryEntry {
    * back as the step has them (other steps leave the plugins' settings as they are now)
    */
   plugins?: string[];
+  /** A name for the step (an agent's suggestion accepted: tagLastStep), kept through undo and redo. */
+  tag?: string;
   clips: Clip[];
   tracks: Track[];
   masterFx: MasterFx;
@@ -285,7 +287,8 @@ const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): Histor
 /** An entry carrying what the step it's taken for moved: its ripple and its plugins. */
 const sameStep = (entry: HistoryEntry, step: HistoryEntry): HistoryEntry => {
   const out = withRipple(entry, step.ripple);
-  return step.plugins ? { ...out, plugins: step.plugins } : out;
+  const tagged = step.tag ? { ...out, tag: step.tag } : out;
+  return step.plugins ? { ...tagged, plugins: step.plugins } : tagged;
 };
 
 /** A plugin-knob step undone or redone: those plugins take the settings the restored tracks have. */
@@ -3501,6 +3504,19 @@ useTimelineStore.subscribe((state, prev) => {
     if (followed) useTimelineStore.setState({ tracks: followed });
   }
 });
+
+/** Name the newest undo step `tag` (it keeps the name through undo and redo: see stepPlace). */
+export function tagLastStep(tag: string): void {
+  useTimelineStore.setState((s) => (s.past.length ? { past: [...s.past.slice(0, -1), { ...s.past[s.past.length - 1], tag }] } : {}));
+}
+
+/** Where the undo step named `tag` is: done (Undo would take it back), undone (Redo would), or gone from the history. */
+export function stepPlace(tag: string): 'done' | 'undone' | null {
+  const s = useTimelineStore.getState();
+  if (s.past.some((e) => e.tag === tag)) return 'done';
+  if (s.future.some((e) => e.tag === tag)) return 'undone';
+  return null;
+}
 
 export function currentProject(): ProjectSnapshot {
   const s = useTimelineStore.getState();
