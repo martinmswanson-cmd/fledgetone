@@ -120,10 +120,13 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (t.isPlaying || t.loadingToPlay) throw new HandlerError('busy', 'The song is playing; ask again when it stops.');
       slow(listenRate, 'listens');
       listening = true;
+      // Play pressed meanwhile: the render stops at once (the song's own playback comes first) and the agent hears busy
+      const stop = new AbortController();
+      const unwatch = useTimelineStore.subscribe((st) => (st.isPlaying || st.loadingToPlay) && stop.abort());
       try {
         let stats: MasterStats | undefined;
-        const audio = await renderRange(listenSnapshot(song), fromBar, toBar, { onMasterStats: (s) => (stats = s) });
-        const m = await measureRender(audio);
+        const audio = await renderRange(listenSnapshot(song), fromBar, toBar, { signal: stop.signal, onMasterStats: (s) => (stats = s) });
+        const m = await measureRender(audio, stop.signal);
         const findings: string[] = [];
         if (m.truePeakDbtp > -1) findings.push(`The true peak reaches ${m.truePeakDbtp.toFixed(1)} dBTP: over -1, it may distort when it's turned into an MP3.`);
         if (stats && stats.limiterPeakDb > 3) findings.push(`The master limiter takes up to ${stats.limiterPeakDb.toFixed(1)} dB off the peaks.`);
@@ -144,7 +147,11 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
           },
           findings,
         };
+      } catch (err) {
+        if (stop.signal.aborted) throw new HandlerError('busy', 'The song started playing, so listening stopped; ask again when it stops.');
+        throw err;
       } finally {
+        unwatch();
         listening = false;
       }
     },

@@ -38,3 +38,33 @@ export function preRollStart(song: { tracks: Track[]; clips: readonly Clip[]; bp
   const bySeconds = secondsToBar(Math.max(0, barToSeconds(fromBar, tempo) - PRE_ROLL_MAX_SECONDS), tempo);
   return Math.max(1, start, fromBar - PRE_ROLL_MAX_BARS, bySeconds);
 }
+
+/** Tone ticks in a bar (4/4), for writing a length in bars as a duration ("384i"). */
+const TICKS_PER_BAR = 768;
+
+/**
+ * `clips` with every note still sounding at bar `at` (begun before it, ending after it) begun
+ * again at `at` for what's left of it: rendered from `at`, a drone or pad held from long before
+ * (longer than any run-in) still sounds, its attack inside the run-in that's trimmed away. The
+ * same array if no note is held over `at`.
+ */
+export function restartHeldNotes(clips: readonly Clip[], at: number): Clip[] {
+  const eps = 1e-6;
+  let changed = false;
+  const out = clips.map((c) => {
+    const clipEnd = c.startBar + c.lengthBars;
+    if (c.startBar >= at || clipEnd <= at || !c.notes?.length) return c;
+    let held = false;
+    const notes = c.notes.map((n) => {
+      const start = c.startBar + n.startOffset;
+      const end = Math.min(clipEnd, start + durationToBars(n.duration));
+      if (start >= at - eps || end <= at + eps) return n;
+      held = true;
+      return { ...n, startOffset: at - c.startBar, duration: `${Math.max(1, Math.round((end - at) * TICKS_PER_BAR))}i` };
+    });
+    if (!held) return c;
+    changed = true;
+    return { ...c, notes };
+  });
+  return changed ? out : (clips as Clip[]);
+}

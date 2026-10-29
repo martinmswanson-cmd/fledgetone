@@ -18,8 +18,9 @@ export function returnFocus(opener: HTMLElement | null): void {
 
 /**
  * After a card was answered from the keyboard or an assistive tool (its buttons gone), focus
- * goes on: to the next open card's first button, else an earlier one's, else the panel. Never
- * left on nothing.
+ * goes on: to the next card itself (its label is read; Tab reaches its buttons), else the one
+ * before, else the panel. Never left on nothing, and never on a button: a held Enter or a Space
+ * that follows mustn't press anything (Hear would start playing), and Space plays the song there.
  */
 export function focusAfterAnswer(cardId: string): void {
   window.setTimeout(() => {
@@ -28,7 +29,6 @@ export function focusAfterAnswer(cardId: string): void {
     const cards = [...document.querySelectorAll<HTMLElement>('[data-agent-panel] [data-suggestion]')];
     const at = cards.findIndex((c) => c.dataset.suggestion === cardId);
     const order = [...cards.slice(at + 1), ...cards.slice(0, Math.max(0, at)).reverse()];
-    const next = order.map((c) => c.querySelector<HTMLElement>('button:not([disabled])')).find(Boolean);
-    (next ?? document.querySelector<HTMLElement>('[data-agent-panel]'))?.focus({ preventScroll: false });
+    (order[0] ?? document.querySelector<HTMLElement>('[data-agent-panel]'))?.focus({ preventScroll: false });
   }, 0);
 }

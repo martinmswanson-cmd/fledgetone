@@ -363,6 +363,23 @@ async function until(check, ms, what) {
     // A note held from bar 13 into bar 15 is heard in bars 15-16 (nothing else plays there)
     const held = await call('listen', { fromBar: 15, toBar: 16, ops: [{ op: 'add_clip', trackId: ids.bass, startBar: 13, lengthBars: 4, notes: [{ pitch: 'C2', start: 0, length: 4 }] }] });
     step('9a held notes are heard', Number.isFinite(held.mix.lufs) && !held.findings.some((f) => /silent/.test(f)), `${held.mix.lufs} LUFS in bars 15-16`);
+    // A drone held over 40 bars sounds the same from bar 5, 12 and 30 (longer than any run-in)
+    const drone = [
+      { op: 'add_track', instrument: 'synthDesigner', ref: 'drone' },
+      { op: 'set_track', trackId: '$drone', solo: true },
+      { op: 'add_clip', trackId: '$drone', startBar: 1, lengthBars: 40, notes: [{ pitch: 'C3', start: 0, length: 40 }] },
+    ];
+    const droneAt = [];
+    for (const at of [5, 12, 30]) droneAt.push((await call('listen', { fromBar: at, toBar: at + 1, ops: drone })).mix.lufs);
+    step('9a a drone held for 40 bars is heard the same anywhere', droneAt.every((v) => Number.isFinite(v)) && Math.max(...droneAt) - Math.min(...droneAt) < 1.5, droneAt.join(', '));
+    // Play pressed during a listen: the listen stops (busy), the song plays
+    const playLate = call('listen', { fromBar: 1, toBar: 30 }).then(() => 'answered', (e) => e.message);
+    await page.waitForTimeout(400);
+    await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().togglePlay());
+    const stoppedListen = await playLate;
+    await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().pause());
+    step('9a Play during a listen stops the listen', /started playing/.test(stoppedListen), stoppedListen);
+    await page.waitForTimeout(6100);
     const listened = await call('listen', { fromBar: 1, toBar: 5 });
     step('9 listen', Number.isFinite(listened.mix.lufs) && Number.isFinite(listened.mix.truePeakDbtp), `${listened.mix.lufs} LUFS, ${listened.mix.truePeakDbtp} dBTP`);
 
@@ -397,6 +414,14 @@ async function until(check, ms, what) {
     await page.keyboard.press('Space');
     await statusIs(sixth.id, 'dismissed');
     const playing = await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().isPlaying);
+    // Focus went on to a card (not a button: a Space or a held key must press nothing), and Space plays the song
+    await page.waitForTimeout(100);
+    const focusedOn = await A(() => ({ tag: document.activeElement?.tagName, card: document.activeElement?.hasAttribute('data-suggestion') ?? false }));
+    await page.keyboard.press('Space');
+    const spaceSong = await until(() => A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().isPlaying), 2000, 'playback').catch(() => false);
+    const spaceAudition = await A(() => window.__fledgetoneAgent.audition.useAudition.getState().phase);
+    await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().pause());
+    step('9c after a keyboard answer: focus on the next card, Space plays the song (nothing heard)', focusedOn.card && focusedOn.tag !== 'BUTTON' && !!spaceSong && spaceAudition === 'idle', `${JSON.stringify(focusedOn)}, song ${!!spaceSong}, audition ${spaceAudition}`);
     step('9c appended, a fresh card ignores presses, Space presses', layout.a === topBefore && layout.b > layout.a && early.s.status === 'waiting' && /just appeared/.test(early.text) && !playing, `first card at ${topBefore} → ${layout.a}, new at ${layout.b}`);
 
     // 9d. Not heard: one press of Accept doesn't accept, it offers "Accept without listening"; a
@@ -585,6 +610,23 @@ async function until(check, ms, what) {
     await page2.getByRole('menuitem', { name: 'View', exact: true }).first().click();
     await page2.locator('[role^="menuitem"]', { hasText: 'Suggestions' }).first().click();
     const loaded = await page2.locator('[data-agent-panel]').waitFor({ timeout: 15000 }).then(() => true, () => false);
+    // 12b. The panel failing once loaded, while an agent is connected: a note; Close keeps it away
+    // (the studio up) until the musician opens the panel again
+    await page2.evaluate(async () => {
+      const { useUiStore } = await import('/src/store/uiStore.ts');
+      window.__agentCrash = true;
+      useUiStore.setState({ agentStatus: { state: 'connected' } });
+      useUiStore.getState().setAgentPanelOpen(false);
+    });
+    const crashNote = await page2.locator('[data-agent-failed]').waitFor({ timeout: 5000 }).then(async () => (await page2.locator('[data-agent-failed]').textContent()).includes('stopped working'), () => false);
+    await page2.locator('[data-agent-failed]').getByRole('button', { name: 'Close' }).click();
+    await page2.waitForTimeout(800);
+    const staysAway = (await page2.locator('[data-agent-failed]').count()) === 0 && (await page2.locator('[data-timeline-scroll]').count()) > 0;
+    await page2.evaluate(() => (window.__agentCrash = false));
+    await page2.getByRole('menuitem', { name: 'View', exact: true }).first().click();
+    await page2.locator('[role^="menuitem"]', { hasText: 'Suggestions' }).first().click();
+    const backAgain = await page2.locator('[data-agent-panel]').waitFor({ timeout: 10000 }).then(() => true, () => false);
+    step('12b the panel failing: a note, Close keeps it away, opening it brings it back', crashNote && staysAway && backAgain, `note ${crashNote}, away after Close ${staysAway}, back ${backAgain}`);
     step('12 the chunk fails to load: a note, Reload, the studio stays', note && noteOnTop && studioUp > 0 && padding === '0px' && loaded, `note ${note} (on top ${noteOnTop}), studio ${studioUp > 0}, padding ${padding}, after Reload ${loaded}`);
     await page2.close();
   } catch (err) {

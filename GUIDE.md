@@ -1539,7 +1539,7 @@ The agent never opens the panel or moves the keyboard focus. The header's **Agen
 
 The agent can also leave you messages on the panel (marked as from your agent, in quotes) and point at a track, a clip, some bars or a control: a ring for a few seconds, nothing pressed and the keyboard left where it was. **Disconnect** on the panel ends the connection; closing the tab does too.
 
-**If it doesn't connect.** Chrome may ask whether the page can reach devices on your local network: allow it (the helper is on your computer). Safari and Brave may block the connection to a helper on your computer; a `fledgetone studio` mode that opens the studio from the helper itself is coming. If another tab already has your agent connected, the dialog says so: disconnect it there first. If the Suggestions panel itself can't load (you're offline, say), a note at the top offers **Reload**; your song is kept. The phone apps don't connect to agents.
+**If it doesn't connect.** Chrome may ask whether the page can reach devices on your local network: allow it (the helper is on your computer). Safari and Brave may block the connection to a helper on your computer; a `fledgetone studio` mode that opens the studio from the helper itself is coming. If another tab already has your agent connected, the dialog says so: disconnect it there first. If the Suggestions panel itself can't load (you're offline, say) or stops working, a note at the top offers **Reload** (your song is kept); **Close** puts it away until you open the panel again. The phone apps don't connect to agents.
 
 ## Tips and limits
 

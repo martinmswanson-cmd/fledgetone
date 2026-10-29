@@ -32,6 +32,8 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 const AgentStudio: React.FC = () => {
   const panel = useUiStore((s) => s.agentPanelOpen);
   const connect = useUiStore((s) => s.agentConnectOpen);
+  // (the browser checks make it fail on purpose, to see the studio stay up; never in a production build)
+  if (import.meta.env.DEV && (window as unknown as { __agentCrash?: boolean }).__agentCrash) throw new Error('A failure for the browser checks');
   const announcement = useSuggestions((s) => s.announcement);
   // Suggestions waiting are kept true to the song (another song opened, an edit under them), connected or not
   const anyWaiting = useSuggestions((s) => waitingCount(s.suggestions) > 0);

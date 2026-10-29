@@ -120,8 +120,10 @@ interface UiState {
   /** The agent's Suggestions panel (see src/components/agent/), and the Let an agent connect dialog */
   agentPanelOpen: boolean;
   agentConnectOpen: boolean;
-  /** The agent's side of the studio couldn't be loaded (AgentMount shows a note) */
-  agentLoadFailed: boolean;
+  /** The agent's side of the studio couldn't be loaded, or stopped working (AgentMount shows a note) */
+  agentLoadFailed: null | 'load' | 'crash';
+  /** The note was closed: the agent's side stays away until the panel or the connect dialog is opened again */
+  agentSuppressed: boolean;
   /** The agent connection as the header shows it: off, connecting, connected (and the agent's name), and how many suggestions wait and messages are new */
   agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string; waiting?: number; unread?: number };
   setAgentPanelOpen: (open: boolean) => void;
@@ -185,15 +187,16 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   agentPanelOpen: false,
   agentConnectOpen: false,
-  agentLoadFailed: false,
+  agentLoadFailed: null,
+  agentSuppressed: false,
   agentStatus: { state: 'off' },
   setAgentPanelOpen: (agentPanelOpen) => {
     if (agentPanelOpen && !get().agentPanelOpen) agentOpeners.panel = focusedNow();
-    set({ agentPanelOpen });
+    set(agentPanelOpen ? { agentPanelOpen, agentSuppressed: false } : { agentPanelOpen });
   },
   setAgentConnectOpen: (agentConnectOpen) => {
     if (agentConnectOpen && !get().agentConnectOpen) agentOpeners.connect = focusedNow();
-    set({ agentConnectOpen });
+    set(agentConnectOpen ? { agentConnectOpen, agentSuppressed: false } : { agentConnectOpen });
   },
   setDockHeight: (height) => {
     set({ dockHeight: Math.round(Math.max(DOCK_MIN, Math.min(DOCK_MAX, height))) });

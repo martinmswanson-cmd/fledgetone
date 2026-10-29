@@ -74,10 +74,12 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
     <article
       aria-label={`Suggestion from your agent: ${s.title}`}
       data-suggestion={s.id}
+      // (focus can come here, never to a button, after the card before it is answered from the keyboard)
+      tabIndex={-1}
       onMouseEnter={focus}
       onMouseLeave={unfocus}
       onFocus={focus}
-      className={`rounded-lg border p-3 flex flex-col gap-2 ${open ? 'border-forge-border bg-forge-bg/60' : 'border-forge-border/50 bg-forge-bg/30 opacity-80'}`}
+      className={`rounded-lg border p-3 flex flex-col gap-2 outline-none focus:ring-1 focus:ring-cyan-400/60 ${open ? 'border-forge-border bg-forge-bg/60' : 'border-forge-border/50 bg-forge-bg/30 opacity-80'}`}
     >
       <header className="flex items-start gap-2">
         <div className="flex-1 min-w-0">

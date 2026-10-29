@@ -14,7 +14,7 @@ import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAna
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { barToSeconds, type TempoPoint } from './tempoMap';
-import { preRollStart } from './auditionMath';
+import { preRollStart, restartHeldNotes } from './auditionMath';
 import type { IntensityCurve } from '../store/intensity';
 
 /** The parts of a song a render needs. */
@@ -67,8 +67,8 @@ function trimStart(audio: AudioBuffer, frames: number): AudioBuffer {
 
 /**
  * Render bars [from, to) of `song` through the master section, as they sound in the song: from a
- * run-in (preRollStart) so notes held over from before are heard, then trimmed to start exactly at
- * `fromBar`. `onMasterStats` hears what the master did.
+ * run-in (preRollStart; notes held from before it begin again at its start: restartHeldNotes) so
+ * notes held over from before are heard, then trimmed to start exactly at `fromBar`. `onMasterStats` hears what the master did.
  */
 export async function renderRange(
   song: ListenSnapshot,
@@ -77,7 +77,9 @@ export async function renderRange(
   opts: { signal?: AbortSignal; progress?: RenderProgress; onMasterStats?: (s: MasterStats) => void } = {}
 ): Promise<AudioBuffer> {
   const start = preRollStart(song, fromBar);
-  const audio = await renderArrangement({ ...renderOptionsFor(song, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
+  // (notes held from before the run-in begin again at its start, for what's left of them)
+  const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start) } : song;
+  const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
   if (start >= fromBar) return audio;
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   return trimStart(audio, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate));

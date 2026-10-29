@@ -25,7 +25,8 @@ const { partsChanged, RevisionCounter } = await import('../src/agent/revision.ts
 const { closeMessage } = await import('../src/agent/bridgeProtocolClient.ts');
 const { acceptDecision, keepSuggestions, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
 const { AGENT_NAME_MAX, agentName, fromAgent, readsAs, typedCode } = await import('../src/agent/protocol.ts');
-const { preRollStart, sameBarOffset, PRE_ROLL_MAX_BARS } = await import('../src/audio/auditionMath.ts');
+const { preRollStart, restartHeldNotes, sameBarOffset, PRE_ROLL_MAX_BARS } = await import('../src/audio/auditionMath.ts');
+const { durationToBars } = await import('../src/store/timelineTypes.ts');
 const { followTracks } = await import('../src/store/drumFollow.ts');
 const { newKitDesign } = await import('../src/store/drumDesign.ts');
 const { applyOps } = await import('../src/agent/ops.ts');
@@ -292,6 +293,25 @@ test('a stretch is rendered from the earliest note still held into it (capped), 
   assert.ok(Math.abs(preRollStart(song([note(0, '16m')], 40), 15) - (15 - 20 / 6)) < 1e-9);
   // A muted track's notes don't count
   assert.equal(preRollStart({ ...song([note(2, '4m')]), tracks: [{ ...track, isMuted: true }] }, 7), 7);
+});
+
+test('a note held from before the run-in begins again at its start, for what is left of it', () => {
+  const note = (id, startOffset, duration) => ({ id, note: 'C2', startOffset, duration, velocity: 0.8 });
+  const clips = [
+    { id: 'drone', trackId: 't', startBar: 1, lengthBars: 40, notes: [note('d', 0, '40m'), note('short', 1, '1m'), note('later', 30, '2m')] },
+    { id: 'after', trackId: 't', startBar: 25, lengthBars: 4, notes: [note('x', 0, '4m')] },
+  ];
+  const out = restartHeldNotes(clips, 22);
+  const d = out[0].notes.find((n) => n.id === 'd');
+  assert.equal(out[0].startBar + d.startOffset, 22, 'begins at the run-in');
+  assert.ok(Math.abs(durationToBars(d.duration) - 19) < 1e-9, 'for the 19 bars left of it');
+  assert.equal(out[0].notes.find((n) => n.id === 'short'), clips[0].notes[1], 'notes over by then are as they were');
+  assert.equal(out[0].notes.find((n) => n.id === 'later'), clips[0].notes[2], 'and those after it');
+  assert.equal(out[1], clips[1], 'a clip after it untouched');
+  assert.equal(restartHeldNotes(clips, 1), clips, 'nothing held over bar 1: the same clips');
+  // Cut at its clip's end
+  const cut = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 10, notes: [note('n', 0, '40m')] }], 5);
+  assert.ok(Math.abs(durationToBars(cut[0].notes[0].duration) - 6) < 1e-9);
 });
 
 test('a Designed Kit follows the song in the suggestion as it does in the studio', () => {
