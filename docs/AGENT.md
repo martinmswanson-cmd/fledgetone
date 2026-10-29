@@ -119,8 +119,10 @@ put it back in the box to send it as a new message. What goes with a message is 
 send and retry: the selection only while the agent may see it, the suggestion's id only while
 that suggestion is on the panel. On the panel an earlier connection's messages are set off by a
 line ("Earlier, with your agent (name)"), each agent's message with the name it came with. The
-musician's text is kept as they wrote it, less control characters and direction overrides
-(joiners and direction marks stay, for emoji and scripts that need them).
+agent gets exactly what the musician sees: control characters and invisible characters go
+(hidden tag text, word joiners, soft hyphens, stray variation selectors, direction overrides);
+the joiners, the direction marks, emoji presentation after a visible character and the flags made
+of tag sequences (England, Scotland, Wales) stay.
 
 Nothing of the conversation is saved: the studio keeps it for the tab (a reload clears it), the
 helper in memory until the studio disconnects, the last 200 messages each way. Neither writes it
