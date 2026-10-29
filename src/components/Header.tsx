@@ -4,7 +4,7 @@
  * Search, Learn, Guide and Start Audio buttons. Also the ? shortcut that opens the guide.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, GraduationCap, Search, Volume2, Power } from 'lucide-react';
+import { BookOpen, GraduationCap, MessagesSquare, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import logo from '../assets/fledgetone.png';
@@ -17,6 +17,23 @@ import { PerfBadge } from './PerfBadge';
 import { PALETTE_SHORTCUT, useUiStore } from '../store/uiStore';
 import { MenuBar } from './menu/MenuBar';
 import { ProjectBar } from './timeline/ProjectBar';
+
+/** "Agent connected": shown while an agent is paired; opens the Suggestions panel. */
+const AgentChip: React.FC = () => {
+  const status = useUiStore((s) => s.agentStatus);
+  if (status.state !== 'connected') return null;
+  return (
+    <button
+      type="button"
+      onClick={() => useUiStore.getState().setAgentPanelOpen(!useUiStore.getState().agentPanelOpen)}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono border border-cyan-500/50 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
+      title={`${status.agent ?? 'An agent'} is connected: show or hide its suggestions`}
+      data-agent-chip=""
+    >
+      <MessagesSquare className="w-3.5 h-3.5" aria-hidden /> Agent connected
+    </button>
+  );
+};
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -167,6 +184,7 @@ export const Header: React.FC = () => {
         {isRunning && <ListeningBadge />}
         {isRunning && <LoudnessBadge />}
         {isRunning && <PerfBadge />}
+        <AgentChip />
 
         <button
           type="button"

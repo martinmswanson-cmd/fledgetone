@@ -35,7 +35,7 @@ Lists
   list instruments|presets|starters|params|inserts|master [query] [--json]
 
 Your agent
-  mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin]
+  mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>]
                                         The agent tools, as an MCP server on stdio. Files are read
                                         and written only inside --root (default: this folder).
                                         The studio connects on 127.0.0.1:${DEFAULT_PORT} (--port 0: any free port).
@@ -72,6 +72,7 @@ async function main(argv: string[]): Promise<number> {
       port: { type: 'string' },
       dev: { type: 'boolean' },
       'allow-null-origin': { type: 'boolean' },
+      'allow-origin': { type: 'string', multiple: true },
     },
   });
   const flags: cmd.Flags = { ...values, o: values.o ?? values.out };
@@ -113,7 +114,7 @@ async function main(argv: string[]): Promise<number> {
 }
 
 /** The agent tools: an MCP server on stdio and the studio connection, until stdin closes. */
-async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow-null-origin'?: boolean }): Promise<number> {
+async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow-null-origin'?: boolean; 'allow-origin'?: string[] }): Promise<number> {
   const root = resolve(values.root ?? process.cwd());
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new cmd.UsageError(`--root ${root} isn't a folder`);
   const port = values.port === undefined ? undefined : Number(values.port);
@@ -125,6 +126,16 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
     port,
     dev: values.dev === true,
     allowNull: values['allow-null-origin'] === true,
+    studioOrigins: (values['allow-origin'] ?? []).map((o) => {
+      // An exact origin (scheme, host and port), as a page reports it
+      let url: URL;
+      try {
+        url = new URL(o);
+      } catch {
+        throw new cmd.UsageError(`--allow-origin ${o} isn't an address like http://localhost:5960`);
+      }
+      return url.origin;
+    }),
     version: APP_VERSION,
     agentName: () => server?.server.getClientVersion()?.name,
   });

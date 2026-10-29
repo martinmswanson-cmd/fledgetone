@@ -1,0 +1,179 @@
+/**
+ * "Let an agent connect…": the code the agent gave (and the port, if it said another), what the
+ * agent may do (read the song always; see what's selected, suggest changes, listen: each off until
+ * ticked), the privacy line, and what to do when the browser blocks the connection. Connected, it
+ * says to whom, lets the permissions change, and disconnects.
+ */
+import React from 'react';
+import { Modal } from '../timeline/Modal';
+import { useUiStore } from '../../store/uiStore';
+import { connectAgent, DEFAULT_PORT, disconnectAgent, retryCode, setAgentPermissions } from '../../agent/bridgeClient';
+import { useSuggestions } from '../../agent/suggestionsStore';
+import { normalizeCode, type Permissions } from '../../agent/protocol';
+
+/** The privacy line, word for word (also in the guide and the command line's help). */
+export const PRIVACY_LINE = 'Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.';
+
+const PORT_KEY = 'fledgetone.agentPort';
+const readPort = () => {
+  try {
+    const n = Number(localStorage.getItem(PORT_KEY));
+    return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
+  } catch {
+    return DEFAULT_PORT;
+  }
+};
+
+/** "k7qm3xpd9tbw" typed as "K7QM-3XPD-9TBW". */
+const grouped = (text: string) =>
+  text
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '')
+    .slice(0, 12)
+    .replace(/(.{4})(?=.)/g, '$1-');
+
+const PERMISSIONS: Array<{ key: keyof Permissions; label: string; detail: string }> = [
+  { key: 'read', label: 'Read the song', detail: 'Its tracks, clips, notes, mix and markers. Always on while connected.' },
+  { key: 'see', label: 'See what I select', detail: 'The selected track and clips, the open clip and the playhead.' },
+  { key: 'suggest', label: 'Suggest changes', detail: 'Suggestions wait on the Suggestions panel until you accept or dismiss them.' },
+  { key: 'listen', label: 'Listen', detail: 'Render a few bars and measure them (loudness, peaks, balance). Nothing plays.' },
+];
+
+export const ConnectDialog: React.FC = () => {
+  const close = React.useCallback(() => useUiStore.getState().setAgentConnectOpen(false), []);
+  const info = useSuggestions((s) => s.connection);
+  const permissions = useSuggestions((s) => s.permissions);
+  const [code, setCode] = React.useState('');
+  const [port, setPort] = React.useState(readPort);
+  const [ask, setAsk] = React.useState<Permissions>(() => ({ ...permissions }));
+  const connected = info.state === 'paired';
+  const busy = info.state === 'waiting' || info.state === 'proving';
+  const valid = normalizeCode(code) !== null;
+
+  // Paired: show the panel and get out of the way
+  const wasConnected = React.useRef(connected);
+  React.useEffect(() => {
+    if (connected && !wasConnected.current) {
+      useUiStore.getState().setAgentPanelOpen(true);
+      close();
+    }
+    wasConnected.current = connected;
+  }, [connected, close]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!valid) return;
+    try {
+      localStorage.setItem(PORT_KEY, String(port));
+    } catch {
+      // Not kept: it starts at the default next time
+    }
+    if (info.state === 'wrong_code' && retryCode(code)) return;
+    connectAgent(code, port, ask);
+  };
+
+  const toggle = (key: keyof Permissions, on: boolean) => {
+    const next = { ...ask, [key]: on, read: true };
+    setAsk(next);
+    if (connected) setAgentPermissions(next);
+  };
+
+  const status =
+    info.state === 'waiting'
+      ? 'Connecting to your agent’s helper…'
+      : info.state === 'proving'
+        ? 'Checking the code…'
+        : info.state === 'wrong_code'
+          ? `${info.message ?? 'That code doesn’t match.'}${info.attemptsLeft !== undefined ? ` ${info.attemptsLeft} ${info.attemptsLeft === 1 ? 'try' : 'tries'} left.` : ''}`
+          : info.state === 'refused' || (info.state === 'closed' && info.message)
+            ? (info.message ?? 'The connection closed.')
+            : '';
+
+  return (
+    <Modal title={connected ? 'Agent connected' : 'Let an agent connect'} onClose={close}>
+      <form onSubmit={submit} className="flex flex-col gap-3 p-4 text-[13px] text-forge-muted max-w-md">
+        {connected ? (
+          <p className="text-forge-text">
+            Connected to <span className="font-semibold">{info.agent ?? 'your agent'}</span>. It can read this song{ask.suggest ? ' and suggest changes' : ''}{ask.listen ? ', and listen' : ''}.
+          </p>
+        ) : (
+          <>
+            <p>
+              An agent you already use (one that works with MCP) can read this song and suggest changes. You hear each one before and after, and accept it or not. Start its helper first
+              (<span className="font-mono text-forge-text">fledgetone mcp</span>, see the guide), then ask it to connect: it gives you a code.
+            </p>
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] uppercase tracking-wider font-mono">Code from your agent</span>
+              <input
+                autoFocus
+                value={code}
+                onChange={(e) => setCode(grouped(e.target.value))}
+                placeholder="K7QM-3XPD-9TBW"
+                autoComplete="off"
+                spellCheck={false}
+                inputMode="text"
+                aria-describedby="agent-connect-status"
+                className="h-10 px-3 rounded-md border border-forge-border bg-forge-bg font-mono text-lg tracking-[0.2em] text-forge-text focus:border-cyan-500 outline-none"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wider font-mono">Port</span>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={port}
+                onChange={(e) => setPort(Math.max(1, Math.min(65535, Math.round(Number(e.target.value) || DEFAULT_PORT))))}
+                className="h-8 w-24 px-2 rounded-md border border-forge-border bg-forge-bg font-mono text-forge-text"
+                aria-label="Port the helper listens on"
+              />
+              <span className="text-[11px]">{port === DEFAULT_PORT ? 'The usual one. Change it only if your agent says another.' : 'Your agent said this one.'}</span>
+            </label>
+          </>
+        )}
+        <fieldset className="flex flex-col gap-1.5 border border-forge-border rounded-md p-3">
+          <legend className="px-1 text-[11px] uppercase tracking-wider font-mono">The agent may</legend>
+          {PERMISSIONS.map((p) => (
+            <label key={p.key} className="flex items-start gap-2">
+              <input type="checkbox" className="mt-1 accent-cyan-500" checked={p.key === 'read' || ask[p.key]} disabled={p.key === 'read'} onChange={(e) => toggle(p.key, e.target.checked)} />
+              <span>
+                <span className="text-forge-text">{p.label}</span>
+                <span className="block text-[11px]">{p.detail}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="text-forge-text">{PRIVACY_LINE}</p>
+        <p id="agent-connect-status" role="status" aria-live="polite" className={info.state === 'wrong_code' || info.state === 'refused' ? 'text-amber-300' : ''}>
+          {status}
+        </p>
+        {!connected && (
+          <details className="text-[12px]">
+            <summary className="cursor-pointer text-forge-text">Nothing happens?</summary>
+            <p className="mt-1">
+              Chrome may ask whether this page can reach devices on your local network: allow it (the helper runs on this computer). Safari and Brave can block the connection to a helper on this
+              computer; a <span className="font-mono">fledgetone studio</span> mode that opens the studio from the helper itself is coming. Check too that the port matches what your agent said.
+            </p>
+          </details>
+        )}
+        <div className="flex justify-end gap-2">
+          {connected || busy ? (
+            <button type="button" onClick={() => disconnectAgent()} className="h-9 px-3 rounded-md border border-forge-border text-forge-text hover:border-red-400/70">
+              Disconnect
+            </button>
+          ) : null}
+          {!connected && (
+            <button type="submit" disabled={!valid || busy} className="h-9 px-4 rounded-md border border-cyan-500/60 bg-cyan-500/15 font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-50">
+              {info.state === 'wrong_code' ? 'Try again' : 'Connect'}
+            </button>
+          )}
+          {connected && (
+            <button type="button" onClick={close} className="h-9 px-4 rounded-md border border-cyan-500/60 bg-cyan-500/15 font-semibold text-cyan-100">
+              Done
+            </button>
+          )}
+        </div>
+      </form>
+    </Modal>
+  );
+};
