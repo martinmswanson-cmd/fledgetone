@@ -22,6 +22,7 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
   const draft = useConversation((s) => s.draft);
   const about = useConversation((s) => s.about);
   const include = useConversation((s) => s.include);
+  const note = useConversation((s) => s.note);
   const see = useSuggestions((s) => s.permissions.see);
   const connected = useSuggestions((s) => s.connection.state === 'paired');
   const aboutTitle = useSuggestions((s) => (about ? s.suggestions.find((x) => x.id === about)?.title : undefined));
@@ -34,7 +35,7 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
     if (empty) return;
     const m = sendToAgent(draft, { about: aboutTitle ? about : null, include: include && see });
     if (!m) return;
-    useConversation.setState({ draft: '', about: null, include: false });
+    useConversation.setState({ draft: '', about: null, include: false, note: null });
     const now = useConversation.getState().mine.find((x) => x.id === m.id);
     announce(now?.status === 'not_sent' ? `${deliveryWords(now)}. Retry is next to your message.` : 'Sent to your agent.', true);
     onSent?.();
@@ -90,7 +91,7 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
         placeholder="Message your agent…"
         aria-label="Message your agent"
         aria-describedby="agent-compose-hint"
-        onChange={(e) => useConversation.setState({ draft: e.target.value.slice(0, CONVERSATION.textMaxChars) })}
+        onChange={(e) => useConversation.setState({ draft: e.target.value.slice(0, CONVERSATION.textMaxChars), note: null })}
         onKeyDown={(e) => {
           keep(e);
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -101,6 +102,11 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
         onKeyUp={keep}
         className="w-full resize-none max-h-32 min-h-[2.75rem] rounded-md border border-forge-border bg-forge-bg px-2 py-1.5 text-[12px] text-forge-text placeholder:text-forge-muted focus:outline-none focus:border-cyan-500/70"
       />
+      {note && (
+        <p data-box-note="" className="text-[11px] text-amber-300">
+          {note}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <label className={`flex items-center gap-1.5 text-[11px] ${see ? 'text-forge-text' : 'text-forge-muted'}`} title={see ? undefined : 'Allow “See what I select” (Change, above) to include it'}>
           <input

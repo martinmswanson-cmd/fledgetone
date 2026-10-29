@@ -428,23 +428,35 @@ export function readContext(c: unknown): UserMessageContext | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Invisible characters the musician's writing needs: the joiners (emoji sequences, Persian and Indic words) and the direction marks (LRM, RLM, ALM). */
-const KEPT_INVISIBLE = new Set([0x200c, 0x200d, 0x200e, 0x200f, 0x061c]);
 const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/u;
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
-/** A character that shows by itself (a base for a variation selector). */
-const showsAlone = (c: string | undefined) => !!c && !/\s/u.test(c) && !INVISIBLE.test(c) && !CONTROL.test(c);
+const BLANK_BRAILLE = '\u2800';
+/** A braille cell with dots (the blank one doesn't count). */
+const isBraille = (c: string | undefined) => !!c && c > '\u2800' && c <= '\u28ff';
+/** A character that shows by itself (a base for a variation selector, a neighbour for a joiner or a mark). */
+const showsAlone = (c: string | undefined) => !!c && !/\s/u.test(c) && !INVISIBLE.test(c) && !CONTROL.test(c) && c !== BLANK_BRAILLE;
+/** The end of something visible: a character that shows, or what hangs on one (a combining mark, a presentation selector). */
+const visibleEnd = (c: string | undefined) => showsAlone(c) || (!!c && (/\p{M}/u.test(c) || c === '\uFE0E' || c === '\uFE0F'));
+/** The flags made of tag sequences that exist (England, Scotland, Wales): their tag letters. */
+const TAG_FLAGS = new Set(['gbeng', 'gbsct', 'gbwls']);
+const JOINERS = new Set([0x200c, 0x200d]);
+const MARKS = new Set([0x200e, 0x200f, 0x061c]);
 
 /**
  * The musician's own text made plain (at most `max` characters), so the agent gets exactly what
  * the musician sees: control characters and every invisible or format character go (tag
  * characters, word joiners, soft hyphens, byte order marks, fillers, direction embeddings,
  * overrides and isolates), line and paragraph separators become line breaks. Kept, because writing
- * needs them: the joiners U+200C and U+200D, the direction marks LRM, RLM and ALM, the emoji and
- * text presentation selectors (U+FE0F, U+FE0E) right after a character that shows, and tag
- * characters only inside an emoji tag sequence (a black flag, tags, then the cancel tag: the flags
- * of England, Scotland and Wales).
+ * needs them, and only where they do something:
+ *
+ * - a joiner (U+200C, U+200D: emoji sequences, Persian and Indic words), one at a time, between
+ *   two visible characters;
+ * - a direction mark (LRM, RLM, ALM), one at a time, next to something visible;
+ * - an emoji or text presentation selector (U+FE0F, U+FE0E) right after a character that shows;
+ * - the flags of England, Scotland and Wales (a black flag, their tag letters, a cancel tag): any
+ *   other tag sequence leaves the plain black flag;
+ * - a blank braille cell only next to a braille cell with dots.
  */
 export function plainUserText(text: unknown, max: number): string {
   if (typeof text !== 'string') return '';
@@ -453,25 +465,36 @@ export function plainUserText(text: unknown, max: number): string {
   for (let i = 0; i < cps.length; i++) {
     const c = cps[i];
     const cp = c.codePointAt(0)!;
+    const prev = out.at(-1);
+    const next = cps[i + 1];
     if (CONTROL.test(c)) continue;
-    // A flag's tag sequence: U+1F3F4, tag letters (U+E0020 to U+E007E), U+E007F
     if (cp === 0x1f3f4) {
       let j = i + 1;
       while (j < cps.length && cps[j].codePointAt(0)! >= 0xe0020 && cps[j].codePointAt(0)! <= 0xe007e) j++;
-      if (j > i + 1 && cps[j]?.codePointAt(0) === 0xe007f) {
+      const tags = cps.slice(i + 1, j).map((t) => String.fromCodePoint(t.codePointAt(0)! - 0xe0000)).join('');
+      if (cps[j]?.codePointAt(0) === 0xe007f && TAG_FLAGS.has(tags)) {
         out.push(...cps.slice(i, j + 1));
         i = j;
         continue;
       }
+      // (another sequence: the plain flag, its tags left out with every other tag character)
       out.push(c);
       continue;
     }
     if (cp === 0xfe0e || cp === 0xfe0f) {
-      if (showsAlone(out.at(-1))) out.push(c);
+      if (showsAlone(prev)) out.push(c);
       continue;
     }
-    if (KEPT_INVISIBLE.has(cp)) {
-      out.push(c);
+    if (JOINERS.has(cp)) {
+      if (visibleEnd(prev) && showsAlone(next)) out.push(c);
+      continue;
+    }
+    if (MARKS.has(cp)) {
+      if (!MARKS.has(prev?.codePointAt(0) ?? -1) && (visibleEnd(prev) || showsAlone(next))) out.push(c);
+      continue;
+    }
+    if (c === BLANK_BRAILLE) {
+      if (isBraille(prev) || isBraille(next)) out.push(c);
       continue;
     }
     if (INVISIBLE.test(c)) continue;
@@ -480,8 +503,8 @@ export function plainUserText(text: unknown, max: number): string {
   return out.join('').slice(0, max);
 }
 
-/** Whether text has anything to see (not only spaces and invisible characters). */
-export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}]/u.test(text);
+/** Whether text has anything to see (not only spaces and invisible characters, blank braille among them). */
+export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}\u2800]/u.test(text);
 
 /**
  * A `user_message` event's params as both ends keep them, or null if it isn't one: an id of

@@ -42,9 +42,11 @@ export interface ConversationState {
   include: boolean;
   /** The current connection's number (each pairing counts one more; 0 before any). */
   connection: number;
+  /** A word about the box (it couldn't take something), until the musician types. */
+  note: string | null;
 }
 
-export const useConversation = create<ConversationState>(() => ({ mine: [], draft: '', about: null, include: false, connection: 0 }));
+export const useConversation = create<ConversationState>(() => ({ mine: [], draft: '', about: null, include: false, connection: 0, note: null }));
 
 /** Why a message wasn't sent, in plain words. */
 export const NOT_CONNECTED_REASON = 'the agent isn’t connected';
@@ -148,8 +150,23 @@ export function contextWords(m: Pick<UserMessage, 'context'>): string | null {
   return parts.length ? `With your selection: ${parts.join(', ')}` : 'With your selection';
 }
 
-/** The box's words with `text` put back after them (a blank line between), for "Put back in the box": what the musician is writing is never lost. */
-export function withPutBack(draft: string, text: string): string {
+/**
+ * The box's words with `text` put back after them (a blank line between), for "Put back in the
+ * box": what the musician is writing is never lost. Null if both don't fit in the box (it's left
+ * as it is, and the musician is told).
+ */
+export function withPutBack(draft: string, text: string): string | null {
   const next = hasVisibleText(draft) ? `${draft.replace(/\s+$/, '')}\n\n${text}` : text;
-  return next.slice(0, CONVERSATION.textMaxChars);
+  return next.length <= CONVERSATION.textMaxChars ? next : null;
+}
+
+/** Put a message's words back in the box; false (box unchanged, a note under it) if they don't fit. */
+export function putBack(text: string): boolean {
+  const next = withPutBack(useConversation.getState().draft, text);
+  if (next === null) {
+    useConversation.setState({ note: 'That doesn’t fit in the box: send or shorten what’s there first.' });
+    return false;
+  }
+  useConversation.setState({ draft: next, note: null });
+  return true;
 }

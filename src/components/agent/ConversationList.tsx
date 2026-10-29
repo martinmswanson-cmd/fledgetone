@@ -12,7 +12,7 @@
 import React from 'react';
 import { RotateCw } from 'lucide-react';
 import { useSuggestions, shortText, announce, type AgentMessage } from '../../agent/suggestionsStore';
-import { contextWords, useConversation, withPutBack, type OwnMessage } from '../../agent/conversation';
+import { contextWords, putBack, useConversation, type OwnMessage } from '../../agent/conversation';
 import { retryMessage } from '../../agent/bridgeClient';
 import { deliveryWords, fromYourAgent } from './words';
 
@@ -114,7 +114,7 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
               data-put-back={m.id}
               onClick={() => {
                 // (nothing is sent: it's in the box, after what they're writing, for them to send as a new message, or not)
-                useConversation.setState((c) => ({ draft: withPutBack(c.draft, m.text) }));
+                if (!putBack(m.text)) announce('That doesn’t fit in the box: send or shorten what’s there first.', true);
                 focusBox(true);
               }}
               className="h-6 px-2 rounded-md border border-forge-border text-forge-text hover:border-cyan-500/60"
