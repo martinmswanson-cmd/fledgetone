@@ -31,6 +31,8 @@ export interface SongNote {
   velocity: number;
   loudest: number;
   drift?: number;
+  /** The longest it's held (seconds, the sustain pedal included), where the song's slowest tempo is known */
+  seconds?: number;
 }
 
 /** A sample's name taken apart: "<note>|<layer>|<take>", or "rel|<note>|<take>" for a release sound. */
@@ -205,20 +207,25 @@ export const COPY_SEMITONES = 24;
  * and its release sound's. What a song needs of re-pitched copies (see pitchedCopies.ts), made
  * ahead so those notes play a copy instead of stretching the recording as they sound.
  */
-export function neededPitches(index: RecordingIndex, notes: SongNote[], wheel?: [number, number] | null): Map<string, Set<number>> {
-  const out = new Map<string, Set<number>>();
-  walkNotes(index, notes, wheel, (s, midi) => {
-    const m = nearestMidi(s.midis, midi);
-    if (m === undefined) return undefined;
-    const semis = midi - m;
-    if (semis !== 0 && Math.abs(semis) <= COPY_SEMITONES) {
-      const name = s.names.get(m)!;
-      let row = out.get(name);
-      if (!row) out.set(name, (row = new Set()));
-      row.add(semis);
-    }
-    return m;
-  });
+export function neededPitches(index: RecordingIndex, notes: SongNote[], wheel?: [number, number] | null): Map<string, Map<number, number>> {
+  const out = new Map<string, Map<number, number>>();
+  // (each note's own length goes with it: walkNotes visits a pitch once for its loudnesses)
+  for (const note of notes) {
+    walkNotes(index, [note], wheel, (s, midi, neighbour) => {
+      const m = nearestMidi(s.midis, midi);
+      if (m === undefined) return undefined;
+      const semis = midi - m;
+      if (semis !== 0 && Math.abs(semis) <= COPY_SEMITONES) {
+        const name = s.names.get(m)!;
+        let row = out.get(name);
+        if (!row) out.set(name, (row = new Map()));
+        // (a release sound, taken without its neighbour, plays to its end)
+        const seconds = neighbour && note.seconds !== undefined ? note.seconds : Infinity;
+        row.set(semis, Math.max(row.get(semis) ?? 0, seconds));
+      }
+      return m;
+    });
+  }
   return out;
 }
 
@@ -315,6 +322,8 @@ export interface TrackPlan {
   wheel: [number, number] | null;
   /** Whether its notes move in pitch as they sound: a bend or vibrato lane, a note's own bend, or its Human insert's pitch drift */
   bends: boolean;
+  /** Whether its notes' speed moves as they sound (a bend or vibrato lane, a note's own bend): not its Human drift, which only sets where a note starts */
+  glides: boolean;
 }
 
 /**
@@ -325,10 +334,10 @@ export interface TrackPlan {
 export function trackPlan(track: Pick<Track, 'id'> & { fx?: Partial<Pick<Track['fx'], 'human'>> }, clips: Array<Pick<Clip, 'trackId' | 'notes' | 'takes' | 'expression'> & Partial<Pick<Clip, 'lengthBars'>>>, barSeconds?: number): TrackPlan {
   const human = track.fx?.human;
   const drift = human?.on ? HUMAN_MAX_DYNAMICS * human.dynamics : 0;
-  const out: TrackPlan = { notes: [], wheel: null, bends: !!(human?.on && human.pitch > 0) };
+  const out: TrackPlan = { notes: [], wheel: null, bends: !!(human?.on && human.pitch > 0), glides: false };
   for (const clip of clips) {
     if (clip.trackId !== track.id) continue;
-    for (const ex of [clip.expression, ...(clip.takes ?? []).map((t) => t.expression)]) if (ex?.bend?.length || ex?.vibrato?.length) out.bends = true;
+    for (const ex of [clip.expression, ...(clip.takes ?? []).map((t) => t.expression)]) if (ex?.bend?.length || ex?.vibrato?.length) out.bends = out.glides = true;
     for (const lane of [clip.expression?.mod, ...(clip.takes ?? []).map((t) => t.expression?.mod)]) {
       for (const p of lane ?? []) out.wheel = out.wheel ? [Math.min(out.wheel[0], p.value), Math.max(out.wheel[1], p.value)] : [p.value, p.value];
     }
@@ -340,7 +349,7 @@ export function trackPlan(track: Pick<Track, 'id'> & { fx?: Partial<Pick<Track['
       const at = (offset: number) => Math.round(offset * 1e6);
       for (const n of notes) loudest.set(at(n.startOffset), Math.max(loudest.get(at(n.startOffset)) ?? 0, n.velocity));
       for (const n of notes) {
-        if (n.expr?.bend?.length) out.bends = true;
+        if (n.expr?.bend?.length) out.bends = out.glides = true;
         out.notes.push({ note: n.note, velocity: n.velocity, loudest: loudest.get(at(n.startOffset)) ?? n.velocity, drift, ...(n.expr ? { expr: n.expr } : {}), ...(barSeconds ? { seconds: durationToBars(n.duration) * barSeconds } : {}) });
       }
     }
@@ -354,7 +363,7 @@ export function trackPlan(track: Pick<Track, 'id'> & { fx?: Partial<Pick<Track['
  * track's Human insert lets its velocity drift, and the span of the clips' mod wheel lanes
  * (which crossfade an instrument's loudnesses: InstrumentDef.dynamics).
  */
-export function songNotesByInstrument(tracks: Array<Pick<Track, 'id' | 'instrumentKey'> & { fx?: Pick<Track['fx'], 'human'> }>, clips: Pick<Clip, 'trackId' | 'notes' | 'takes' | 'expression'>[], midiOf: (note: string) => number): Map<string, SongNotes> {
+export function songNotesByInstrument(tracks: Array<Pick<Track, 'id' | 'instrumentKey'> & { fx?: Pick<Track['fx'], 'human'> }>, clips: Array<Pick<Clip, 'trackId' | 'notes' | 'takes' | 'expression'> & Partial<Pick<Clip, 'lengthBars'>>>, midiOf: (note: string) => number, barSeconds?: number): Map<string, SongNotes> {
   const byId = new Map(tracks.map((t) => [t.id, t]));
   const out = new Map<string, SongNotes>();
   for (const clip of clips) {
@@ -368,14 +377,15 @@ export function songNotesByInstrument(tracks: Array<Pick<Track, 'id' | 'instrume
     for (const lane of [clip.expression?.mod, ...(clip.takes ?? []).map((t) => t.expression?.mod)]) {
       for (const p of lane ?? []) song.wheel = song.wheel ? [Math.min(song.wheel[0], p.value), Math.max(song.wheel[1], p.value)] : [p.value, p.value];
     }
-    for (const notes of [clip.notes, ...(clip.takes ?? []).map((t) => t.notes)]) {
-      if (!notes?.length) continue;
+    for (const played of [clip.notes, ...(clip.takes ?? []).map((t) => t.notes)]) {
+      if (!played?.length) continue;
+      const notes = barSeconds && clip.lengthBars ? sustainNotes(played, clip.expression?.sustain, clip.lengthBars) : played;
       const loudest = new Map<number, number>();
       const at = (offset: number) => Math.round(offset * 1e6);
       for (const n of notes) loudest.set(at(n.startOffset), Math.max(loudest.get(at(n.startOffset)) ?? 0, n.velocity));
       for (const n of notes) {
         const midi = Math.round(midiOf(n.note));
-        if (Number.isFinite(midi)) song.notes.push({ midi, velocity: n.velocity, loudest: loudest.get(at(n.startOffset)) ?? n.velocity, drift });
+        if (Number.isFinite(midi)) song.notes.push({ midi, velocity: n.velocity, loudest: loudest.get(at(n.startOffset)) ?? n.velocity, drift, ...(barSeconds ? { seconds: durationToBars(n.duration) * barSeconds } : {}) });
       }
     }
   }

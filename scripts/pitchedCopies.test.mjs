@@ -190,6 +190,27 @@ test('a copy is long enough for the whole recording at its speed', () => {
   assert.equal(half.step, 2);
 });
 
+test('a kernel is the same whatever was made before it, and the kept ones stay within their cap', () => {
+  // Two ratios a hair apart (a loop's nudge) share one kernel, the same in either order
+  const a = 2 ** (2 / 12);
+  const b = a * (1 + 2e-6);
+  const x = sine(9000, 96000, 6000);
+  const copyOf = (r) => R.resample([x], R.planCopy(r, 96000, 48000, x.length), R.copyKernel(r, 96000, 48000, 48000, 24000))[0];
+  R.clearKernels();
+  const bFirst = copyOf(b);
+  R.clearKernels();
+  copyOf(a);
+  const bAfter = copyOf(b);
+  assert.deepEqual(bAfter, bFirst);
+  assert.equal(R.copyKernel(a, 96000, 48000, 48000, 24000), R.copyKernel(b, 96000, 48000, 48000, 24000));
+  // Many ratios: the cache holds at most its cap, and a kernel made again is the same
+  R.clearKernels();
+  const first = R.copyKernel(2 ** (1 / 1200), 96000, 96000, 48000, 24000).coefs.slice();
+  for (let c = 1; c <= 200; c++) R.copyKernel(2 ** ((c * 5) / 1200), 96000, 96000, 48000, 24000);
+  assert.ok(R.kernelCache().bytes <= R.KERNEL_CACHE_BYTES, `${R.kernelCache().bytes}`);
+  assert.deepEqual(R.copyKernel(2 ** (1 / 1200), 96000, 96000, 48000, 24000).coefs, first);
+});
+
 test('a level outline is stretched to the copy, never quieter', () => {
   const o = new Float32Array([1, 0.5, 0.25, 0.125, 0.0625, 0.03]);
   assert.deepEqual([...R.stretchOutline(o, 2)], [1, 0.25, 0.0625]);
@@ -252,12 +273,12 @@ test('which pitches a song plays each recording at: the nearest recording of eve
     { midi: 62, velocity: 0.8, loudest: 0.8 }, // a semitone under D#4
     { midi: 70, velocity: 0.8, loudest: 0.8 }, // A4 + 1
   ]);
-  assert.deepEqual([...(pitches.get('C4|0|0') ?? [])], [1]);
-  assert.deepEqual([...(pitches.get('C4|0|1') ?? [])], [1]);
-  assert.deepEqual([...(pitches.get('D#4|0|0') ?? [])], [-1]);
-  assert.deepEqual([...(pitches.get('A4|0|0') ?? [])], [1]);
+  assert.deepEqual([...(pitches.get('C4|0|0')?.keys() ?? [])], [1]);
+  assert.deepEqual([...(pitches.get('C4|0|1')?.keys() ?? [])], [1]);
+  assert.deepEqual([...(pitches.get('D#4|0|0')?.keys() ?? [])], [-1]);
+  assert.deepEqual([...(pitches.get('A4|0|0')?.keys() ?? [])], [1]);
   // The release sounds' nearest, at the note's pitch
-  assert.deepEqual([...(pitches.get('rel|C4|0') ?? [])].sort(), [1, 2]);
+  assert.deepEqual([...(pitches.get('rel|C4|0')?.keys() ?? [])].sort(), [1, 2]);
   assert.ok(!pitches.has('F#4|0|0'));
   // Loudnesses: only those a note's velocity reaches
   const layered = S.indexRecordings(['C4|0|0', 'C4|1|0', 'G4|0|0', 'G4|1|0'], midiOf, [0.5, 1]);
@@ -265,6 +286,17 @@ test('which pitches a song plays each recording at: the nearest recording of eve
   assert.deepEqual([...soft.keys()], ['C4|0|0']);
   const loud = S.neededPitches(layered, [{ midi: 62, velocity: 0.2, loudest: 0.9 }]);
   assert.deepEqual([...loud.keys()].sort(), ['C4|0|0', 'C4|1|0']);
+  // How long each pitch of a recording is held, the longest note's (a release sound: all of it)
+  const timed = S.neededPitches(index, [
+    { midi: 61, velocity: 0.8, loudest: 0.8, seconds: 0.25 },
+    { midi: 61, velocity: 0.8, loudest: 0.8, seconds: 1.5 },
+    { midi: 62, velocity: 0.8, loudest: 0.8, seconds: 0.5 },
+  ]);
+  assert.equal(timed.get('C4|0|0').get(1), 1.5);
+  assert.equal(timed.get('D#4|0|0').get(-1), 0.5);
+  assert.equal(timed.get('rel|C4|0').get(1), Infinity);
+  // Unknown lengths: all of it
+  assert.equal(pitches.get('C4|0|0').get(1), Infinity);
 });
 
 test('a track plan: every note with its chord loudest and its Human drift, and the wheel lanes', () => {
@@ -274,6 +306,15 @@ test('a track plan: every note with its chord loudest and its Human drift, and t
   ]);
   assert.equal(plan.notes.length, 2);
   assert.equal(plan.notes[0].loudest, 0.9);
+  // Human pitch: bends (copies a moving rate reads well), but no glide (a note's speed holds)
+  assert.equal(plan.bends, true);
+  assert.equal(plan.glides, false);
+  const lanes = S.trackPlan({ id: 't' }, [{ trackId: 't', lengthBars: 1, notes: [{ note: 'C4', startOffset: 0, velocity: 0.5, duration: '4n' }], expression: { bend: [{ at: 0, value: 1 }] } }], 2);
+  assert.equal(lanes.glides, true);
+  assert.equal(lanes.notes[0].seconds, 0.5);
+  // The sustain pedal holds a note on to where it comes up
+  const held = S.trackPlan({ id: 't' }, [{ trackId: 't', lengthBars: 1, notes: [{ note: 'C4', startOffset: 0, velocity: 0.5, duration: '4n' }], expression: { sustain: [{ at: 0, value: 1 }, { at: 0.75, value: 0 }] } }], 2);
+  assert.equal(held.notes[0].seconds, 1.5);
   assert.ok(plan.notes[0].drift > 0);
   assert.deepEqual(plan.wheel, [0.3, 0.7]);
 });

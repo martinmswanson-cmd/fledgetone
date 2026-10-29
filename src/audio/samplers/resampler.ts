@@ -45,18 +45,37 @@ export function tapsFor(width: number, db = KERNEL_DB): number {
   return Math.max(8, n + (n & 1));
 }
 
+/** Kernels made, least recently used first (a Map keeps the order things were put in), and the bytes they take. */
 const kernels = new Map<string, Kernel>();
+let kernelBytes = 0;
+/** How many bytes of kernels are kept (a Worker's): past it the least recently used go (made again if asked for: the same every time). */
+export const KERNEL_CACHE_BYTES = 32e6;
+
+/** How many kernels are kept, and their bytes (for the checks). */
+export const kernelCache = () => ({ count: kernels.size, bytes: kernelBytes });
+
+/** Let go of every kept kernel. */
+export function clearKernels(): void {
+  kernels.clear();
+  kernelBytes = 0;
+}
 
 /**
  * A low-pass interpolation kernel: `cutoff` and `width` in cycles per input sample (the -6 dB
- * point, and the transition from pass to stop around it), `db` its stopband's depth. Made once
- * for each shape and kept.
+ * point, and the transition from pass to stop around it), `db` its stopband's depth. Kept by its
+ * exact shape: a kernel is only ever reused for exactly the shape it was made for, so a copy is
+ * the same whatever was made before it (two shapes a millionth apart once shared the first one's
+ * kernel, and an export came out a little different from one session to the next).
  */
 export function designKernel(cutoff: number, width: number, db = KERNEL_DB): Kernel {
   const taps = tapsFor(width, db);
-  const key = `${taps}|${cutoff.toFixed(6)}|${db}`;
+  const key = `${taps}|${cutoff}|${width}|${db}`;
   const have = kernels.get(key);
-  if (have) return have;
+  if (have) {
+    kernels.delete(key);
+    kernels.set(key, have);
+    return have;
+  }
   const beta = kaiserBeta(db);
   const norm = bessel0(beta);
   const half = taps / 2;
@@ -81,6 +100,12 @@ export function designKernel(cutoff: number, width: number, db = KERNEL_DB): Ker
   for (let i = 0; i < diffs.length; i++) diffs[i] = coefs[i + taps] - coefs[i];
   const kernel = { taps, phases: PHASES, coefs, diffs };
   kernels.set(key, kernel);
+  kernelBytes += coefs.byteLength + diffs.byteLength;
+  for (const [k, old] of kernels) {
+    if (kernelBytes <= KERNEL_CACHE_BYTES || old === kernel) break;
+    kernels.delete(k);
+    kernelBytes -= old.coefs.byteLength + old.diffs.byteLength;
+  }
   return kernel;
 }
 
@@ -166,10 +191,18 @@ export function copyKernel(ratio: number, inRate: number, outRate: number, playR
   const stop = Math.min(playRate, outRate) - pass;
   // In the source's own frequencies: the output's divided by the ratio, within what the source holds
   const top = Math.min(band, 0.49 * inRate);
-  const p = Math.min(pass / ratio, top);
-  const s = Math.max(p + 1e-3 * inRate, Math.min(stop / ratio, inRate - top));
-  return designKernel((p + s) / 2 / inRate, (s - p) / inRate);
+  const p = Math.min(pass / ratio, top) / inRate;
+  const s = Math.max(p + 1e-3, Math.min(stop / ratio, inRate - top) / inRate);
+  // On a grid (KERNEL_GRID of a cycle a sample, about 12 Hz at 96 kHz), the pass edge rounded up
+  // and the stop edge down, so ratios a hair apart (a loop's nudge, a pad's tuning) share one
+  // kernel, the same one whichever comes first, and none is any worse than asked for
+  const pi = Math.ceil(p * KERNEL_GRID - 1e-9);
+  const si = Math.max(pi + 8, Math.floor(s * KERNEL_GRID + 1e-9));
+  return designKernel((pi + si) / 2 / KERNEL_GRID, (si - pi) / KERNEL_GRID);
 }
+
+/** The grid copyKernel's band edges are on, in steps of a cycle a sample. */
+const KERNEL_GRID = 8192;
 
 /** What a copy is to be (planCopy): how it reads its source, its loop, and the ratio it really plays at. */
 export interface CopyPlan extends ReadPlan {

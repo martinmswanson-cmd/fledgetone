@@ -15,7 +15,7 @@
  * asks for the one a note missed so the next one has it.
  */
 import { CopyCache } from './copyCache';
-import { copyKernel, planCopy, resampleInto, type CopyPlan } from './resampler';
+import { clearKernels, copyKernel, planCopy, resampleInto, type CopyPlan } from './resampler';
 import ResampleWorker from './resampleWorker.ts?worker&inline';
 import type { ResampleJob } from './resampleWorker';
 
@@ -80,8 +80,32 @@ export function setCopyCap(bytes: number): void {
 /** How many bytes the kept copies take. */
 export const copyBytes = () => cache.bytes;
 
-/** Let go of every copy not pinned (Clear memory); returns about how many bytes that frees. */
-export const clearCopies = () => cache.clear();
+/**
+ * Let go of every copy not pinned, and of the copies live playback asked for that aren't made yet
+ * (Clear memory), and of the Workers with nothing to do; returns about how many bytes that frees.
+ * An export's copies are made and kept as it planned.
+ */
+export function clearCopies(): number {
+  cancelBackground();
+  endIdleWorkers();
+  clearKernels();
+  return cache.clear();
+}
+
+/**
+ * Let go of these recordings' copies, and of the ones asked for and not made yet (their
+ * instrument is let go): a copy of a recording nothing plays any more is never made or kept.
+ */
+export function forgetCopiesOf(sources: Iterable<AudioBuffer>): void {
+  for (const source of sources) {
+    sourceTurns.set(source, (sourceTurns.get(source) ?? 0) + 1);
+    for (const key of cache.keys(source)) cache.delete(source, key);
+    for (let i = waiting.length - 1; i >= 0; i--) {
+      const t = waiting[i];
+      if (!t.urgent && t.ref.deref() === source) cancel(t, i);
+    }
+  }
+}
 
 /** The copy of `source` `wish` describes, if it's made. */
 export function readyCopy(source: AudioBuffer, wish: CopyWish): PitchedCopy | undefined {
@@ -107,7 +131,7 @@ export function unpinCopy(source: AudioBuffer, key: string): void {
  * `pin`: held until unpinCopy, whatever the cap. Undefined where no copy is worth making, or one
  * couldn't be.
  */
-export function makeCopy(source: AudioBuffer, wish: CopyWish, urgent = false, pin = false): Promise<PitchedCopy | undefined> {
+export function makeCopy(source: AudioBuffer, wish: CopyWish, urgent = false, pin = false, planned = false): Promise<PitchedCopy | undefined> {
   if (!copyable(wish.ratio)) return Promise.resolve(undefined);
   const key = copyKey(source, wish);
   const have = cache.get(source, key);
@@ -119,10 +143,15 @@ export function makeCopy(source: AudioBuffer, wish: CopyWish, urgent = false, pi
   if (!row) making.set(source, (row = new Map()));
   let p = row.get(key);
   if (!p) {
-    const job = queue(source, wish, urgent);
+    // Live playback's, in the background: only what fits (see roomFor)
+    const bytes = copySize(source, wish);
+    if (!urgent && !roomFor(bytes, planned)) return Promise.resolve(undefined);
+    const job = queue(source, wish, urgent, bytes);
     p = job.then(
       (copy) => {
         row!.delete(key);
+        // (asked for in the background and let go of since: Clear memory, its instrument let go)
+        if (!copy) return undefined;
         for (const d of derivers) d(source, copy, wish);
         cache.set(source, key, copy, copy.buffer.length * copy.buffer.numberOfChannels * 4);
         return copy;
@@ -196,7 +225,7 @@ export function copySet(offline: boolean, allow: (source: AudioBuffer, key: stri
       return have;
     },
     prepare,
-    warm: (source, wish) => (offline ? prepare(source, wish) : makeCopy(source, wish).then(() => undefined)),
+    warm: (source, wish) => (offline ? prepare(source, wish) : makeCopy(source, wish, false, false, true).then(() => undefined)),
     dispose: () => {
       disposed = true;
       for (const [source, key] of pins) cache.unpin(source, key);
@@ -209,21 +238,73 @@ export function copySet(offline: boolean, allow: (source: AudioBuffer, key: stri
 // ---------- the work: in Workers, urgent first ----------
 
 interface Task {
-  source: AudioBuffer;
+  /** Its recording: held weakly while it waits in the background (an export's, strongly) */
+  ref: WeakRef<AudioBuffer>;
+  strong?: AudioBuffer;
   key: string;
   wish: CopyWish;
   urgent: boolean;
-  resolve: (copy: PitchedCopy) => void;
+  bytes: number;
+  /** The background's turn (see cancelBackground) and its recording's (forgetCopiesOf) when it was asked for */
+  turn: number;
+  sourceTurn: number;
+  resolve: (copy: PitchedCopy | undefined) => void;
   reject: (err: unknown) => void;
 }
 
 const waiting: Task[] = [];
 let busy = 0;
-/** Workers idle and ready for the next job */
-const idle: Worker[] = [];
+/** Workers idle and ready for the next job, each with the timer that ends it if it stays idle */
+const idle: Array<{ worker: Worker; timer: ReturnType<typeof setTimeout> }> = [];
+/** How long a Worker with nothing to do is kept (ms): its kernels go with it */
+const IDLE_WORKER_MS = 5000;
 let workersMade = 0;
 let noWorkers = typeof Worker === 'undefined';
 let nextId = 1;
+
+/** Live playback's turn: Clear memory starts a new one, and what the last one asked for is dropped */
+let backgroundTurn = 0;
+/** Each recording's turn: letting go of its instrument starts a new one (forgetCopiesOf) */
+const sourceTurns = new WeakMap<AudioBuffer, number>();
+/** The bytes of the background copies waiting or being made */
+let backgroundBytes = 0;
+
+/**
+ * Whether live playback may ask for a copy `bytes` big now: one planned ahead (a song's notes, a
+ * pad just tuned) only while the copies kept and those on their way fit in the cap (more would
+ * only push out the first ones: on a device with little memory a song's copies were made ten
+ * times over); one a note missed while those on their way stay under half the cap (they push
+ * out the least recently played, as notes ask for them).
+ */
+function roomFor(bytes: number, planned: boolean): boolean {
+  return planned ? cache.bytes + backgroundBytes + bytes <= cache.cap : backgroundBytes + bytes <= cache.cap / 2;
+}
+
+/** A background job given up before it ran. */
+function cancel(t: Task, i: number): void {
+  waiting.splice(i, 1);
+  backgroundBytes -= t.bytes;
+  t.resolve(undefined);
+}
+
+/** Drop live playback's background jobs: those waiting at once, those being made when they're done. */
+function cancelBackground(): void {
+  backgroundTurn++;
+  for (let i = waiting.length - 1; i >= 0; i--) if (!waiting[i].urgent) cancel(waiting[i], i);
+}
+
+/** Whether a background job is still wanted (not given up since it was asked for, its recording still there). */
+const stillWanted = (t: Task, source: AudioBuffer | undefined): source is AudioBuffer =>
+  !!source && (t.urgent || (t.turn === backgroundTurn && t.sourceTurn === (sourceTurns.get(source) ?? 0)));
+
+/** End the Workers with nothing to do. */
+function endIdleWorkers(): void {
+  for (const { worker, timer } of idle.splice(0)) {
+    clearTimeout(timer);
+    worker.terminate();
+    workersMade--;
+  }
+}
 
 /** How many copies are made at once: one for live playback's background (it shares the computer with the music), more for an export that waits. */
 function lanes(urgent: boolean): number {
@@ -231,17 +312,23 @@ function lanes(urgent: boolean): number {
   return urgent ? Math.max(1, Math.min(4, cores - 1)) : 1;
 }
 
-function queue(source: AudioBuffer, wish: CopyWish, urgent: boolean): Promise<PitchedCopy> {
-  return new Promise<PitchedCopy>((resolve, reject) => {
-    waiting.push({ source, key: copyKey(source, wish), wish, urgent, resolve, reject });
+function queue(source: AudioBuffer, wish: CopyWish, urgent: boolean, bytes: number): Promise<PitchedCopy | undefined> {
+  return new Promise<PitchedCopy | undefined>((resolve, reject) => {
+    if (!urgent) backgroundBytes += bytes;
+    waiting.push({ ref: new WeakRef(source), ...(urgent ? { strong: source } : {}), key: copyKey(source, wish), wish, urgent, bytes: urgent ? 0 : bytes, turn: backgroundTurn, sourceTurn: sourceTurns.get(source) ?? 0, resolve, reject });
     pump();
   });
 }
 
-/** An export now waits for a copy asked for in the background: it goes to the front. */
+/** An export now waits for a copy asked for in the background: it goes to the front (and is no longer dropped by Clear memory). */
 function hurry(source: AudioBuffer, key: string): void {
-  const t = waiting.find((x) => x.source === source && x.key === key);
-  if (t) t.urgent = true;
+  const t = waiting.find((x) => x.ref.deref() === source && x.key === key);
+  if (t && !t.urgent) {
+    t.urgent = true;
+    t.strong = source;
+    backgroundBytes -= t.bytes;
+    t.bytes = 0;
+  }
   pump();
 }
 
@@ -251,17 +338,26 @@ function pump(): void {
     const i = urgentNext >= 0 ? urgentNext : 0;
     if (busy >= lanes(urgentNext >= 0)) return;
     const [task] = waiting.splice(i, 1);
+    const source = task.strong ?? task.ref.deref();
+    if (!stillWanted(task, source)) {
+      backgroundBytes -= task.bytes;
+      task.resolve(undefined);
+      continue;
+    }
     busy++;
-    run(task).then(task.resolve, task.reject).finally(() => {
-      busy--;
-      pump();
-    });
+    run(task, source)
+      .then((copy) => task.resolve(stillWanted(task, task.ref.deref()) ? copy : undefined), task.reject)
+      .finally(() => {
+        backgroundBytes -= task.bytes;
+        busy--;
+        pump();
+      });
   }
 }
 
 /** Make one copy: in a Worker where one can start, else here in pieces. */
-async function run(task: Task): Promise<PitchedCopy> {
-  const { source, wish } = task;
+async function run(task: Task, source: AudioBuffer): Promise<PitchedCopy> {
+  const { wish } = task;
   const outRate = wish.outRate ?? source.sampleRate;
   const plan = planCopy(wish.ratio, source.sampleRate, outRate, source.length, wish.loop, wish.region);
   const band = wish.band ?? source.sampleRate / 2;
@@ -282,7 +378,9 @@ async function run(task: Task): Promise<PitchedCopy> {
 
 /** A copy made in a Worker (rejects if none can run: the caller makes it here instead). */
 function inWorker(job: ResampleJob): Promise<Float32Array[]> {
-  let worker = idle.pop();
+  const spare = idle.pop();
+  if (spare) clearTimeout(spare.timer);
+  let worker = spare?.worker;
   if (!worker) {
     try {
       worker = new ResampleWorker();
@@ -296,7 +394,14 @@ function inWorker(job: ResampleJob): Promise<Float32Array[]> {
   return new Promise<Float32Array[]>((resolve, reject) => {
     w.onmessage = (e: MessageEvent<{ id: number; channels?: Float32Array[]; error?: string }>) => {
       if (e.data.id !== job.id) return;
-      idle.push(w);
+      const timer = setTimeout(() => {
+        const at = idle.findIndex((x) => x.worker === w);
+        if (at < 0) return;
+        idle.splice(at, 1);
+        w.terminate();
+        workersMade--;
+      }, IDLE_WORKER_MS);
+      idle.push({ worker: w, timer });
       if (e.data.channels) resolve(e.data.channels);
       else reject(new Error(e.data.error ?? 'resampling failed'));
     };
@@ -326,5 +431,5 @@ async function inPieces(channels: Float32Array[], plan: CopyPlan, ratio: number,
   return out;
 }
 
-/** How many Workers are making copies (for the memory readout and tests). */
+/** How many Workers there are (making copies, or idle for a few seconds: for the memory readout and tests). */
 export const resampleWorkers = () => workersMade;
