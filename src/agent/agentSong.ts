@@ -231,7 +231,8 @@ function fitPrefix<T>(list: readonly T[], build: (part: T[]) => AgentSong, max: 
 }
 
 /**
- * Leave out detail, least useful first, until the song fits in `max` bytes: the inserts'
+ * Leave out detail, least useful first, until the song fits in `max` bytes: tempo and time
+ * signature changes past the room the rest leaves them, the inserts'
  * settings, the automation points, the clips' ranges, the tracks' inserts and automation; then,
  * if lists are still too long, the markers and sections past a share of the room, the tracks past
  * theirs, and the clips (of the tracks kept, in song order) past what's left. It always fits.
@@ -239,7 +240,21 @@ function fitPrefix<T>(list: readonly T[], build: (part: T[]) => AgentSong, max: 
 function fitSize(song: AgentSong, max: number): AgentSong {
   if (size(song) <= max) return song;
   const omit = (s: AgentSong, what: string): AgentSong => ({ ...s, omitted: [...s.omitted, what] });
-  let s = omit({ ...song, tracks: song.tracks.map((t) => ({ ...t, inserts: t.inserts.map((i) => ({ insert: i.insert })) })) }, "inserts' settings (only their names are listed)");
+  let s = song;
+  // Tempo and time signature changes: the room the rest leaves, at least a tenth, the first ones kept
+  for (const key of ['tempo', 'meter'] as const) {
+    const all = s[key].changes as Array<{ bar: number }>;
+    const part = (list: Array<{ bar: number }>): AgentSong => ({ ...s, [key]: { ...s[key], changes: list } });
+    const without = size(part([]));
+    // (all the room the rest doesn't take, and at least a tenth)
+    const room = Math.max(max * 0.1, max - without - 240);
+    if (size(part(all)) - without <= room) continue;
+    const keep = fitPrefix(all, part, without + room);
+    s = omit(part(all.slice(0, keep)), `${all.length - keep} of ${all.length} ${key === 'tempo' ? 'tempo' : 'time signature'} changes, from bar ${all[keep].bar} on`);
+  }
+  if (size(s) <= max) return s;
+
+  s = omit({ ...s, tracks: s.tracks.map((t) => ({ ...t, inserts: t.inserts.map((i) => ({ insert: i.insert })) })) }, "inserts' settings (only their names are listed)");
   if (size(s) <= max) return s;
   s = omit({ ...s, tracks: s.tracks.map((t) => ({ ...t, automation: t.automation.map(({ points: _p, ...rest }) => rest) })) }, 'automation points (get_automation has them)');
   if (size(s) <= max) return s;
@@ -279,8 +294,19 @@ function fitSize(song: AgentSong, max: number): AgentSong {
   const clipCount = s.clips.filter((c) => kept.has(c.trackId)).length;
   if (nClips < clipCount)
     out = omit(out, nClips === 0 ? `all ${clipCount} clips (get_notes reads the notes, with their clips' ids)` : `${clipCount - nClips} of ${clipCount} clips, those after bar ${clips[nClips - 1].startBar} (get_notes reads the notes, with their clips' ids)`);
-  // The omitted list was given room above; should a pathological song still not fit, the lists go
-  if (size(out) > max) out = { ...out, markers: [], sections: [], clips: [], tracks: out.tracks.slice(0, fitPrefix(out.tracks, (t) => ({ ...out, markers: [], sections: [], clips: [], tracks: t }), max)) };
+  // The omitted list was given room above; should a pathological song still not fit, the lists go,
+  // one after another, each said
+  const last: Array<[string, (x: AgentSong) => AgentSong]> = [
+    ['the markers and sections', (x) => ({ ...x, markers: [], sections: [] })],
+    ['the clips', (x) => ({ ...x, clips: [] })],
+    ['the tempo and time signature changes', (x) => ({ ...x, tempo: { ...x.tempo, changes: [] }, meter: { ...x.meter, changes: [] } })],
+    ['the tracks', (x) => ({ ...x, tracks: [] })],
+    ['what was left out', (x) => ({ ...x, omitted: ['most of the song: it is too big to summarize (get_notes and get_automation read it)'] })],
+  ];
+  for (const [what, cut] of last) {
+    if (size(out) <= max) break;
+    out = omit(cut(out), `${what} (the song is too big to summarize whole)`);
+  }
   return out;
 }
 
@@ -320,7 +346,8 @@ export function agentNotes(
     }
   }
   all.sort((a, b) => a.bar - b.bar || a.trackId.localeCompare(b.trackId) || a.pitch.localeCompare(b.pitch));
-  const from = q.cursor ? Math.max(0, parseInt(q.cursor, 10) || 0) : 0;
+  if (q.cursor && !/^\d{1,9}$/.test(q.cursor)) throw new Error('cursor is the "next" a previous get_notes gave (a whole number)');
+  const from = q.cursor ? Number(q.cursor) : 0;
   const notes = all.slice(from, from + limit);
   return { notes, total: all.length, ...(from + limit < all.length ? { next: String(from + limit) } : {}) };
 }

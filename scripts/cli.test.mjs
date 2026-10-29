@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'tools/cli');
@@ -222,4 +222,30 @@ test('from-link: a damaged link is a plain error, exit 2', { skip }, async () =>
     assert.equal(r.code, 2, link);
     assert.match(r.stderr, /^fledgetone: that link can't be read/, link);
   }
+});
+
+test('writeFileSafe writes plain files only, and checks what it opened before writing', { skip }, async () => {
+  // (the hook that lets the command line's TypeScript load here, as the helper runs from source)
+  await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
+  const { writeFileSafe } = await import(pathToFileURL(join(CLI, 'src/files.ts')).href);
+  const { symlinkSync } = await import('node:fs');
+  const plain = join(tmp, 'plain.json');
+  writeFileSync(plain, 'a much longer text than what replaces it');
+  writeFileSafe(plain, 'short');
+  assert.equal(readFileSync(plain, 'utf8'), 'short', 'written over and cut to the new length');
+  const real = join(tmp, 'real.json');
+  writeFileSync(real, 'keep');
+  const link = join(tmp, 'link.json');
+  symlinkSync(real, link);
+  assert.throws(() => writeFileSafe(link, 'nope'), /is a link/);
+  assert.equal(readFileSync(real, 'utf8'), 'keep');
+});
+
+test('measure: under 0.4 seconds there is no balance to read', { skip }, async () => {
+  const wav = join(tmp, 'blip.wav');
+  writeFileSync(wav, makeWav({ seconds: 0.1 }));
+  const m = JSON.parse((await cli('measure', wav, '--json')).stdout);
+  assert.equal(m.silent, false);
+  assert.deepEqual(m.regions, []);
+  assert.match(m.note, /shorter than 0\.4 seconds/);
 });

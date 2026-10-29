@@ -47,7 +47,7 @@ test('a new track set loud, and a volume lane drawn high', () => {
   const loudNew = { ...a, tracks: [...a.tracks, { ...a.tracks[0], id: 'new', name: 'New', volume: 6 }] };
   assert.deepEqual(checkSafety(a, loudNew), []);
   const lane = withTrack(a, 4, { automation: [{ param: 'volume', points: [{ bar: 1, value: 1 }] }] });
-  assert.match(checkSafety(a, lane).join(' '), /"Rain"'s volume automation goes up/);
+  assert.match(checkSafety(a, lane).join(' '), /On "Rain", the volume automation goes up/);
 });
 
 test('applyOps carries the warnings: +9 dB through an op', () => {
@@ -67,12 +67,12 @@ test('insert gains, drives and feedback pushed up are warnings', () => {
   const t = base().tracks[0].id;
   const band = { on: true, type: 'bell', freq: 3000, gain: 24, q: 1 };
   const cases = [
-    [[{ op: 'set_insert', trackId: t, insert: 'compressor', settings: { on: true, makeup: 18 } }], /compressor makes up 18 dB more/],
-    [[{ op: 'set_insert', trackId: t, insert: 'peq', settings: { on: true, bands: [band] } }], /parametric EQ lifts a band by 24 dB more/],
+    [[{ op: 'set_insert', trackId: t, insert: 'compressor', settings: { on: true, makeup: 18 } }], /On "Keys", the compressor makes up 18 dB more/],
+    [[{ op: 'set_insert', trackId: t, insert: 'peq', settings: { on: true, bands: [band] } }], /On "Keys", the parametric EQ lifts a band by 24 dB more/],
     [[{ op: 'set_insert', trackId: t, insert: 'mbc', settings: { on: true, bands: [{ threshold: -24, ratio: 3, gain: 18 }, { threshold: -20, ratio: 2.5, gain: 1 }, { threshold: -22, ratio: 3, gain: 1.5 }] } }], /multiband compressor lifts a band/],
-    [[{ op: 'set_eq', trackId: t, low: 12, mid: 12, high: 12 }], /EQ low goes up by 12 dB[\s\S]*EQ mid goes up[\s\S]*EQ high goes up/],
-    [[{ op: 'set_insert', trackId: t, insert: 'distortion', settings: { on: true, amount: 1 } }], /Distortion is driven much harder/],
-    [[{ op: 'set_insert', trackId: t, insert: 'saturate', settings: { on: true, amount: 1 } }], /Saturation is driven much harder/],
+    [[{ op: 'set_eq', trackId: t, low: 12, mid: 12, high: 12 }], /On "Keys", the EQ low goes up by 12 dB[\s\S]*EQ mid goes up[\s\S]*EQ high goes up/],
+    [[{ op: 'set_insert', trackId: t, insert: 'distortion', settings: { on: true, amount: 1 } }], /This turns on Distortion on "Keys" at 100% drive/],
+    [[{ op: 'set_insert', trackId: t, insert: 'saturate', settings: { on: true, amount: 1 } }], /This turns on Saturation on "Keys" at 100% drive/],
     [[{ op: 'set_insert', trackId: t, insert: 'echo', settings: { on: true, feedback: 0.9 } }], /Delay feeds back at 90%/],
   ];
   for (const [ops, re] of cases) assert.match(warningsFor(ops), re, JSON.stringify(ops[0]));
@@ -102,4 +102,27 @@ test('gain stacked along the way out, and an unmuted track, are warnings', () =>
   assert.doesNotMatch(master, /through the buses/);
   const muted = { ...a, tracks: a.tracks.map((x, i) => (i === 0 ? { ...x, isMuted: true } : x)) };
   assert.match(warningsFor([{ op: 'set_track', trackId: t.id, mute: false }], muted), /This unmutes "Keys"/);
+});
+
+test('a lane redrawn no higher than it was says nothing; a drive pushed harder (not switched on) says so', () => {
+  const t = base().tracks[0];
+  const first = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0.9 }, { bar: 9, value: 0.9 }] }] }, { idBase: 'sg-1' });
+  assert.match(first.warnings.join('\n'), /volume automation goes up/);
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0.9 }, { bar: 9, value: 0.8 }, { bar: 13, value: 0.85 }] }], first.song), '');
+  const driven = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'distortion', settings: { on: true, amount: 0.2 } }] }, { idBase: 'sg-2' }).song;
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'distortion', settings: { amount: 1 } }], driven), /On "Keys", Distortion is driven much harder \(20% to 100% drive\)/);
+  // No "'s" glued to a quoted name anywhere
+  assert.doesNotMatch(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'compressor', settings: { on: true, makeup: 18 } }]), /"'s/);
+});
+
+test('a quiet track unmuted is a note, a loud one a warning', () => {
+  const a = base();
+  const quiet = { ...a, tracks: a.tracks.map((x, i) => (i === 4 ? { ...x, isMuted: true, volume: -30 } : x)) };
+  const q = applyOps(quiet, { opsVersion: 1, ops: [{ op: 'set_track', trackId: a.tracks[4].id, mute: false }] }, { idBase: 'sg' });
+  assert.equal(q.warnings.join(''), '');
+  assert.match(q.notes.join(''), /This unmutes "Rain", quietly under the rest of the mix/);
+  const loud = { ...a, tracks: a.tracks.map((x, i) => (i === 4 ? { ...x, isMuted: true, volume: 0 } : x)) };
+  const l = applyOps(loud, { opsVersion: 1, ops: [{ op: 'set_track', trackId: a.tracks[4].id, mute: false }] }, { idBase: 'sg' });
+  assert.match(l.warnings.join(''), /This unmutes "Rain" \(at 0 dB\)/);
+  assert.deepEqual(l.notes, []);
 });

@@ -227,13 +227,13 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   if (a.pan !== b.pan) add({ text: `Pans ${n} to ${formatPan(b.pan)} (was ${formatPan(a.pan)}).`, ...at });
   if (a.isMuted !== b.isMuted) add({ text: `${b.isMuted ? 'Mutes' : 'Unmutes'} ${n}.`, ...at });
   if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, ...at });
-  if (a.reverbSend !== b.reverbSend) add({ text: `Changes ${n}'s reverb send from ${r1(a.reverbSend * 100)}% to ${r1(b.reverbSend * 100)}%.`, ...at });
-  if (a.delaySend !== b.delaySend) add({ text: `Changes ${n}'s delay send from ${r1(a.delaySend * 100)}% to ${r1(b.delaySend * 100)}%.`, ...at });
+  if (a.reverbSend !== b.reverbSend) add({ text: `Changes the reverb send of ${n} from ${r1(a.reverbSend * 100)}% to ${r1(b.reverbSend * 100)}%.`, ...at });
+  if (a.delaySend !== b.delaySend) add({ text: `Changes the delay send of ${n} from ${r1(a.delaySend * 100)}% to ${r1(b.delaySend * 100)}%.`, ...at });
   if ((a.distance ?? 0) !== (b.distance ?? 0)) add({ text: `Moves ${n} ${(b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer'} on the stage (distance ${r1(a.distance ?? 0)} to ${r1(b.distance ?? 0)}).`, ...at });
   if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? `"${tracks.find((t) => t.id === b.output)?.name ?? 'a bus'}"` : 'the master'}.`, ...at });
   if (!same(a.eq, b.eq)) {
     const parts = (['low', 'mid', 'high'] as const).filter((k) => a.eq[k] !== b.eq[k]).map((k) => `${k} ${db(b.eq[k])}`);
-    add({ text: `Sets ${n}'s EQ: ${parts.join(', ')}.`, ...at });
+    add({ text: `Sets the EQ of ${n}: ${parts.join(', ')}.`, ...at });
   }
   if (!same(a.fx, b.fx)) {
     for (const k of new Set([...Object.keys(a.fx), ...Object.keys(b.fx)])) {
@@ -242,16 +242,16 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
       if (same(x, y)) continue;
       const label = INSERT_LABELS[k] ?? k;
       const on = (v: unknown) => !!(v as { on?: boolean } | undefined)?.on;
-      if (on(x) !== on(y)) add({ text: `Turns ${on(y) ? 'on' : 'off'} ${n}'s ${label}${on(y) ? ` (${settingChanges(x, y) || 'as it was set'})` : ''}.`, ...at });
-      else add({ text: `Changes ${n}'s ${label}${on(y) ? '' : ' (switched off)'}: ${settingChanges(x, y)}.`, ...at });
+      if (on(x) !== on(y)) add({ text: `Turns ${on(y) ? 'on' : 'off'} the ${label} on ${n}${on(y) ? ` (${settingChanges(x, y) || 'as it was set'})` : ''}.`, ...at });
+      else add({ text: `Changes the ${label} on ${n}${on(y) ? '' : ' (switched off)'}: ${settingChanges(x, y)}.`, ...at });
     }
   }
   if (!same(a.synth, b.synth) && a.instrumentKey === b.instrumentKey) add({ text: `Gives ${n} a new synth sound.`, ...at });
   if (!same(a.automation, b.automation)) diffLanes(a, b, tracks, add);
-  if (!same(a.sends, b.sends)) add({ text: `Changes ${n}'s sends to the returns.`, ...at });
+  if (!same(a.sends, b.sends)) add({ text: `Changes the sends of ${n} to the returns.`, ...at });
   const known = new Set(['name', 'instrumentKey', 'color', 'volume', 'pan', 'isMuted', 'isSoloed', 'reverbSend', 'delaySend', 'distance', 'output', 'eq', 'fx', 'synth', 'automation', 'sends', 'drumDesign']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
-  if (other.length) add({ text: `Changes ${n}'s other settings (${other.join(', ')}).`, ...at });
+  if (other.length) add({ text: `Changes other settings of ${n} (${other.join(', ')}).`, ...at });
 }
 
 function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
@@ -266,9 +266,9 @@ function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   for (const l of after) {
     const old = before.find((o) => o.param === l.param);
     if (!old) add({ text: `Draws ${label(l)} automation on ${n} (${plural(l.points.length, 'point')}).`, trackId: b.id, ...span([l]) });
-    else if (!same(old, l)) add({ text: `Redraws ${n}'s ${label(l)} automation (${plural(l.points.length, 'point')}, was ${old.points.length}).`, trackId: b.id, ...changedSpan(old, l) });
+    else if (!same(old, l)) add({ text: `Redraws the ${label(l)} automation of ${n} (${plural(l.points.length, 'point')}, was ${old.points.length}).`, trackId: b.id, ...changedSpan(old, l) });
   }
-  for (const l of before) if (!after.some((o) => o.param === l.param)) add({ text: `Removes ${n}'s ${label(l)} automation.`, trackId: b.id, ...span([l]) });
+  for (const l of before) if (!after.some((o) => o.param === l.param)) add({ text: `Removes the ${label(l)} automation of ${n}.`, trackId: b.id, ...span([l]) });
 }
 
 /** The bars over which two versions of a lane differ. */
@@ -303,5 +303,5 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     add({ text: `In ${n} on ${trackName(b.trackId)}: ${parts.join(', ')}${where}.`, ...at, fromBar: from, toBar: Math.max(to, from + 1 / 16) });
   }
   if ((a.pattern ?? null) !== (b.pattern ?? null)) add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at });
-  for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the clip ${n}'s ${k === 'stepLanes' ? 'step lanes' : k}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
+  for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
 }

@@ -3,7 +3,7 @@
  * suggestion files, and WAV audio; and the agent tools' rule that a file must be inside the
  * folder the helper was started for (--root), with a song, suggestion or audio extension.
  */
-import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { parseProject, serializeProject, type ProjectSnapshot } from '../../../src/store/project';
 
@@ -42,22 +42,32 @@ export function readJson(path: string): unknown {
  * nothing yet) is refused, so a planted link can't send the write somewhere else.
  */
 export function writeFileSafe(path: string, text: string): void {
+  const linkError = () => new Error(`${path} is a link: write to a plain file`);
   let link = false;
   try {
     link = lstatSync(path).isSymbolicLink();
   } catch {
     // Not there yet: made below
   }
-  if (link) throw new Error(`${path} is a link: write to a plain file`);
+  if (link) throw linkError();
+  const parent = realpathSync.native(dirname(resolve(path)));
   let fd: number;
   try {
-    // O_NOFOLLOW: a link made between the check and the open fails here too
-    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0), 0o644);
+    // O_NOFOLLOW: a link made between the check and the open fails here too (where the system has
+    // it; without, the checks after the open catch it). Not truncated until those checks pass.
+    fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0), 0o644);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    throw new Error(code === 'ELOOP' ? `${path} is a link: write to a plain file` : `can't write ${path} (${code ?? 'error'})`);
+    throw code === 'ELOOP' ? linkError() : new Error(`can't write ${path} (${code ?? 'error'})`);
   }
   try {
+    // What was opened must be the plain file at that path, in the folder that was checked: a link
+    // (or a junction) swapped in, or a folder swapped above it, is refused before anything is written
+    const opened = fstatSync(fd);
+    const there = lstatSync(path);
+    if (there.isSymbolicLink() || !opened.isFile() || there.dev !== opened.dev || there.ino !== opened.ino) throw linkError();
+    if (realpathSync.native(dirname(resolve(path))) !== parent) throw new Error(`the folder of ${path} changed while it was being written`);
+    ftruncateSync(fd, 0);
     writeSync(fd, text);
   } finally {
     closeSync(fd);

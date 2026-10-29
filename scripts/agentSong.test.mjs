@@ -130,3 +130,26 @@ test('a song with very many tracks or markers still fits, with tracks and clips 
   assert.ok(bytes(tiny) <= 2600, `${bytes(tiny)} bytes`);
   if (!tiny.clips.length) assert.ok(tiny.omitted.some((o) => /^all \d+ clips/.test(o)), tiny.omitted.join('\n'));
 });
+
+test('very many tempo changes are cut to fit, the rest of the song kept, and it always fits', () => {
+  const p = createStarter('lofi');
+  const tempoPoints = Array.from({ length: 1500 }, (_, i) => ({ id: `tempo-${i}`, bar: 2 + i * 0.25, bpm: 100 + (i % 50), ramp: false }));
+  const s = toAgentSong({ ...p, tempoPoints });
+  assert.ok(bytes(s) <= AGENT_SONG_MAX_BYTES, `${bytes(s)} bytes`);
+  assert.equal(s.tracks.length, p.tracks.length);
+  assert.equal(s.clips.length, p.clips.length);
+  assert.ok(s.tempo.changes.length > 0);
+  assert.ok(s.omitted.some((o) => /^\d+ of 1500 tempo changes, from bar [\d.]+ on$/.test(o)), s.omitted.join('\n'));
+  // However small the room, it fits, and says what went
+  for (const maxBytes of [3000, 1200]) {
+    const tiny = toAgentSong({ ...p, tempoPoints }, { maxBytes });
+    assert.ok(bytes(tiny) <= maxBytes, `${maxBytes}: ${bytes(tiny)} bytes`);
+    assert.ok(tiny.omitted.length > 0);
+  }
+});
+
+test('a cursor that is not a whole number from a previous call is refused', () => {
+  const p = createStarter('lofi');
+  for (const cursor of ['1e9', '-5', '1.5', 'abc']) assert.throws(() => agentNotes(p, { cursor }), /cursor/, cursor);
+  assert.equal(agentNotes(p, { cursor: '10', limit: 5 }).notes.length, 5);
+});

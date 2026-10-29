@@ -155,6 +155,8 @@ export interface ApplyResult {
   song: ProjectSnapshot;
   /** Plain-words cautions: values brought into range, big level jumps, notes out of an instrument's range. */
   warnings: string[];
+  /** Plain-words things worth knowing that need no care (a quiet track unmuted): shown, not in amber. */
+  notes: string[];
   /** What changed, in plain words, with the tracks, clips and bars it touches (see songDiff.ts). */
   diff: SongDiff;
   /** The ids the ops' `ref` names stand for. */
@@ -947,18 +949,20 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   }
   if (gated.unread) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${gated.unread.tracks} tracks and ${gated.unread.clips} clips a saved file couldn't keep` }] };
   // A saved file keeps the first of repeated ids and drops the rest quietly: nothing may be lost that way
-  const lost = idTrouble(song, gated);
+  const lost = idTrouble(base, song);
   if (lost) return { ok: false, errors: [{ op: -1, path: '', message: `the result can't be saved as it is: ${lost}` }] };
   const notesAfter = song.clips.reduce((n, c) => n + c.notes.length, 0);
   if (notesAfter - notesBefore > MAX_ADDED_NOTES) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${notesAfter - notesBefore} more notes: at most ${MAX_ADDED_NOTES} more in one suggestion` }] };
   song = withFileValues(base, song, gated, warn);
 
-  for (const text of checkSafety(base, song)) warn(text);
+  const notes: string[] = [];
+  for (const text of checkSafety(base, song, notes)) warn(text);
   const diff = diffSongs(base, song);
   return {
     ok: true,
     song,
     warnings,
+    notes,
     diff,
     refs: Object.fromEntries([...refs].map(([k, v]) => [k, v.id])),
     idBase,
@@ -1023,14 +1027,20 @@ export function freeIdBase(song: ProjectSnapshot, wanted: string): string {
   for (let i = 2; ; i++) if (!taken(`${wanted}~${i}`)) return `${wanted}~${i}`;
 }
 
-/** Why a song would lose something to repeated ids when saved (null: it wouldn't). */
-function idTrouble(song: ProjectSnapshot, gated: ProjectSnapshot): string | null {
-  if (gated.tracks.length !== song.tracks.length) return `${song.tracks.length - gated.tracks.length} tracks share an id with another`;
-  if (gated.clips.length !== song.clips.length) return `${song.clips.length - gated.clips.length} clips share an id with another`;
-  const repeated = (ids: string[]) => ids.length !== new Set(ids).size;
-  if (repeated((song.markers ?? []).map((m) => m.id))) return 'two markers share an id';
-  if (repeated((song.tempoPoints ?? []).map((t) => t.id))) return 'two tempo changes share an id';
-  const clip = song.clips.find((c) => repeated(c.notes.map((n) => n.id)));
+/**
+ * Why a song would lose something to ids the suggestion repeated (null: it wouldn't). Repeats the
+ * song already had (a saved file keeps repeated notes, markers and tempo changes) don't count:
+ * only more of them than `base` had.
+ */
+function idTrouble(base: ProjectSnapshot, song: ProjectSnapshot): string | null {
+  const repeats = (ids: string[]) => ids.length - new Set(ids).size;
+  const more = (a: Array<{ id: string }> | undefined, b: Array<{ id: string }> | undefined) => repeats((b ?? []).map((x) => x.id)) - repeats((a ?? []).map((x) => x.id));
+  if (more(base.tracks, song.tracks) > 0) return 'two tracks share an id';
+  if (more(base.clips, song.clips) > 0) return 'two clips share an id';
+  if (more(base.markers, song.markers) > 0) return 'two markers share an id';
+  if (more(base.tempoPoints, song.tempoPoints) > 0) return 'two tempo changes share an id';
+  const before = new Map(base.clips.map((c) => [c.id, c]));
+  const clip = song.clips.find((c) => more(before.get(c.id)?.notes, c.notes) > 0);
   if (clip) return `two notes in "${clip.name}" share an id`;
   return null;
 }

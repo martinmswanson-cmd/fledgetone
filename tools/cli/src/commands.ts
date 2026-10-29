@@ -268,8 +268,8 @@ export function apply(args: string[], flags: Flags): number {
     return 1;
   }
   writeSong(out, { ...result.song, sounds: song.sounds });
-  if (flags.json) json({ written: out, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings });
-  else say([`"${suggestion.title}": wrote ${out}.`, ...result.diff.changes.map((c) => `- ${c.text}`), ...result.warnings.map((w) => `! ${w}`)].join('\n'));
+  if (flags.json) json({ written: out, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, notes: result.notes });
+  else say([`"${suggestion.title}": wrote ${out}.`, ...result.diff.changes.map((c) => `- ${c.text}`), ...result.warnings.map((w) => `! ${w}`), ...result.notes.map((x) => `(${x})`)].join('\n'));
   return 0;
 }
 
@@ -310,7 +310,8 @@ export function measureAudio(channels: Float32Array[], sampleRate: number) {
   const rmsDb = 10 * Math.log10(sum / Math.max(1, used.length * left.length));
   const peakDb = 20 * Math.log10(peak);
   let regions: Array<{ name: string; db: number }> = [];
-  if (!silent) {
+  // (under 0.4 seconds the balance means nothing: too few windows to average)
+  if (!silent && left.length >= sampleRate * 0.4) {
     const spectrum = bandSpectrum(used, sampleRate);
     const bands = totalBands(spectrum);
     const total = sumDb(bands);

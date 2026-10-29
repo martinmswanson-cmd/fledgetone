@@ -140,7 +140,8 @@ op that makes something can name it with `ref`, and later ops in the same sugges
 pitch`, and nothing is applied. **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, or
-its fader, buses and the master together), a track unmuted, a Distortion or Saturation driven much
+its fader, buses and the master together), a track unmuted (one that sits 12 dB or more under the
+rest of the mix is only a note), a Distortion or Saturation driven much
 harder, a Delay fed back at 80% or more, automation of any of those drawn high, the master up by
 more than 3 dB, the Loud master or the clipper switched on. Every result is checked the way a
 saved song is when it opens, so a suggestion can never hold what a song file couldn't. A

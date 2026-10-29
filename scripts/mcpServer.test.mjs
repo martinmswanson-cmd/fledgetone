@@ -78,6 +78,12 @@ test('the tools, file mode, the live tools without a studio, and the guide', { s
     assert.equal(again.connected, false);
     assert.equal(again.code, connect.code, 'the same code until it is used');
 
+    // The song under another case is still the song
+    copyFileSync(join(work, 'song.fledgetone.json'), join(work, 'plain.json'));
+    const sameName = await client.callTool({ name: 'suggest', arguments: { file: 'plain.json', out: 'PLAIN.JSON', title: 'x', explanation: '', ops } });
+    assert.ok(sameName.isError);
+    assert.match(text(sameName), /never the song itself/);
+
     // A link planted where the suggestion goes (pointing out of the folder, at nothing yet) is refused
     const outside = mkdtempSync(join(tmpdir(), 'fledgetone-outside-'));
     symlinkSync(join(outside, 'planted.json'), join(work, 'planted.suggestion.json'));

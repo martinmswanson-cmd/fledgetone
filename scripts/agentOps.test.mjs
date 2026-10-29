@@ -313,3 +313,13 @@ test("names an object has by inheritance aren't pitches or settings", () => {
   // A drum row's own name still works
   assert.ok(run(base(), [{ op: 'add_notes', clipId: DRUM_CLIP, notes: [{ pitch: 'kick', start: 0, length: 0.25 }] }]).ok);
 });
+
+test('repeated ids a song already had (a saved file keeps them) do not stop a suggestion', () => {
+  const raw = JSON.parse(JSON.stringify(serializeProject(base())));
+  raw.clips[0].notes[1].id = raw.clips[0].notes[0].id;
+  raw.markers.push({ ...raw.markers[0] });
+  raw.tempoPoints = [{ id: 'tp', bar: 5, bpm: 100 }, { id: 'tp', bar: 9, bpm: 110 }];
+  const song = parseProject(raw);
+  const out = run(song, [{ op: 'set_track', trackId: KEYS, volumeDb: -12 }, { op: 'add_notes', clipId: song.clips[0].id, notes: [{ pitch: 'C4', start: 0, length: 0.25 }] }]);
+  assert.ok(out.ok, JSON.stringify(out.errors));
+});

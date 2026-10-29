@@ -248,7 +248,7 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
           if (!file || !out) throw new Error('File mode needs both "file" (the song) and "out" (the suggestion file to write).');
           const songPath = fileInRoot(root, file, { types: SONG_TYPES, mustExist: true });
           const outPath = fileInRoot(root, out, { types: ['.json'], write: true });
-          if (outPath.endsWith('.fledgetone.json') || sameFile(outPath, songPath)) throw new Error('"out" is a suggestion file (name it like change.suggestion.json), never the song itself.');
+          if (outPath.toLowerCase().endsWith('.fledgetone.json') || outPath.toLowerCase() === songPath.toLowerCase() || sameFile(outPath, songPath)) throw new Error('"out" is a suggestion file (name it like change.suggestion.json), never the song itself.');
           if (existsSync(outPath)) {
             const old = (() => {
               try {
@@ -263,7 +263,7 @@ export function createMcpServer({ root, bridge }: McpOptions): McpServer {
           const result = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase: suggestionIdBase(ops) });
           if (!result.ok) return fail(`The suggestion can't be applied:\n${result.errors.map((e) => `- op ${e.op}${e.path ? ` (${e.path})` : ''}: ${e.message}`).join('\n')}`);
           writeJson(outPath, makeSuggestionFile(song, { title, explanation, ops: ops as never }));
-          return { written: out, apply: `fledgetone apply ${file} ${out} -o <new song>.fledgetone.json`, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, audition: focus ?? result.diff.audition };
+          return { written: out, apply: `fledgetone apply ${file} ${out} -o <new song>.fledgetone.json`, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, notes: result.notes, audition: focus ?? result.diff.audition };
         }
         needStudio();
         if (waitingSuggestions() >= LIMITS.waitingSuggestions) throw new Error(`${LIMITS.waitingSuggestions} suggestions are already waiting for the musician: wait for them to accept or dismiss some, or withdraw one.`);

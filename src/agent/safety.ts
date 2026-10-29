@@ -56,9 +56,17 @@ function pathDb(t: Track, tracks: readonly Track[]): number {
   return t.volume + busChain(t, tracks).reduce((sum, b) => sum + b.volume, 0);
 }
 
-/** The warnings for going from `before` to `after` (an empty list: nothing to say). */
-export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot): string[] {
+/** An unmuted track this far under the loudest other track is only mentioned, not warned about. */
+export const QUIET_UNDER_MIX_DB = 12;
+
+/**
+ * The warnings for going from `before` to `after` (an empty list: nothing to say). Things worth
+ * knowing but no cause for care (a quiet track unmuted) go in `notes`, when it's given.
+ */
+export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot, notes?: string[]): string[] {
   const out: string[] = [];
+  // The loudest audible track's level along its way out, to tell a quiet track from a loud one
+  const audible = after.tracks.filter((t) => !isMixTrack(t) && !t.isMuted);
   const old = new Map(before.tracks.map((t) => [t.id, t]));
   const a = normalizeMasterSettings(before.master);
   const b = normalizeMasterSettings(after.master);
@@ -72,7 +80,12 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot): st
     const from = was ? was.volume : 0;
     const ownJump = t.volume - from;
     if (ownJump > TRACK_JUMP_DB + 1e-9) out.push(`${n} goes up by ${r1(ownJump)} dB. Turn your speakers down before you listen.`);
-    if (was?.isMuted && !t.isMuted) out.push(`This unmutes ${n} (at ${r1(t.volume)} dB): it will be heard again.`);
+    if (was?.isMuted && !t.isMuted) {
+      const others = audible.filter((x) => x.id !== t.id).map((x) => pathDb(x, after.tracks));
+      const quiet = others.length > 0 && pathDb(t, after.tracks) <= Math.max(...others) - QUIET_UNDER_MIX_DB;
+      if (quiet) notes?.push(`This unmutes ${n}, quietly under the rest of the mix (at ${r1(t.volume)} dB).`);
+      else out.push(`This unmutes ${n} (at ${r1(t.volume)} dB): it will be heard again.`);
+    }
     // Along the whole path: its buses and the master together (what it adds on its own is said above)
     if (!isMixTrack(t) && !t.isMuted) {
       const now = pathDb(t, after.tracks) + b.level;
@@ -83,22 +96,24 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot): st
     // The EQ and the inserts' gains
     for (const band of ['low', 'mid', 'high'] as const) {
       const lift = t.eq[band] - (was?.eq[band] ?? 0);
-      if (lift > TRACK_JUMP_DB + 1e-9) out.push(`${n}'s EQ ${band} goes up by ${r1(lift)} dB.`);
+      if (lift > TRACK_JUMP_DB + 1e-9) out.push(`On ${n}, the EQ ${band} goes up by ${r1(lift)} dB.`);
     }
     const makeup = onValue(t, 'compressor', 'makeup') - onValue(was, 'compressor', 'makeup');
-    if (makeup > TRACK_JUMP_DB + 1e-9) out.push(`${n}'s compressor makes up ${r1(makeup)} dB more.`);
+    if (makeup > TRACK_JUMP_DB + 1e-9) out.push(`On ${n}, the compressor makes up ${r1(makeup)} dB more.`);
     for (const [insert, label] of [['peq', 'parametric EQ'], ['mbc', 'multiband compressor']] as const) {
       const lift = bandLift(t, insert) - bandLift(was, insert);
-      if (lift > TRACK_JUMP_DB + 1e-9) out.push(`${n}'s ${label} lifts a band by ${r1(lift)} dB more.`);
+      if (lift > TRACK_JUMP_DB + 1e-9) out.push(`On ${n}, the ${label} lifts a band by ${r1(lift)} dB more.`);
     }
     // Drives and feedback
     for (const [insert, field, label] of [['distortion', 'amount', 'Distortion'], ['saturate', 'amount', 'Saturation']] as const) {
       const now = onValue(t, insert, field);
       const then = onValue(was, insert, field);
-      if (now - then > DRIVE_JUMP + 1e-9) out.push(`${n}'s ${label} is driven much harder (${pct(then)} to ${pct(now)}): it gets louder and harsher.`);
+      if (now - then <= DRIVE_JUMP + 1e-9) continue;
+      if (then === 0) out.push(`This turns on ${label} on ${n} at ${pct(now)} drive: it gets louder and harsher.`);
+      else out.push(`On ${n}, ${label} is driven much harder (${pct(then)} to ${pct(now)} drive): it gets louder and harsher.`);
     }
     const feedback = onValue(t, 'echo', 'feedback');
-    if (feedback >= FEEDBACK_HIGH - 1e-9 && feedback > onValue(was, 'echo', 'feedback') + 1e-9) out.push(`${n}'s Delay feeds back at ${pct(feedback)}: its echoes build up and take a long time to die away.`);
+    if (feedback >= FEEDBACK_HIGH - 1e-9 && feedback > onValue(was, 'echo', 'feedback') + 1e-9) out.push(`On ${n}, the Delay feeds back at ${pct(feedback)}: its echoes build up and take a long time to die away.`);
     // Automation drawn high
     for (const lane of t.automation ?? []) {
       const limit = LANE_LIMITS[lane.param];
@@ -107,11 +122,12 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot): st
       if (oldLane && JSON.stringify(oldLane) === JSON.stringify(lane)) continue;
       const spec = specOf(lane.param as AutomationParam, t, after.tracks);
       const top = spec.toReal(Math.max(...lane.points.map((p) => p.value)));
-      // Measured from the setting as it was before the suggestion (a new track: as it starts)
-      const base = spec.trackValue(was ?? t);
-      if (limit.kind === 'db' && top - base > TRACK_JUMP_DB + 1e-9) out.push(`${n}'s ${limit.label} automation goes up to ${r1(top - base)} dB over its setting.`);
-      if (limit.kind === 'drive' && top - base > DRIVE_JUMP + 1e-9) out.push(`${n}'s ${limit.label} automation pushes it to ${pct(top)}.`);
-      if (limit.kind === 'feedback' && top >= FEEDBACK_HIGH - 1e-9) out.push(`${n}'s ${limit.label} automation feeds it back at up to ${pct(top)}.`);
+      // Measured from the lane's own highest point when it had one (it was what played), else from
+      // the setting as it was before the suggestion (a new track: as it starts)
+      const base = oldLane?.points.length ? spec.toReal(Math.max(...oldLane.points.map((p) => p.value))) : spec.trackValue(was ?? t);
+      if (limit.kind === 'db' && top - base > TRACK_JUMP_DB + 1e-9) out.push(`On ${n}, the ${limit.label} automation goes up to ${r1(top - base)} dB over what it was.`);
+      if (limit.kind === 'drive' && top - base > DRIVE_JUMP + 1e-9) out.push(`On ${n}, the ${limit.label} automation pushes it to ${pct(top)}.`);
+      if (limit.kind === 'feedback' && top >= FEEDBACK_HIGH - 1e-9) out.push(`On ${n}, the ${limit.label} automation feeds it back at up to ${pct(top)}.`);
     }
   }
 

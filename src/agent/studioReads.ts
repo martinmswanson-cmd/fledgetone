@@ -19,7 +19,7 @@ const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 export function previewOps(song: ProjectSnapshot, ops: unknown, idBase = 'preview') {
   const out = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase });
   if (!out.ok) return { ok: false as const, errors: out.errors };
-  return { ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, audition: out.diff.audition, refs: out.refs, stats: out.stats };
+  return { ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, notes: out.notes, audition: out.diff.audition, refs: out.refs, stats: out.stats };
 }
 
 /** The reading handlers, for the studio's bridge client. */
