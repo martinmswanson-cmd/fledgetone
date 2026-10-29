@@ -441,6 +441,8 @@ const visibleEnd = (c: string | undefined) => showsAlone(c) || (!!c && (/\p{M}/u
 /** The flags made of tag sequences that exist (England, Scotland, Wales): their tag letters. */
 const TAG_FLAGS = new Set(['gbeng', 'gbsct', 'gbwls']);
 const JOINERS = new Set([0x200c, 0x200d]);
+/** A letter of a script whose letters join (Arabic, Syriac, N'Ko, Mongolian, Adlam, Hanifi Rohingya). */
+const JOINING_LETTER = /^[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Adlam}\p{Script=Hanifi_Rohingya}]$/u;
 const MARKS = new Set([0x200e, 0x200f, 0x061c]);
 
 /**
@@ -451,7 +453,8 @@ const MARKS = new Set([0x200e, 0x200f, 0x061c]);
  * needs them, and only where they do something:
  *
  * - a joiner (U+200C, U+200D: emoji sequences, Persian and Indic words), one at a time, between
- *   two visible characters;
+ *   two visible characters; a ZWJ also right after a letter of a joining script (Arabic, Syriac,
+ *   N'Ko, Mongolian, Adlam, Hanifi Rohingya), before a space or the end, for a joined form;
  * - a direction mark (LRM, RLM, ALM), one at a time, next to something visible;
  * - an emoji or text presentation selector (U+FE0F, U+FE0E) right after a character that shows;
  * - the flags of England, Scotland and Wales (a black flag, their tag letters, a cancel tag): any
@@ -486,7 +489,8 @@ export function plainUserText(text: unknown, max: number): string {
       continue;
     }
     if (JOINERS.has(cp)) {
-      if (visibleEnd(prev) && showsAlone(next)) out.push(c);
+      // (a ZWJ after a letter of a joining script keeps it in its joined form, even at a word's end: Arabic abbreviations)
+      if ((visibleEnd(prev) && showsAlone(next)) || (cp === 0x200d && JOINING_LETTER.test(prev ?? '') && !JOINERS.has(next?.codePointAt(0) ?? -1))) out.push(c);
       continue;
     }
     if (MARKS.has(cp)) {

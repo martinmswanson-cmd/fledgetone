@@ -96,6 +96,12 @@ test('what the agent gets is what the musician sees: hidden tag text, stray sele
   assert.equal(P.plainUserText('\u200Da\u200D\u200Db\u200D', 100), 'a\u200Db', 'one joiner left between a and b, none at the ends');
   assert.equal(P.plainUserText('\u200Fa \u200F\u200F \u200E', 100), '\u200Fa  ', 'marks between spaces or at the end after one go');
   assert.equal(P.plainUserText('\u0915\u094D\u200D\u0937', 100), '\u0915\u094D\u200D\u0937', 'a joiner after a virama (Devanagari)');
+  // A ZWJ after a joining script's letter keeps its joined form, before a space or the end (once)
+  assert.equal(P.plainUserText('\u0639\u200D \u0647\u200D', 100), '\u0639\u200D \u0647\u200D', 'an Arabic abbreviation');
+  assert.equal(P.plainUserText('\u0710\u200D \u07CA\u200D \u1820\u200D \u{1E900}\u200D \u{10D00}\u200D', 100), '\u0710\u200D \u07CA\u200D \u1820\u200D \u{1E900}\u200D \u{10D00}\u200D', 'Syriac, NKo, Mongolian, Adlam, Hanifi Rohingya');
+  assert.equal(P.plainUserText('\u0639\u200D\u200D\u200D ', 100), '\u0639\u200D ', 'one, not a run');
+  assert.equal(P.plainUserText('ok\u200D ', 100), 'ok ', 'not after a Latin letter');
+  assert.equal(P.plainUserText('\u0639\u200C ', 100), '\u0639 ', 'a non-joiner at the end still goes');
   // Blank braille: only among braille
   assert.equal(P.plainUserText('ok\u2800\u2800', 100), 'ok');
   assert.equal(P.plainUserText('\u2801\u2800\u2803', 100), '\u2801\u2800\u2803');
