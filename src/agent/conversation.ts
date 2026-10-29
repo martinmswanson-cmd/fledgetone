@@ -17,7 +17,7 @@
  * only while it's on the panel.
  */
 import { create } from 'zustand';
-import { CONVERSATION, readContext, type UserMessage, type UserMessageContext } from './protocol';
+import { CONVERSATION, hasVisibleText, readContext, type UserMessage, type UserMessageContext } from './protocol';
 
 export type Delivery = 'sending' | 'sent' | 'seen' | 'not_sent';
 
@@ -146,4 +146,10 @@ export function contextWords(m: Pick<UserMessage, 'context'>): string | null {
   }
   if (c.editingClipId && !c.selectedClipIds?.includes(c.editingClipId)) parts.push('the clip being edited');
   return parts.length ? `With your selection: ${parts.join(', ')}` : 'With your selection';
+}
+
+/** The box's words with `text` put back after them (a blank line between), for "Put back in the box": what the musician is writing is never lost. */
+export function withPutBack(draft: string, text: string): string {
+  const next = hasVisibleText(draft) ? `${draft.replace(/\s+$/, '')}\n\n${text}` : text;
+  return next.slice(0, CONVERSATION.textMaxChars);
 }

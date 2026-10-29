@@ -12,14 +12,19 @@
 import React from 'react';
 import { RotateCw } from 'lucide-react';
 import { useSuggestions, shortText, announce, type AgentMessage } from '../../agent/suggestionsStore';
-import { contextWords, useConversation, type OwnMessage } from '../../agent/conversation';
+import { contextWords, useConversation, withPutBack, type OwnMessage } from '../../agent/conversation';
 import { retryMessage } from '../../agent/bridgeClient';
 import { deliveryWords, fromYourAgent } from './words';
 
 type Entry = { kind: 'agent'; m: AgentMessage } | { kind: 'mine'; m: OwnMessage };
 
 /** The message box, for focus after a press that moves it (Retry). */
-const focusBox = () => window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-agent-compose] textarea')?.focus({ preventScroll: true }), 0);
+const focusBox = (toEnd = false) =>
+  window.setTimeout(() => {
+    const box = document.querySelector<HTMLTextAreaElement>('[data-agent-compose] textarea');
+    box?.focus({ preventScroll: true });
+    if (box && toEnd) box.setSelectionRange(box.value.length, box.value.length);
+  }, 0);
 
 export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.RefObject<HTMLElement | null> }> = ({ agent, lastAgentRef }) => {
   const messages = useSuggestions((s) => s.messages);
@@ -108,9 +113,9 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
               data-keep-focus=""
               data-put-back={m.id}
               onClick={() => {
-                // (nothing is sent: it's in the box, for the musician to send as a new message, or not)
-                useConversation.setState({ draft: m.text });
-                focusBox();
+                // (nothing is sent: it's in the box, after what they're writing, for them to send as a new message, or not)
+                useConversation.setState((c) => ({ draft: withPutBack(c.draft, m.text) }));
+                focusBox(true);
               }}
               className="h-6 px-2 rounded-md border border-forge-border text-forge-text hover:border-cyan-500/60"
               aria-label={`Put back in the box: “${shortText(m.text, 40)}”`}

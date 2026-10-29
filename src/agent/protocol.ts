@@ -428,25 +428,60 @@ export function readContext(c: unknown): UserMessageContext | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/** Invisible characters the musician's writing needs: the joiners (emoji sequences, Persian and Indic words) and the direction marks (LRM, RLM, ALM). */
+const KEPT_INVISIBLE = new Set([0x200c, 0x200d, 0x200e, 0x200f, 0x061c]);
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/u;
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+/** A character that shows by itself (a base for a variation selector). */
+const showsAlone = (c: string | undefined) => !!c && !/\s/u.test(c) && !INVISIBLE.test(c) && !CONTROL.test(c);
+
 /**
- * The musician's own text made plain (at most `max` characters): control characters and the
- * direction embeddings, overrides and isolates go, line and paragraph separators become line
- * breaks. Unlike an agent's text it keeps the joiners (U+200C, U+200D: emoji sequences, Persian
- * and Indic words) and the direction marks (LRM, RLM, ALM) that their writing needs.
+ * The musician's own text made plain (at most `max` characters), so the agent gets exactly what
+ * the musician sees: control characters and every invisible or format character go (tag
+ * characters, word joiners, soft hyphens, byte order marks, fillers, direction embeddings,
+ * overrides and isolates), line and paragraph separators become line breaks. Kept, because writing
+ * needs them: the joiners U+200C and U+200D, the direction marks LRM, RLM and ALM, the emoji and
+ * text presentation selectors (U+FE0F, U+FE0E) right after a character that shows, and tag
+ * characters only inside an emoji tag sequence (a black flag, tags, then the cancel tag: the flags
+ * of England, Scotland and Wales).
  */
 export function plainUserText(text: unknown, max: number): string {
   if (typeof text !== 'string') return '';
-  return (
-    text
-      .replace(/[\u2028\u2029]/g, '\n')
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '')
-      .slice(0, max)
-  );
+  const cps = [...text.replace(/[\u2028\u2029]/g, '\n')];
+  const out: string[] = [];
+  for (let i = 0; i < cps.length; i++) {
+    const c = cps[i];
+    const cp = c.codePointAt(0)!;
+    if (CONTROL.test(c)) continue;
+    // A flag's tag sequence: U+1F3F4, tag letters (U+E0020 to U+E007E), U+E007F
+    if (cp === 0x1f3f4) {
+      let j = i + 1;
+      while (j < cps.length && cps[j].codePointAt(0)! >= 0xe0020 && cps[j].codePointAt(0)! <= 0xe007e) j++;
+      if (j > i + 1 && cps[j]?.codePointAt(0) === 0xe007f) {
+        out.push(...cps.slice(i, j + 1));
+        i = j;
+        continue;
+      }
+      out.push(c);
+      continue;
+    }
+    if (cp === 0xfe0e || cp === 0xfe0f) {
+      if (showsAlone(out.at(-1))) out.push(c);
+      continue;
+    }
+    if (KEPT_INVISIBLE.has(cp)) {
+      out.push(c);
+      continue;
+    }
+    if (INVISIBLE.test(c)) continue;
+    out.push(c);
+  }
+  return out.join('').slice(0, max);
 }
 
 /** Whether text has anything to see (not only spaces and invisible characters). */
-export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}]/u.test(text);
+export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}]/u.test(text);
 
 /**
  * A `user_message` event's params as both ends keep them, or null if it isn't one: an id of
