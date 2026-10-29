@@ -1,0 +1,323 @@
+// Replying to your agent, end to end in a real browser: the studio (the dev server) paired with
+// the agent helper (`fledgetone mcp`, run from source) driven by the MCP SDK's own client, as an
+// agent would. It checks, in order:
+//
+//   1. keys typed in the message box stay there: Space doesn't play, Delete doesn't delete the
+//      selected clip, Ctrl+Z doesn't undo the song, letters don't reach the shortcuts; Shift+Enter
+//      is a new line and sends nothing
+//   2. Enter sends: the message shows as "You", the agent gets it from wait_for_changes and
+//      get_messages, and it reads "Seen by your agent"
+//   3. the agent's say with replyTo shows as a reply to it, after it, from the agent; the focus
+//      stays where the musician left it
+//   4. "Ask about this" on a card ties the next message to the suggestion (the agent gets its id)
+//   5. the selection goes along only when "Include what I've selected" is ticked (for that message
+//      only) and the agent may see the selection: never once that's switched off
+//   6. at 360 px wide the panel fits (nothing in it scrolls sideways or goes past the edge, the box
+//      and Send on screen)
+//   7. sent with no agent connected: "Not sent — the agent isn't connected" with Retry, and it
+//      stays not sent after a new connection until Retry, which sends it
+//
+// Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default), Playwright's Chromium,
+// and tools/cli's packages (npm install in tools/cli):
+//
+//   setsid nohup npx vite --port 5960 --strictPort > /tmp/vite.log 2>&1 &
+//   node scripts/agent-check/e2e2.cjs            (SHOTS=dir saves screenshots there)
+//
+// Exit code 0 when every step passes.
+let playwright;
+try {
+  playwright = require('playwright');
+} catch {
+  playwright = require('/opt/node22/lib/node_modules/playwright');
+}
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { pathToFileURL } = require('url');
+
+const ROOT = path.join(__dirname, '..', '..');
+const CLI = path.join(ROOT, 'tools', 'cli');
+const SDK = path.join(CLI, 'node_modules', '@modelcontextprotocol', 'sdk', 'dist', 'esm');
+const PORT = Number(process.env.PORT || 5960);
+const APP = `http://localhost:${PORT}/`;
+const SHOTS = process.env.SHOTS || null;
+
+let failures = 0;
+const step = (name, ok, detail = '') => {
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? `: ${detail}` : ''}`);
+  if (!ok) failures++;
+};
+
+async function until(check, ms, what) {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await check();
+    if (v) return v;
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+(async () => {
+  if (PORT < 5960 || PORT > 5969) throw new Error('PORT must be 5960 to 5969');
+  const { Client } = await import(pathToFileURL(path.join(SDK, 'client', 'index.js')).href);
+  const { StdioClientTransport } = await import(pathToFileURL(path.join(SDK, 'client', 'stdio.js')).href);
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'fledgetone-e2e2-'));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ['--import', path.join(CLI, 'src', 'tsHook.mjs'), path.join(CLI, 'src', 'fledgetone.ts'), 'mcp', '--port', '0', '--root', work, '--allow-origin', APP.replace(/\/$/, '')],
+    cwd: ROOT,
+    stderr: 'pipe',
+  });
+  transport.stderr?.on('data', (d) => process.env.VERBOSE && process.stderr.write(`[helper] ${d}`));
+  const agent = new Client({ name: 'E2E agent', version: '1' });
+  await agent.connect(transport);
+  const call = async (name, args = {}) => {
+    const r = await agent.callTool({ name, arguments: args });
+    const text = r.content.map((c) => c.text).join('');
+    if (r.isError) throw new Error(`${name}: ${text}`);
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  };
+  // (say and suggest keep to one a second and one every 3 seconds)
+  const patiently = async (name, args) => {
+    for (;;) {
+      try {
+        return await call(name, args);
+      } catch (e) {
+        if (!/Too many/.test(e.message)) throw e;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+  };
+
+  const browser = await playwright.chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem('bosBeatbox.welcomeSeen', 'true'));
+  try {
+    await page.goto(APP, { waitUntil: 'networkidle' });
+    const menu = async (item) => {
+      await page.getByRole('menuitem', { name: 'View', exact: true }).first().click();
+      await page.locator('[role^="menuitem"]', { hasText: item }).first().click();
+    };
+    const A = (fn, arg) => page.evaluate(fn, arg);
+
+    await menu('Suggestions');
+    await page.waitForFunction(() => window.__fledgetoneAgent?.conv, null, { timeout: 30000 });
+    const ids = await A(() => {
+      const tl = window.__fledgetoneAgent.tl.useTimelineStore;
+      tl.getState().newProject('blank');
+      const [drums, bass] = tl.getState().tracks.map((t) => t.id);
+      const c = tl.getState().createEmptyClip(bass, 3, 2);
+      tl.getState().addNotes(c, [{ note: 'C2', startOffset: 0, duration: '8n', velocity: 0.8 }]);
+      return { drums, bass, c };
+    });
+    await page.getByLabel('Close the Suggestions panel').click();
+
+    const pair = async (ticks) => {
+      const { code, port } = await call('connect_studio');
+      await menu('Let an agent connect…');
+      await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(code);
+      await page.getByLabel('Port the helper listens on').fill(String(port));
+      for (const name of ticks) await page.getByRole('checkbox', { name }).check();
+      await page.getByRole('button', { name: 'Connect', exact: true }).click();
+      await until(async () => (await call('studio_status')).connected, 15000, 'pairing');
+      if (await page.getByRole('button', { name: 'Done' }).count()) await page.getByRole('button', { name: 'Done' }).click();
+      if (!(await page.locator('[data-agent-panel]').count())) await page.locator('[data-agent-chip]').click();
+      await page.waitForSelector('[data-agent-panel]');
+    };
+    await pair([/^See what I select/, /^Suggest changes/]);
+
+    const box = page.locator('[data-agent-compose] textarea');
+    const own = page.locator('[data-own-message]');
+    const lastOwn = () => own.last();
+    const ownCount = () => own.count();
+    let since = (await call('studio_status')).lastEvent;
+
+    // 1. Keys in the box stay in the box. First an edit the song's Undo would take back, and a clip selected.
+    const before = await A(([bass, c]) => {
+      const tl = window.__fledgetoneAgent.tl.useTimelineStore;
+      tl.getState().setTrackVolume(bass, -7);
+      tl.getState().selectClip(c, false);
+      const s = tl.getState();
+      return { past: s.past.length, clips: s.clips.length, vol: s.tracks.find((t) => t.id === bass).volume };
+    }, [ids.bass, ids.c]);
+    await box.click();
+    await page.keyboard.type('a b c mute solo ');
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Delete');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Control+z');
+    await page.keyboard.type('qwerty');
+    await page.keyboard.press('Shift+Enter');
+    await page.keyboard.type('second line');
+    await page.waitForTimeout(400);
+    const during = await A((bass) => {
+      const s = window.__fledgetoneAgent.tl.useTimelineStore.getState();
+      return { past: s.past.length, clips: s.clips.length, vol: s.tracks.find((t) => t.id === bass).volume, playing: s.isPlaying || s.loadingToPlay, focus: document.activeElement?.tagName };
+    }, ids.bass);
+    const typed = await box.inputValue();
+    step(
+      '1 keys typed in the box stay there',
+      !during.playing && during.past === before.past && during.clips === before.clips && during.vol === before.vol && during.focus === 'TEXTAREA' && /qwerty\nsecond line$/.test(typed) && (await ownCount()) === 0,
+      `playing ${during.playing}, undo steps ${before.past} → ${during.past}, clips ${before.clips} → ${during.clips}, volume ${before.vol} → ${during.vol}, ${JSON.stringify(typed)}`
+    );
+
+    // 2. Enter sends it
+    await box.fill('Is the bass too busy in bar 3?\nI want it simpler.');
+    await page.keyboard.press('Enter');
+    await lastOwn().waitFor({ timeout: 5000 });
+    const ownText = await lastOwn().textContent();
+    const sentId = await lastOwn().getAttribute('data-own-message');
+    const sentStatus = await until(async () => {
+      const d = await lastOwn().getAttribute('data-delivery');
+      return d !== 'sending' && d;
+    }, 6000, 'the helper to have it');
+    const waited = await call('wait_for_changes', { since, timeoutSeconds: 5 });
+    since = waited.last;
+    const got = waited.events.find((e) => e.event === 'user_message' && e.params.id === sentId);
+    await until(async () => (await lastOwn().getAttribute('data-delivery')) === 'seen', 5000, 'seen');
+    const seenWords = await lastOwn().locator('[data-delivery-words]').textContent();
+    const conv = await call('get_messages');
+    const inConv = conv.messages.find((m) => m.id === sentId);
+    step(
+      '2 Enter sends: shown as You, the agent gets it, seen',
+      /^You/.test(ownText) && sentStatus !== 'not_sent' && got?.params.text === 'Is the bass too busy in bar 3?\nI want it simpler.' && !got.params.context && !got.params.suggestionId && inConv?.from === 'musician' && seenWords === 'Seen by your agent' && (await box.inputValue()) === '',
+      `delivery ${sentStatus} then ${seenWords}; get_messages ${conv.messages.length}`
+    );
+
+    // 3. The agent's reply, shown as one, after the message; the focus stays put
+    await page.locator('[data-agent-panel] h2').click();
+    await box.focus();
+    await patiently('say', { text: 'A little: the notes in bar 3 crowd the kick. Shall I suggest a simpler line?', replyTo: sentId });
+    const reply = page.locator(`[data-agent-message][data-reply-to="${sentId}"]`);
+    await reply.waitFor({ timeout: 5000 });
+    const replyText = await reply.textContent();
+    const order = await A(([sid]) => {
+      const all = [...document.querySelectorAll('[data-agent-conversation] > figure')];
+      return { mine: all.findIndex((f) => f.dataset.ownMessage === sid), reply: all.findIndex((f) => f.dataset.replyTo === sid), focus: document.activeElement?.tagName };
+    }, [sentId]);
+    const badReply = await call('say', { text: 'x', replyTo: 'u-nope' }).then(() => 'accepted', (e) => e.message);
+    step(
+      '3 say with replyTo shows as a reply, after it; the focus stays',
+      /From your agent \(E2E agent\)/.test(replyText) && /Replying to you: “Is the bass too busy/.test(replyText) && order.reply > order.mine && order.focus === 'TEXTAREA' && /replyTo/.test(badReply),
+      JSON.stringify(order)
+    );
+
+    // 4. Ask about this
+    const made = await patiently('suggest', { title: 'A simpler bass in bar 3', explanation: 'Fewer notes, so the kick comes through.', ops: [{ op: 'set_track', trackId: ids.bass, volumeDb: -9 }] });
+    const card = page.locator(`[data-suggestion="${made.id}"]`);
+    await card.waitFor({ timeout: 5000 });
+    await card.locator(`[data-ask-about="${made.id}"]`).click();
+    await page.waitForTimeout(100);
+    const askFocus = await A(() => document.activeElement?.matches('[data-agent-compose] textarea'));
+    const chip = await page.locator(`[data-asking-about="${made.id}"]`).textContent();
+    await page.keyboard.type('Why lower it rather than take notes out?');
+    await page.keyboard.press('Enter');
+    await until(async () => (await ownCount()) === 2, 5000, 'the second message');
+    const asked = await call('wait_for_changes', { since, timeoutSeconds: 5 });
+    since = asked.last;
+    const askedEv = asked.events.find((e) => e.event === 'user_message');
+    const shownAbout = await lastOwn().textContent();
+    step(
+      '4 Ask about this: the agent gets the suggestion id',
+      askFocus && /Asking about “A simpler bass in bar 3”/.test(chip) && askedEv?.params.suggestionId === made.id && /About the suggestion “A simpler bass/.test(shownAbout) && (await page.locator('[data-asking-about]').count()) === 0,
+      `focus in the box ${askFocus}, id ${askedEv?.params.suggestionId}`
+    );
+    if (SHOTS) {
+      await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-1280.png') });
+      await page.screenshot({ path: path.join(SHOTS, 'studio-1280.png') });
+    }
+
+    // 5. The selection goes along only when ticked, for that message only, and only while the agent may see it
+    const include = page.getByRole('checkbox', { name: /Include what I’ve selected/ });
+    const sendText = async (t) => {
+      await box.fill(t);
+      await page.keyboard.press('Enter');
+      const w = await call('wait_for_changes', { since, timeoutSeconds: 5 });
+      since = w.last;
+      return w.events.find((e) => e.event === 'user_message')?.params;
+    };
+    const plain = await sendText('Without my selection');
+    await include.check();
+    const withSel = await sendText('With my selection');
+    const afterTick = await include.isChecked();
+    await page.locator('[data-agent-panel]').getByRole('button', { name: 'Change' }).click();
+    await page.getByRole('checkbox', { name: /^See what I select/ }).uncheck();
+    await page.getByRole('button', { name: 'Done' }).click();
+    await until(async () => !(await call('studio_status')).permissions.see, 5000, 'the permission off');
+    const disabled = await include.isDisabled();
+    // (even with the box ticked behind the scenes, nothing of the selection goes)
+    await A(() => window.__fledgetoneAgent.conv.useConversation.setState({ include: true }));
+    const notPermitted = await sendText('Not allowed to see');
+    const shownContext = await own.nth(3).textContent();
+    step(
+      '5 the selection only when ticked and allowed',
+      !!plain && !plain.context && withSel?.context?.selectedClipIds?.includes(ids.c) && withSel.context.bars?.fromBar === 3 && !afterTick && disabled && !!notPermitted && !notPermitted.context && /With your selection: 1 selected clip, bars 3-4/.test(shownContext),
+      `plain ${JSON.stringify(plain?.context)}, ticked ${JSON.stringify(withSel?.context)}, unticked after ${!afterTick}, off ${disabled} ${JSON.stringify(notPermitted?.context)}`
+    );
+
+    // 6. At 360 px
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.waitForTimeout(300);
+    await page.locator('[data-agent-panel] [data-agent-conversation]').evaluate((el) => el.closest('.overflow-y-auto').scrollTo(0, 1e6));
+    const narrow = await A(() => {
+      const panel = document.querySelector('[data-agent-panel]').getBoundingClientRect();
+      const send = [...document.querySelectorAll('[data-agent-compose] button')].find((b) => b.textContent.includes('Send')).getBoundingClientRect();
+      const ta = document.querySelector('[data-agent-compose] textarea').getBoundingClientRect();
+      const wide = [...document.querySelectorAll('[data-agent-panel] *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 0.5).length;
+      // (nothing in the panel scrolls sideways; the studio under it is the studio's business)
+      const scrollers = [document.querySelector('[data-agent-panel]'), ...document.querySelectorAll('[data-agent-panel] .overflow-y-auto, [data-agent-compose]')];
+      return { sideways: scrollers.some((e) => e.scrollWidth > e.clientWidth + 1), panel: Math.round(panel.width), send: send.right <= window.innerWidth && send.bottom <= window.innerHeight, box: ta.bottom <= window.innerHeight && ta.width > 250, wide };
+    });
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'conversation-360.png') });
+    step('6 at 360 px the panel fits', !narrow.sideways && narrow.panel === 360 && narrow.send && narrow.box && narrow.wide === 0, JSON.stringify(narrow));
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    // 7. Not connected: Not sent, with Retry; nothing goes by itself on the next connection
+    await page.locator('[data-agent-panel]').getByRole('button', { name: 'Disconnect' }).click();
+    await until(async () => !(await call('studio_status')).connected, 5000, 'the disconnect');
+    await box.fill('Are you still there?');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    const lost = lastOwn();
+    const lostId = await lost.getAttribute('data-own-message');
+    const lostWords = await lost.locator('[data-delivery-words]').textContent();
+    const retry = lost.locator('[data-retry]');
+    const retryShown = await retry.isVisible();
+    const focusAfterSend = await A(() => document.activeElement?.matches('[data-agent-compose] textarea'));
+    if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-not-sent-1280.png') });
+    await pair([]);
+    await page.waitForTimeout(1500);
+    const stillLost = await lost.getAttribute('data-delivery');
+    const fresh = await call('get_messages');
+    const quiet = await call('wait_for_changes', { since: (await call('studio_status')).lastEvent, timeoutSeconds: 1 });
+    await retry.click();
+    await until(async () => ['sent', 'seen'].includes(await lost.getAttribute('data-delivery')), 6000, 'the retry');
+    const retried = await call('get_messages');
+    step(
+      '7 not connected: Not sent with Retry; nothing goes until Retry',
+      lostWords === 'Not sent — the agent isn’t connected' && retryShown && focusAfterSend && stillLost === 'not_sent' && fresh.messages.length === 0 && !quiet.events.some((e) => e.event === 'user_message') && retried.messages.some((m) => m.id === lostId && m.text === 'Are you still there?'),
+      `${lostWords}; after reconnecting ${stillLost}, the helper had ${fresh.messages.length}; after Retry ${retried.messages.length}`
+    );
+    if (SHOTS) await page.locator('[data-agent-panel]').screenshot({ path: path.join(SHOTS, 'conversation-retry-1280.png') });
+    step('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
+  } catch (err) {
+    failures++;
+    console.log(`FAIL ${err.message}`);
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'failure2.png') }).catch(() => {});
+  } finally {
+    await browser.close();
+    await agent.close();
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  console.log(failures ? `${failures} failed` : 'all passed');
+  process.exit(failures ? 1 : 0);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
