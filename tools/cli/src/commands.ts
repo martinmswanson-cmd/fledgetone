@@ -155,6 +155,7 @@ export function barRange(text: string): { fromBar: number; toBar: number } {
   if (!m) throw new UsageError('--bars takes a bar or a range, like 5 or 5-8');
   const from = Number(m[1]);
   const to = m[2] ? Number(m[2]) : from;
+  if (from < 1) throw new UsageError('--bars: songs start at bar 1');
   if (to < from) throw new UsageError('--bars: the range ends before it starts');
   return { fromBar: from, toBar: to + 1 };
 }

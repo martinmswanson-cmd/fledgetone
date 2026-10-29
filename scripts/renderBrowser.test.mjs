@@ -8,8 +8,8 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -30,6 +30,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'tools/cli');
 const SDK = join(CLI, 'node_modules/@modelcontextprotocol/sdk');
 const SONG = join(ROOT, 'scripts/fixtures/render-song.fledgetone.json');
+// The same song with a built-in plugin (Airwindows ADClip7) on its drums
+const PLUGIN_SONG = join(ROOT, 'scripts/fixtures/render-plugin-song.fledgetone.json');
 
 const work = mkdtempSync(join(tmpdir(), 'fledgetone-render-'));
 // Downloads (none here: offline) and nothing else kept in a folder of the test's own
@@ -167,4 +169,44 @@ test('before and after a suggestion, through the agent helper: only the bars it 
   } finally {
     await client.close();
   }
+});
+
+test('built-in plugins play from this copy (offline); plugins from other sites are refused in plain words', { skip, timeout: 300_000 }, async () => {
+  const withPlugin = await cli('render', PLUGIN_SONG, '-o', 'plugin.wav', '--offline', '--bars', '1-2', '--json');
+  assert.equal(withPlugin.code, 0, withPlugin.stderr);
+  const plain = await cli('render', SONG, '-o', 'plain.wav', '--offline', '--bars', '1-2');
+  assert.equal(plain.code, 0, plain.stderr);
+  assert.ok(!readFileSync(join(work, 'plugin.wav')).equals(readFileSync(join(work, 'plain.wav'))), 'the plugin is heard');
+  rmSync(join(work, 'plugin.wav'));
+  rmSync(join(work, 'plain.wav'));
+  // A plugin from another site: not run, and the render says why and what to do
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  song.tracks.find((t) => t.name === 'Keys').pluginFx = [{ id: 'fx-web', url: 'https://plugins.example/reverb/index.js', name: 'Web Reverb' }];
+  writeFileSync(join(work, 'web-plugin.fledgetone.json'), JSON.stringify(song));
+  const r = await cli('render', 'web-plugin.fledgetone.json', '-o', 'web.wav', '--offline');
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /plugins from other sites.*"Keys" plays Web Reverb \(from https:\/\/plugins\.example\/reverb\/index\.js\).*Export it from the studio instead/s);
+  assert.ok(!existsSync(join(work, 'web.wav')));
+  const l = await cli('listen', 'web-plugin.fledgetone.json', '--bars', '1', '--offline');
+  assert.equal(l.code, 2);
+  assert.match(l.stderr, /plugins from other sites/);
+});
+
+test('Ctrl+C twice: the browser and its folder are cleaned up all the same', { skip, timeout: 120_000 }, async () => {
+  const tmpRoot = join(work, 'tmp');
+  mkdirSync(tmpRoot);
+  const child = spawn(process.execPath, ['--import', join(CLI, 'src/tsHook.mjs'), join(CLI, 'src/fledgetone.ts'), 'render', SONG, '-o', 'stopped.wav', '--offline', '--verbose'], { cwd: work, env: { ...env, TMPDIR: tmpRoot }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let err = '';
+  child.stderr.on('data', (d) => (err += d));
+  const deadline = Date.now() + 60_000;
+  // Once the page is up (it logs), stop it twice in a row
+  while (!/\[page /.test(err) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  child.kill('SIGINT');
+  await new Promise((r) => setTimeout(r, 30));
+  child.kill('SIGINT');
+  const code = await new Promise((r) => child.on('exit', (c, sig) => r(c ?? sig)));
+  assert.equal(code, 2, err.slice(-400));
+  assert.match(err, /Stopped\./);
+  assert.deepEqual(readdirSync(tmpRoot).filter((n) => n.startsWith('fledgetone-browser-')), [], 'no browser folder left');
+  assert.ok(!existsSync(join(work, 'stopped.wav')));
 });

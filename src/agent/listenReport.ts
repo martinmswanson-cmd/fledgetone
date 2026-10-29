@@ -175,7 +175,7 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
     const loudest = Math.max(...changed.map((b) => b.differenceDb ?? -Infinity));
     const others = bars.length - changed.length;
     summary.push(
-      `${range(changedBars)} sound different${Number.isFinite(loudest) ? ` (what changed is up to ${loudest.toFixed(1)} dBFS)` : ''}${changed.length < changedBars.toBar - changedBars.fromBar ? ', not every bar between' : ''}${others ? '; the other bars sound the same' : ''}.`
+      `${range(changedBars)} ${changedBars.toBar - changedBars.fromBar <= 1 ? 'sounds' : 'sound'} different${Number.isFinite(loudest) ? ` (what changed is up to ${loudest.toFixed(1)} dBFS)` : ''}${changed.length < changedBars.toBar - changedBars.fromBar ? ', not every bar between' : ''}${others ? '; the other bars sound the same' : ''}.`
     );
   }
   if (mix.lufs !== null && Math.abs(mix.lufs) >= 0.1) summary.push(`Overall it is ${Math.abs(mix.lufs).toFixed(1)} LU ${mix.lufs > 0 ? 'louder' : 'quieter'} (${after.mix.lufs} against ${before.mix.lufs} LUFS).`);

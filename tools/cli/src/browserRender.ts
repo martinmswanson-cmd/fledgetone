@@ -16,7 +16,7 @@
  * fails or takes too long (the browser is killed by its process if it won't close).
  */
 import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -141,7 +141,48 @@ function browserCandidates(asked?: string): Array<{ label: string; options: Reco
     { label: "Playwright's Chromium", options: {} },
     { label: 'Microsoft Edge', options: { channel: 'msedge' } },
     ...known.map((p) => ({ label: p, options: { executablePath: p } })),
+    ...playwrightBrowsers().map((p) => ({ label: p, options: { executablePath: p } })),
   ];
+}
+
+/**
+ * Chromium downloaded by any version of Playwright (in PLAYWRIGHT_BROWSERS_PATH or its usual
+ * folder), newest first: one made for another version still renders.
+ */
+function playwrightBrowsers(): string[] {
+  const dirs = [process.env.PLAYWRIGHT_BROWSERS_PATH, join(homedir(), '.cache', 'ms-playwright'), join(homedir(), 'Library', 'Caches', 'ms-playwright'), process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'ms-playwright')].filter(
+    (d): d is string => !!d && d !== '0' && existsSync(d)
+  );
+  const programs = [
+    ['chrome-linux', 'chrome'],
+    ['chrome-linux64', 'chrome'],
+    ['chrome-linux', 'headless_shell'],
+    ['chrome-headless-shell-linux64', 'chrome-headless-shell'],
+    ['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'],
+    ['chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'],
+    ['chrome-win', 'chrome.exe'],
+    ['chrome-win64', 'chrome.exe'],
+  ];
+  const found: Array<{ path: string; rev: number }> = [];
+  for (const dir of dirs) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const m = /^chromium(?:_headless_shell)?-(\d+)$/.exec(name);
+      if (!m) continue;
+      for (const parts of programs) {
+        const path = join(dir, name, ...parts);
+        if (existsSync(path)) found.push({ path, rev: Number(m[1]) });
+      }
+    }
+  }
+  // (newest first; of one download, the headless shell first: it's made for this and calls nothing)
+  const shell = (p: string) => (/headless/i.test(p) ? 0 : 1);
+  return [...new Set(found.sort((a, b) => b.rev - a.rev || shell(a.path) - shell(b.path)).map((f) => f.path))];
 }
 
 export const NO_BROWSER =
@@ -167,6 +208,31 @@ async function launch(chromium: PwChromium, asked: string | undefined, timeoutMs
   return withTempDir(tempDir, () => launchIn(chromium, asked, timeoutMs));
 }
 
+/**
+ * The proxy the environment names for HTTPS (HTTPS_PROXY, else HTTP_PROXY), as Playwright takes
+ * it: the page's own server and NO_PROXY's hosts bypass it. Recordings download through it.
+ */
+export function proxyFromEnv(env: NodeJS.ProcessEnv = process.env): { server: string; bypass: string; username?: string; password?: string } | null {
+  const raw = env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy;
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw.includes('://') ? raw : `http://${raw}`);
+  } catch {
+    return null;
+  }
+  const noProxy = (env.NO_PROXY || env.no_proxy || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter((x) => x && x !== '*' && !/\s/.test(x));
+  const bypass = [...new Set(['127.0.0.1', 'localhost', ...noProxy])].join(',');
+  return {
+    server: `${url.protocol}//${url.host}`,
+    bypass,
+    ...(url.username ? { username: decodeURIComponent(url.username), password: decodeURIComponent(url.password) } : {}),
+  };
+}
+
 async function launchIn(chromium: PwChromium, asked: string | undefined, timeoutMs: number): Promise<Launched> {
   const why: string[] = [];
   for (const c of browserCandidates(asked)) {
@@ -181,7 +247,21 @@ async function launchIn(chromium: PwChromium, asked: string | undefined, timeout
         handleSIGTERM: false,
         handleSIGHUP: false,
         // (no sound card needed, nothing played: renders are offline)
-        args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio', '--no-first-run', '--disable-background-networking', '--disable-component-update', '--disable-sync'],
+        args: [
+          '--autoplay-policy=no-user-gesture-required',
+          '--mute-audio',
+          '--no-first-run',
+          '--no-default-browser-check',
+          // (the browser's own calls home: none of them are needed to render)
+          '--disable-background-networking',
+          '--disable-component-update',
+          '--disable-sync',
+          '--disable-default-apps',
+          '--disable-domain-reliability',
+          '--disable-client-side-phishing-detection',
+          '--no-pings',
+          '--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,AutofillServerCommunication,CertificateTransparencyComponentUpdater,PushMessaging',
+        ],
         ...c.options,
       });
       const browser = await chromium.connect(server.wsEndpoint(), { timeout: timeoutMs });
@@ -253,6 +333,8 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
       ...[
         ['/fledgetone-samples', samples],
         ['/fledgetone-plugins', pub('fledgetone-plugins')],
+        // (the renderer asks for its plugins next to itself: pluginSources.ts)
+        ['/runtime/fledgetone-plugins', pub('fledgetone-plugins')],
         ['/fledgetone-sfx', pub('fledgetone-sfx')],
       ]
         .filter((m): m is [string, string] => !!m[1])
@@ -261,24 +343,36 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
     {
       // Not in a folder: kept from an earlier download?
       fallback: (path, query) => {
-        const m = /^\/(fledgetone-(?:samples|plugins|sfx))\/(.+)$/.exec(path);
+        const m = /^\/(?:runtime\/)?(fledgetone-(?:samples|plugins|sfx))\/(.+)$/.exec(path);
         const kept = m ? keptPath(m[1], m[2], query) : null;
-        return kept && existsSync(kept) ? kept : null;
+        return kept && keptIsGood(kept) ? kept : null;
       },
     }
   );
   await server.start(0);
+  removeStaleBrowserFolders();
   // The browser's profile and Playwright's working folder go in here, deleted at the end
   const tempDir = mkdtempSync(join(tmpdir(), 'fledgetone-browser-'));
+  writeFileSync(join(tempDir, 'owner.pid'), String(process.pid));
   let launched: Launched | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let onSignal: (() => void) | undefined;
+  let downloadFailed = false;
+  // Ctrl+C (or being told to stop): the first stops the run; any more are let be until everything is shut down
+  let stop: ((err: Error) => void) | undefined;
+  const onSignal = () => {
+    stop?.(new Error('Stopped.'));
+    stop = undefined;
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   const pageErrors: string[] = [];
   try {
     const run = (async () => {
       launched = await launch(chromium, opts.browser, Math.min(60_000, timeoutMs), tempDir);
       const { browser } = launched;
-      const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false });
+      // A proxy is the page's only (its downloads go through it), not the browser's own
+      const proxy = proxyFromEnv();
+      const context = await browser.newContext({ serviceWorkers: 'block', acceptDownloads: false, ...(proxy ? { proxy } : {}) });
       const appOrigin = opts.appUrl ? new URL(opts.appUrl).origin : null;
       // The page reaches its own server (and the dev server in --app-url), and the app's own site for recordings; nothing else
       await context.route('**/*', async (route) => {
@@ -296,7 +390,7 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
           return route.abort('blockedbyclient');
         }
         const kept = keptPath(m[1], decodeURIComponent(m[2]), new URLSearchParams(m[3] ?? ''));
-        if (kept && existsSync(kept)) return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': contentType(kept) }, body: readFileSync(kept) });
+        if (kept && keptIsGood(kept)) return route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*', 'content-type': contentType(kept) }, body: readFileSync(kept) });
         if (opts.offline) {
           opts.onLog?.(`not downloading ${url} (--offline)`);
           return route.abort('internetdisconnected');
@@ -304,15 +398,22 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
         try {
           const response = await route.fetch();
           const body = await response.body();
-          if (response.ok() && kept) {
+          // Kept only if it's what was asked for: a whole answer, of the right kind and size
+          const why = response.status() >= 200 && response.status() < 300 ? downloadProblem(kept ?? url, response.headers()['content-type'] ?? '', body) : `the site answered ${response.status()}`;
+          if (!why && kept) {
             mkdirSync(dirname(kept), { recursive: true });
             const part = `${kept}.part-${process.pid}`;
             writeFileSync(part, body);
             renameSync(part, kept);
+          } else if (why) {
+            downloadFailed = true;
+            opts.onLog?.(`not keeping ${url}: ${why}`);
           }
           return route.fulfill({ status: response.status(), headers: { ...response.headers(), 'access-control-allow-origin': '*' }, body });
         } catch (err) {
-          opts.onLog?.(`couldn't download ${url}: ${((err as Error).message ?? '').split('\n')[0]}`);
+          const why = ((err as Error).message ?? '').split('\n')[0];
+          downloadFailed = true;
+          opts.onLog?.(`couldn't download ${url}: ${why}`);
           return route.abort('failed');
         }
       });
@@ -356,30 +457,114 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
     })();
     const deadline = new Promise<never>((_, fail) => {
       timer = setTimeout(() => fail(new Error(`It took longer than ${Math.round(timeoutMs / 1000)} seconds, so it was stopped (--timeout gives more).`)), timeoutMs);
-      // Ctrl+C (or being told to stop): everything is shut down before the command ends
-      onSignal = () => fail(new Error('Stopped.'));
-      process.once('SIGINT', onSignal);
-      process.once('SIGTERM', onSignal);
+      stop = fail;
     });
     run.catch(() => {}); // (its rejection is handled by the race; this keeps a late one quiet)
     return await Promise.race([run, deadline]);
   } catch (err) {
     if (err instanceof RenderSetupError) throw err;
-    const message = (err as Error).message ?? String(err);
+    let message = (err as Error).message ?? String(err);
+    // (the app says to check the connection; behind a proxy, say how this reaches it)
+    if (downloadFailed && /couldn.t download/i.test(message)) message += ` ${downloadHint()}`;
     // (a page that failed on its own, then went quiet: say what it said)
     if (/took longer than/.test(message) && pageErrors.length) throw new Error(`${message} The page said: ${pageErrors[0]}`);
     // A page error comes back wrapped by Playwright: the app's own words, without its wrapping
     const own = /Error: ([^\n]+)/.exec(message.replace(/^page\.evaluate: /, ''));
-    throw new Error(own && message.startsWith('page.evaluate') ? own[1] : message.split('\n')[0]);
+    throw new Error(own && message.startsWith('page.evaluate') ? `${own[1]}${downloadFailed && /couldn.t download/i.test(own[1]) ? ` ${downloadHint()}` : ''}` : message.split('\n')[0]);
   } finally {
     clearTimeout(timer);
-    if (onSignal) {
-      process.off('SIGINT', onSignal);
-      process.off('SIGTERM', onSignal);
-    }
+    // (a second Ctrl+C meanwhile is heard and let be, so the clean-up below always finishes)
     await closeBrowser(launched);
     await server.close();
     rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
+  }
+}
+
+/** What to try when a download fails: the proxy in use, or how to name one, and the samples folder. */
+function downloadHint(): string {
+  const proxy = proxyFromEnv();
+  return proxy
+    ? `(It downloads through the proxy at ${proxy.server}, from HTTPS_PROXY: check it lets fledgetone.com through, and if it uses a certificate of its own, give it with NODE_EXTRA_CA_CERTS. Or give the recordings with --samples.)`
+    : '(Behind a proxy? Set HTTPS_PROXY to it. Or give the recordings with --samples.)';
+}
+
+/** The kinds of file each extension may be, by the site's content type and the file's first bytes. */
+const KINDS: Array<{ ext: RegExp; types: RegExp; magic: (b: Buffer) => boolean }> = [
+  { ext: /\.mp3$/i, types: /^(audio\/(mpeg|mp3)|application\/octet-stream)/i, magic: (b) => b.toString('latin1', 0, 3) === 'ID3' || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) },
+  { ext: /\.ogg$/i, types: /^(audio\/ogg|application\/ogg|application\/octet-stream)/i, magic: (b) => b.toString('latin1', 0, 4) === 'OggS' },
+  { ext: /\.wasm$/i, types: /^(application\/wasm|application\/octet-stream)/i, magic: (b) => b[0] === 0 && b.toString('latin1', 1, 4) === 'asm' },
+  { ext: /\.wav$/i, types: /^(audio\/(wav|x-wav|wave)|application\/octet-stream)/i, magic: (b) => b.toString('latin1', 0, 4) === 'RIFF' },
+  { ext: /\.json$/i, types: /^(application\/json|text\/plain|application\/octet-stream)/i, magic: (b) => /^\s*[[{]/.test(b.toString('utf8', 0, 64)) },
+];
+/** The biggest file a download may be (the largest plugin is about 10 MB, a recording well under 1). */
+export const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024;
+
+/** Why a downloaded file isn't kept (null: it's fine): the wrong kind, empty, too big. `name` is its path or address. */
+export function downloadProblem(name: string, type: string, body: Buffer): string | null {
+  const plain = name.replace(/@[^/\\]*$/, '').replace(/[?#].*$/, '');
+  const kind = KINDS.find((k) => k.ext.test(plain));
+  if (!body.length) return 'it is empty';
+  if (body.length > MAX_DOWNLOAD_BYTES) return `it is ${Math.round(body.length / 1e6)} MB, more than any recording or plugin`;
+  if (!kind) return 'not a kind of file it keeps';
+  if (type && !kind.types.test(type)) return `it came as ${type.split(';')[0]}`;
+  if (!kind.magic(body)) return "its contents aren't what its name says";
+  return null;
+}
+
+/** Whether a kept download is still sound: a damaged one is deleted (and downloaded again). */
+function keptIsGood(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const size = statSync(path).size;
+    const fd = openSync(path, 'r');
+    const head = Buffer.alloc(Math.min(64, size));
+    readSync(fd, head, 0, head.length, 0);
+    closeSync(fd);
+    if (size > 0 && size <= MAX_DOWNLOAD_BYTES && downloadProblem(path, '', head) === null) return true;
+  } catch {
+    // Unreadable: as damaged
+  }
+  rmSync(path, { force: true });
+  return false;
+}
+
+/** Leftover browser folders (from a run that was killed) more than an hour old, whose run has ended, are deleted. */
+export function removeStaleBrowserFolders(base = tmpdir(), olderThanMs = 60 * 60_000): number {
+  let removed = 0;
+  let names: string[] = [];
+  try {
+    names = readdirSync(base);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    if (!name.startsWith('fledgetone-browser-')) continue;
+    const dir = join(base, name);
+    try {
+      if (Date.now() - statSync(dir).mtimeMs < olderThanMs) continue;
+      const pid = Number(readFileSync(join(dir, 'owner.pid'), 'utf8'));
+      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid)) continue;
+    } catch {
+      // No owner written: an old run's (or not readable): still only if old enough, checked above
+    }
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      removed++;
+    } catch {
+      // In use or not ours to delete
+    }
+  }
+  return removed;
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 

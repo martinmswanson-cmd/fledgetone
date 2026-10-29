@@ -126,6 +126,9 @@ async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
   const raw = typeof projectJson === 'string' ? (JSON.parse(projectJson) as unknown) : projectJson;
   const p = parseProject(raw);
   const project: ProjectSnapshot = { ...p, tracks: p.tracks.map((t) => ({ ...t, fx: normalizeTrackFx(t.fx) })) };
+  // Plugins from other sites (by their address) aren't run here: refused, rather than rendered silent
+  const outside = outsidePlugins(project.tracks);
+  if (outside.length) throw new Error(outsidePluginsMessage(outside));
   // The plugins it plays, loaded first: one that can't be would leave its part silent
   const plugins = songPlugins(project.tracks, pluginFamilies());
   if (plugins.missing.length) throw new Error(`This renderer can't play ${plugins.missing.join(', ')}`);
@@ -136,6 +139,19 @@ async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
   }
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
   return project;
+}
+
+/** The plugins the tracks that sound play from other sites (not Fledgetone's built-in ones). */
+export function outsidePlugins(tracks: ProjectSnapshot['tracks']): Array<{ track: string; plugin: string; url: string }> {
+  return audibleTracks(tracks).flatMap((t) =>
+    [t.plugin, ...(t.pluginFx ?? [])].filter((x) => !!x && !x.url.startsWith('builtin:')).map((x) => ({ track: t.name, plugin: x!.name || 'a plugin', url: x!.url }))
+  );
+}
+
+/** Why a song with such plugins isn't rendered, and what to do instead. */
+export function outsidePluginsMessage(list: ReturnType<typeof outsidePlugins>): string {
+  const named = list.map((x) => `"${x.track}" plays ${x.plugin} (from ${x.url.slice(0, 120)})`).join('; ');
+  return `This song uses plugins from other sites, which rendering on the command line doesn't run (it runs only Fledgetone's own): ${named}. Export it from the studio instead (File › Export audio / video…), where you chose to load them, or take them off those tracks (or mute them) to render the rest.`;
 }
 
 /** Where the music ends, as Export's whole song: the end of the last clip of a track that sounds (bar 1: nothing). */

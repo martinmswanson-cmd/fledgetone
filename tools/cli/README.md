@@ -12,27 +12,38 @@ You need Node 22. From a fresh clone of the repository:
 
 ```sh
 npm install                     # the app's own packages (the build uses Vite)
-cd tools/cli && npm install     # the command line's: the MCP SDK, ws and zod
+cd tools/cli && npm install     # the command line's: the MCP SDK, ws and zod (and playwright-core, for rendering)
 cd ../.. && npm run build:cli   # writes tools/cli/dist/fledgetone.mjs
 node tools/cli/dist/fledgetone.mjs --help
 ```
 
 Rendering song files (`render`, `listen`, and the helper's `render_file` and `listen` with a
-file) also needs the app's renderer and something to drive a browser with:
+file) also needs the app's renderer, `npm run build:runtime` (it writes
+`dist-runtime/fledgetone-render.js`), and playwright-core, which drives a browser to render in.
+It's an optional package of tools/cli, so `npm install` there brings it (it downloads no browser);
+without it the rest of the command line works, and rendering says how to get it. A copy found
+elsewhere is used too (`NODE_PATH`, the global packages, or `FLEDGETONE_PLAYWRIGHT=<its folder>`).
 
-```sh
-npm run build:runtime                          # writes dist-runtime/fledgetone-render.js
-cd tools/cli && npm install playwright-core    # downloads no browser
-```
-
-An installed Google Chrome or Chromium is used (or Edge); without one, `npx playwright-core install
+An installed Google Chrome or Chromium is used (or Edge, or one Playwright downloaded before, of
+any version); without one, `npx playwright-core install
 chromium` in `tools/cli` downloads one, or `--browser <path>` names one. The browser is started for
 each render with no window and closed when it ends; it opens only a page this command line serves
 on `127.0.0.1`, and reaches nothing else but fledgetone.com, for the recordings of instruments the
 song uses (the same files and addresses the app downloads them from). Those are kept in
 `~/.cache/fledgetone` (`FLEDGETONE_CACHE` for another folder), so each downloads once; in a copy
 of the repository the recordings in `public/fledgetone-samples` are used first, and `--samples
-<folder>` gives another such folder. `--offline` downloads nothing.
+<folder>` gives another such folder. `--offline` downloads nothing. A download is kept only if
+it's a whole file of the kind asked for (a recording, a plugin), and a kept one that's damaged is
+deleted and downloaded again.
+
+Behind a proxy, set `HTTPS_PROXY` (and `NO_PROXY` for addresses that go around it): the
+downloads go through it. A proxy that uses a certificate of its own needs it in
+`NODE_EXTRA_CA_CERTS` (a file of PEM certificates), as other Node programs do.
+
+Songs with plugins from other sites (by their address, not Fledgetone's built-in ones) aren't
+rendered: the command line doesn't run plugins from the internet. It says which tracks; export
+those songs from the studio, or take the plugins off (or mute those tracks) to render the rest.
+The built-in plugins load from `public/fledgetone-plugins` in this copy.
 
 `tools/cli/dist/` is build output: it isn't committed (the repository's `.gitignore` leaves out
 every `dist`), so build it after each pull. The bundle holds the app's own plain-logic code it
@@ -89,7 +100,7 @@ The command line is part of Fledgetone (GPL-3.0-or-later). Its packages, as pinn
 | `ws` | 8.22.0 | MIT |
 | `zod` | 4.6.7 | MIT |
 | `@types/ws` (type checking only) | 8.18.1 | MIT |
-| `playwright-core` (for rendering; installed by hand for now) | 1.56 | Apache-2.0 |
+| `playwright-core` (optional: for rendering) | 1.64.1 | Apache-2.0 |
 
 Everything they bring in is MIT, ISC, BSD-2-Clause or BSD-3-Clause, all compatible with
 GPL-3.0-or-later. None of it is in the app the website serves.

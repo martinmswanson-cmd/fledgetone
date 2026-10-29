@@ -8,7 +8,7 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -35,6 +35,7 @@ const SONG = join(ROOT, 'scripts/fixtures/render-song.fledgetone.json');
 
 const rc = await import('../tools/cli/src/renderCommands.ts');
 const { compareListens, HEARD_DIFFERENCE_DB } = await import('../src/agent/listenReport.ts');
+const br = await import('../tools/cli/src/browserRender.ts');
 
 const tmp = mkdtempSync(join(tmpdir(), 'fledgetone-render-args-'));
 test.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -65,6 +66,8 @@ test('render: its arguments, checked before anything renders', () => {
     [[SONG], { o: join(tmp, 'x.mp3'), bits: '16' }, /--bits is for WAV/],
     [[SONG], { o: join(tmp, 'x.wav'), format: 'mp3' }, /--format says mp3/],
     [[SONG], { o: join(tmp, 'x.wav'), bars: '9-5' }, /ends before it starts/],
+    [[SONG], { o: join(tmp, 'x.wav'), bars: '0' }, /songs start at bar 1/],
+    [[SONG], { o: join(tmp, 'x.wav'), bars: '0-4' }, /songs start at bar 1/],
     [[SONG], { o: SONG }, /give a \.wav or \.mp3 file|is the song itself/],
   ];
   for (const [args, flags, re] of bad) assert.throws(() => rc.renderPlan(args, flags), re, JSON.stringify(flags));
@@ -110,6 +113,9 @@ test('a before-and-after: which bars changed, and the difference in plain words'
   assert.deepEqual(c.difference.bars.map((b) => b.changed), [false, false, true, true]);
   assert.equal(c.difference.bars[2].lufsChange, 2);
   assert.equal(c.difference.mix.lufs, 0.5);
+  // One bar: "sounds"
+  const one = compareListens(before, after, [null, null, -30, null]);
+  assert.match(one.difference.summary[0], /^Bar 3 sounds different/);
   assert.match(c.difference.summary[0], /^Bars 3 to 4 sound different \(what changed is up to -30\.0 dBFS\); the other bars sound the same\.$/);
   assert.match(c.difference.summary.join(' '), /0\.5 LU louder/);
   assert.ok(c.before === before && c.after === after, 'both reports are kept whole');
@@ -178,5 +184,44 @@ test('render_file and listen with a file: only inside --root, never through a li
     await client.close();
     rmSync(work, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('downloads: a proxy from the environment, and only whole files of the right kind kept', () => {
+  assert.equal(br.proxyFromEnv({}), null);
+  assert.deepEqual(br.proxyFromEnv({ HTTPS_PROXY: 'http://127.0.0.1:3128', NO_PROXY: 'example.org, .corp' }), { server: 'http://127.0.0.1:3128', bypass: '127.0.0.1,localhost,example.org,.corp' });
+  assert.deepEqual(br.proxyFromEnv({ https_proxy: 'http://me:p%40ss@proxy.lan:8080' }), { server: 'http://proxy.lan:8080', bypass: '127.0.0.1,localhost', username: 'me', password: 'p@ss' });
+  const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(100)]);
+  assert.equal(br.downloadProblem('a/C4_0_0.mp3@abc', 'audio/mpeg', mp3), null);
+  assert.equal(br.downloadProblem('https://fledgetone.com/app/fledgetone-samples/x/C4.mp3?v=1', 'audio/mpeg', mp3), null);
+  assert.match(br.downloadProblem('a/C4.mp3', 'text/html; charset=utf-8', mp3), /came as text\/html/);
+  assert.match(br.downloadProblem('a/C4.mp3', 'audio/mpeg', Buffer.from('<html>blocked</html>')), /aren't what its name says/);
+  assert.match(br.downloadProblem('a/C4.mp3', 'audio/mpeg', Buffer.alloc(0)), /empty/);
+  assert.match(br.downloadProblem('a/big.wasm', 'application/wasm', Buffer.alloc(br.MAX_DOWNLOAD_BYTES + 1)), /more than any/);
+  assert.equal(br.downloadProblem('p/airwindows.wasm', 'application/wasm', Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0])), null);
+  assert.match(br.downloadProblem('p/index.html', 'text/html', Buffer.from('x')), /not a kind of file/);
+});
+
+test('leftover browser folders: old ones whose run ended are deleted, others kept', () => {
+  const base = mkdtempSync(join(tmpdir(), 'fledgetone-stale-'));
+  try {
+    const old = Date.now() / 1000 - 3 * 3600;
+    const make = (name, pid, age) => {
+      const dir = join(base, name);
+      mkdirSync(dir);
+      if (pid !== undefined) writeFileSync(join(dir, 'owner.pid'), String(pid));
+      if (age) utimesSync(dir, age, age);
+      return dir;
+    };
+    const ended = make('fledgetone-browser-ended', 2 ** 22 + 12345, old);
+    const noOwner = make('fledgetone-browser-noowner', undefined, old);
+    const running = make('fledgetone-browser-running', process.ppid, old);
+    const fresh = make('fledgetone-browser-fresh', 2 ** 22 + 12346, 0);
+    const other = make('something-else', undefined, old);
+    assert.equal(br.removeStaleBrowserFolders(base), 2);
+    assert.ok(!existsSync(ended) && !existsSync(noOwner), 'old, ended: deleted');
+    assert.ok(existsSync(running) && existsSync(fresh) && existsSync(other), 'running, new, or not ours: kept');
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
 });

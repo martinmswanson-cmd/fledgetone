@@ -50,15 +50,21 @@ servers are listed in a JSON file takes something like this:
 
 To hear song files without the studio (`render_file`, and `listen` with a file; on the command
 line `fledgetone render` and `fledgetone listen`), the helper renders them in a browser on your
-computer that it starts and closes itself, with no window. That needs two more things:
+computer that it starts and closes itself, with no window. That needs the app's renderer,
 
 ```sh
-npm run build:runtime                          # the app's renderer: dist-runtime/fledgetone-render.js
-cd tools/cli && npm install playwright-core    # what drives the browser (it downloads no browser)
+npm run build:runtime    # dist-runtime/fledgetone-render.js
 ```
 
-and a browser: an installed Google Chrome or Chromium is found by itself (Edge too); without one,
-`npx playwright-core install chromium` in `tools/cli` downloads one, or `--browser <path>` names one.
+playwright-core (which `npm install` in `tools/cli` brings: it's optional there, and downloads no
+browser), and a browser: an installed Google Chrome or Chromium is found by itself (Edge too);
+without one, `npx playwright-core install chromium` in `tools/cli` downloads one, or `--browser
+<path>` names one. Behind a proxy, set `HTTPS_PROXY` (and `NODE_EXTRA_CA_CERTS` if it has a
+certificate of its own) so recordings can download.
+
+Songs with plugins from other sites (not Fledgetone's built-in ones) aren't rendered: the helper
+doesn't run plugins from the internet, and says which tracks use them. Export those songs from
+the studio instead.
 
 Options of `fledgetone mcp`:
 
