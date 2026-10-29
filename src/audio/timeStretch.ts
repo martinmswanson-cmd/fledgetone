@@ -21,7 +21,8 @@
  *
  * Plain arrays, so Node can unit-test it.
  */
-import { glideRate, vocode, vocoderSize, type TimeMap } from './phaseVocoder';
+import { glideRate, holdAtHits, mapAt, vocode, vocoderSize, type TimeMap } from './phaseVocoder';
+import { analysisMix } from './channelMix';
 import { harmonicPercussive, type HarmonicPercussive } from './harmonicPercussive';
 
 /**
@@ -42,6 +43,8 @@ export interface StretchAnalysis {
   glide: number;
   /** The hits (input samples) and the harmonic-percussive split around them, for the stretch to use */
   hits: number[];
+  /** How hard each hit is (its rise in level), so a strong hit wins over a weak one next to it */
+  strength: number[];
   split: HarmonicPercussive;
 }
 
@@ -71,15 +74,23 @@ export function analyseForStretch(input: readonly Float32Array[], sampleRate: nu
   const engine: StretchEngine = percussive >= PERCUSSIVE_SHARE ? 'wsola' : 'vocoder';
   // (How fast the partials glide only matters to the vocoder)
   const glide = engine === 'vocoder' ? glideRate(mono, sampleRate) : 0;
-  return { engine, size: vocoderSizeFor(glide, sampleRate), percussive, glide, hits, split };
+  return { engine, size: vocoderSizeFor(glide, sampleRate), percussive, glide, hits, strength: hits.map((h) => hitStrength(mono, h, sampleRate)), split };
 }
 
+/** The channels' mix, as loud as one channel (none cancelling another: channelMix.ts). */
 function mixOf(input: readonly Float32Array[]): Float32Array {
   if (input.length === 1) return input[0];
-  const length = input[0]?.length ?? 0;
-  const mono = new Float32Array(length);
-  for (const ch of input) for (let i = 0; i < length; i++) mono[i] += ch[i] / input.length;
-  return mono;
+  return analysisMix(input).map((v) => v / input.length);
+}
+
+/** How hard a hit at `h` is: the level over the 20 ms after it, less the 20 ms before. */
+function hitStrength(mono: Float32Array, h: number, sampleRate: number): number {
+  const w = Math.round(0.02 * sampleRate);
+  let after = 0;
+  let before = 0;
+  for (let i = h; i < Math.min(mono.length, h + w); i++) after += mono[i] * mono[i];
+  for (let i = Math.max(0, h - w); i < h; i++) before += mono[i] * mono[i];
+  return Math.sqrt(after / w) - Math.sqrt(before / w);
 }
 
 /** The hits the phase vocoder keeps in place: the sound's start, and its onsets. */
@@ -109,7 +120,7 @@ function fitLength(ch: Float32Array, length: number): Float32Array {
 }
 
 /** WSOLA piece by piece, end to end (each piece to its exact length). */
-function wsolaPieces(input: readonly Float32Array[], pieces: readonly StretchPiece[], sampleRate: number): Float32Array[] {
+export function wsolaPieces(input: readonly Float32Array[], pieces: readonly StretchPiece[], sampleRate: number): Float32Array[] {
   const length = pieces.reduce((n, p) => n + (p.outTo - p.outFrom), 0);
   const out = input.map(() => new Float32Array(length));
   let at = 0;
@@ -127,8 +138,9 @@ function wsolaPieces(input: readonly Float32Array[], pieces: readonly StretchPie
  * to its own length), end to end. Pieces follow on from each other in the input and the output.
  * The sound is heard whole (analyseForStretch): drums are stretched piece by piece with WSOLA; a
  * tonal sound in one phase vocoder pass along all the pieces, so it runs on unbroken across them.
+ * `consume`: the input's arrays may be used up (overwritten) on the way, saving a copy of the sound.
  */
-export function warpChannels(input: readonly Float32Array[], pieces: readonly StretchPiece[], sampleRate: number, analysis = analyseForStretch(input, sampleRate)): Float32Array[] {
+export function warpChannels(input: readonly Float32Array[], pieces: readonly StretchPiece[], sampleRate: number, analysis = analyseForStretch(input, sampleRate), consume = false): Float32Array[] {
   const real = pieces.filter((p) => p.to > p.from && p.outTo > p.outFrom);
   if (!real.length || !input.length) return input.map(() => new Float32Array(0));
   if (analysis.engine === 'wsola') return wsolaPieces(input, real, sampleRate);
@@ -147,21 +159,91 @@ export function warpChannels(input: readonly Float32Array[], pieces: readonly St
   }
   const length = at;
   const map: TimeMap = { out, in: inp };
+  const inLength = input[0].length;
   // The hits (each partial a hit starts lands exactly where the hit belongs), and the
-  // percussive part around them
+  // percussive part around them. Around each hit the speed is held at 1 for a window's reach
+  // where there's room (holdAtHits), so the windows give it back exactly as loud and as sharp
   const { hits } = analysis;
-  const { harmonic, percussive } = analysis.split.parts();
-  const tonal = vocode(harmonic, length, map, sampleRate, { size: analysis.size, overlap: overlapFor(analysis.size, sampleRate), onsets: hits });
+  const ceiling = peakOf(input) * PEAK_ROOM;
+  const { harmonic, percussive } = analysis.split.parts(input, consume);
+  // (Hits closer together in the output than the window is long can't all be held: the window
+  // comes down to their spacing, no shorter than the short one)
+  const size = windowForHits(analysis.size, hits, map, sampleRate);
+  const result = vocode(harmonic, length, holdAtHits(map, hits, size / 2, inLength, length, analysis.strength), sampleRate, { size, overlap: overlapFor(size, sampleRate), onsets: hits });
   // The percussive part through a short window, which keeps the hits sharp (and, being the same
-  // kind of stretch, in step with the harmonic part: the two add back up cleanly)
+  // kind of stretch, in step with the harmonic part: the two add back up cleanly), added in
   const short = vocoderSize(sampleRate);
-  const hitsPart = vocode(percussive, length, map, sampleRate, { size: short, overlap: overlapFor(short, sampleRate), onsets: hits });
-  for (let c = 0; c < tonal.length; c++) {
-    const t = tonal[c];
-    const h = hitsPart[c];
-    for (let i = 0; i < length; i++) t[i] += h[i];
+  vocode(percussive, length, holdAtHits(map, hits, short / 2, inLength, length, analysis.strength), sampleRate, { size: short, overlap: overlapFor(short, sampleRate), onsets: hits, into: result });
+  return capPeaks(result, ceiling);
+}
+
+/**
+ * The harmonic part's window for hits laid out along `map`: `size`, or less where the hits come
+ * closer together in the output than it is long (most of them: the median spacing), so the speed
+ * can be held at 1 over each hit's windows. Never below the short window (vocoderSize).
+ */
+export function windowForHits(size: number, hits: readonly number[], map: TimeMap, sampleRate: number): number {
+  if (hits.length < 3) return size;
+  const inverse: TimeMap = { out: map.in, in: map.out };
+  const at = hits.map((h) => mapAt(inverse, h));
+  const gaps = at.slice(1).map((t, i) => t - at[i]).sort((a, b) => a - b);
+  const spacing = gaps[gaps.length >> 1];
+  let n = size;
+  while (n > vocoderSize(sampleRate) && n > spacing) n /= 2;
+  return n;
+}
+
+/** How far over the input's peak a stretch may go (+0.5 dB: a held chord's peaks move a little as its partials' phases do) before capPeaks brings it down. */
+const PEAK_ROOM = 10 ** (0.5 / 20);
+
+const peakOf = (chs: readonly Float32Array[]) => {
+  let p = 0;
+  for (const ch of chs) for (let i = 0; i < ch.length; i++) p = Math.max(p, Math.abs(ch[i]));
+  return p;
+};
+
+/**
+ * `channels` (in place) kept under `ceiling`: where a peak would go over, the level dips smoothly
+ * around it (over about 6 ms either side, the channels together), and nowhere else. A safety net:
+ * a stretch is never louder at its peaks than what went in, by more than a fraction of a dB.
+ */
+export function capPeaks(channels: Float32Array[], ceiling: number): Float32Array[] {
+  const length = channels[0]?.length ?? 0;
+  if (!(ceiling > 0) || !length) return channels;
+  let over = false;
+  for (const ch of channels) for (let i = 0; i < length && !over; i++) if (Math.abs(ch[i]) > ceiling) over = true;
+  if (!over) return channels;
+  // The gain each sample needs, held over the reach (a running minimum), then averaged over it:
+  // never more than any sample within reach needs, and smooth
+  const reach = 256;
+  const need = new Float32Array(length).fill(1);
+  for (const ch of channels) for (let i = 0; i < length; i++) if (Math.abs(ch[i]) > ceiling) need[i] = Math.min(need[i], ceiling / Math.abs(ch[i]));
+  const held = new Float32Array(length);
+  // (A running minimum over [i - reach, i + reach], with a queue of the candidates)
+  const queue = new Int32Array(length);
+  let head = 0;
+  let tail = 0;
+  for (let j = 0; j < length + reach; j++) {
+    if (j < length) {
+      while (tail > head && need[queue[tail - 1]] >= need[j]) tail--;
+      queue[tail++] = j;
+    }
+    const i = j - reach;
+    if (i < 0) continue;
+    while (queue[head] < i - reach) head++;
+    held[i] = need[queue[head]];
   }
-  return tonal;
+  const gain = new Float32Array(length);
+  // (Past the ends counts as 1: no dip needed there)
+  let sum = reach + 1;
+  for (let i = 0; i < Math.min(length, reach); i++) sum += held[i];
+  if (length < reach) sum += reach - length;
+  for (let i = 0; i < length; i++) {
+    sum += (i + reach < length ? held[i + reach] : 1) - (i - reach - 1 >= 0 ? held[i - reach - 1] : 1);
+    gain[i] = Math.min(held[i], sum / (2 * reach + 1));
+  }
+  for (const ch of channels) for (let i = 0; i < length; i++) ch[i] *= gain[i];
+  return channels;
 }
 
 /**
@@ -169,14 +251,14 @@ export function warpChannels(input: readonly Float32Array[], pieces: readonly St
  * as long, 0.5 twice as long (Math.round(length / ratio) samples). The channels are stretched
  * together, so a stereo image stays put.
  */
-export function stretchChannels(input: readonly Float32Array[], ratio: number, sampleRate: number, analysis?: StretchAnalysis): Float32Array[] {
+export function stretchChannels(input: readonly Float32Array[], ratio: number, sampleRate: number, analysis?: StretchAnalysis, consume = false): Float32Array[] {
   const length = input[0]?.length ?? 0;
   if (!length || !(ratio > 0)) return input.map((ch) => ch.slice());
   if (Math.abs(ratio - 1) < 1e-6) return input.map((ch) => ch.slice());
   const plan = analysis ?? analyseForStretch(input, sampleRate);
   if (plan.engine === 'wsola') return wsolaChannels(input, ratio, sampleRate);
   const outLength = Math.max(1, Math.round(length / ratio));
-  return warpChannels(input, [{ from: 0, to: length, outFrom: 0, outTo: outLength }], sampleRate, plan);
+  return warpChannels(input, [{ from: 0, to: length, outFrom: 0, outTo: outLength }], sampleRate, plan, consume);
 }
 
 /** Window length, in seconds: long enough for low notes, short enough to keep hits tight. */

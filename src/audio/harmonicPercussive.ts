@@ -9,6 +9,7 @@
  * takes little memory. Plain arrays, so Node can unit-test it.
  */
 import { fftInPlace } from './fft';
+import { analysisMix } from './channelMix';
 
 /** The split's FFT size for `sampleRate`: about 46 ms. */
 const splitSize = (sampleRate: number) => (sampleRate > 64000 ? 4096 : sampleRate > 32000 ? 2048 : 1024);
@@ -63,10 +64,14 @@ export interface HarmonicPercussive {
   /** The same above 200 Hz (where a drum's tone, a kick's boom, no longer counts) */
   percussiveHighShare: number;
   /**
-   * The two parts, one array per channel each (split on the channels' mix, so they share one
-   * stereo image). With hits given to the analysis, only what's around them is percussive.
+   * The two parts of `sound` (the sound this was heard from, or the same samples again), one array
+   * per channel each (split on the channels' mix, so they share one stereo image). With hits given
+   * to the analysis, only what's around them is percussive. `inPlace`: the harmonic part is left in
+   * the sound's own arrays (no copy), for a caller that is done with them.
    */
-  parts(): { harmonic: Float32Array[]; percussive: Float32Array[] };
+  parts(sound: readonly Float32Array[], inPlace?: boolean): { harmonic: Float32Array[]; percussive: Float32Array[] };
+  /** About how much memory this keeps (for a cache of analyses) */
+  bytes: number;
 }
 
 /** Hann window of `n`. */
@@ -90,6 +95,8 @@ export function harmonicPercussive(input: readonly Float32Array[], sampleRate: n
   const frames = Math.ceil((length + half) / hop) + 2;
   const frameStart = (f: number) => (f - 1) * hop - half;
   const win = hann(n);
+  // (Analysed on the channels' mix, none cancelling another)
+  const mix = analysisMix(input);
   const re = new Float64Array(n);
   const im = new Float64Array(n);
 
@@ -135,9 +142,7 @@ export function harmonicPercussive(input: readonly Float32Array[], sampleRate: n
       const s0 = frameStart(f);
       for (let j = 0; j < n; j++) {
         const s = s0 + j;
-        let v = 0;
-        if (s >= 0 && s < length) for (const ch of input) v += ch[s];
-        re[j] = v * win[j];
+        re[j] = s >= 0 && s < length ? mix[s] * win[j] : 0;
         im[j] = 0;
       }
       fftInPlace(re, im);
@@ -171,13 +176,16 @@ export function harmonicPercussive(input: readonly Float32Array[], sampleRate: n
     }
   }
 
-  const parts = () => {
+  const parts = (sound: readonly Float32Array[], inPlace = false) => {
     // Each channel's percussive part: its spectrogram cut by the kept shares, back to sound (Hann
     // both ways at a quarter-window hop, whose squares add to 1.5); the harmonic part is the rest
-    const harmonic = input.map((ch) => ch.slice());
-    const perc = input.map(() => new Float32Array(length));
-    for (let c = 0; c < input.length; c++) {
-      const src = input[c];
+    // (worked out in the sound's own arrays, in place, when they may be given up)
+    const re = new Float64Array(n);
+    const im = new Float64Array(n);
+    const harmonic = inPlace ? (sound as Float32Array[]) : sound.map((ch) => ch.slice());
+    const perc = sound.map(() => new Float32Array(length));
+    for (let c = 0; c < sound.length; c++) {
+      const src = sound[c];
       const pOut = perc[c];
       for (const [f, keep] of kept) {
         const s0 = frameStart(f);
@@ -208,5 +216,7 @@ export function harmonicPercussive(input: readonly Float32Array[], sampleRate: n
     return { harmonic, percussive: perc };
   };
 
-  return { percussiveShare: total > 0 ? percussive / total : 0, percussiveHighShare: totalHigh > 0 ? percussiveHigh / totalHigh : 0, parts };
+  let bytes = 0;
+  for (const keep of kept.values()) bytes += keep.length + 48;
+  return { percussiveShare: total > 0 ? percussive / total : 0, percussiveHighShare: totalHigh > 0 ? percussiveHigh / totalHigh : 0, parts, bytes };
 }

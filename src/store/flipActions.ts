@@ -4,6 +4,7 @@
  * and key), and the bass cut. Each is one undo step. The maths is in sampleFlip.ts,
  * sampleAnalysis.ts and pitchShift.ts.
  */
+import { withClipHeld } from './clipJobs';
 import { songTempo, useTimelineStore } from './timelineStore';
 import type { Clip, NoteEvent, SoundMeta } from './timelineTypes';
 import { barsToDuration, uid } from './timelineTypes';
@@ -159,7 +160,7 @@ export async function shiftedSound(original: string, shift: number, fallbackName
  * re-pitched copy kept in the sound library: same length, same timing, new key. 0 goes back to the
  * original. One undo step.
  */
-export async function shiftClip(clipId: string, semitones: number): Promise<void> {
+async function shiftClipNow(clipId: string, semitones: number): Promise<void> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   const audio = clip?.audio;
@@ -172,6 +173,11 @@ export async function shiftClip(clipId: string, semitones: number): Promise<void
   }
   const sound = await shiftedSound(original, shift, clip.name);
   useTimelineStore.getState().setClipAudio(clipId, { soundId: sound.id, shiftedFrom: original, shift, shiftVersion: SHIFT_VERSION }, true);
+}
+
+/** (Holding the clip while it works: see clipJobs.ts) */
+export function shiftClip(clipId: string, semitones: number): Promise<void> {
+  return withClipHeld(clipId, () => shiftClipNow(clipId, semitones));
 }
 
 /** The semitones that move a sample in `sampleKey` (sitting `cents` off A440) into the song's key, or null with no song key. */

@@ -5,6 +5,7 @@
  * original" brings the first sound back whatever was done since. Being a sound like any other,
  * it plays the same live and in an export.
  */
+import { withClipHeld } from './clipJobs';
 import { songTempo, useTimelineStore } from './timelineStore';
 import { AUDIO_GAIN_MAX, type Clip, type ClipAudio } from './timelineTypes';
 import { audioSourceSeconds, stretchRatio } from './audioClips';
@@ -48,7 +49,7 @@ export function mangleOp(req: MangleRequest, bpm: number, ratio: number, sampleR
  * Mangle audio clip `clipId`. Resolves to what to tell the person. The clip's length follows
  * edits that change it (tape speed, stretch); warp markers go (they belonged to the old sound).
  */
-export async function mangleClip(clipId: string, req: MangleRequest): Promise<string> {
+async function mangleClipNow(clipId: string, req: MangleRequest): Promise<string> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip?.audio) return 'Choose an audio clip to mangle.';
@@ -89,6 +90,11 @@ export async function mangleClip(clipId: string, req: MangleRequest): Promise<st
     }),
   }));
   return `"${clip.name}" ${label}. Undo goes back a step; Back to the original undoes them all.`;
+}
+
+/** (Holding the clip while it works: see clipJobs.ts) */
+export function mangleClip(clipId: string, req: MangleRequest): Promise<string> {
+  return withClipHeld(clipId, () => mangleClipNow(clipId, req));
 }
 
 /** Play the sound the clip was mangled from again, where it was, as long and as it was set (one undo step). */

@@ -75,7 +75,7 @@ export function resample(x: Float32Array, speed: number, outLength: number, star
   return resampleAt(x, outLength, (i) => start + i * speed, () => speed);
 }
 
-/** Zero crossings of the short kernel each side (sincAt). */
+/** Zero crossings of the short kernel each side (sincTaps). */
 const SHORT_ZEROS = 8;
 let shortTable: Float64Array | null = null;
 function shortKernel(): Float64Array {
@@ -91,19 +91,20 @@ function shortKernel(): Float64Array {
   return shortTable;
 }
 
-/** `x` at the fractional sample `t` (a 16-tap windowed sinc, full band; silence outside `x`). */
-export function sincAt(x: Float32Array, t: number): number {
+/** Taps either side of the short kernel (sincTaps). */
+export const SINC_HALF = SHORT_ZEROS;
+
+/**
+ * The short kernel's 16 taps for reading between samples `frac` (0 to 1) past a sample i: tap k
+ * weighs sample i - SINC_HALF + 1 + k. Worked out once, they read any number of samples that
+ * same fraction off (a grain laid down between samples).
+ */
+export function sincTaps(frac: number, taps: Float64Array): Float64Array {
   const h = shortKernel();
-  const i = Math.floor(t);
-  const f = t - i;
-  if (f === 0) return i >= 0 && i < x.length ? x[i] : 0;
-  let sum = 0;
-  const lo = Math.max(0, i - SHORT_ZEROS + 1);
-  const hi = Math.min(x.length - 1, i + SHORT_ZEROS);
-  for (let j = lo; j <= hi; j++) {
-    const d = Math.abs(t - j) * RES;
-    const k = d | 0;
-    sum += x[j] * (h[k] + (d - k) * (h[k + 1] - h[k]));
+  for (let k = 0; k < 2 * SHORT_ZEROS; k++) {
+    const d = Math.abs(frac - (k - SHORT_ZEROS + 1)) * RES;
+    const i = d | 0;
+    taps[k] = i + 1 < h.length ? h[i] + (d - i) * (h[i + 1] - h[i]) : 0;
   }
-  return sum;
+  return taps;
 }

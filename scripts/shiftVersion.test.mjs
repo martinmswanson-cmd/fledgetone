@@ -38,3 +38,17 @@ test('the version is kept with the clip (and dropped without a shift)', () => {
   assert.equal('shiftVersion' in normalizeClipAudio({ ...base, shiftedFrom: 's1', shift: 3 }), false);
   assert.equal('shiftVersion' in normalizeClipAudio({ ...base, shiftVersion: 2 }), false);
 });
+
+test('a clip with work under way on its sound is held (and let go)', async () => {
+  const { holdClip, clipHeld, withClipHeld } = await import('../src/store/clipJobs.ts');
+  const release = holdClip('c1');
+  assert.ok(clipHeld('c1'));
+  const inner = holdClip('c1');
+  release();
+  assert.ok(clipHeld('c1'));
+  inner();
+  inner();
+  assert.equal(clipHeld('c1'), false);
+  await withClipHeld('c2', async () => assert.ok(clipHeld('c2')));
+  assert.equal(clipHeld('c2'), false);
+});

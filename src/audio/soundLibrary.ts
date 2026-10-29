@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { liveMix } from './engine';
 import { createPeaks, fillPeaks } from './waveform';
 import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
-import { runDsp } from './dspRun';
+import { DspDropped, runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
 import type { Peaks } from './waveform';
 import type { ClipAudio, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
@@ -341,66 +341,112 @@ export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer
 
 // ---------- time-stretched copies ----------
 
+/**
+ * A copy being made: its promise, and whether something must have it (an export or a freeze:
+ * never dropped). One made in the background for playback is dropped once nothing wants it (a
+ * tempo dragged on past it); while it's made, a quick stand-in (WSOLA: right speed and pitch)
+ * plays in its place, never in an export.
+ */
+interface Making {
+  promise: Promise<AudioBuffer>;
+  required: boolean;
+}
+
+const toBuffer = (channels: Float32Array[], sampleRate: number) => {
+  const length = Math.max(1, channels[0]?.length ?? 0);
+  const buffer = new AudioBuffer({ length, numberOfChannels: Math.max(1, channels.length), sampleRate });
+  channels.forEach((ch, c) => buffer.copyToChannel((ch.length ? ch : new Float32Array(1)) as Float32Array<ArrayBuffer>, c));
+  return buffer;
+};
+const channelsOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+
+/** Stand-ins by copy key (stretched or warped), until the real copy is made. */
+const standIns = new Map<string, AudioBuffer>();
+/** Stand-ins kept per sound and rate */
+const KEEP_STAND_INS = 3;
+function keepStandIn(key: string, prefix: string, buffer: AudioBuffer): void {
+  standIns.set(key, buffer);
+  const mine = [...standIns.keys()].filter((k) => k.startsWith(prefix) && k !== key && !isWanted(k));
+  for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_STAND_INS + 1))) standIns.delete(old);
+}
+
 /** Stretched copies of sounds (see timeStretch.ts), by sound, sample rate, speed and the stretch's version. */
 const stretchedBuffers = new Map<string, AudioBuffer>();
-const stretching = new Map<string, Promise<AudioBuffer>>();
+const stretching = new Map<string, Making>();
 const stretchKey = (id: string, sampleRate: number, ratio: number) => `${id}|${sampleRate}|${ratio.toFixed(4)}|v${STRETCH_VERSION}`;
 /** Speeds kept per sound and rate: a tempo being dragged leaves only the last few behind */
 const KEEP_STRETCHES = 3;
+/** The speed last asked for, per sound and rate (still wanted while the tempo settles) */
+const lastAsked = new Map<string, string>();
 
-/** The sound played `ratio` times as fast at the same pitch, once stretchSound has made it. */
-export const stretchedSound = (id: string, sampleRate: number, ratio: number): AudioBuffer | undefined =>
-  stretchedBuffers.get(stretchKey(id, sampleRate, ratio));
-
-/** Make (once, shared) the sound played `ratio` times as fast at the same pitch, decoded to `sampleRate`. */
-export function stretchSound(id: string, sampleRate: number, ratio: number): Promise<AudioBuffer> {
+/** The sound played `ratio` times as fast at the same pitch, once stretchSound has made it (or its stand-in, while it's made). */
+export const stretchedSound = (id: string, sampleRate: number, ratio: number): AudioBuffer | undefined => {
   const key = stretchKey(id, sampleRate, ratio);
-  let promise = stretching.get(key);
-  if (!promise) {
-    promise = (async () => {
-      const source = await decodeSound(id, sampleRate);
-      // (In a Worker: a long tonal sound is a few seconds of work)
-      const channels = await runDsp(
-        { kind: 'stretch', ratio },
-        Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c)),
-        sampleRate
-      );
-      const buffer = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
-      channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
-      return buffer;
-    })();
-    promise.then(
-      (buffer) => {
-        stretchedBuffers.set(key, buffer);
-        // Forget the oldest speeds of this sound beyond the last few
-        const prefix = `${id}|${sampleRate}|`;
-        const mine = [...stretchedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
-        for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_STRETCHES))) {
-          stretchedBuffers.delete(old);
-          stretching.delete(old);
-        }
-      },
-      () => stretching.delete(key)
-    );
-    stretching.set(key, promise);
+  return stretchedBuffers.get(key) ?? standIns.get(key);
+};
+
+/**
+ * Make (once, shared) the sound played `ratio` times as fast at the same pitch, decoded to
+ * `sampleRate`. `background`: for playback, so a stand-in comes first and it may be dropped once
+ * nothing wants it; otherwise (an export) it's always made, and waited for.
+ */
+export function stretchSound(id: string, sampleRate: number, ratio: number, background = false): Promise<AudioBuffer> {
+  const key = stretchKey(id, sampleRate, ratio);
+  const slot = `${id}|${sampleRate}`;
+  const known = stretching.get(key);
+  if (known) {
+    if (background) return known.promise;
+    // (Needed now: one dropped just before this asked is made again)
+    known.required = true;
+    return known.promise.catch((err) => (err instanceof DspDropped ? stretchSound(id, sampleRate, ratio) : Promise.reject(err)));
   }
-  return promise;
+  const making: Making = { promise: Promise.resolve(null as unknown as AudioBuffer), required: !background };
+  const wantedNow = () => making.required || isWanted(key) || lastAsked.get(slot) === key;
+  making.promise = (async () => {
+    const source = await decodeSound(id, sampleRate);
+    if (background && !standIns.has(key)) {
+      const quick = await runDsp({ kind: 'stretch', ratio, quick: true }, channelsOf(source), sampleRate, { wanted: wantedNow });
+      if (!stretchedBuffers.has(key)) keepStandIn(key, `${slot}|`, toBuffer(quick, sampleRate));
+    }
+    // (In a Worker: a long tonal sound is a few seconds of work; how the sound was heard is kept there for its next speed)
+    const channels = await runDsp({ kind: 'stretch', ratio, key: slot }, channelsOf(source), sampleRate, { wanted: wantedNow });
+    return toBuffer(channels, sampleRate);
+  })();
+  making.promise.then(
+    (buffer) => {
+      stretchedBuffers.set(key, buffer);
+      standIns.delete(key);
+      // Forget the oldest speeds of this sound beyond the last few
+      const prefix = `${slot}|`;
+      const mine = [...stretchedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
+      for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_STRETCHES))) {
+        stretchedBuffers.delete(old);
+        stretching.delete(old);
+      }
+    },
+    () => stretching.delete(key)
+  );
+  stretching.set(key, making);
+  return making.promise;
 }
 
 const stretchTimers = new Map<string, number>();
 /**
  * Ask for a stretched copy soon: while a tempo is being dragged only the speed it settles on is
- * made (each takes a moment of work). Until then the player plays the sound sped up as a tape would.
+ * made (each takes a moment of work; one no longer wanted is dropped). Until then the player plays
+ * the sound sped up as a tape would, then the stand-in, then the real copy.
  */
 export function requestStretch(id: string, sampleRate: number, ratio: number): void {
-  if (stretchedSound(id, sampleRate, ratio)) return;
   const slot = `${id}|${sampleRate}`;
+  const key = stretchKey(id, sampleRate, ratio);
+  if (stretchedBuffers.has(key)) return;
+  lastAsked.set(slot, key);
   clearTimeout(stretchTimers.get(slot));
   stretchTimers.set(
     slot,
     window.setTimeout(() => {
       stretchTimers.delete(slot);
-      void stretchSound(id, sampleRate, ratio).catch(() => {});
+      void stretchSound(id, sampleRate, ratio, true).catch(() => {});
     }, 250)
   );
 }
@@ -413,56 +459,71 @@ export function requestStretch(id: string, sampleRate: number, ratio: number): v
  * beat beatAt(0) + t * bpm / 60 of the sound. Kept per sound, rate, tempo and markers.
  */
 const warpedBuffers = new Map<string, AudioBuffer>();
-const warping = new Map<string, Promise<AudioBuffer>>();
+const warping = new Map<string, Making>();
 const warpBufferKey = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number) =>
   `${id}|${sampleRate}|${bpm.toFixed(4)}|${audio.stretchBpm}|${warpKey(audio)}|v${STRETCH_VERSION}`;
 /** Warps kept per sound and rate (markers being dragged leave only the last few behind) */
 const KEEP_WARPS = 4;
+/** The warp last asked for, per sound and rate */
+const lastWarp = new Map<string, string>();
 
-export const warpedSound = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): AudioBuffer | undefined =>
-  warpedBuffers.get(warpBufferKey(id, sampleRate, audio, bpm));
-
-export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): Promise<AudioBuffer> {
+export const warpedSound = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): AudioBuffer | undefined => {
   const key = warpBufferKey(id, sampleRate, audio, bpm);
-  let promise = warping.get(key);
-  if (!promise) {
-    const shape = { stretchBpm: audio.stretchBpm, warp: audio.warp };
-    promise = (async () => {
-      const source = await decodeSound(id, sampleRate);
-      const input = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
-      const pieces: StretchPiece[] = [];
-      for (const piece of warpPieces(shape, 0, source.duration)) {
-        const from = Math.round(piece.src0 * sampleRate);
-        const to = Math.round(piece.src1 * sampleRate);
-        // Its length at the song's tempo, in samples (rounded so the pieces add up to the beats)
-        const outFrom = Math.round(((piece.beat0 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
-        const outTo = Math.round(((piece.beat1 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
-        if (to <= from || outTo <= outFrom) continue;
-        pieces.push({ from, to, outFrom, outTo });
-      }
-      // Heard whole and stretched along all the pieces at once (timeStretch.ts), in a Worker
-      const channels = pieces.length ? await runDsp({ kind: 'warp', pieces }, input, sampleRate) : input.map(() => new Float32Array(1));
-      const length = Math.max(1, channels[0]?.length ?? 0);
-      const buffer = new AudioBuffer({ length, numberOfChannels: source.numberOfChannels, sampleRate });
-      channels.forEach((ch, c) => buffer.copyToChannel((ch.length ? ch : new Float32Array(1)) as Float32Array<ArrayBuffer>, c));
-      return buffer;
-    })();
-    promise.then(
-      (buffer) => {
-        warpedBuffers.set(key, buffer);
-        const prefix = `${id}|${sampleRate}|`;
-        const mine = [...warpedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
-        for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_WARPS))) {
-          warpedBuffers.delete(old);
-          warping.delete(old);
-        }
-        warpListeners.forEach((l) => l());
-      },
-      () => warping.delete(key)
-    );
-    warping.set(key, promise);
+  return warpedBuffers.get(key) ?? standIns.get(key);
+};
+
+/** Make (once, shared) the warped copy (see stretchSound for `background`). */
+export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number, background = false): Promise<AudioBuffer> {
+  const key = warpBufferKey(id, sampleRate, audio, bpm);
+  const slot = `${id}|${sampleRate}`;
+  const known = warping.get(key);
+  if (known) {
+    if (background) return known.promise;
+    known.required = true;
+    return known.promise.catch((err) => (err instanceof DspDropped ? warpSound(id, sampleRate, audio, bpm) : Promise.reject(err)));
   }
-  return promise;
+  const making: Making = { promise: Promise.resolve(null as unknown as AudioBuffer), required: !background };
+  const wantedNow = () => making.required || isWanted(key) || lastWarp.get(slot) === key;
+  const shape = { stretchBpm: audio.stretchBpm, warp: audio.warp };
+  making.promise = (async () => {
+    const source = await decodeSound(id, sampleRate);
+    const pieces: StretchPiece[] = [];
+    for (const piece of warpPieces(shape, 0, source.duration)) {
+      const from = Math.round(piece.src0 * sampleRate);
+      const to = Math.round(piece.src1 * sampleRate);
+      // Its length at the song's tempo, in samples (rounded so the pieces add up to the beats)
+      const outFrom = Math.round(((piece.beat0 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+      const outTo = Math.round(((piece.beat1 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+      if (to <= from || outTo <= outFrom) continue;
+      pieces.push({ from, to, outFrom, outTo });
+    }
+    if (!pieces.length) return toBuffer(channelsOf(source).map(() => new Float32Array(1)), sampleRate);
+    if (background && !standIns.has(key)) {
+      const quick = await runDsp({ kind: 'warp', pieces, quick: true }, channelsOf(source), sampleRate, { wanted: wantedNow });
+      if (!warpedBuffers.has(key)) {
+        keepStandIn(key, `${slot}|`, toBuffer(quick, sampleRate));
+        warpListeners.forEach((l) => l());
+      }
+    }
+    // Heard whole and stretched along all the pieces at once (timeStretch.ts), in a Worker
+    return toBuffer(await runDsp({ kind: 'warp', pieces, key: slot }, channelsOf(source), sampleRate, { wanted: wantedNow }), sampleRate);
+  })();
+  making.promise.then(
+    (buffer) => {
+      warpedBuffers.set(key, buffer);
+      standIns.delete(key);
+      const prefix = `${slot}|`;
+      const mine = [...warpedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
+      for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_WARPS))) {
+        warpedBuffers.delete(old);
+        warping.delete(old);
+      }
+      warpListeners.forEach((l) => l());
+    },
+    () => warping.delete(key)
+  );
+  warping.set(key, making);
+  return making.promise;
 }
 
 // ---------- copies the song plays ----------
@@ -498,8 +559,8 @@ export function wantCopies(owner: string, copies: readonly WantedCopy[], make = 
       wantTimers.delete(owner);
       for (const c of copies) {
         if ('warp' in c) {
-          if (!warpedSound(c.id, c.sampleRate, c.warp, c.bpm)) void warpSound(c.id, c.sampleRate, c.warp, c.bpm).catch(() => {});
-        } else if (c.ratio !== 1 && !stretchedSound(c.id, c.sampleRate, c.ratio)) void stretchSound(c.id, c.sampleRate, c.ratio).catch(() => {});
+          if (!warpedBuffers.has(copyKey(c))) void warpSound(c.id, c.sampleRate, c.warp, c.bpm, true).catch(() => {});
+        } else if (c.ratio !== 1 && !stretchedBuffers.has(copyKey(c))) void stretchSound(c.id, c.sampleRate, c.ratio, true).catch(() => {});
       }
     }, 300)
   );
@@ -515,15 +576,17 @@ export function onWarped(listener: () => void): () => void {
 const warpTimers = new Map<string, number>();
 /** Ask for a warped copy soon (while markers are being dragged, only where they settle is made). */
 export function requestWarp(id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): void {
-  if (warpedSound(id, sampleRate, audio, bpm)) return;
+  const key = warpBufferKey(id, sampleRate, audio, bpm);
+  if (warpedBuffers.has(key)) return;
   const slot = `${id}|${sampleRate}`;
+  lastWarp.set(slot, key);
   clearTimeout(warpTimers.get(slot));
   const shape = { stretchBpm: audio.stretchBpm, warp: audio.warp };
   warpTimers.set(
     slot,
     window.setTimeout(() => {
       warpTimers.delete(slot);
-      void warpSound(id, sampleRate, shape, bpm).catch(() => {});
+      void warpSound(id, sampleRate, shape, bpm, true).catch(() => {});
     }, 200)
   );
 }

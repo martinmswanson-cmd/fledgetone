@@ -11,7 +11,7 @@
  * live: the pitch is found by looking at the whole note, and the result is plain audio, so exports
  * play exactly what was heard, with no AudioWorklet in any render. Plain arrays, so Node tests it.
  */
-import { corrections, detectPitch, hzToMidi, psola, type PitchFrame, type TuneSettings } from './vocalTune';
+import { corrections, detectPitch, hzToMidi, pitchMarks, psola, type PitchFrame, type TuneSettings } from './vocalTune';
 
 /** Scales offered by the tuner, as semitones up from the key's root. */
 export const TUNE_SCALES = {
@@ -128,7 +128,9 @@ export function hardTuneChannels(channels: readonly Float32Array[], sampleRate: 
   for (const ch of channels) for (let i = 0; i < mix.length; i++) mix[i] += ch[i] / channels.length;
   const frames = detectPitch(mix, sampleRate);
   const shift = hardCorrections(frames, s);
-  return { channels: channels.map((ch) => psola(ch, sampleRate, frames, shift)), frames, shift };
+  // (The cycles found once, on the mix, so every channel is cut in the same places)
+  const marks = pitchMarks(mix, sampleRate, frames);
+  return { channels: channels.map((ch) => psola(ch, sampleRate, frames, shift, marks)), frames, shift };
 }
 
 /**

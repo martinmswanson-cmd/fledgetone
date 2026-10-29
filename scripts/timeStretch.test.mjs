@@ -214,3 +214,97 @@ test('warping: pieces end to end, each to its length, and the phase vocoder give
   for (let i = 0; i < chord.length; i++) err = Math.max(err, Math.abs(same[i] - chord[i]));
   assert.ok(err < 1e-3, `speed 1 differs by ${err}`);
 });
+
+// --- Level safety and attacks (regressions) ---
+
+const peakOf = (chs) => Math.max(...chs.map((c) => c.reduce((m, v) => Math.max(m, Math.abs(v)), 0)));
+const { pitchShiftChannels } = await import('../src/audio/pitchShift.ts');
+const { runDspJob } = await import('../src/audio/dspJobs.ts');
+
+test('sound next to digital silence is never turned up (a gated vocal, chord bursts)', () => {
+  // A noise-gated voice: 0.6 s on, 0.4 s of exact silence
+  const v = new Float32Array(SR * 4);
+  let ph = 0;
+  for (let i = 0; i < v.length; i++) {
+    const t = i / SR;
+    const f = 200 * (1 + 0.02 * Math.sin(2 * Math.PI * 5 * t));
+    ph += (2 * Math.PI * f) / SR;
+    if (t % 1 >= 0.6) continue;
+    let s = 0;
+    for (let h = 1; h < 20; h++) s += Math.sin(ph * h) * Math.exp(-Math.abs(f * h - 700) / 600);
+    v[i] = 0.08 * s;
+  }
+  const p = peakOf([v]);
+  for (const r of [0.8, 0.9, 1.1, 1.25]) assert.ok(peakOf(stretchChannels([v], r, SR)) < p * 1.1, `gated voice at ${r}`);
+  for (const st of [-2, 1, 3]) assert.ok(peakOf(pitchShiftChannels([v], st, SR)) < p * 1.1, `gated voice moved ${st} st`);
+  // Chord bursts with silence between
+  const b = new Float32Array(SR * 3);
+  for (let i = 0; i < b.length; i++) {
+    const t = i / SR;
+    if ((t > 0.5 && t < 1.2) || (t > 1.6 && t < 2.4)) b[i] = (0.9 * (Math.sin(2 * Math.PI * 220 * t) + 0.5 * Math.sin(2 * Math.PI * 277 * t) + 0.4 * Math.sin(2 * Math.PI * 330 * t))) / 1.9;
+  }
+  for (const r of [0.5, 0.7, 1.5, 2]) assert.ok(peakOf(stretchChannels([b], r, SR)) < peakOf([b]) * 1.07, `bursts at ${r}`);
+});
+
+test('left and right out of phase is stretched, not silenced', () => {
+  const pad = saw(AMAJ, 2, SR);
+  const neg = pad.map((v) => -v);
+  for (const out of [stretchChannels([pad, neg], 0.8, SR), pitchShiftChannels([pad, neg], 3, SR)]) {
+    assert.ok(rms(out[0], 0, out[0].length) > 0.9 * rms(pad, 0, pad.length));
+    assert.ok(rms(out[1], 0, out[1].length) > 0.9 * rms(pad, 0, pad.length));
+  }
+  const loop = drums(3);
+  assert.equal(analyseForStretch([loop, loop.map((v) => -v)], SR).engine, 'wsola');
+});
+
+test('attacks keep their level, slowed down, sped up or moved an octave', () => {
+  // A piano-like one-shot from silence
+  const x = new Float32Array(Math.round(SR * 1.5));
+  for (let i = 0; i < SR; i++) {
+    const t = i / SR;
+    let s = 0;
+    for (let h = 1; h < 10; h++) s += (Math.sin(2 * Math.PI * 261.6 * h * t) * Math.exp(-t * (2 + h))) / h;
+    x[i] = 0.6 * s * Math.min(1, i / 30);
+  }
+  const p = peakOf([x]);
+  for (const r of [0.5, 0.75, 1.5, 2]) {
+    const q = peakOf(stretchChannels([x], r, SR));
+    assert.ok(Math.abs(20 * Math.log10(q / p)) < 0.5, `one-shot at ${r}: ${(20 * Math.log10(q / p)).toFixed(2)} dB`);
+  }
+  for (const st of [-12, 12]) assert.ok(peakOf(pitchShiftChannels([x], st, SR)) < p * 1.06, `one-shot moved ${st} st`);
+  // A mix of drums, bass and a pad (the phase vocoder's, not WSOLA's): each hit's own energy (the
+  // 25 ms after it, less the 25 ms before) within half a dB of the source's
+  const beat = 0.5 * SR;
+  const loop = drums(3);
+  const pad = saw(AMAJ, 3, SR, 0.08);
+  const mix = loop.map((v, i) => v + pad[i] + 0.3 * Math.sin((2 * Math.PI * 55 * i) / SR) * Math.exp(-((i % beat) / SR) * 2));
+  assert.equal(analyseForStretch([mix], SR).engine, 'vocoder');
+  const E = (y, a, b) => {
+    let s = 0;
+    for (let i = Math.max(0, a); i < Math.min(y.length, b); i++) s += y[i] * y[i];
+    return s;
+  };
+  const w = Math.round(0.025 * SR);
+  const hit = (y, at) => 10 * Math.log10(E(y, at - 100, at + w) - E(y, at - 100 - w, at - 100));
+  for (const r of [0.8, 1.25, 2]) {
+    const [out] = stretchChannels([mix], r, SR);
+    for (let k = 1; k < 5; k++) {
+      const d = hit(out, Math.round((k * beat) / r)) - hit(mix, k * beat);
+      if (process.env.SHOW) console.log(r, k, d.toFixed(2));
+      else assert.ok(Math.abs(d) < 0.7, `mix at ${r}, hit ${k}: ${d.toFixed(2)} dB`);
+    }
+  }
+});
+
+test('a sound heard once is kept for its next speed, and gives the same stretch', () => {
+  const chord = saw(AMAJ, 1.5, SR);
+  const once = runDspJob({ kind: 'stretch', ratio: 0.8 }, [chord.slice()], SR).channels[0];
+  const kept = runDspJob({ kind: 'stretch', ratio: 0.8, key: 'chord|44100' }, [chord.slice()], SR).channels[0];
+  const again = runDspJob({ kind: 'stretch', ratio: 0.8, key: 'chord|44100' }, [chord.slice()], SR).channels[0];
+  assert.deepEqual(kept, once);
+  assert.deepEqual(again, once);
+  // The quick stand-in is WSOLA at the same length
+  const quick = runDspJob({ kind: 'stretch', ratio: 0.8, quick: true }, [chord.slice()], SR).channels[0];
+  assert.equal(quick.length, once.length);
+  assert.deepEqual(quick, wsolaChannels([chord], 0.8, SR)[0]);
+});

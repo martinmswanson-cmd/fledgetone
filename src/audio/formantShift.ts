@@ -8,8 +8,9 @@
  * new comes in between them. The channels share one outline (their mix's), so the stereo image
  * stays put. Plain arrays, so Node can unit-test it.
  */
-import { fftInPlace } from "./fft";
-import { vocoderSize } from "./phaseVocoder";
+import { fftInPlace } from './fft';
+import { analysisMix } from './channelMix';
+import { vocoderSize } from './phaseVocoder';
 
 /** Smoothing passes that lift the outline onto the harmonics' peaks ("true envelope"). */
 const PASSES = 3;
@@ -50,6 +51,8 @@ export function formantShiftChannels(input: readonly Float32Array[], semitones: 
   const sounding = [false, false, false];
   const gain = new Float64Array(bins);
   const output = input.map(() => new Float32Array(length));
+  // (The outline from the channels' mix, none cancelling another)
+  const mix = analysisMix(input);
   const frames = Math.ceil((length + half) / hop) + 2;
   const startOf = (f: number) => (f - 1) * hop - half;
 
@@ -59,9 +62,7 @@ export function formantShiftChannels(input: readonly Float32Array[], semitones: 
     const s0 = startOf(f);
     for (let j = 0; j < n; j++) {
       const s = s0 + j;
-      let v = 0;
-      if (s >= 0 && s < length) for (const ch of input) v += ch[s];
-      re[j] = v * win[j];
+      re[j] = s >= 0 && s < length ? mix[s] * win[j] : 0;
       im[j] = 0;
     }
     fftInPlace(re, im);
