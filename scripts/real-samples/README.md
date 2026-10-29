@@ -166,7 +166,7 @@ about 720 MB of zips; each is deleted once split).
   of a tail made a held chord's sudden end) first cuts the fade off, where the level falls 6 dB
   under the straight line of its decay over the note's body, and carries on at that line's rate.
   One gain per set leaves its loudest peak
-  just under full scale. It writes the MP3s (LAME V0 with a 20 kHz low-pass, so nothing a listener hears is cut: the sets were first made at V4, which cut everything over about 16 kHz) and `src/audio/hostedSets.ts`, with each set's bytes, seconds of sound (what it takes decoded) and fingerprint.
+  just under full scale. It writes the MP3s (LAME V0 with a 20 kHz low-pass, so nothing a listener hears is cut: the sets were first made at V4, which cut everything over about 16 kHz) and `src/audio/hostedSets.ts`, with each set's bytes, seconds of sound (what it takes decoded: in all, and each file's in tenths of a second) and fingerprint.
   A set with `xloop` (the strings) loops a held note inside its own sustain instead: the longest
   stretch of it up to 3 s, its start moved by up to two periods to where it best matches the sound
   before the loop's end, its last quarter second crossfaded into what comes before its start, and

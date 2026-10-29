@@ -52,6 +52,37 @@ test("a set's decoded size is estimated on the safe side (the grand piano measur
   assert.ok(Math.abs(decodedBytes(s, notes, 96000) - 2 * whole) < 1);
 });
 
+test("every hosted file's length is in the index, and they add up to its set's", () => {
+  for (const [folder, set] of Object.entries(HOSTED_SETS)) {
+    assert.equal(set.tenths.length, set.notes.length * set.layers * set.takes, folder);
+    const none = set.tenths.filter((t) => t === 0).length;
+    assert.equal(none, Object.keys(set.shared ?? {}).length, folder);
+    const sum = set.tenths.reduce((a, b) => a + b, 0) / 10;
+    // (each rounded up to a tenth)
+    assert.ok(sum >= set.audio - 0.05 && sum <= set.audio + 0.1 * (set.tenths.length - none) + 0.05, `${folder}: ${sum} vs ${set.audio}`);
+  }
+});
+
+test("a few low notes are reckoned at their own length, not the set's average (an export's estimate never comes in under)", () => {
+  const s = INSTRUMENTS.piano.samples;
+  const names = Object.keys(s.samples);
+  const average = decodedBytes(s, names, 48000) / names.length;
+  const low = names.filter((n) => midiOf(n.split('|')[0]) < 60);
+  const high = names.filter((n) => midiOf(n.split('|')[0]) >= 84);
+  // (measured: the grand piano's files below C4 1.54 times its average, the longest 1.58)
+  assert.ok(decodedBytes(s, low, 48000) / low.length > 1.4 * average);
+  assert.ok(decodedBytes(s, high, 48000) / high.length < average);
+  const longest = Math.max(...names.map((n) => decodedBytes(s, [n], 48000)));
+  assert.ok(longest > 1.5 * average, String(longest / average));
+  // The whole set: its sound, as before
+  assert.ok(Math.abs(setDecodedBytes(s) - HOSTED_SETS['grand-piano'].audio * 48000 * 4) < 1);
+  // (the pizzicato's longest, 2.14)
+  const pizz = INSTRUMENTS.realPizzicato.samples;
+  const all = Object.keys(pizz.samples);
+  const most = Math.max(...all.map((n) => decodedBytes(pizz, [n], 48000)));
+  assert.ok(most > 2 * (decodedBytes(pizz, all, 48000) / all.length));
+});
+
 test("a soundfont's note is reckoned at the length it's rung on or held to as it loads, in stereo (struck ones were 3.1 s, now up to 10)", () => {
   for (const key of ['timpani', 'celesta', 'violin', 'choir']) {
     const s = INSTRUMENTS[key].samples;

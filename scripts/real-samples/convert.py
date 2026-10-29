@@ -15,7 +15,7 @@
 # left to a nearby note's recording at that loudness). A ringing note cut off while it still
 # sounds can be given the rest of its decay (`tail`). One gain per set leaves its loudest peak
 # just under full scale.
-import os, sys, json, struct, subprocess, re
+import os, sys, json, math, struct, subprocess, re
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sets import SETS, KINDS
@@ -811,7 +811,12 @@ def write_index(root, done):
                 size += len(data)
         v['hash'] = h.hexdigest()[:10]
         v['bytes'] = size
-        v['audio'] = round(sum(sound_seconds(os.path.join(folder, n)) for n in os.listdir(folder) if n.endswith('.mp3')), 1)
+        secs = {n: sound_seconds(os.path.join(folder, n)) for n in os.listdir(folder) if n.endswith('.mp3')}
+        v['audio'] = round(sum(secs.values()), 1)
+        # (each file's, in tenths of a second rounded up, so a few files' estimate never comes in
+        # under what they take: in the order of the notes, then layers, then takes; 0 for none)
+        v['tenths'] = [math.ceil(round(secs.get(f'{NAMES[m % 12]}{m // 12 - 1}_{l}_{t}.mp3', 0) * 10, 6))
+                       for m in v['notes'] for l in range(v['layers']) for t in range(v['takes'])]
     lines = [
         '/**',
         ' * The recordings hosted with the app, set by set (public/fledgetone-samples/<set>/): the MIDI',
@@ -826,6 +831,12 @@ def write_index(root, done):
         '  bytes: number;',
         '  /** Seconds of sound in its files, each channel counted (what it takes decoded: see setSizes.ts) */',
         '  audio: number;',
+        '  /**',
+        '   * Each file\'s seconds of sound, each channel counted, in tenths of a second rounded up: in the',
+        '   * order of the notes, then layers, then takes (0 for a recording with no file of its own). The',
+        '   * low notes\' can be half as long again as the set\'s average (see setSizes.ts)',
+        '   */',
+        '  tenths: number[];',
         '  /** Changes when the set\'s files do (see recordingStore.ts) */',
         '  hash: string;',
         '  /**',
@@ -849,7 +860,7 @@ def write_index(root, done):
         shared = v.get('shared') or {}
         if shared:
             tail += ', shared: {' + ', '.join(f"'{n}': " + (f"'{to}'" if to else 'null') for n, to in sorted(shared.items())) + '}'
-        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, audio: {v['audio']}, hash: '{v['hash']}'{tail} }},")
+        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, audio: {v['audio']}, hash: '{v['hash']}', tenths: [{','.join(map(str, v['tenths']))}]{tail} }},")
     lines += ['};', '']
     open(path, 'w').write('\n'.join(lines))
 
