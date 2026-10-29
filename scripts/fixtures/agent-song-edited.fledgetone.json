@@ -1,0 +1,1422 @@
+{
+  "format": "fledgetone-project",
+  "version": 1,
+  "modWheel": "dynamics",
+  "name": "Agent test song",
+  "songId": "agent-test-song",
+  "bpm": 70,
+  "swing": 0,
+  "loopRegion": {
+    "inBar": 1,
+    "outBar": 17,
+    "enabled": true
+  },
+  "tracks": [
+    {
+      "id": "track-starter_ambient-1",
+      "name": "Warm pad",
+      "color": "#fdba74",
+      "instrumentKey": "synthDesigner",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": -18.5,
+      "pan": 0,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0.5,
+      "delaySend": 0,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": true,
+          "bands": [
+            {
+              "on": true,
+              "type": "lowcut",
+              "freq": 120,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      },
+      "synth": {
+        "osc1": {
+          "on": true,
+          "wave": "sawtooth",
+          "octave": 0,
+          "semi": 0,
+          "fine": 0,
+          "level": 0.8
+        },
+        "osc2": {
+          "on": true,
+          "wave": "sawtooth",
+          "octave": 0,
+          "semi": 0,
+          "fine": 12,
+          "level": 0.7
+        },
+        "sub": 0,
+        "noise": 0,
+        "unison": {
+          "voices": 3,
+          "spread": 12,
+          "width": 0.7
+        },
+        "filter": {
+          "type": "lowpass",
+          "cutoff": 900,
+          "resonance": 1,
+          "envAmount": 1.5,
+          "keyTrack": 0.5
+        },
+        "filterEnv": {
+          "attack": 0.8,
+          "decay": 1.5,
+          "sustain": 0.4,
+          "release": 1.5
+        },
+        "amp": {
+          "attack": 0.6,
+          "decay": 0.3,
+          "sustain": 0.9,
+          "release": 1.5
+        },
+        "lfo": {
+          "target": "off",
+          "shape": "sine",
+          "sync": "1/8",
+          "rate": 4,
+          "depth": 0.5
+        },
+        "drive": 0,
+        "mono": false,
+        "glide": 0.06,
+        "level": 0
+      }
+    },
+    {
+      "id": "track-starter_ambient-2",
+      "name": "Glass",
+      "color": "#a5f3fc",
+      "instrumentKey": "synthDesigner",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": -26,
+      "pan": 0.2,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0.6,
+      "delaySend": 0,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": true,
+          "bands": [
+            {
+              "on": true,
+              "type": "lowcut",
+              "freq": 200,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      },
+      "synth": {
+        "osc1": {
+          "on": true,
+          "wave": "triangle",
+          "octave": 0,
+          "semi": 0,
+          "fine": 0,
+          "level": 0.8
+        },
+        "osc2": {
+          "on": true,
+          "wave": "sine",
+          "octave": 2,
+          "semi": 0,
+          "fine": 7,
+          "level": 0.35
+        },
+        "sub": 0,
+        "noise": 0,
+        "unison": {
+          "voices": 3,
+          "spread": 10,
+          "width": 1
+        },
+        "filter": {
+          "type": "lowpass",
+          "cutoff": 5000,
+          "resonance": 0.6,
+          "envAmount": 0.5,
+          "keyTrack": 0.5
+        },
+        "filterEnv": {
+          "attack": 0.005,
+          "decay": 0.4,
+          "sustain": 0.3,
+          "release": 0.3
+        },
+        "amp": {
+          "attack": 0.4,
+          "decay": 1.5,
+          "sustain": 0.75,
+          "release": 2
+        },
+        "lfo": {
+          "target": "amp",
+          "shape": "sine",
+          "sync": "free",
+          "rate": 0.3,
+          "depth": 0.1
+        },
+        "drive": 0,
+        "mono": false,
+        "glide": 0.06,
+        "level": 1.5
+      }
+    },
+    {
+      "id": "track-starter_ambient-3",
+      "name": "Kalimba",
+      "color": "#d97706",
+      "instrumentKey": "realKalimba",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": -9.5,
+      "pan": -0.2,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0.5,
+      "delaySend": 0.35,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": true,
+          "timing": 0.3,
+          "dynamics": 0.3,
+          "pitch": 0
+        },
+        "peq": {
+          "on": false,
+          "bands": [
+            {
+              "on": false,
+              "type": "lowcut",
+              "freq": 40,
+              "gain": 0,
+              "q": 0.7071067811865476
+            },
+            {
+              "on": true,
+              "type": "lowshelf",
+              "freq": 120,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 2500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "highshelf",
+              "freq": 8000,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": false,
+              "type": "highcut",
+              "freq": 18000,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "track-starter_ambient-4",
+      "name": "Crystal",
+      "color": "#e0f2fe",
+      "instrumentKey": "crystal",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": -12,
+      "pan": 0.3,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0.7,
+      "delaySend": 0.3,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": true,
+          "bands": [
+            {
+              "on": true,
+              "type": "lowcut",
+              "freq": 500,
+              "gain": 0,
+              "q": 0.7071067811865476
+            },
+            {
+              "on": true,
+              "type": "highcut",
+              "freq": 8000,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip-starter_ambient-5",
+      "trackId": "track-starter_ambient-1",
+      "name": "Pad",
+      "startBar": 1,
+      "lengthBars": 16,
+      "notes": [
+        {
+          "id": "note-starter_ambient-6",
+          "note": "D3",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-7",
+          "note": "A3",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-8",
+          "note": "C#4",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-9",
+          "note": "E4",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-a",
+          "note": "B2",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-b",
+          "note": "F#3",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-c",
+          "note": "A3",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-d",
+          "note": "E4",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-e",
+          "note": "G2",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-f",
+          "note": "D3",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-g",
+          "note": "F#3",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-h",
+          "note": "A3",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-i",
+          "note": "A2",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-j",
+          "note": "E3",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-k",
+          "note": "F#3",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-l",
+          "note": "B3",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-m",
+          "note": "D3",
+          "startOffset": 8,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-n",
+          "note": "A3",
+          "startOffset": 8,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-o",
+          "note": "C#4",
+          "startOffset": 8,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-p",
+          "note": "E4",
+          "startOffset": 8,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-q",
+          "note": "B2",
+          "startOffset": 10,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-r",
+          "note": "F#3",
+          "startOffset": 10,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-s",
+          "note": "A3",
+          "startOffset": 10,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-t",
+          "note": "E4",
+          "startOffset": 10,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-u",
+          "note": "G2",
+          "startOffset": 12,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-v",
+          "note": "D3",
+          "startOffset": 12,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-w",
+          "note": "F#3",
+          "startOffset": 12,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-x",
+          "note": "A3",
+          "startOffset": 12,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-y",
+          "note": "A2",
+          "startOffset": 14,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-z",
+          "note": "E3",
+          "startOffset": 14,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-10",
+          "note": "F#3",
+          "startOffset": 14,
+          "duration": "2m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-11",
+          "note": "B3",
+          "startOffset": 14,
+          "duration": "2m",
+          "velocity": 0.6
+        }
+      ],
+      "expression": {
+        "mod": [
+          {
+            "at": 0,
+            "value": 0.675
+          },
+          {
+            "at": 8.8,
+            "value": 0.975
+          },
+          {
+            "at": 16,
+            "value": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "clip-starter_ambient-12",
+      "trackId": "track-starter_ambient-2",
+      "name": "Air",
+      "startBar": 5,
+      "lengthBars": 8,
+      "notes": [
+        {
+          "id": "note-starter_ambient-13",
+          "note": "F#5",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-14",
+          "note": "A5",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-15",
+          "note": "D5",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-16",
+          "note": "F#5",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-17",
+          "note": "B4",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-18",
+          "note": "D5",
+          "startOffset": 4,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-19",
+          "note": "C#5",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1a",
+          "note": "E5",
+          "startOffset": 6,
+          "duration": "2m",
+          "velocity": 0.5
+        }
+      ],
+      "expression": {
+        "mod": [
+          {
+            "at": 0,
+            "value": 0.675
+          },
+          {
+            "at": 4.4,
+            "value": 0.975
+          },
+          {
+            "at": 8,
+            "value": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "clip-starter_ambient-1b",
+      "trackId": "track-starter_ambient-2",
+      "name": "Air",
+      "startBar": 13,
+      "lengthBars": 4,
+      "notes": [
+        {
+          "id": "note-starter_ambient-1c",
+          "note": "F#5",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1d",
+          "note": "A5",
+          "startOffset": 0,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1e",
+          "note": "D5",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1f",
+          "note": "F#5",
+          "startOffset": 2,
+          "duration": "2m",
+          "velocity": 0.5
+        }
+      ],
+      "expression": {
+        "mod": [
+          {
+            "at": 0,
+            "value": 0.675
+          },
+          {
+            "at": 2.2,
+            "value": 0.975
+          },
+          {
+            "at": 4,
+            "value": 0.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "clip-starter_ambient-1g",
+      "trackId": "track-starter_ambient-3",
+      "name": "Kalimba",
+      "startBar": 5,
+      "lengthBars": 12,
+      "notes": [
+        {
+          "id": "note-starter_ambient-1h",
+          "note": "F#5",
+          "startOffset": 0,
+          "duration": "4n",
+          "velocity": 0.7
+        },
+        {
+          "id": "note-starter_ambient-1i",
+          "note": "A5",
+          "startOffset": 0.1875,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-1j",
+          "note": "E5",
+          "startOffset": 0.375,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1k",
+          "note": "D5",
+          "startOffset": 0.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1l",
+          "note": "C#5",
+          "startOffset": 1.25,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1m",
+          "note": "E5",
+          "startOffset": 1.5,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-1n",
+          "note": "F#5",
+          "startOffset": 1.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1o",
+          "note": "D5",
+          "startOffset": 2.25,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-1p",
+          "note": "B4",
+          "startOffset": 2.5,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-1q",
+          "note": "A4",
+          "startOffset": 2.875,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1r",
+          "note": "B4",
+          "startOffset": 3.25,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1s",
+          "note": "D5",
+          "startOffset": 3.5,
+          "duration": "2n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1t",
+          "note": "F#5",
+          "startOffset": 4,
+          "duration": "4n",
+          "velocity": 0.7
+        },
+        {
+          "id": "note-starter_ambient-1u",
+          "note": "A5",
+          "startOffset": 4.1875,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-1v",
+          "note": "E5",
+          "startOffset": 4.375,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1w",
+          "note": "D5",
+          "startOffset": 4.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-1x",
+          "note": "C#5",
+          "startOffset": 5.25,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-1y",
+          "note": "E5",
+          "startOffset": 5.5,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-1z",
+          "note": "F#5",
+          "startOffset": 5.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-20",
+          "note": "D5",
+          "startOffset": 6.25,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-21",
+          "note": "B4",
+          "startOffset": 6.5,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-22",
+          "note": "A4",
+          "startOffset": 6.875,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-23",
+          "note": "B4",
+          "startOffset": 7.25,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-24",
+          "note": "D5",
+          "startOffset": 7.5,
+          "duration": "2n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-25",
+          "note": "F#5",
+          "startOffset": 8,
+          "duration": "4n",
+          "velocity": 0.7
+        },
+        {
+          "id": "note-starter_ambient-26",
+          "note": "A5",
+          "startOffset": 8.1875,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-27",
+          "note": "E5",
+          "startOffset": 8.375,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-28",
+          "note": "D5",
+          "startOffset": 8.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-29",
+          "note": "C#5",
+          "startOffset": 9.25,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-2a",
+          "note": "E5",
+          "startOffset": 9.5,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-2b",
+          "note": "F#5",
+          "startOffset": 9.75,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2c",
+          "note": "D5",
+          "startOffset": 10.25,
+          "duration": "4n",
+          "velocity": 0.65
+        },
+        {
+          "id": "note-starter_ambient-2d",
+          "note": "B4",
+          "startOffset": 10.5,
+          "duration": "4n",
+          "velocity": 0.55
+        },
+        {
+          "id": "note-starter_ambient-2e",
+          "note": "A4",
+          "startOffset": 10.875,
+          "duration": "4n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-starter_ambient-2f",
+          "note": "B4",
+          "startOffset": 11.25,
+          "duration": "4n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2g",
+          "note": "D5",
+          "startOffset": 11.5,
+          "duration": "2n",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-sg-0099e89001-1",
+          "note": "F#5",
+          "startOffset": 3.5,
+          "duration": "0.25m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-sg-0099e89001-2",
+          "note": "A5",
+          "startOffset": 3.75,
+          "duration": "0.25m",
+          "velocity": 0.5
+        }
+      ]
+    },
+    {
+      "id": "clip-starter_ambient-2h",
+      "trackId": "track-starter_ambient-4",
+      "name": "Shimmer",
+      "startBar": 9,
+      "lengthBars": 8,
+      "notes": [
+        {
+          "id": "note-starter_ambient-2i",
+          "note": "A6",
+          "startOffset": 0,
+          "duration": "2n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2j",
+          "note": "E6",
+          "startOffset": 1.375,
+          "duration": "2n",
+          "velocity": 0.45
+        },
+        {
+          "id": "note-starter_ambient-2k",
+          "note": "F#6",
+          "startOffset": 2.5,
+          "duration": "2n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2l",
+          "note": "C#6",
+          "startOffset": 3.625,
+          "duration": "2n",
+          "velocity": 0.4
+        },
+        {
+          "id": "note-starter_ambient-2m",
+          "note": "A6",
+          "startOffset": 4,
+          "duration": "2n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2n",
+          "note": "E6",
+          "startOffset": 5.375,
+          "duration": "2n",
+          "velocity": 0.45
+        },
+        {
+          "id": "note-starter_ambient-2o",
+          "note": "F#6",
+          "startOffset": 6.5,
+          "duration": "2n",
+          "velocity": 0.5
+        },
+        {
+          "id": "note-starter_ambient-2p",
+          "note": "C#6",
+          "startOffset": 7.625,
+          "duration": "2n",
+          "velocity": 0.4
+        }
+      ]
+    }
+  ],
+  "masterFx": {
+    "reverbDecay": 11,
+    "delayTime": "8n",
+    "delayFeedback": 0.4
+  },
+  "fps": 30,
+  "dropFrame": false,
+  "markers": [
+    {
+      "id": "marker-starter_ambient-2q",
+      "name": "Drift",
+      "anchor": "bar",
+      "bar": 1,
+      "seconds": 0
+    },
+    {
+      "id": "marker-starter_ambient-2r",
+      "name": "Kalimba",
+      "anchor": "bar",
+      "bar": 5,
+      "seconds": 13.714285714285714
+    },
+    {
+      "id": "marker-starter_ambient-2s",
+      "name": "Shimmer",
+      "anchor": "bar",
+      "bar": 9,
+      "seconds": 27.428571428571427
+    },
+    {
+      "id": "marker-sg-0099e89001-3",
+      "name": "Coda",
+      "anchor": "bar",
+      "bar": 13,
+      "seconds": 41.142857142857146
+    }
+  ],
+  "master": {
+    "glue": "gentle",
+    "ott": {
+      "on": false,
+      "depth": 0.5,
+      "time": 0.3,
+      "inGain": 0,
+      "outGain": 0
+    },
+    "width": {
+      "on": true,
+      "amount": 1.4,
+      "monoBass": true
+    },
+    "level": 10.5
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "format": "fledgetone-suggestion",
+  "version": 1,
+  "songId": "agent-test-song",
+  "touchedHashes": {
+    "clip:clip-starter_ambient-1g": "b1fcf5be2e60cf4b",
+    "track:track-starter_ambient-2": "c6e5eab17555d55c",
+    "markers": "2530d088f7b6af2f"
+  },
+  "title": "A kalimba answer",
+  "explanation": "Two notes answer the phrase in bar 8, and the glass pad comes down a little so they are heard.",
+  "opsVersion": 1,
+  "ops": [
+    {
+      "op": "add_notes",
+      "clipId": "clip-starter_ambient-1g",
+      "notes": [
+        {
+          "pitch": "F#5",
+          "start": 3.5,
+          "length": 0.25,
+          "velocity": 0.6
+        },
+        {
+          "pitch": "A5",
+          "start": 3.75,
+          "length": 0.25,
+          "velocity": 0.5
+        }
+      ]
+    },
+    {
+      "op": "set_track",
+      "trackId": "track-starter_ambient-2",
+      "volumeDb": -26
+    },
+    {
+      "op": "add_marker",
+      "bar": 13,
+      "name": "Coda"
+    }
+  ]
+}
