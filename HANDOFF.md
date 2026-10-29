@@ -214,6 +214,19 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Sound fidelity programme** (2026.10.29): phase 1 2x sample decode (OVERSAMPLE, EXPORT_DECODE_BYTES
+  512 MB, lowMemoryDevice), lossy exports limited at -1 dBTP with measured post-encode trim, gapless MP3
+  tag, Fledge tables per level, 4x designer drive; phase 2 Fledge drive 2x (halfband, stage-internal
+  dry/wet), cubic delay reads, native 4-tap chorus, room-IR insert reverb, split Loud clipper, glue
+  20/150 ms, 24-bit kept renders, stereo hats (DRUM_RENDER_VERSION), makeSpace, retro sets re-rendered
+  (soundfont-renders), hosted sets re-encoded at LAME V0 20 kHz (about 600 MB; per-file `tenths` in
+  hostedSets.ts, BIG_SET_DECODED); phase 3 pre-resampled pitched copies (resampler.ts, pitchedCopies.ts,
+  copyCache.ts, prepare(plan), live/export budgets, grid-snapped kernels for determinism) and a phase
+  vocoder for tonal stretch / Move to key / Mangle (phaseVocoder.ts, harmonicPercussive.ts, channelMix.ts,
+  dspWorker.ts with analysis cache, WSOLA stand-in, clipJobs.ts), Tune PSOLA with fractional marks.
+  Freeze fingerprints include sample-source hashes. Open: Phaser vibrato about +6 dBFS; Musyng Kite
+  renders are CC BY-SA 3.0; vibrato-voice stretch at 1.25-1.5x still -19 to -23 dB; tuned/mangled clips
+  made before keep their old sound.
 - **Bug cycle round 2** (2026.10.28-3): audio clip edits along the tempo map (`playsAlongMap`,
   `soundShift`, `barsForSeconds`, retime too); two-tab autosave (`tab` id, 'otherTab' versions,
   `useOtherTab`); share-link notes sorted by tick only; Pocket section jumps (`sectionJump`), linked
