@@ -26,6 +26,7 @@ import { DRUM_NOTES } from '../store/drumNotes';
 import { midiOf, nameOf } from '../store/noteTools';
 import { presetPatch, SYNTH_PRESETS } from '../store/synthPatch';
 import { designedKitStart } from '../store/synthKits';
+import { followTracks } from '../store/drumFollow';
 import {
   defaultLoud,
   defaultTrackFx,
@@ -928,6 +929,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     w.bpm = bpm;
     w.tempoPoints = tempoPoints;
   }
+
+  // Designed Kits that follow the song's key or tempo follow it here too, as the store does after
+  // every change (drumFollow.ts): what's heard is what the song will play once accepted
+  const followed = followTracks(w.tracks, w.clips, w.bpm, w.tempoPoints);
+  if (followed) w.tracks = followed;
 
   // ---------- The file check ----------
 

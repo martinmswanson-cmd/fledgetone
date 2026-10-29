@@ -17,6 +17,7 @@ import {
   LIMITS,
   newNonce,
   normalizeCode,
+  agentName,
   parseMessage,
   PROTOCOL_VERSION,
   sameProof,
@@ -187,7 +188,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     }
     const r = (result ?? {}) as Partial<PairResult>;
     const server = r.server && typeof r.server.name === 'string' ? { name: r.server.name.slice(0, LIMITS.nameMaxChars), version: String(r.server.version ?? '').slice(0, 40) } : info.server;
-    setState('paired', { server, agent: typeof r.agent === 'string' ? r.agent.slice(0, LIMITS.nameMaxChars) : undefined, message: undefined });
+    setState('paired', { server, agent: agentName(r.agent), message: undefined });
   };
 
   const answer = (id: string, result: unknown) => sendRaw({ kind: 'res', id, result: result ?? null });

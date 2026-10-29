@@ -1,10 +1,12 @@
 /**
- * What the timeline shows of the agent: the tracks (their headers and the bars) a suggestion changes, tinted while its
- * card has the pointer or focus or its before-and-after plays, and what the agent points at
+ * What the timeline shows of the agent: the bars of the tracks a suggestion changes, tinted while
+ * its card has the pointer or focus or its before-and-after plays (with a mark at the lanes' left
+ * edge, so the tracks show even with those bars scrolled away), and what the agent points at
  * (point_at: a track, a clip, some bars or a marker), ringed for a few seconds with its note.
- * Drawn over the timeline from where its lanes and clips are on screen (found by their data-lane
- * and data-clip-id attributes), so the timeline itself doesn't change; it follows scrolling and
- * zoom while it shows, and takes no clicks.
+ * Drawn over the lanes only (never the track headers, the ruler or anything outside the timeline)
+ * from where the lanes and clips are on screen (found by their data-lane and data-clip-id
+ * attributes), so the timeline itself doesn't change; it follows scrolling and zoom while it
+ * shows, and takes no clicks. Screen readers hear of a highlight from the agent's live region.
  */
 import React from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -16,7 +18,7 @@ interface Box {
   top: number;
   width: number;
   height: number;
-  kind: 'tint' | 'ring';
+  kind: 'tint' | 'ring' | 'edge';
 }
 
 /** The part of `r` inside `clip`, or null. */
@@ -38,7 +40,8 @@ export const TimelineHighlight: React.FC = () => {
   const highlight = useSuggestions((s) => s.highlight);
   const focusId = useSuggestions((s) => s.focusId);
   const auditionKey = useAudition((s) => (s.phase !== 'idle' ? s.key : null));
-  const focused = useSuggestions((s) => s.suggestions.find((x) => x.id === (focusId ?? auditionKey)) ?? null);
+  // (one made for another song has nothing to show in this one)
+  const focused = useSuggestions((s) => s.suggestions.find((x) => x.id === (focusId ?? auditionKey) && x.status !== 'other_song') ?? null);
   const [boxes, setBoxes] = React.useState<Box[]>([]);
   const [note, setNote] = React.useState<{ text: string; left: number; top: number } | null>(null);
 
@@ -50,7 +53,14 @@ export const TimelineHighlight: React.FC = () => {
       frame = requestAnimationFrame(draw);
       const scroll = document.querySelector('[data-timeline-scroll]');
       if (!scroll) return setBoxes([]);
-      const view = scroll.getBoundingClientRect();
+      // The lanes' part of the timeline: right of the track headers, under the ruler
+      const whole = scroll.getBoundingClientRect();
+      const ruler = scroll.querySelector('[data-timeline-ruler]');
+      const rr = ruler?.getBoundingClientRect();
+      const corner = ruler?.firstElementChild?.getBoundingClientRect();
+      const view = new DOMRect(corner ? corner.right : whole.left, rr ? Math.max(whole.top, rr.bottom) : whole.top, 0, 0);
+      view.width = Math.max(0, whole.right - view.left);
+      view.height = Math.max(0, whole.bottom - view.top);
       const { zoom, markers } = useTimelineStore.getState();
       const out: Box[] = [];
       const lanes = [...document.querySelectorAll('[data-lane]')];
@@ -66,9 +76,9 @@ export const TimelineHighlight: React.FC = () => {
           const lane = laneOf(id);
           if (!lane) continue;
           add(focused.bars ? laneBars(lane, range.fromBar, range.toBar, zoom) : lane.getBoundingClientRect(), 'tint');
-          // Its header too, which is always on screen (the bars may be scrolled out of view)
-          const header = lane.previousElementSibling;
-          if (header) add(header.getBoundingClientRect(), 'tint');
+          // A mark at the lanes' left edge, always in view (the bars may be scrolled away)
+          const lr = lane.getBoundingClientRect();
+          add({ left: view.left, right: view.left + 4, top: lr.top, bottom: lr.bottom }, 'edge');
         }
       }
       let anchor: { left: number; top: number } | null = null;
@@ -90,7 +100,8 @@ export const TimelineHighlight: React.FC = () => {
           }
         }
         add(r, 'ring');
-        if (r) anchor = { left: Math.max(view.left, Math.min(r.left, view.right - 200)), top: Math.max(view.top, r.top) };
+        // The note sits inside the lanes, at the top left of what it's about
+        if (r) anchor = { left: Math.max(view.left + 4, Math.min(r.left + 4, view.right - 204)), top: Math.max(view.top + 4, Math.min(r.top + 4, view.bottom - 40)) };
       }
       setBoxes((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out));
       setNote(h?.note && anchor ? { text: h.note, ...anchor } : null);
@@ -106,12 +117,14 @@ export const TimelineHighlight: React.FC = () => {
       {boxes.map((b, i) => (
         <div
           key={i}
-          className={b.kind === 'ring' ? 'absolute rounded-md border-2 border-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.6)]' : 'absolute bg-cyan-400/10 border-y border-cyan-400/30'}
+          className={
+            b.kind === 'ring' ? 'absolute rounded-md border-2 border-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.6)]' : b.kind === 'edge' ? 'absolute bg-cyan-400/70' : 'absolute bg-cyan-400/10 border-y border-cyan-400/30'
+          }
           style={{ left: b.left, top: b.top, width: b.width, height: b.height }}
         />
       ))}
       {note && (
-        <div className="absolute max-w-[200px] -translate-y-full rounded bg-forge-panel border border-cyan-400/60 px-2 py-1 text-[11px] text-forge-text whitespace-pre-wrap break-words" style={{ left: note.left, top: note.top - 4 }}>
+        <div className="absolute max-w-[200px] rounded bg-forge-panel border border-cyan-400/60 px-2 py-1 text-[11px] text-forge-text whitespace-pre-wrap break-words" style={{ left: note.left, top: note.top - 4 }}>
           {note.text}
         </div>
       )}

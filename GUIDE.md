@@ -1518,7 +1518,7 @@ After you've opened Fledgetone once from fledgetone.com (in Chrome, Edge, Safari
 
 ## Working with an agent (optional)
 
-Fledgetone has no AI built in, no account and no keys. If you already use an AI agent that works with MCP (Claude Code or Claude Desktop, for example), you can let it read your song and **suggest** changes: notes, clips, levels, effects, automation, tempo and markers. You hear every suggestion before and after, then accept it or not. The agent never changes your song itself, and nothing is accepted for you. It's entirely optional: nothing about it runs until you ask.
+Fledgetone has no AI built in, no account and no keys. If you already use an agent that can use MCP tools, you can let it read your song and **suggest** changes: notes, clips, levels, effects, automation, tempo and markers. You hear every suggestion before and after, then accept it or not. The agent never changes your song itself, and nothing is accepted for you. It's entirely optional: nothing about it runs until you ask.
 
 **Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.** Connect only an agent you'd show the song to.
 
@@ -1526,15 +1526,17 @@ Fledgetone has no AI built in, no account and no keys. If you already use an AI 
 
 1. Ask your agent to connect to Fledgetone. It gives you a code like `K7QM-3XPD-9TBW`.
 2. In Fledgetone, choose **View › Let an agent connect…** (or search for it), type the code, and tick what the agent may do: it can always **read the song**; it can also **see what you select**, **suggest changes** and **listen** (render a few bars and measure their loudness and balance; nothing plays). Leave the port at 47123 unless your agent says another.
-3. **Connect**. The header shows **Agent connected**; click it, or **View › Suggestions**, for the Suggestions panel.
+3. **Connect**. The header shows **Agent connected**; click it, or **View › Suggestions**, for the Suggestions panel. If the code was mistyped, type it again and press **Try again**: what's ticked at that moment is what the agent gets.
 
-**Suggestions.** Each one arrives as a card on the Suggestions panel: what the agent called it and why, **What changes** in plain words, cautions in amber (a track much louder, the master pushed, a delay feeding back), and notes. Move the pointer over a card to see its tracks and bars tinted on the timeline.
+The agent never opens the panel or moves the keyboard focus: a new suggestion is counted on the header's **Agent connected** button until you look.
 
-- **Hear**: **Suggested** and **Now** play the same few bars looped, switching in step, so you hear exactly what changes. Your song's playback stops first, and nothing in your song changes while you listen (no undo step, no autosave). A suggestion much louder than your song plays turned down to 6 LU over it, and the card says so.
-- **Accept** puts it in your song as one step: **Edit › Undo** (Ctrl+Z) takes it all back out. **Dismiss** throws it away.
-- If you edit the song while a suggestion waits, it's checked again: if what it changes is untouched it's applied to your song as it is now ("listen again"); if you edited something it changes, it's **out of date** and can't be accepted.
+**Suggestions.** Each one arrives as a card at the end of the Suggestions panel, marked **From your agent**: what the agent called it and why (in quotes: those are its words, not Fledgetone's), **What changes** in plain words, cautions in amber (a track much louder, the master pushed, a delay feeding back), and notes. Move the pointer over a card to see its tracks and bars tinted on the timeline. A card that has just appeared or moved ignores clicks for a second, so a click meant for another card never lands on it.
 
-The agent can also leave you messages on the panel and point at a track, a clip, some bars or a control. **Disconnect** on the panel ends the connection; closing the tab does too.
+- **Hear**: **Suggested** and **Now** play the same few bars looped, switching at the same place in the music (even when the suggestion changes the tempo), so you hear exactly what changes. Your song's playback stops first, and nothing in your song changes while you listen (no undo step, no autosave). A suggestion much louder than your song plays turned down to about 6 dB louder than it (in loudness), and the card says so. **Stop** stops it.
+- **Accept** puts it in your song as one step: **Edit › Undo** (Ctrl+Z) takes it all back out, and the card then says **Undone** (Redo puts it back). **Dismiss** throws it away. The card says whether you've heard it; you can accept one you haven't, as the card describes it.
+- If you change the song while a suggestion waits (an edit, the swing, the intensity), it's checked again: if what it changes is untouched, it's made again on your song as it is now when you hear it, and **Accept** wants you to hear that version first (or press it a second time, **Accept unheard**). If you edited something it changes, it's **out of date** and can't be accepted. If you open another song (New, Open, a link, Restore), the suggestions you had are for the other song and can't be accepted in this one; anything playing stops.
+
+The agent can also leave you messages on the panel (marked as from your agent, in quotes) and point at a track, a clip, some bars or a control: a ring for a few seconds, nothing pressed and the keyboard left where it was. **Disconnect** on the panel ends the connection; closing the tab does too.
 
 **If it doesn't connect.** Chrome may ask whether the page can reach devices on your local network: allow it (the helper is on your computer). Safari and Brave may block the connection to a helper on your computer; a `fledgetone studio` mode that opens the studio from the helper itself is coming. The phone apps don't connect to agents.
 

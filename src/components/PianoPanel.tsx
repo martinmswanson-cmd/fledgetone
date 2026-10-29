@@ -100,8 +100,9 @@ export const PianoPanel: React.FC = () => {
       role="region"
       aria-label="Piano"
       data-piano-panel
-      style={pos ?? undefined}
-      className={`fixed ${pos ? '' : 'bottom-4 right-4'} z-[70] hidden md:flex flex-col gap-2 rounded-xl border border-forge-borderLight bg-forge-panel/95 shadow-2xl shadow-black/60 p-3 text-xs text-forge-muted`}
+      // (clear of the Suggestions panel when it's open: --agent-panel-w is its width then)
+      style={pos ?? { bottom: '1rem', right: 'calc(var(--agent-panel-w, 0px) + 1rem)' }}
+      className={`fixed z-[70] hidden md:flex flex-col gap-2 rounded-xl border border-forge-borderLight bg-forge-panel/95 shadow-2xl shadow-black/60 p-3 text-xs text-forge-muted`}
     >
       <div className="flex items-center gap-2 cursor-grab active:cursor-grabbing" onPointerDown={drag} title="Drag to move it">
         <Piano className="w-4 h-4 text-cyan-300" />

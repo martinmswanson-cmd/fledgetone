@@ -1,8 +1,9 @@
 /**
  * Hearing a suggestion before and after: the same bars rendered twice, A (the song now) and B (the
- * song as the suggestion would make it), played looped and in step from the same moment, each
- * through its own gain after the master, so a switch between them is a 20 ms crossfade at the same
- * place in the music. Both are rendered as the export would (recordings as live playback has
+ * song as the suggestion would make it), each looped over exactly those bars through its own gain
+ * after the master. A switch between them is a 20 ms crossfade at the same place in the music: the
+ * one switched to starts again at the bar (and part of a bar) the other had reached, so a
+ * suggestion that changes the tempo (A and B of different lengths) still switches in step. Both are rendered as the export would (recordings as live playback has
  * them) and the song itself is never touched: no store change, no undo step, no autosave.
  *
  * Ears first: playback fades in, every switch and the stop fade, and a B more than LOUDER_LIMIT_LU
@@ -13,6 +14,8 @@ import { create } from 'zustand';
 import { liveContext, afterMaster } from './liveContext';
 import { initAudio } from './engine';
 import { measureRender, renderRange, type ListenSnapshot } from './listen';
+import type { Tempo } from './tempoMap';
+import { sameBarOffset } from './auditionMath';
 
 /** How long a switch between A and B takes, seconds. */
 export const SWITCH_SECONDS = 0.02;
@@ -39,9 +42,17 @@ export interface AuditionState {
 
 export const useAudition = create<AuditionState>(() => ({ key: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, note: null, error: null, bars: null }));
 
+type Side = 'a' | 'b';
+
 interface Playing {
-  sources: AudioBufferSourceNode[];
-  gains: { a: GainNode; b: GainNode };
+  sources: Record<Side, AudioBufferSourceNode>;
+  /** When each source's loop began (context time). */
+  began: Record<Side, number>;
+  tempo: Record<Side, Tempo>;
+  fromBar: number;
+  buffers: Record<Side, AudioBuffer>;
+  gains: Record<Side, GainNode>;
+  heard: Side;
   /** The gain B plays at when heard (1, or less when it was turned down). */
   bLevel: number;
   master: GainNode;
@@ -49,8 +60,11 @@ interface Playing {
 
 let playing: Playing | null = null;
 let rendering: AbortController | null = null;
-/** The last pair rendered, kept so a second Hear doesn't render again. */
-let cache: { key: string; a: AudioBuffer; b: AudioBuffer; bLevel: number; diff: number } | null = null;
+/**
+ * The last pair rendered, kept so a second Hear doesn't render again: for suggestion `key`, the
+ * renders of `renderKey` (the caller's name for exactly what was rendered: the suggestion's version).
+ */
+let cache: { key: string; renderKey: string; a: AudioBuffer; b: AudioBuffer; bLevel: number; diff: number } | null = null;
 
 // (the context the output after the master lives in, as the other previews play into it)
 const raw = () => liveContext.rawContext as AudioContext;
@@ -71,7 +85,7 @@ export function stopAudition(): void {
   if (p) {
     ramp(p.master.gain, 0, FADE_SECONDS);
     const end = raw().currentTime + FADE_SECONDS + 0.02;
-    for (const s of p.sources) {
+    for (const s of Object.values(p.sources)) {
       try {
         s.stop(end);
       } catch {
@@ -83,15 +97,40 @@ export function stopAudition(): void {
   useAudition.setState({ phase: 'idle', progress: 0 });
 }
 
-/** Switch between A (now) and B (suggested), crossfading in SWITCH_SECONDS. */
-export function hearAudition(which: 'a' | 'b'): void {
-  useAudition.setState({ hearing: which });
-  if (!playing) return;
-  ramp(playing.gains.a.gain, which === 'a' ? 1 : 0, SWITCH_SECONDS);
-  ramp(playing.gains.b.gain, which === 'b' ? playing.bLevel : 0, SWITCH_SECONDS);
+function loopSource(ctx: AudioContext, buffer: AudioBuffer, out: GainNode, at: number, offset: number) {
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.loop = true;
+  src.connect(out);
+  src.start(at, offset);
+  return src;
 }
 
-/** Forget the kept renders (the song or the suggestion changed). */
+/** Switch between A (now) and B (suggested), crossfading in SWITCH_SECONDS at the same place in the music. */
+export function hearAudition(which: Side): void {
+  useAudition.setState({ hearing: which });
+  const p = playing;
+  if (!p || p.heard === which) return;
+  const ctx = raw();
+  const from = p.heard;
+  const at = ctx.currentTime + 0.01;
+  // The side switched to starts again where the other is now
+  const offset = sameBarOffset(Math.max(0, at - p.began[from]), p.fromBar, { tempo: p.tempo[from], seconds: p.buffers[from].duration }, { tempo: p.tempo[which], seconds: p.buffers[which].duration });
+  const old = p.sources[which];
+  try {
+    old.stop();
+  } catch {
+    // Already stopped
+  }
+  old.disconnect();
+  p.sources[which] = loopSource(ctx, p.buffers[which], p.gains[which], at, offset);
+  p.began[which] = at - offset;
+  p.heard = which;
+  ramp(p.gains.a.gain, which === 'a' ? 1 : 0, SWITCH_SECONDS);
+  ramp(p.gains.b.gain, which === 'b' ? p.bLevel : 0, SWITCH_SECONDS);
+}
+
+/** Forget the kept renders of suggestion `key` (or all) and stop hearing it. */
 export function forgetAudition(key?: string): void {
   if (!key || cache?.key === key) cache = null;
   if (key && useAudition.getState().key === key) stopAudition();
@@ -100,18 +139,21 @@ export function forgetAudition(key?: string): void {
 /** The renders of the last audition, for checking (A and B, as heard). */
 export const auditionBuffers = (): { a: AudioBuffer; b: AudioBuffer } | null => (cache ? { a: cache.a, b: cache.b } : null);
 
+const tempoOf = (s: ListenSnapshot): Tempo => ({ bpm: s.bpm, points: s.tempoPoints ?? [] });
+
 /**
- * Render bars [from, to) of `now` and `suggested` (unless the same `key` was rendered last) and
- * play them looped, hearing `hearing` first. Resolves once playing (or stopped or failed).
+ * Render bars [from, to) of `now` and `suggested` (unless `renderKey` was rendered last) and play
+ * them looped, hearing `hearing` first. `key` is the suggestion. Resolves once playing (or stopped
+ * or failed).
  */
-export async function startAudition(opts: { key: string; now: ListenSnapshot; suggested: ListenSnapshot; fromBar: number; toBar: number; hearing?: 'a' | 'b' }): Promise<void> {
+export async function startAudition(opts: { key: string; renderKey: string; now: ListenSnapshot; suggested: ListenSnapshot; fromBar: number; toBar: number; hearing?: Side }): Promise<void> {
   stopAudition();
   const hearing = opts.hearing ?? 'b';
   useAudition.setState({ key: opts.key, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: [opts.fromBar, opts.toBar] });
   const controller = new AbortController();
   rendering = controller;
   try {
-    let pair = cache?.key === opts.key ? cache : null;
+    let pair = cache?.renderKey === opts.renderKey ? cache : null;
     if (!pair) {
       const signal = controller.signal;
       const a = await renderRange(opts.now, opts.fromBar, opts.toBar, { signal, progress: (f) => useAudition.setState({ progress: f * 0.45 }) });
@@ -120,7 +162,7 @@ export async function startAudition(opts: { key: string; now: ListenSnapshot; su
       const diff = Number.isFinite(ma.lufs) && Number.isFinite(mb.lufs) ? mb.lufs - ma.lufs : Number.isFinite(mb.lufs) ? Infinity : 0;
       // A B much louder than A is turned down to A + the limit (a B from silence: to -23 LUFS-ish, by its own level)
       const over = Number.isFinite(diff) ? diff - LOUDER_LIMIT_LU : Number.isFinite(mb.lufs) ? Math.max(0, mb.lufs + 23) : 0;
-      pair = { key: opts.key, a, b, diff, bLevel: over > 0 ? 10 ** (-over / 20) : 1 };
+      pair = { key: opts.key, renderKey: opts.renderKey, a, b, diff, bLevel: over > 0 ? 10 ** (-over / 20) : 1 };
       cache = pair;
     }
     if (rendering !== controller) return;
@@ -135,25 +177,18 @@ export async function startAudition(opts: { key: string; now: ListenSnapshot; su
     gains.b.gain.value = hearing === 'b' ? pair.bLevel : 0;
     gains.a.connect(master);
     gains.b.connect(master);
-    // Both start at the same moment and loop the same length: always at the same place in the music
+    // Both start at the top of the range (a switch puts the other at the same bar again)
     const at = ctx.currentTime + 0.05;
-    const sources = (['a', 'b'] as const).map((k) => {
-      const src = ctx.createBufferSource();
-      src.buffer = pair![k];
-      src.loop = true;
-      src.connect(gains[k]);
-      src.start(at);
-      return src;
-    });
+    const sources = { a: loopSource(ctx, pair.a, gains.a, at, 0), b: loopSource(ctx, pair.b, gains.b, at, 0) };
     master.gain.setValueAtTime(0, at);
     master.gain.linearRampToValueAtTime(1, at + FADE_SECONDS);
-    playing = { sources, gains, bLevel: pair.bLevel, master };
+    playing = { sources, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, fromBar: opts.fromBar, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master };
     const diff = pair.diff;
     useAudition.setState({
       phase: 'playing',
       progress: 1,
       levelDiff: Number.isFinite(diff) ? Math.round(diff * 10) / 10 : null,
-      note: pair.bLevel < 1 ? `The suggestion is ${Number.isFinite(diff) ? `${Math.round(diff * 10) / 10} LU` : 'much'} louder: it plays turned down to ${LOUDER_LIMIT_LU} LU over the song as it is.` : null,
+      note: pair.bLevel < 1 ? `The suggestion is ${Number.isFinite(diff) ? `about ${Math.round(diff)} dB` : 'much'} louder (in loudness): it plays turned down to about ${LOUDER_LIMIT_LU} dB louder than the song as it is.` : null,
     });
   } catch (err) {
     if (rendering === controller) rendering = null;

@@ -131,6 +131,24 @@ function partOf(song: ProjectSnapshot, key: string): unknown {
   return undefined;
 }
 
+/** The touched keys of `ops` (the existing things they name), once each. */
+export function keysOfOps(ops: readonly Op[]): string[] {
+  return [...new Set(ops.flatMap(keysOf))];
+}
+
+/**
+ * Fingerprints of `keys` in `song`, with null for what isn't there: for telling, after a
+ * suggestion was accepted, whether the song is back as it was before (an undo) or as accepted.
+ */
+export function hashesOf(song: ProjectSnapshot, keys: readonly string[]): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const key of keys) {
+    const part = partOf(song, key);
+    out[key] = part === undefined ? null : fingerprint(part);
+  }
+  return out;
+}
+
 /** Fingerprints of everything `ops` touch in `song` (missing things are left out: an op naming one fails anyway). */
 export function touchedHashes(song: ProjectSnapshot, ops: readonly Op[]): Record<string, string> {
   const out: Record<string, string> = {};

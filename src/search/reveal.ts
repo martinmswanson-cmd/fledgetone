@@ -42,6 +42,18 @@ export async function reveal(selector: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Ring the control `selector` finds where it is, scrolled into view but not focused and nothing
+ * opened: for pointing something out without taking the keyboard. Resolves false if it never appears.
+ */
+export async function ring(selector: string): Promise<boolean> {
+  const el = await waitFor(selector, 2);
+  if (!el || !el.getClientRects().length) return false;
+  el.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() });
+  flash(el);
+  return true;
+}
+
 /** Click the button `selector` finds (to open what it opens), after bringing it into view. */
 export async function press(selector: string): Promise<boolean> {
   const el = await waitFor(selector, 2);

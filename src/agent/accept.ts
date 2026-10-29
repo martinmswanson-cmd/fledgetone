@@ -1,8 +1,8 @@
 /**
  * Accept and Dismiss, the musician's answers to a suggestion. Accept puts the song as it was heard
  * into the store as one undo step (a checkpoint, then one change of the tracks, clips, markers,
- * tempo and master), after checking it still fits (see acceptDecision: out of date, or applied
- * again to the song as it is now and to be heard again first). Then what the store's own actions
+ * tempo and master), after checking it still fits (see acceptDecision: for another song, out of
+ * date, or applied again to the song as it is now and to be heard again first). Then what the store's own actions
  * would have done on the side: the live mix's master and tempo-synced effects, and the recordings
  * of instruments the suggestion chose. Only a real click or key press accepts: a click made by a
  * script (an event that isn't trusted) does nothing.
@@ -13,7 +13,8 @@ import { liveMix } from '../audio/engine';
 import { setLiveStripTempo } from '../audio/liveTracks';
 import { hasRecordings, loadQuick } from '../audio/samplers/samplerManager';
 import { forgetAudition, stopAudition, useAudition } from '../audio/auditionPlayer';
-import { acceptDecision, updateSuggestion, useSuggestions, type Suggestion } from './suggestionsStore';
+import { acceptDecision, appliedRecord, isOpen, updateSuggestion, useSuggestions, type Suggestion } from './suggestionsStore';
+import { songContext } from './songWatch';
 
 /** Put `song`'s edited parts into the store as one undo step. */
 export function applyAsOneStep(song: ProjectSnapshot): void {
@@ -43,21 +44,23 @@ const find = (id: string): Suggestion | undefined => useSuggestions.getState().s
 
 /**
  * Accept suggestion `id`. `event` is the click or key press that asked: one a script made isn't
- * an answer. Returns null when accepted, else what to tell the musician.
+ * an answer. Returns null when accepted, else what to tell the musician. The suggestion is marked
+ * accepted before the song changes, so nothing (and no agent) ever sees it out of date on the way.
  */
 export function acceptSuggestion(id: string, event: { isTrusted: boolean } | null): string | null {
   if (!event?.isTrusted) return 'Accept with a click or a key press.';
   const s = find(id);
   if (!s) return 'That suggestion is gone.';
-  const decision = acceptDecision(s, currentProject(), useSuggestions.getState().revision);
+  const before = currentProject();
+  const decision = acceptDecision(s, before, songContext());
   if (!decision.apply) {
     updateSuggestion(id, decision.suggestion);
-    if (decision.suggestion.song !== s.song) forgetAudition(id);
+    if (!isOpen(decision.suggestion)) forgetAudition(id);
     return decision.message;
   }
   if (useAudition.getState().key === id) stopAudition();
+  updateSuggestion(id, { ...decision.suggestion, status: 'accepted', applied: appliedRecord(decision.suggestion, before) });
   applyAsOneStep(decision.apply);
-  updateSuggestion(id, { ...decision.suggestion, status: 'accepted' });
   forgetAudition(id);
   return null;
 }
@@ -66,8 +69,7 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
 export function dismissSuggestion(id: string, event: { isTrusted: boolean } | null): void {
   if (!event?.isTrusted) return;
   const s = find(id);
-  if (!s || (s.status !== 'waiting' && s.status !== 'changed' && s.status !== 'out_of_date')) return;
-  if (useAudition.getState().key === id) stopAudition();
+  if (!s || (!isOpen(s) && s.status !== 'out_of_date' && s.status !== 'other_song')) return;
   updateSuggestion(id, { status: 'dismissed' });
   forgetAudition(id);
 }

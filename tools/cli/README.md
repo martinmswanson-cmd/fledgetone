@@ -1,6 +1,6 @@
 # fledgetone: the command line
 
-Fledgetone songs on the command line, and the helper that lets your own AI agent read a song and
+Fledgetone songs on the command line, and the helper that lets your own agent read a song and
 suggest changes (an MCP server). How to connect an agent, the ops it suggests with and how the
 connection is kept safe are in [docs/AGENT.md](../../docs/AGENT.md).
 

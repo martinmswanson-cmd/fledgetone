@@ -115,9 +115,31 @@ function versionFile(): Plugin {
  */
 const SHELL_PUBLIC_FILES = ['favicon.svg', 'manifest.webmanifest']
 
+/** Chunks loaded only when the musician asks for them, not kept ahead (they're kept once fetched): the agent's side of the studio (AgentStudio) and what only it uses. */
+const ON_DEMAND = ['AgentStudio']
+
+function onDemandOnly(bundle: Record<string, { type: string; name?: string; imports?: string[]; dynamicImports?: string[] }>): Set<string> {
+  const chunks = Object.entries(bundle).filter(([, c]) => c.type === 'chunk')
+  const out = new Set(chunks.filter(([, c]) => ON_DEMAND.includes(c.name ?? '')).map(([f]) => f))
+  // ...and the chunks every importer of which is one of those
+  for (let more = true; more; ) {
+    more = false
+    for (const [f] of chunks) {
+      if (out.has(f)) continue
+      const importers = chunks.filter(([, c]) => c.imports?.includes(f) || c.dynamicImports?.includes(f)).map(([g]) => g)
+      if (importers.length && importers.every((g) => out.has(g))) {
+        out.add(f)
+        more = true
+      }
+    }
+  }
+  return out
+}
+
 /**
  * Write dist/sw.js, the service worker (src/pwa/sw.js), with this build's list of files to keep:
- * the page, everything Vite emitted (scripts, styles, images) and the favicon. Its id is a hash of
+ * the page, everything Vite emitted (scripts, styles, images) but what's loaded only on demand
+ * (ON_DEMAND), and the favicon. Its id is a hash of
  * those files, so a build that changes nothing makes the same worker and browsers see no update.
  */
 function serviceWorker(): Plugin {
@@ -126,7 +148,8 @@ function serviceWorker(): Plugin {
     apply: 'build',
     writeBundle(options, bundle) {
       const out = options.dir ?? join(process.cwd(), 'dist')
-      const emitted = Object.keys(bundle).filter((f) => f !== 'index.html' && !f.endsWith('.map') && f !== 'version.json' && f !== 'third-party-licenses.txt')
+      const ondemand = onDemandOnly(bundle)
+      const emitted = Object.keys(bundle).filter((f) => f !== 'index.html' && !f.endsWith('.map') && f !== 'version.json' && f !== 'third-party-licenses.txt' && !ondemand.has(f))
       const files = ['index.html', ...SHELL_PUBLIC_FILES.filter((f) => existsSync(join(out, f))), ...emitted.sort()]
       const hash = createHash('sha256')
       for (const f of files) hash.update(f).update(readFileSync(join(out, f)))

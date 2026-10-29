@@ -15,6 +15,10 @@ export const MOD_KEY = isMac ? '⌘' : 'Ctrl+';
  * The panels of the dock under the timeline. The Mixer, Game and Sound effects used to be
  * dialogs: asking for one of those as a dialog opens its dock tab instead.
  */
+/** Where focus was when the Suggestions panel or the Let an agent connect dialog was opened: it goes back there when they close. */
+export const agentOpeners: { panel: HTMLElement | null; connect: HTMLElement | null } = { panel: null, connect: null };
+const focusedNow = () => (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null);
+
 export type DockTab = 'mixer' | 'launcher' | 'eq' | 'game' | 'video' | 'sfx';
 export const DOCK_TABS: readonly DockTab[] = ['mixer', 'launcher', 'eq', 'game', 'video', 'sfx'];
 const isDockTab = (d: string | null): d is DockTab => d !== null && (DOCK_TABS as readonly string[]).includes(d);
@@ -116,8 +120,8 @@ interface UiState {
   /** The agent's Suggestions panel (see src/components/agent/), and the Let an agent connect dialog */
   agentPanelOpen: boolean;
   agentConnectOpen: boolean;
-  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name) */
-  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string };
+  /** The agent connection as the header shows it: off, connecting, connected (and the agent's name), and how many suggestions wait */
+  agentStatus: { state: 'off' | 'connecting' | 'connected'; agent?: string; waiting?: number };
   setAgentPanelOpen: (open: boolean) => void;
   setAgentConnectOpen: (open: boolean) => void;
 }
@@ -180,8 +184,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   agentPanelOpen: false,
   agentConnectOpen: false,
   agentStatus: { state: 'off' },
-  setAgentPanelOpen: (agentPanelOpen) => set({ agentPanelOpen }),
-  setAgentConnectOpen: (agentConnectOpen) => set({ agentConnectOpen }),
+  setAgentPanelOpen: (agentPanelOpen) => {
+    if (agentPanelOpen && !get().agentPanelOpen) agentOpeners.panel = focusedNow();
+    set({ agentPanelOpen });
+  },
+  setAgentConnectOpen: (agentConnectOpen) => {
+    if (agentConnectOpen && !get().agentConnectOpen) agentOpeners.connect = focusedNow();
+    set({ agentConnectOpen });
+  },
   setDockHeight: (height) => {
     set({ dockHeight: Math.round(Math.max(DOCK_MIN, Math.min(DOCK_MAX, height))) });
     const s = get();

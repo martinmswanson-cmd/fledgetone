@@ -1,7 +1,7 @@
 # Working with your own agent
 
-Fledgetone has no assistant built in, no account and no keys. Instead, an AI agent you already
-use (one that speaks MCP, the Model Context Protocol) can read your song and **suggest** changes.
+Fledgetone has no assistant built in, no account and no keys. Instead, an agent you already
+use (one that can use MCP tools, the Model Context Protocol) can read your song and **suggest** changes.
 You hear each suggestion before and after, and accept it (one undo step) or dismiss it. The agent
 never changes the song itself, and nothing is accepted for you.
 
@@ -33,14 +33,8 @@ node tools/cli/dist/fledgetone.mjs --help
 The helper is `fledgetone mcp`: an MCP server your agent starts and talks to over stdio. Point
 `--root` at the folder with your songs (the agent can read and write files only there).
 
-**Claude Code** (from the folder with your songs):
-
-```sh
-claude mcp add fledgetone -- node /path/to/fledgetone/tools/cli/dist/fledgetone.mjs mcp --root .
-```
-
-**Claude Desktop** (Settings, Developer, Edit Config: `claude_desktop_config.json`), or any agent
-that takes an MCP server in a JSON file:
+Add it to your agent's MCP settings as a server started by a command. An agent whose MCP
+servers are listed in a JSON file takes something like this:
 
 ```json
 {

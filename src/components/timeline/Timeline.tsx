@@ -60,8 +60,8 @@ import { installLiveInput } from '../../audio/liveInput';
 
 // A plugin that fails to load says why
 onPluginError((message) => showToast(message));
-/** Controls that Space works (ticks or switches), so it doesn't start the music there. */
-const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"]';
+/** What takes Space itself when focused: a checkbox or switch ticks with it, and a button of the Suggestions panel presses with it (Space there never plays the song). */
+const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"], [data-agent-panel] button';
 
 const closePluginWindow = () => useUiStore.getState().setPluginWindow(null);
 
@@ -362,7 +362,7 @@ export const Timeline: React.FC = () => {
       const key = e.key.toLowerCase();
 
       if (e.code === 'Space') {
-        // A focused checkbox or switch takes Space itself: it's how the keyboard ticks it
+        // A focused checkbox or switch takes Space itself: it's how the keyboard ticks it (and a Suggestions panel button presses)
         if (e.target instanceof Element && e.target.closest(SPACE_TAKERS)) return;
         e.preventDefault();
         // A focused button would also "click" on Space and double-toggle
@@ -476,7 +476,7 @@ export const Timeline: React.FC = () => {
             }}
           >
             {/* Ruler row */}
-            <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
+            <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }} data-timeline-ruler="">
               <div
                 className="sticky left-0 z-30 shrink-0 bg-forge-panel border-r border-b border-forge-border flex items-center justify-between px-3 text-[10px] font-mono uppercase tracking-widest text-forge-muted"
                 style={{ width: HEADER_WIDTH }}

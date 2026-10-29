@@ -6,17 +6,17 @@
  *
  * While connected it counts the song's revisions (revision.ts) and tells the agent of each edit
  * (`changed`), of what the musician selects if they allow it (`view`), and of every suggestion
- * answered (`suggestion`); and it checks the waiting suggestions again whenever the song changes,
- * so one the song moved under says so before anyone presses Accept.
+ * answered (`suggestion`); the song watch (songWatch.ts) keeps the suggestions true to the song
+ * meanwhile. All of that stops when the connection does.
  */
-import { currentProject, songParts, useTimelineStore } from '../store/timelineStore';
+import { songParts, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { APP_VERSION } from '../version';
-import { forgetAudition } from '../audio/auditionPlayer';
 import { createBridgeClient, type BridgeClient, type BridgeInfo } from './bridgeProtocolClient';
 import { DEFAULT_PERMISSIONS, type Permissions } from './protocol';
 import { RevisionCounter } from './revision';
-import { refreshSuggestion, useSuggestions } from './suggestionsStore';
+import { useSuggestions } from './suggestionsStore';
+import { watchSong } from './songWatch';
 import { studioHandlers } from './handlers';
 
 /** The helper's port unless the musician gives another (as `fledgetone mcp` listens by default). */
@@ -34,32 +34,22 @@ function setInfo(info: BridgeInfo) {
   useUiStore.setState({ agentStatus: { state, ...(info.agent ? { agent: info.agent } : {}) } });
 }
 
-/**
- * Count revisions and keep the suggestions fresh from now on (once: it goes on while the page is
- * open, so suggestions made before a disconnect keep checking themselves too).
- */
+/** Count revisions and tell the agent of changes, until stopTracking (a disconnect). */
 export function trackSong(): void {
   if (tracking) return;
   counter.update(songParts(useTimelineStore.getState()) as unknown as Record<string, unknown>);
   let changedTimer = 0;
   let viewTimer = 0;
-  const unsub = useTimelineStore.subscribe((s, prev) => {
+  const unwatch = watchSong((ctx) => {
     const before = counter.revision;
-    const revision = counter.update(songParts(s) as unknown as Record<string, unknown>);
-    if (revision !== before) {
-      useSuggestions.setState({ revision });
-      // Each waiting suggestion checked against the song now
-      const now = currentProject();
-      const list = useSuggestions.getState().suggestions;
-      const next = list.map((x) => refreshSuggestion(x, now, revision));
-      if (next.some((x, i) => x !== list[i])) {
-        next.forEach((x, i) => x.song !== list[i].song && forgetAudition(x.id));
-        useSuggestions.setState({ suggestions: next });
-      }
-      // The agent hears of edits a moment after a burst of them ends
-      window.clearTimeout(changedTimer);
-      changedTimer = window.setTimeout(() => client?.emit('changed', { revision: useSuggestions.getState().revision }), 300);
-    }
+    const revision = counter.update(ctx.parts);
+    if (revision === before) return;
+    useSuggestions.setState({ revision });
+    // The agent hears of edits a moment after a burst of them ends
+    window.clearTimeout(changedTimer);
+    changedTimer = window.setTimeout(() => client?.emit('changed', { revision: useSuggestions.getState().revision }), 300);
+  });
+  const unsub = useTimelineStore.subscribe((s, prev) => {
     const selection = s.selectedTrackId !== prev.selectedTrackId || s.editingClipId !== prev.editingClipId || s.clips !== prev.clips;
     if (selection && useSuggestions.getState().permissions.see) {
       window.clearTimeout(viewTimer);
@@ -69,17 +59,25 @@ export function trackSong(): void {
       }, 400);
     }
   });
-  // Every answer to a suggestion (accepted, dismissed, out of date...) goes to the agent
+  // Every answer to a suggestion (accepted, dismissed, out of date, undone...) goes to the agent
   const unsubS = useSuggestions.subscribe((s, prev) => {
     if (s.suggestions === prev.suggestions) return;
     const was = new Map(prev.suggestions.map((x) => [x.id, x.status]));
-    for (const x of s.suggestions) if (was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
+    for (const x of s.suggestions) if (was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
   });
   useSuggestions.setState({ revision: counter.revision });
   tracking = () => {
+    unwatch();
     unsub();
     unsubS();
+    window.clearTimeout(changedTimer);
+    window.clearTimeout(viewTimer);
   };
+}
+
+function stopTracking() {
+  tracking?.();
+  tracking = null;
 }
 
 /** Connect to the helper on `port` and pair with `code`. A connection already open is closed first. */
@@ -113,6 +111,7 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     if (client !== c) return;
     const was = c.state;
     c.closed(was === 'waiting' ? 'The helper isn’t answering on that port. Check your agent started it (fledgetone mcp) and the port matches.' : undefined);
+    stopTracking();
   };
   ws.onerror = () => {
     // The close event follows with the reason
@@ -134,15 +133,20 @@ export function disconnectAgent(reason = 'The musician disconnected.'): void {
   client = null;
   if (c) c.disconnect(reason);
   socket = null;
+  stopTracking();
   setInfo({ state: 'closed', ...(c ? { message: reason } : {}) });
 }
 
 /** Whether a connection is open or opening. */
 export const agentConnected = (): boolean => !!client && (client.state === 'paired' || client.state === 'proving' || client.state === 'waiting' || client.state === 'wrong_code');
 
-/** For the dialog: try the code again on the connection that's open (after a wrong code). */
-export function retryCode(code: string): boolean {
+/**
+ * For the dialog: try the code again on the connection that's open (after a wrong code), with
+ * what the musician allows now (the boxes as they are at this press, never as they were at the first).
+ */
+export function retryCode(code: string, permissions: Permissions): boolean {
   if (!client || client.state !== 'wrong_code' || !socket || socket.readyState !== WebSocket.OPEN) return false;
+  setAgentPermissions(permissions);
   client.pair(code);
   return true;
 }

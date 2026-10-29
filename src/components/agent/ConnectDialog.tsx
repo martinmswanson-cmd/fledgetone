@@ -6,10 +6,11 @@
  */
 import React from 'react';
 import { Modal } from '../timeline/Modal';
-import { useUiStore } from '../../store/uiStore';
+import { agentOpeners, useUiStore } from '../../store/uiStore';
 import { connectAgent, DEFAULT_PORT, disconnectAgent, retryCode, setAgentPermissions } from '../../agent/bridgeClient';
 import { useSuggestions } from '../../agent/suggestionsStore';
-import { normalizeCode, type Permissions } from '../../agent/protocol';
+import { normalizeCode, typedCode, type Permissions } from '../../agent/protocol';
+import { returnFocus } from './returnFocus';
 
 /** The privacy line, word for word (also in the guide and the command line's help). */
 export const PRIVACY_LINE = 'Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.';
@@ -24,13 +25,11 @@ const readPort = () => {
   }
 };
 
-/** "k7qm3xpd9tbw" typed as "K7QM-3XPD-9TBW". */
-const grouped = (text: string) =>
-  text
-    .toUpperCase()
-    .replace(/[^0-9A-Z]/g, '')
-    .slice(0, 12)
-    .replace(/(.{4})(?=.)/g, '$1-');
+/** The port as typed, or null if it isn't one. */
+const portOf = (text: string): number | null => {
+  const n = Number(text.trim());
+  return text.trim() && Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
+};
 
 const PERMISSIONS: Array<{ key: keyof Permissions; label: string; detail: string }> = [
   { key: 'read', label: 'Read the song', detail: 'Its tracks, clips, notes, mix and markers. Always on while connected.' },
@@ -44,11 +43,15 @@ export const ConnectDialog: React.FC = () => {
   const info = useSuggestions((s) => s.connection);
   const permissions = useSuggestions((s) => s.permissions);
   const [code, setCode] = React.useState('');
-  const [port, setPort] = React.useState(readPort);
+  const [portText, setPortText] = React.useState(() => String(readPort()));
+  const port = portOf(portText);
   const [ask, setAsk] = React.useState<Permissions>(() => ({ ...permissions }));
   const connected = info.state === 'paired';
   const busy = info.state === 'waiting' || info.state === 'proving';
-  const valid = normalizeCode(code) !== null;
+  const valid = normalizeCode(code) !== null && port !== null;
+
+  // Closed: focus goes back to what opened it
+  React.useEffect(() => () => returnFocus(agentOpeners.connect), []);
 
   // Paired: show the panel and get out of the way
   const wasConnected = React.useRef(connected);
@@ -62,13 +65,14 @@ export const ConnectDialog: React.FC = () => {
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || port === null) return;
     try {
       localStorage.setItem(PORT_KEY, String(port));
     } catch {
       // Not kept: it starts at the default next time
     }
-    if (info.state === 'wrong_code' && retryCode(code)) return;
+    // (what's ticked now goes with every try, a second one too)
+    if (info.state === 'wrong_code' && retryCode(code, ask)) return;
     connectAgent(code, port, ask);
   };
 
@@ -94,7 +98,7 @@ export const ConnectDialog: React.FC = () => {
       <form onSubmit={submit} className="flex flex-col gap-3 p-4 text-[13px] text-forge-muted max-w-md">
         {connected ? (
           <p className="text-forge-text">
-            Connected to <span className="font-semibold">{info.agent ?? 'your agent'}</span>. It can read this song{ask.suggest ? ' and suggest changes' : ''}{ask.listen ? ', and listen' : ''}.
+            Connected to your agent{info.agent ? <> (<span className="font-semibold">{info.agent}</span>)</> : null}. It can read this song{ask.suggest ? ' and suggest changes' : ''}{ask.listen ? ', and listen' : ''}.
           </p>
         ) : (
           <>
@@ -107,7 +111,7 @@ export const ConnectDialog: React.FC = () => {
               <input
                 autoFocus
                 value={code}
-                onChange={(e) => setCode(grouped(e.target.value))}
+                onChange={(e) => setCode(typedCode(e.target.value))}
                 placeholder="K7QM-3XPD-9TBW"
                 autoComplete="off"
                 spellCheck={false}
@@ -119,15 +123,15 @@ export const ConnectDialog: React.FC = () => {
             <label className="flex items-center gap-2">
               <span className="text-[11px] uppercase tracking-wider font-mono">Port</span>
               <input
-                type="number"
-                min={1}
-                max={65535}
-                value={port}
-                onChange={(e) => setPort(Math.max(1, Math.min(65535, Math.round(Number(e.target.value) || DEFAULT_PORT))))}
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                value={portText}
+                onChange={(e) => setPortText(e.target.value.replace(/[^0-9]/g, '').slice(0, 5))}
                 className="h-8 w-24 px-2 rounded-md border border-forge-border bg-forge-bg font-mono text-forge-text"
                 aria-label="Port the helper listens on"
               />
-              <span className="text-[11px]">{port === DEFAULT_PORT ? 'The usual one. Change it only if your agent says another.' : 'Your agent said this one.'}</span>
+              <span className="text-[11px]">{port === null ? 'A port is a number from 1 to 65535.' : port === DEFAULT_PORT ? 'The usual one. Change it only if your agent says another.' : 'Your agent said this one.'}</span>
             </label>
           </>
         )}

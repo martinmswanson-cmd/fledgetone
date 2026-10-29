@@ -10,35 +10,34 @@
  */
 import { currentProject, songTempo, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
-import type { ProjectSnapshot } from '../store/project';
 import { barToSeconds } from '../audio/tempoMap';
-import { measureRender, renderRange, type ListenSnapshot } from '../audio/listen';
+import { measureRender, renderRange } from '../audio/listen';
+import { listenSnapshot } from './listenSnapshot';
 import type { MasterStats } from '../audio/effects/masterAfter';
-import { reveal } from '../search/reveal';
+import { ring } from '../search/reveal';
 import { APP_VERSION } from '../version';
 import { HandlerError, type Handler } from './bridgeProtocolClient';
-import { LIMITS, plainAgentText, RateLimiter, type StudioMethod } from './protocol';
+import { fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
 import { songReadHandlers } from './studioReads';
 import { applyOps, OPS_VERSION } from './ops';
-import { isOpen, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { freshen, isOpen, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : undefined);
 
 /** A suggestion as the agent reads it back. */
-const view = (s: Suggestion) => ({ id: s.id, title: s.title, status: s.status, changes: s.changes, warnings: s.warnings, notes: s.notes, audition: s.audition, ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}) });
-
-/** The parts of a song a render needs. */
-export const listenSnapshot = (p: ProjectSnapshot): ListenSnapshot => ({
-  tracks: p.tracks,
-  clips: p.clips,
-  bpm: p.bpm,
-  tempoPoints: p.tempoPoints,
-  swing: p.swing,
-  masterFx: p.masterFx ?? { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 },
-  master: p.master,
-  intensity: p.intensity,
+const view = (s: Suggestion) => ({
+  id: s.id,
+  title: s.title,
+  status: s.status,
+  heard: s.heard !== null && s.heard === s.version,
+  changes: s.changes,
+  warnings: s.warnings,
+  notes: s.notes,
+  audition: s.focus ?? s.audition,
+  ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}),
 });
 
 /** A selector for a control by its name: its search words, its label or its title. */
@@ -72,11 +71,11 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       if (waitingCount(st.suggestions) >= LIMITS.waitingSuggestions) throw new HandlerError('too_many', `${LIMITS.waitingSuggestions} suggestions are already waiting for the musician.`);
       if (!Array.isArray(p.ops)) throw new HandlerError('bad_request', 'A suggestion needs "ops", a list of ops.');
       slow(suggestRate, 'suggestions');
-      const made = makeSuggestion(currentProject(), st.revision, { title: p.title, explanation: p.explanation, ops: p.ops, focus: p.focus });
+      const made = makeSuggestion(currentProject(), songContext(), { title: p.title, explanation: p.explanation, ops: p.ops, focus: p.focus });
       if (!made.ok) throw new HandlerError('bad_ops', made.message, { errors: made.errors });
-      useSuggestions.setState((x) => ({ suggestions: [made.suggestion, ...x.suggestions].slice(0, 50) }));
-      // The panel opens to show it (the musician decides; nothing is applied)
-      useUiStore.getState().setAgentPanelOpen(true);
+      // Added at the end (what's on the panel doesn't move), and only counted on the header's
+      // button: the panel isn't opened for it, nor is anything focused or applied
+      useSuggestions.setState((x) => ({ suggestions: [...x.suggestions, made.suggestion].slice(-50), announcement: `New suggestion from your agent: ${made.suggestion.title}` }));
       return view(made.suggestion);
     },
 
@@ -101,7 +100,10 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       let song = currentProject();
       let what = 'the song as it is';
       if (p.suggestionId !== undefined) {
-        song = find(p.suggestionId).song;
+        const s = freshen(find(p.suggestionId), song, songContext());
+        updateSuggestion(s.id, s);
+        if (s.status === 'other_song') throw new HandlerError('not_waiting', 'That suggestion was made for another song: the musician opened another since.');
+        song = s.song;
         what = 'the song with the suggestion';
       } else if (Array.isArray(p.ops)) {
         const out = applyOps(song, { opsVersion: OPS_VERSION, ops: p.ops }, { idBase: 'listen' });
@@ -144,11 +146,11 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
     },
 
     say: (p) => {
-      const text = plainAgentText(p.text, LIMITS.sayMaxChars).trim();
+      const text = fromAgent(p.text, LIMITS.sayMaxChars);
       if (!text) throw new HandlerError('bad_request', 'say needs some text.');
       slow(sayRate, 'messages');
       const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), at: Date.now() };
-      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-100) }));
+      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-100), announcement: `Your agent says: ${text}` }));
       return { ok: true };
     },
 
@@ -157,7 +159,7 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       const given = ['track', 'clip', 'bars', 'marker', 'control'].filter((k) => t[k] !== undefined);
       if (given.length !== 1) throw new HandlerError('bad_request', 'Point at exactly one thing: track, clip, bars, marker or control.');
       slow(pointRate, 'highlights');
-      const note = plainAgentText(p.note, 200) || undefined;
+      const note = fromAgent(p.note, 200) || undefined;
       const s = useTimelineStore.getState();
       const target: NonNullable<ReturnType<typeof useSuggestions.getState>['highlight']>['target'] = {};
       if (t.track !== undefined) {
@@ -178,12 +180,13 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       } else {
         const name = str(t.control, 60);
         if (!name) throw new HandlerError('bad_request', 'control needs a name.');
-        // (as the search palette does: scrolled to, focused and rung)
-        const found = await reveal(controlSelector(name));
+        // Rung where it is, as the search palette does, but never focused: the keyboard stays where the musician left it
+        const found = await ring(controlSelector(name));
         if (!found) throw new HandlerError('not_found', `No control called "${name}" is on screen.`);
         return { ok: true, shown: 'control' };
       }
-      useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 } });
+      const what = target.track ? 'a track' : target.clip ? 'a clip' : target.marker ? 'a marker' : 'some bars';
+      useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 }, announcement: `Your agent points at ${what} on the timeline${note ? `: ${note}` : '.'}` });
       return { ok: true, shown: given[0] };
     },
 

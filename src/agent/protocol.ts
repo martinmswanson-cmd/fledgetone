@@ -289,3 +289,39 @@ export function plainAgentText(text: unknown, max: number): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f‪-‮⁦-⁩]/g, '').slice(0, max);
 }
+
+/** The app's own name at the start of an agent's text: it could pass for the app speaking. */
+const POSES_AS_APP = /^\W*fledge\W*tone/i;
+
+/**
+ * Text from an agent made safe to show as the agent's (plainAgentText, trimmed): text that starts
+ * with the app's name is shown in quotes, so it never reads as the app's own words.
+ */
+export function fromAgent(text: unknown, max: number): string {
+  const plain = plainAgentText(text, max).replace(/\s+/g, (w) => (w.includes('\n') ? w : ' ')).trim();
+  return POSES_AS_APP.test(plain) ? `“${plain}”` : plain;
+}
+
+/** The longest agent name shown. */
+export const AGENT_NAME_MAX = 40;
+
+/**
+ * An agent's name for itself as the studio shows it: plain, on one line, at most AGENT_NAME_MAX
+ * characters; none (the studio says "your agent") if it's empty or starts with the app's name.
+ */
+export function agentName(text: unknown): string | undefined {
+  const plain = plainAgentText(text, 200).replace(/\s+/g, ' ').trim().slice(0, AGENT_NAME_MAX).trim();
+  return plain && !POSES_AS_APP.test(plain) ? plain : undefined;
+}
+
+/**
+ * What's typed or pasted in the code field, as it's shown there: a label in front ("Code: ...")
+ * dropped, O read as 0 and I or L as 1, anything else not in the code's letters left out, at most
+ * CODE_LENGTH of them, grouped in fours ("K7QM-3XPD-9TBW").
+ */
+export function typedCode(text: string): string {
+  // (a code never has a colon in it, nor starts with the word "code")
+  const unlabelled = (text.includes(':') ? text.slice(text.lastIndexOf(':') + 1) : text).replace(/^\s*(pairing\s+)?code\b\s*[=-]?/i, '');
+  const plain = [...unlabelled.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')].filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, CODE_LENGTH);
+  return plain.replace(/(.{4})(?=.)/g, '$1-');
+}

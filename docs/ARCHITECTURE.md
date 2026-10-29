@@ -238,12 +238,21 @@ ops and the security model):
   saved): each is the ops applied to the song with an id base of its own (`ops.ts`), so what's
   heard is what's accepted.
 - **Hearing it**: `auditionPlayer.ts` renders the same bars of the song now and as suggested
-  (`listen.ts`, which the Mix check shares) and plays both looped and in step after the master,
-  crossfading 20 ms between them. The store isn't touched.
+  (`listen.ts`, which the Mix check shares) and plays each looped after the master, crossfading
+  20 ms between them; a switch starts the other at the same bar (`auditionMath.ts`), so a tempo
+  change still switches in step. Renders are kept by the suggestion's version. The store isn't
+  touched.
+- **Keeping suggestions true** (`songWatch.ts`): each suggestion records the song it was made
+  from (`songGeneration`, its `songParts` and the swing and intensity, which undo doesn't keep).
+  At most every 150 ms after a change, while connected, while the panel is open or while one
+  waits, each is checked by fingerprints only: another song (it can never go in), out of date,
+  or changed (made again, a new version, only when it's heard or accepted); an accepted one an
+  undo took out says undone. Hearing makes it again first and notes the version heard; Accept
+  wants that version heard, or a second press.
 - **Accept** (`accept.ts`): one undo step (a checkpoint, then one change of the tracks, clips,
-  markers, tempo and master), only from a real click. While a suggestion waits, every edit
-  (`revision.ts`, counting changes of `songParts`) checks it again: still fits, applied again to
-  the song now, or out of date.
+  markers, tempo and master), only from a real click on a card that stayed where it was
+  (`cardGuard.ts`). The suggestion is marked accepted first, so the agent never hears it out of
+  date on the way. `revision.ts` counts changes of `songParts` for the agent's `changed` events.
 
 ## The instruments
 

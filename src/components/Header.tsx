@@ -21,16 +21,25 @@ import { ProjectBar } from './timeline/ProjectBar';
 /** "Agent connected": shown while an agent is paired; opens the Suggestions panel. */
 const AgentChip: React.FC = () => {
   const status = useUiStore((s) => s.agentStatus);
-  if (status.state !== 'connected') return null;
+  const waiting = status.waiting ?? 0;
+  if (status.state !== 'connected' && waiting === 0) return null;
+  const who = status.agent ? `Your agent (${status.agent})` : 'Your agent';
+  const count = waiting ? `${waiting} suggestion${waiting === 1 ? '' : 's'} waiting` : '';
   return (
     <button
       type="button"
       onClick={() => useUiStore.getState().setAgentPanelOpen(!useUiStore.getState().agentPanelOpen)}
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-mono border border-cyan-500/50 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
-      title={`${status.agent ?? 'An agent'} is connected: show or hide its suggestions`}
+      title={`${status.state === 'connected' ? `${who} is connected` : 'No agent connected'}${count ? `, ${count}` : ''}: show or hide the Suggestions panel`}
+      aria-label={`${status.state === 'connected' ? 'Agent connected' : 'Suggestions'}${count ? `, ${count}` : ''}`}
       data-agent-chip=""
     >
-      <MessagesSquare className="w-3.5 h-3.5" aria-hidden /> Agent connected
+      <MessagesSquare className="w-3.5 h-3.5" aria-hidden /> {status.state === 'connected' ? 'Agent connected' : 'Suggestions'}
+      {waiting > 0 && (
+        <span className="ml-0.5 min-w-[1.25rem] px-1 rounded-full bg-cyan-500/30 text-cyan-50 text-center" data-agent-waiting="">
+          {waiting}
+        </span>
+      )}
     </button>
   );
 };

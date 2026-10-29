@@ -1,26 +1,20 @@
 /**
- * One suggestion on the Suggestions panel: the agent's title and why (as plain text), what it
- * changes in plain words, its cautions in amber and its notes plain, a before-and-after to hear
- * (Now / Suggested, the same bars looped, switched in step), and Accept (one undo step) or Dismiss.
- * Accept and Dismiss answer only to a real click or key press. A suggestion the song changed
- * under says so: heard again, or out of date (it can't be accepted).
+ * One suggestion on the Suggestions panel: marked as from the agent, with its title and why quoted
+ * (plain text), what it changes in plain words, its cautions in amber and its notes plain, a
+ * before-and-after to hear (Now / Suggested, the same bars looped, switched in step), and Accept
+ * (one undo step) or Dismiss. Accept and Dismiss answer only to a real click or key press on a card
+ * that stayed where it was (cardGuard.ts). It says whether it was heard; one the song changed under
+ * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
+ * of date or made for another song can't be accepted. Stop is there whenever it's being heard.
  */
 import React from 'react';
 import { Check, Headphones, Square, X } from 'lucide-react';
-import { useAudition, startAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
+import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
-import { listenSnapshot } from '../../agent/handlers';
-import { currentProject, useTimelineStore } from '../../store/timelineStore';
+import { hearSuggestion } from '../../agent/songWatch';
 import { isOpen, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
-
-const STATUS: Record<Suggestion['status'], string> = {
-  waiting: 'Waiting for you',
-  changed: 'The song changed since: listen again before you accept',
-  out_of_date: 'Out of date',
-  accepted: 'Accepted (Undo takes it out)',
-  dismissed: 'Dismissed',
-  withdrawn: 'Withdrawn by the agent',
-};
+import { guardClick, guardDown } from './cardGuard';
+import { fromYourAgent, louderWords, STATUS_WORDS } from './words';
 
 const bars = (r: { fromBar: number; toBar: number }) => {
   const a = Math.floor(r.fromBar);
@@ -28,30 +22,44 @@ const bars = (r: { fromBar: number; toBar: number }) => {
   return a === b ? `bar ${a}` : `bars ${a}-${b}`;
 };
 
-export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestion: s }) => {
+/** The line under the buttons: where it is, and whether what Accept puts in was heard. */
+function statusLine(s: Suggestion): string {
+  if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : 'The song changed since it was suggested: hear it again before you accept.';
+  if (s.status === 'waiting') return s.heard === null ? 'Not heard yet.' : 'Heard.';
+  const words = STATUS_WORDS[s.status];
+  return words[0].toUpperCase() + words.slice(1) + '.';
+}
+
+export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }> = ({ suggestion: s, agent }) => {
   const audition = useAudition();
   const mine = audition.key === s.id;
-  // The last press's answer, kept only until the suggestion's status or revision moves on
-  const [said, setSaid] = React.useState<{ text: string | null; at: string } | null>(null);
-  const here = `${s.status}:${s.revision}`;
+  // The last press's answer, kept only until the suggestion's status or version moves on
+  const [said, setSaid] = React.useState<{ text: string; at: string } | null>(null);
+  const here = `${s.status}:${s.version}`;
   const message = said && said.at === here ? said.text : null;
-  const setMessage = (text: string | null) => setSaid({ text, at: here });
+  // An answer to a press: shown on the card, and said for screen readers (one live region for the panel)
+  const say = (text: string | null) => {
+    // (kept for the suggestion as the press left it: Accept may have made it again)
+    const after = useSuggestions.getState().suggestions.find((x) => x.id === s.id);
+    setSaid(text ? { text, at: after ? `${after.status}:${after.version}` : here } : null);
+    useSuggestions.setState({ announcement: text ?? `“${s.title}” accepted.` });
+  };
   const open = isOpen(s);
   const range = s.focus ?? s.audition;
+  const playing = mine && audition.phase === 'playing';
 
   const hear = (which: 'a' | 'b') => {
-    if (mine && audition.phase === 'playing') return hearAudition(which);
-    // The song's own playback stops first: the two can't play at once
-    useTimelineStore.getState().pause();
-    void startAudition({ key: s.id, now: listenSnapshot(currentProject()), suggested: listenSnapshot(s.song), fromBar: range.fromBar, toBar: range.toBar, hearing: which });
+    if (playing) return hearAudition(which);
+    void hearSuggestion(s.id, which);
   };
 
   const focus = () => useSuggestions.setState({ focusId: s.id });
   const unfocus = () => useSuggestions.getState().focusId === s.id && useSuggestions.setState({ focusId: null });
+  const unsettled = 'That card just appeared or moved: press again if you meant it.';
 
   return (
     <article
-      aria-label={`Suggestion: ${s.title}`}
+      aria-label={`Suggestion from your agent: ${s.title}`}
       data-suggestion={s.id}
       onMouseEnter={focus}
       onMouseLeave={unfocus}
@@ -59,10 +67,13 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
       className={`rounded-lg border p-3 flex flex-col gap-2 ${open ? 'border-forge-border bg-forge-bg/60' : 'border-forge-border/50 bg-forge-bg/30 opacity-80'}`}
     >
       <header className="flex items-start gap-2">
-        <h3 className="flex-1 text-[13px] font-semibold text-forge-text break-words">{s.title}</h3>
-        <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wider ${s.status === 'out_of_date' ? 'text-amber-300' : 'text-forge-muted'}`}>{s.status.replace(/_/g, ' ')}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</p>
+          <h3 className="text-[13px] font-semibold text-forge-text break-words">“{s.title}”</h3>
+        </div>
+        <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wider ${s.status === 'out_of_date' || s.status === 'other_song' ? 'text-amber-300' : 'text-forge-muted'}`}>{s.status.replace(/_/g, ' ')}</span>
       </header>
-      {s.explanation && <p className="text-[12px] text-forge-muted whitespace-pre-wrap break-words">{s.explanation}</p>}
+      {s.explanation && <blockquote className="border-l-2 border-cyan-500/50 pl-2 text-[12px] text-forge-muted whitespace-pre-wrap break-words">{s.explanation}</blockquote>}
 
       <div>
         <h4 className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">What changes{s.bars ? ` (${bars(s.bars)})` : ''}</h4>
@@ -93,25 +104,27 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
         </ul>
       )}
       {s.status === 'out_of_date' && s.outOfDate && <p className="text-[12px] text-amber-300">It can’t be accepted: {s.outOfDate.join('; ')}.</p>}
+      {s.status === 'other_song' && <p className="text-[12px] text-amber-300">It was made for the song that was open before, so it can’t go in this one.</p>}
 
-      {open && (
+      {(open || mine) && (
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label={`Hear ${bars(range)} before and after`}>
           <Headphones className="w-3.5 h-3.5 text-forge-muted" aria-hidden />
-          {(['a', 'b'] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => hear(k)}
-              aria-pressed={mine && audition.phase === 'playing' && audition.hearing === k}
-              data-hear={k === 'a' ? 'now' : 'suggested'}
-              className={`h-7 px-2.5 rounded-md border text-[12px] ${mine && audition.phase === 'playing' && audition.hearing === k ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border text-forge-text hover:border-cyan-500/60'}`}
-            >
-              {k === 'a' ? 'Now' : 'Suggested'}
-            </button>
-          ))}
+          {open &&
+            (['a', 'b'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => hear(k)}
+                aria-pressed={playing && audition.hearing === k}
+                data-hear={k === 'a' ? 'now' : 'suggested'}
+                className={`h-7 px-2.5 rounded-md border text-[12px] ${playing && audition.hearing === k ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border text-forge-text hover:border-cyan-500/60'}`}
+              >
+                {k === 'a' ? 'Now' : 'Suggested'}
+              </button>
+            ))}
           {mine && audition.phase !== 'idle' && (
-            <button type="button" onClick={stopAudition} className="h-7 px-2 rounded-md border border-forge-border text-forge-text" aria-label="Stop hearing">
-              <Square className="w-3 h-3" />
+            <button type="button" onClick={stopAudition} data-stop="" className="h-7 px-2 rounded-md border border-forge-border text-forge-text flex items-center gap-1 text-[12px]" aria-label="Stop hearing">
+              <Square className="w-3 h-3" aria-hidden /> Stop
             </button>
           )}
           <span className="text-[11px] text-forge-muted">{bars(range)}</span>
@@ -120,31 +133,29 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
               <span className="block h-full bg-cyan-500" style={{ width: `${Math.round(audition.progress * 100)}%` }} />
             </span>
           )}
-          {mine && audition.phase === 'playing' && audition.levelDiff !== null && (
-            <span className="w-full text-[11px] text-forge-muted">
-              Suggested is {Math.abs(audition.levelDiff) < 0.1 ? 'as loud as now' : `${Math.abs(audition.levelDiff).toFixed(1)} LU ${audition.levelDiff > 0 ? 'louder' : 'quieter'}`}.
-            </span>
-          )}
+          {playing && audition.levelDiff !== null && <span className="w-full text-[11px] text-forge-muted">Suggested is {louderWords(audition.levelDiff)}.</span>}
           {mine && audition.note && <span className="w-full text-[11px] text-amber-300">{audition.note}</span>}
           {mine && audition.error && <span className="w-full text-[11px] text-amber-300">Couldn’t render it: {audition.error}</span>}
         </div>
       )}
 
       <footer className="flex flex-wrap items-center gap-2">
-        {(open || s.status === 'out_of_date') && (
+        {(open || s.status === 'out_of_date' || s.status === 'other_song') && (
           <>
             <button
               type="button"
               disabled={!open}
-              onClick={(e) => setMessage(acceptSuggestion(s.id, e.nativeEvent))}
+              onPointerDown={guardDown}
+              onClick={(e) => say(guardClick(e, s.id) ? acceptSuggestion(s.id, e.nativeEvent) : unsettled)}
               data-accept={s.id}
               className="h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
             >
-              <Check className="w-3.5 h-3.5" aria-hidden /> Accept
+              <Check className="w-3.5 h-3.5" aria-hidden /> {open && s.confirmUnheard === s.version && s.heard !== s.version ? 'Accept unheard' : 'Accept'}
             </button>
             <button
               type="button"
-              onClick={(e) => dismissSuggestion(s.id, e.nativeEvent)}
+              onPointerDown={guardDown}
+              onClick={(e) => (guardClick(e, s.id) ? dismissSuggestion(s.id, e.nativeEvent) : say(unsettled))}
               data-dismiss={s.id}
               className="h-8 px-3 rounded-md border border-forge-border text-[12px] text-forge-text hover:border-red-400/60 flex items-center gap-1"
             >
@@ -152,8 +163,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
             </button>
           </>
         )}
-        <span role="status" aria-live="polite" className={`text-[11px] ${s.status === 'changed' ? 'text-amber-300' : 'text-forge-muted'}`}>
-          {message ?? STATUS[s.status]}
+        <span data-card-status="" className={`text-[11px] ${s.status === 'changed' || s.status === 'other_song' || message ? 'text-amber-300' : 'text-forge-muted'}`}>
+          {message ?? statusLine(s)}
         </span>
       </footer>
     </article>
