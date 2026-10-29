@@ -159,28 +159,57 @@ export const SearchPalette: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Where focus was as it opens (Ctrl+K, the menu, a button), noted before its own field takes the
+  // focus: closing it puts the focus back there (the field you were typing in, say). Opened from a
+  // menu, whose item is gone once it closes: back to that menu's button in the menu bar.
+  const fallback = useRef<HTMLElement | null>(null);
+  const ran = useRef(false);
+  const giveBack = () => {
+    const to = [opener.current, fallback.current].find((el) => el?.isConnected) ?? null;
+    to?.focus();
+  };
+  useEffect(
+    () =>
+      useUiStore.subscribe((s, prev) => {
+        if (s.paletteOpen && !prev.paletteOpen) {
+          const at = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+          opener.current = at;
+          fallback.current = at?.closest('[role="menu"]') ? (document.querySelector<HTMLElement>('[role="menubar"] [aria-expanded="true"]') ?? document.querySelector<HTMLElement>('[role="menubar"] [role="menuitem"]')) : null;
+          ran.current = false;
+        }
+        // However it closed (Esc, Ctrl+K again, a click outside): focus left on nothing goes back
+        if (!s.paletteOpen && prev.paletteOpen)
+          window.setTimeout(() => {
+            const now = document.activeElement;
+            if (!ran.current && (!now || now === document.body || !now.isConnected)) giveBack();
+          }, 0);
+      }),
+    []
+  );
+
   // Esc closes it before anything else hears the key (the piano roll, a dialog under it)
   useEffect(() => {
     if (!open) return;
-    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopImmediatePropagation();
       useUiStore.getState().setPaletteOpen(false);
-      opener.current?.focus();
+      giveBack();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;
   return (
     <Palette
-      onClose={(ran) => {
-        useUiStore.getState().setPaletteOpen(false);
+      onClose={(didRun) => {
         // After running something, focus goes where it took you (or stays put)
-        if (!ran) opener.current?.focus();
+        ran.current = didRun;
+        useUiStore.getState().setPaletteOpen(false);
+        if (!didRun) giveBack();
       }}
     />
   );

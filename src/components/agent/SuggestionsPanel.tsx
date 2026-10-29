@@ -2,8 +2,9 @@
  * The Suggestions panel, on the right of the studio: who's connected and what they may do (with
  * Change and Disconnect), the agent's suggestions in the order they came (a new one goes at the
  * end, so nothing on the panel moves under the pointer), each a card to hear, accept or dismiss
- * (SuggestionCard), and the agent's messages. Everything the agent wrote is shown as plain text,
- * quoted and marked as from the agent. Only the musician opens it (an agent's suggestion counts
+ * (SuggestionCard), the conversation with the agent (ConversationList: its messages and the
+ * musician's own), and the message box at the foot (MessageBox: sent only when the musician presses
+ * Send). Everything the agent wrote is shown as plain text, quoted and marked as from the agent. Only the musician opens it (an agent's suggestion counts
  * on the header's button instead); it takes focus when opened and gives it back when closed.
  * Full width on a narrow window, under dialogs, menus and toasts; Esc closes it. What changes is
  * said for screen readers in one live region (AgentStudio's).
@@ -15,10 +16,12 @@ import { announce, shortText, unreadCount, useSuggestions, type Suggestion } fro
 import { disconnectAgent } from '../../agent/bridgeClient';
 import { watchSong } from '../../agent/songWatch';
 import { SuggestionCard } from './SuggestionCard';
-import { fromYourAgent, STATUS_WORDS } from './words';
+import { STATUS_WORDS } from './words';
 import { stopAudition } from '../../audio/auditionPlayer';
 import { noteCardPlaces, noteListScroll, noteOwnInput } from './cardGuard';
 import { returnFocus } from './returnFocus';
+import { ConversationList } from './ConversationList';
+import { MessageBox } from './MessageBox';
 
 /** "can read, suggest, listen": what the musician allowed, in words. */
 function allowed(p: { see: boolean; suggest: boolean; listen: boolean }): string {
@@ -107,6 +110,13 @@ export const SuggestionsPanel: React.FC = () => {
     noteOwnInput();
     lastMessage.current?.scrollIntoView({ block: 'end' });
   };
+  // After the musician sends: the list to its end, where their message is (their own doing, so the cards keep their time)
+  const toEnd = () =>
+    window.setTimeout(() => {
+      noteOwnInput();
+      const el = list.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
 
   // Statuses that change (out of date, for another song, undone...) are said together
   React.useEffect(
@@ -128,10 +138,13 @@ export const SuggestionsPanel: React.FC = () => {
       onClick={(e) => {
         // After a pointer's press on a button, focus goes to the panel itself: Space then plays
         // the song as everywhere, rather than pressing that button again
-        if (e.detail > 0 && (e.target as Element).closest('button') && document.activeElement !== panel.current) panel.current?.focus({ preventScroll: true });
+        // (the message box and Retry keep it: focus goes back to the box)
+        const t = e.target as Element;
+        if (e.detail > 0 && t.closest('button') && !t.closest('[data-keep-focus]') && document.activeElement !== panel.current) panel.current?.focus({ preventScroll: true });
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+        // (Esc while an input method composes text is the method's)
+        if (e.key === 'Escape' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
           e.stopPropagation();
           close();
         }
@@ -179,16 +192,7 @@ export const SuggestionsPanel: React.FC = () => {
           ) : (
             suggestions.map((s) => <SuggestionCard key={s.id} suggestion={s} agent={agent} />)
           )}
-          {messages.length > 0 && (
-            <section aria-label="Messages from your agent" className="flex flex-col gap-1.5">
-              {messages.slice(-20).map((m) => (
-                <figure key={m.id} ref={m === latest ? lastMessage : undefined} className="rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5">
-                  <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</figcaption>
-                  <blockquote className="mt-0.5 text-[12px] text-forge-text whitespace-pre-wrap break-words">{m.text}</blockquote>
-                </figure>
-              ))}
-            </section>
-          )}
+          <ConversationList agent={agent} lastAgentRef={lastMessage} />
         </div>
         {unread > 0 && (
           <button
@@ -197,10 +201,11 @@ export const SuggestionsPanel: React.FC = () => {
             data-agent-unread=""
             className="absolute bottom-2 left-1/2 -translate-x-1/2 h-7 px-3 rounded-full border border-cyan-500/50 bg-forge-panel text-[12px] text-cyan-100 shadow-lg shadow-black/50 hover:bg-cyan-500/20"
           >
-            {unread} new message{unread === 1 ? '' : 's'} from your agent, below
+            Jump to {unread} new message{unread === 1 ? '' : 's'} from your agent
           </button>
         )}
       </div>
+      <MessageBox onSent={toEnd} />
     </aside>
   );
 };

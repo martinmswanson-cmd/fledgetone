@@ -1,7 +1,7 @@
 /**
  * The agent's side of the studio, loaded on demand (see AgentMount): the Suggestions panel, the
  * Let an agent connect dialog, the timeline highlight and the live region that says what changes. In the dev server it also offers a few
- * hooks to the browser checks (scripts/agent-check/e2e.cjs).
+ * hooks to the browser checks (scripts/agent-check/e2e.cjs and e2e2.cjs).
  */
 import React from 'react';
 import { useUiStore } from '../../store/uiStore';
@@ -24,8 +24,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     import('../../store/timelineStore'),
     import('../../agent/songWatch'),
     import('../../agent/listenSnapshot'),
-  ]).then(([sg, audition, listen, ops, handlers, tl, watch, snap]) => {
-    (window as unknown as Record<string, unknown>).__fledgetoneAgent = { sg, audition, listen, ops, handlers, tl, watch, snap };
+    import('../../agent/conversation'),
+  ]).then(([sg, audition, listen, ops, handlers, tl, watch, snap, conv]) => {
+    (window as unknown as Record<string, unknown>).__fledgetoneAgent = { sg, audition, listen, ops, handlers, tl, watch, snap, conv };
   });
 }
 

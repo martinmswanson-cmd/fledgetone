@@ -6,15 +6,17 @@
  * that stayed where it was (cardGuard.ts). It says whether it was heard; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
  * of date or made for another song can't be accepted. Stop is there whenever it's being heard.
+ * "Ask about this" ties the musician's next message to it (the message box takes the focus).
  */
 import React from 'react';
-import { Check, Headphones, Square, X } from 'lucide-react';
+import { Check, Headphones, MessageSquareReply, Square, X } from 'lucide-react';
 import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { hearSuggestion } from '../../agent/songWatch';
 import { announce, ARMED_MS, isArmed, isOpen, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
+import { useConversation } from '../../agent/conversation';
 import { fromYourAgent, louderWords, STATUS_WORDS } from './words';
 
 /** An agent's title in quotes, once (one that poses as the app comes quoted already). */
@@ -199,6 +201,20 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
         <span data-card-status="" className={`text-[11px] ${s.status === 'changed' || s.status === 'other_song' || message ? 'text-amber-300' : 'text-forge-muted'}`}>
           {message ?? statusLine(s)}
         </span>
+        <button
+          type="button"
+          data-keep-focus=""
+          data-ask-about={s.id}
+          onClick={() => {
+            // (the musician's own press: the message box takes the focus, to write the question)
+            useConversation.setState({ about: s.id });
+            window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('[data-agent-compose] textarea')?.focus({ preventScroll: true }), 0);
+          }}
+          aria-label={`Ask about this: “${s.title}”`}
+          className="ml-auto h-7 px-2 rounded-md border border-forge-border text-[11px] text-forge-muted hover:text-forge-text hover:border-cyan-500/60 flex items-center gap-1"
+        >
+          <MessageSquareReply className="w-3 h-3" aria-hidden /> Ask about this
+        </button>
       </footer>
     </article>
   );

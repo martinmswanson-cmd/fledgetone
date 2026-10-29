@@ -121,9 +121,10 @@ export const DEFAULT_PERMISSIONS: Permissions = { read: true, see: false, sugges
 /**
  * What the studio tells the helper without being asked (events): the song changed (its new
  * revision), the view or selection changed, a suggestion's status changed (accepted, dismissed,
- * out of date, withdrawn), the permissions changed, or it's leaving.
+ * out of date, withdrawn), the permissions changed, it's leaving, or the musician sent the agent a
+ * message (user_message, only when they press Send: see readUserMessage).
  */
-export const STUDIO_EVENTS = ['changed', 'view', 'suggestion', 'permissions', 'bye'] as const;
+export const STUDIO_EVENTS = ['changed', 'view', 'suggestion', 'permissions', 'bye', 'user_message'] as const;
 export type StudioEvent = (typeof STUDIO_EVENTS)[number];
 
 export const isStudioMethod = (m: unknown): m is StudioMethod => typeof m === 'string' && Object.hasOwn(STUDIO_METHODS, m);
@@ -354,4 +355,174 @@ export function typedCode(text: string): string {
   const unlabelled = (text.includes(':') ? text.slice(text.lastIndexOf(':') + 1) : text).replace(/^\s*(pairing\s+)?code\b\s*[=-]?/i, '');
   const plain = [...unlabelled.toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')].filter((c) => CODE_ALPHABET.includes(c)).join('').slice(0, CODE_LENGTH);
   return plain.replace(/(.{4})(?=.)/g, '$1-');
+}
+
+// ---------- The conversation ----------
+
+/**
+ * The musician's side of the conversation: what they write to their agent on the Suggestions
+ * panel. Kept in memory only, on both ends (never saved with the song or to disk): the studio
+ * keeps it for the tab, the helper until the studio disconnects.
+ */
+export const CONVERSATION = {
+  /** A message the musician writes: at most this many characters. */
+  textMaxChars: 2_000,
+  /** Messages kept each way (the oldest go first). */
+  keep: 200,
+  /** get_messages gives at most this many at a time. */
+  pageMax: 50,
+  /** How long the studio waits for the helper to say it has a message, else it's "Not sent", ms. */
+  ackMs: 5_000,
+  /** Clips listed in a message's context, at most. */
+  contextClips: 50,
+} as const;
+
+/** What the musician chose to send along with a message ("Include what I've selected"). */
+export interface UserMessageContext {
+  selectedTrackId?: string;
+  selectedClipIds?: string[];
+  editingClipId?: string;
+  /** The bars the selected clips cover (song bars, toBar not included). */
+  bars?: { fromBar: number; toBar: number };
+}
+
+/** The `user_message` event's params (studio to helper): one message the musician sent. */
+export interface UserMessage {
+  id: string;
+  text: string;
+  /** When it was written (ms since 1970). */
+  at: number;
+  /** The suggestion it asks about ("Ask about this" on a card). */
+  suggestionId?: string;
+  context?: UserMessageContext;
+}
+
+/** The helper's event (helper to studio) telling the studio it has the musician's messages (`received`), or the agent has read them (`seen`). */
+export const USER_MESSAGE_STATUS = 'user_message_status';
+export interface UserMessageStatusParams {
+  ids: string[];
+  status: 'received' | 'seen';
+}
+
+const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const shortId = (v: unknown) => (typeof v === 'string' && MESSAGE_ID.test(v) ? v : undefined);
+const bar = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 10_000 ? v : undefined);
+
+/** A message's context as either end keeps it: only the fields it may have, ids checked, at most CONVERSATION.contextClips clips. Undefined if nothing is left. */
+export function readContext(c: unknown): UserMessageContext | undefined {
+  if (typeof c !== 'object' || c === null || Array.isArray(c)) return undefined;
+  const o = c as Record<string, unknown>;
+  const out: UserMessageContext = {};
+  const track = shortId(o.selectedTrackId);
+  if (track) out.selectedTrackId = track;
+  if (Array.isArray(o.selectedClipIds)) {
+    const clips = o.selectedClipIds.map(shortId).filter((x): x is string => !!x).slice(0, CONVERSATION.contextClips);
+    if (clips.length) out.selectedClipIds = clips;
+  }
+  const editing = shortId(o.editingClipId);
+  if (editing) out.editingClipId = editing;
+  const b = o.bars as Record<string, unknown> | undefined;
+  const from = bar(b?.fromBar);
+  const to = bar(b?.toBar);
+  if (from !== undefined && to !== undefined && to > from) out.bars = { fromBar: from, toBar: to };
+  return Object.keys(out).length ? out : undefined;
+}
+
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/u;
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+const BLANK_BRAILLE = '\u2800';
+/** A braille cell with dots (the blank one doesn't count). */
+const isBraille = (c: string | undefined) => !!c && c > '\u2800' && c <= '\u28ff';
+/** A character that shows by itself (a base for a variation selector, a neighbour for a joiner or a mark). */
+const showsAlone = (c: string | undefined) => !!c && !/\s/u.test(c) && !INVISIBLE.test(c) && !CONTROL.test(c) && c !== BLANK_BRAILLE;
+/** The end of something visible: a character that shows, or what hangs on one (a combining mark, a presentation selector). */
+const visibleEnd = (c: string | undefined) => showsAlone(c) || (!!c && (/\p{M}/u.test(c) || c === '\uFE0E' || c === '\uFE0F'));
+/** The flags made of tag sequences that exist (England, Scotland, Wales): their tag letters. */
+const TAG_FLAGS = new Set(['gbeng', 'gbsct', 'gbwls']);
+const JOINERS = new Set([0x200c, 0x200d]);
+/** A letter of a script whose letters join (Arabic, Syriac, N'Ko, Mongolian, Adlam, Hanifi Rohingya). */
+const JOINING_LETTER = /^[\p{Script=Arabic}\p{Script=Syriac}\p{Script=Nko}\p{Script=Mongolian}\p{Script=Adlam}\p{Script=Hanifi_Rohingya}]$/u;
+const MARKS = new Set([0x200e, 0x200f, 0x061c]);
+
+/**
+ * The musician's own text made plain (at most `max` characters), so the agent gets exactly what
+ * the musician sees: control characters and every invisible or format character go (tag
+ * characters, word joiners, soft hyphens, byte order marks, fillers, direction embeddings,
+ * overrides and isolates), line and paragraph separators become line breaks. Kept, because writing
+ * needs them, and only where they do something:
+ *
+ * - a joiner (U+200C, U+200D: emoji sequences, Persian and Indic words), one at a time, between
+ *   two visible characters; a ZWJ also right after a letter of a joining script (Arabic, Syriac,
+ *   N'Ko, Mongolian, Adlam, Hanifi Rohingya), before a space or the end, for a joined form;
+ * - a direction mark (LRM, RLM, ALM), one at a time, next to something visible;
+ * - an emoji or text presentation selector (U+FE0F, U+FE0E) right after a character that shows;
+ * - the flags of England, Scotland and Wales (a black flag, their tag letters, a cancel tag): any
+ *   other tag sequence leaves the plain black flag;
+ * - a blank braille cell only next to a braille cell with dots.
+ */
+export function plainUserText(text: unknown, max: number): string {
+  if (typeof text !== 'string') return '';
+  const cps = [...text.replace(/[\u2028\u2029]/g, '\n')];
+  const out: string[] = [];
+  for (let i = 0; i < cps.length; i++) {
+    const c = cps[i];
+    const cp = c.codePointAt(0)!;
+    const prev = out.at(-1);
+    const next = cps[i + 1];
+    if (CONTROL.test(c)) continue;
+    if (cp === 0x1f3f4) {
+      let j = i + 1;
+      while (j < cps.length && cps[j].codePointAt(0)! >= 0xe0020 && cps[j].codePointAt(0)! <= 0xe007e) j++;
+      const tags = cps.slice(i + 1, j).map((t) => String.fromCodePoint(t.codePointAt(0)! - 0xe0000)).join('');
+      if (cps[j]?.codePointAt(0) === 0xe007f && TAG_FLAGS.has(tags)) {
+        out.push(...cps.slice(i, j + 1));
+        i = j;
+        continue;
+      }
+      // (another sequence: the plain flag, its tags left out with every other tag character)
+      out.push(c);
+      continue;
+    }
+    if (cp === 0xfe0e || cp === 0xfe0f) {
+      if (showsAlone(prev)) out.push(c);
+      continue;
+    }
+    if (JOINERS.has(cp)) {
+      // (a ZWJ after a letter of a joining script keeps it in its joined form, even at a word's end: Arabic abbreviations)
+      if ((visibleEnd(prev) && showsAlone(next)) || (cp === 0x200d && JOINING_LETTER.test(prev ?? '') && !JOINERS.has(next?.codePointAt(0) ?? -1))) out.push(c);
+      continue;
+    }
+    if (MARKS.has(cp)) {
+      if (!MARKS.has(prev?.codePointAt(0) ?? -1) && (visibleEnd(prev) || showsAlone(next))) out.push(c);
+      continue;
+    }
+    if (c === BLANK_BRAILLE) {
+      if (isBraille(prev) || isBraille(next)) out.push(c);
+      continue;
+    }
+    if (INVISIBLE.test(c)) continue;
+    out.push(c);
+  }
+  return out.join('').slice(0, max);
+}
+
+/** Whether text has anything to see (not only spaces and invisible characters, blank braille among them). */
+export const hasVisibleText = (text: string): boolean => /[^\s\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}\u2800]/u.test(text);
+
+/**
+ * A `user_message` event's params as both ends keep them, or null if it isn't one: an id of
+ * letters, digits, - and _; the text plain (plainUserText), trimmed, with something visible in
+ * it, at most CONVERSATION.textMaxChars; a time; the suggestion's id and the context only if
+ * they're well formed (anything else is left out).
+ */
+export function readUserMessage(p: unknown): UserMessage | null {
+  if (typeof p !== 'object' || p === null || Array.isArray(p)) return null;
+  const o = p as Record<string, unknown>;
+  const id = shortId(o.id);
+  const text = plainUserText(o.text, CONVERSATION.textMaxChars).trim();
+  if (!id || !hasVisibleText(text) || typeof o.at !== 'number' || !Number.isFinite(o.at)) return null;
+  const suggestionId = shortId(o.suggestionId);
+  const context = readContext(o.context);
+  return { id, text, at: o.at, ...(suggestionId ? { suggestionId } : {}), ...(context ? { context } : {}) };
 }

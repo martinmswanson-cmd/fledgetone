@@ -8,12 +8,14 @@
  * the code for a new one; one proof is worked out at a time), and
  * serves one paired studio at a time. Once paired, `request` sends the studio a request and waits
  * for its answer (or a timeout), and the studio's events are kept in a ring buffer that
- * `waitForEvents` reads from, for the agent's wait_for_changes. It logs to stderr only.
+ * `waitForEvents` reads from, for the agent's wait_for_changes (the musician's messages kept apart
+ * from the rest, so edits never push one out; a reader that fell behind is told it missed some). It logs to stderr only.
  */
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import {
   agentName,
+  CONVERSATION,
   encodeMessage,
   hostAllowed,
   LIMITS,
@@ -70,6 +72,9 @@ export class BridgeError extends Error {
   }
 }
 
+/** What an event filter returns to keep an event out of the ring buffer (see BridgeServer.eventFilter). */
+export const DROP = Symbol('drop');
+
 /** The message every live tool gives when no studio is paired. */
 export const NOT_CONNECTED = 'No studio is connected — call connect_studio and ask the user to type the code in Fledgetone.';
 
@@ -111,11 +116,15 @@ export class BridgeServer {
   private nextId = 0;
   private readonly events: StudioEventRecord[] = [];
   private seq = 0;
+  /** The newest event pushed out of the ring buffer unread (wait_for_changes from before it missed something). */
+  private dropped = 0;
   private waiters: Array<() => void> = [];
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private readonly listeners = new Set<(e: StudioEventRecord) => void>();
   private readonly opts: BridgeServerOptions;
   port = 0;
+  /** Looks at each studio event before it's kept: its params as kept, or DROP (the conversation's check of user_message, conversation.ts). */
+  eventFilter: ((event: string, params: unknown) => unknown) | null = null;
 
   constructor(opts: BridgeServerOptions) {
     this.opts = opts;
@@ -225,7 +234,9 @@ export class BridgeServer {
     if (m.kind === 'event') {
       if (!(STUDIO_EVENTS as readonly string[]).includes(m.method!)) return;
       if (m.method === 'permissions' && conn.studio && typeof m.params === 'object' && m.params) conn.studio.permissions = { ...(m.params as Permissions), read: true };
-      this.record(m.method!, m.params);
+      const params = this.eventFilter ? this.eventFilter(m.method!, m.params) : m.params;
+      if (params === DROP) return;
+      this.record(m.method!, params);
       if (m.method === 'bye') conn.ws.close(4000, 'Bye');
       return;
     }
@@ -362,10 +373,37 @@ export class BridgeServer {
         // a listener's trouble isn't the connection's
       }
     }
-    while (this.events.length > LIMITS.eventBuffer) this.events.shift();
+    this.trim();
     const waiting = this.waiters;
     this.waiters = [];
     for (const w of waiting) w();
+  }
+
+  /**
+   * The ring buffer kept to LIMITS.eventBuffer events of other kinds, the oldest first, and the
+   * musician's messages (user_message) to CONVERSATION.keep of their own: a burst of edits never
+   * pushes out a message. What goes is noted, so wait_for_changes can say something was missed.
+   */
+  private trim() {
+    const over = (kind: (e: StudioEventRecord) => boolean, max: number) => {
+      let count = this.events.filter(kind).length;
+      for (let i = 0; count > max && i < this.events.length; ) {
+        if (!kind(this.events[i])) {
+          i++;
+          continue;
+        }
+        this.dropped = Math.max(this.dropped, this.events[i].seq);
+        this.events.splice(i, 1);
+        count--;
+      }
+    };
+    over((e) => e.event !== 'user_message', LIMITS.eventBuffer);
+    over((e) => e.event === 'user_message', CONVERSATION.keep);
+  }
+
+  /** Drop every kept event of this kind from the ring buffer (the musician's messages, when the studio disconnects). */
+  forget(event: string): void {
+    for (let i = this.events.length - 1; i >= 0; i--) if (this.events[i].event === event) this.events.splice(i, 1);
   }
 
   /** Be told of every event the studio sends (and of pairing and disconnecting). Returns the way to stop. */
@@ -420,8 +458,11 @@ export class BridgeServer {
     return this.paired !== null;
   }
 
-  /** Events after `since` (a seq), waiting up to `ms` for one if there are none yet. */
-  async waitForEvents(since: number, ms: number): Promise<{ events: StudioEventRecord[]; last: number }> {
+  /**
+   * Events after `since` (a seq), waiting up to `ms` for one if there are none yet. `missed`: some
+   * after `since` were pushed out of the ring buffer before they were read (with a hint).
+   */
+  async waitForEvents(since: number, ms: number): Promise<{ events: StudioEventRecord[]; last: number; missed?: true; hint?: string }> {
     const after = () => this.events.filter((e) => e.seq > since);
     if (!after().length && ms > 0) {
       await new Promise<void>((resolve) => {
@@ -432,7 +473,16 @@ export class BridgeServer {
         });
       });
     }
-    return { events: after(), last: this.seq };
+    const out = { events: after(), last: this.seq };
+    return since < this.dropped ? { ...out, missed: true, hint: 'Some events after "since" were dropped before you read them: call get_messages for the musician\'s messages (check "unanswered") and get_song for the song as it is.' } : out;
+  }
+
+  /** Tell the paired studio something (an event); false with no studio. */
+  notify(method: string, params: unknown): boolean {
+    const conn = this.paired;
+    if (!conn) return false;
+    this.send(conn, { kind: 'event', method, params });
+    return true;
   }
 
   /** Ask the paired studio; resolves with its answer. Throws BridgeError (not_connected, timeout, or the studio's own error). */

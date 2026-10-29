@@ -3,7 +3,7 @@
  * permission each needs; the client checks those). The reading ones come from studioReads.ts on
  * the song as it is now; here: suggest (onto the Suggestions panel, after its ops are tried), get
  * and withdraw a suggestion, listen (a stretch rendered and measured, the song or a suggestion of
- * it), say (a message on the panel), point_at (a highlight on the timeline, or a control rung as
+ * it), say (a message on the panel, maybe a reply to one of the musician's), point_at (a highlight on the timeline, or a control rung as
  * the search does) and get_view (what's open and selected). Each keeps to the limits in LIMITS:
  * a suggestion every 3 seconds and five waiting, one listen at a time and ten a minute, a message
  * or a highlight a second.
@@ -17,7 +17,8 @@ import type { MasterStats } from '../audio/effects/masterAfter';
 import { ring } from '../search/reveal';
 import { APP_VERSION } from '../version';
 import { HandlerError, type Handler } from './bridgeProtocolClient';
-import { fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
+import { CONVERSATION, fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
+import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { applyOps, OPS_VERSION } from './ops';
 import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
@@ -159,11 +160,16 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
     say: (p) => {
       const text = fromAgent(p.text, LIMITS.sayMaxChars);
       if (!text) throw new HandlerError('bad_request', 'say needs some text.');
+      // A reply names one of the musician's messages (that the agent has, so it has read it)
+      const replyTo = str(p.replyTo, 64);
+      const conv = useConversation.getState();
+      if (replyTo && !conv.mine.some((m) => m.id === replyTo && m.connection === conv.connection && m.status !== 'not_sent')) throw new HandlerError('not_found', 'There is no message from the musician with that id (replyTo).');
       slow(sayRate, 'messages');
-      const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), at: Date.now() };
-      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-100) }));
-      announce(`Your agent sent a message: ${shortText(text)}`);
-      return { ok: true };
+      const msg = { id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, text, ...(str(p.about, 40) ? { about: str(p.about, 40)! } : {}), ...(replyTo ? { replyTo } : {}), connection: conv.connection, ...(useSuggestions.getState().connection.agent ? { agent: useSuggestions.getState().connection.agent } : {}), at: Date.now() };
+      useSuggestions.setState((x) => ({ messages: [...x.messages, msg].slice(-CONVERSATION.keep) }));
+      if (replyTo) setDelivery([replyTo], 'seen');
+      announce(`${replyTo ? 'Your agent replied' : 'Your agent sent a message'}: ${shortText(text)}`);
+      return { ok: true, id: msg.id };
     },
 
     point_at: async (p) => {
