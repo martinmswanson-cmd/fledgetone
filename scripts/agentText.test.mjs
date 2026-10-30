@@ -18,7 +18,10 @@ register(
   }
 }`)
 );
-const { agentLine, agentText, byAgentId, cleanForAgent } = await import('../src/agent/agentText.ts');
+const { agentIds, agentLine, agentText, byAgentId, cleanForAgent, hiddenIdAlias } = await import('../src/agent/agentText.ts');
+const { agentLabel, plainAgentText } = await import('../src/agent/protocol.ts');
+const { cleanMarkerName } = await import('../src/store/markers.ts');
+const { serializeProject, parseProject } = await import('../src/store/project.ts');
 const { toAgentSong, agentNotes, agentAutomation } = await import('../src/agent/agentSong.ts');
 const { previewOps } = await import('../src/agent/studioReads.ts');
 const { applyOps } = await import('../src/agent/ops.ts');
@@ -133,4 +136,133 @@ test('a suggestion file keeps the agent\'s words plain, written and read', () =>
   assert.equal(read.explanation, 'evil');
   assert.equal(read.touchedNames['track:x'], 'Bass');
   assert.equal(parseSuggestionFile({ ...made, title: HIDDEN }).title, 'Suggestion', 'nothing visible: the plain name');
+});
+
+// (a lone half of a surrogate pair)
+const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+// (and the other invisible ones: fillers, variation selectors but the emoji and text ones)
+const IGNORABLE = /(?![\uFE0E\uFE0F])\p{Default_Ignorable_Code_Point}/u;
+
+test('names an agent gives are kept plain: controls, hidden and direction characters go, cut between code points', () => {
+  assert.equal(plainAgentText(`a\u0085b\u009bc\u3164d\ufe00e\u{e0100}f${HIDDEN}`, 100), 'abcdef', 'C1 controls, fillers and variation selectors too');
+  assert.equal(plainAgentText('ok \u2764\ufe0f', 100), 'ok \u2764\ufe0f', 'an emoji presentation selector stays');
+  assert.equal(plainAgentText('x\udb40y', 100), 'xy', 'a lone surrogate goes');
+  assert.equal(plainAgentText(`${'x'.repeat(39)}\u{1f600}`, 40), 'x'.repeat(39), 'never half an emoji at the cut');
+  assert.equal(agentLabel(`  Lead\n\tsynth\u202e ${HIDDEN}`, 40), 'Lead synth');
+  assert.equal(agentLabel(`\u2800\u3164${HIDDEN}\u200b`, 40), '', 'nothing visible: no name');
+
+  const p = createStarter('lofi');
+  const trackId = p.tracks[0].id;
+  const clipHolder = p.tracks.find((t) => p.clips.some((c) => c.trackId === t.id && c.notes.length));
+  const dirty = (s) => `${s}\u001b]0;pwned\u0007\u202e${HIDDEN}\u200b`;
+  const ops = [
+    { op: 'set_track', trackId, name: dirty('Glass') },
+    { op: 'add_track', instrument: 'kalimba', name: dirty('Bell') },
+    { op: 'add_clip', trackId: clipHolder.id, startBar: 60, lengthBars: 1, name: dirty('Riff') },
+    { op: 'add_marker', bar: 61, name: dirty('Coda'), ref: 'coda' },
+    { op: 'rename_marker', markerId: '$coda', name: dirty('Outro') },
+    { op: 'add_marker', bar: 62, name: `${'y'.repeat(79)}\u{1f600}` },
+  ];
+  const out = applyOps(p, { opsVersion: 1, ops }, { idBase: 'x' });
+  assert.ok(out.ok, JSON.stringify(out.errors));
+  const saved = parseProject(JSON.parse(JSON.stringify(serializeProject(out.song))));
+  const names = [saved.tracks[0].name, saved.tracks.at(-1).name, saved.clips.find((c) => c.startBar === 60).name, ...saved.markers.map((m) => m.name)];
+  for (const n of names) assert.ok(!UNSEEN.test(n) && !IGNORABLE.test(n) && !LONE.test(n), `kept hidden: ${JSON.stringify(n)}`);
+  assert.equal(saved.tracks[0].name, 'Glass]0;pwned');
+  assert.equal(saved.tracks.at(-1).name, 'Bell]0;pwned');
+  assert.ok(saved.markers.some((m) => m.name === 'Outro]0;pwned'));
+  assert.ok(saved.markers.some((m) => m.name === 'y'.repeat(79)), 'a marker name cut before half an emoji');
+  // What the card says changes holds none of it either
+  for (const c of out.diff.changes) assert.ok(!UNSEEN.test(c.text) && !LONE.test(c.text), c.text);
+  // A name that's only hidden text is refused, as an empty one is
+  for (const op of [{ op: 'set_track', trackId, name: HIDDEN }, { op: 'add_track', instrument: 'kalimba', name: '\u200b\u3164' }, { op: 'add_marker', bar: 63, name: `\u202e${HIDDEN}` }]) {
+    const bad = applyOps(p, { opsVersion: 1, ops: [op] }, { idBase: 'x' });
+    assert.ok(!bad.ok && /at least one letter/.test(bad.errors[0].message), JSON.stringify(bad.errors));
+  }
+  // The musician's own marker names keep what they typed (only controls and line breaks are tidied)
+  assert.equal(cleanMarkerName('Drop \u{1f469}\u200d\u{1f4bb}\n'), 'Drop \u{1f469}\u200d\u{1f4bb}');
+});
+
+/** The lofi starter with a second drum track whose id reads, made plain, as the first one's. */
+function collidingSong() {
+  const p = createStarter('lofi');
+  const first = p.tracks[0];
+  const clip = p.clips.find((c) => c.trackId === first.id && c.notes.length);
+  const twinId = `${first.id}\u200b`;
+  const twinClipId = `${clip.id}${HIDDEN}`;
+  const ret = p.tracks.find((t) => t.instrumentKey === 'return');
+  return {
+    song: {
+      ...p,
+      tracks: [...p.tracks, { ...first, id: twinId, name: 'Twin', ...(ret ? { sends: [{ to: ret.id, level: 0.2 }] } : {}), automation: [{ param: 'volume', points: [{ bar: 1, value: 0.2 }] }] }],
+      // (and a clip on it whose id reads as the original clip's, with a note whose id reads as another's)
+      clips: [...p.clips, { ...clip, id: twinClipId, trackId: twinId, startBar: 70, notes: [clip.notes[0], { ...clip.notes[1], id: `${clip.notes[0].id}\u2060` }] }],
+    },
+    first,
+    clip,
+    twinId,
+    twinClipId,
+  };
+}
+
+test('ids that read the same once made plain are told apart, the same everywhere, and lead back to their own thing', () => {
+  const { song, first, clip, twinId, twinClipId } = collidingSong();
+  const s = toAgentSong(song);
+  const ids = s.tracks.map((t) => t.id);
+  assert.equal(new Set(ids).size, ids.length, `two tracks read the same: ${ids}`);
+  assert.equal(s.tracks[0].id, first.id, 'a plain id stays as it is');
+  const twin = s.tracks.find((t) => t.name === 'Twin');
+  assert.equal(twin.id, hiddenIdAlias(twinId));
+  assert.ok(!UNSEEN.test(twin.id));
+  assert.equal(hiddenIdAlias(twinId), hiddenIdAlias(twinId), 'stable');
+  const twinClip = s.clips.find((c) => c.startBar === 70);
+  assert.equal(twinClip.id, hiddenIdAlias(twinClipId));
+  assert.equal(twinClip.trackId, twin.id, "a clip's track by the id the agent reads");
+  assert.equal(new Set(s.clips.map((c) => c.id)).size, s.clips.length);
+  // get_notes, by the clip and the track as get_song names them
+  const byClip = agentNotes(song, { clipId: twinClip.id });
+  assert.equal(byClip.notes.length, 2, 'the twin clip by its alias');
+  assert.ok(byClip.notes.every((n) => n.clipId === twinClip.id && n.trackId === twin.id));
+  assert.equal(new Set(byClip.notes.map((n) => n.id)).size, 2, "a clip's notes read apart too");
+  assert.equal(agentNotes(song, { trackId: twin.id }).notes.length, 2, 'the twin track by its alias');
+  assert.ok(agentNotes(song, { clipId: clip.id }).notes.every((n) => n.clipId === clip.id), 'the plain clip id: the original');
+  // get_automation by the alias
+  const lanes = agentAutomation(song, { trackId: twin.id });
+  assert.equal(lanes.length, 1);
+  assert.equal(lanes[0].trackId, twin.id);
+  // The ops: the plain id is the plain one's, the alias the twin's
+  const plain = applyOps(song, { opsVersion: 1, ops: [{ op: 'set_track', trackId: first.id, volumeDb: -30 }] }, { idBase: 't' });
+  assert.equal(plain.song.tracks[0].volume, -30);
+  assert.notEqual(plain.song.tracks.at(-1).volume, -30);
+  const aliased = applyOps(song, { opsVersion: 1, ops: [{ op: 'set_track', trackId: twin.id, volumeDb: -30 }, { op: 'change_notes', clipId: twinClip.id, notes: [{ id: byClip.notes.find((n) => n.id.includes('~')).id, velocity: 0.1 }] }] }, { idBase: 't' });
+  assert.ok(aliased.ok, JSON.stringify(aliased.errors));
+  assert.equal(aliased.song.tracks.at(-1).volume, -30, 'the twin, by its alias');
+  assert.notEqual(aliased.song.tracks[0].volume, -30);
+  const changed = aliased.song.clips.find((c) => c.id === twinClipId);
+  assert.equal(changed.notes[1].velocity, 0.1, 'the twin note, by its alias');
+  assert.notEqual(changed.notes[0].velocity, 0.1);
+  // A suggestion file made with the alias fingerprints the twin
+  const file = makeSuggestionFile(song, { title: 'x', explanation: '', ops: [{ op: 'set_track', trackId: twin.id, volumeDb: -30 }] });
+  const twinMoved = { ...song, tracks: song.tracks.map((t) => (t.id === twinId ? { ...t, pan: 0.5 } : t)) };
+  const firstMoved = { ...song, tracks: song.tracks.map((t) => (t.id === first.id ? { ...t, pan: 0.5 } : t)) };
+  assert.equal(classifySuggestion(file, { song: twinMoved }).status, 'out_of_date');
+  assert.equal(classifySuggestion(file, { song: firstMoved }).status, 'unchanged');
+  // agentIds: alone, a hidden id reads plain; two that collide, the hidden one gets an alias
+  assert.deepEqual([...agentIds(['a\u200b', 'b']).values()], ['a', 'b']);
+  assert.deepEqual([...agentIds(['a', 'a\u200b']).values()], ['a', hiddenIdAlias('a\u200b')]);
+  const both = [...agentIds(['a\u200b', 'a\u2060']).values()];
+  assert.equal(new Set(both).size, 2);
+  assert.equal(byAgentId([{ id: 'a\u200b' }, { id: 'a\u2060' }], both[1])?.id, 'a\u2060');
+});
+
+test('cleanForAgent leaves nothing uncleaned: deep nesting is cut, odd objects as their JSON or left out', () => {
+  let deep = { name: `bottom${HIDDEN}` };
+  for (let i = 0; i < 100; i++) deep = { next: [deep] };
+  assert.ok(!UNSEEN.test(JSON.stringify(cleanForAgent(deep))));
+  class Odd {
+    constructor() {
+      this.text = `odd${HIDDEN}`;
+    }
+  }
+  assert.deepEqual(cleanForAgent({ a: new Odd(), when: new Date(0), f: () => 1 }), { a: null, when: '1970-01-01T00:00:00.000Z', f: null });
 });

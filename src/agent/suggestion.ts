@@ -41,10 +41,15 @@ export type Freshness = 'unchanged' | 'reapply' | 'out_of_date';
 
 const fileClip = ({ isSelected: _s, ...rest }: Clip) => rest;
 /**
- * A track as it sounds and holds clips. What only the screen or the moment holds doesn't count:
- * armed to record, its folder folded or not, its MIDI knobs, a freeze (it sounds the same frozen).
+ * A track as it sounds and holds clips, as far as a suggestion's ops build on it. What only the
+ * screen or the moment holds doesn't count: armed to record, its folder folded or not, its MIDI
+ * knobs, a freeze (it sounds the same frozen). Nor do its mute and solo (pressed to listen, and
+ * kept as they are when the ops go in again on the song as it is), its name or its colour: none
+ * of the ops builds on them, so a suggestion stays good when they change.
  */
-const trackPart = ({ isArmed: _a, freezing: _f, frozen: _z, midiMap: _m, folder, ...rest }: Track) => {
+const trackPart = ({ isMuted: _mu, isSoloed: _so, name: _n, color: _c, ...rest }: Track) => listedTrack(rest as Track);
+/** A track as earlier versions fingerprinted it (mute, solo, name and colour in): their suggestion files still fit. */
+const listedTrack = ({ isArmed: _a, freezing: _f, frozen: _z, midiMap: _m, folder, ...rest }: Track) => {
   if (!folder) return rest;
   const { collapsed: _c, ...open } = folder;
   return { ...rest, folder: open };
@@ -133,6 +138,13 @@ function partOf(song: ProjectSnapshot, key: string): unknown {
   return undefined;
 }
 
+/** Whether `hash` is a track's fingerprint as earlier versions took it (listedTrack), and still fits. */
+function legacyMatch(song: ProjectSnapshot, key: string, hash: string): boolean {
+  if (!key.startsWith('track:')) return false;
+  const t = byAgentId(song.tracks, key.slice(6));
+  return !!t && fingerprint(listedTrack(t)) === hash;
+}
+
 /** Fingerprints of everything `ops` touch in `song` (missing things are left out: an op naming one fails anyway). */
 export function touchedHashes(song: ProjectSnapshot, ops: readonly Op[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -191,7 +203,7 @@ export function classifySuggestion(
   for (const [key, hash] of Object.entries(made.touchedHashes)) {
     const part = partOf(now.song, key);
     if (part === undefined) changed.push(`${describeKey(now.song, key, made.touchedNames)} is gone`);
-    else if (fingerprint(part) !== hash) changed.push(`${describeKey(now.song, key, made.touchedNames)} changed`);
+    else if (fingerprint(part) !== hash && !legacyMatch(now.song, key, hash)) changed.push(`${describeKey(now.song, key, made.touchedNames)} changed`);
   }
   if (changed.length) return { status: 'out_of_date', changed };
   return { status: made.revision === undefined ? 'unchanged' : 'reapply', changed: [] };

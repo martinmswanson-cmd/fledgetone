@@ -2,7 +2,9 @@
  * "Let an agent connect…": the code the agent gave (and the port, if it said another), what the
  * agent may do (read the song always; see what's selected, suggest changes, listen: each off until
  * ticked), the privacy line, and what to do when the browser blocks the connection. Connected, it
- * says to whom, lets the permissions change, and disconnects.
+ * says to whom, lets the permissions change, and disconnects (the boxes then back to reading
+ * only, for the next pairing). After a wrong code, Try again goes on the same connection only if
+ * the port is the same; a port typed anew is dialed afresh.
  */
 import React from 'react';
 import { Modal } from '../timeline/Modal';
@@ -46,21 +48,23 @@ export const ConnectDialog: React.FC = () => {
   // Closed: focus goes back to what opened it
   React.useEffect(() => () => returnFocus(agentOpeners.connect), []);
 
-  // Paired: show the panel and get out of the way
+  // Paired: show the panel and get out of the way. No longer paired (Disconnect here, or the
+  // connection went): the boxes go back to reading only, so the next pairing starts from that
   const wasConnected = React.useRef(connected);
   React.useEffect(() => {
     if (connected && !wasConnected.current) {
       useUiStore.getState().setAgentPanelOpen(true);
       close();
-    }
+    } else if (!connected && wasConnected.current) setAsk({ ...DEFAULT_PERMISSIONS });
     wasConnected.current = connected;
   }, [connected, close]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || port === null) return;
-    // (what's ticked now goes with every try, a second one too)
-    if (info.state === 'wrong_code' && retryCode(code, ask)) return;
+    // (what's ticked now goes with every try, a second one too; on the connection that's open only
+    // if the port is still the one it dialed, else to the port typed now, afresh)
+    if (info.state === 'wrong_code' && retryCode(code, port, ask)) return;
     connectAgent(code, port, ask);
   };
 

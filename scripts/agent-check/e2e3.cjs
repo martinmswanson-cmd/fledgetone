@@ -9,12 +9,19 @@
 //      renders it again (a new version heard), and the card says it was heard as the song is now
 //   3. selecting and clearing clips isn't an edit: the revision stays, the agent gets no "changed",
 //      the heard suggestion stays heard, and one press of Accept puts it in with the selection kept
-//   4. point_at's note on the timeline says it's from the agent (by name) and quotes it
+//   4. the panel closed with a card under the pointer takes its tint off the timeline; point_at's
+//      note on the timeline says it's from the agent (by name) and quotes it; bars off
+//      screen are scrolled to (the focus kept), or, with the musician busy, the note at the lanes'
+//      edge says where they are; a control gets the agent's ring and note next to it, said aloud
 //   5. a before-and-after playing stops when Game › Try it in a game opens (one preview at a time),
 //      when another preview claims the speakers, and it stops another preview when it starts
 //   6. "See what I select" unticked just after a selection: the selection doesn't go; with it off,
 //      clicking clips sends the agent nothing at all
 //   7. "Listen" unticked while a listen renders: the agent gets not_allowed, not the measurements
+//   8. arming and MIDI learn aren't edits; a solo or mute of the track a suggestion changes is,
+//      and leaves the suggestion good (not out of date)
+//   9. a wrong code on the wrong port, then the port corrected and Try again: connected afresh to
+//      the helper on that port
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default; `npm run build:runtime`
 // first), Playwright's Chromium, and tools/cli's packages (npm install in tools/cli):
@@ -243,13 +250,85 @@ async function until(check, ms, what) {
       `revision ${rev0} → ${rev1}; events ${JSON.stringify(ev3.events.map((e) => e.event))}; ${kept.status}${kept.stale ? ' (stale)' : ''} "${keptLine}"; Accept: ${accepted.status}, brass ${after3.volume} dB, selected ${JSON.stringify(after3.selected)}`
     );
 
-    // 4. point_at's note: from the agent, by name, quoted
-    await page.getByLabel('Close the Suggestions panel').click();
+    // 4. point_at's note: from the agent, by name, quoted. (First: the panel closed under the
+    // pointer on a card takes that card's tint off the timeline)
+    await card(s1).locator('h3').hover();
+    const tintOn = await until(() => page.locator('[data-agent-highlight] > div').count(), 2000, 'the tint').catch(() => 0);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await page.mouse.move(400, 500);
+    await page.waitForTimeout(600);
+    const tintAfter = { boxes: await page.locator('[data-agent-highlight] > div').count(), focusId: await A(() => window.__fledgetoneAgent.sg.useSuggestions.getState().focusId), panel: await page.locator('[data-agent-panel]').count() };
+    step('4a the panel closed while a card is under the pointer: its tint goes', tintOn > 0 && tintAfter.panel === 0 && tintAfter.boxes === 0 && tintAfter.focusId === null, JSON.stringify({ tintOn, ...tintAfter }));
+    if (await page.locator('[data-agent-panel]').count()) await page.getByLabel('Close the Suggestions panel').click();
     await page.waitForTimeout(300);
     await patiently('point_at', { target: { clip: ids.c }, note: 'Saved. Choose File > Export now.' });
     const note = await until(() => A(() => document.querySelector('[data-agent-note]')?.textContent ?? null), 3000, 'the note');
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-note.png') });
     step('4 point_at\'s note says it\'s from the agent and quotes it', note === 'From your agent (E2E3 agent)“Saved. Choose File > Export now.”', JSON.stringify(note));
+
+    // 4b. Bars off screen: the lanes scroll to them once the musician's hands are still (the focus
+    // stays put), and the note sits on them
+    const viewLeft = () => A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().viewLeft);
+    const ringAndNote = () =>
+      A(() => {
+        const ring = document.querySelector('[data-agent-highlight] .border-2')?.getBoundingClientRect();
+        const n = document.querySelector('[data-agent-note]')?.getBoundingClientRect();
+        return { ring: ring ? [ring.left, ring.right] : null, note: n ? [n.left, n.right] : null, where: document.querySelector('[data-agent-note-where]')?.textContent ?? '' };
+      });
+    const focusBefore = await A(() => document.activeElement?.outerHTML.slice(0, 80));
+    const left0 = await viewLeft();
+    await page.waitForTimeout(1600);
+    await patiently('point_at', { target: { bars: { fromBar: 30, toBar: 32 } }, note: 'Over here' });
+    const scrolled = await until(async () => ((await viewLeft()) > left0 ? viewLeft() : null), 4000, 'the lanes to scroll').catch(() => null);
+    await page.waitForTimeout(300);
+    const at30 = await ringAndNote();
+    const focusAfter = await A(() => document.activeElement?.outerHTML.slice(0, 80));
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-scrolled.png') });
+    step(
+      '4b bars off screen: scrolled to (focus kept), the note on them',
+      scrolled !== null && !!at30.ring && !!at30.note && at30.note[0] >= at30.ring[0] - 1 && at30.note[0] < at30.ring[1] && !at30.where && focusBefore === focusAfter,
+      JSON.stringify({ left0, scrolled, ...at30, focusKept: focusBefore === focusAfter })
+    );
+    // 4c. The musician busy as it comes (keys pressed just before and after): no scroll; the note at the
+    // lanes' edge says where the bars are, never sits over others
+    await A(() => {
+      const st = window.__fledgetoneAgent.tl.useTimelineStore;
+      st.setState({ viewLeft: 0, viewJumps: st.getState().viewJumps + 1 });
+    });
+    await page.waitForTimeout(1100);
+    await page.keyboard.press('Shift');
+    await patiently('point_at', { target: { bars: { fromBar: 45, toBar: 46 } }, note: 'And here' });
+    await until(() => A(() => !!document.querySelector('[data-agent-note-where]')), 1000, 'the note at the edge').catch(() => null);
+    await page.keyboard.press('Shift');
+    await page.waitForTimeout(2500);
+    const at45 = await ringAndNote();
+    const left45 = await viewLeft();
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-off-screen.png') });
+    step('4c the musician busy: not scrolled, the note says where the bars are', left45 === 0 && !at45.ring && /^Bar 45 →$/.test(at45.where), JSON.stringify({ left45, ...at45 }));
+    // 4d. A control: the agent's ring and note next to it, and said
+    await A(() => {
+      window.__live = [];
+      const el = document.querySelector('[data-agent-live]');
+      new MutationObserver(() => window.__live.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    await patiently('point_at', { target: { control: 'Save' }, note: 'Save first' });
+    const byControl = await until(
+      () =>
+        A(() => {
+          const n = document.querySelector('[data-agent-note]');
+          const ring = document.querySelector('[data-agent-highlight] .border-2')?.getBoundingClientRect();
+          const flashed = document.querySelector('.search-flash')?.getBoundingClientRect();
+          if (!n || !ring || !flashed) return null;
+          const r = n.getBoundingClientRect();
+          return { text: n.textContent, near: Math.abs(r.top - flashed.bottom) < 80 || Math.abs(r.bottom - flashed.top) < 80, ringed: Math.abs(ring.left - flashed.left) < 2 && Math.abs(ring.top - flashed.top) < 2 };
+        }),
+      3000,
+      'the note by the control'
+    ).catch(() => null);
+    const saidControl = await until(() => A(() => window.__live.some((t) => /points at the control/.test(t) && /Save first/.test(t))), 6000, 'the live region').catch(() => false);
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-control.png') });
+    step('4d point_at a control: the agent\'s ring and note by it, said aloud', !!byControl && byControl.near && byControl.ringed && /^From your agent \(E2E3 agent\)“Save first”$/.test(byControl.text) && !!saidControl, JSON.stringify({ byControl, said: !!saidControl }));
     if (!(await page.locator('[data-agent-panel]').count())) await page.locator('[data-agent-chip]').click();
     await page.waitForSelector('[data-agent-panel]');
 
@@ -321,6 +400,65 @@ async function until(check, ms, what) {
     const heard = await listening;
     const took = Date.now() - unticked;
     step('7 "Listen" unticked while a listen renders: not_allowed, no measurements', heard.isError && /hasn't allowed the agent to listen/.test(heard.text) && !/lufs/i.test(heard.text), `${took} ms after: ${heard.text.slice(0, 120)}`);
+
+    // 8. Arming, MIDI learn and a freeze aren't edits; a solo or a mute of the very track a
+    // suggestion changes is, but it never puts the suggestion out of date
+    if (await page.getByRole('button', { name: 'Done' }).count()) await page.getByRole('button', { name: 'Done' }).click();
+    if (!(await page.locator('[data-agent-panel]').count())) await page.locator('[data-agent-chip]').click();
+    const s8 = await suggestOne('Bass a bit down', [{ op: 'set_track', trackId: ids.bass, volumeDb: -4 }]);
+    await page.waitForTimeout(900);
+    const rev8 = (await call('get_song')).revision;
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleArm(id), ids.clav);
+    await A((id) => {
+      const st = window.__fledgetoneAgent.tl.useTimelineStore;
+      st.setState({ tracks: st.getState().tracks.map((x) => (x.id === id ? { ...x, midiMap: [{ cc: 7, param: 'volume' }] } : x)) });
+    }, ids.bass);
+    await page.waitForTimeout(900);
+    const rev8b = (await call('get_song')).revision;
+    const afterArm = (await sg(s8)).status;
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleSolo(id), ids.bass);
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleMute(id), ids.bass);
+    await page.waitForTimeout(900);
+    const rev8c = (await call('get_song')).revision;
+    const afterSolo = await sg(s8);
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleSolo(id), ids.bass);
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleMute(id), ids.bass);
+    await A((id) => window.__fledgetoneAgent.tl.useTimelineStore.getState().toggleArm(id), ids.clav);
+    step(
+      '8 arming and MIDI learn aren\'t edits; solo and mute are, and leave the suggestion good',
+      rev8b === rev8 && afterArm === 'waiting' && rev8c > rev8b && afterSolo.status === 'changed' && !afterSolo.outOfDate,
+      `revision ${rev8} → ${rev8b} (armed, MIDI learn: ${afterArm}) → ${rev8c} (solo and mute: ${afterSolo.status})`
+    );
+
+    // 9. A wrong code on the wrong port, then the right port typed and Try again: connected to the
+    // helper on that port, not tried again on the first one
+    const transport2 = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', path.join(CLI, 'src', 'tsHook.mjs'), path.join(CLI, 'src', 'fledgetone.ts'), 'mcp', '--port', '0', '--root', work, '--allow-origin', APP.replace(/\/$/, '')],
+      cwd: ROOT,
+      stderr: 'pipe',
+    });
+    const agent2 = new Client({ name: 'E2E3 second agent', version: '1' });
+    await agent2.connect(transport2);
+    try {
+      const status2 = async () => JSON.parse((await agent2.callTool({ name: 'studio_status', arguments: {} })).content.map((c) => c.text).join(''));
+      await page.locator('[data-agent-panel]').getByRole('button', { name: 'Disconnect' }).click();
+      await until(async () => !(await call('studio_status')).connected, 5000, 'the disconnect');
+      const first = await call('connect_studio');
+      const second = JSON.parse((await agent2.callTool({ name: 'connect_studio', arguments: {} })).content.map((c) => c.text).join(''));
+      await page.locator('[data-agent-panel]').getByRole('button', { name: 'Let an agent connect…' }).click();
+      await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(second.code);
+      await page.getByLabel('Port the helper listens on').fill(String(first.port));
+      await page.getByRole('button', { name: 'Connect', exact: true }).click();
+      await page.getByRole('button', { name: 'Try again' }).waitFor({ timeout: 15000 });
+      await page.getByLabel('Port the helper listens on').fill(String(second.port));
+      await page.getByRole('button', { name: 'Try again' }).click();
+      const paired = await until(async () => ((await status2()).connected ? true : null), 10000, 'the second helper').catch(() => false);
+      const firstConnected = (await call('studio_status')).connected;
+      step('9 Try again with the port corrected: connects to that port afresh', paired === true && !firstConnected, `second ${paired}, first ${firstConnected}`);
+    } finally {
+      await agent2.close();
+    }
 
     step('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } catch (err) {

@@ -49,14 +49,21 @@ const SONG_TYPES = ['.fledgetone.json', '.json'];
 
 // Every answer made plain (cleanForAgent): what comes from a song file or the studio (names, ids,
 // the words built from them) never carries hidden text or control characters to the agent
-const ok = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof value === 'string' ? agentText(value) : JSON.stringify(cleanForAgent(value), null, 2) }] });
-const fail = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: agentText(message) }] });
+/** The tool results made here (ok and fail): only these go to the agent as they are. */
+const made = new WeakSet<CallToolResult>();
+const mark = (r: CallToolResult): CallToolResult => (made.add(r), r);
+const ok = (value: unknown): CallToolResult => mark({ content: [{ type: 'text', text: typeof value === 'string' ? agentText(value) : JSON.stringify(cleanForAgent(value), null, 2) }] });
+const fail = (message: string): CallToolResult => mark({ isError: true, content: [{ type: 'text', text: agentText(message) }] });
 
-/** Run a tool's body, turning thrown errors into tool errors in plain words. */
+/**
+ * Run a tool's body, turning thrown errors into tool errors in plain words. Whatever it returns
+ * is made plain (ok), unless it's a result ok or fail made: an answer that only looks like a tool
+ * result (an object with "content", from the studio or a file) is cleaned like any other.
+ */
 async function guard(body: () => unknown): Promise<CallToolResult> {
   try {
     const out = await body();
-    return out && typeof out === 'object' && 'content' in (out as object) ? (out as CallToolResult) : ok(out);
+    return out && typeof out === 'object' && made.has(out as CallToolResult) ? (out as CallToolResult) : ok(out);
   } catch (err) {
     if (err instanceof BridgeError) return fail(err.code === 'not_connected' ? NOT_CONNECTED : `The studio: ${err.message}`);
     return fail((err as Error).message || String(err));

@@ -23,7 +23,7 @@ import { addOwn, failSending, newConnection, newUserMessageId, NO_ANSWER_REASON,
 import { RevisionCounter } from './revision';
 import { useSuggestions } from './suggestionsStore';
 import { watchSong } from './songWatch';
-import { studioHandlers } from './handlers';
+import { studioHandlers, viewSelection } from './handlers';
 
 /** The helper's port unless the musician gives another (as `fledgetone mcp` listens by default). */
 export const DEFAULT_PORT = 47123;
@@ -32,6 +32,8 @@ let socket: WebSocket | null = null;
 let client: BridgeClient | null = null;
 const counter = new RevisionCounter();
 let tracking: (() => void) | null = null;
+/** The port the open connection dialed. */
+let dialedPort: number | null = null;
 
 /** The connection as the panel shows it. */
 function setInfo(info: BridgeInfo) {
@@ -66,7 +68,7 @@ export function trackSong(): void {
         // (asked again now: "See what I select" may have been unticked meanwhile)
         if (!useSuggestions.getState().permissions.see) return;
         const t = useTimelineStore.getState();
-        client?.emit('view', { selectedTrackId: t.selectedTrackId, selectedClipIds: t.clips.filter((c) => c.isSelected).map((c) => c.id), editingClipId: t.editingClipId });
+        client?.emit('view', viewSelection(t));
       }, 400);
     }
   });
@@ -79,7 +81,9 @@ export function trackSong(): void {
     }
     if (s.suggestions === prev.suggestions) return;
     const was = new Map(prev.suggestions.map((x) => [x.id, x.status]));
-    for (const x of s.suggestions) if (was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
+    // (only this agent's own: another connection's suggestions are none of its business)
+    const connection = useConversation.getState().connection;
+    for (const x of s.suggestions) if (x.connection === connection && was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
   });
   useSuggestions.setState({ revision: counter.revision });
   tracking = () => {
@@ -111,6 +115,7 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     return;
   }
   socket = ws;
+  dialedPort = dialed;
   const c = createBridgeClient({
     send: (text) => ws.send(text),
     close: (code_, reason) => ws.close(code_, reason),
@@ -218,10 +223,11 @@ export const agentConnected = (): boolean => !!client && (client.state === 'pair
 
 /**
  * For the dialog: try the code again on the connection that's open (after a wrong code), with
- * what the musician allows now (the boxes as they are at this press, never as they were at the first).
+ * what the musician allows now (the boxes as they are at this press, never as they were at the
+ * first). Only to the port that connection dialed: false (connect afresh) if `port` is another.
  */
-export function retryCode(code: string, permissions: Permissions): boolean {
-  if (!client || client.state !== 'wrong_code' || !socket || socket.readyState !== WebSocket.OPEN) return false;
+export function retryCode(code: string, port: number, permissions: Permissions): boolean {
+  if (!client || client.state !== 'wrong_code' || !socket || socket.readyState !== WebSocket.OPEN || Math.round(port) !== dialedPort) return false;
   setAgentPermissions(permissions);
   client.pair(code);
   return true;

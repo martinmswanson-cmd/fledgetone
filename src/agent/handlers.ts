@@ -3,10 +3,12 @@
  * permission each needs; the client checks those). The reading ones come from studioReads.ts on
  * the song as it is now; here: suggest (onto the Suggestions panel, after its ops are tried), get
  * and withdraw a suggestion, listen (a stretch rendered and measured, the song or a suggestion of
- * it), say (a message on the panel, maybe a reply to one of the musician's), point_at (a highlight on the timeline, or a control rung as
- * the search does) and get_view (what's open and selected). Each keeps to the limits in LIMITS:
- * a suggestion every 3 seconds and five waiting, one listen at a time and ten a minute, a message
- * or a highlight a second.
+ * it), say (a message on the panel, maybe a reply to one of the musician's), point_at (a highlight
+ * on the timeline, or a control rung as the search does, with the agent's note by it) and get_view
+ * (what's open and selected). Things are named by the ids the agent reads (agentIds). An agent
+ * has only the suggestions made in its own connection: one paired later doesn't see, withdraw or
+ * listen to another's. Each keeps to the limits in LIMITS: a suggestion every 3 seconds and five
+ * waiting, one listen at a time and ten a minute, a message or a highlight a second.
  */
 import { currentProject, songTempo, useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
@@ -20,7 +22,7 @@ import { HandlerError, type Handler } from './bridgeProtocolClient';
 import { CONVERSATION, fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
 import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
-import { cleanForAgent } from './agentText';
+import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
 import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
@@ -41,6 +43,17 @@ const view = (s: Suggestion) => ({
   audition: s.focus ?? s.audition,
   ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}),
 });
+
+/** What's selected, by the ids the agent reads (agentIds: the same as get_song's). */
+export function viewSelection(s: Pick<ReturnType<typeof useTimelineStore.getState>, 'tracks' | 'clips' | 'selectedTrackId' | 'editingClipId'>) {
+  const track = agentIdOf(s.tracks);
+  const clip = agentIdOf(s.clips);
+  return {
+    selectedTrackId: s.selectedTrackId === null ? null : track(s.selectedTrackId),
+    selectedClipIds: s.clips.filter((c) => c.isSelected).map((c) => clip(c.id)),
+    editingClipId: s.editingClipId === null ? null : clip(s.editingClipId),
+  };
+}
 
 /** A selector for a control by its name: its search words, its label or its title. */
 export function controlSelector(name: string): string {
@@ -75,8 +88,14 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
     const wait = r.take();
     if (wait) throw new HandlerError('too_fast', `Too many ${what}: try again in ${Math.ceil(wait / 100) / 10} seconds.`);
   };
+  // An agent has only the suggestions it made in this connection: a newly paired one doesn't see
+  // (or withdraw, or listen to) another's, nor do they count against how many it may have waiting
+  const mine = () => {
+    const connection = useConversation.getState().connection;
+    return useSuggestions.getState().suggestions.filter((x) => x.connection === connection);
+  };
   const find = (id: unknown) => {
-    const s = useSuggestions.getState().suggestions.find((x) => x.id === id);
+    const s = mine().find((x) => x.id === id);
     if (!s) throw new HandlerError('not_found', 'There is no suggestion with that id.');
     return s;
   };
@@ -85,11 +104,10 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
     ...songReadHandlers({ song: currentProject, revision: () => useSuggestions.getState().revision, appVersion: APP_VERSION }),
 
     suggest: (p) => {
-      const st = useSuggestions.getState();
-      if (waitingCount(st.suggestions) >= LIMITS.waitingSuggestions) throw new HandlerError('too_many', `${LIMITS.waitingSuggestions} suggestions are already waiting for the musician.`);
+      if (waitingCount(mine()) >= LIMITS.waitingSuggestions) throw new HandlerError('too_many', `${LIMITS.waitingSuggestions} suggestions are already waiting for the musician.`);
       if (!Array.isArray(p.ops)) throw new HandlerError('bad_request', 'A suggestion needs "ops", a list of ops.');
       slow(suggestRate, 'suggestions');
-      const made = makeSuggestion(currentProject(), songContext(), { title: p.title, explanation: p.explanation, ops: p.ops, focus: p.focus });
+      const made = makeSuggestion(currentProject(), songContext(), { title: p.title, explanation: p.explanation, ops: p.ops, focus: p.focus }, undefined, undefined, useConversation.getState().connection);
       if (!made.ok) throw new HandlerError('bad_ops', made.message, { errors: made.errors });
       // Added at the end (what's on the panel doesn't move), and only counted on the header's
       // button: the panel isn't opened for it, nor is anything focused or applied
@@ -100,7 +118,7 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
 
     get_suggestion: (p) => {
       if (p.id !== undefined) return view(find(p.id));
-      return { suggestions: useSuggestions.getState().suggestions.map(view) };
+      return { suggestions: mine().map(view) };
     },
 
     withdraw_suggestion: (p) => {
@@ -203,15 +221,19 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
       const note = fromAgent(p.note, 200) || undefined;
       const s = useTimelineStore.getState();
       const target: NonNullable<ReturnType<typeof useSuggestions.getState>['highlight']>['target'] = {};
+      // (each by the id the agent reads, as get_song gives it)
       if (t.track !== undefined) {
-        if (!s.tracks.some((x) => x.id === t.track)) throw new HandlerError('not_found', 'There is no track with that id.');
-        target.track = String(t.track);
+        const track = byAgentId(s.tracks, String(t.track));
+        if (!track) throw new HandlerError('not_found', 'There is no track with that id.');
+        target.track = track.id;
       } else if (t.clip !== undefined) {
-        if (!s.clips.some((x) => x.id === t.clip)) throw new HandlerError('not_found', 'There is no clip with that id.');
-        target.clip = String(t.clip);
+        const clip = byAgentId(s.clips, String(t.clip));
+        if (!clip) throw new HandlerError('not_found', 'There is no clip with that id.');
+        target.clip = clip.id;
       } else if (t.marker !== undefined) {
-        if (!s.markers.some((x) => x.id === t.marker)) throw new HandlerError('not_found', 'There is no marker with that id.');
-        target.marker = String(t.marker);
+        const marker = byAgentId(s.markers, String(t.marker));
+        if (!marker) throw new HandlerError('not_found', 'There is no marker with that id.');
+        target.marker = marker.id;
       } else if (t.bars !== undefined) {
         const b = t.bars as Record<string, unknown>;
         const from = num(b.fromBar);
@@ -221,9 +243,14 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
       } else {
         const name = str(t.control, 60);
         if (!name) throw new HandlerError('bad_request', 'control needs a name.');
-        // Rung where it is, as the search palette does, but never focused: the keyboard stays where the musician left it
+        // Rung where it is, as the search palette does, but never focused: the keyboard stays where
+        // the musician left it. The agent's ring and note go next to it, so it reads as the agent's
         const found = await ring(controlSelector(name));
         if (!found) throw new HandlerError('not_found', `No control called "${name}" is on screen.`);
+        // (named as the studio names it, else as the agent did)
+        const label = (found.getAttribute('aria-label') || found.getAttribute('title') || found.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60) || fromAgent(name, 60);
+        useSuggestions.setState({ highlight: { target: { control: label }, element: found, ...(note ? { note } : {}), until: Date.now() + 6000 } });
+        announce(`Your agent points at the control “${shortText(label, 40)}”${note ? `, saying “${shortText(note)}”` : '.'}`);
         return { ok: true, shown: 'control' };
       }
       const what = target.track ? 'a track' : target.clip ? 'a clip' : target.marker ? 'a marker' : 'some bars';
@@ -240,9 +267,7 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
         playheadBar: Math.round(s.playheadPosition * 1000) / 1000,
         playing: s.isPlaying,
         loop: { inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, on: s.loopRegion.enabled },
-        selectedTrackId: s.selectedTrackId,
-        selectedClipIds: s.clips.filter((c) => c.isSelected).map((c) => c.id),
-        editingClipId: s.editingClipId,
+        ...viewSelection(s),
         visibleBars: { fromBar: Math.round(from * 100) / 100, toBar: Math.round((from + s.viewWidth / s.zoom) * 100) / 100 },
         panel: u.dockOpen ? u.dockTab : null,
       };

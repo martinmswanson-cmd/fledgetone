@@ -7,8 +7,9 @@
  *   of what it touches, and the song it's for (its generation: New, Open, a link or Restore start
  *   another), the song's parts as undo sees them and what else a render hears (swing, intensity);
  * - checking it when the song changes, cheaply (fingerprints only): another song (it can't go
- *   in), out of date (something it changes was edited), or changed (it still fits, but the song
- *   moved on: it's applied again when it's heard or accepted, never before);
+ *   in), out of date (something it changes was edited; it waits again if that's put back), or
+ *   changed (it still fits, but the song moved on: it's applied again when it's heard or
+ *   accepted, never before);
  * - what Accept should do: a changed suggestion goes in only as heard, or after a second press
  *   that says it wasn't; and, once accepted, whether an undo took it back out (and a redo in).
  */
@@ -79,9 +80,13 @@ export interface Suggestion {
   audition: BarRange;
   /** Out of date: what changed under it. */
   outOfDate?: string[];
+  /** Out of date: the song's parts when it went so (until they change, it's not checked again). */
+  outOfDateAt?: Parts;
   /** Accepted: the name of its undo step (tagLastStep), to tell an undo (and a redo). */
   step?: string;
   createdAt: number;
+  /** The connection the agent made it in (conversation.ts): only that agent reads, withdraws or listens to it. */
+  connection?: number;
 }
 
 /** A message from the agent (say), shown as plain text, attributed to it; `replyTo`: the musician's message it answers (conversation.ts). */
@@ -96,9 +101,11 @@ export interface AgentMessage {
   at: number;
 }
 
-/** What the agent pointed at (point_at), shown on the timeline for a few seconds. */
+/** What the agent pointed at (point_at), shown on the timeline (or by the control) for a few seconds. */
 export interface Highlight {
   target: { track?: string; clip?: string; bars?: BarRange; marker?: string; control?: string };
+  /** A control pointed at: the element rung (the note goes next to it). */
+  element?: HTMLElement;
   note?: string;
   until: number;
 }
@@ -192,7 +199,8 @@ export function makeSuggestion(
   ctx: SongContext,
   req: { title: unknown; explanation: unknown; ops: unknown; focus?: unknown },
   id = newSuggestionId(),
-  now = Date.now()
+  now = Date.now(),
+  connection?: number
 ): { ok: true; suggestion: Suggestion } | { ok: false; errors: OpError[]; message: string } {
   const title = fromAgent(req.title, LIMITS.titleMaxChars);
   if (!title) return { ok: false, errors: [], message: 'A suggestion needs a title.' };
@@ -226,6 +234,7 @@ export function makeSuggestion(
       status: 'waiting',
       ...fromResult(out),
       createdAt: now,
+      ...(connection !== undefined ? { connection } : {}),
     },
   };
 }
@@ -233,14 +242,28 @@ export function makeSuggestion(
 /**
  * A waiting suggestion checked against the song now, cheaply (fingerprints, no applying): for
  * another song, out of date, changed (still fits, `stale` until it's made again), or as it was.
+ * One out of date is checked again whenever the song changes, and waits again once what it
+ * changes is as it was (an undo, or the same edit made back): changed, or waiting as it was made
+ * if the whole song is as it was then.
  */
 export function checkSuggestion(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): Suggestion {
+  if (s.status === 'out_of_date') return recheck(s, now, ctx);
   if (!isOpen(s)) return s;
   if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
   if (sameSong(s, ctx)) return s;
   const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
-  if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed, armed: null };
+  if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed, outOfDateAt: ctx.parts, armed: null };
   return s.status === 'changed' && s.stale && !s.armed ? s : { ...s, status: 'changed', stale: true, armed: null };
+}
+
+/** An out-of-date suggestion checked again (see checkSuggestion). */
+function recheck(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): Suggestion {
+  if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
+  if (s.outOfDateAt && !partsChanged(s.outOfDateAt, ctx.parts)) return s;
+  const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
+  if (fit.status === 'out_of_date') return { ...s, outOfDate: fit.changed, outOfDateAt: ctx.parts };
+  const { outOfDate: _o, outOfDateAt: _a, ...rest } = s;
+  return sameSong(s, ctx) ? { ...rest, status: s.version > 1 ? 'changed' : 'waiting', stale: false, armed: null } : { ...rest, status: 'changed', stale: true, armed: null };
 }
 
 /** A suggestion made again on the song now, if the song moved on since it was made (else as it is). */
@@ -248,7 +271,7 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   const checked = checkSuggestion(s, now, ctx);
   if (!isOpen(checked) || (!checked.stale && sameSong(checked, ctx))) return checked;
   const again = applyOps(now, { opsVersion: OPS_VERSION, ops: s.ops }, { idBase: s.idBase });
-  if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: again.errors.map((e) => e.message) };
+  if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: again.errors.map((e) => e.message), outOfDateAt: ctx.parts, armed: null };
   return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again) };
 }
 
