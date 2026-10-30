@@ -595,6 +595,14 @@ test('what the before-and-after plays: every region a change is heard in, one af
   assert.deepEqual(many.plays, [{ fromBar: 1, toBar: 32 }, { fromBar: 39, toBar: 70 }, { fromBar: 80, toBar: 82 }]);
   assert.deepEqual(many.unheard, [{ fromBar: 82, toBar: 85 }, { fromBar: 100, toBar: 101 }]);
   assert.equal(many.limit, 'bars');
+  // In 3/4 the cut falls where a measure starts (bar 65 of four quarter notes is beat 2 of measure 86,
+  // bar 64 starts measure 85), so the
+  // bars heard and those not heard never share a measure and the loop ends on one
+  const waltz = { ...fast, meter: { num: 3, den: 4 } };
+  const cut = plan([{ fromBar: 1, toBar: 145 }], undefined, [waltz]);
+  assert.deepEqual(cut.plays, [{ fromBar: 1, toBar: 64 }]);
+  assert.deepEqual(cut.unheard, [{ fromBar: 64, toBar: 145 }]);
+  assert.equal(cut.limit, 'bars');
   // The slower of the two songs counts (a suggestion that slows the song down plays longer after)
   assert.equal(plan([{ fromBar: 5, toBar: 40 }], undefined, [fast, song]).limit, null);
   assert.equal(plan([{ fromBar: 5, toBar: 60 }], undefined, [fast, song]).limit, 'seconds');
@@ -771,7 +779,13 @@ test('checked by sound unless the musician\'s own song is too long (a suggestion
   assert.ok(second.apply, 'the second, separate press takes it');
   // The card and noteHeard say and do so (source)
   assert.match(readFileSync(new URL('../src/components/agent/SuggestionCard.tsx', import.meta.url), 'utf8'), /data-not-checked=""/);
-  assert.match(readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8'), /if \(!played \|\| unchecked\)/);
+  const watch = readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8');
+  assert.match(watch, /if \(!played \|\| unchecked\)/);
+  // (scan r8) what B played is kept on each suggestion, per version: hearing another one in between
+  // (a new audition, its own heardB) doesn't take back the promise that a later check decides it
+  assert.match(watch, /updateSuggestion\(s\.id, \{ playedB: \{ version: s\.version, renderKey: a\.renderKey, bars \} \}\)/);
+  assert.match(watch, /for \(const s of useSuggestions\.getState\(\)\.suggestions\) \{\n\s+const played = playedOf\(s\);/);
+  assert.ok(!/playedThrough\(a\.heardB/.test(watch), 'never decided from the audition playing now');
 });
 
 test('without Listen, an agent reads only where the rules say a suggestion is heard, never what the renders found (scan r6)', async () => {
@@ -792,8 +806,9 @@ test('without Listen, an agent reads only where the rules say a suggestion is he
   assert.match(handlers, /const rulesWhy = listen \? null : tooLongWhy\(song, s\);/);
   assert.match(handlers, /\.\.\.\(!listen\s+\? rulesWhy/);
   const watch = readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8');
-  assert.match(watch, /if \(hearingByRules\(s, currentProject\(\)\)\.unheard \|\| !s\.ruleRegions\.every\(\(r\) => playedThrough\(a\.heardB, r\)\)\) return;/);
+  assert.match(watch, /if \(!s\.ruleRegions\.every\(\(r\) => playedThrough\(playedB, r\)\) \|\| hearingByRules\(s, currentProject\(\)\)\.unheard\) return;/);
   // (scan r7) what B played of a version counts after Stop too: a check by sound that finishes later and finds nothing past it leaves it heard
-  assert.match(watch, /if \(a\.key === null \|\| !a\.heardB\.length\) return;/);
-  assert.match(watch, /if \(!playedVersion\(s, a\)\) return;/);
+  // (scan r8) kept on the suggestion (playedB), of its current version, not stale, still open
+  assert.match(watch, /s\.playedB && s\.playedB\.version === s\.version && !s\.stale && isOpen\(s\)/);
+  assert.match(watch, /if \(!s \|\| !playedVersion\(s, a\)\) return;/);
 });

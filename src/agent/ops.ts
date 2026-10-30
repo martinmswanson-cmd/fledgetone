@@ -648,9 +648,12 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           const path = `${at}.points[${i}]`;
           if (!isObj(raw) || !isNum(raw.bar) || !isNum(raw.value)) throw new OpFail(path, 'expected { "bar": <song bar>, "value": 0 to 1, "curve"?: -1 to 1 }');
           if (raw.curve !== undefined && !isNum(raw.curve)) throw new OpFail(`${path}.curve`, 'expected a number, -1 to 1');
-          const bar = clamped(raw.bar, 1, TOTAL_BARS + 1, `${track.name} automation point ${i} bar`);
-          const value = clamped(raw.value, 0, 1, `${track.name} automation point ${i} value`);
-          const curve = raw.curve === undefined ? undefined : clamped(raw.curve, -1, 1, `${track.name} automation point ${i} curve`);
+          // (the track's name marked as the agent's, the point counted from 1, its place as the ruler numbers it)
+          const point = `${nm(track.name)} automation point ${i + 1}`;
+          const bar = clamp(raw.bar, 1, TOTAL_BARS + 1);
+          if (bar !== raw.bar) warn(`${point} at ${raw.bar < 1 ? 'a bar before bar 1' : at4(raw.bar, String(raw.bar))} is off the timeline: put at ${at4(bar, String(bar))}.`);
+          const value = clamped(raw.value, 0, 1, `${point} value`);
+          const curve = raw.curve === undefined ? undefined : clamped(raw.curve, -1, 1, `${point} curve`);
           return curve ? { bar, value, curve } : { bar, value };
         });
         const lanes = track.automation ?? [];
@@ -873,7 +876,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   function readLength(value: unknown, path: string): number {
     if (!isNum(value) || value <= 0) throw new OpFail(path, 'expected a length in bars, more than 0 (0.25 is a quarter note in 4/4)');
     if (value < MIN_LENGTH - EPS) {
-      warn(`A note length of ${len4(value, String(value))} is shorter than the shortest (${shortest}): made ${meter ? 'a sixteenth note' : '1/16'}.`);
+      // (never its length in numbers: under a sixteenth it could round to 0)
+      warn(`A note shorter than ${shortest} was made ${shortest} long, the shortest a note can be.`);
       return MIN_LENGTH;
     }
     if (value > TOTAL_BARS) throw new OpFail(path, `at most ${TOTAL_BARS} bars`);
@@ -911,7 +915,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   function readClipLength(value: number, path: string, max = TOTAL_BARS): number {
     if (value <= 0) throw new OpFail(path, 'expected a length in bars, more than 0');
     if (value < MIN_LENGTH - EPS) {
-      warn(`A clip length of ${len4(value, String(value))} is shorter than the shortest (${shortest}): made ${meter ? 'a sixteenth note' : '1/16'}.`);
+      warn(`A clip shorter than ${shortest} was made ${shortest} long, the shortest a clip can be.`);
       return MIN_LENGTH;
     }
     if (value > max + EPS) {

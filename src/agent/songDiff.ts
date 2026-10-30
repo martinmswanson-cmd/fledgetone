@@ -139,7 +139,9 @@ export const positionWords = (bar: number, meter: MeterMap | null): string => {
   return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
 };
 /** A length: "4 bars", or in a song not in 4/4 (`meter`: where a bar isn't a measure) in quarter notes. */
-export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${r1(lengthBars * 4)} quarter notes` : `${r1(lengthBars)} bars`);
+export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${lengthNumber(lengthBars * 4)} quarter notes` : `${lengthNumber(lengthBars)} bars`);
+/** A length's number to 1 decimal, but never 0 for a length that isn't (two figures then: 0.004). */
+const lengthNumber = (v: number): string => (r1(v) === 0 && v > 0 ? String(Number(v.toPrecision(2))) : String(r1(v)));
 const barAt = (bar: number): string => positionWords(bar, sentenceMeter);
 /** A clip's length (see lengthWordsIn). */
 const lengthWords = (lengthBars: number): string => lengthWordsIn(lengthBars, sentenceMeter);
@@ -581,7 +583,11 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
  */
 function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
   const n = nm(b.name);
-  const label = (l: AutomationLane) => specOf(l.param, b, tracks).label;
+  // (a send's lane is named by its return, whose name an agent may have written: marked as a name)
+  const label = (l: AutomationLane) => {
+    const to = l.param.startsWith('send:') ? tracks.find((t) => t.id === l.param.slice(5)) : undefined;
+    return to ? `Send → ${nm(to.name)}` : specOf(l.param, b, tracks).label;
+  };
   const span = (lanes: AutomationLane[]) => {
     const all = lanes.flatMap((l) => l.points.map((p) => p.bar));
     return all.length ? { fromBar: Math.min(...all), toBar: Math.max(...all) + 1 } : {};
