@@ -1,7 +1,25 @@
 /** The plain arithmetic of hearing a stretch of a song (listen.ts) and a suggestion before and after (auditionPlayer.ts). */
 import { barToSeconds, secondsToBar, type Tempo, type TempoPoint } from './tempoMap';
-import { durationToBars, type Clip, type Track } from '../store/timelineTypes';
+import { durationToBars, type Clip, type NoteEvent, type Track } from '../store/timelineTypes';
 import { audibleIds } from '../store/buses';
+import { sustainNotes } from '../store/expression';
+
+/**
+ * The notes of a clip that sound, each with how long it sounds (bars), as the scheduler plays
+ * them (scheduler.ts groupClipNotes): notes hidden by a trim (starting before the clip's start
+ * or at or past its end) left out, and each held by the clip's sustain pedal until it's let up.
+ * (Chance and conditions are left to the render: a held note begun again keeps where it really
+ * begins, so it plays on the same passes. A feel or swing moves notes by less than a 16th.)
+ */
+export function soundingNotes(c: Pick<Clip, 'notes' | 'lengthBars' | 'expression'>): Array<{ note: NoteEvent; bars: number }> {
+  const out: Array<{ note: NoteEvent; bars: number }> = [];
+  for (const note of c.notes ?? []) {
+    if (!(note.startOffset >= -1e-6 && note.startOffset < c.lengthBars - 1e-6)) continue;
+    const [held] = sustainNotes([note], c.expression?.sustain, c.lengthBars);
+    out.push({ note, bars: durationToBars(held.duration) });
+  }
+  return out;
+}
 
 /**
  * Where in `to`'s loop the music is when `from`'s loop has played `elapsed` seconds: the same bar
@@ -28,9 +46,9 @@ export function preRollStart(song: { tracks: Track[]; clips: readonly Clip[]; bp
   let start = fromBar;
   for (const c of song.clips) {
     if (!ids.has(c.trackId) || c.startBar >= fromBar || c.startBar + c.lengthBars <= fromBar) continue;
-    for (const n of c.notes ?? []) {
-      const at = c.startBar + n.startOffset;
-      if (at < start && at + durationToBars(n.duration) > fromBar) start = at;
+    for (const { note, bars } of soundingNotes(c)) {
+      const at = c.startBar + note.startOffset;
+      if (at < start && at + bars > fromBar) start = at;
     }
   }
   if (start >= fromBar) return fromBar;
@@ -57,9 +75,14 @@ export function restartHeldNotes(clips: readonly Clip[], at: number, fromBar: nu
     const clipEnd = c.startBar + c.lengthBars;
     if (c.startBar >= at || clipEnd <= at || !c.notes?.length) return c;
     let held = false;
+    // (as the scheduler hears them: a note hidden by a trim stays as it is, and doesn't play; the
+    // sustain pedal's hold counts, and the note begun again ends where the pedal lets it go)
+    const sounding = new Map(soundingNotes(c).map((x) => [x.note, x.bars]));
     const notes = c.notes.map((n) => {
+      const bars = sounding.get(n);
+      if (bars === undefined) return n;
       const start = c.startBar + n.startOffset;
-      const end = Math.min(clipEnd, start + durationToBars(n.duration));
+      const end = Math.min(clipEnd, start + bars);
       if (start >= at - eps || end <= fromBar + eps) return n;
       held = true;
       return { ...n, startOffset: at - c.startBar, duration: `${Math.max(1, Math.round((end - at) * TICKS_PER_BAR))}i`, heldFrom: n.heldFrom ?? start };

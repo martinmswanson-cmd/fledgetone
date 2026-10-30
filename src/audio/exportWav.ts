@@ -481,11 +481,11 @@ export async function renderStems(
    * ceiling: encodeTogether in encoders.ts).
    */
   encode?: ((channels: Float32Array[], sampleRate: number) => Promise<Blob>) | { together: (stems: Array<() => Promise<Float32Array[]>>, sampleRate: number) => Promise<Blob[]> }
-): Promise<Array<{ track: Track; wav: Blob }>> {
+): Promise<Array<{ track: Track; wav: Blob; frames: number }>> {
   const tracks = stemTracks(opts);
   if (!tracks.length) throw new Error('no audible track has clips in this range');
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
-  const parked: Array<{ track: Track; samples: Blob; length: number }> = [];
+  const parked: Array<{ track: Track; samples: Blob; length: number; frames?: number }> = [];
   let reverbImpulse = opts.reverbImpulse;
   let peak = 0;
   let ringsUntil = 0;
@@ -535,16 +535,18 @@ export async function renderStems(
     const samples = new Float32Array(await stem.samples.arrayBuffer());
     const channels = endRingOut([samples.subarray(0, stem.length), samples.subarray(stem.length)], sampleRate, opts, ringsUntil);
     scale(channels, gain);
+    // (the frames the file holds, its ring-out included)
+    stem.frames = channels[0].length;
     return channels;
   };
   if (encode && typeof encode !== 'function') {
     const files = await encode.together(parked.map((stem) => () => unpark(stem)), sampleRate);
-    return parked.map((stem, i) => ({ track: stem.track, wav: files[i] }));
+    return parked.map((stem, i) => ({ track: stem.track, wav: files[i], frames: stem.frames ?? stem.length }));
   }
-  const stems: Array<{ track: Track; wav: Blob }> = [];
+  const stems: Array<{ track: Track; wav: Blob; frames: number }> = [];
   for (const stem of parked) {
     const channels = await unpark(stem);
-    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length), ditherSeedOf(stem.track.id)) });
+    stems.push({ track: stem.track, frames: channels[0].length, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length), ditherSeedOf(stem.track.id)) });
   }
   return stems;
 }

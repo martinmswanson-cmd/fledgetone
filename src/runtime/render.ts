@@ -84,7 +84,7 @@ export interface RenderSongResult {
   sampleRate: number;
   bitDepth: BitDepth | null;
   ending: ExportEnding;
-  /** The target matched (null: none). */
+  /** The target matched (null: none, and always for stems, which are never matched). */
   target: { id: string; lufs: number } | null;
   seconds: number;
   /** The file's loudness and true peak (the mixdown; stems: the loudest stem's peak). */
@@ -203,14 +203,14 @@ export async function renderSong(projectJson: unknown, opts: RenderSongOptions =
   const trimNote = () => {
     if (held.trimDb > 0.05) notes.push(`Turned down ${held.trimDb.toFixed(1)} dB after encoding, so it never passes ${ceilingDbtp} dBTP decoded.`);
   };
-  const result = (files: RenderedFile[], seconds: number, lufs: number | null, truePeakDbtp: number | null): RenderSongResult => ({
+  const result = (files: RenderedFile[], seconds: number, lufs: number | null, truePeakDbtp: number | null, matched = true): RenderSongResult => ({
     song: p.name,
     range: { fromBar, toBar },
     format,
     sampleRate,
     bitDepth: format === 'wav' ? bitDepth : null,
     ending,
-    target: targetId ? { id: target.id, lufs: target.lufs } : null,
+    target: matched && targetId ? { id: target.id, lufs: target.lufs } : null,
     seconds: Math.round(seconds * 1000) / 1000,
     lufs: tenth(lufs),
     truePeakDbtp: tenth(truePeakDbtp),
@@ -229,13 +229,17 @@ export async function renderSong(projectJson: unknown, opts: RenderSongOptions =
     );
     const names = stemFileNames(base, rendered.map((r) => r.track), format);
     trimNote();
-    const seconds = format === 'wav' ? Math.max(0, (rendered[0].wav.size - 44) / (2 * (bitDepth / 8) * sampleRate)) : barToSeconds(toBar, tempoOf(p)) - barToSeconds(fromBar, tempoOf(p));
+    // (stems are never matched to a loudness target, as Export's aren't: they add up to the mix as it plays)
+    if (opts.target) notes.push(`Stems aren't matched to a loudness target (${target.id} applies to the mixdown only): they're at the mix's own level.`);
+    // (the frames rendered, the ring-out included: an MP3's own length is a few frames of padding more)
+    const seconds = rendered[0].frames / sampleRate;
     progress(1, 'Done');
     return result(
       rendered.map((r, i) => ({ name: names[i], id: keep(r.wav), bytes: r.wav.size, track: { id: r.track.id, name: r.track.name } })),
       seconds,
       null,
-      held.peakDbtp
+      held.peakDbtp,
+      false
     );
   }
 

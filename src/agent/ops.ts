@@ -57,6 +57,8 @@ import { diffSongs, type SongDiff } from './songDiff';
 import { checkSafety } from './safety';
 import { firstDifference, stableJson } from './fingerprint';
 import { LIMITS } from './protocol';
+import { byAgentId } from './agentText';
+
 
 /** The version of the op vocabulary this file reads. */
 export const OPS_VERSION = 1;
@@ -395,7 +397,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           const path = `${at}.notes[${i}]`;
           if (!isObj(raw) || typeof raw.id !== 'string') throw new OpFail(path, 'expected { "id": "<note id>", ...the fields to change }');
           for (const k of Object.keys(raw)) if (!['id', 'pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${path}.${k}`, `a note change has id, pitch, start, length and velocity, not "${k}"`);
-          const note = clip.notes.find((n) => n.id === raw.id);
+          const note = byAgentId(clip.notes, raw.id);
           if (!note) throw new OpFail(`${path}.id`, `clip "${clip.name}" has no note ${JSON.stringify(raw.id)} (get_notes lists them)`);
           const pitch = raw.pitch === undefined ? note.note : readPitch(raw.pitch, `${path}.pitch`, track);
           const start = raw.start === undefined ? note.startOffset : readStart(raw.start, `${path}.start`, clip);
@@ -412,9 +414,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (ways !== 1) throw new OpFail(at, 'remove_notes takes one of: "noteIds", "all": true, or "fromBar" and "toBar" (song bars)');
         let keep: (n: NoteEvent) => boolean;
         if (op.noteIds) {
-          const ids = new Set(op.noteIds);
+          const ids = new Set<string>();
           op.noteIds.forEach((id, i) => {
-            if (!clip.notes.some((n) => n.id === id)) throw new OpFail(`${at}.noteIds[${i}]`, `clip "${clip.name}" has no note ${JSON.stringify(id)}`);
+            const note = byAgentId(clip.notes, id);
+            if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip "${clip.name}" has no note ${JSON.stringify(id)}`);
+            ids.add(note.id);
           });
           keep = (n) => !ids.has(n.id);
         } else if (op.all) keep = () => false;
@@ -435,7 +439,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (isDrumKind(track.instrumentKey) || isFxKind(track.instrumentKey) || isDropKind(track.instrumentKey))
           throw new OpFail(`${at}.clipId`, `"${track.name}" plays a drum, effect or move on each note, not a pitch: change the notes' pitch with change_notes instead`);
         if (!Number.isInteger(op.semitones) || Math.abs(op.semitones) > 48) throw new OpFail(`${at}.semitones`, 'expected a whole number of semitones, -48 to 48');
-        const ids = op.noteIds ? new Set(op.noteIds) : null;
+        const ids = op.noteIds ? new Set(op.noteIds.map((id) => byAgentId(clip.notes, id)?.id ?? id)) : null;
         const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
         let held = 0;
         const notes = clip.notes.map((n) => {
@@ -756,8 +760,18 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     if (ref) refs.set(ref, { kind, id });
   }
 
+  /**
+   * The id of the thing an agent names: as given, or the one whose id reads so once made plain
+   * (the agent reads ids as agentText makes them: a file's id with hidden text in it is named
+   * without it). As given when none or several do.
+   */
+  function realId(value: string, kind: 'track' | 'clip' | 'marker' | 'tempo'): string {
+    const list: ReadonlyArray<{ id: string }> = kind === 'track' ? w.tracks : kind === 'clip' ? w.clips : kind === 'marker' ? w.markers : w.tempoPoints;
+    return byAgentId(list, value)?.id ?? value;
+  }
+
   function resolveId(value: string, path: string, kind: 'track' | 'clip' | 'marker' | 'tempo'): string {
-    if (!value.startsWith('$')) return value;
+    if (!value.startsWith('$')) return realId(value, kind);
     const ref = refs.get(value.slice(1));
     if (!ref) throw new OpFail(path, `no earlier op made ${JSON.stringify(value)} (give ref: "${value.slice(1)}" on the op that adds it)`);
     if (ref.kind !== kind) throw new OpFail(path, `${value} is a ${ref.kind}, not a ${kind}`);
@@ -816,8 +830,9 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     if (!isAutomationParam(value)) throw new OpFail(path, `unknown setting ${JSON.stringify(value)} (list_params lists them)`);
     if (value.startsWith('plugin:')) throw new OpFail(path, 'plugin settings are not in this version of the ops');
     if (value.startsWith('send:')) {
-      const to = w.tracks.find((t) => t.id === value.slice(5));
+      const to = byAgentId(w.tracks, value.slice(5));
       if (!to || !isReturn(to) || to.id === track.id) throw new OpFail(path, `${value}: there's no return track with that id`);
+      return `send:${to.id}` as AutomationParam;
     }
     return value;
   }

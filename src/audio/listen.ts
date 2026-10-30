@@ -10,7 +10,7 @@
  * check renders them). No store here: callers pass the song.
  */
 import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions, type RenderProgress } from './exportWav';
-import { createLoudnessAnalyser } from './loudness';
+import { createLoudnessAnalyser, shortTermWindowFull } from './loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAnalysis';
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
@@ -126,7 +126,8 @@ export async function renderRangeStems(
 export interface RenderMeasure {
   seconds: number;
   lufs: number;
-  shortTermMaxLufs: number;
+  /** The loudest whole 3 seconds (-Infinity: silent), or null for audio shorter than 3 seconds. */
+  shortTermMaxLufs: number | null;
   truePeakDbtp: number;
   crestDb: number;
   /** Each part of the spectrum against the whole, dB. */
@@ -145,12 +146,15 @@ export async function measureRender(audio: AudioBuffer, signal?: AbortSignal): P
   const rate = audio.sampleRate;
   const analyser = createLoudnessAnalyser(rate);
   const hop = Math.max(1, Math.round(rate / 10));
-  let shortTermMax = -Infinity;
+  // (null until a whole 3 seconds have been fed: fewer would overstate audio that starts loud)
+  let shortTermMax: number | null = null;
   for (let i = 0; i < left.length; i += hop) {
     const n = Math.min(hop, left.length - i);
     analyser.feed(left.subarray(i, i + n), right.subarray(i, i + n), n);
-    const now = analyser.read().shortTerm;
-    if (now > shortTermMax) shortTermMax = now;
+    if (shortTermWindowFull(i + n, rate)) {
+      const now = analyser.read().shortTerm;
+      if (shortTermMax === null || now > shortTermMax) shortTermMax = now;
+    }
     // (about every 5 seconds of audio, let the page breathe)
     if ((i / hop) % 50 === 49) {
       await new Promise((r) => setTimeout(r, 0));

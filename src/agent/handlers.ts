@@ -20,6 +20,7 @@ import { HandlerError, type Handler } from './bridgeProtocolClient';
 import { CONVERSATION, fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
 import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
+import { cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
 import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
@@ -47,8 +48,24 @@ export function controlSelector(name: string): string {
   return [`[data-search~="${q.toLowerCase()}"]`, `[data-search*="${q.toLowerCase()}"]`, `[aria-label="${q}" i]`, `[aria-label^="${q}" i]`, `[title^="${q}" i]`].join(', ');
 }
 
-/** The handlers the studio adds to the reading ones. */
+/**
+ * The studio's handlers, each answer made plain for the agent (cleanForAgent: the names of the
+ * song's tracks and clips in a listen's tracks, a suggestion's changes and why it's out of date
+ * hold no hidden text).
+ */
 export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
+  const out: Partial<Record<StudioMethod, Handler>> = {};
+  for (const [method, handler] of Object.entries(handlersAsTheyAre()) as Array<[StudioMethod, Handler]>) {
+    out[method] = (params, ctx) => {
+      const r = handler(params, ctx);
+      return r instanceof Promise ? r.then(cleanForAgent) : cleanForAgent(r);
+    };
+  }
+  return out;
+}
+
+/** The handlers the studio adds to the reading ones. */
+function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
   const suggestRate = new RateLimiter(1, LIMITS.suggestEveryMs);
   const listenRate = new RateLimiter(LIMITS.listensPerMinute, 60_000);
   const sayRate = new RateLimiter(1, LIMITS.sayEveryMs);
@@ -133,7 +150,7 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
         if (stats && stats.limiterPeakDb > 3) findings.push(`The master limiter takes up to ${stats.limiterPeakDb.toFixed(1)} dB off the peaks.`);
         if (stats?.clipper && stats.clipper.peakDb > 3) findings.push(`The master clipper takes up to ${stats.clipper.peakDb.toFixed(1)} dB off the peaks.`);
         if (!Number.isFinite(m.lufs)) findings.push('It is silent.');
-        const finite = (v: number) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+        const finite = (v: number | null) => (v !== null && Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
         return {
           range: { fromBar, toBar },
           heard: what,

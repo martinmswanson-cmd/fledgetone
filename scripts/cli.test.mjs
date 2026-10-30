@@ -5,8 +5,8 @@
 // `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
+import { execFile, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -124,7 +124,7 @@ test('notes, list and new', { skip }, async () => {
 });
 
 /** A 16-bit WAV of a 1 kHz sine at half scale in every channel. */
-function makeWav({ channels = 2, rate = 48000, seconds = 2, truncate } = {}) {
+function makeWav({ channels = 2, rate = 48000, seconds = 2, truncate, level = () => 0.5 } = {}) {
   const frames = Math.round(rate * seconds);
   const size = frames * channels * 2;
   const buf = Buffer.alloc(44 + size);
@@ -141,7 +141,7 @@ function makeWav({ channels = 2, rate = 48000, seconds = 2, truncate } = {}) {
   buf.write('data', 36);
   buf.writeUInt32LE(size, 40);
   for (let i = 0; i < frames; i++) {
-    const v = Math.round(0.5 * Math.sin((2 * Math.PI * 1000 * i) / rate) * 32767);
+    const v = Math.round(level(i / rate) * Math.sin((2 * Math.PI * 1000 * i) / rate) * 32767);
     for (let c = 0; c < channels; c++) buf.writeInt16LE(v, 44 + (i * channels + c) * 2);
   }
   return truncate ? buf.subarray(0, truncate) : buf;
@@ -248,4 +248,83 @@ test('measure: under 0.4 seconds there is no balance to read', { skip }, async (
   assert.equal(m.silent, false);
   assert.deepEqual(m.regions, []);
   assert.match(m.note, /shorter than 0\.4 seconds/);
+});
+
+/** ffmpeg's ebur128 loudest short-term reading (whole 3-second windows only), or null without ffmpeg. */
+function ffmpegShortTermMax(path) {
+  const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', path, '-af', 'ebur128', '-f', 'null', '-'], { encoding: 'utf8' });
+  if (r.error || r.status !== 0) return null;
+  const lines = r.stderr.split('\n').filter((l) => /\bt: *([\d.]+)/.test(l) && /S: *(-?[\d.]+)/.test(l));
+  // (ffmpeg prints a reading every 100 ms, a hair before each tenth; from 3 seconds on its short-term covers a whole 3 seconds)
+  const whole = lines.filter((l) => Number(/\bt: *([\d.]+)/.exec(l)[1]) >= 3 - 0.01).map((l) => Number(/S: *(-?[\d.]+)/.exec(l)[1]));
+  return whole.length ? Math.max(...whole) : null;
+}
+
+test('measure: the loudest 3 seconds counts whole 3-second windows only (a loud start is not overstated); under 3 seconds there are none', { skip }, async () => {
+  // A second of a loud sine, then five quiet: the loudest 3 seconds are the first three, about 4.8 LU under the loud second
+  const start = join(tmp, 'loud-start.wav');
+  writeFileSync(start, makeWav({ seconds: 6, level: (t) => (t < 1 ? 0.5 : 0.005) }));
+  const loud = join(tmp, 'loud-second.wav');
+  writeFileSync(loud, makeWav({ seconds: 1 }));
+  const a = JSON.parse((await cli('measure', start, '--json')).stdout);
+  const b = JSON.parse((await cli('measure', loud, '--json')).stdout);
+  assert.ok(Math.abs(a.shortTermMaxLufs - (b.lufs - 10 * Math.log10(3))) < 0.3, `loudest 3 s ${a.shortTermMaxLufs}, the loud second ${b.lufs}`);
+  const ref = ffmpegShortTermMax(start);
+  if (ref !== null) assert.ok(Math.abs(a.shortTermMaxLufs - ref) < 0.3, `ffmpeg's ebur128 says ${ref}`);
+  // A second long: no whole 3 seconds, said plainly
+  assert.equal(b.shortTermMaxLufs, null);
+  const text = await cli('measure', loud);
+  assert.match(text.stdout, /too short for the loudest 3 seconds: under 3 seconds long/);
+  assert.match((await cli('measure', start)).stdout, /loudest 3 seconds -\d+\.\d LUFS/);
+});
+
+test('info: meter changes listed, as tempo changes are', { skip }, async () => {
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  song.meterPoints = [{ id: 'm1', bar: 5, num: 3, den: 4 }, { id: 'm2', bar: 9, num: 7, den: 8 }];
+  const path = join(tmp, 'meters.fledgetone.json');
+  writeFileSync(path, JSON.stringify(song));
+  const r = await cli('info', path);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^Meter changes: 3\/4 at bar 5\.0, 7\/8 at bar 9\.0$/m);
+});
+
+test('what the command line prints carries no terminal escapes or hidden characters from a song or a suggestion file', { skip }, async () => {
+  const esc = '\u001b]0;pwned\u0007\u001b[2K\r\u009b31m\u202e\u200b';
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  song.name = `Demo${esc}`;
+  song.tracks[0].name = `Bass${esc}\u{e0049}\u{e0047}`;
+  const path = join(tmp, 'esc.fledgetone.json');
+  writeFileSync(path, JSON.stringify(song));
+  // eslint-disable-next-line no-control-regex
+  const unsafe = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\p{Cf}]/u;
+  for (const args of [['info', path], ['info', path, '--json'], ['notes', path], ['check', path], ['diff', path, SONG]]) {
+    const r = await cli(...args);
+    assert.ok(!unsafe.test(r.stdout), `${args[0]}: ${JSON.stringify(r.stdout.match(unsafe))}`);
+    assert.ok(r.stdout.length > 0, args.join(' '));
+  }
+  // An error quoting a name from the song
+  const bad = await cli('notes', path, '--track', `Nope${esc}`);
+  assert.equal(bad.code, 2);
+  assert.ok(!unsafe.test(bad.stderr), JSON.stringify(bad.stderr));
+  // A suggestion file with escapes in its title (anyone can write one): apply prints it plain
+  const sug = JSON.parse(readFileSync(SUGGESTION, 'utf8'));
+  sug.title = `Quieter${esc}\nfledgetone: all checks passed`;
+  const sugPath = join(tmp, 'esc.suggestion.json');
+  writeFileSync(sugPath, JSON.stringify(sug));
+  const applied = await cli('apply', SONG, sugPath, '-o', join(tmp, 'esc-out.fledgetone.json'), '--force');
+  assert.ok(!unsafe.test(applied.stdout), JSON.stringify(applied.stdout));
+  assert.ok(!/^fledgetone: all checks passed/m.test(applied.stdout), 'the title stays on its line');
+});
+
+test('a file whose name only starts with two dots is inside the folder (the helper and the studio server)', { skip }, async () => {
+  await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
+  const { fileInRoot } = await import(pathToFileURL(join(CLI, 'src/files.ts')).href);
+  const { fileInside } = await import(pathToFileURL(join(CLI, 'src/staticServer.ts')).href);
+  const root = mkdtempSync(join(tmp, 'root-'));
+  copyFileSync(SONG, join(root, '..dots.fledgetone.json'));
+  writeFileSync(join(root, '..page.html'), '<p>hi</p>');
+  assert.equal(fileInRoot(root, '..dots.fledgetone.json', { mustExist: true }), join(realpathSync(root), '..dots.fledgetone.json'));
+  assert.throws(() => fileInRoot(join(root), '../outside.fledgetone.json'), /outside the folder/);
+  assert.equal(fileInside(root, '..page.html'), join(realpathSync(root), '..page.html'));
+  assert.equal(fileInside(root, '../cli.test.mjs'), null);
 });

@@ -53,7 +53,7 @@ export function fileInside(dir: string, rel: string): string | null {
   if (!existsSync(full)) return null;
   const real = realpathSync.native(full);
   const r = relative(root, real);
-  if (r.startsWith('..') || isAbsolute(r) || r.split(sep).includes('..')) return null;
+  if (r === '..' || r.startsWith('..' + sep) || isAbsolute(r) || r.split(sep).includes('..')) return null;
   return real;
 }
 

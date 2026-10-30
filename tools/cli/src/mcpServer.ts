@@ -25,6 +25,7 @@ import { diffSongs } from '../../../src/agent/songDiff';
 import { makeSuggestionFile, SUGGESTION_FORMAT } from '../../../src/agent/suggestion';
 import { previewOps } from '../../../src/agent/studioReads';
 import { LIMITS, RateLimiter, type StudioMethod } from '../../../src/agent/protocol';
+import { agentText, cleanForAgent } from '../../../src/agent/agentText';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED } from './bridgeServer';
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
@@ -46,8 +47,10 @@ export const RENDER_FILE_MAX_SECONDS = 600;
 
 const SONG_TYPES = ['.fledgetone.json', '.json'];
 
-const ok = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] });
-const fail = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: message }] });
+// Every answer made plain (cleanForAgent): what comes from a song file or the studio (names, ids,
+// the words built from them) never carries hidden text or control characters to the agent
+const ok = (value: unknown): CallToolResult => ({ content: [{ type: 'text', text: typeof value === 'string' ? agentText(value) : JSON.stringify(cleanForAgent(value), null, 2) }] });
+const fail = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: agentText(message) }] });
 
 /** Run a tool's body, turning thrown errors into tool errors in plain words. */
 async function guard(body: () => unknown): Promise<CallToolResult> {
@@ -480,7 +483,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
   const liveResource = (name: string, uri: string, title: string, method: StudioMethod) =>
     server.registerResource(name, uri, { title, mimeType: 'application/json' }, async (u) => {
       if (!bridge.isPaired) throw new Error(NOT_CONNECTED);
-      return { contents: [{ uri: u.href, mimeType: 'application/json', text: JSON.stringify(await live(method), null, 2) }] };
+      return { contents: [{ uri: u.href, mimeType: 'application/json', text: JSON.stringify(cleanForAgent(await live(method)), null, 2) }] };
     });
   liveResource('studio-song', 'fledgetone://studio/song', 'The song on screen', 'get_song');
   liveResource('studio-view', 'fledgetone://studio/view', 'What the musician sees', 'get_view');

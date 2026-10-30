@@ -251,6 +251,16 @@ export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = 
 }
 
 /** The worklet processor's name. */
+/**
+ * Whether a short-term reading (the last 3 s) after `framesFed` frames covers a whole 3 seconds:
+ * before then it averages the blocks there are, so audio that starts loud reads louder than any
+ * 3 seconds of it. The loudest 3 seconds counts only whole windows (as hitCheck.ts and ffmpeg's
+ * ebur128 do); audio shorter than 3 s has none.
+ */
+export function shortTermWindowFull(framesFed: number, sampleRate: number): boolean {
+  return framesFed >= 30 * Math.round(sampleRate / 10);
+}
+
 export const LOUDNESS_PROCESSOR = 'bbx-loudness';
 
 /** How often the live meter posts its numbers. */

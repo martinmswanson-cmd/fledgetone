@@ -54,7 +54,8 @@ export interface ListenReport {
 /** What a listen measured of the mix, before rounding (as listen.ts measureRender gives it). */
 export interface MixReading {
   lufs: number;
-  shortTermMaxLufs: number;
+  /** null: shorter than 3 seconds, so no whole 3 seconds to measure. */
+  shortTermMaxLufs: number | null;
   truePeakDbtp: number;
   crestDb: number;
   regions: Array<{ name: string; db: number }>;
