@@ -11,6 +11,7 @@ import { createZip } from '../../audio/zip';
 import { importSoundFile } from '../../audio/soundLibrary';
 import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
+import { previewVoice, type PreviewVoice } from '../../audio/previewFade';
 import { showToast } from './toastStore';
 
 /**
@@ -38,14 +39,10 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
   const [busy, setBusy] = useState<number | null>(null);
   const [rendered, setRendered] = useState<{ key: string; takes: Float32Array[][]; sampleRate: number } | null>(null);
   const seconds = useTimelineStore((s) => (clip ? (clip.lengthBars * 240) / tempoAt(clip.startBar, songTempo(s)) : 0));
-  const playing = useRef<AudioBufferSourceNode | null>(null);
-  // A take heard is the one preview playing (and another starting stops it)
+  const playing = useRef<PreviewVoice | null>(null);
+  // A take heard is the one preview playing (and another starting stops it, with a short fade)
   const claim = useExclusivePreview('variations', () => {
-    try {
-      playing.current?.stop();
-    } catch {
-      // Already ended
-    }
+    playing.current?.stop();
     playing.current = null;
   });
   if (!clip || !track) return null;
@@ -89,10 +86,10 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
     r.takes[i].forEach((ch, k) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, k));
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(afterMaster());
+    const voice = previewVoice(src, afterMaster());
     claim();
     src.start();
-    playing.current = src;
+    playing.current = voice;
   };
 
   const save = async () => {

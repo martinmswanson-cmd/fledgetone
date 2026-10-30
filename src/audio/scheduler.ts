@@ -99,6 +99,13 @@ export interface ClipSchedule {
   update: (tracks: Track[], clips: Clip[]) => void;
   /** How far before its tick the earliest note pushed early (a feel, or a row's own shift) plays, in 16ths (0: none early) */
   earliest: () => number;
+  /**
+   * Send each controller lane's value at `bar` to the instruments of the clips that started
+   * before it and are still playing there (a lane is sent only where its value changes, so a
+   * plugin would otherwise miss it). The schedule does this itself whenever its Transport starts,
+   * moves or loops back; a render calls it too, before it starts, so the plugins are set in time.
+   */
+  hold: (bar: number, time: number) => void;
   dispose: () => void;
 }
 
@@ -240,7 +247,13 @@ export function createClipSchedule(
    * round the loop counts as a further pass (see noteChance.ts). Exports leave it out: they count
    * a clip's copies only, so a seamless loop file plays the same every time round.
    */
-  loopOf?: () => LoopRegion | null
+  loopOf?: () => LoopRegion | null,
+  /**
+   * The song's meter, for the measured groove feels (their steps count from each measure's start).
+   * Live playback reads the studio's (getSongMeter, kept in step with the song by the store); a
+   * render passes its song's, so a render with no store (the command line's) plays the same.
+   */
+  meterOf: () => MeterMap = getSongMeter
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   /** Drop tracks: their notes play on the beat as written (no swing or shift), as an export reads them (dropMoves.ts) */
@@ -264,16 +277,41 @@ export function createClipSchedule(
     }
     return loop;
   };
-  const onLoop = () => {
-    currentLoop();
-    wraps++;
+  /** Each controller lane's value at `tick`, to the clips playing on through it (see ClipSchedule.hold). */
+  const holdLanes = (tick: number, time: number) => {
+    for (const { clip } of entries.values()) {
+      if (!clip.expression || tick <= barToTicks(clip.startBar) || tick >= barToTicks(clip.startBar + clip.lengthBars)) continue;
+      // (the value its last 64th sent, as the lane's own events step)
+      const at = Math.floor((ticksToBar(tick) - clip.startBar) * 64 + 1e-6) / 64;
+      const sends: Array<[number, number]> = [];
+      for (const lane of lanesOf(clip.expression)) {
+        const n = laneCc(lane);
+        const points = clip.expression[lane];
+        if (n !== null && points?.length) sends.push([n, at <= points[0].at ? points[0].value : exprValueAt(points, at)]);
+      }
+      if (!sends.length) continue;
+      const instrument = instrumentFor(clip.trackId);
+      if (!instrument?.cc) continue;
+      onActivity?.(clip.trackId, time, 0);
+      for (const [n, value] of sends) safely(() => instrument.cc!(n, value, time));
+    }
   };
-  const onStart = () => void (wraps = 0);
-  if (loopOf) {
-    transport.on('loop', onLoop);
-    transport.on('start', onStart);
-    transport.on('stop', onStart);
-  }
+  const onLoop = (time: number) => {
+    if (loopOf) {
+      currentLoop();
+      wraps++;
+    }
+    holdLanes(Math.round(transport.getTicksAtTime(time)), time);
+  };
+  // (Tone says "start" when the Transport starts and when it's moved while playing)
+  const onStart = (time: number) => {
+    wraps = 0;
+    holdLanes(Math.round(transport.getTicksAtTime(time)), time);
+  };
+  const onStop = () => void (wraps = 0);
+  transport.on('loop', onLoop);
+  transport.on('start', onStart);
+  transport.on('stop', onStop);
   /** The group with only the notes that play this time round (null: none of them). */
   const gate = (group: NoteGroup, tick: number): NoteGroup | null => {
     const conds = group.conds;
@@ -426,7 +464,7 @@ export function createClipSchedule(
         if (!trackIds.has(clip.trackId)) continue;
         const prev = entries.get(clip.id);
         const role = feelRole(clip, trackById.get(clip.trackId), clips, roleMemo);
-        const meter = role ? getSongMeter() : undefined;
+        const meter = role ? meterOf() : undefined;
         const entry = prev && prev.role === role && prev.meter === meter && sameNotes(prev.clip, clip) ? prev : { clip, role, meter, groups: groupClipNotes(clip, role, meter) };
         nextEntries.set(clip.id, entry);
         for (const [tick, group] of entry.groups) {
@@ -453,12 +491,11 @@ export function createClipSchedule(
       for (const e of entries.values()) if (!straight.has(e.clip.trackId)) for (const [, g] of e.groups) if (g.shift && -g.shift > most) most = -g.shift;
       return most;
     },
+    hold: (bar, time) => holdLanes(barToTicks(bar), time),
     dispose: () => {
-      if (loopOf) {
-        transport.off('loop', onLoop);
-        transport.off('start', onStart);
-        transport.off('stop', onStart);
-      }
+      transport.off('loop', onLoop);
+      transport.off('start', onStart);
+      transport.off('stop', onStop);
       events.forEach((id) => transport.clear(id));
       events.clear();
       byTick.clear();

@@ -232,6 +232,80 @@ test('listen hears what the song plays: not a note a trim hides, and a note the 
   for (const f of [hidden, held]) rmSync(join(work, f));
 });
 
+const listenJson = async (file, bars) => {
+  const r = await cli('listen', file, '--bars', bars, '--offline', '--json');
+  assert.equal(r.code, 0, r.stderr);
+  return JSON.parse(r.stdout);
+};
+
+test("a measured groove feel follows the song's meter (no studio to say what it is)", { skip, timeout: 300_000 }, async () => {
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  for (const c of song.clips) c.groove = { swing: 0, grid: 16, feel: { id: 'houseShuffle', amount: 1 } };
+  writeFileSync(join(work, 'feel44.fledgetone.json'), JSON.stringify(song));
+  writeFileSync(join(work, 'feel34.fledgetone.json'), JSON.stringify({ ...song, meter: { num: 3, den: 4 } }));
+  for (const m of ['44', '34']) {
+    const r = await cli('render', `feel${m}.fledgetone.json`, '-o', `feel${m}.wav`, '--bars', '1-3', '--offline');
+    assert.equal(r.code, 0, r.stderr);
+  }
+  // The feel's steps count from each 3/4 measure's start, not from each 4/4 bar's
+  assert.ok(!readFileSync(join(work, 'feel34.wav')).equals(readFileSync(join(work, 'feel44.wav'))), 'the 3/4 song plays its feel in 3/4');
+  for (const f of ['feel44.fledgetone.json', 'feel34.fledgetone.json', 'feel44.wav', 'feel34.wav']) rmSync(join(work, f));
+});
+
+test("a controller lane's held value reaches the plugin in a range that starts after the clip does", { skip, timeout: 300_000 }, async () => {
+  // Fledge Synth's organ (its mod wheel opens it up above 5 kHz), a chord a bar for 8 bars, CC 1 held at 1 from the start
+  const notes = [];
+  for (let b = 0; b < 8; b++) for (const [i, n] of ['C4', 'E4', 'G4'].entries()) notes.push({ id: `n${b}${i}`, note: n, startOffset: b, duration: '2n', velocity: 0.7 });
+  const song = {
+    format: 'fledgetone-project',
+    version: 1,
+    modWheel: 'dynamics',
+    name: 'Organ wheel',
+    bpm: 120,
+    swing: 0,
+    loopRegion: { inBar: 1, outBar: 9, enabled: false },
+    tracks: [{ id: 't1', name: 'Organ', instrumentKey: 'plugin', volume: -12, pan: 0, reverbSend: 0, delaySend: 0, plugin: { id: 'p1', url: 'builtin:fledge/Fledge Synth', name: 'Fledge Synth', state: { builtin: 1, program: 23 } } }],
+    clips: [{ id: 'c1', trackId: 't1', name: 'Organ', startBar: 1, lengthBars: 8, notes, expression: { cc1: [{ at: 0, value: 1 }] } }],
+  };
+  writeFileSync(join(work, 'wheel.fledgetone.json'), JSON.stringify(song));
+  writeFileSync(join(work, 'nowheel.fledgetone.json'), JSON.stringify({ ...song, clips: [{ ...song.clips[0], expression: undefined }] }));
+  const presence = (rep) => rep.mix.regions.find((r) => /^presence/.test(r.name)).db;
+  const [first, later, none] = [await listenJson('wheel.fledgetone.json', '1-4'), await listenJson('wheel.fledgetone.json', '5-8'), await listenJson('nowheel.fledgetone.json', '5-8')];
+  assert.ok(presence(first) - presence(none) > 3, `the wheel is heard: ${presence(first)} against ${presence(none)} dB without it`);
+  assert.ok(Math.abs(presence(later) - presence(first)) < 0.5, `bars 5 to 8 (${presence(later)} dB) as bars 1 to 4 (${presence(first)} dB)`);
+  for (const f of ['wheel.fledgetone.json', 'nowheel.fledgetone.json']) rmSync(join(work, f));
+});
+
+test("a listen reports what the master did in the bars asked for, not in the run-in before them", { skip, timeout: 300_000 }, async () => {
+  // Drums and bass in bars 1 to 4 pushed 15 dB into the limiter; a quiet note held from bar 1 to 9 makes a listen of bars 5 to 8 run in from bar 1
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  song.master = { ...song.master, level: 15 };
+  const keys = song.tracks.find((t) => t.name === 'Keys');
+  song.clips = song.clips.map((c) => (c.trackId === keys.id ? { ...c, notes: [{ id: 'held', note: 'D3', startOffset: 0, duration: '8m', velocity: 0.05 }] } : { ...c, notes: c.notes.filter((n) => n.startOffset < 4) }));
+  writeFileSync(join(work, 'limited.fledgetone.json'), JSON.stringify(song));
+  const loud = await listenJson('limited.fledgetone.json', '1-4');
+  assert.ok(loud.mix.master.limiterMaxGrDb > 3, `bars 1 to 4 are limited: ${loud.mix.master.limiterMaxGrDb} dB`);
+  const quiet = await listenJson('limited.fledgetone.json', '5-8');
+  assert.ok(quiet.mix.master.limiterMaxGrDb < 0.5, `bars 5 to 8 aren't: ${quiet.mix.master.limiterMaxGrDb} dB`);
+  assert.ok(!quiet.findings.some((f) => /limiter/i.test(f)), JSON.stringify(quiet.findings));
+  rmSync(join(work, 'limited.fledgetone.json'));
+});
+
+test("a listen from where a pad's chord has just ended hears its release, as the song does", { skip, timeout: 300_000 }, async () => {
+  // The Ambient starter's warm pad: two-bar chords, one ending exactly on bar 3 and ringing on
+  const made = await cli('new', '--starter', 'ambient', '-o', 'ambient.fledgetone.json');
+  assert.equal(made.code, 0, made.stderr);
+  const song = JSON.parse(readFileSync(join(work, 'ambient.fledgetone.json'), 'utf8'));
+  const pad = song.tracks[0];
+  song.tracks = [pad];
+  song.clips = song.clips.filter((c) => c.trackId === pad.id);
+  writeFileSync(join(work, 'pad.fledgetone.json'), JSON.stringify(song));
+  const whole = await listenJson('pad.fledgetone.json', '1-4');
+  const from3 = await listenJson('pad.fledgetone.json', '3-4');
+  assert.ok(Math.abs(from3.bars[0].lufs - whole.bars[2].lufs) < 0.3, `bar 3 alone (${from3.bars[0].lufs}) as in the song (${whole.bars[2].lufs})`);
+  for (const f of ['ambient.fledgetone.json', 'pad.fledgetone.json']) rmSync(join(work, f));
+});
+
 test('stems: never matched to a loudness target (and the summary says so); an MP3 stem\'s length includes the ring-out', { skip, timeout: 300_000 }, async () => {
   const r = await cli('render', SONG, '--stems', 'stems-wav', '--target', 'club', '--bars', '1-2', '--offline', '--json');
   assert.equal(r.code, 0, r.stderr);

@@ -662,8 +662,9 @@ export class AdaptiveMusic {
     this.out.gain.setTargetAtTime(volume, this.ctx.currentTime, seconds / 3);
   }
 
-  stop() {
-    if (this.current?.sources) this.stopState(this.current, this.ctx.currentTime);
+  /** Stop the music, at once or fading out over `fade` seconds. */
+  stop(fade = 0) {
+    if (this.current?.sources) this.stopState(this.current, this.ctx.currentTime, fade);
     this.current = null;
   }
 

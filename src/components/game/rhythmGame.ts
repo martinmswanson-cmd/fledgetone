@@ -7,6 +7,7 @@
  * the player's own offset), so what's seen is what's heard.
  */
 import { LANES, type ChartNote } from '../../store/rhythmChart';
+import { PREVIEW_FADE_SECONDS, previewVoice, type PreviewVoice } from '../../audio/previewFade';
 
 export type Judgement = 'perfect' | 'great' | 'good' | 'miss';
 
@@ -68,7 +69,7 @@ export class RhythmGame {
   private o: RhythmOptions;
   private resize: ResizeObserver;
   private raf = 0;
-  private source: AudioBufferSourceNode | null = null;
+  private source: PreviewVoice | null = null;
   private filter: BiquadFilterNode;
   private gain: GainNode;
   private t0 = 0;
@@ -128,9 +129,9 @@ export class RhythmGame {
     this.t0 = ctx.currentTime + LEAD_IN;
     const src = ctx.createBufferSource();
     src.buffer = this.o.buffer;
-    src.connect(this.filter);
+    const voice = previewVoice(src, this.filter);
     src.start(this.t0);
-    this.source = src;
+    this.source = voice;
     this.end = Math.max(this.o.buffer.duration, ...this.notes.map((n) => n.end ?? n.time)) + 0.5;
     cancelAnimationFrame(this.raf);
     const tick = () => {
@@ -146,21 +147,21 @@ export class RhythmGame {
     this.stopSong();
   }
 
+  /** (with a short fade: never cut mid-waveform) */
   private stopSong() {
-    try {
-      this.source?.stop();
-    } catch {
-      // (not started yet)
-    }
-    this.source?.disconnect();
+    this.source?.stop();
     this.source = null;
   }
 
   dispose() {
     cancelAnimationFrame(this.raf);
     this.stopSong();
-    this.filter.disconnect();
-    this.gain.disconnect();
+    // (once the song has faded out)
+    const { filter, gain } = this;
+    setTimeout(() => {
+      filter.disconnect();
+      gain.disconnect();
+    }, (PREVIEW_FADE_SECONDS + 0.05) * 1000);
     this.resize.disconnect();
     this.canvas.remove();
   }

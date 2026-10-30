@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { countedRender } from '../../audio/renderBusy';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { safeFileName } from '../../store/project';
 import {
   audibleTracks,
@@ -413,6 +413,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       tracks: s.tracks,
       clips: s.clips,
       swing: s.swing,
+      meter: songMeterOf(s),
       markers: s.markers,
       master: s.master,
       bypassMaster: stemsOnly && settings.bypassMaster,

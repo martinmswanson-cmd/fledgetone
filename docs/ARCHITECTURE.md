@@ -240,9 +240,12 @@ ops and the security model):
   heard is what's accepted.
 - **Hearing it**: `auditionPlayer.ts` renders the same bars of the song now and as suggested
   (`listen.ts`, which the Mix check shares; from a run-in of up to 8 bars or 20 s when notes are
-  held into the range, notes held from before that and still sounding at the range begun again
+  held into the range or end just before it and are still ringing out (their release: about 2 s,
+  or a recorded instrument's own), notes held from before that and still sounding at the range begun again
   at its start (keeping their own Human seed and feel: `heldFrom`), then trimmed:
-  `preRollStart` and `restartHeldNotes` in `auditionMath.ts`) and plays each looped after the master, crossfading
+  `preRollStart` and `restartHeldNotes` in `auditionMath.ts`; what the master section did is counted
+  from the range's start) and plays each looped after the master (the end of each crossfading
+  15 ms into what leads into its start, `loopChannels`, so going round doesn't click), crossfading
   20 ms between them; a switch starts the other at the same bar (`auditionMath.ts`), so a tempo
   change still switches in step. Renders are kept by the suggestion's version. The store isn't
   touched.

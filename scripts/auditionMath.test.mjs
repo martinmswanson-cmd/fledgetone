@@ -17,7 +17,7 @@ register(
   }
 }`)
 );
-const { preRollStart, restartHeldNotes, soundingNotes } = await import('../src/audio/auditionMath.ts');
+const { preRollStart, restartHeldNotes, soundingNotes, releaseSeconds, RELEASE_ALLOWANCE_SECONDS, loopChannels, LOOP_FADE_SECONDS } = await import('../src/audio/auditionMath.ts');
 const { sustainNotes } = await import('../src/store/expression.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
 
@@ -59,8 +59,65 @@ test('a note held by the sustain pedal is heard in a range after it was let go, 
   // ...and the scheduler, holding it again, ends it at the same place (the pedal is up by then)
   const again = sustainNotes(out.notes, clip.expression.sustain, clip.lengthBars)[0];
   near(n.startOffset + durationToBars(again.duration), 3.01, 'the scheduler ends it where the pedal comes up');
-  // Without the pedal it was over long before: nothing to run in, nothing begun again
+  // Without the pedal it ends at 1.25, and rings out a release (2 s, a bar here) after: a range
+  // from bar 2 runs in from it (it isn't begun again: it plays as it is), one from bar 3 doesn't
   const dry = { ...clip, expression: undefined };
-  assert.equal(preRollStart(songOf(dry), 2), 2);
+  assert.equal(preRollStart(songOf(dry), 2), 1);
+  assert.equal(preRollStart(songOf(dry), 3), 3);
+  assert.equal(restartHeldNotes([dry], 1, 2)[0], dry);
   assert.equal(restartHeldNotes([dry], 2, 3)[0], dry);
+});
+
+test('a note that ends at or just before a range rings out into it: the run-in starts from it', () => {
+  // A pad's 2-bar chord ending exactly on bar 3, in a clip that ends there too (an Ambient pad)
+  const pad = { id: 'c', trackId: 't', startBar: 1, lengthBars: 2, notes: [note('chord', 0, '2m')] };
+  assert.equal(preRollStart(songOf(pad), 3), 1, 'its release is heard in bar 3');
+  assert.equal(restartHeldNotes([pad], 1, 3)[0], pad, 'and it plays as it is: nothing begun again');
+  // ...ending a hair before it
+  assert.equal(preRollStart(songOf({ ...pad, lengthBars: 1.99 }), 3), 1);
+  // Long over (more than the release before the range): no run-in
+  assert.equal(RELEASE_ALLOWANCE_SECONDS, 2);
+  assert.equal(preRollStart(songOf(pad), 4.01), 4.01, 'two seconds (a bar at 120 BPM) after it ends, it has rung out');
+  assert.equal(preRollStart(songOf(pad), 3.99), 1);
+  // An instrument whose recordings say how long they ring: a piano's 0.6 s
+  const piano = { ...track, instrumentKey: 'piano' };
+  assert.equal(releaseSeconds(piano), 0.6);
+  assert.equal(releaseSeconds({ ...piano, ring: 3 }), 3, 'as the track sets its ring');
+  assert.equal(releaseSeconds(track), RELEASE_ALLOWANCE_SECONDS, 'a synth: the allowance');
+  assert.equal(releaseSeconds({ ...track, ring: 0.1 }), RELEASE_ALLOWANCE_SECONDS, '(a ring is a recorded instrument\'s)');
+  const pianoSong = { ...songOf(pad), tracks: [piano] };
+  assert.equal(preRollStart(pianoSong, 3.25), 1, 'still ringing a quarter of a bar (0.5 s) on');
+  assert.equal(preRollStart(pianoSong, 3.5), 3.5, 'over a second on, it has died away');
+  // A muted track's notes don't count
+  assert.equal(preRollStart({ ...songOf(pad), tracks: [{ ...track, isMuted: true }] }, 3), 3);
+});
+
+test('a looped stretch goes round without a click: its end crossfades into what leads into its start', () => {
+  const rate = 44100;
+  // A held 110 Hz note across the whole render, the stretch starting mid-waveform 0.37 s in
+  const sine = new Float32Array(rate).map((_, i) => 0.5 * Math.sin((2 * Math.PI * 110 * i) / rate));
+  const trim = Math.round(0.37 * rate);
+  const fade = LOOP_FADE_SECONDS * rate;
+  assert.ok(LOOP_FADE_SECONDS >= 0.01 && LOOP_FADE_SECONDS <= 0.02);
+  const copy = sine.slice();
+  const [out] = loopChannels([sine], trim, fade);
+  assert.deepEqual(sine, copy, 'the render is left as it was');
+  assert.equal(out.length, sine.length - trim);
+  // Its start is the render's from the trim on, as it was
+  assert.equal(out[0], sine[trim]);
+  assert.equal(out[out.length - fade - 1], sine[sine.length - fade - 1]);
+  let inside = 0;
+  for (let i = 1; i < out.length; i++) inside = Math.max(inside, Math.abs(out[i] - out[i - 1]));
+  const wrap = Math.abs(out[0] - out[out.length - 1]);
+  // Cut as it was, the wrap jumped (the end isn't where the start is)
+  assert.ok(Math.abs(sine[trim] - sine[sine.length - 1]) > 0.1);
+  assert.ok(wrap <= inside, `the wrap steps ${wrap}, the music at most ${inside}`);
+  // ...and going round, the last frame leads into the first as the song does
+  assert.ok(Math.abs(out[out.length - 1] - sine[trim - 1]) < 0.01);
+  // No run-in: the end fades out into the silence before the render
+  const [alone] = loopChannels([sine], 0, fade);
+  assert.equal(alone.length, sine.length);
+  assert.ok(Math.abs(alone[alone.length - 1]) < 0.02, String(alone[alone.length - 1]));
+  // A stretch shorter than two fades still loops (the fade shortened to fit)
+  assert.equal(loopChannels([new Float32Array(100).fill(0.5)], 10, fade)[0].length, 90);
 });

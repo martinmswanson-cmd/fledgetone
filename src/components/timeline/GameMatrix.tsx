@@ -9,6 +9,7 @@ import { gameKitSong } from './gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio, liveMix } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
+import { PREVIEW_FADE_SECONDS } from '../../audio/previewFade';
 import { showToast } from './toastStore';
 
 /**
@@ -195,7 +196,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const player = useRef<AdaptiveMusic | null>(null);
   // The pads are the one preview playing (a suggestion's before-and-after, say, stops; another stops them)
   const claim = useExclusivePreview('game-audition-pads', () => {
-    player.current?.stop();
+    player.current?.stop(PREVIEW_FADE_SECONDS);
     setCurrent(null);
     setPending(null);
   });
@@ -225,7 +226,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     })();
     return () => {
       cancelled = true;
-      player.current?.stop();
+      player.current?.stop(PREVIEW_FADE_SECONDS);
     };
   }, [onClose, claim]);
 
@@ -374,7 +375,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               <button
                 type="button"
                 onClick={() => {
-                  player.current?.stop();
+                  player.current?.stop(PREVIEW_FADE_SECONDS);
                   setCurrent(null);
                 }}
                 className="h-8 px-3 flex items-center gap-1.5 rounded-md border border-forge-border hover:text-forge-text"

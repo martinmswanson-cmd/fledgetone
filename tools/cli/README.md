@@ -86,7 +86,8 @@ http://localhost:5200/` renders with a running dev server's code instead of the 
 working on Fledgetone.
 
 Names and titles from song and suggestion files are printed without control characters or
-invisible ones (no terminal escapes), errors included.
+invisible ones (no terminal escapes; no variation selectors, fillers or other characters that
+show nothing, but an emoji's own joiners and selector), errors and `--json` included.
 
 Exit codes: 0 done; 1 done with something to fix, or refused (an out-of-date suggestion); 2 a
 mistake in the command or a file that can't be read. Nothing but the command's output goes to

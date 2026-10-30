@@ -196,7 +196,7 @@ export async function buildGameKitParts(
       stateOfMarker.set(marker.id, name);
       sectionOfMarker.set(marker.id, sec);
     }
-    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal, recordings };
+    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, meter: meterMap, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal, recordings };
     const file = `states/${safe(name)}.wav`;
     const seconds = secondsBetween(sec.from, sec.to, tempo);
     let samples = Math.round(seconds * sampleRate);

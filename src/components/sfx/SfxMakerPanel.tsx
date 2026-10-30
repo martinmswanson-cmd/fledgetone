@@ -7,6 +7,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import { afterMaster, liveContext } from '../../audio/liveContext';
+import { previewVoice, type PreviewVoice } from '../../audio/previewFade';
 import { Copy, Dices, Download, Gamepad2, Layers, Play, Plus, RefreshCw, Shuffle, Square, Star, Trash2, Upload, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isAudioKind } from '../../audio/instrumentCatalog';
@@ -178,7 +179,7 @@ const noteName = (freq: number) => {
 
 let playing: AudioBufferSourceNode | null = null;
 /** Every sound playing or waiting to (Hear variations queues several), so Stop stops them all */
-const sounding = new Set<AudioBufferSourceNode>();
+const sounding = new Map<AudioBufferSourceNode, PreviewVoice>();
 const playListeners = new Set<() => void>();
 const usePlaying = () => {
   const [, bump] = useState(0);
@@ -189,14 +190,9 @@ const usePlaying = () => {
   }, []);
   return playing;
 };
+/** Stop every sound (with a short fade: never cut mid-waveform). */
 function stop() {
-  for (const src of sounding) {
-    try {
-      src.stop();
-    } catch {
-      // already ended
-    }
-  }
+  for (const voice of sounding.values()) voice.stop();
   sounding.clear();
   playing = null;
   playListeners.forEach((l) => l());
@@ -214,13 +210,13 @@ async function audition(samples: Float32Array | Float32Array[], sampleRate: numb
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = loop;
-  src.connect(afterMaster());
+  const voice = previewVoice(src, afterMaster());
   if (!when) stop();
   // (the one preview playing: a suggestion's before-and-after, say, stops)
   claimPreview('sfx-maker');
   src.start(ctx.currentTime + when);
   playing = src;
-  sounding.add(src);
+  sounding.set(src, voice);
   src.onended = () => {
     sounding.delete(src);
     if (playing === src) {

@@ -4,7 +4,8 @@
  * render options the Mix check, the before-and-after of a suggestion and an agent's listen all
  * share (renderOptionsFor), the render itself (renderRange: through the master section, with the
  * recordings live playback has, exactly the bars asked for, notes held over from before
- * included), and its measurement (measureRender:
+ * included; renderLoop: the same made to play looped, its end crossfaded into what leads into
+ * its start), and its measurement (measureRender:
  * integrated and loudest-3-seconds loudness, true peak, crest and the balance across the
  * spectrum), and the same bars track by track (renderRangeStems: each track's stem, as the Mix
  * check renders them). No store here: callers pass the song.
@@ -14,8 +15,8 @@ import { createLoudnessAnalyser, shortTermWindowFull } from './loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAnalysis';
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
-import { barToSeconds, type TempoPoint } from './tempoMap';
-import { preRollStart, restartHeldNotes } from './auditionMath';
+import { barToSeconds, type MeterMap, type TempoPoint } from './tempoMap';
+import { LOOP_FADE_SECONDS, loopChannels, preRollStart, restartHeldNotes } from './auditionMath';
 import type { IntensityCurve } from '../store/intensity';
 
 /** The parts of a song a render needs. */
@@ -24,6 +25,8 @@ export interface ListenSnapshot {
   clips: Clip[];
   bpm: number;
   tempoPoints?: TempoPoint[];
+  /** The song's meter (absent: the studio's; see RenderOptions.meter) */
+  meter?: MeterMap;
   swing: number;
   masterFx: MasterFx;
   master?: MasterSettings;
@@ -39,6 +42,7 @@ export function renderOptionsFor(song: ListenSnapshot, fromBar: number, toBar: n
     clips: song.clips,
     bpm: song.bpm,
     tempoPoints: song.tempoPoints,
+    ...(song.meter ? { meter: song.meter } : {}),
     swing: song.swing,
     startBar: fromBar,
     endBar: toBar,
@@ -80,10 +84,29 @@ export async function renderRange(
   const start = preRollStart(song, fromBar);
   // (notes held from before the run-in begin again at its start, for what's left of them)
   const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
-  const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats } : {}) }, opts.progress);
+  // (what the master section did is counted from fromBar: the run-in isn't heard)
+  const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats, masterStatsFromBar: fromBar } : {}) }, opts.progress);
   if (start >= fromBar) return audio;
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   return trimStart(audio, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate));
+}
+
+/**
+ * Render bars [from, to) of `song` as renderRange does, made to be played looped (the before and
+ * after of a suggestion): its end crossfades into the music leading into its start (loopChannels),
+ * so going round doesn't click where a note is held over the start.
+ */
+export async function renderLoop(song: ListenSnapshot, fromBar: number, toBar: number, opts: { signal?: AbortSignal; progress?: RenderProgress } = {}): Promise<AudioBuffer> {
+  const start = preRollStart(song, fromBar);
+  const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
+  // (no 5 ms fade at the end: the crossfade takes its place)
+  const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), noEndFade: true }, opts.progress);
+  const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
+  const trim = start < fromBar ? Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate) : 0;
+  const channels = loopChannels(channelsOf(audio), trim, LOOP_FADE_SECONDS * audio.sampleRate);
+  const out = new AudioBuffer({ numberOfChannels: channels.length, length: Math.max(1, channels[0].length), sampleRate: audio.sampleRate });
+  channels.forEach((c, i) => out.copyToChannel(c, i));
+  return out;
 }
 
 /**

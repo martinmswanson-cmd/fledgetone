@@ -15,6 +15,7 @@ import { encodeChannels } from '../../audio/exportWav';
 import { audioSourceSeconds } from '../../store/audioClips';
 import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
+import { previewVoice, type PreviewVoice } from '../../audio/previewFade';
 import { showToast } from './toastStore';
 
 /**
@@ -47,14 +48,10 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
   const [source, setSource] = useState<AudioBuffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const player = useRef<AudioBufferSourceNode | null>(null);
-  // The clip heard (tuned or not) is the one preview playing (and another starting stops it)
+  const player = useRef<PreviewVoice | null>(null);
+  // The clip heard (tuned or not) is the one preview playing (and another starting stops it, with a short fade)
   const claim = useExclusivePreview('tune', () => {
-    try {
-      player.current?.stop();
-    } catch {
-      // Already ended
-    }
+    player.current?.stop();
     player.current = null;
     setPlaying(false);
   });
@@ -115,11 +112,11 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     chans.forEach((ch, c) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(afterMaster());
-    src.onended = () => setPlaying(false);
+    const voice = previewVoice(src, afterMaster());
+    src.onended = () => player.current === voice && setPlaying(false);
     claim();
     src.start();
-    player.current = src;
+    player.current = voice;
     setPlaying(true);
   };
 

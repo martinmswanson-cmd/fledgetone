@@ -20,7 +20,7 @@
  */
 import { parseProject, type ProjectSnapshot } from '../store/project';
 import { buildGameKitParts, type GameKitSong } from '../audio/gameKit';
-import { importEmbeddedSounds } from '../audio/soundLibrary';
+import { importEmbeddedSounds, withLibrarySamples } from '../audio/soundLibrary';
 import { normalizeTrackFx, DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import { AdaptiveMusic } from '../gameKit/adaptive-music.js';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
@@ -84,6 +84,8 @@ export async function loadSong(source: string | object, opts: LoadOptions = {}):
     });
   }
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
+  // A Sampler's sound kept the old way (a data: URL) goes into the library, as the app moves it when it opens the file
+  project.tracks = await withLibrarySamples(project.tracks);
   // With stem groups the player mixes the stems, so each state's whole mix isn't made
   const { manifest, files } = await buildGameKitParts(songOf(project), opts.onProgress, 44100, true, undefined, 'playback');
   const ctx = opts.context ?? new AudioContext();

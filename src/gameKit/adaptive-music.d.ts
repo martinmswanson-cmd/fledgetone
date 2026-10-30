@@ -38,7 +38,8 @@ export class AdaptiveMusic {
   stopSfx(name?: string, fade?: number): void;
   setSfxVolume(volume: number, seconds?: number): void;
   setVolume(volume: number, seconds?: number): void;
-  stop(): void;
+  /** Stop the music, at once or fading out over `fade` seconds (default 0). */
+  stop(fade?: number): void;
   /** Stop everything and take the player's sound out of the mix for good (it can't be used after). */
   dispose(): void;
 }

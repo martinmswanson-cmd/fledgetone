@@ -819,7 +819,7 @@ export const LIVE_CLIPPER_LATENCY = createClipperKernel(0, true, false, true).la
  * the last `latency` samples come from running it on over silence). What an export's master
  * section does (masterAfter.ts); returns what it did.
  */
-export function clipChannels(left: Float32Array, right: Float32Array, sampleRate: number, settings: ClipperSettings): ClipperReading {
+export function clipChannels(left: Float32Array, right: Float32Array, sampleRate: number, settings: ClipperSettings, readFrom = 0): ClipperReading {
   const kernel = createClipperKernel(sampleRate, settings.band === true, false, settings.split === true);
   const { drive, ceiling, softness } = clipperParams(settings);
   const n = left.length;
@@ -830,8 +830,10 @@ export function clipChannels(left: Float32Array, right: Float32Array, sampleRate
   // Output sample i + lat is input sample i: write each block's output `lat` back
   const total = n + lat;
   const zeros = new Float32Array(block);
-  for (let start = 0; start < total; start += block) {
-    const end = Math.min(total, start + block);
+  for (let start = 0; start < total; ) {
+    // (a block ends where the reading starts, and what it did before then is let go)
+    if (start === readFrom && readFrom > 0) kernel.read();
+    const end = Math.min(total, start + block, start < readFrom ? readFrom : Infinity);
     const frames = end - start;
     const inEnd = Math.min(n, end);
     const l = start < n ? left.subarray(start, inEnd) : zeros;
@@ -853,6 +855,7 @@ export function clipChannels(left: Float32Array, right: Float32Array, sampleRate
         if (right !== left) right[at] = outR[k];
       }
     }
+    start = end;
   }
   return kernel.read();
 }
