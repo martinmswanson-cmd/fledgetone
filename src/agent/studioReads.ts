@@ -9,6 +9,7 @@
 import type { ProjectSnapshot } from '../store/project';
 import { agentAutomation, agentNotes, toAgentSong } from './agentSong';
 import { applyOps, OPS_VERSION } from './ops';
+import { cleanForAgent } from './agentText';
 import { HandlerError, type Handler } from './bridgeProtocolClient';
 import type { StudioMethod } from './protocol';
 
@@ -18,8 +19,9 @@ const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 /** What a dry run of some ops tells an agent. */
 export function previewOps(song: ProjectSnapshot, ops: unknown, idBase = 'preview') {
   const out = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase });
-  if (!out.ok) return { ok: false as const, errors: out.errors };
-  return { ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, notes: out.notes, audition: out.diff.audition, refs: out.refs, stats: out.stats };
+  // (the changes and warnings name tracks and clips: as plain as the song summary has them)
+  if (!out.ok) return cleanForAgent({ ok: false as const, errors: out.errors });
+  return cleanForAgent({ ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, notes: out.notes, audition: out.diff.audition, refs: out.refs, stats: out.stats });
 }
 
 /** The reading handlers, for the studio's bridge client. */

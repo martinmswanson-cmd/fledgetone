@@ -128,7 +128,8 @@ A listen gives the same report as a live one, and more:
 }
 ```
 
-- `mix`: integrated loudness (LUFS), the loudest 3 seconds, true peak (dBTP), crest (peak against
+- `mix`: integrated loudness (LUFS), the loudest 3 seconds (whole 3-second windows only: `null`
+  for less than 3 seconds), true peak (dBTP), crest (peak against
   average, dB), the balance (each part of the spectrum against the whole, dB), and how much the
   master's limiter and clipper took off the peaks (dB; `null`: the clipper is off).
 - `bars`: the loudness of each bar (a bar under 0.4 seconds has none: `null`).
@@ -180,7 +181,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`). The helper keeps the last 200 events, and your messages apart from them (an edit never pushes one out); if some after `since` were dropped unread, the answer has `missed: true` and a hint: call `get_messages` and answer its `unanswered` |
-| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
+| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them (it renders from up to 8 bars earlier and measures only the range; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
@@ -629,6 +630,12 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   same files the app downloads; nothing about the song is sent). With `--offline` it downloads
   nothing. It's closed when the render ends, also when it fails or takes too long.
 - **What an agent writes is shown as plain text**, its names cut to 64 characters.
+- **What the agent reads of a song is plain text too.** A song file's names and ids (and the words
+  built from them: what a suggestion changes, why it's out of date, a listen's tracks) reach the
+  agent without control characters or invisible ones (hidden tag text, zero-width characters,
+  direction overrides), by the same rule as your messages. An id that held them is read, and can
+  be named in ops, without them. The command line prints nothing from a file with terminal
+  escapes in it.
 - **What you write to the agent** goes only when you press Send, only to the paired helper, and
   carries your selection only if you tick "Include what I've selected" (and allow it to see what
   you select). It's kept in memory only (the tab, and the helper until you disconnect), never saved.

@@ -15,9 +15,10 @@ import { applyOps, checkOpsShape, OPS_VERSION } from '../../../src/agent/ops';
 import type { ListenComparison, ListenReport } from '../../../src/agent/listenReport';
 import { readJson, readSong, sameFile, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions } from './browserRender';
-import { barRange, suggestionIdBase, UsageError, type Flags } from './commands';
+import { printErr, printOut, safeText } from './print';
+import { barRange, loudestText, suggestionIdBase, UsageError, type Flags } from './commands';
 
-const say = (text: string) => process.stdout.write(text.endsWith('\n') ? text : text + '\n');
+const say = printOut;
 const r1 = (v: number | null) => (v === null ? '-' : (Math.round(v * 10) / 10).toFixed(1));
 const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 /** Song bars [from, to) as a person counts them: "bars 9 to 16" (the end included), or with the end said where it isn't a whole bar. */
@@ -116,13 +117,14 @@ export function browserOptions(flags: Flags, progressLabel = 'Rendering'): Brows
     ...(timeout ? { timeoutMs: timeout * 1000 } : {}),
     onProgress: tty
       ? (f, what) => {
-          const line = `${progressLabel}: ${what} ${Math.round(f * 100)}%`;
+          // (the escape that clears the line is the command's own; the stage, which can name a track, is made safe)
+          const line = safeText(`${progressLabel}: ${what} ${Math.round(f * 100)}%`).replace(/\s+/g, ' ');
           if (line !== last) process.stderr.write(`\r\x1b[K${line}`);
           last = line;
           if (f >= 1) process.stderr.write('\r\x1b[K');
         }
       : undefined,
-    onLog: flags.verbose ? (line) => process.stderr.write(`${line}\n`) : undefined,
+    onLog: flags.verbose ? (line) => printErr(line) : undefined,
   };
 }
 
@@ -286,7 +288,7 @@ function reportText(r: ListenReport, label = ''): string[] {
   const m = r.mix;
   const lines = [
     `${label}${barsText(r.range.fromBar, r.range.toBar)}, ${r.heard}: ${clock(r.seconds)}`,
-    `  Loudness ${r1(m.lufs)} LUFS (loudest 3 seconds ${r1(m.shortTermMaxLufs)}), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb)} dB`,
+    `  Loudness ${r1(m.lufs)} LUFS (${loudestText(m.shortTermMaxLufs, r.seconds)}), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb)} dB`,
     `  Master: the limiter takes up to ${r1(m.master.limiterMaxGrDb)} dB off${m.master.clipperMaxDb !== null ? `, the clipper up to ${r1(m.master.clipperMaxDb)} dB` : ''}`,
   ];
   if (m.regions.length) lines.push(`  Balance: ${m.regions.map((x) => `${x.name} ${signed(x.db)}`).join(', ')}`);

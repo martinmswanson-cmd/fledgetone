@@ -11,6 +11,7 @@ import * as cmd from './commands';
 import { BridgeServer, DEFAULT_PORT } from './bridgeServer';
 import { createMcpServer } from './mcpServer';
 import { APP_VERSION } from './meta';
+import { printErr, printOut } from './print';
 import * as rc from './renderCommands';
 import { findAppBuild, NO_BUILD, startStudio, STUDIO_PORT } from './studioServer';
 
@@ -126,11 +127,11 @@ async function main(argv: string[]): Promise<number> {
   const flags: cmd.Flags = { ...values, o: values.o ?? values.out };
   const [command, ...args] = positionals;
   if (values.version) {
-    process.stdout.write(`${APP_VERSION}\n`);
+    printOut(APP_VERSION);
     return 0;
   }
   if (values.help || !command || command === 'help') {
-    process.stdout.write(HELP);
+    printOut(HELP);
     return 0;
   }
   switch (command) {
@@ -190,7 +191,7 @@ async function studio(values: { port?: string; app?: string }): Promise<number> 
   const build = findAppBuild(values.app);
   if (!build) throw new cmd.UsageError(values.app ? `${values.app} isn't a built app (a folder with index.html and assets/)` : NO_BUILD);
   const { server, url } = await startStudio(portOf(values.port, STUDIO_PORT, '--port')!, build);
-  process.stdout.write(
+  printOut(
     `Fledgetone is at ${url} (on this computer only). Open it in your browser.\n` +
       `To let it connect to your agent, start the helper with --allow-origin ${server.origin}, or start both together: fledgetone mcp --studio.\n` +
       `Songs and settings kept here are this address's own, apart from fledgetone.com's. Ctrl+C stops it.\n`
@@ -214,7 +215,7 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
   }
   const render = rc.browserOptions({ ...values, quiet: true });
   // stdout is the MCP protocol's alone: anything else written there would break it
-  console.log = console.info = console.warn = (...a: unknown[]) => process.stderr.write(a.map(String).join(' ') + '\n');
+  console.log = console.info = console.warn = (...a: unknown[]) => printErr(a.map(String).join(' '));
   let server: ReturnType<typeof createMcpServer> | null = null;
   const bridge = new BridgeServer({
     port,
@@ -231,14 +232,15 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
       return url.origin;
     }),
     version: APP_VERSION,
+    log: (t: string) => printErr(`fledgetone: ${t}`),
     agentName: () => server?.server.getClientVersion()?.name,
   });
   await bridge.start();
   server = createMcpServer({ root, bridge, render });
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  process.stderr.write(`fledgetone: agent tools ready (files in ${root})\n`);
-  if (studioServer) process.stderr.write(`fledgetone: the studio is at ${studioServer.url} (it may connect)\n`);
+  printErr(`fledgetone: agent tools ready (files in ${root})`);
+  if (studioServer) printErr(`fledgetone: the studio is at ${studioServer.url} (it may connect)`);
   await untilStopped((stop) => {
     process.stdin.once('end', stop);
     process.stdin.once('close', stop);
@@ -263,7 +265,7 @@ main(process.argv.slice(2)).then(
     const code = (err as { code?: unknown } | null)?.code;
     const usage = err instanceof cmd.UsageError || (typeof code === 'string' && code.startsWith('ERR_PARSE_ARGS'));
     const message = (err instanceof Error && err.message) || String(err) || 'something went wrong';
-    process.stderr.write(`fledgetone: ${message}\n${usage ? 'fledgetone --help lists the commands.\n' : ''}`);
+    printErr(`fledgetone: ${message}${usage ? '\nfledgetone --help lists the commands.' : ''}`);
     process.exitCode = 2;
   }
 );

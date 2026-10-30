@@ -22,6 +22,7 @@ import { specOf } from '../audio/automation';
 import { barToSeconds, formatMeter, FOUR_FOUR, type TempoMap } from '../audio/tempoMap';
 import { INSERT_NAMES, insertDefaults } from './ops';
 import { stableJson } from './fingerprint';
+import { agentLine, cleanForAgent } from './agentText';
 
 export const AGENT_SONG_SCHEMA = 'fledgetone.agent-song/1';
 /** The most an AgentSong may weigh as JSON. */
@@ -112,8 +113,8 @@ function agentTrack(t: Track, tracks: readonly Track[]): AgentTrack {
   const fx = t.fx as unknown as Record<string, { on?: boolean } & Record<string, unknown>>;
   return {
     id: t.id,
-    name: t.name,
-    instrument: { key: t.instrumentKey, name: meta?.name ?? t.instrumentKey, category: meta?.category ?? '' },
+    name: agentLine(t.name),
+    instrument: { key: t.instrumentKey, name: agentLine(meta?.name ?? t.instrumentKey), category: meta?.category ?? '' },
     role: partKind(t.instrumentKey),
     volumeDb: r(t.volume, 2),
     pan: r(t.pan, 3),
@@ -137,7 +138,7 @@ function agentTrack(t: Track, tracks: readonly Track[]): AgentTrack {
         points: l.points.map((p) => ({ bar: r(p.bar), value: r(p.value), ...(p.curve ? { curve: r(p.curve) } : {}) })),
       })),
     ...(t.instrumentKey === 'synthDesigner' && t.synth ? presetOf(t.synth) : {}),
-    ...(t.folder ? { folder: t.folder.name } : {}),
+    ...(t.folder ? { folder: agentLine(t.folder.name) } : {}),
     ...(t.stemGroup ? { stemGroup: t.stemGroup } : {}),
     ...(kind === 'bus' || kind === 'return' ? { mixTrack: kind } : {}),
   };
@@ -178,22 +179,22 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
     revision: opts.revision ?? 0,
     app: { version: opts.appVersion ?? 'unknown', projectVersion: PROJECT_VERSION },
     ...(p.songId ? { songId: p.songId } : {}),
-    name: p.name.slice(0, 200),
+    name: agentLine(p.name, 200),
     tempo: { bpm: p.bpm, changes: (p.tempoPoints ?? []).map((t) => ({ id: t.id, bar: r(t.bar), bpm: t.bpm, ramp: t.ramp === true })) },
     meter: { base: formatMeter(meterMap.base), changes: meterMap.points.map((m) => ({ bar: r(m.bar), meter: formatMeter(m) })) },
     key: key?.name ?? null,
     lengthBars: r(end - 1),
     lengthSeconds: r(barToSeconds(end, tempo), 2),
     loop: { inBar: r(p.loopRegion.inBar), outBar: r(p.loopRegion.outBar), on: p.loopRegion.enabled },
-    markers: (p.markers ?? []).map((m) => ({ id: m.id, name: m.name, bar: r(m.bar), seconds: r(m.seconds, 3), heldTo: m.anchor })),
-    sections: songSections(p.clips, p.markers ?? [], meterMap).map((s) => ({ name: s.name, fromBar: r(s.from), toBar: r(s.to) })),
+    markers: (p.markers ?? []).map((m) => ({ id: m.id, name: agentLine(m.name), bar: r(m.bar), seconds: r(m.seconds, 3), heldTo: m.anchor })),
+    sections: songSections(p.clips, p.markers ?? [], meterMap).map((s) => ({ name: agentLine(s.name), fromBar: r(s.from), toBar: r(s.to) })),
     tracks: p.tracks.map((t) => agentTrack(t, p.tracks)),
     clips: p.clips.map((c) => {
       const range = noteRange(c, byId.get(c.trackId));
       return {
         id: c.id,
         trackId: c.trackId,
-        name: c.name,
+        name: agentLine(c.name),
         startBar: r(c.startBar),
         lengthBars: r(c.lengthBars),
         kind: c.audio ? 'audio' : c.takes?.length ? 'takes' : 'notes',
@@ -213,7 +214,8 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
     },
     omitted: [],
   };
-  return fitSize(song, opts.maxBytes ?? AGENT_SONG_MAX_BYTES);
+  // (and every other string from the file, the ids among them, as plain as the names)
+  return fitSize(cleanForAgent(song), opts.maxBytes ?? AGENT_SONG_MAX_BYTES);
 }
 
 const size = (s: AgentSong) => new TextEncoder().encode(JSON.stringify(s)).length;
@@ -349,7 +351,7 @@ export function agentNotes(
   if (q.cursor && !/^\d{1,9}$/.test(q.cursor)) throw new Error('cursor is the "next" a previous get_notes gave (a whole number)');
   const from = q.cursor ? Number(q.cursor) : 0;
   const notes = all.slice(from, from + limit);
-  return { notes, total: all.length, ...(from + limit < all.length ? { next: String(from + limit) } : {}) };
+  return cleanForAgent({ notes, total: all.length, ...(from + limit < all.length ? { next: String(from + limit) } : {}) });
 }
 
 /** Every automation lane (or one track's, or one setting's), with all its points. */
@@ -359,6 +361,6 @@ export function agentAutomation(p: ProjectSnapshot, q: { trackId?: string; param
     .flatMap((t) =>
       (t.automation ?? [])
         .filter((l) => !q.param || l.param === q.param)
-        .map((l) => ({ trackId: t.id, track: t.name, param: l.param, label: specOf(l.param, t, p.tracks).label, points: l.points.map((x) => ({ ...x })) }))
+        .map((l) => cleanForAgent({ trackId: t.id, track: agentLine(t.name), param: l.param, label: specOf(l.param, t, p.tracks).label, points: l.points.map((x) => ({ ...x })) }))
     );
 }

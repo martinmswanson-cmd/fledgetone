@@ -4,7 +4,7 @@
  * folder the helper was started for (--root), with a song, suggestion or audio extension.
  */
 import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { parseProject, serializeProject, type ProjectSnapshot } from '../../../src/store/project';
 
 /** A song from a .fledgetone.json file. Throws with a readable reason. */
@@ -117,7 +117,8 @@ export function fileInRoot(root: string, file: string, opts: { types?: string[];
   const dir = realpathSync.native(dirname(full));
   const inside = (p: string) => {
     const rel = relative(realRoot, p);
-    return !rel.startsWith('..') && !isAbsolute(rel);
+    // (a name that only starts with two dots, "..notes.json", is inside)
+    return rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel);
   };
   if (!inside(dir)) throw new Error(`${file} is outside the folder the helper works in (${realRoot}); start it with --root to use another`);
   const at = resolve(dir, basename(full));

@@ -64,15 +64,15 @@ npx tsc -p tools/cli                # type check
 
 | Command | What it does |
 | --- | --- |
-| `info <song> [--json]` | The song in plain words: tempo, key, length, markers, sections, tracks and clips with their ids. `--json` gives the summary an agent reads |
+| `info <song> [--json]` | The song in plain words: tempo and time signature (and their changes), key, length, markers, sections, tracks and clips with their ids. `--json` gives the summary an agent reads |
 | `notes <song> [--track <name\|id>] [--bars 5-8] [--json]` | Its notes with their ids, in song order |
 | `check <song> [--json] [--fix -o <out>]` | What the app changes when it opens the file (values out of range, parts it can't read). Exit 0: nothing; 1: something, listed. `--fix` writes the repaired song |
 | `diff <a> <b> [--json]` | What changed from one song to another |
 | `list instruments\|presets\|starters\|params\|inserts\|master [query] [--json]` | What there is to choose from |
 | `new --starter <id> -o <out> [--name <name>]` | A new song from a starter |
 | `apply <song> <suggestion.json> -o <out> [--overwrite] [--force]` | Applies a suggestion file to a song, writing a new song. It never writes over the song it reads (unless `--overwrite`) and refuses a suggestion whose song has changed since, or that was made for another song (unless `--force`) |
-| `measure <file.wav> [--json]` | An export's loudness (LUFS, and the loudest 3 seconds), true peak, crest and balance across the spectrum |
-| `render <song> -o <out.wav\|out.mp3> [--bars 1-16] [--rate 44100\|48000] [--bits 16\|24\|32f] [--stems <folder>] [--target <id>\|none] [--json]` | The song as Export makes it: WAV (24-bit by default; 32f is float) or MP3 (320 kb/s), ringing out at the end. `--stems` writes one file per track into a folder (without the master section, as Export's stems), as well as or instead of `-o`. `--target` matches a loudness target (`streaming`, `loud`, `club`, `game`, `podcast`, `broadcast`); by default, as Export: the Loud master's own when it's on, else none. 88.2 and 96 kHz too, for WAV. Never writes over a file unless `--overwrite` |
+| `measure <file.wav> [--json]` | An export's loudness (LUFS, and the loudest 3 seconds: none in a file under 3 seconds), true peak, crest and balance across the spectrum |
+| `render <song> -o <out.wav\|out.mp3> [--bars 1-16] [--rate 44100\|48000] [--bits 16\|24\|32f] [--stems <folder>] [--target <id>\|none] [--json]` | The song as Export makes it: WAV (24-bit by default; 32f is float) or MP3 (320 kb/s), ringing out at the end. `--stems` writes one file per track into a folder (without the master section, as Export's stems, and never matched to a loudness target), as well as or instead of `-o`. `--target` matches a loudness target (`streaming`, `loud`, `club`, `game`, `podcast`, `broadcast`); by default, as Export: the Loud master's own when it's on, else none. 88.2 and 96 kHz too, for WAV. Never writes over a file unless `--overwrite` |
 | `listen <song> [--bars 9-16] [--per-track] [--suggestion <file> \| --ops <file>] [--json]` | Bars rendered as the studio's listen renders them and measured: loudness, the loudest 3 seconds, true peak, crest, balance, what the master's limiter and clipper did, bar by bar, each track with `--per-track`, and the Mix check's findings. With a suggestion file (or a file of ops), before and after, and which bars sound different. `--json` gives what the agent reads (see docs/AGENT.md) |
 | `studio [--port 47200] [--app <folder>]` | A built copy of the app (`npm run build` or `build:site` first) on `127.0.0.1`, for Safari and Brave, which won't let fledgetone.com reach the helper. `mcp --studio` starts it with the helper and lets it connect |
 | `link <song> [--base <url>]` | A share link that opens the song in Fledgetone |
@@ -84,6 +84,9 @@ render and listen options `--samples`, `--offline`, `--browser`, `--timeout <sec
 600) and `--verbose` (what the page logs and what it was refused) work for `mcp` too. `--app-url
 http://localhost:5200/` renders with a running dev server's code instead of the build, for
 working on Fledgetone.
+
+Names and titles from song and suggestion files are printed without control characters or
+invisible ones (no terminal escapes), errors included.
 
 Exit codes: 0 done; 1 done with something to fix, or refused (an out-of-date suggestion); 2 a
 mistake in the command or a file that can't be read. Nothing but the command's output goes to

@@ -15,18 +15,21 @@ import { applyOps } from '../../../src/agent/ops';
 import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/suggestion';
 import { fingerprint, firstDifference, stableJson } from '../../../src/agent/fingerprint';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
-import { createLoudnessAnalyser } from '../../../src/audio/loudness';
+import { createLoudnessAnalyser, shortTermWindowFull } from '../../../src/audio/loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../../../src/audio/mixAnalysis';
 import { readJson, readSong, readWav, sameFile, writeSong } from './files';
 import { APP_VERSION } from './meta';
+import { printOut } from './print';
 
 export type Flags = Record<string, string | string[] | boolean | undefined>;
 type Out = (text: string) => void;
 
-const say: Out = (text) => process.stdout.write(text.endsWith('\n') ? text : text + '\n');
+const say: Out = printOut;
 const json = (v: unknown) => say(JSON.stringify(v, null, 2));
 const r1 = (v: number) => (Number.isFinite(v) ? (Math.round(v * 10) / 10).toFixed(1) : String(v));
 const db = (v: number) => `${v > 0 ? '+' : ''}${r1(v)} dB`;
+/** The loudest 3 seconds in words: none for audio shorter than 3 seconds (null), "-" for silence. */
+export const loudestText = (v: number | null, seconds: number) => (v === null && seconds < 3 ? 'too short for the loudest 3 seconds: under 3 seconds long' : `loudest 3 seconds ${v === null ? '-' : r1(v)}${v !== null && Number.isFinite(v) ? ' LUFS' : ''}`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
 /** A command's mistake: said on stderr, exit code 2. */
@@ -45,6 +48,7 @@ export function songText(s: AgentSong): string {
   const lines: string[] = [];
   lines.push(`${s.name}: ${r1(s.tempo.bpm)} BPM, ${s.meter.base}${s.key ? `, ${s.key}` : ''}, ${r1(s.lengthBars)} bars (${clock(s.lengthSeconds)})`);
   if (s.tempo.changes.length) lines.push(`Tempo changes: ${s.tempo.changes.map((t) => `${r1(t.bpm)} BPM at bar ${r1(t.bar)}${t.ramp ? ' (ramp)' : ''} [${t.id}]`).join(', ')}`);
+  if (s.meter.changes.length) lines.push(`Meter changes: ${s.meter.changes.map((m) => `${m.meter} at bar ${r1(m.bar)}`).join(', ')}`);
   lines.push(`Loop: bars ${r1(s.loop.inBar)} to ${r1(s.loop.outBar)} (${s.loop.on ? 'on' : 'off'})`);
   if (s.markers.length) lines.push(`Markers: ${s.markers.map((m) => `${m.name} (bar ${r1(m.bar)}) [${m.id}]`).join(', ')}`);
   if (s.sections.length) lines.push(`Sections: ${s.sections.map((x) => `${x.name} ${r1(x.fromBar)}-${r1(x.toBar)}`).join(', ')}`);
@@ -289,12 +293,14 @@ export function measureAudio(channels: Float32Array[], sampleRate: number) {
   const analyser = createLoudnessAnalyser(sampleRate);
   // Fed in tenths of a second, so the loudest 3 seconds (short-term) can be read on the way
   const hop = Math.max(1, Math.round(sampleRate / 10));
-  let shortTermMax = -Infinity;
+  // (only whole 3-second windows count: null for audio shorter than 3 seconds)
+  let shortTermMax: number | null = null;
   for (let i = 0; i < left.length; i += hop) {
     const n = Math.min(hop, left.length - i);
     analyser.feed(left.subarray(i, i + n), right.subarray(i, i + n), n);
+    if (!shortTermWindowFull(i + n, sampleRate)) continue;
     const now = analyser.read().shortTerm;
-    if (now > shortTermMax) shortTermMax = now;
+    if (shortTermMax === null || now > shortTermMax) shortTermMax = now;
   }
   const reading = analyser.read();
   let peak = 0;
@@ -342,7 +348,7 @@ export function measure(args: string[], flags: Flags): number {
     say(
       [
         `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
-        `Loudness ${r1(m.lufs)} LUFS (loudest 3 seconds ${r1(m.shortTermMaxLufs)} LUFS), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
+        `Loudness ${r1(m.lufs)} LUFS (${loudestText(m.shortTermMaxLufs, m.seconds)}), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
         'Balance (each part of the spectrum against the whole):',
         ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`),
         ...(m.note ? [`(Note: ${m.note}.)`] : []),

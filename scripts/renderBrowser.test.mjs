@@ -197,6 +197,57 @@ test('built-in plugins play from this copy (offline); plugins from other sites a
   assert.match(l.stderr, /plugins from other sites/);
 });
 
+/** The fixture song with only its keys, playing `notes` from bar 1 for 16 bars (and the clip's `extra`). */
+function keysSong(name, notes, extra = {}) {
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  const keys = song.tracks.find((t) => t.name === 'Keys');
+  song.tracks = [keys];
+  song.clips = [{ ...song.clips.find((c) => c.trackId === keys.id), startBar: 1, lengthBars: 16, notes, ...extra }];
+  writeFileSync(join(work, name), JSON.stringify(song));
+  return name;
+}
+
+test('listen hears what the song plays: not a note a trim hides, and a note the sustain pedal holds; under 3 seconds there is no loudest 3 seconds', { skip, timeout: 300_000 }, async () => {
+  const listenTo = async (file, bars) => {
+    const r = await cli('listen', file, '--bars', bars, '--offline', '--json');
+    assert.equal(r.code, 0, r.stderr);
+    return JSON.parse(r.stdout);
+  };
+  // A long note starting a quarter bar before its clip (a left trim): the song never plays it
+  const hidden = keysSong('hidden.fledgetone.json', [{ id: 'n1', note: 'D3', startOffset: -0.25, duration: '16m', velocity: 0.8 }, { id: 'n2', note: 'A3', startOffset: 0, duration: '1m', velocity: 0.8 }]);
+  const h = await listenTo(hidden, '11-12');
+  assert.equal(h.mix.lufs, null, `bars 11 to 12 are silent, as the song plays them: ${JSON.stringify(h.mix)}`);
+  // A quarter note held by the pedal until 3 bars in: it sounds in bars 2 and 3
+  const held = keysSong('sustain.fledgetone.json', [{ id: 'n1', note: 'D3', startOffset: 0, duration: '4n', velocity: 0.8 }, { id: 'n2', note: 'A3', startOffset: 8, duration: '4n', velocity: 0.8 }], { expression: { sustain: [{ at: 0, value: 1 }, { at: 3, value: 1 }, { at: 3.01, value: 0 }] } });
+  const whole = await listenTo(held, '1-4');
+  const s = await listenTo(held, '2-3');
+  assert.equal(typeof s.mix.lufs, 'number', `the held note is heard: ${JSON.stringify(s.mix)}`);
+  assert.ok(Math.abs(s.bars[0].lufs - whole.bars[1].lufs) < 1, `bar 2 alone (${s.bars[0].lufs}) as in the song (${whole.bars[1].lufs})`);
+  // Bars 2 to 3 are 4 seconds: the loudest 3 seconds is a whole window; bar 2 alone (2 s) has none
+  assert.equal(typeof s.mix.shortTermMaxLufs, 'number');
+  const one = await listenTo(held, '2');
+  assert.equal(one.mix.shortTermMaxLufs, null);
+  const text = await cli('listen', held, '--bars', '2', '--offline');
+  assert.match(text.stdout, /too short for the loudest 3 seconds: under 3 seconds long/);
+  for (const f of [hidden, held]) rmSync(join(work, f));
+});
+
+test('stems: never matched to a loudness target (and the summary says so); an MP3 stem\'s length includes the ring-out', { skip, timeout: 300_000 }, async () => {
+  const r = await cli('render', SONG, '--stems', 'stems-wav', '--target', 'club', '--bars', '1-2', '--offline', '--json');
+  assert.equal(r.code, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.stems.target, null);
+  assert.ok(out.stems.notes.some((n) => /Stems aren't matched to a loudness target/.test(n)), JSON.stringify(out.stems.notes));
+  const text = await cli('render', SONG, '--stems', 'stems-text', '--target', 'club', '--bars', '1-2', '--offline');
+  assert.ok(!/, matched to -?\d/.test(text.stdout), text.stdout);
+  const wav = wavInfo(join(work, out.stems.files[0].name));
+  assert.ok(Math.abs(wav.seconds - out.stems.seconds) < 0.01, `${wav.seconds} against ${out.stems.seconds}`);
+  assert.ok(wav.seconds > 4.05, 'bars 1 to 2 ring out past their 4 seconds');
+  const mp3 = JSON.parse((await cli('render', SONG, '--stems', 'stems-mp3', '--format', 'mp3', '--bars', '1-2', '--offline', '--json')).stdout);
+  assert.ok(Math.abs(mp3.stems.seconds - wav.seconds) < 0.01, `the MP3 stems say ${mp3.stems.seconds} s, the frames rendered are ${wav.seconds} s`);
+  for (const d of ['stems-wav', 'stems-text', 'stems-mp3']) rmSync(join(work, d), { recursive: true, force: true });
+});
+
 test('Ctrl+C twice: the browser and its folder are cleaned up all the same', { skip, timeout: 120_000 }, async () => {
   const tmpRoot = join(work, 'tmp');
   mkdirSync(tmpRoot);

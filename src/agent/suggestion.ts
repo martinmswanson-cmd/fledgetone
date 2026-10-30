@@ -15,6 +15,8 @@ import type { Clip, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings } from '../store/timelineTypes';
 import { checkOpsShape, OPS_VERSION, type Op } from './ops';
 import { fingerprint } from './fingerprint';
+import { fromAgent } from './protocol';
+import { agentLine, byAgentId } from './agentText';
 
 export const SUGGESTION_FORMAT = 'fledgetone-suggestion';
 export const SUGGESTION_VERSION = 1;
@@ -109,17 +111,17 @@ function partOf(song: ProjectSnapshot, key: string): unknown {
   const [kind, id] = [key.slice(0, key.indexOf(':') < 0 ? key.length : key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
   switch (kind) {
     case 'clip': {
-      const c = song.clips.find((x) => x.id === id);
+      const c = byAgentId(song.clips, id);
       return c && fileClip(c);
     }
     case 'track': {
-      const t = song.tracks.find((x) => x.id === id);
+      const t = byAgentId(song.tracks, id);
       return t && trackPart(t);
     }
     case 'kind':
-      return song.tracks.find((x) => x.id === id)?.instrumentKey;
+      return byAgentId(song.tracks, id)?.instrumentKey;
     case 'marker':
-      return song.markers?.find((x) => x.id === id);
+      return byAgentId(song.markers ?? [], id);
     case 'markers':
       // Where the markers sit (a new one can't go where one already is)
       return (song.markers ?? []).map((m) => Math.round(m.bar * 1e6));
@@ -156,15 +158,17 @@ export function touchedNames(song: ProjectSnapshot, ops: readonly Op[]): Record<
 
 function nameOf(song: ProjectSnapshot, key: string): string | undefined {
   const id = key.slice(key.indexOf(':') + 1);
-  if (key.startsWith('clip:')) return song.clips.find((c) => c.id === id)?.name;
-  if (key.startsWith('track:') || key.startsWith('kind:')) return song.tracks.find((t) => t.id === id)?.name;
-  if (key.startsWith('marker:')) return song.markers?.find((m) => m.id === id)?.name;
+  if (key.startsWith('clip:')) return byAgentId(song.clips, id)?.name;
+  if (key.startsWith('track:') || key.startsWith('kind:')) return byAgentId(song.tracks, id)?.name;
+  if (key.startsWith('marker:')) return byAgentId(song.markers ?? [], id)?.name;
   return undefined;
 }
 
 /** What a touched key is, in plain words, for saying why a suggestion is out of date. */
 function describeKey(song: ProjectSnapshot, key: string, names: Record<string, string> = {}): string {
-  const name = nameOf(song, key) ?? names[key];
+  // (a name from the song, as plainly as the agent's summary has it: this reaches the agent)
+  const raw = nameOf(song, key) ?? names[key];
+  const name = raw === undefined ? undefined : agentLine(raw, 64);
   const what = key.startsWith('clip:') ? 'clip' : key.startsWith('marker:') ? 'marker' : 'track';
   if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${name}"` : `a ${what} it changes`;
   if (key === 'markers') return 'the markers';
@@ -193,6 +197,9 @@ export function classifySuggestion(
   return { status: made.revision === undefined ? 'unchanged' : 'reapply', changed: [] };
 }
 
+/** A suggestion's title as it's kept and shown: the agent's words made plain (fromAgent), on one line. */
+const titleOf = (text: string) => fromAgent(text, 80).replace(/\s+/g, ' ').trim();
+
 /** A suggestion file for `ops` on `song`. */
 export function makeSuggestionFile(song: ProjectSnapshot, s: { title: string; explanation: string; ops: Op[] }): SuggestionFile {
   return {
@@ -201,8 +208,9 @@ export function makeSuggestionFile(song: ProjectSnapshot, s: { title: string; ex
     ...(song.songId ? { songId: song.songId } : {}),
     touchedHashes: touchedHashes(song, s.ops),
     touchedNames: touchedNames(song, s.ops),
-    title: s.title.slice(0, 80),
-    explanation: s.explanation.slice(0, 2000),
+    // (the agent's words as the studio shows them: plain text, no controls or hidden characters)
+    title: titleOf(s.title),
+    explanation: fromAgent(s.explanation, 2000),
     opsVersion: OPS_VERSION,
     ops: s.ops,
   };
@@ -223,10 +231,11 @@ export function parseSuggestionFile(raw: unknown): SuggestionFile {
     ...(typeof o.songId === 'string' && o.songId ? { songId: o.songId } : {}),
     touchedHashes: Object.fromEntries(Object.entries(hashes).filter((e): e is [string, string] => typeof e[1] === 'string')),
     ...(typeof o.touchedNames === 'object' && o.touchedNames !== null
-      ? { touchedNames: Object.fromEntries(Object.entries(o.touchedNames as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string').map(([k, v]) => [k, v.slice(0, 64)])) }
+      ? { touchedNames: Object.fromEntries(Object.entries(o.touchedNames as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string').map(([k, v]) => [k, agentLine(v, 64)])) }
       : {}),
-    title: typeof o.title === 'string' ? o.title.slice(0, 80) : 'Suggestion',
-    explanation: typeof o.explanation === 'string' ? o.explanation.slice(0, 2000) : '',
+    // (a file can be written by anyone: its words as plain as an agent's on the panel)
+    title: (typeof o.title === 'string' && titleOf(o.title)) || 'Suggestion',
+    explanation: typeof o.explanation === 'string' ? fromAgent(o.explanation, 2000) : '',
     opsVersion: OPS_VERSION,
     ops: o.ops as Op[],
   };
