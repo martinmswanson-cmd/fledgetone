@@ -472,10 +472,28 @@ function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInst
   const bend = inst.bend;
   if (!bend || args[0] === 'plugin') return inst;
   let wheel: number | undefined;
-  inst.bend = (cents, time, live) => {
+  /**
+   * The song's centres sent ahead of their time (a bent note's end, sent with the note): a wheel
+   * moved before one comes is sent again there, so the song at rest leaves it where it's held.
+   */
+  let centres: number[] = [];
+  const now = () => liveMix.bus.context.currentTime;
+  inst.bend = (cents, time, live, cut) => {
+    if (cut) centres = centres.filter((t) => t < time);
     if (live) wheel = cents === 0 ? undefined : cents;
-    else if (cents !== 0) wheel = undefined;
-    bend(live || cents !== 0 ? cents : (wheel ?? 0), time, live);
+    else if (cents !== 0) {
+      wheel = undefined;
+      centres = centres.filter((t) => t < time);
+    } else if (time > now()) {
+      if (centres.length > 64) centres = centres.filter((t) => t > now());
+      centres.push(time);
+    }
+    bend(live || cents !== 0 ? cents : (wheel ?? 0), time, live, cut);
+    if (live) {
+      const at = now();
+      centres = centres.filter((t) => t > at);
+      for (const t of centres) bend(cents, t, live);
+    }
   };
   return inst;
 }
@@ -506,8 +524,10 @@ export function releaseAllLiveVoices(): void {
   for (const lt of live.values()) {
     safely(() => lt.instrument.releaseAll());
     lt.strip.resendPluginControls();
-    // A bend left by a clip's expression ends with playback
-    if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime));
+    // A bend left by a clip's expression ends with playback (with any sent for later: a note's
+    // slide), and so does the wheel played live: centred and forgotten (sent as the wheel's, so
+    // it isn't kept as the player's)
+    if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime, true, true));
   }
   letGo.forEach((l) => safely(l));
   // (Let go while playing, as Free memory does: its controllers are set again where the song is)

@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 import type { GlideRef } from '../instruments';
-import { legatoGlide, playMono } from './synths';
+import { bendSignal, legatoGlide, playMono } from './synths';
 
 /**
  * Funk Slap Bass (Monophonic)
@@ -61,7 +61,7 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
     // A key held on a MIDI keyboard: sounds until released
     attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
     release: (time: number) => synth.triggerRelease(time),
-    bend: (cents: number, time: number) => synth.detune.setTargetAtTime(cents, time, 0.005),
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bendSignal(synth.detune, cents, time, cut),
   };
 }
 

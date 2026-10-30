@@ -201,7 +201,11 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   which begins a note again in a clip of its own when its clip is over by the run-in), songDiff's
   note, clip and track ranges, duck.ts proxy spans, and an export's ring-out (`exportWav.ts
   heldPast`/`ringOutFor`: only past RING_OUT_MARGIN, so songs whose notes run on less than that,
-  all the starters, keep their exact length). Use clipSoundEnd, not `startBar + lengthBars`, for
+  all the starters, keep their exact length; the export dialog's ring-out wording reads the same
+  `ringOutPlan`, and a seamless loop's warm-up passes `loopTailSeconds` count it too, capped at
+  two minutes). The clip restartHeldNotes makes is `<id>~held` (`HELD_CLIP`): it keeps its clip's
+  groove, and the scheduler seeds its notes and counts its passes by its own clip
+  (`ownClipId` in noteChance.ts), so chance, Human drift and feel accents match. Use clipSoundEnd, not `startBar + lengthBars`, for
   where a clip stops sounding. A change of a proxy track (duck.ts) is heard wherever every other
   track dips (look-ahead, bridge, release, their tail: songDiff `proxyDucked`/`dipRange`).
 - **What B played is kept on each suggestion** (`playedB`, per version and render; songWatch.ts
@@ -512,19 +516,28 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   live (`bend(..., live = true)` from liveInput.ts) and live knobs (`cc(..., live = true)`) are
   sent again after the reset by `wamPlugin.ts`; where the song's bend is at rest the wheel stays
   as the player has it, and a clip lane on the same controller (or a song bend) takes it over.
-  A note's own bend on an instrument that bends as a whole is no longer sent all at the note's
-  start: `sendDue` sends each step a 256th note ahead from a Transport repeat (`stepper`, made only
-  when a clip has such notes, so other songs render as before), in time order with everything else
-  the instrument gets (the built-ins and samplers follow a bend from when it is sent, and keep one
-  bend value by call order). A jump (seek, loop wrap: `jumpAway`) leaves the note's bend where it is
-  (`cut`) until the instrument's next note or a clip bend lane (`endHolding`: the song's bend
-  there) or the note's end (`null` step: the song's bend there); Tone says "stop" then "start" at
-  one time on a seek, so `bentNotes` is only cleared on a real stop (`stoppedAt`) or when every
-  voice is let go (`onVoicesLetGo` from `releaseAllLiveVoices`: Stop, Pause, Free memory;
-  `forgetNotes` centres after the last step already sent). `holdTrack` (unmute, solo, plugin
+  A note's own bend on an instrument that bends as a whole is sent in full when the note starts,
+  on the audio clock (`playExpressive`), so a stalled main thread can't hold a slide up and a
+  render's ring-out (its Transport stopped at the range end) hears it to its end. Every
+  instrument with `bend` that has no per-note voices keeps its bends by time
+  (`src/audio/bendTimeline.ts`: poly.ts, designer.ts, edmBass.ts, bass808Designer.ts,
+  sampleKits.ts' Multi, samplerManager.ts; the Tone synths' detune and the plugins' timed MIDI
+  already were): a note starts at the bend in force when it starts and follows the ones sent for
+  later. `bend(cents, time, live, cut)`: `cut` drops the bends sent for `time` and after first
+  (`cancelScheduledValues`, `dropBendsAfter` in builtinHost.ts and the worklet's `dropBends`; a
+  plugin without it has each later bend followed by the held one). A jump (seek, loop wrap:
+  `jumpAway`) cuts and holds the note's bend until the instrument's next note or a clip bend lane
+  (`endHolding`, sent with `cut`) or the note's end (the song's bend there, sent at the jump);
+  Tone says "stop" then "start" at one time on a seek, so `bentNotes` is only cleared on a real
+  stop (`stoppedAt`) or when every voice is let go (`onVoicesLetGo`). Stop, Pause and Free
+  memory (`releaseAllLiveVoices`) send every instrument a centred, `live`, `cut` bend: the bends
+  to come go, and the player's wheel is centred and forgotten. `holdTrack` (unmute, solo, plugin
   ready) keeps a sounding note's bend. The live wheel on built-ins and samplers is kept by
   `liveInstrument` in liveTracks.ts (the plugin does it itself): a song bend of centre sends the
-  wheel's instead. Check with scripts/audio-check/live-controllers.cjs.
+  wheel's instead, and a centre sent ahead (a bent note's end) gets the wheel sent again there
+  when it moves. An MPE note's own bend on such an instrument is sent `live` and ends with the
+  note (`endMpeBend` in liveInput.ts: back to another bent MPE note's, else the master wheel).
+  Check with scripts/audio-check/live-controllers.cjs.
   The export dialog memoises its frames and ring-out (`useMemo`), and `withControllerLanes`
   without a memo reuses each track's lanes for the same track object (`lastLanes`), so the
   tails, the render's plan and the dialog don't merge long recorded lanes again each time.

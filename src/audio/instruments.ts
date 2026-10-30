@@ -91,8 +91,11 @@ export interface TrackInstrument {
   /**
    * Pitch bend in cents, for the instruments whose voices can bend (the others ignore it).
    * `live`: the wheel on the player's keyboard (a plugin keeps it where the song's bend is at rest).
+   * Bends may be sent well ahead of their time (a note's whole slide when it starts), and a note
+   * starts at the bend in force when it starts (see bendTimeline.ts). `cut`: the bends sent for
+   * `time` and after are dropped first (a jump, Stop).
    */
-  bend?: (cents: number, time: number, live?: boolean) => void;
+  bend?: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
   /**
    * The mod wheel as dynamics (0 soft to 1 loud) from `time`, for instruments recorded at several
    * loudnesses (InstrumentDef.dynamics): played instead of the wheel's vibrato. null: no wheel.
@@ -382,7 +385,7 @@ interface MonoVoice {
   trigger: (note: string, d: string, t: number, v: number) => void;
   attack: (note: string, t: number, v: number) => void;
   release: (t: number) => void;
-  bend: (cents: number, t: number) => void;
+  bend: (cents: number, t: number, live?: boolean, cut?: boolean) => void;
   releaseAll: () => void;
   dispose: () => void;
 }
@@ -434,7 +437,7 @@ function create808Instrument(output: Tone.InputNode, options: InstrumentOptions)
   return {
     play: (notes, time) => (useDesigned ? getDesigned().play(notes, time) : getLegacy().play(notes, time)),
     noteOn: (n, time) => (useDesigned ? getDesigned().hold(n, time) : getLegacy().noteOn!(n, time)),
-    bend: (cents, time) => (useDesigned ? getDesigned().bend(cents, time) : getLegacy().bend?.(cents, time)),
+    bend: (cents, time, live, cut) => (useDesigned ? getDesigned().bend(cents, time, live, cut) : getLegacy().bend?.(cents, time, live, cut)),
     setBass808: (settings) => {
       if (!!settings !== useDesigned) {
         useDesigned = !!settings;
@@ -462,7 +465,7 @@ function create808Instrument(output: Tone.InputNode, options: InstrumentOptions)
 
 /** A pool synth (chords): a held key gets a voice of its own until it's let go. */
 function poly(
-  synth: { attack: (note: string, t: number, v: number) => { release: (t: number) => void }; bend: (cents: number, t: number) => void },
+  synth: { attack: (note: string, t: number, v: number) => { release: (t: number) => void }; bend: (cents: number, t: number, live?: boolean, cut?: boolean) => void },
   base: Omit<TrackInstrument, 'noteOn' | 'bend'>
 ): TrackInstrument {
   return {

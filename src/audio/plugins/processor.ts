@@ -28,7 +28,7 @@
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
-import { insertTimedEvent } from '../legato';
+import { insertTimedEvent, isBendAfter } from '../legato';
 
 /** A plugin playing a sample at or past this (+60 dBFS), or NaN, has blown up (see the guard in the processor). */
 export const BLOWN_UP = 1000;
@@ -51,6 +51,7 @@ const BLOWN = ${BLOWN_UP};
 const CEILING = ${OUTPUT_CEILING};
 const families = new Map();
 const insertTimedEvent = ${insertTimedEvent.toString()};
+const isBendAfter = ${isBendAfter.toString()};
 
 /** The family's shared instance, made with its first plugin; counted, so the last to go lets it go. */
 function familyOf(name, module) {
@@ -325,6 +326,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'synced', id: d.id });
     } else if (d.type === 'clear') {
       this.events.length = 0;
+    } else if (d.type === 'dropBends') {
+      // (A jump or Stop: a note's slide still to come goes, see TrackInstrument.bend)
+      this.events = this.events.filter((ev) => !isBendAfter(ev, d.after));
     } else if (d.type === 'legacy') {
       // (As at the start: an older saved sound with only its first "count" values just went in)
       if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);

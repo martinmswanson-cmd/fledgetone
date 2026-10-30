@@ -60,3 +60,12 @@ export function insertTimedEvent(events: TimedEvent[], ev: TimedEvent, join: num
   }
   events.splice(i, 0, ev);
 }
+
+/**
+ * Whether `ev` is a pitch bend for `time` or after (dropped at a jump or Stop: see
+ * TrackInstrument.bend). Sent to the plugins' AudioWorklet as source text, like insertTimedEvent.
+ */
+export function isBendAfter(ev: TimedEvent, time: number): boolean {
+  const b = ev.type === 'wam-midi' ? (ev.data as { bytes?: number[] } | undefined)?.bytes : undefined;
+  return !!b && (b[0] & 0xf0) === 0xe0 && ev.time >= time;
+}

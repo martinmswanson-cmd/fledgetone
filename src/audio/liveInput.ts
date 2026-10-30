@@ -67,7 +67,20 @@ const holding = new Map<number, string>();
  * its own, see TrackInstrument.noteVoice). Channel 1 (0 here) is the keyboard's master channel:
  * its bend moves every note.
  */
-const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null }>();
+const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null; bent?: { instrument: TrackInstrument; cents: number } }>();
+/** The bend of the wheel that bends every note (the keyboard's, or MPE's master channel), in cents. */
+let masterWheel = 0;
+/**
+ * An MPE note bent on an instrument that bends as a whole has ended: its bend ends with it. The
+ * instrument goes back to another such note's bend if one still sounds, else to the master wheel.
+ */
+function endMpeBend(channel: number): void {
+  const bent = mpeNotes.get(channel)?.bent;
+  mpeNotes.delete(channel);
+  if (!bent) return;
+  const other = [...mpeNotes.values()].reverse().find((m) => m.bent?.instrument === bent.instrument);
+  safely(() => bent.instrument.bend?.(other?.bent?.cents ?? masterWheel, liveNow(), true));
+}
 /** Let go while the sustain pedal was down: ended when it comes up. */
 const sustained = new Map<number, NoteOff>();
 let pedal = false;
@@ -186,7 +199,7 @@ export function playMidi(message: MidiMessage, heard: number): void {
     case 'noteOff': {
       emitNote({ on: false, midi: message.note, velocity: 0 });
       noteRepeatOff(message.note);
-      if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
+      if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) endMpeBend(message.channel);
       const off = held.get(message.note);
       if (!off) {
         // (Nothing sounding to hold on: a muted track's key lets go of its effect too, once the
@@ -219,13 +232,18 @@ export function playMidi(message: MidiMessage, heard: number): void {
         // An MPE note's own bend (its range is 48 semitones)
         const cents = (message.cents / PITCH_BEND_RANGE_CENTS) * MPE_BEND_RANGE_CENTS;
         if (own.voice) safely(() => own.voice!.bend(cents, now));
-        else if (instrument?.bend) safely(() => instrument.bend!(cents, now, true));
+        else if (instrument?.bend) {
+          // (Sent as played, so the song's bend at rest leaves it; it ends with the note, see endMpeBend)
+          safely(() => instrument.bend!(cents, now, true));
+          own.bent = { instrument, cents };
+        }
         recorded = { kind: 'noteExpr', note: own.note, lane: 'bend', value: cents / 100 };
         break;
       }
       // In MPE only the master channel bends every note: a member channel with no note held
       // (its bend comes just before the note, or after it ended) bends nothing
       if (useMidiStore.getState().mpe && message.channel) break;
+      masterWheel = message.cents;
       if (instrument?.bend) safely(() => instrument.bend!(message.cents, now, true));
       break;
     }
@@ -263,7 +281,9 @@ export function releaseLiveNotes(): void {
   held.clear();
   sustained.clear();
   holding.clear();
-  mpeNotes.clear();
+  // (Stop and Pause centre the wheels too, see releaseAllLiveVoices)
+  masterWheel = 0;
+  for (const channel of [...mpeNotes.keys()]) endMpeBend(channel);
   pedal = false;
 }
 

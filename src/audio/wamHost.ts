@@ -19,6 +19,8 @@ export interface WamInstance {
     getParameterValues?: (normalized?: boolean, ...ids: string[]) => Promise<Record<string, { id: string; value: number; normalized?: boolean }>>;
     scheduleEvents?: (...events: unknown[]) => void;
     clearEvents?: () => void;
+    /** Drop the pitch bends still to come from `time` on (the built-in plugins) */
+    dropBendsAfter?: (time: number) => void;
     getState?: () => Promise<unknown>;
     /** The settings at once (the built-in plugins can say without asking the audio thread) */
     getStateNow?: () => unknown;

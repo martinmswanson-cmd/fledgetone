@@ -23,6 +23,7 @@ import { BLEND_ZONE, chooseExportDecodes, COPY_SEMITONES, decodeRateOf, OVERSAMP
 import type { RecordingIndex, SongNotes, TrackPlan } from './songSamples';
 import { clearCopies, copyBytes, copySet, dropCopy, forgetCopiesOf, makeCopy, onCopyMade, setCopyCap, type CopySet, type CopyWish } from './pitchedCopies';
 import { stretchOutline } from './resampler';
+import { createBendTimeline } from '../bendTimeline';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -977,8 +978,8 @@ export interface SamplerVoice {
   /** A key held on a MIDI keyboard: `note` sounds from `time` until released. */
   attack: (note: string, time: number, velocity: number) => void;
   release: (note: string, time: number) => void;
-  /** Pitch bend in cents from `time`: every sounding note, and the notes after, play that far off. */
-  bend: (cents: number, time: number) => void;
+  /** Pitch bend in cents from `time`: every sounding note, and the notes after, play that far off (`cut`: see TrackInstrument.bend). */
+  bend: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
   /**
    * The mod wheel as dynamics (0 soft to 1 loud), from `time`, for an instrument recorded at several
    * loudnesses (InstrumentDef.dynamics); null hands loudness back to each note's velocity.
@@ -1699,7 +1700,7 @@ function samplerVoice(
   const readied = new Map<AudioBuffer, Map<number, CopyWish>>();
   const pitched = (buffer: AudioBuffer, interval: number, frac = 0, need = Infinity, offset = 0): { buffer: AudioBuffer; rate: number; k: number } => {
     const residual = Math.abs(frac) < 1e-9 ? 1 : 2 ** (frac / 12);
-    if (interval !== 0 && Math.abs(interval) <= COPY_SEMITONES && (wide || (residual === 1 && bendRatio === 1))) {
+    if (interval !== 0 && Math.abs(interval) <= COPY_SEMITONES && (wide || (residual === 1 && bendNow === 1))) {
       const wish = readied.get(buffer)?.get(interval) ?? wishOf(buffer, 2 ** (interval / 12), playRate, wide);
       const copy = copies.find(buffer, wish);
       // (the start of a recording only where it lasts as long as this note sounds: else the recording)
@@ -1789,9 +1790,40 @@ function samplerVoice(
   /** The last chord strummed (a guitar's: the next one's direction follows the hand) */
   let lastStrum: LastStrum | null = null;
   const sounding: Sounding[] = [];
-  let bendRatio = 1;
+  /**
+   * The pitch bend by time (cents): a note starts at the one in force then and follows the ones
+   * sent for later (see bendTimeline.ts); `bendNow`, as a rate, for the note being started.
+   */
+  const bends = createBendTimeline();
+  const ratioAt = (time: number) => 2 ** (bends.at(time) / 1200);
+  let bendNow = 1;
   const prune = (time: number) => {
     for (let i = sounding.length - 1; i >= 0; i--) if (sounding[i].until < time) sounding.splice(i, 1);
+  };
+
+  /** Bend `s` to `ratio` times its unbent rate from `time`. */
+  const bendSound = (s: Sounding, ratio: number, time: number) => {
+    s.src.playbackRate.setTargetAtTime(s.base * ratio, time, 0.005);
+    s.pair?.src.playbackRate.setTargetAtTime(s.pair.base * ratio, time, 0.005);
+    if (time > s.last) s.played += (time - s.last) * s.rate;
+    s.last = Math.max(s.last, time);
+    s.rate = s.base * ratio;
+    // A held key rings until its recording runs out at the new speed
+    // (Each recording by its own loop: in a pair one can loop while the other runs out)
+    if (s.until === Infinity) {
+      const mainLoops = s.pair ? s.pair.mainLooping : s.looping;
+      if (!mainLoops && s.src.buffer) s.src.stop(time + Math.max(0, audibleEnd(s.src.buffer) - s.played) / s.rate);
+      // The louder recording plays at its own speed from its own start: how far it has got
+      const p = s.pair;
+      if (p && !p.looping && p.src.buffer) {
+        const played = p.from + (s.played - p.mainFrom) * (p.base / s.base);
+        p.src.stop(time + Math.max(0, audibleEnd(p.src.buffer) - played) / (p.base * ratio));
+      }
+    }
+  };
+  /** The bends sent for after `from`, on a note just started (see bendTimeline.ts) */
+  const follow = (s: Sounding, from: number) => {
+    for (const [t, cents] of bends.after(from)) bendSound(s, 2 ** (cents / 1200), t);
   };
 
   /** Fade `s` out quickly from `at` (its place taken by a newer note), and stop it. */
@@ -1893,6 +1925,7 @@ function samplerVoice(
       upper = null;
     }
     const frac = midiFloat - midi;
+    bendNow = ratioAt(Math.max(at, raw.currentTime));
     // (how long it sounds: to its key's release and its release's end)
     const need = hold - Math.max(at, raw.currentTime) + afterRelease();
     const main = pitched(found.buffer, found.interval, frac, need, offset);
@@ -1925,11 +1958,11 @@ function samplerVoice(
     const play = ({ buffer, rate, k }: ReturnType<typeof pitched>, to: AudioNode, extra: AudioNode[] = []) => {
       const src = raw.createBufferSource();
       src.buffer = buffer;
-      src.playbackRate.value = rate * bendRatio;
+      src.playbackRate.value = rate * bendNow;
       src.connect(to);
       const from = Math.min(offset / k, audibleEnd(buffer) / 2);
       src.start(when, from);
-      let end = when + (audibleEnd(buffer) - from) / (rate * bendRatio);
+      let end = when + (audibleEnd(buffer) - from) / (rate * bendNow);
       // Held past the end of its recording: it loops its steady stretch until it's released
       const loop = loopsOf.get(buffer);
       if (loop && hold > end - 0.5 && loop[0] > from) {
@@ -1962,10 +1995,10 @@ function samplerVoice(
       const hiBase = hi.rate;
       const two = play(hi, loud, [loud, done]);
       // (`played` and `from` count the main copy's own seconds; the louder one's, its own: see bend)
-      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: main.buffer, pair: { src: two.src, base: hiBase, soft, loud, low, from: two.from, mainFrom: one.from, looping: two.end === Infinity, mainLooping: one.end === Infinity } };
+      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendNow, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: main.buffer, pair: { src: two.src, base: hiBase, soft, loud, low, from: two.from, mainFrom: one.from, looping: two.end === Infinity, mainLooping: one.end === Infinity } };
     } else {
       const one = play(main, gain, [gain]);
-      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: main.buffer };
+      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendNow, releasedAt: Infinity, looping: one.end === Infinity, buffer: main.buffer };
     }
     if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
     // The same string picked again as it was let go: no damping sound (see comingReleases)
@@ -1978,6 +2011,7 @@ function samplerVoice(
     }
     makeRoom(note, when);
     sounding.push(s);
+    follow(s, when);
     return s;
   };
 
@@ -2038,15 +2072,17 @@ function samplerVoice(
     const when = Math.max(at, raw.currentTime);
     const from = 2 ** ((interval * PORTAMENTO_REACH) / 12);
     for (const [src, base] of [[next.src, next.base], ...(next.pair ? [[next.pair.src, next.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
-      const rate = base * bendRatio;
+      const rate = base * ratioAt(when);
       src.playbackRate.cancelScheduledValues(when);
       src.playbackRate.setValueAtTime(rate * from, when);
       src.playbackRate.exponentialRampToValueAtTime(rate, when + glide);
     }
     const toward = 2 ** ((-interval * (1 - PORTAMENTO_REACH)) / 12);
     for (const [src, base] of [[old.src, old.base], ...(old.pair ? [[old.pair.src, old.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
-      src.playbackRate.setTargetAtTime(base * bendRatio * toward, when, glide / 3);
+      src.playbackRate.setTargetAtTime(base * ratioAt(when) * toward, when, glide / 3);
     }
+    // (The bends sent for later, which the slide's start dropped)
+    follow(next, when);
   };
 
   let releaseTurn = 0;
@@ -2181,30 +2217,13 @@ function samplerVoice(
       const s = start(note, time, velocity, 0, 0, Infinity);
       if (s) s.until = Infinity;
     },
-    bend: (cents, time) => {
+    bend: (cents, time, _live, cut) => {
       const next = 2 ** (cents / 1200);
-      if (Math.abs(next - bendRatio) < 1e-6) return;
       prune(time);
-      for (const s of sounding) {
-        s.src.playbackRate.setTargetAtTime(s.base * next, time, 0.005);
-        s.pair?.src.playbackRate.setTargetAtTime(s.pair.base * next, time, 0.005);
-        if (time > s.last) s.played += (time - s.last) * s.rate;
-        s.last = Math.max(s.last, time);
-        s.rate = s.base * next;
-        // A held key rings until its recording runs out at the new speed
-        // (Each recording by its own loop: in a pair one can loop while the other runs out)
-        if (s.until === Infinity) {
-          const mainLoops = s.pair ? s.pair.mainLooping : s.looping;
-          if (!mainLoops && s.src.buffer) s.src.stop(time + Math.max(0, audibleEnd(s.src.buffer) - s.played) / s.rate);
-          // The louder recording plays at its own speed from its own start: how far it has got
-          const p = s.pair;
-          if (p && !p.looping && p.src.buffer) {
-            const played = p.from + (s.played - p.mainFrom) * (p.base / s.base);
-            p.src.stop(time + Math.max(0, audibleEnd(p.src.buffer) - played) / (p.base * next));
-          }
-        }
-      }
-      bendRatio = next;
+      if (cut) for (const s of sounding) for (const src of sourcesOf(s)) src.playbackRate.cancelScheduledValues(time);
+      else if (Math.abs(next - ratioAt(time)) < 1e-6) return;
+      bends.set(cents, time, cut);
+      for (const s of sounding) bendSound(s, next, time);
     },
     dynamics: (value, time) => {
       dyn = value === null ? null : Math.max(0, Math.min(1, value));

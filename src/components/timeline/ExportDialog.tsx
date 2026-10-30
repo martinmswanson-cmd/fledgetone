@@ -21,7 +21,7 @@ import {
   renderIntroLoop,
   renderStems,
   ditherSeedOf,
-  ringOutSeconds,
+  ringOutPlan,
   SAMPLE_RATES,
   lossyRate,
   channelsOf,
@@ -393,7 +393,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           : `${fileBase}.${ext}`;
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * exportRate);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const tail = useMemo(() => ringOutSeconds(masterFx, tracks, tempo, undefined, clips), [masterFx, tracks, tempo, clips, roomLength]);
+  // (As the render works it out: tails, and notes sounding on past the range's end)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ringOut = useMemo(() => ringOutPlan(planned), [planned, roomLength]);
 
   // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
   const startExport = () => countedRender(async () => {
@@ -685,11 +687,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const rangeDetail = game
     ? `For games: an intro (${formatBarRange(1, loop.inBar)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (${loopRange}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
     : range === 'song'
-      ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(1, 1 + songBars, tempo)}.`
-      : `${loopRange.charAt(0).toUpperCase()}${loopRange.slice(1)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
+      ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} ${songBars === 1 ? 'bar' : 'bars'}, ${lengthLabel(1, 1 + songBars, tempo)}.`
+      : `${loopRange.charAt(0).toUpperCase()}${loopRange.slice(1)}: ${formatBarCount(loopBars)} ${loopBars === 1 ? 'bar' : 'bars'}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
-      ? `Plays the range once, then lets release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(tail)} s after the range.`
+      ? `Plays the range once, then lets ${ringOut.notesPlayOn ? 'notes still sounding at its end play on to their own ends, and their ' : ''}release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(Math.ceil(ringOut.seconds * 10) / 10)} s after the range.`
       : ending === 'exact'
         ? `Exactly the range, ${frames.toLocaleString()} samples, with a 5 ms fade at the very end so it doesn't click.`
         : `Exactly one loop, ${frames.toLocaleString()} samples. Its start already holds what rings on from the pass before, so it repeats without a gap or click. (Renders ${passes} passes and keeps the last.)`;

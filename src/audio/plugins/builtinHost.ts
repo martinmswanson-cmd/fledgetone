@@ -5,6 +5,7 @@ import { GPL_FAMILY_NAMES } from './pluginCatalog';
 import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
 import { presetFilePath } from '../runtimePlugins';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
+import { isBendAfter, type TimedEvent } from '../legato';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
 import { OUTPUT_TRIMS_DB, ownMemoryFor, PARAM_LIMITS } from './paramLimits';
@@ -380,6 +381,11 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     clearEvents: () => {
       pending = [];
       if (!destroyed) node.port.postMessage({ type: 'clear' });
+    },
+    dropBendsAfter: (time: number) => {
+      pending = pending.filter((e) => !isBendAfter(e as TimedEvent, time));
+      flush();
+      if (!destroyed) node.port.postMessage({ type: 'dropBends', after: time });
     },
     getState: async (): Promise<BuiltinState> => stateNow(),
     getStateNow: (): BuiltinState => stateNow(),

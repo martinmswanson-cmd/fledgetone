@@ -464,7 +464,7 @@ test('a note held from before the run-in begins again at its start, for what is 
 test("a restarted note's Human seed and feel come from where it really begins", () => {
   const src = readFileSync(new URL('../src/audio/scheduler.ts', import.meta.url), 'utf8');
   assert.match(src, /const own = note\.heldFrom !== undefined \? barToTicks\(note\.heldFrom\) : tick;/);
-  assert.match(src, /noteSeed\(clip\.id, note\.note, own\)/);
+  assert.match(src, /noteSeed\(ownClipId\(clip\.id\), note\.note, own\)/);
   assert.match(src, /feelVelocity\(feel, note\.velocity, own,/);
   assert.match(src, /posOf\(own\)/);
 });

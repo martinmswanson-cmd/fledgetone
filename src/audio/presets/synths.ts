@@ -19,14 +19,23 @@ import type { GlideRef } from '../instruments';
 interface HeldSynth {
   triggerAttack: (note: Tone.Unit.Frequency, time?: Tone.Unit.Time, velocity?: number) => unknown;
   triggerRelease: (time?: Tone.Unit.Time) => unknown;
-  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown };
+  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown; cancelScheduledValues: (time: Tone.Unit.Time) => unknown };
+}
+
+/**
+ * Bend a whole synth's detune (cents) from `time`: it's on the audio clock, so a bend sent ahead of
+ * its time moves every note sounding then. `cut`: the bends set for after `time` go first.
+ */
+export function bendSignal(detune: HeldSynth['detune'], cents: number, time: number, cut?: boolean): void {
+  if (cut) detune.cancelScheduledValues(time);
+  detune.setTargetAtTime(cents, time, 0.005);
 }
 
 function heldNote(synth: HeldSynth, safeTime: (time?: Tone.Unit.Time) => number) {
   return {
     attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
     release: (time: number) => synth.triggerRelease(time),
-    bend: (cents: number, time: number) => synth.detune.setTargetAtTime(cents, time, 0.005),
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bendSignal(synth.detune, cents, time, cut),
   };
 }
 

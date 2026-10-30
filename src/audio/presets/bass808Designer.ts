@@ -7,6 +7,7 @@ import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
 import type { Bass808Settings } from '../../store/bass808';
 import { defaultBass808, tuneNote } from '../../store/bass808';
+import { createBendTimeline } from '../bendTimeline';
 
 /**
  * The designed 808 (an 808 Bass track with Track.bass808 set; see bass808.ts): a sine with a
@@ -79,7 +80,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
   const voices = createVoiceSet(raw);
   let settings = initial ?? defaultBass808();
   let current: Voice808 | null = null;
-  let bendCents = 0;
+  /** The pitch bend (cents) by time: a note starts at the one in force then and follows the ones sent for later (see bendTimeline.ts) */
+  const bends = createBendTimeline();
 
   const playNote = (n: PlayableNote, time: number): Voice808 | undefined => {
     const s = settings;
@@ -118,7 +120,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     // The previous note (ringing on after its end) gives way quickly: one 808 at a time
     if (current && current.stopAt > from) voices.release(current, from, 0.015);
 
-    const osc = createOsc(raw, 'sine', s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq, from, bendCents);
+    const osc = createOsc(raw, 'sine', s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq, from, bends.at(start));
+    for (const [t, cents] of bends.after(start)) osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t - lead), 0.006);
     if (s.punch > 0) osc.frequency.exponentialRampToValueAtTime(freq, from + s.punchTime);
     const env = raw.createGain();
     const peak = PEAK * (0.35 + 0.65 * n.velocity);
@@ -185,10 +188,11 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
         voice.end = t;
       };
     },
-    bend: (cents: number, time: number) => {
-      if (Math.abs(cents - bendCents) < 0.01) return;
-      bendCents = cents;
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
       const t = notLate(bus.context, time);
+      if (cut) current?.osc.detune.cancelScheduledValues(Math.max(raw.currentTime, t - current.lead));
+      else if (Math.abs(cents - bends.at(t)) < 0.01) return;
+      bends.set(cents, t, cut);
       if (current && current.stopAt > t) current.osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t - current.lead), 0.006);
     },
     setSettings: (next: Bass808Settings | undefined) => {
