@@ -28,7 +28,10 @@ mda.wasm: the mda plug-ins (MIT; offered by the author under MIT or GPL 2+)
 ============================================================
 Copyright (c) 2008 Paul Kellett, https://sourceforge.net/projects/mda-vst/
 The plug-in base class they are built against here is Fledgetone's own (MIT). Modified: the
-Piano no longer zeroes a sample where its voices' sum goes over 2 (scripts/plugins/mda/mdaPiano-loud.patch).
+Piano no longer zeroes a sample where its voices' sum goes over 2 (scripts/plugins/mda/mdaPiano-loud.patch);
+the DX10, EPiano, JX10 and Piano take Reset All Controllers (CC 121), putting their wheels, bend,
+pressure, volume and sustain pedal back where a fresh copy has them
+(scripts/plugins/mda/mdaDX10-reset.patch, mdaEPiano-reset.patch, mdaJX10-reset.patch, mdaPiano-reset.patch).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

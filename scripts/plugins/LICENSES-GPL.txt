@@ -10,7 +10,8 @@ surge.wasm and surge-patches/: Surge XT (GPL-3.0)
 Copyright 2005-2026 by various authors, as described by the git history of
 https://github.com/surge-synthesizer/surge (the Surge Synth Team; originally Vember Audio's Surge
 by Claes Johanson). Its factory patches are by the Surge Synth Team and contributors (a few are
-shown under other names in the app). Built with its libraries: the sst-* libraries (GPL-3.0 and
+shown under other names in the app, and a few have plainer file names). Modified: built without
+its plug-in and editor parts, with Fledgetone's own host code (scripts/plugins/surge/). Built with its libraries: the sst-* libraries (GPL-3.0 and
 MIT), Airwindows (MIT), Mutable Instruments eurorack code (MIT), tuning-library (MIT), PFFFT
 (BSD), fmt (MIT), zstd (BSD), sqlite (public domain), PEGTL (MIT), simde (MIT), binn (Apache-2.0).
 

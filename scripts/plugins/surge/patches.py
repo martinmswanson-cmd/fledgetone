@@ -3,9 +3,11 @@
 
 Every factory patch but the templates and tutorials, one .fxp per patch, by category. A few are
 renamed: the app names no artists, songs, people or products, and drops a few crude jokes (the
-patch inside is unchanged; the app shows the file's name).
+patch inside is unchanged; the app shows the file's name). A name with characters a web server
+may read wrongly in a path (+, &, quotes, letters outside ASCII) is written to a plain file name
+instead, and shown by its own name: families.json's "shownAs" (file name: name shown).
 """
-import os, shutil, sys
+import json, os, re, shutil, sys
 SRC = os.path.join(sys.argv[1], 'resources/data/patches_factory')
 OUT = sys.argv[2]
 SKIP_CATEGORIES = {'Templates', 'Tutorials'}
@@ -21,6 +23,10 @@ RENAME = {
     'Polysynths/Xpander 1': 'Expander 1', 'Polysynths/Xpander 2': 'Expander 2', 'Polysynths/Separate Ways': 'Arena Synth',
     'Sequences/I Want To Get Well': 'Get Well',
 }
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'families.json')) as f:
+    SHOWN_AS = next(fam for fam in json.load(f) if fam['family'] == 'surge')['presets']['Surge XT'].get('shownAs', {})
+FILE_OF = {shown: file for file, shown in SHOWN_AS.items()}
+SAFE = re.compile(r'[A-Za-z0-9 ._/-]+')
 if os.path.isdir(OUT):
     shutil.rmtree(OUT)
 n = 0
@@ -33,7 +39,11 @@ for cat in sorted(os.listdir(SRC)):
         key = f'{cat}/{f[:-4]}'
         if key in DROP:
             continue
+        shown = f'{cat}/{RENAME.get(key, f[:-4])}'
+        name = FILE_OF.get(shown, shown)
+        if not SAFE.fullmatch(name):
+            sys.exit(f'"{shown}": give it a plain file name in families.json\'s "shownAs"')
         os.makedirs(os.path.join(OUT, cat), exist_ok=True)
-        shutil.copy(os.path.join(SRC, cat, f), os.path.join(OUT, cat, RENAME.get(key, f[:-4]) + '.fxp'))
+        shutil.copy(os.path.join(SRC, cat, f), os.path.join(OUT, name + '.fxp'))
         n += 1
 print(n, 'patches')

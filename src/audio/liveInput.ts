@@ -247,7 +247,8 @@ export function playMidi(message: MidiMessage, heard: number): void {
       break;
     case 'cc':
       // (A plugin gets it as MIDI; a mapped setting has already followed it, see midiLearn.ts)
-      if (instrument?.cc) safely(() => instrument.cc!(message.cc, message.value, now));
+      // (Played live: kept as the player left it where the song resets the controllers, see wamPlugin.ts)
+      if (instrument?.cc) safely(() => instrument.cc!(message.cc, message.value, now, true));
       break;
   }
   recordMidi(recorded, heard);

@@ -156,3 +156,28 @@ test("an MPE keyboard's per-note bend and pressure are recorded into the notes",
   assert.deepEqual(e4.expr.bend, [{ at: 0, value: 0 }, { at: 0.25, value: 2 }]);
   assert.deepEqual(c4.expr, { pressure: [{ at: 0.125, value: 0.4 }] });
 });
+
+test('long volume and expression lanes are combined quickly, and a fader or pan change keeps them', () => {
+  // 64 bars of CC 7 and CC 11 at 100 points a bar each (a recorded knob): was seconds, every pan change
+  const clips = [];
+  for (let c = 0; c < 8; c++) {
+    const cc7 = [];
+    const cc11 = [];
+    for (let i = 0; i <= 800; i++) {
+      cc7.push({ at: i / 100, value: 0.6 + 0.3 * Math.sin(i / 7) });
+      cc11.push({ at: (i + 0.5) / 100, value: 0.5 + 0.4 * Math.sin(i / 5) });
+    }
+    clips.push({ ...clip(1 + c * 8, { cc7, cc11 }), id: `long${c}`, lengthBars: 8 });
+  }
+  const t0 = performance.now();
+  const memo = controllerMemo();
+  const [first] = withControllerLanes([track()], clips, memo);
+  assert.ok(performance.now() - t0 < 1000);
+  const t1 = performance.now();
+  const [moved] = withControllerLanes([track({ pan: 0.5, volume: -10 })], clips, memo);
+  assert.ok(performance.now() - t1 < 100);
+  // The same lanes as made afresh, with the track's new setting in front
+  assert.deepEqual(moved, withControllerLanes([track({ pan: 0.5, volume: -10 })], clips)[0]);
+  assert.notDeepEqual(moved.automation[0].points[0], first.automation[0].points[0]);
+  assert.equal(moved.pan, 0.5);
+});

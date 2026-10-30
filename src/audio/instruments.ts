@@ -95,8 +95,8 @@ export interface TrackInstrument {
    * loudnesses (InstrumentDef.dynamics): played instead of the wheel's vibrato. null: no wheel.
    */
   dynamics?: (value: number | null, time: number) => void;
-  /** A MIDI controller (0 to 119) moved to `value` (0 to 1): plugins get it as MIDI. */
-  cc?: (cc: number, value: number, time: number) => void;
+  /** A MIDI controller (0 to 119) moved to `value` (0 to 1): plugins get it as MIDI (`live`: from the player's keyboard). */
+  cc?: (cc: number, value: number, time: number, live?: boolean) => void;
   /**
    * Reset All Controllers (CC 121) at `time`. True if that puts every controller back where the
    * fresh plugin has it (see resetsFresh in ccHold.ts); false where it may not.

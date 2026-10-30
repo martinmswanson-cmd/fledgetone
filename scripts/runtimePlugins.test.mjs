@@ -42,3 +42,27 @@ test('a GPL plugin is told apart, and the patch it starts on goes in with it', a
     ['gpl/surge.wasm', 'gpl/surge.wasm'],
   ]);
 });
+
+test('every preset file is there, under a plain file name a web server reads as it is', async () => {
+  const { existsSync } = await import('node:fs');
+  const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
+  const { presetFilePath } = await import('../src/audio/runtimePlugins.ts');
+  let n = 0;
+  for (const f of [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES])
+    for (const p of f.plugins) {
+      if (!p.presetFiles) continue;
+      for (const name of p.presetFiles.names) {
+        const { path, url } = presetFilePath(p.presetFiles, name);
+        assert.ok(existsSync(new URL(`../public/fledgetone-plugins/${path}`, import.meta.url)), path);
+        // (Only spaces escaped: what decodeURI and every static server give back as the file)
+        assert.match(url, /^[A-Za-z0-9%._/-]+$/, url);
+        assert.equal(decodeURI(url), path);
+        n++;
+      }
+    }
+  assert.ok(n > 600);
+  const surge = GPL_PLUGIN_FAMILIES.find((f) => f.family === 'surge').plugins[0].presetFiles;
+  // (Saved songs name the patch as shown: those keep finding it)
+  assert.deepEqual(presetFilePath(surge, 'Splits/Bass+Drums'), { path: 'gpl/surge-patches/Splits/Bass and Drums.fxp', url: 'gpl/surge-patches/Splits/Bass%20and%20Drums.fxp' });
+  assert.equal(presetFilePath(surge, 'Sequences/S&H Classic').url, 'gpl/surge-patches/Sequences/S%20and%20H%20Classic.fxp');
+});

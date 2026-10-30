@@ -8,8 +8,8 @@ export const GPL_PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0",
   "gpl": true,
   "file": "gpl/surge.wasm",
-  "bytes": 5884680,
-  "hash": "6f9512005910",
+  "bytes": 5885295,
+  "hash": "d50db9383f4a",
   "plugins": [
    {
     "name": "Surge XT",
@@ -627,7 +627,17 @@ export const GPL_PLUGIN_FAMILIES: PluginFamily[] = [
       "Winds/Flute 2",
       "Winds/Low",
       "Winds/Tragic Winds"
-     ]
+     ],
+     "files": {
+      "Basses/Mmm... Pointy!": "Basses/Mmm Pointy",
+      "Leads/µcomputer": "Leads/Microcomputer",
+      "MPE/Pad Plink 'n' Move": "MPE/Pad Plink n Move",
+      "Plucks/Lil' Exploders": "Plucks/Lil Exploders",
+      "Polysynths/Keep 'em Coming": "Polysynths/Keep em Coming",
+      "Polysynths/Ol' Sampler": "Polysynths/Ol Sampler",
+      "Sequences/S&H Classic": "Sequences/S and H Classic",
+      "Splits/Bass+Drums": "Splits/Bass and Drums"
+     }
     }
    }
   ]
