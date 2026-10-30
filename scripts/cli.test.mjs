@@ -177,6 +177,13 @@ test('measure: mono as one channel, more than two said, silence and damaged file
   assert.deepEqual(empty.regions, []);
   const text = await measureOf('empty2.wav', makeWav({ seconds: 0 }));
   assert.equal(text.code, 0);
+  // Under 0.4 seconds: no loudness reading, said in words (not "-Infinity LUFS")
+  const shortPath = join(tmp, 'short.wav');
+  writeFileSync(shortPath, makeWav({ seconds: 0.2 }));
+  const short = await cli('measure', shortPath);
+  assert.equal(short.code, 0, short.stderr);
+  assert.match(short.stdout, /Too short to measure loudness/);
+  assert.doesNotMatch(short.stdout, /Infinity|NaN|Balance/);
   for (const [name, wav, re] of [
     ['cut.wav', makeWav({ truncate: 30 }), /damaged or cut short/],
     ['slow.wav', makeWav({ rate: 4, seconds: 2 }), /sample rate is 4 Hz/],

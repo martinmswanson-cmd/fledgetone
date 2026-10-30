@@ -1474,10 +1474,28 @@ impl Synth {
                         }
                     }
                 }
+                121 => self.reset_controllers(),
                 120 | 123 => self.all_off(d1 == 120),
                 _ => {}
             },
             _ => {}
+        }
+    }
+
+    /// Reset All Controllers (CC 121): the mod wheel, bend, pressure and pedal back at rest, as a
+    /// fresh synth has them (the host sends it at Stop, so a wheel a song left up isn't stuck
+    /// there). Notes sounding go on; ones only the pedal held are let go.
+    fn reset_controllers(&mut self) {
+        self.modwheel = 0.0;
+        self.bend = 0.0;
+        self.aftertouch = 0.0;
+        self.pedal = false;
+        for v in self.voices.iter_mut() {
+            v.pressure = 0.0;
+            if v.sustained {
+                v.sustained = false;
+                v.release();
+            }
         }
     }
 
@@ -2977,6 +2995,27 @@ mod tests {
             }
             assert!((s.voices[0].pitch - 84.0).abs() < 0.005, "{sr}: ended at {}", s.voices[0].pitch);
         }
+    }
+
+    #[test]
+    fn reset_all_controllers_puts_the_wheel_bend_and_pedal_back_at_rest() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0xB0, 1, 127);
+        s.midi(0xE0, 0, 127);
+        s.midi(0xD0, 90, 0);
+        s.midi(0xB0, 64, 127);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 5);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 5);
+        assert_eq!(active(&s), 1, "held by the pedal");
+        s.midi(0xB0, 121, 0);
+        assert_eq!(s.modwheel, 0.0);
+        assert_eq!(s.bend, 0.0);
+        assert_eq!(s.aftertouch, 0.0);
+        assert!(!s.pedal);
+        render(&mut s, 400);
+        assert_eq!(active(&s), 0, "let go with the pedal");
     }
 
     #[test]

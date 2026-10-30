@@ -156,6 +156,13 @@ clock, ahead of time, so the main thread being busy doesn't make notes late:
   the track's own lane within its clip. A plugin parameter's lane reaches the plugin as timed
   events read on a 16-sample grid a little ahead of the clock (`controlEvents.ts`, from the strip's
   control tick), so it lands in the same place live and in an export.
+- **Controllers to plugins**: a clip's controller lane also reaches a plugin as MIDI, sent only
+  where its value changes, and a controller keeps its value after its clip ends, for the rest of
+  the song. So wherever playback starts (Play, a seek, a loop going round, a render of some bars, a
+  game kit's loop, a track unmuted or a plugin loaded mid-song), each of the track's controllers is
+  set to its value there in a playback of the whole song, the last one any of its clips sent, or
+  back to rest if none has yet (`ccHold.ts`, applied by the clip schedule's `hold`). Stop sends
+  each plugin Reset All Controllers (CC 121, `wamPlugin.ts`), so nothing is left turned up.
 - **The playhead** is drawn by a `requestAnimationFrame` loop in the store that reads where the
   listener is now (`getAudiblePositionBar`, which allows for output latency) and sets
   `playheadPosition`.

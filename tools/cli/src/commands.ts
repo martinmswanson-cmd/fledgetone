@@ -29,6 +29,9 @@ const json = (v: unknown) => say(JSON.stringify(v, null, 2));
 const r1 = (v: number) => (Number.isFinite(v) ? (Math.round(v * 10) / 10).toFixed(1) : String(v));
 const db = (v: number) => `${v > 0 ? '+' : ''}${r1(v)} dB`;
 /** The loudest 3 seconds in words: none for audio shorter than 3 seconds (null), "-" for silence. */
+/** The loudness line's start: the integrated loudness and the loudest 3 seconds, or in plain words why there is none. */
+export const loudnessText = (lufs: number | null, shortTermMax: number | null, seconds: number) =>
+  lufs !== null && Number.isFinite(lufs) ? `Loudness ${r1(lufs)} LUFS (${loudestText(shortTermMax, seconds)})` : seconds < 0.4 ? 'Too short to measure loudness (under 0.4 seconds)' : 'Too quiet to measure loudness';
 export const loudestText = (v: number | null, seconds: number) => (v === null && seconds < 3 ? 'too short for the loudest 3 seconds: under 3 seconds long' : `loudest 3 seconds ${v === null ? '-' : r1(v)}${v !== null && Number.isFinite(v) ? ' LUFS' : ''}`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
@@ -348,9 +351,8 @@ export function measure(args: string[], flags: Flags): number {
     say(
       [
         `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
-        `Loudness ${r1(m.lufs)} LUFS (${loudestText(m.shortTermMaxLufs, m.seconds)}), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
-        'Balance (each part of the spectrum against the whole):',
-        ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`),
+        `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
+        ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
         ...(m.note ? [`(Note: ${m.note}.)`] : []),
       ].join('\n')
     );
