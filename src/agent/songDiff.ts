@@ -4,20 +4,25 @@
  * (-6 to -3 dB).") with the tracks, clips and bars it touches. The names in a sentence are the
  * song's, which an agent may have written: each is kept apart (names.ts), shown as a chip of its
  * own on a card (`marked`) and in plain quotes, its own quotes and brackets taken out, everywhere
- * else (`text`). Also where each change is heard (`heard`, and all of them together in `regions`):
- * a change that sits somewhere, its bars; one of a track's sound (its level, pan, instrument,
- * inserts, sends, routing...), the bars where that track sounds (its clips with their tails, and
- * the clips of every track playing into it, when it's a bus or a return); a tempo or time
- * signature change at bar N, bar N to the end; one for the whole song (the tempo, the time
- * signature, the master, a solo), the whole song; a name, a marker or a link, nowhere (nothing to
- * hear). Plain logic, used by applyOps, the command line's diff and the studio's suggestion cards.
+ * else (`text`). Also where each change is heard (`heard`, and all of them together in `regions`),
+ * by rules that are never fewer bars than the truth: notes or a clip, its bars and its notes' tail
+ * (the release and the track's effects); one of a track's sound (its level, pan, instrument,
+ * inserts, sends, routing...) or of its automation (a lane holds before and after its points), and
+ * any change of a clip with controller or step lanes (what they hold carries into the track's
+ * later clips), the bars where that track sounds (its clips with their tails, and the clips of
+ * every track playing into it, when it's a bus or a return); a tempo or time signature change at
+ * bar N, bar N to the end (from the change before it, when a glide starts there); one for the
+ * whole song (the tempo, the time signature, the master, a solo) or anything not known here, the
+ * whole song; a name, a marker or a link, nowhere (nothing to hear). The studio adds the bars it
+ * finds by sound (whereHeard.ts). Plain logic, used by applyOps, the command line's diff and the
+ * studio's suggestion cards.
  */
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../store/timelineTypes';
 import { durationToBars } from '../store/timelineTypes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
-import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import { releaseSeconds } from '../audio/auditionMath';
 import { liveSends } from '../store/buses';
 import { stableJson } from './fingerprint';
@@ -25,10 +30,11 @@ import { plainToken } from './agentText';
 import { nm, plainNames } from './names';
 
 /**
- * Where a change is heard: 'here' (its own bars, fromBar to toBar), 'track' (wherever its track
- * sounds), 'from' (from its fromBar to the end of the song), 'song' (the whole song), 'silent'
- * (nowhere: a name, a marker, a link). Unsaid: 'here' when it has bars, else 'track' when it has a
- * track, else 'song'.
+ * Where a change is heard: 'here' (its own bars, fromBar to toBar, and, for a change on a track,
+ * past toBar by that track's tail: its notes' release and its effects), 'track' (wherever its
+ * track sounds), 'from' (from its fromBar to the end of the song), 'song' (the whole song),
+ * 'silent' (nowhere: a name, a marker, a link). Unsaid: 'song' (what isn't known to sit somewhere
+ * is taken to be heard everywhere: never less than the truth).
  */
 export type HearWhere = 'here' | 'track' | 'from' | 'song' | 'silent';
 
@@ -133,16 +139,17 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   let tempoChanged = false;
   if (before.bpm !== after.bpm) {
     tempoChanged = true;
-    add({ text: `Changes the tempo from ${r1(before.bpm)} to ${r1(after.bpm)} BPM.` });
+    add({ text: `Changes the tempo from ${r1(before.bpm)} to ${r1(after.bpm)} BPM.`, hear: 'song' });
   }
   const bPoints = before.tempoPoints ?? [];
   const aPoints = after.tempoPoints ?? [];
+  const tempoFrom = tempoChangeStart(bPoints, aPoints);
   for (const p of aPoints) {
     const old = bPoints.find((o) => o.id === p.id);
-    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
-    else if (!same(old, p)) add({ text: `Changes the tempo change at bar ${r1(old.bar)} to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
+    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: `Changes the tempo change at bar ${r1(old.bar)} to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}.`, fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at bar ${r1(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at bar ${r1(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
   tempoChanged ||= !same(bPoints, aPoints);
 
   // ---------- Time signature ----------
@@ -166,25 +173,25 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   for (const t of after.tracks) {
     const old = before.tracks.find((o) => o.id === t.id);
     if (!old) {
-      add({ text: `Adds a track: ${nm(t.name)} (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id });
+      add({ text: `Adds a track: ${nm(t.name)} (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id, hear: 'track' });
       continue;
     }
     if (old !== t && !same(old, t)) diffTrack(old, t, after.tracks, add);
   }
-  for (const t of before.tracks) if (!after.tracks.some((o) => o.id === t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id });
+  for (const t of before.tracks) if (!after.tracks.some((o) => o.id === t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id, hear: 'track' });
 
   // ---------- Clips ----------
   for (const c of after.clips) {
     const old = before.clips.find((o) => o.id === c.id);
     if (!old) {
-      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
+      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars, hear: hasLanes(c) ? 'track' : 'here' });
       continue;
     }
     if (old !== c) diffClip(old, c, trackName, add);
   }
   for (const c of before.clips) {
     if (!after.clips.some((o) => o.id === c.id) && after.tracks.some((t) => t.id === c.trackId))
-      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
+      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars, hear: hasLanes(c) ? 'track' : 'here' });
   }
 
   // ---------- Markers ----------
@@ -298,13 +305,22 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
   };
   const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
   const song: BarRange = { fromBar: 1, toBar: end };
+  /** Bar `to` and past it by the tail of a note of each of `tracks` ending there (as a clip's, see clipRange). */
+  const withTail = (to: number, tracks: readonly string[]): number => {
+    const tail = Math.max(0, ...tracks.map((id) => releaseSeconds(trackOf(id)) + EFFECT_TAIL_SECONDS));
+    const until = Math.max(...tempos.map((t) => secondsToBar(barToSeconds(to, t) + tail, t)));
+    return Number.isFinite(until) ? Math.max(to, until) : to;
+  };
   return (c) => {
-    const how: HearWhere = c.hear ?? (c.fromBar !== undefined && c.toBar !== undefined ? 'here' : c.trackId ? 'track' : 'song');
+    // (what isn't known to sit somewhere is heard everywhere)
+    const how: HearWhere = c.hear ?? 'song';
     if (how === 'silent') return [];
     if (how === 'song') return [song];
     if (how === 'from' && c.fromBar !== undefined) return c.fromBar < end ? joinRanges([{ fromBar: c.fromBar, toBar: end }]) : joinRanges([{ fromBar: c.fromBar, toBar: c.fromBar + 1 }]);
-    if (how === 'track' && c.trackId) return sounds(c.trackId);
-    if (c.fromBar !== undefined && c.toBar !== undefined) return joinRanges([{ fromBar: c.fromBar, toBar: c.toBar }]);
+    const tracks = c.trackId ? [c.trackId, ...(alsoTracks.get(c) ?? [])] : [];
+    if (how === 'track' && tracks.length) return joinRanges(tracks.flatMap((id) => sounds(id)));
+    // (a change on a track rings on past its bars: its notes' release, and the track's effects)
+    if (how === 'here' && c.fromBar !== undefined && c.toBar !== undefined) return joinRanges([{ fromBar: c.fromBar, toBar: tracks.length ? withTail(c.toBar, tracks) : c.toBar }]);
     return [song];
   };
 }
@@ -367,13 +383,13 @@ function settingChanges(x: unknown, y: unknown): string {
 
 function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
   const n = nm(b.name);
-  const at = { trackId: b.id };
-  if (a.name !== b.name) add({ text: `Renames the track ${nm(a.name)} to ${nm(b.name)}.`, ...at, hear: 'silent' });
+  const at = { trackId: b.id, hear: 'track' as HearWhere };
+  if (a.name !== b.name) add({ text: `Renames the track ${nm(a.name)} to ${nm(b.name)}.`, trackId: b.id, hear: 'silent' });
   if (a.instrumentKey !== b.instrumentKey) add({ text: `${n} plays ${INSTRUMENTS[b.instrumentKey]?.name ?? b.instrumentKey} instead of ${INSTRUMENTS[a.instrumentKey]?.name ?? a.instrumentKey}.`, ...at });
   if (a.volume !== b.volume) add({ text: `Turns ${n} ${b.volume > a.volume ? 'up' : 'down'} by ${r1(Math.abs(b.volume - a.volume))} dB (${db(a.volume)} to ${db(b.volume)}).`, ...at });
   if (a.pan !== b.pan) add({ text: `Pans ${n} to ${formatPan(b.pan)} (was ${formatPan(a.pan)}).`, ...at });
   if (a.isMuted !== b.isMuted) add({ text: `${b.isMuted ? 'Mutes' : 'Unmutes'} ${n}.`, ...at });
-  if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, ...at, hear: 'song' });
+  if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, trackId: b.id, hear: 'song' });
   if (a.reverbSend !== b.reverbSend) add({ text: `Changes the reverb send of ${n} from ${r1(a.reverbSend * 100)}% to ${r1(b.reverbSend * 100)}%.`, ...at });
   if (a.delaySend !== b.delaySend) add({ text: `Changes the delay send of ${n} from ${r1(a.delaySend * 100)}% to ${r1(b.delaySend * 100)}%.`, ...at });
   if ((a.distance ?? 0) !== (b.distance ?? 0)) add({ text: `Moves ${n} ${(b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer'} on the stage (distance ${r1(a.distance ?? 0)} to ${r1(b.distance ?? 0)}).`, ...at });
@@ -398,9 +414,18 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   if (!same(a.sends, b.sends)) add({ text: `Changes the sends of ${n} to the returns.`, ...at });
   const known = new Set(['name', 'instrumentKey', 'color', 'volume', 'pan', 'isMuted', 'isSoloed', 'reverbSend', 'delaySend', 'distance', 'output', 'eq', 'fx', 'synth', 'automation', 'sends', 'drumDesign']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
-  if (other.length) add({ text: `Changes other settings of ${n} (${other.join(', ')}).`, ...at });
+  // (settings not known here: heard anywhere, for all that's known)
+  if (other.length) add({ text: `Changes other settings of ${n} (${other.join(', ')}).`, trackId: b.id, hear: 'song' });
 }
 
+/**
+ * A lane's changes. Each is heard wherever the track sounds (hear 'track'), not only at its points:
+ * a lane holds its first value before its first point and its last after its last, and moves
+ * every bar between, so a point changed at bar 9 changes everything from the point before it to
+ * the point after it, and a lane drawn or taken away changes the track everywhere it plays (a
+ * send's lane, an instrument's or an insert's the same: where the track and what it feeds sound).
+ * fromBar and toBar stay the points' bars, for showing where the lane was drawn.
+ */
 function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
   const n = nm(b.name);
   const label = (l: AutomationLane) => specOf(l.param, b, tracks).label;
@@ -412,10 +437,10 @@ function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   const after = b.automation ?? [];
   for (const l of after) {
     const old = before.find((o) => o.param === l.param);
-    if (!old) add({ text: `Draws ${label(l)} automation on ${n} (${plural(l.points.length, 'point')}).`, trackId: b.id, ...span([l]) });
-    else if (!same(old, l)) add({ text: `Redraws the ${label(l)} automation of ${n} (${plural(l.points.length, 'point')}, was ${old.points.length}).`, trackId: b.id, ...changedSpan(old, l) });
+    if (!old) add({ text: `Draws ${label(l)} automation on ${n} (${plural(l.points.length, 'point')}).`, trackId: b.id, hear: 'track', ...span([l]) });
+    else if (!same(old, l)) add({ text: `Redraws the ${label(l)} automation of ${n} (${plural(l.points.length, 'point')}, was ${old.points.length}).`, trackId: b.id, hear: 'track', ...changedSpan(old, l) });
   }
-  for (const l of before) if (!after.some((o) => o.param === l.param)) add({ text: `Removes the ${label(l)} automation of ${n}.`, trackId: b.id, ...span([l]) });
+  for (const l of before) if (!after.some((o) => o.param === l.param)) add({ text: `Removes the ${label(l)} automation of ${n}.`, trackId: b.id, hear: 'track', ...span([l]) });
 }
 
 /** The bars over which two versions of a lane differ. */
@@ -427,14 +452,27 @@ function changedSpan(a: AutomationLane, b: AutomationLane): Partial<BarRange> {
   return bars.length ? { fromBar: Math.min(...bars), toBar: Math.max(...bars) + 1 } : {};
 }
 
+/** Whether a clip has lanes of its own (controllers: bend, mod, sustain, CCs; step lanes): what they set holds on past the clip, into the track's later clips. */
+const hasLanes = (c: Clip): boolean => !!c.stepLanes?.length || (!!c.expression && Object.values(c.expression).some((v) => !!v?.length));
+
+/** The other tracks a change is heard on too (a clip moved from one track to another: both). */
+const alsoTracks = new WeakMap<SongChange, string[]>();
+
 function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: SongChange) => void) {
   const n = nm(b.name);
-  const at = { trackId: b.trackId, clipId: b.id };
-  if (a.trackId !== b.trackId) add({ text: `Moves the clip ${n} from ${trackName(a.trackId)} to ${trackName(b.trackId)}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
+  // (a clip with lanes, in either version: what they hold carries into the track's later clips, so
+  // a change of it is heard wherever the track plays; else in its bars, with the notes' tail)
+  const hear: HearWhere = hasLanes(a) || hasLanes(b) ? 'track' : 'here';
+  const at = { trackId: b.trackId, clipId: b.id, hear };
+  if (a.trackId !== b.trackId) {
+    const moved: SongChange = { text: `Moves the clip ${n} from ${trackName(a.trackId)} to ${trackName(b.trackId)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) };
+    alsoTracks.set(moved, [a.trackId]);
+    add(moved);
+  }
   if (Math.abs(a.startBar - b.startBar) > 1e-9)
     add({ text: `Moves the clip ${n} from bar ${r1(a.startBar)} to bar ${r1(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
   if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
-    add({ text: `Makes the clip ${n} ${r1(b.lengthBars)} bars long (was ${r1(a.lengthBars)}).`, ...at, fromBar: b.startBar + Math.min(a.lengthBars, b.lengthBars), toBar: b.startBar + Math.max(a.lengthBars, b.lengthBars) });
+    add({ text: `Makes the clip ${n} ${r1(b.lengthBars)} bars long (was ${r1(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
   if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
   if (a.notes !== b.notes && !same(a.notes, b.notes)) {
     const before = new Map(a.notes.map((x) => [x.id, x]));
@@ -447,8 +485,31 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     const from = b.startBar + Math.max(0, Math.min(...touched.map((x) => x.startOffset)));
     const to = b.startBar + Math.min(b.lengthBars, Math.max(...touched.map(noteEnd)));
     const where = to > from ? ` in ${bars(from, to)}` : '';
+    // (heard in their bars and as they ring out after: the release and the track's effects, see hearing)
     add({ text: `In ${n} on ${trackName(b.trackId)}: ${parts.join(', ')}${where}.`, ...at, fromBar: from, toBar: Math.max(to, from + 1 / 16) });
   }
   if ((a.pattern ?? null) !== (b.pattern ?? null)) add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at, hear: 'silent' });
   for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
+  // (anything else about a clip, not known here: heard anywhere, for all that's known)
+  const known = new Set(['id', 'trackId', 'startBar', 'lengthBars', 'name', 'notes', 'pattern', 'expression', 'groove', 'wobble', 'stepLanes', 'isSelected']);
+  const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
+  if (other.length) add({ text: `Changes other settings of the clip ${n} (${other.join(', ')}).`, trackId: b.trackId, clipId: b.id, hear: 'song' });
+}
+
+/**
+ * Where a tempo point's change starts to be heard, for the point with id `id` (at `bar` or later):
+ * at its bar, or, when it or the point after it glides (ramp, in either version), at the point
+ * before it (or bar 1): a glide changes every bar from where it starts.
+ */
+function tempoChangeStart(before: readonly TempoPoint[], after: readonly TempoPoint[]): (id: string, bar: number) => number {
+  const lists = [before, after].map((l) => [...l].sort((x, y) => x.bar - y.bar));
+  return (id, bar) => {
+    let from = bar;
+    for (const list of lists) {
+      const i = list.findIndex((p) => p.id === id);
+      if (i < 0) continue;
+      if (list[i].ramp || list[i + 1]?.ramp) from = Math.min(from, list[i - 1]?.bar ?? 1);
+    }
+    return Math.max(1, from);
+  };
 }

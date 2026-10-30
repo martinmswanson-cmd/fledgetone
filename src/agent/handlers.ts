@@ -27,6 +27,7 @@ import { applyOps, OPS_VERSION } from './ops';
 import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
+import { MEASURE_MAX_SECONDS, queueFinding, stopFinding, useFinding } from './whereHeard';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : undefined);
@@ -42,6 +43,9 @@ const view = (s: Suggestion) => ({
   notes: s.notes,
   // Where its changes are heard, what its before-and-after plays (one stretch after another), and what that leaves out
   regions: s.regions,
+  // How they were found: by the rules alone, or by the rules and by sound (the song rendered whole before and after, bar against bar)
+  regionsBy: s.found === 'sound' ? 'rules and sound' : 'rules',
+  ...(s.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : useFinding.getState().id === s.id && useFinding.getState().version === s.version ? { finding: true } : s.foundWhy ? { notBySound: s.foundWhy === 'too_long' ? `the song is longer than ${MEASURE_MAX_SECONDS / 60} minutes` : 'the render failed' } : {}),
   audition: s.audition,
   ...(s.unheard ? { unheard: s.unheard, limit: s.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
   ...(s.focusLeftOut ? { focusLeftOut: true } : {}),
@@ -116,6 +120,8 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
       // Added at the end (what's on the panel doesn't move), and only counted on the header's
       // button: the panel isn't opened for it, nor is anything focused or applied
       useSuggestions.setState((x) => ({ suggestions: keepSuggestions([...x.suggestions, made.suggestion]) }));
+      // (where it's heard is found by sound in the background, before it's heard)
+      queueFinding();
       announce(`New suggestion from your agent: ${shortText(made.suggestion.title)}.`);
       return view(made.suggestion);
     },
@@ -130,6 +136,7 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
       if (!isOpen(s) && s.status !== 'out_of_date') throw new HandlerError('not_waiting', `That suggestion is ${s.status.replace('_', ' ')}.`);
       updateSuggestion(s.id, { status: 'withdrawn' });
       forgetAudition(s.id);
+      stopFinding(s.id);
       return view({ ...s, status: 'withdrawn' });
     },
 

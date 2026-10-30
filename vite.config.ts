@@ -34,6 +34,8 @@ function thirdPartyLicenses(): Plugin {
       if (roots.has('wasm-media-encoders')) sections.push(CODEC_NOTICES)
       // The Bravura music font that vexflow embeds (its own licence, the SIL OFL, isn't in vexflow's licence file)
       if (roots.has('vexflow')) sections.push(readFileSync(join(process.cwd(), 'scripts/fonts/OFL-Bravura.txt'), 'utf8').trim())
+      // Unicode's confusables data (src/agent/lookAlikes.ts, the look-alike letters: its notice is a comment the minifier drops)
+      if ([...this.getModuleIds()].some((id) => id.replace(/\\/g, '/').endsWith('/src/agent/lookAlikes.ts'))) sections.push(readFileSync(join(process.cwd(), 'scripts/look-alikes-LICENSE.txt'), 'utf8').trim())
       // The built-in plugins (public/fledgetone-plugins/, compiled from scripts/plugins/)
       sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES.txt'), 'utf8').trim())
       // The GPL ones, in the builds that have them (VITE_GPL_PLUGINS=1: npm run build:full)

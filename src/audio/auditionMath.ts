@@ -220,3 +220,32 @@ export function sequenceOffset(elapsed: number, plays: ReadonlyArray<{ fromBar: 
   const inStretch = sameBarOffset(into - from.starts[i], plays[i].fromBar, { tempo: from.tempo, seconds: end(from, i) - from.starts[i] }, { tempo: to.tempo, seconds: end(to, i) - (to.starts[i] ?? 0) });
   return Math.max(0, Math.min(Math.max(0, to.seconds - 0.001), (to.starts[i] ?? 0) + inStretch));
 }
+
+/**
+ * What B played as song bars: each span of its buffer in the stretch it lies in (`plays`, starting
+ * at `starts`, seconds), by B's own tempo. Parts of bars too; joined.
+ */
+export function playedBars(spans: ReadonlyArray<readonly [number, number]>, plays: ReadonlyArray<{ fromBar: number; toBar: number }>, starts: readonly number[], seconds: number, tempo: Tempo): Array<{ fromBar: number; toBar: number }> {
+  const out: Array<{ fromBar: number; toBar: number }> = [];
+  plays.forEach((r, i) => {
+    const s0 = starts[i] ?? 0;
+    const s1 = i + 1 < starts.length ? starts[i + 1] : seconds;
+    const t0 = barToSeconds(r.fromBar, tempo);
+    for (const [a, b] of spans) {
+      const x = Math.max(a, s0);
+      const y = Math.min(b, s1);
+      if (y <= x) continue;
+      // (the stretch's end, reached, is its last bar's end: frames rounded off don't leave a sliver unplayed)
+      const toBar = y >= s1 - 1e-3 ? r.toBar : Math.min(r.toBar, secondsToBar(t0 + (y - s0), tempo));
+      out.push({ fromBar: x <= s0 + 1e-3 ? r.fromBar : Math.max(r.fromBar, secondsToBar(t0 + (x - s0), tempo)), toBar });
+    }
+  });
+  out.sort((x, y) => x.fromBar - y.fromBar);
+  const joined: Array<{ fromBar: number; toBar: number }> = [];
+  for (const r of out) {
+    const last = joined.at(-1);
+    if (last && r.fromBar <= last.toBar + 1e-6) last.toBar = Math.max(last.toBar, r.toBar);
+    else joined.push({ ...r });
+  }
+  return joined;
+}

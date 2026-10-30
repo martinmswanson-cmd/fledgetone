@@ -134,7 +134,10 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     },
   });
   client = c;
-  // (open, the helper says hello at once: a program on the port that never does is said so)
+  // (the helper says hello as soon as the connection opens: the wait for it starts now, as the
+  // socket is made, so a program on the port that takes the connection but never completes it,
+  // or never says hello, is said so after HELLO_TIMEOUT_MS all the same)
+  c.opened();
   ws.onopen = () => {
     if (client === c) c.opened();
   };

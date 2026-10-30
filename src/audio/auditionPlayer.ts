@@ -13,14 +13,17 @@
  * louder than A is played turned down to A + LOUDER_LIMIT_LU (the note says so). The caller pauses
  * the song's own playback first, and it's one preview among the app's others: starting, it stops
  * any other (Try it in a game, the audition pads...), and another starting stops it
- * (exclusivePreview.ts). A small store says what's happening, for the suggestion card.
+ * (exclusivePreview.ts). A small store says what's happening, for the suggestion card, and what of
+ * B has really been played (`heardB`: the bars its playhead went through while B was heard, at
+ * least once, for what's rendered now), so a suggestion counts as heard only once its Suggested
+ * side has played through every place it changes (noteHeard in songWatch.ts), never on a press.
  */
 import { create } from 'zustand';
 import { liveContext, afterMaster } from './liveContext';
 import { initAudio } from './engine';
 import { measureRender, renderSequence, type ListenSnapshot } from './listen';
 import type { Tempo } from './tempoMap';
-import { sequenceOffset } from './auditionMath';
+import { playedBars, sequenceOffset } from './auditionMath';
 import { claimPreview, registerPreview } from './exclusivePreview';
 
 /** How long a switch between A and B takes, seconds. */
@@ -48,9 +51,15 @@ export interface AuditionState {
   bars: [number, number] | null;
   /** The stretches heard, one after another, [from, to) each. */
   plays: Array<{ fromBar: number; toBar: number }> | null;
+  /**
+   * The song bars B's playhead has played through while B was heard (at least once, in order,
+   * joined; parts of bars too), for `renderKey`: kept while the same render plays again, empty
+   * when another is rendered.
+   */
+  heardB: Array<{ fromBar: number; toBar: number }>;
 }
 
-export const useAudition = create<AuditionState>(() => ({ key: null, renderKey: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, note: null, error: null, bars: null, plays: null }));
+export const useAudition = create<AuditionState>(() => ({ key: null, renderKey: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, note: null, error: null, bars: null, plays: null, heardB: [] }));
 
 type Side = 'a' | 'b';
 
@@ -69,9 +78,58 @@ interface Playing {
   /** The gain B plays at when heard (1, or less when it was turned down). */
   bLevel: number;
   master: GainNode;
+  /** While B is heard: the context time up to which what it played is counted in `played` (null while A is heard). */
+  bMark: number | null;
+  /** What's rendered (the caller's renderKey). */
+  renderKey: string;
+  /** Counts what B played, now and then, while it plays. */
+  ticker: number;
 }
 
 let playing: Playing | null = null;
+/** What of B has been played (seconds into its buffer, joined), for renderKey `key`. */
+let played: { key: string; spans: Array<[number, number]> } = { key: '', spans: [] };
+/** How often what B played is counted while it plays, ms. */
+const COUNT_EVERY_MS = 200;
+
+/** Spans of seconds joined (overlapping and touching ones), in order. */
+function joinSpans(list: ReadonlyArray<[number, number]>): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (const [a, b] of [...list].sort((x, y) => x[0] - y[0])) {
+    const last = out.at(-1);
+    if (last && a <= last[1] + 1e-6) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+
+/** What B played from its mark to `now` (context time), counted (it loops: a lap or more is all of it). */
+function countB(p: Playing, now: number) {
+  if (p.heard !== 'b' || p.bMark === null || now <= p.bMark) return;
+  const seconds = p.buffers.b.duration;
+  const from = p.bMark - p.began.b;
+  const to = now - p.began.b;
+  p.bMark = now;
+  if (seconds <= 0 || to <= from) return;
+  const spans = played.key === p.renderKey ? [...played.spans] : [];
+  if (to - from >= seconds) spans.push([0, seconds]);
+  else {
+    const a = ((from % seconds) + seconds) % seconds;
+    const b = a + (to - from);
+    if (b <= seconds) spans.push([a, b]);
+    else spans.push([a, seconds], [0, b - seconds]);
+  }
+  played = { key: p.renderKey, spans: joinSpans(spans) };
+}
+
+/** Count what B played up to now, and say it (heardB). */
+function publishB(p: Playing) {
+  countB(p, raw().currentTime);
+  if (played.key !== p.renderKey) return;
+  const heardB = playedBars(played.spans, p.plays, p.starts.b, p.buffers.b.duration, p.tempo.b);
+  const was = useAudition.getState().heardB;
+  if (heardB.length !== was.length || heardB.some((r, i) => Math.abs(r.fromBar - was[i].fromBar) > 1e-6 || Math.abs(r.toBar - was[i].toBar) > 1e-6)) useAudition.setState({ heardB });
+}
 let rendering: AbortController | null = null;
 /**
  * The last pair rendered, kept so a second Hear doesn't render again: for suggestion `key`, the
@@ -97,6 +155,11 @@ export function stopAudition(): void {
   rendering?.abort();
   rendering = null;
   const p = playing;
+  if (p) {
+    // (what B played until now counts, said while it's still playing)
+    window.clearInterval(p.ticker);
+    publishB(p);
+  }
   playing = null;
   if (p) {
     ramp(p.master.gain, 0, FADE_SECONDS);
@@ -156,6 +219,11 @@ export function hearAudition(which: Side): void {
   const ctx = raw();
   const from = p.heard;
   const at = ctx.currentTime + 0.01;
+  // (B heard until the switch counts; from it, A's)
+  if (from === 'b') {
+    countB(p, at);
+    p.bMark = null;
+  }
   // The side switched to starts again where the other is now
   const offset = sequenceOffset(Math.max(0, at - p.began[from]), p.plays, { tempo: p.tempo[from], starts: p.starts[from], seconds: p.buffers[from].duration }, { tempo: p.tempo[which], starts: p.starts[which], seconds: p.buffers[which].duration });
   // (the old source of that side may still be fading from a switch a moment ago: it fades out as the new one fades in)
@@ -163,6 +231,8 @@ export function hearAudition(which: Side): void {
   p.voices[which] = loopVoice(ctx, p.buffers[which], p.gains[which], at, offset, true);
   p.began[which] = at - offset;
   p.heard = which;
+  if (which === 'b') p.bMark = at;
+  publishB(p);
   ramp(p.gains.a.gain, which === 'a' ? 1 : 0, SWITCH_SECONDS);
   ramp(p.gains.b.gain, which === 'b' ? p.bLevel : 0, SWITCH_SECONDS);
 }
@@ -187,7 +257,10 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
   stopAudition();
   const hearing = opts.hearing ?? 'b';
   const plays = opts.plays.map((p) => ({ fromBar: p.fromBar, toBar: p.toBar }));
-  useAudition.setState({ key: opts.key, renderKey: opts.renderKey, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: plays.length ? [plays[0].fromBar, plays[plays.length - 1].toBar] : null, plays });
+  // (what B played counts for this render only: another starts again from nothing)
+  if (played.key !== opts.renderKey) played = { key: opts.renderKey, spans: [] };
+  const heardB = useAudition.getState().renderKey === opts.renderKey ? useAudition.getState().heardB : [];
+  useAudition.setState({ key: opts.key, renderKey: opts.renderKey, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: plays.length ? [plays[0].fromBar, plays[plays.length - 1].toBar] : null, plays, heardB });
   const controller = new AbortController();
   rendering = controller;
   try {
@@ -223,7 +296,11 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     master.gain.linearRampToValueAtTime(1, at + FADE_SECONDS);
     // The one preview playing: Try it in a game, the audition pads, the SFX maker... stop
     claimPreview(AUDITION_PREVIEW);
-    playing = { voices, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, plays, starts: pair.starts, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master };
+    const p: Playing = { voices, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, plays, starts: pair.starts, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master, bMark: hearing === 'b' ? at : null, renderKey: opts.renderKey, ticker: 0 };
+    p.ticker = window.setInterval(() => {
+      if (playing === p) publishB(p);
+    }, COUNT_EVERY_MS);
+    playing = p;
     const diff = pair.diff;
     useAudition.setState({
       phase: 'playing',

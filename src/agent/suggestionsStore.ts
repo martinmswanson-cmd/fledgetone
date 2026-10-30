@@ -22,7 +22,7 @@ import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from '
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
-import { rangesWords, type BarRange } from './songDiff';
+import { joinRanges, rangesWords, type BarRange } from './songDiff';
 import type { BridgeInfo } from './bridgeProtocolClient';
 
 /**
@@ -83,8 +83,26 @@ export interface Suggestion {
   marked?: { changes: string[]; warnings: string[]; notes: string[] };
   touchedTracks: string[];
   bars: BarRange | null;
-  /** Where its changes are heard (SongDiff.regions): what its before-and-after must play for it to count as heard. */
+  /**
+   * Where its changes are heard: what its before-and-after must play for it to count as heard. The
+   * rules' (SongDiff.regions, `ruleRegions`), and, once found by sound (`found` 'sound', see
+   * whereHeard.ts), every bar where the song before and after renders differently as well.
+   */
   regions: BarRange[];
+  /** Where its changes are heard by the rules alone (SongDiff.regions): never fewer bars than the truth. */
+  ruleRegions: BarRange[];
+  /** What its before-and-after plays when there's nothing to hear (SongDiff.audition). */
+  fallback: BarRange;
+  /**
+   * How `regions` was found, for this version: by the rules alone ('rules': not yet by sound, or
+   * it can't be, `foundWhy`), or by the rules and by sound ('sound': `soundRegions` are the bars
+   * where the two renders differ).
+   */
+  found: 'rules' | 'sound';
+  /** Why it isn't found by sound: the song is too long to render whole ('too_long'), or the render failed ('failed'). */
+  foundWhy?: 'too_long' | 'failed';
+  /** The bars where the song before and after render differently (found 'sound'). */
+  soundRegions?: BarRange[];
   /** The stretches its before-and-after plays, one after another (hearingPlan): every region, and the agent's focus if that fits. */
   audition: BarRange[];
   /** The bars of `regions` that `audition` can't reach (too long to hear at once), or null. */
@@ -219,6 +237,19 @@ export const coveredBy = (played: readonly BarRange[], inner: BarRange): boolean
   return true;
 };
 
+/** Whether stretches of song bars played (parts of bars too) hold every bar of `r` whole (a hair's breadth short of a bar's end counts: frames rounded off). */
+export function playedThrough(played: ReadonlyArray<{ fromBar: number; toBar: number }>, r: { fromBar: number; toBar: number }): boolean {
+  const eps = 1e-3;
+  let at = Math.floor(r.fromBar + 1e-9);
+  const end = Math.ceil(r.toBar - 1e-9);
+  for (const p of [...played].sort((x, y) => x.fromBar - y.fromBar)) {
+    if (p.fromBar > at + eps) break;
+    if (p.toBar > at) at = p.toBar;
+    if (at >= end - eps) return true;
+  }
+  return at >= end - eps;
+}
+
 /** A range kept to what a listen may take: LIMITS.listenMaxBars bars and LIMITS.listenMaxSeconds seconds. */
 const listenable = (r: BarRange, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): BarRange => capSeconds({ fromBar: r.fromBar, toBar: Math.min(r.toBar, r.fromBar + LIMITS.listenMaxBars) }, song);
 
@@ -341,6 +372,11 @@ const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: Project
     touchedTracks: r.diff.touchedTracks,
     bars: r.diff.bars,
     regions: r.diff.regions,
+    ruleRegions: r.diff.regions,
+    fallback: r.diff.audition,
+    found: 'rules' as const,
+    foundWhy: undefined,
+    soundRegions: undefined,
     audition: plan.plays,
     unheard: plan.unheard,
     limit: plan.limit,
@@ -442,6 +478,30 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
 
 export { barWords, rangesWords } from './songDiff';
 
+/**
+ * `s` with where its changes are heard found by sound: its rules' regions and the bars where the
+ * song before (`before`, the song it was made on) and after render differently (`sound`), joined,
+ * and what its before-and-after plays made again for them (hearingPlan). Never fewer bars than the
+ * rules'. Heard before (only by the rules' regions), it's heard again only over all of them.
+ */
+export function withSoundRegions(s: Suggestion, sound: readonly BarRange[], before: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): Suggestion {
+  const regions = joinRanges([...s.ruleRegions, ...sound]);
+  const plan = hearingPlan(regions, s.fallback, s.focus, [before, s.song]);
+  const grew = regions.length !== s.regions.length || regions.some((r, i) => r.fromBar !== s.regions[i].fromBar || r.toBar !== s.regions[i].toBar);
+  return {
+    ...s,
+    regions,
+    found: 'sound',
+    foundWhy: undefined,
+    soundRegions: sound.map((r) => ({ ...r })),
+    audition: plan.plays,
+    unheard: plan.unheard,
+    limit: plan.limit,
+    focusLeftOut: plan.focusLeftOut,
+    ...(grew && s.heard === s.version ? { heard: null, partHeard: s.version } : {}),
+  };
+}
+
 /** The regions of `s` (or the parts of them) its before-and-after plays: all of them, but what `unheard` leaves out. */
 export function heardRegions(s: Pick<Suggestion, 'regions' | 'unheard'>): BarRange[] {
   if (!s.unheard) return s.regions.map((r) => ({ ...r }));
@@ -492,7 +552,9 @@ export function acceptDecision(
   const message =
     fresh.partHeard === fresh.version && fresh.unheard
       ? `You heard only part of this: ${unheardWords(fresh.unheard, fresh.limit)} Press Accept without listening to take it all the same.`
-      : fresh.status === 'changed' && fresh.heard !== null
+      : fresh.partHeard === fresh.version
+        ? `You heard only part of this: Suggested has to play through ${rangesWords(fresh.regions)}. Hear it to the end, or press Accept without listening.`
+        : fresh.status === 'changed' && fresh.heard !== null
       ? 'The song changed since you heard this, so what would go in hasn’t been heard. Hear it again, or press Accept without listening.'
       : fresh.status === 'changed'
         ? 'You haven’t heard this, and the song changed since it was suggested. Hear it first, or press Accept without listening.'

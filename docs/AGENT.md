@@ -154,8 +154,9 @@ changes of the mix's numbers (after minus before), of each track's, and bar by b
 ```
 
 `differenceDb` is the level of what changed: the after's samples minus the before's, in dBFS
-(`null`: the same; with a tempo change the two can't be lined up, and every bar counts as
-changed). A bar has `changed` when that is above -70 dBFS. Renders are exact (the same song
+(`null`: the same; a bar a tempo change moved, so that it starts or ends at another time in the
+after than in the before, can't be lined up, and counts as changed). A bar has `changed` when
+that is above -70 dBFS. Renders are exact (the same song
 renders to the same samples every time), so a bar the suggestion doesn't reach comes out the same,
 and `changedBars` is where it's heard (often a bar or so past the notes it adds, as they ring
 out). A suggestion file whose song has changed since it was made, or that was made for another
@@ -185,7 +186,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: every region played whole), where its changes are heard (`regions`), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, or the render failed), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -197,16 +198,35 @@ There is no tool to accept a suggestion, and there never will be: only you accep
 ### What a suggestion's before-and-after plays
 
 A suggestion counts as heard only once the musician has heard every place its changes can be heard
-(its `regions`, in whole bars, overlapping and touching ones joined):
+(its `regions`, in whole bars, overlapping and touching ones joined): its Suggested side has
+played through each of them, to its end, at least once (stopping early, or hearing only Now, is
+hearing it in part). The regions are found two ways, and are both together, so they're never
+fewer bars than the truth. First by rules:
 
-- a change that sits somewhere (notes, a clip, automation): its bars;
+- notes or a clip: their bars, and past them as they ring out (the track's release and effects);
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
-  routing, distance): wherever that track plays, its clips in the song as it is and as suggested,
-  each with its tail (its notes ringing out, and its effects), and, for a bus or a return,
-  wherever the tracks playing into it or sending to it play;
-- a tempo or time signature change at bar N: bar N to the end of the song; the song's tempo or
-  time signature, the master, or a solo: the whole song;
+  routing, distance) or any of its automation (a lane holds its first value before its first
+  point and its last after its last, so a lane is never heard only at its points; a send's,
+  an instrument's or an insert's lane the same): wherever that track plays, its clips in the
+  song as it is and as suggested, each with its tail (its notes ringing out, and its effects),
+  and, for a bus or a return, wherever the tracks playing into it or sending to it play;
+- a change of a clip with controller lanes (bend, mod, sustain, CCs) or step lanes (moved,
+  resized, taken away, its notes): wherever its track plays (what the lanes hold carries into
+  the track's later clips);
+- a tempo or time signature change at bar N: bar N to the end of the song, from the change before
+  it (or bar 1) when it glides or the change after it glides into it (a glide speeds up or slows
+  down the bars before its own); the song's tempo or time signature, the master, a solo, or
+  anything else: the whole song;
 - a name, a marker or a link between clips: nothing to hear.
+
+Then by sound: the studio renders the whole song as it is and as suggested (in the background,
+as soon as the suggestion arrives, never while the song plays, or when the musician presses
+Hear: the card says "Finding where it changes…") and compares them bar by bar, as `listen` with
+ops does: every bar whose difference is above -70 dBFS joins the regions (`regionsBy` is then
+`"rules and sound"`, and `soundRegions` names those bars). A song longer than 4 minutes isn't
+rendered whole: its regions are the rules' alone (`notBySound`). A suggestion file's `regions`
+(file mode) are the rules' alone: `listen` with the file and the ops says where it sounds
+different.
 
 The before-and-after plays the regions one after another, in order, looped as one, each with the
 bar before it (to hear it come in) when that fits too; a region that fits only without it is
