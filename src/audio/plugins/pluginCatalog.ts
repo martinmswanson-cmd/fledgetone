@@ -3717,8 +3717,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT",
   "gpl": false,
   "file": "mda.wasm",
-  "bytes": 2241026,
-  "hash": "1f06bbed3a64",
+  "bytes": 2240826,
+  "hash": "5119bb56d377",
   "plugins": [
    {
     "name": "Ambience",

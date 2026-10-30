@@ -2,7 +2,8 @@
 // their list of the block's notes afresh on each processEvents call, so bb_mda.cpp hands them all
 // of a block's messages at once. A chord plays every note, a note that ends where the next starts
 // is released, a controller on a note's last block doesn't lose its note-off, and all-notes-off
-// fades out instead of cutting the voices dead.
+// fades out instead of cutting the voices dead. A loud Piano chord plays
+// through with no sample zeroed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -121,5 +122,32 @@ test('mda instruments: all-notes-off fades out, then the next note plays', () =>
     s.midi(0x90, 60, 100);
     assert.ok(peak(s.render(seconds(0.2))) > 0.01, `${name}: silent after all-notes-off`);
     s.done();
+  }
+});
+
+test('mda Piano: a loud chord plays through, with no sample zeroed (a click) where its sum goes over 2', () => {
+  // (Upstream zeroes the sample and prints there; mda/mdaPiano-loud.patch keeps it, dropping only NaN)
+  for (let program = 0; program < 8; program++) {
+    const h = e.bb_create(names.indexOf('Piano'), RATE);
+    e.bb_set_program(h, program);
+    for (const n of [36, 48, 55, 60, 64, 67]) e.bb_midi(h, 0x90, n, 127);
+    const got = [];
+    for (let b = 0; b < seconds(1); b++) {
+      e.bb_process(h, 128);
+      got.push(...new Float32Array(e.memory.buffer, e.bb_buffer(h, 2), 128));
+    }
+    e.bb_destroy(h);
+    // Away from its attack: its largest step from one sample to the next is a fraction of its level
+    // (a sample zeroed would step by the whole of it)
+    const settled = got.slice(4410);
+    let step = 0;
+    for (let i = 1; i < settled.length; i++) step = Math.max(step, Math.abs(settled[i] - settled[i - 1]));
+    const loud = Math.max(...settled.map(Math.abs));
+    for (let i = 4411; i < got.length; i++) {
+      // A sample dropped to 0 among loud ones is a click
+      assert.ok(!(got[i] === 0 && Math.abs(got[i - 1]) > 0.2 * loud), `program ${program}: sample ${i} zeroed`);
+    }
+    assert.ok(step < 0.5 * loud, `program ${program}: a step of ${step} at a level of ${loud}`);
+    assert.ok(loud > 0.5, `program ${program}: plays (${loud})`);
   }
 });

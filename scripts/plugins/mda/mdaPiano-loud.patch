@@ -1,0 +1,22 @@
+--- a/mdaPiano.cpp
++++ b/mdaPiano.cpp
+@@ -400,15 +400,10 @@
+         l += V->outl * V->f0;
+         r += V->outr * V->f0;
+ 
+- if(!(l > -2.0f) || !(l < 2.0f))
+- {
+-   printf("what is this shit?   %d,  %f,  %f\n", i, x, V->f0);
+-   l = 0.0f;
+- }
+-if(!(r > -2.0f) || !(r < 2.0f))
+- {
+-   r = 0.0f;
+- }
++ // (Fledgetone: only a broken value, NaN or infinite, is dropped; a loud chord's sum over 2 plays
++ // as it is, rather than a sample zeroed (a click) and a print. The host guards the level.)
++ if(!(l > -1.0e30f && l < 1.0e30f)) l = 0.0f;
++ if(!(r > -1.0e30f && r < 1.0e30f)) r = 0.0f;
+ 
+         V++;
+       }
