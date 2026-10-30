@@ -37,6 +37,7 @@ import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { barToSeconds, FOUR_FOUR, type MeterMap } from '../audio/tempoMap';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { listenSnapshot } from '../agent/listenSnapshot';
+import { agentIdOf } from '../agent/agentText';
 import { applyOps, OPS_VERSION } from '../agent/ops';
 import { allFindings, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
 
@@ -329,6 +330,8 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const mixMeasure = { lufs: m.lufs, truePeakDb: m.truePeakDbtp, spectrum, stats };
   let tracks: ListenTrack[] | undefined;
   const measures: TrackMeasure[] = [];
+  // Track ids as the agent reads them everywhere else (hidden ones as their aliases)
+  const idOf = agentIdOf(song.tracks);
   if (opts.perTrack) {
     tracks = [];
     await renderRangeStems(
@@ -337,7 +340,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
       toBar,
       async (track, ch, sampleRate) => {
         const t = await measureRender(bufferOf(ch, sampleRate));
-        tracks!.push({ id: track.id, name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions });
+        tracks!.push({ id: idOf(track.id), name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions });
         measures.push({
           id: track.id,
           name: track.name,
@@ -355,7 +358,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const streaming = targetById(DEFAULT_TARGET);
   const checks = checkMix(mixMeasure, measures, { lufs: streaming.lufs, name: `the streaming target (${streaming.lufs} LUFS)` })
     .filter((f) => opts.perTrack || MIX_ONLY_CHECKS.includes(f.id))
-    .map((f) => ({ id: f.id, level: f.level, title: f.title, detail: f.detail, trackIds: f.trackIds }));
+    .map((f) => ({ id: f.id, level: f.level, title: f.title, detail: f.detail, trackIds: f.trackIds?.map(idOf) }));
   const report: ListenReport = {
     range: { fromBar, toBar },
     seconds: Math.round((channels[0].length / rate) * 1000) / 1000,
