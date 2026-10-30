@@ -21,7 +21,7 @@ export function previewOps(song: ProjectSnapshot, ops: unknown, idBase = 'previe
   const out = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase });
   // (the changes and warnings name tracks and clips: as plain as the song summary has them)
   if (!out.ok) return cleanForAgent({ ok: false as const, errors: out.errors });
-  return cleanForAgent({ ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, notes: out.notes, audition: out.diff.audition, refs: out.refs, stats: out.stats });
+  return cleanForAgent({ ok: true as const, changes: out.diff.changes.map((c) => c.text), warnings: out.warnings, notes: out.notes, regions: out.diff.regions, audition: out.diff.audition, refs: out.refs, stats: out.stats });
 }
 
 /** The reading handlers, for the studio's bridge client. */

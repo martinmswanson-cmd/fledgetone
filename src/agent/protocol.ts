@@ -28,6 +28,9 @@
  * --dev), and only at 127.0.0.1:<port> by that exact Host (so another site's DNS name pointed at
  * 127.0.0.1 is refused).
  */
+import { LOOK_ALIKE_LETTERS } from './lookAlikes';
+import { textName } from './names';
+
 /** The protocol version both ends speak. */
 export const PROTOCOL_VERSION = 1;
 
@@ -260,13 +263,14 @@ export const DEV_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'h
 
 /**
  * Whether a page from `origin` may connect: the published app; the `fledgetone studio` page's own
- * origins (passed in `studioOrigins`, Stage 2); the dev server only with `dev`; a page with no
- * origin of its own ("null": a file opened from disk) only with `allowNull`. No Origin header at
- * all (a program, not a browser page) is refused: the studio is always a page.
+ * origins (passed in `studioOrigins`, Stage 2); the dev server only with `dev`. Never a page with
+ * no origin of its own ("null"): a file opened from disk reads so, but so does any website's
+ * sandboxed frame, which could then try codes on the helper (`fledgetone mcp --studio` serves
+ * the studio from the helper instead). No Origin header at all (a program, not a browser page)
+ * is refused: the studio is always a page.
  */
-export function originAllowed(origin: string | undefined | null, opts: { dev?: boolean; allowNull?: boolean; studioOrigins?: readonly string[] } = {}): boolean {
-  if (!origin) return false;
-  if (origin === 'null') return opts.allowNull === true;
+export function originAllowed(origin: string | undefined | null, opts: { dev?: boolean; studioOrigins?: readonly string[] } = {}): boolean {
+  if (!origin || origin === 'null') return false;
   if ((APP_ORIGINS as readonly string[]).includes(origin)) return true;
   if (opts.studioOrigins?.includes(origin)) return true;
   return opts.dev === true && (DEV_ORIGINS as readonly string[]).includes(origin);
@@ -334,32 +338,63 @@ export function agentLabel(text: unknown, max: number): string {
   return hasVisibleText(cut) ? cut : '';
 }
 
-/** Letters that look like Latin ones (Cyrillic, Greek, digits and the like), as those letters. */
-const LOOK_ALIKES: Record<string, string> = {
-  а: 'a', е: 'e', ё: 'e', о: 'o', р: 'p', с: 'c', у: 'y', х: 'x', к: 'k', т: 't', н: 'h', м: 'm', в: 'b', г: 'r', ԁ: 'd', ԍ: 'g', ɡ: 'g', ӏ: 'l', і: 'l', ї: 'l', ј: 'j', ѕ: 's', ԛ: 'q', ԝ: 'w', һ: 'h',
-  α: 'a', β: 'b', ε: 'e', η: 'n', ι: 'l', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', γ: 'y', δ: 'd',
-  '0': 'o', '1': 'l', '3': 'e', '|': 'l', i: 'l', ı: 'l', ł: 'l', ƒ: 'f', ſ: 'f', ɢ: 'g', ᴛ: 't', ᴏ: 'o', ᴇ: 'e', ꜰ: 'f', ʟ: 'l', ɴ: 'n', ᴅ: 'd',
+/**
+ * More look-alikes than Unicode's confusables data names (LOOK_ALIKE_LETTERS): digits and signs
+ * read as letters, i and l alike, small capitals, and letters read as the letter they're mostly
+ * seen as. Applied after it, in lower case.
+ */
+const MORE_LOOK_ALIKES: Record<string, string> = {
+  '0': 'o', '1': 'l', '3': 'e', '|': 'l', '!': 'l', i: 'l', ı: 'l', ł: 'l', ƒ: 'f', ſ: 'f', ɢ: 'g', ᴛ: 't', ᴏ: 'o', ᴇ: 'e', ꜰ: 'f', ʟ: 'l', ɴ: 'n', ᴅ: 'd',
+  Ғ: 'f', ғ: 'f', И: 'n', г: 'r', н: 'h', т: 't', к: 'k', м: 'm', в: 'b', и: 'n', й: 'n', л: 'n', п: 'n', д: 'd', ԁ: 'd', ԍ: 'g', ɡ: 'g',
+  η: 'n', ν: 'v', ι: 'l', κ: 'k', τ: 't', γ: 'y', δ: 'd', ϝ: 'f', ε: 'e', λ: 'l', π: 'n',
+  // (the Canadian syllabics "fancy text" writes Latin with)
+  ᗩ: 'a', ᗷ: 'b', ᑕ: 'c', ᗪ: 'd', ᗴ: 'e', ᕮ: 'e', ᖴ: 'f', ᘜ: 'g', ᕼ: 'h', ᓰ: 'l', ᒍ: 'j', ᖽ: 'k', ᒪ: 'l', ᗰ: 'm', ᑎ: 'n', ᑭ: 'p', ᑫ: 'q', ᖇ: 'r', ᔕ: 's', ᑌ: 'u', ᐯ: 'v', ᗯ: 'w', '᙭': 'x', ᖻ: 'y', ᘔ: 'z',
 };
+
+/** Stands for a letter of any other script in what text reads as (readsAs): it may look like any Latin one. */
+export const ANY_LETTER = '?';
 
 /**
  * What `text` reads as at a glance: compatibility forms folded (full-width, ligatures), invisible
- * characters and accents dropped, look-alike letters as the Latin ones (i and l alike), lower
- * case, letters only. For telling text that would pass for the app's name.
+ * characters and accents dropped, look-alike letters of every script as the Latin ones (Unicode's
+ * confusables data, LOOK_ALIKE_LETTERS, and MORE_LOOK_ALIKES: i and l alike), lower case, letters
+ * only; a letter of another script that reads as no Latin one is ANY_LETTER. For telling text
+ * that would pass for the app's name.
  */
 export function readsAs(text: string): string {
-  return [
-    ...text
-      .normalize('NFKD')
-      .replace(/[\p{Cf}\p{M}]/gu, '')
-      .toLowerCase(),
-  ]
-    .map((c) => LOOK_ALIKES[c] ?? c)
+  return [...text.normalize('NFKD').replace(/[\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}]/gu, '')]
+    .map((c) => {
+      // (this table's own first, then Unicode's; a small letter whose capital is a look-alike, as Cherokee's, as that)
+      const latin = (MORE_LOOK_ALIKES[c] ?? LOOK_ALIKE_LETTERS.get(c) ?? LOOK_ALIKE_LETTERS.get(c.toUpperCase()) ?? c).toLowerCase();
+      return [...latin].map((x) => MORE_LOOK_ALIKES[x] ?? x).join('');
+    })
     .join('')
-    .replace(/[^a-z]/g, '');
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z\p{L}]/gu, '')
+    .replace(/[^a-z]/g, ANY_LETTER);
 }
 
-/** The app's own name at the start of an agent's text: it could pass for the app speaking. */
-const posesAsApp = (text: string) => readsAs(text).startsWith(readsAs('Fledgetone'));
+/** The app's name as text reads (readsAs). */
+const APP_READS = 'fledgetone';
+
+/**
+ * The app's name at the start of an agent's text: it could pass for the app speaking. Each letter
+ * must read as the name's (readsAs), but a letter of another script that reads as no Latin one
+ * counts as any letter (a look-alike no table names), as long as at least three of them read as
+ * the name's own (and none as another letter): text in another script altogether is never taken
+ * for the name.
+ */
+export function posesAsApp(text: string): boolean {
+  const reads = readsAs(text);
+  if (reads.length < APP_READS.length) return false;
+  let same = 0;
+  for (let i = 0; i < APP_READS.length; i++) {
+    if (reads[i] === APP_READS[i]) same++;
+    else if (reads[i] !== ANY_LETTER) return false;
+  }
+  return same >= 3;
+}
 
 /**
  * Text from an agent made safe to show as the agent's (plainAgentText, trimmed): text that starts
@@ -374,11 +409,14 @@ export function fromAgent(text: unknown, max: number): string {
 export const AGENT_NAME_MAX = 40;
 
 /**
- * An agent's name for itself as the studio shows it: plain, on one line, at most AGENT_NAME_MAX
- * characters; none (the studio says "your agent") if it's empty or starts with the app's name.
+ * An agent's name for itself as the studio shows it: plain, on one line, without quote or bracket
+ * characters (so it can't close the "(…)" or the quotes the studio's words put it in: names.ts
+ * textName), at most AGENT_NAME_MAX characters; none (the studio says "your agent") if it's empty
+ * or starts with the app's name.
  */
 export function agentName(text: unknown): string | undefined {
-  const plain = plainAgentText(text, 200).replace(/\s+/g, ' ').trim().slice(0, AGENT_NAME_MAX).trim();
+  const named = textName(plainAgentText(text, 200));
+  const plain = cutText(named === '…' ? '' : named, AGENT_NAME_MAX).trim();
   return plain && !posesAsApp(plain) ? plain : undefined;
 }
 

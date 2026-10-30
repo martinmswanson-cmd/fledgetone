@@ -10,7 +10,7 @@ import { createStarter, isStarterId, STARTERS } from '../../../src/store/starter
 import { parseProject, serializeProject } from '../../../src/store/project';
 import { projectFromHash, songLink } from '../../../src/store/shareLink';
 import { toAgentSong, agentNotes, type AgentSong } from '../../../src/agent/agentSong';
-import { diffSongs } from '../../../src/agent/songDiff';
+import { diffSongs, rangesWords } from '../../../src/agent/songDiff';
 import { applyOps } from '../../../src/agent/ops';
 import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/suggestion';
 import { fingerprint, firstDifference, stableJson } from '../../../src/agent/fingerprint';
@@ -150,9 +150,10 @@ export function diff(args: string[], flags: Flags): number {
   const a = readSong(need(args[0], 'the first song file'));
   const b = readSong(need(args[1], 'the second song file'));
   const d = diffSongs(a, b);
-  if (flags.json) json(d);
+  // (the words with their names in plain quotes: the marked ones are for the studio's cards)
+  if (flags.json) json({ ...d, changes: d.changes.map(({ marked: _m, ...c }) => c) });
   else if (!d.changes.length) say('No differences.');
-  else say([...d.changes.map((c) => `- ${c.text}`), ...(d.bars ? [`(Bars ${Math.floor(d.bars.fromBar)} to ${Math.ceil(d.bars.toBar)})`] : [])].join('\n'));
+  else say([...d.changes.map((c) => `- ${c.text}`), ...(d.regions.length ? [`(Heard in ${rangesWords(d.regions)})`] : [])].join('\n'));
   return 0;
 }
 

@@ -140,3 +140,83 @@ export function loopChannels(channels: readonly Float32Array<ArrayBuffer>[], tri
     return out;
   });
 }
+
+/** One stretch of a sequence, rendered: its channels from its first bar on, and the `fade` frames that lead into that bar in the song (silence where none were rendered). */
+export interface RenderedStretch {
+  channels: Float32Array<ArrayBuffer>[];
+  lead: Float32Array<ArrayBuffer>[];
+}
+
+/** A render's channels split for a sequence: from frame `trim` on, and the `fade` frames before it (zeros before frame 0). */
+export function stretchOf(channels: readonly Float32Array<ArrayBuffer>[], trim: number, fade: number): RenderedStretch {
+  const t = Math.max(0, trim);
+  const n = Math.max(0, Math.round(fade));
+  return {
+    channels: channels.map((d) => d.slice(t)),
+    lead: channels.map((d) => {
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const at = t - n + i;
+        out[i] = at >= 0 && at < d.length ? d[at] : 0;
+      }
+      return out;
+    }),
+  };
+}
+
+/**
+ * Stretches of a song played one after another, looped as one (the before or after of a
+ * suggestion whose changes sit in several places): each stretch's last `fade` frames crossfade
+ * (equal power) into the music leading into the next one's start (the first's, after the last),
+ * so going from one to the next is a step the song itself takes into that bar, never a click.
+ * With one stretch it's loopChannels. `starts`: where each stretch begins in the result, frames.
+ */
+export function joinStretches(parts: readonly RenderedStretch[], fade: number): { channels: Float32Array<ArrayBuffer>[]; starts: number[] } {
+  const count = Math.max(0, ...parts.map((p) => p.channels.length));
+  const starts: number[] = [];
+  let length = 0;
+  for (const p of parts) {
+    starts.push(length);
+    length += p.channels[0]?.length ?? 0;
+  }
+  const channels = Array.from({ length: count }, () => new Float32Array(Math.max(1, length)));
+  parts.forEach((p, i) => {
+    const next = parts[(i + 1) % parts.length];
+    for (let c = 0; c < count; c++) {
+      const data = p.channels[Math.min(c, p.channels.length - 1)];
+      if (!data) continue;
+      const out = data.slice();
+      const lead = next.lead[Math.min(c, next.lead.length - 1)] ?? new Float32Array(0);
+      const n = Math.min(Math.max(0, Math.round(fade)), Math.floor(out.length / 2), lead.length);
+      for (let k = 0; k < n; k++) {
+        const t = ((k + 0.5) / n) * (Math.PI / 2);
+        const at = out.length - n + k;
+        out[at] = out[at] * Math.cos(t) + lead[lead.length - n + k] * Math.sin(t);
+      }
+      channels[c].set(out, starts[i]);
+    }
+  });
+  return { channels, starts };
+}
+
+/** A side of a sequence for switching (sequenceOffset): its tempo, where each stretch begins in it (seconds) and its whole length (seconds). */
+export interface SequenceSide {
+  tempo: Tempo;
+  starts: readonly number[];
+  seconds: number;
+}
+
+/**
+ * Where in `to`'s sequence the music is when `from`'s has played `elapsed` seconds: the same
+ * stretch, and in it the same bar (and part of a bar) by each side's own tempo (sameBarOffset), so
+ * a switch between before and after keeps its place even when they're of different lengths.
+ */
+export function sequenceOffset(elapsed: number, plays: ReadonlyArray<{ fromBar: number }>, from: SequenceSide, to: SequenceSide): number {
+  if (!plays.length || from.seconds <= 0) return 0;
+  const into = ((elapsed % from.seconds) + from.seconds) % from.seconds;
+  let i = 0;
+  while (i + 1 < from.starts.length && from.starts[i + 1] <= into + 1e-9) i++;
+  const end = (side: SequenceSide, k: number) => (k + 1 < side.starts.length ? side.starts[k + 1] : side.seconds);
+  const inStretch = sameBarOffset(into - from.starts[i], plays[i].fromBar, { tempo: from.tempo, seconds: end(from, i) - from.starts[i] }, { tempo: to.tempo, seconds: end(to, i) - (to.starts[i] ?? 0) });
+  return Math.max(0, Math.min(Math.max(0, to.seconds - 0.001), (to.starts[i] ?? 0) + inStretch));
+}

@@ -17,6 +17,7 @@ import { checkOpsShape, OPS_VERSION, type Op } from './ops';
 import { fingerprint } from './fingerprint';
 import { fromAgent } from './protocol';
 import { agentLine, byAgentId } from './agentText';
+import { textName } from './names';
 
 export const SUGGESTION_FORMAT = 'fledgetone-suggestion';
 export const SUGGESTION_VERSION = 1;
@@ -182,7 +183,7 @@ function describeKey(song: ProjectSnapshot, key: string, names: Record<string, s
   const raw = nameOf(song, key) ?? names[key];
   const name = raw === undefined ? undefined : agentLine(raw, 64);
   const what = key.startsWith('clip:') ? 'clip' : key.startsWith('marker:') ? 'marker' : 'track';
-  if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${name}"` : `a ${what} it changes`;
+  if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${textName(name)}"` : `a ${what} it changes`;
   if (key === 'markers') return 'the markers';
   if (key === 'tempo') return 'the tempo';
   if (key === 'master') return 'the master';

@@ -53,8 +53,6 @@ export interface BridgeServerOptions {
   port?: number;
   /** Let the dev server's pages connect (localhost:5173 and 5200). */
   dev?: boolean;
-  /** Let pages with no origin of their own (a file opened from disk) connect. */
-  allowNull?: boolean;
   /** More origins allowed (the `fledgetone studio` page). */
   studioOrigins?: string[];
   version: string;
@@ -203,7 +201,7 @@ export class BridgeServer {
       this.log(`refused a connection for host ${JSON.stringify(info.req.headers.host)}`);
       return done(false, 403, 'Forbidden');
     }
-    if (!originAllowed(info.origin || info.req.headers.origin, { dev: this.opts.dev, allowNull: this.opts.allowNull, studioOrigins: this.opts.studioOrigins })) {
+    if (!originAllowed(info.origin || info.req.headers.origin, { dev: this.opts.dev, studioOrigins: this.opts.studioOrigins })) {
       this.log(`refused a connection from ${JSON.stringify(info.origin ?? null)} (not an allowed page)`);
       return done(false, 403, 'Forbidden');
     }

@@ -108,8 +108,52 @@ export interface BridgeClient {
   setPermissions(p: Permissions): void;
   /** Leave: says bye and closes. */
   disconnect(reason?: string): void;
+  /** The connection opened (the WebSocket's open event): the helper's hello is waited for HELLO_TIMEOUT_MS. */
+  opened(): void;
   /** The connection closed (from the WebSocket's close event). */
   closed(reason?: string): void;
+}
+
+/** How long the studio waits for the helper's hello once the connection is open, ms. */
+export const HELLO_TIMEOUT_MS = 10_000;
+
+/** What the studio says when the program on the port opens a connection but never says hello. */
+export const NO_HELLO = 'The helper isn’t answering on that port. Check your agent started it (fledgetone mcp) and the port is the one it said.';
+
+/** What the studio says when the program on the port speaks, but not the helper's protocol. */
+export const NOT_THE_HELPER = 'The program on that port refused the connection. Check the port is the one your agent said.';
+
+/** What the studio says when the helper speaks another version of the connection. */
+export const OTHER_VERSION = 'The helper speaks another version of the connection. Update Fledgetone’s command line tools.';
+
+/**
+ * Whether `text` is the helper's hello of another version of the protocol: an event named hello
+ * (whatever its envelope's version) whose `protocol` or `v` is a number other than this one's.
+ * Anything else that isn't the protocol is another program, not an older or newer helper.
+ */
+export function isOtherVersionHello(text: unknown): boolean {
+  if (typeof text !== 'string' || text.length > LIMITS.frameBytes) return false;
+  let m: unknown;
+  try {
+    m = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return false;
+  const o = m as Record<string, unknown>;
+  if (o.kind !== 'event' || o.method !== 'hello') return false;
+  const protocol = (o.params as Record<string, unknown> | null | undefined)?.protocol;
+  const v = o.v;
+  const other = (x: unknown) => typeof x === 'number' && Number.isInteger(x) && x !== PROTOCOL_VERSION;
+  return other(v) || other(protocol);
+}
+
+/**
+ * Tries left as a helper says after a wrong code: a whole number from 0 to
+ * LIMITS.triesPerConnection, else nothing (a program that isn't the helper could say anything).
+ */
+export function readAttemptsLeft(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= LIMITS.triesPerConnection ? v : undefined;
 }
 
 /**
@@ -172,6 +216,13 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
   /** The request under way: the first step (`pair`, the helper proves) or the second (`pair_confirm`, the studio does), with the nonces it's bound to. */
   let pending: { step: 'pair' | 'confirm'; id: string; serverNonce: string; nonce: string; code: string; timer: ReturnType<typeof setTimeout> } | null = null;
   let pairCount = 0;
+  /** Wrong codes on this connection, as the studio counts them (whatever the other end says). */
+  let wrongTries = 0;
+  let helloTimer: ReturnType<typeof setTimeout> | null = null;
+  const stopHello = () => {
+    if (helloTimer) clearTimeout(helloTimer);
+    helloTimer = null;
+  };
   const address = pairingAddress(opts.port);
 
   const setState = (next: BridgeState, extra: Partial<BridgeInfo> = {}) => {
@@ -191,6 +242,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
   };
 
   const refuse = (message: string, closeCode: number = CLOSE.refused) => {
+    stopHello();
     if (pending) clearTimeout(pending.timer);
     pending = null;
     setState('refused', { message });
@@ -230,10 +282,14 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
       if (typeof r.nonce === 'string' && r.nonce.length >= 16) serverNonce = r.nonce;
       const expected = await serverProof(p.code, p.serverNonce, p.nonce, address);
       if (!sameProof(r.proof, expected)) {
-        // A mistyped code, or not the helper the agent started: either way nothing about the code went to it
-        const left = typeof r.attemptsLeft === 'number' ? r.attemptsLeft : 0;
+        // A mistyped code, or not the helper the agent started: either way nothing about the code went to it.
+        // (the tries left only as the helper would say them, and never more than the studio's own count leaves)
+        wrongTries++;
+        const said = readAttemptsLeft(r.attemptsLeft);
+        const ours = LIMITS.triesPerConnection - wrongTries;
+        const left = said === undefined ? ours : Math.min(said, ours);
         if (left <= 0) refuse('That code doesn’t match, and there are no tries left. Ask your agent to connect again for a new code.');
-        else setState('wrong_code', { attemptsLeft: left, message: 'That code doesn’t match the one your agent gave. Check it and type it again. (If it’s right, check the port is the one your agent said: on this one is something other than the helper your agent started, and nothing was sent to it.)' });
+        else setState('wrong_code', { ...(said !== undefined ? { attemptsLeft: left } : {}), message: 'That code doesn’t match the one your agent gave. Check it and type it again. (If it’s right, check the port is the one your agent said: on this one is something other than the helper your agent started, and nothing was sent to it.)' });
         return;
       }
       // The helper knows the code: now the studio proves it does too
@@ -293,16 +349,19 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
       if (state === 'closed' || state === 'refused') return;
       const m = parseMessage(text);
       if (!m) {
-        // Not our protocol, or another version of it: nothing more is said
-        refuse('The helper speaks another version of the connection. Update Fledgetone’s command line tools.', CLOSE.version);
+        // Another version of the helper (its hello says so), or another program: nothing more is said
+        if (isOtherVersionHello(text)) refuse(OTHER_VERSION, CLOSE.version);
+        else refuse(state === 'paired' ? 'The helper and the studio didn’t understand each other. Update Fledgetone’s command line tools.' : NOT_THE_HELPER, state === 'paired' ? CLOSE.protocol : CLOSE.refused);
         return;
       }
       if (m.kind === 'event' && m.method === 'hello') {
         const h = (m.params ?? {}) as Partial<HelloParams>;
         if (h.protocol !== PROTOCOL_VERSION || typeof h.nonce !== 'string' || h.nonce.length < 16) {
-          refuse('The helper speaks another version of the connection. Update Fledgetone’s command line tools.', CLOSE.version);
+          if (isOtherVersionHello(text)) refuse(OTHER_VERSION, CLOSE.version);
+          else refuse(NOT_THE_HELPER);
           return;
         }
+        stopHello();
         // A second hello mid-pairing would let a helper swap nonces under a proof: only the first counts
         if (serverNonce) return;
         serverNonce = h.nonce;
@@ -327,6 +386,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
       if (state === 'paired') sendRaw({ kind: 'event', method: 'permissions', params: permissions });
     },
     disconnect(reason = 'The musician disconnected.') {
+      stopHello();
       if (state === 'paired') sendRaw({ kind: 'event', method: 'bye', params: { reason } });
       if (pending) clearTimeout(pending.timer);
       pending = null;
@@ -337,7 +397,15 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
       }
       setState('closed', { message: reason });
     },
+    opened() {
+      if (serverNonce || state !== 'waiting' || helloTimer) return;
+      helloTimer = setTimeout(() => {
+        helloTimer = null;
+        if (!serverNonce && state === 'waiting') refuse(NO_HELLO);
+      }, HELLO_TIMEOUT_MS);
+    },
     closed(reason) {
+      stopHello();
       if (pending) clearTimeout(pending.timer);
       pending = null;
       if (state !== 'closed') setState('closed', state === 'refused' ? {} : { message: reason || 'The connection closed.' });

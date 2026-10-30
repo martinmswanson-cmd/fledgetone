@@ -22,6 +22,7 @@ import { noteCardPlaces, noteListScroll, noteOwnInput } from './cardGuard';
 import { returnFocus } from './returnFocus';
 import { ConversationList } from './ConversationList';
 import { MessageBox } from './MessageBox';
+import { NameChip } from './Named';
 
 /** "can read, suggest, listen": what the musician allowed, in words. */
 function allowed(p: { see: boolean; suggest: boolean; listen: boolean }): string {
@@ -165,7 +166,7 @@ export const SuggestionsPanel: React.FC = () => {
         {connected ? (
           <>
             <span className="flex-1 min-w-0">
-              <span className="text-forge-text">Connected: your agent{agent ? ` (${agent})` : ''}</span> · {allowed(permissions)}
+              <span className="text-forge-text">Connected: your agent{agent ? <NameChip name={agent} /> : null}</span> · {allowed(permissions)}
             </span>
             <button type="button" onClick={() => ui.setAgentConnectOpen(true)} className="h-7 px-2 rounded-md border border-forge-border text-forge-text hover:border-cyan-500/60">
               Change

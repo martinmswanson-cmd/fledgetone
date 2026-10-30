@@ -1,9 +1,11 @@
 /** Words the Suggestions panel and its cards share. */
 import type { Suggestion } from '../../agent/suggestionsStore';
 import type { OwnMessage } from '../../agent/conversation';
+import { textName } from '../../agent/names';
+import type { Permissions } from '../../agent/protocol';
 
-/** "From your agent (name)" or "From your agent". */
-export const fromYourAgent = (name?: string): string => `From your agent${name ? ` (${name})` : ''}`;
+/** "From your agent (name)" or "From your agent", as plain text (on screen the name is a chip: Named.tsx). */
+export const fromYourAgent = (name?: string): string => `From your agent${name ? ` (${textName(name)})` : ''}`;
 
 /** Where a suggestion is, in words. */
 export const STATUS_WORDS: Record<Suggestion['status'], string> = {
@@ -38,3 +40,8 @@ export function deliveryWords(m: Pick<OwnMessage, 'status' | 'reason'>): string 
   }
 }
 
+/** What the agent may do, in words: "read this song, see what you select, suggest changes, and listen". */
+export function mayWords(p: Pick<Permissions, 'see' | 'suggest' | 'listen'>): string {
+  const can = ['read this song', ...(p.see ? ['see what you select'] : []), ...(p.suggest ? ['suggest changes'] : []), ...(p.listen ? ['listen'] : [])];
+  return can.length === 1 ? can[0] : `${can.slice(0, -1).join(', ')}${can.length > 2 ? ',' : ''} and ${can.at(-1)}`;
+}

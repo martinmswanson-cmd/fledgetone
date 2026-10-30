@@ -13,6 +13,8 @@ import { connectAgent, DEFAULT_PORT, disconnectAgent, retryCode, setAgentPermiss
 import { useSuggestions } from '../../agent/suggestionsStore';
 import { DEFAULT_PERMISSIONS, normalizeCode, typedCode, type Permissions } from '../../agent/protocol';
 import { returnFocus } from './returnFocus';
+import { NameChip } from './Named';
+import { mayWords } from './words';
 
 /** The privacy line, word for word (also in the guide and the command line's help). */
 export const PRIVACY_LINE = 'Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.';
@@ -90,7 +92,7 @@ export const ConnectDialog: React.FC = () => {
       <form onSubmit={submit} data-agent-ui="" className="flex flex-col gap-3 p-4 text-[13px] text-forge-muted max-w-md">
         {connected ? (
           <p className="text-forge-text">
-            Connected to your agent{info.agent ? <> (<span className="font-semibold">{info.agent}</span>)</> : null}. It can read this song{ask.suggest ? ' and suggest changes' : ''}{ask.listen ? ', and listen' : ''}.
+            Connected to your agent{info.agent ? <NameChip name={info.agent} /> : null}. It can {mayWords(ask)}.
           </p>
         ) : (
           <>

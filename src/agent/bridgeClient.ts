@@ -134,6 +134,10 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     },
   });
   client = c;
+  // (open, the helper says hello at once: a program on the port that never does is said so)
+  ws.onopen = () => {
+    if (client === c) c.opened();
+  };
   ws.onmessage = (e) => {
     if (typeof e.data === 'string') void c.receive(e.data);
   };
@@ -174,7 +178,8 @@ export function disconnectAgent(reason = 'The musician disconnected.'): void {
 function deliver(m: OwnMessage): void {
   // What goes is decided now: the selection only while the agent may see it, the suggestion only while it's on the panel
   const st = useSuggestions.getState();
-  const params = outgoing(m, { see: st.permissions.see, onPanel: (id) => st.suggestions.some((s) => s.id === id) });
+  // (a suggestion of another connection's agent is none of this one's: it can't read it)
+  const params = outgoing(m, { see: st.permissions.see, onPanel: (id) => st.suggestions.some((s) => s.id === id && s.connection === m.connection) });
   // (and the conversation shows what went, no more)
   if (params.context !== m.context || params.suggestionId !== m.suggestionId)
     useConversation.setState((c) => ({ mine: c.mine.map((x) => (x.id === m.id ? { ...x, context: params.context, suggestionId: params.suggestionId } : x)) }));
@@ -200,10 +205,11 @@ export function sendToAgent(text: string, opts: { about?: string | null; include
   const st = useSuggestions.getState();
   const t = useTimelineStore.getState();
   const context = opts.include && st.permissions.see ? selectionContext(t) : undefined;
-  const about = opts.about && st.suggestions.some((s) => s.id === opts.about) ? opts.about : undefined;
+  const connection = useConversation.getState().connection;
+  const about = opts.about && st.suggestions.some((s) => s.id === opts.about && s.connection === connection) ? opts.about : undefined;
   const read = readUserMessage({ id: newUserMessageId(), text, at: Date.now(), ...(about ? { suggestionId: about } : {}), ...(context ? { context } : {}) });
   if (!read) return null;
-  const m: OwnMessage = { ...read, status: 'sending', connection: useConversation.getState().connection };
+  const m: OwnMessage = { ...read, status: 'sending', connection };
   addOwn(m);
   deliver(m);
   return m;

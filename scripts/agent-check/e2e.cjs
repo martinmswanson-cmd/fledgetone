@@ -251,7 +251,9 @@ async function until(check, ms, what) {
         return r.left < corner.right - 0.5 || r.top < ruler.bottom - 0.5;
       }).length;
     });
-    step('3 card, caution and tint', /goes up by 9 dB/.test(cardText) && /Turns "Brass Stabs" up by 9 dB/.test(cardText) && /From your agent \(E2E agent\)/.test(cardText) && tinted > 0 && overHeaders === 0, `${tinted} tinted boxes, ${overHeaders} over the headers or ruler`);
+    // (the names an agent may have written are chips of their own, quoted for screen readers)
+    const chips = await card.locator('[data-name-chip]').allTextContents();
+    step('3 card, caution and tint', /goes up by 9 dB/.test(cardText) && /Turns “Brass Stabs” up by 9 dB/.test(cardText) && chips.includes('“E2E agent”') && chips.includes('“Brass Stabs”') && tinted > 0 && overHeaders === 0, `${tinted} tinted boxes, ${overHeaders} over the headers or ruler, chips ${JSON.stringify(chips)}`);
     if (SHOTS) {
       await page.screenshot({ path: path.join(SHOTS, 'panel-and-highlight.png') });
       await card.screenshot({ path: path.join(SHOTS, 'card.png') });
@@ -556,13 +558,20 @@ async function until(check, ms, what) {
     const quick = await A(() => window.__fledgetoneAgent.audition.useAudition.getState());
     step('9f quick switches', quick.phase === 'playing' && quick.hearing === 'b', `${quick.phase}, hearing ${quick.hearing}${quick.error ? `, ${quick.error}` : ''}`);
 
-    // 9g. What's said to screen readers: an agent's long message is said short, a burst merged
+    // 9g. What's said to screen readers: an agent's long message is said short, a burst merged, at
+    // most one announcement every ANNOUNCE_EVERY_MS (waited for by the throttle's own state, never
+    // by a guess at how long things take: under load a say can take longer than its second)
+    const EVERY = await A(() => window.__fledgetoneAgent.sg.ANNOUNCE_EVERY_MS);
+    const quietNow = () => A((every) => { const p = window.__fledgetoneAgent.sg.announcePending(); return p.waiting === 0 && Date.now() - p.lastSaid >= every; }, EVERY);
+    await until(quietNow, 30000, 'the live region to be free');
     await A(() => {
       window.__live = [];
       const el = document.querySelector('[data-agent-live]');
-      new MutationObserver(() => window.__live.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+      new MutationObserver(() => {
+        const last = window.__live.at(-1);
+        if (!last || last.text !== el.textContent) window.__live.push({ at: Date.now(), text: el.textContent });
+      }).observe(el, { childList: true, characterData: true, subtree: true });
     });
-    await page.waitForTimeout(4100);
     const firstCardTop = () => A(() => document.querySelector('[data-agent-panel] [data-suggestion]').getBoundingClientRect().top);
     const topBeforeSays = await firstCardTop();
     await call('say', { text: `Here is a long thought: ${'the bass could move more '.repeat(60)}` });
@@ -573,11 +582,19 @@ async function until(check, ms, what) {
     await page.waitForTimeout(300);
     const topAfterSays = await firstCardTop();
     const unreadShown = await page.locator('[data-agent-unread]').count();
-    const live = await A(() => window.__live);
-    await page.waitForTimeout(4500);
-    const liveAfter = await A(() => window.__live);
+    // Everything said: nothing waiting any more
+    await until(() => A(() => window.__fledgetoneAgent.sg.announcePending().waiting === 0), 30000, 'every announcement to be said');
+    const liveAfter = (await A(() => window.__live)).filter((x) => x.text);
+    const gaps = liveAfter.slice(1).map((x, i) => x.at - liveAfter[i].at);
+    const all = liveAfter.map((x) => x.text).join(' ');
+    // (four messages: each said, or counted in a merge's "and N more")
+    const counted = (all.match(/Your agent sent a message/g) ?? []).length + [...all.matchAll(/And (\d+) more update/g)].reduce((n, m) => n + Number(m[1]), 0);
     step('9g messages never move the cards', topBeforeSays === topAfterSays, `first card at ${topBeforeSays} → ${topAfterSays}, new-messages button shown: ${unreadShown > 0}`);
-    step('9g live region: short, at most one a few seconds', live.length === 1 && live[0].length < 140 && /^Your agent sent a message/.test(live[0]) && liveAfter.length === 2 && /Short note 0/.test(liveAfter[1]), JSON.stringify(liveAfter).slice(0, 200));
+    step(
+      '9g live region: short, at most one a few seconds, every message said',
+      liveAfter.length >= 2 && liveAfter[0].text.length < 140 && /^Your agent sent a message: Here is a long thought/.test(liveAfter[0].text) && gaps.every((g) => g >= EVERY - 100) && /Short note 0/.test(all) && counted === 4,
+      `${liveAfter.length} said, gaps ${JSON.stringify(gaps)}, counted ${counted}: ${JSON.stringify(liveAfter.map((x) => x.text)).slice(0, 200)}`
+    );
 
     // 9h. A message while the panel is closed shows on the header's button until it's been seen
     await page.getByLabel('Close the Suggestions panel').click();
@@ -622,7 +639,14 @@ async function until(check, ms, what) {
     await page.waitForTimeout(1100);
     await call('point_at', { target: { track: ids.bass }, note: 'The bass' });
     const ringed = await until(() => page.locator('[data-agent-highlight] .border-2').count(), 3000, 'the track ring').catch(() => 0);
-    const said = await until(() => A(() => /points at a track/.test(document.querySelector('[data-agent-live]')?.textContent ?? '')), 6000, 'the live region').catch(() => false);
+    // (said once the throttle lets it: on its own, or merged with others said meanwhile, as "and N more")
+    await A(() => {
+      window.__said10 = [];
+      const el = document.querySelector('[data-agent-live]');
+      window.__said10.push(el.textContent);
+      new MutationObserver(() => window.__said10.push(el.textContent)).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    const said = await until(() => A(() => window.__said10.some((t) => /points at a track|And \d+ more update/.test(t ?? ''))), 15000, 'the live region').catch(() => false);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at.png') });
     step('10 point_at', ringed > 0 && !!said);
 

@@ -77,7 +77,7 @@ npx tsc -p tools/cli                # type check
 | `studio [--port 47200] [--app <folder>]` | A built copy of the app (`npm run build` or `build:site` first) on `127.0.0.1`, for Safari and Brave, which won't let fledgetone.com reach the helper. `mcp --studio` starts it with the helper and lets it connect |
 | `link <song> [--base <url>]` | A share link that opens the song in Fledgetone |
 | `from-link <link> -o <out>` | The song in a share link, as a file |
-| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>] [--studio [--studio-port <n>]]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` (and with `--studio`, the studio itself) |
+| `mcp [--root <folder>] [--port <n>] [--dev] [--allow-origin <url>] [--studio [--studio-port <n>]]` | The agent helper: an MCP server on stdio, with the studio connection on `127.0.0.1` (and with `--studio`, the studio itself) |
 
 `--bars 9-16` is bars 9 to 16, 16 included (as `notes --bars`); without it, the whole song. The
 render and listen options `--samples`, `--offline`, `--browser`, `--timeout <seconds>` (default

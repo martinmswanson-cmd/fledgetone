@@ -332,7 +332,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
         title: z.string().min(1).max(LIMITS.titleMaxChars),
         explanation: z.string().max(LIMITS.explanationMaxChars).describe('Why, in plain words: what the musician will hear.'),
         ops: opsSchema,
-        focus: z.object({ fromBar: z.number(), toBar: z.number() }).optional().describe('The bars to play the before-and-after over (else the touched bars and one before)'),
+        focus: z.object({ fromBar: z.number(), toBar: z.number() }).optional().describe('Bars you would like heard as well: the before-and-after plays them along with every bar the suggestion changes, if they fit (never instead of them)'),
         file: z.string().optional(),
         out: z.string().optional(),
       },
@@ -360,7 +360,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
           const result = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase: suggestionIdBase(ops) });
           if (!result.ok) return fail(`The suggestion can't be applied:\n${result.errors.map((e) => `- op ${e.op}${e.path ? ` (${e.path})` : ''}: ${e.message}`).join('\n')}`);
           writeJson(outPath, makeSuggestionFile(song, { title, explanation, ops: ops as never }));
-          return { written: out, apply: `fledgetone apply ${file} ${out} -o <new song>.fledgetone.json`, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, notes: result.notes, audition: focus ?? result.diff.audition };
+          return { written: out, apply: `fledgetone apply ${file} ${out} -o <new song>.fledgetone.json`, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, notes: result.notes, regions: result.diff.regions, audition: focus ?? result.diff.audition };
         }
         needStudio();
         if (waitingSuggestions() >= LIMITS.waitingSuggestions) throw new Error(`${LIMITS.waitingSuggestions} suggestions are already waiting for the musician: wait for them to accept or dismiss some, or withdraw one.`);
@@ -391,7 +391,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     'get_suggestion',
     {
       title: 'A suggestion’s status',
-      description: 'A suggestion you made (or, without id, all of yours): waiting, accepted, dismissed, out of date (the song changed under it), or changed (the song changed elsewhere: the musician should listen again).',
+      description: `A suggestion you made (or, without id, all of yours): waiting, accepted, dismissed, out of date (the song changed under it), or changed (the song changed elsewhere: the musician should listen again). Also whether the musician heard it as it is (heard), where its changes are heard (regions: a track's level or sound counts wherever that track plays, the tempo or the master the whole song), the stretches its before-and-after plays one after another (audition), and, when those can't hold every region (at most ${LIMITS.listenMaxBars} bars and ${LIMITS.listenMaxSeconds} seconds), the bars left unheard (unheard) and the limit that left them out (limit).`,
       inputSchema: { id: z.string().optional() },
       annotations: { readOnlyHint: true },
     },
@@ -483,7 +483,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     ({ a, b }) =>
       guard(() => {
         const d = diffSongs(songFile(a), songFile(b));
-        return { changes: d.changes.map((c) => c.text), bars: d.bars };
+        return { changes: d.changes.map((c) => c.text), bars: d.bars, regions: d.regions };
       })
   );
 

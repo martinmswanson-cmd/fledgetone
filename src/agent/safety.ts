@@ -14,6 +14,7 @@ import type { AutomationParam, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings } from '../store/timelineTypes';
 import { busChain, isMixTrack } from '../store/buses';
 import { specOf } from '../audio/automation';
+import { nm, plainNames } from './names';
 
 /** A track raised by more than this many dB gets a warning. */
 export const TRACK_JUMP_DB = 6;
@@ -64,6 +65,14 @@ export const QUIET_UNDER_MIX_DB = 12;
  * knowing but no cause for care (a quiet track unmuted) go in `notes`, when it's given.
  */
 export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot, notes?: string[]): string[] {
+  const own: string[] = [];
+  const out = checkSafetyMarked(before, after, own).map(plainNames);
+  notes?.push(...own.map(plainNames));
+  return out;
+}
+
+/** checkSafety with each name in the words marked (names.ts), for a card to show them apart. */
+export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapshot, notes?: string[]): string[] {
   const out: string[] = [];
   // The loudest audible track's level along its way out, to tell a quiet track from a loud one
   const audible = after.tracks.filter((t) => !isMixTrack(t) && !t.isMuted);
@@ -75,7 +84,7 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot, not
 
   for (const t of after.tracks) {
     const was = old.get(t.id);
-    const n = `"${t.name}"`;
+    const n = `${nm(t.name)}`;
     // A new track starts at 0 dB, so one set louder is measured from there
     const from = was ? was.volume : 0;
     const ownJump = t.volume - from;
@@ -132,7 +141,7 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot, not
   }
 
   if (louder.length) {
-    const names = louder.slice(0, 3).map(([name]) => `"${name}"`);
+    const names = louder.slice(0, 3).map(([name]) => nm(name));
     const who = louder.length > 3 ? `${names.join(', ')} and ${louder.length - 3} more` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
     out.push(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(Math.max(...louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`);
   }

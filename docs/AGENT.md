@@ -73,9 +73,8 @@ Options of `fledgetone mcp`:
 | `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files (`.json`) and audio (`.wav`, `.mp3`) only. |
 | `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one (the pairing message says which). If 47123 is taken by another program, the helper doesn't move to another port by itself: it says so (on stderr, and `connect_studio` answers with what to do), tries 47123 again at each `connect_studio`, and the file tools work meanwhile. A port given with `--port` that's taken stops the helper with an error. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
-| `--allow-null-origin` | Also let a page opened from a file on disk connect (the one-file build). |
 | `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
-| `--studio` | Also serve the studio itself on `127.0.0.1:47200` and let it connect: for Safari and Brave, which won't let fledgetone.com reach the helper (see [The studio from the helper](#the-studio-from-the-helper)). `--studio-port <n>` for another port, `--app <folder>` for another build. |
+| `--studio` | Also serve the studio itself on `127.0.0.1:47200` and let it connect: for Safari and Brave, which won't let fledgetone.com reach the helper, and for a copy of the app on your computer (see [The studio from the helper](#the-studio-from-the-helper)). `--studio-port <n>` for another port, `--app <folder>` for another build. |
 | `--samples <folder>` | Instrument recordings for renders, laid out like `public/fledgetone-samples` (the default, in a copy of the repository). |
 | `--offline` | Renders download nothing: an instrument whose recordings aren't in the samples folder or kept from before can't play, and the render says so. |
 | `--browser <path>` | The browser renders use (else Chrome, Playwright's Chromium, Edge, then the usual places). Also `FLEDGETONE_BROWSER`. |
@@ -184,9 +183,9 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them, and so is the release of one that ends just before it (it renders from up to 8 bars earlier and measures only the range, what the master's limiter and clipper did included; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
-| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. `focus` (`{fromBar, toBar}`) is bars you'd like heard: the before-and-after plays them along with every bar the suggestion changes (never instead of them), if both fit in 90 seconds; else just the changed bars, the first 90 seconds of them for a change longer than that (`get_suggestion` then gives `unheard`: those bars can't count as heard, and the musician accepts only with a second press) |
+| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (over every bar it changes), and the bars its before-and-after plays (`audition`), or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: every region played whole), where its changes are heard (`regions`), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -194,6 +193,38 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `check_file {file}`, `diff_files {a, b}` | What the app would change opening a file; what changed between two |
 
 There is no tool to accept a suggestion, and there never will be: only you accept.
+
+### What a suggestion's before-and-after plays
+
+A suggestion counts as heard only once the musician has heard every place its changes can be heard
+(its `regions`, in whole bars, overlapping and touching ones joined):
+
+- a change that sits somewhere (notes, a clip, automation): its bars;
+- a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
+  routing, distance): wherever that track plays, its clips in the song as it is and as suggested,
+  each with its tail (its notes ringing out, and its effects), and, for a bus or a return,
+  wherever the tracks playing into it or sending to it play;
+- a tempo or time signature change at bar N: bar N to the end of the song; the song's tempo or
+  time signature, the master, or a solo: the whole song;
+- a name, a marker or a link between clips: nothing to hear.
+
+The before-and-after plays the regions one after another, in order, looped as one, each with the
+bar before it (to hear it come in) when that fits too; a region that fits only without it is
+played without it, never cut. Now and Suggested switch at the same place in the same region. All
+of it is at most 64 bars and 90 seconds (in the slower of the song as it is and as suggested). A
+region that doesn't fit is played as far as it does; what's left of it and every region after it
+is `unheard` (a master change on a long song, say: the whole song is more than 90 seconds), the
+card says which regions are heard and which aren't and which limit it was, and Accept takes it
+only with a second press. Your `focus` is played too if it fits in what's left, else left out
+(`focusLeftOut`). So for a change the musician can hear in one go, keep it to one place, or a few
+close together.
+
+**Names in what changes.** The names in a suggestion's words (a track's, a clip's, a marker's: you
+may have written them) are shown on the card as names apart, never as part of the sentence. In
+the plain words you get back (`changes`, `warnings`, `notes`, `preview_suggestion`, errors) each
+name is in double quotes with its own quote and bracket characters taken out, so a name can't close
+the quotes; your own name for yourself is shown without quote and bracket characters, and none at
+all if it would read as the app's name (in any script's look-alike letters).
 
 ### Talking with the musician
 
@@ -542,9 +573,15 @@ An error answer is `"error": {"code", "message"}` in place of `result`.
    60 bits, shown as `K7QM-3XPD-9TBW`; typed O counts as 0, I and L as 1) and the agent tells
    you. It lasts 10 minutes, and is used up once a studio pairs.
 2. The studio connects to `127.0.0.1:<port>`, the port in its box; the helper sends `hello` with its nonce S: `{protocol: 1, nonce, server}`.
+   A program on the port that opens the connection but sends no `hello` within 10 seconds, or
+   sends something else, is told apart: the studio says the helper isn't answering on that port,
+   or that the program on that port refused the connection; only a `hello` of another protocol
+   version asks you to update the command line tools.
 3. The studio sends a `pair` request with its nonce C and nothing about the code: `{protocol: 1, nonce: C, app, permissions}`.
 4. The helper proves first: `{proof: HMAC-SHA-256(code, "C.S.server.A"), nonce: <S for the next try>, attemptsLeft}`.
-   A is the address `127.0.0.1:<port>` with the port the helper listens on.
+   A is the address `127.0.0.1:<port>` with the port the helper listens on. The studio shows
+   `attemptsLeft` only as a whole number from 0 to 5, and counts the tries itself too (never more
+   than five a connection, whatever the other end says).
 5. The studio checks that proof against the code you typed, with A the address it dialed. If it
    doesn't match (a typo, the wrong port, or a program that isn't the helper your agent started),
    it says so and sends nothing more; you can type the code again (a new try, bound to the new nonces).
@@ -616,8 +653,10 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   be sent isn't, and a listen under way stops and answers `not_allowed`. Selecting clips isn't an
   edit, so an agent that may not see what you select doesn't hear of it as a `changed` either.
 - **Only Fledgetone's own pages connect.** The helper refuses pages from other sites (the Origin
-  must be `https://fledgetone.com`, the studio it serves itself with `--studio`, the dev server
-  with `--dev`, or a file on disk with `--allow-null-origin`), any address but `127.0.0.1:<port>` exactly (so another site can't reach
+  must be `https://fledgetone.com`, the studio it serves itself with `--studio`, or the dev server
+  with `--dev`; never a page with no origin of its own, `null`: a file opened from disk reads so,
+  but so does any website's sandboxed frame, which could then spend the code's tries), any address
+  but `127.0.0.1:<port>` exactly (so another site can't reach
   it through a name of its own pointed at your computer), and a second studio while one is paired.
 - **Only the helper you started, on the port you typed.** The pairing proof works both ways, the
   helper's first, and both proofs are bound to the helper's address (`127.0.0.1:<port>`): a program

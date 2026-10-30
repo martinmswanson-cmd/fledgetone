@@ -1,28 +1,53 @@
 /**
  * What changed between two versions of a song, in plain words: tracks, clips, notes, markers,
- * tempo and master matched by id, each change a sentence ("Turns "Bass" up by 3 dB (-6 to -3
- * dB).") with the tracks, clips and bars it touches. Also the bars worth listening to: the touched
- * bars and one before them, so a suggestion is heard coming in. Plain logic, used by applyOps, the
- * command line's diff and the studio's suggestion cards.
+ * tempo, time signature and master matched by id, each change a sentence ("Turns "Bass" up by 3 dB
+ * (-6 to -3 dB).") with the tracks, clips and bars it touches. The names in a sentence are the
+ * song's, which an agent may have written: each is kept apart (names.ts), shown as a chip of its
+ * own on a card (`marked`) and in plain quotes, its own quotes and brackets taken out, everywhere
+ * else (`text`). Also where each change is heard (`heard`, and all of them together in `regions`):
+ * a change that sits somewhere, its bars; one of a track's sound (its level, pan, instrument,
+ * inserts, sends, routing...), the bars where that track sounds (its clips with their tails, and
+ * the clips of every track playing into it, when it's a bus or a return); a tempo or time
+ * signature change at bar N, bar N to the end; one for the whole song (the tempo, the time
+ * signature, the master, a solo), the whole song; a name, a marker or a link, nowhere (nothing to
+ * hear). Plain logic, used by applyOps, the command line's diff and the studio's suggestion cards.
  */
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../store/timelineTypes';
 import { durationToBars } from '../store/timelineTypes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
-import { secondsToBar } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { releaseSeconds } from '../audio/auditionMath';
+import { liveSends } from '../store/buses';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
+import { nm, plainNames } from './names';
+
+/**
+ * Where a change is heard: 'here' (its own bars, fromBar to toBar), 'track' (wherever its track
+ * sounds), 'from' (from its fromBar to the end of the song), 'song' (the whole song), 'silent'
+ * (nowhere: a name, a marker, a link). Unsaid: 'here' when it has bars, else 'track' when it has a
+ * track, else 'song'.
+ */
+export type HearWhere = 'here' | 'track' | 'from' | 'song' | 'silent';
 
 /** One change, in plain words, with what it touches. */
 export interface SongChange {
+  /** In plain words, each name in plain quotes (names.ts plainNames). */
   text: string;
+  /** The same with each name marked (names.ts nm), for showing the names apart. */
+  marked?: string;
   trackId?: string;
   clipId?: string;
   markerId?: string;
   /** The song bars it touches (end not included), when it sits somewhere in particular. */
   fromBar?: number;
   toBar?: number;
+  /** How its `heard` was found (see HearWhere). */
+  hear?: HearWhere;
+  /** The whole bars it's heard in, in order (none: nothing to hear). */
+  heard?: BarRange[];
 }
 
 /** A range of song bars, end not included. */
@@ -42,12 +67,21 @@ export interface SongDiff {
   masterChanged: boolean;
   /** The bars the located changes span, or null when nothing sits anywhere in particular (a mix change). */
   bars: BarRange | null;
-  /** What to listen to: the touched bars and one before, at most AUDITION_MAX_BARS. */
+  /**
+   * Where the changes are heard, all of them: whole bars, in order, overlapping and touching
+   * ones joined (empty: nothing to hear, only names, markers or links changed). What a
+   * before-and-after has to play for it to count as heard (see hearingPlan in suggestionsStore.ts).
+   */
+  regions: BarRange[];
+  /** A stretch to listen to first: the first region from one bar before, at most AUDITION_MAX_BARS (for a file's suggestion). */
   audition: BarRange;
 }
 
-/** The longest stretch a before-and-after plays. */
+/** The longest stretch `audition` names. */
 export const AUDITION_MAX_BARS = 16;
+
+/** How long a track's effects (a reverb, a delay) are allowed to ring on after its notes have, seconds. */
+export const EFFECT_TAIL_SECONDS = 1.5;
 
 const INSERT_LABELS: Record<string, string> = {
   distortion: 'Distortion',
@@ -90,7 +124,10 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
     if (c.clipId) touchedClips.add(c.clipId);
     if (c.markerId) touchedMarkers.add(c.markerId);
   };
-  const trackName = (id: string) => `"${(after.tracks.find((t) => t.id === id) ?? before.tracks.find((t) => t.id === id))?.name ?? 'a track'}"`;
+  const trackName = (id: string) => {
+    const t = after.tracks.find((x) => x.id === id) ?? before.tracks.find((x) => x.id === id);
+    return t ? nm(t.name) : 'a track';
+  };
 
   // ---------- Tempo ----------
   let tempoChanged = false;
@@ -102,11 +139,23 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   const aPoints = after.tempoPoints ?? [];
   for (const p of aPoints) {
     const old = bPoints.find((o) => o.id === p.id);
-    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: p.bar, toBar: p.bar + 1 });
-    else if (!same(old, p)) add({ text: `Changes the tempo change at bar ${r1(old.bar)} to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1 });
+    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: `Changes the tempo change at bar ${r1(old.bar)} to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at bar ${r1(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: p.bar, toBar: p.bar + 1 });
+  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at bar ${r1(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
   tempoChanged ||= !same(bPoints, aPoints);
+
+  // ---------- Time signature ----------
+  const meter = (m: { num: number; den: number } | undefined) => (m ? `${m.num}/${m.den}` : '4/4');
+  if (meter(before.meter) !== meter(after.meter)) add({ text: `Changes the time signature from ${meter(before.meter)} to ${meter(after.meter)}.`, hear: 'song' });
+  const bMeters = before.meterPoints ?? [];
+  const aMeters = after.meterPoints ?? [];
+  for (const p of aMeters) {
+    const old = bMeters.find((o) => o.id === p.id);
+    if (!old) add({ text: `Adds a change of time signature to ${meter(p)} at bar ${r1(p.bar)}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: `Changes the time signature change at bar ${r1(old.bar)} to ${meter(p)} at bar ${r1(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
+  }
+  for (const p of bMeters) if (!aMeters.some((o) => o.id === p.id)) add({ text: `Removes the change of time signature at bar ${r1(p.bar)} (${meter(p)}).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
 
   // ---------- Master ----------
   const masterBefore = changes.length;
@@ -117,25 +166,25 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   for (const t of after.tracks) {
     const old = before.tracks.find((o) => o.id === t.id);
     if (!old) {
-      add({ text: `Adds a track: "${t.name}" (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id });
+      add({ text: `Adds a track: ${nm(t.name)} (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id });
       continue;
     }
     if (old !== t && !same(old, t)) diffTrack(old, t, after.tracks, add);
   }
-  for (const t of before.tracks) if (!after.tracks.some((o) => o.id === t.id)) add({ text: `Removes the track "${t.name}" and its clips.`, trackId: t.id });
+  for (const t of before.tracks) if (!after.tracks.some((o) => o.id === t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id });
 
   // ---------- Clips ----------
   for (const c of after.clips) {
     const old = before.clips.find((o) => o.id === c.id);
     if (!old) {
-      add({ text: `Adds the clip "${c.name}" on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
+      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
       continue;
     }
     if (old !== c) diffClip(old, c, trackName, add);
   }
   for (const c of before.clips) {
     if (!after.clips.some((o) => o.id === c.id) && after.tracks.some((t) => t.id === c.trackId))
-      add({ text: `Removes the clip "${c.name}" from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
+      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars });
   }
 
   // ---------- Markers ----------
@@ -143,19 +192,26 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   const am = after.markers ?? [];
   for (const m of am) {
     const old = bm.find((o) => o.id === m.id);
-    if (!old) add({ text: `Adds the marker "${m.name}" at bar ${r1(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1 });
+    if (!old) add({ text: `Adds the marker ${nm(m.name)} at bar ${r1(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1, hear: 'silent' });
     else {
-      if (old.name !== m.name) add({ text: `Renames the marker "${old.name}" to "${m.name}".`, markerId: m.id });
+      if (old.name !== m.name) add({ text: `Renames the marker ${nm(old.name)} to ${nm(m.name)}.`, markerId: m.id, hear: 'silent' });
       // A tempo change moves a marker held to its time by itself: only a move beyond that is the suggestion's
       const retimed = old.anchor === 'time' ? secondsToBar(old.seconds, { bpm: after.bpm, points: after.tempoPoints ?? [] }) : old.bar;
-      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker "${m.name}" from bar ${r1(old.bar)} to bar ${r1(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1 });
+      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker ${nm(m.name)} from bar ${r1(old.bar)} to bar ${r1(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
     }
   }
-  for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker "${m.name}" (bar ${r1(m.bar)}).`, markerId: m.id });
+  for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker ${nm(m.name)} (bar ${r1(m.bar)}).`, markerId: m.id, hear: 'silent' });
 
   // ---------- Where ----------
-  const located = changes.filter((c) => c.fromBar !== undefined && c.toBar !== undefined);
+  for (const c of changes) {
+    c.marked = c.text;
+    c.text = plainNames(c.text);
+  }
+  const located = changes.filter((c) => c.fromBar !== undefined && c.toBar !== undefined && c.hear !== 'silent');
   const range = located.length ? { fromBar: Math.min(...located.map((c) => c.fromBar!)), toBar: Math.max(...located.map((c) => c.toBar!)) } : null;
+  const where = hearing(before, after);
+  for (const c of changes) c.heard = where(c);
+  const regions = joinRanges(changes.flatMap((c) => c.heard ?? []));
   return {
     changes,
     touchedTracks: [...touchedTracks],
@@ -164,14 +220,99 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
     tempoChanged,
     masterChanged,
     bars: range,
-    audition: auditionRange(range, after, [...touchedTracks]),
+    regions,
+    audition: auditionRange(regions[0] ?? null, after, [...touchedTracks]),
+  };
+}
+
+/** "bar 5" or "bars 5-8" for a range of whole song bars (end not included). */
+export const barWords = (r: BarRange): string => {
+  const a = Math.floor(r.fromBar);
+  const b = Math.max(a, Math.ceil(r.toBar) - 1);
+  return a === b ? `bar ${a}` : `bars ${a}-${b}`;
+};
+
+/** "bar 2, bars 5-8 and bar 70" for ranges of whole song bars; "no bars" for none. */
+export function rangesWords(list: readonly BarRange[]): string {
+  const words = list.map(barWords);
+  if (!words.length) return 'no bars';
+  return words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+}
+
+/** The whole bars a range of song bars sits in (at least one, from bar 1). */
+export function wholeBars(r: BarRange): BarRange {
+  const fromBar = Math.max(1, Math.floor(r.fromBar + 1e-9));
+  return { fromBar, toBar: Math.max(fromBar + 1, Math.ceil(r.toBar - 1e-9)) };
+}
+
+/** Ranges as whole bars, in order, overlapping and touching ones joined. */
+export function joinRanges(ranges: readonly BarRange[]): BarRange[] {
+  const out: BarRange[] = [];
+  for (const r of ranges.map(wholeBars).sort((x, y) => x.fromBar - y.fromBar || x.toBar - y.toBar)) {
+    const last = out.at(-1);
+    if (last && r.fromBar <= last.toBar) last.toBar = Math.max(last.toBar, r.toBar);
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+/**
+ * Where each change of `before` to `after` is heard (see HearWhere): a track's sound, over its
+ * clips in either version, each with its tail (its notes' release, see releaseSeconds, and
+ * EFFECT_TAIL_SECONDS of its effects), and over those of every track playing into it (a bus) or
+ * sending to it (a return), in either version; the end of the song, the last of those tails.
+ */
+function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChange) => BarRange[] {
+  const songs = [before, after];
+  const tempos = songs.map((s) => ({ bpm: s.bpm, points: s.tempoPoints ?? [] }));
+  const trackOf = (id: string) => after.tracks.find((t) => t.id === id) ?? before.tracks.find((t) => t.id === id);
+  /** Where a clip of `track` sounds: from its start to past its end by its tail, in the slower of the two versions. */
+  const clipRange = (c: Clip): BarRange => {
+    const end = c.startBar + c.lengthBars;
+    const tail = releaseSeconds(trackOf(c.trackId)) + EFFECT_TAIL_SECONDS;
+    const until = Math.max(...tempos.map((t) => secondsToBar(barToSeconds(end, t) + tail, t)));
+    return { fromBar: c.startBar, toBar: Number.isFinite(until) ? Math.max(end, until) : end };
+  };
+  const ranges = new Map<string, BarRange[]>();
+  for (const s of songs)
+    for (const c of s.clips) {
+      const list = ranges.get(c.trackId) ?? [];
+      list.push(clipRange(c));
+      ranges.set(c.trackId, list);
+    }
+  /** The tracks that play into `id` (it's their bus) or send to it (it's their return), in either version. */
+  const feeders = (id: string): string[] => {
+    const out = new Set<string>();
+    for (const s of songs) for (const t of s.tracks) if (t.id !== id && (t.output === id || liveSends(t, s.tracks).some((x) => x.to === id))) out.add(t.id);
+    return [...out];
+  };
+  const memo = new Map<string, BarRange[]>();
+  const sounds = (id: string, seen = new Set<string>()): BarRange[] => {
+    const known = memo.get(id);
+    if (known) return known;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    const out = joinRanges([...(ranges.get(id) ?? []), ...feeders(id).flatMap((f) => sounds(f, seen))]);
+    memo.set(id, out);
+    return out;
+  };
+  const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
+  const song: BarRange = { fromBar: 1, toBar: end };
+  return (c) => {
+    const how: HearWhere = c.hear ?? (c.fromBar !== undefined && c.toBar !== undefined ? 'here' : c.trackId ? 'track' : 'song');
+    if (how === 'silent') return [];
+    if (how === 'song') return [song];
+    if (how === 'from' && c.fromBar !== undefined) return c.fromBar < end ? joinRanges([{ fromBar: c.fromBar, toBar: end }]) : joinRanges([{ fromBar: c.fromBar, toBar: c.fromBar + 1 }]);
+    if (how === 'track' && c.trackId) return sounds(c.trackId);
+    if (c.fromBar !== undefined && c.toBar !== undefined) return joinRanges([{ fromBar: c.fromBar, toBar: c.toBar }]);
+    return [song];
   };
 }
 
 /**
- * The bars to hear a change in: from one bar before the touched bars, at most AUDITION_MAX_BARS.
- * A change that sits nowhere in particular (a track's level) plays where that track first plays;
- * a tempo or master change, the start of the song.
+ * The bars to hear a change in, for a file's suggestion (`audition`): from one bar before `range`
+ * (the first region), at most AUDITION_MAX_BARS. Nothing to hear: where the touched tracks first
+ * play, else the start of the song.
  */
 export function auditionRange(range: BarRange | null, song: Pick<ProjectSnapshot, 'clips'>, tracks: readonly string[] = []): BarRange {
   const fit = (from: number, to: number): BarRange => {
@@ -225,18 +366,18 @@ function settingChanges(x: unknown, y: unknown): string {
 }
 
 function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
-  const n = `"${b.name}"`;
+  const n = nm(b.name);
   const at = { trackId: b.id };
-  if (a.name !== b.name) add({ text: `Renames the track "${a.name}" to "${b.name}".`, ...at });
+  if (a.name !== b.name) add({ text: `Renames the track ${nm(a.name)} to ${nm(b.name)}.`, ...at, hear: 'silent' });
   if (a.instrumentKey !== b.instrumentKey) add({ text: `${n} plays ${INSTRUMENTS[b.instrumentKey]?.name ?? b.instrumentKey} instead of ${INSTRUMENTS[a.instrumentKey]?.name ?? a.instrumentKey}.`, ...at });
   if (a.volume !== b.volume) add({ text: `Turns ${n} ${b.volume > a.volume ? 'up' : 'down'} by ${r1(Math.abs(b.volume - a.volume))} dB (${db(a.volume)} to ${db(b.volume)}).`, ...at });
   if (a.pan !== b.pan) add({ text: `Pans ${n} to ${formatPan(b.pan)} (was ${formatPan(a.pan)}).`, ...at });
   if (a.isMuted !== b.isMuted) add({ text: `${b.isMuted ? 'Mutes' : 'Unmutes'} ${n}.`, ...at });
-  if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, ...at });
+  if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, ...at, hear: 'song' });
   if (a.reverbSend !== b.reverbSend) add({ text: `Changes the reverb send of ${n} from ${r1(a.reverbSend * 100)}% to ${r1(b.reverbSend * 100)}%.`, ...at });
   if (a.delaySend !== b.delaySend) add({ text: `Changes the delay send of ${n} from ${r1(a.delaySend * 100)}% to ${r1(b.delaySend * 100)}%.`, ...at });
   if ((a.distance ?? 0) !== (b.distance ?? 0)) add({ text: `Moves ${n} ${(b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer'} on the stage (distance ${r1(a.distance ?? 0)} to ${r1(b.distance ?? 0)}).`, ...at });
-  if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? `"${tracks.find((t) => t.id === b.output)?.name ?? 'a bus'}"` : 'the master'}.`, ...at });
+  if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? (tracks.find((t) => t.id === b.output) ? nm(tracks.find((t) => t.id === b.output)!.name) : 'a bus') : 'the master'}.`, ...at });
   if (!same(a.eq, b.eq)) {
     const parts = (['low', 'mid', 'high'] as const).filter((k) => a.eq[k] !== b.eq[k]).map((k) => `${k} ${db(b.eq[k])}`);
     add({ text: `Sets the EQ of ${n}: ${parts.join(', ')}.`, ...at });
@@ -261,7 +402,7 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
 }
 
 function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
-  const n = `"${b.name}"`;
+  const n = nm(b.name);
   const label = (l: AutomationLane) => specOf(l.param, b, tracks).label;
   const span = (lanes: AutomationLane[]) => {
     const all = lanes.flatMap((l) => l.points.map((p) => p.bar));
@@ -287,14 +428,14 @@ function changedSpan(a: AutomationLane, b: AutomationLane): Partial<BarRange> {
 }
 
 function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: SongChange) => void) {
-  const n = `"${b.name}"`;
+  const n = nm(b.name);
   const at = { trackId: b.trackId, clipId: b.id };
   if (a.trackId !== b.trackId) add({ text: `Moves the clip ${n} from ${trackName(a.trackId)} to ${trackName(b.trackId)}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
   if (Math.abs(a.startBar - b.startBar) > 1e-9)
     add({ text: `Moves the clip ${n} from bar ${r1(a.startBar)} to bar ${r1(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
   if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
     add({ text: `Makes the clip ${n} ${r1(b.lengthBars)} bars long (was ${r1(a.lengthBars)}).`, ...at, fromBar: b.startBar + Math.min(a.lengthBars, b.lengthBars), toBar: b.startBar + Math.max(a.lengthBars, b.lengthBars) });
-  if (a.name !== b.name) add({ text: `Renames the clip "${a.name}" to ${n}.`, ...at });
+  if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
   if (a.notes !== b.notes && !same(a.notes, b.notes)) {
     const before = new Map(a.notes.map((x) => [x.id, x]));
     const after = new Map(b.notes.map((x) => [x.id, x]));
@@ -308,6 +449,6 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     const where = to > from ? ` in ${bars(from, to)}` : '';
     add({ text: `In ${n} on ${trackName(b.trackId)}: ${parts.join(', ')}${where}.`, ...at, fromBar: from, toBar: Math.max(to, from + 1 / 16) });
   }
-  if ((a.pattern ?? null) !== (b.pattern ?? null)) add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at });
+  if ((a.pattern ?? null) !== (b.pattern ?? null)) add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at, hear: 'silent' });
   for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
 }

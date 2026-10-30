@@ -14,7 +14,8 @@ import { RotateCw } from 'lucide-react';
 import { useSuggestions, shortText, announce, type AgentMessage } from '../../agent/suggestionsStore';
 import { contextWords, putBack, useConversation, type OwnMessage } from '../../agent/conversation';
 import { retryMessage } from '../../agent/bridgeClient';
-import { deliveryWords, fromYourAgent } from './words';
+import { deliveryWords } from './words';
+import { FromYourAgent, NameChip } from './Named';
 
 type Entry = { kind: 'agent'; m: AgentMessage } | { kind: 'mine'; m: OwnMessage };
 
@@ -53,10 +54,12 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
   const names = new Map<number, string>();
   for (const m of messages) if (m.agent && m.connection !== undefined) names.set(m.connection, m.agent);
   const several = entries.some((e) => connOf(e) !== current);
-  const divider = (conn: number) => {
-    if (conn === current && connected) return `This connection: ${fromYourAgent(names.get(conn) ?? agent).replace(/^From y/, 'y')}`;
+  // (the agent's name as a chip of its own, never part of the line's words)
+  const withAgent = (name?: string) => <>your agent{name ? <NameChip name={name} /> : null}</>;
+  const divider = (conn: number): React.ReactNode => {
+    if (conn === current && connected) return <span>This connection: {withAgent(names.get(conn) ?? agent)}</span>;
     if (conn === 0) return 'Before connecting';
-    return `Earlier, with ${fromYourAgent(names.get(conn)).replace(/^From y/, 'y')}`;
+    return <span>Earlier, with {withAgent(names.get(conn))}</span>;
   };
 
   return (
@@ -90,7 +93,7 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
           {...(m.replyTo ? { 'data-reply-to': m.replyTo } : {})}
           className="mr-6 rounded-md bg-forge-bg/60 border border-forge-border/60 border-l-2 border-l-cyan-500/60 px-2.5 py-1.5"
         >
-          <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(m.connection === undefined ? agent : m.agent)}</figcaption>
+          <figcaption className="text-[10px] font-mono uppercase tracking-wider text-forge-muted"><FromYourAgent name={m.connection === undefined ? agent : m.agent} /></figcaption>
           {answers && <p className="mt-0.5 text-[11px] text-forge-muted border-l border-forge-border pl-1.5 break-words">Replying to you: “{shortText(answers.text, 60)}”</p>}
           <blockquote className="mt-0.5 text-[12px] text-forge-text whitespace-pre-wrap break-words">{m.text}</blockquote>
         </figure>
