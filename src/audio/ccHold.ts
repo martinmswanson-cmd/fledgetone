@@ -6,11 +6,12 @@
  * round, a render of some bars, a game kit's loop, a track heard again after a mute), each of a
  * track's controllers is set to what it would be there in a playback of the whole song from the
  * start: the last value sent before that point by any clip of the track, ended or not. One that no
- * clip has sent by then sits at rest (restingCc), as at the start of the song; it's sent only
- * when the plugin may have been moved from rest (a fresh plugin, as every render's is, is there
- * already), and only for the controllers whose rest MIDI defines (the mod wheel, the pedals,
- * expression): one like 74 stays where it was. Stop resets each plugin's controllers too (MIDI's
- * Reset All Controllers, in wamPlugin.ts). Plain data, so Node tests it; the scheduler applies it.
+ * clip has sent by then is as the fresh plugin has it, as at the start of the song: a plugin moved
+ * since it was fresh (a fresh one, as every render's is, is there already) gets MIDI's Reset All
+ * Controllers (CC 121) first, which the built-in families take to mean exactly that, each with its
+ * own starting values (resetsFresh); any other plugin also gets the rests MIDI defines (restingCc:
+ * the mod wheel, the pedals, expression; one like 74 is left to its reset). Stop resets each
+ * plugin's controllers too (in wamPlugin.ts). Plain data, so Node tests it; the scheduler applies it.
  */
 
 import type { Clip } from '../store/timelineTypes';
@@ -88,4 +89,19 @@ export function heldCcAt(clipEvents: Iterable<readonly CcEvent[]>, at: number, m
     }
   }
   return out;
+}
+
+/**
+ * The built-in plugin families whose Reset All Controllers (CC 121) puts every controller back
+ * where a fresh plugin of theirs has it (with its preset's and settings' own values: the organ's
+ * speaker at its Rotary speed, a Surge patch's macros at theirs): Fledge Synth, mda, Faust,
+ * setBfree and Surge XT. Mutable Instruments and Open303 ignore it, and their only controller is
+ * the sustain pedal (Braids, Plaits), which the rests put back; another plugin may do anything.
+ * (Surge XT can't put back a setting a patch of its own has learned to a controller.)
+ */
+export const FRESH_RESET_FAMILIES: readonly string[] = ['fledge', 'mda', 'faust', 'setbfree', 'surge'];
+/** Whether the plugin at `url` takes Reset All Controllers to mean its fresh controllers (see FRESH_RESET_FAMILIES). */
+export function resetsFresh(url: string): boolean {
+  const m = /^builtin:([^/]+)\//.exec(url);
+  return !!m && FRESH_RESET_FAMILIES.includes(m[1]);
 }

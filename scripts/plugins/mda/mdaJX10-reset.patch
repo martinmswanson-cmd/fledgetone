@@ -1,0 +1,22 @@
+--- a/mdaJX10.cpp
++++ b/mdaJX10.cpp
+@@ -947,6 +947,19 @@
+             rezwhl = 0.0065f * (float)(154 - midiData[2]);
+             break;
+ 
++          case 0x79:  //reset all controllers (Fledgetone: back where a fresh JX10 has them)
++            modwhl = filtwhl = press = 0.0f;
++            rezwhl = pbend = ipbend = 1.0f;
++            volume = 0.0005f;
++            if(sustain)
++            {
++              sustain = 0;
++              notes[npos++] = event->deltaFrames;
++              notes[npos++] = SUSTAIN; //end all sustained notes
++              notes[npos++] = 0;
++            }
++            break;
++
+           case 0x40:  //sustain
+             sustain = midiData[2] & 0x40;
+             if(sustain==0)

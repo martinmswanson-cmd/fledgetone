@@ -170,9 +170,18 @@ struct Organ : BBPlugin
         uint8_t msg[3] = {(uint8_t)(kind == 0xb0 || kind == 0x80 || kind == 0x90 ? kind : status), (uint8_t)d1, (uint8_t)d2};
         if (kind == 0xb0 && (d1 == 120 || d1 == 123)) { midi_panic(&inst); return; }
         // Notes and controllers go to the upper manual (channel 1); a few CCs work as on the organ
-        if (kind == 0xb0 && d1 == 1) { set(ROTARY, d2 >= 64 ? pick(2, 3) : pick(1, 3)); return; } // mod wheel: rotary fast
-        if (kind == 0xb0 && d1 == 64) { set(ROTARY, d2 >= 64 ? pick(2, 3) : pick(1, 3)); return; } // sustain pedal: same, as a half-moon switch
+        // (The wheel and the pedal move the speaker, not its setting: Reset All Controllers puts back the setting's speed)
+        if (kind == 0xb0 && d1 == 1) { apply(ROTARY, d2 >= 64 ? pick(2, 3) : pick(1, 3)); return; } // mod wheel: rotary fast
+        if (kind == 0xb0 && d1 == 64) { apply(ROTARY, d2 >= 64 ? pick(2, 3) : pick(1, 3)); return; } // sustain pedal: same, as a half-moon switch
         if (kind == 0xb0 && d1 == 11) { ctl("swellpedal1", d2); return; } // expression: the swell pedal
+        if (kind == 0xb0 && d1 == 121)
+        {
+            // Reset All Controllers: as a fresh organ of this preset and settings is, the speaker at
+            // its Rotary speed setting and the swell pedal open
+            apply(ROTARY, values[ROTARY]);
+            ctl("swellpedal1", 127);
+            return;
+        }
         if (kind == 0xb0) return;
         parse_raw_midi_data(&inst, msg, 3);
     }

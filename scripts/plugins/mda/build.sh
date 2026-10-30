@@ -1,8 +1,8 @@
 #!/bin/sh
 # Build the mda family: build.sh <mda-vst source folder (the src/ inside mda-vst-src-2015-06-18.zip)> <out.wasm> [object dir]
 # Uses this folder's audioeffectx.h in place of the plug-in SDK. Needs emsdk's em++ and patch on the PATH.
-# A source with a patch here (mdaPiano-loud.patch: <file name>-<what>.patch) is built from a patched
-# copy; the source folder itself is left as it is.
+# A source with patches here (<file name>-<what>.patch, as mdaPiano-loud.patch) is built from a copy
+# with them applied in turn; the source folder itself is left as it is.
 set -e
 SRC="$1"; OUT="$2"; OBJ="${3:-/tmp/bb-mda-obj}"; HERE="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$OBJ"
@@ -12,10 +12,12 @@ for f in "$SRC"/*.cpp; do
   id=$(echo "$b" | sed 's/^mda//; s/[^A-Za-z0-9]//g')
   for p in "$HERE/$b"-*.patch; do
     [ -f "$p" ] || continue
-    mkdir -p "$OBJ/patched"
-    cp "$f" "$OBJ/patched/$b.cpp"
-    patch -s "$OBJ/patched/$b.cpp" "$p"
-    f="$OBJ/patched/$b.cpp"
+    if [ "$f" != "$OBJ/patched/$b.cpp" ]; then
+      mkdir -p "$OBJ/patched"
+      cp "$f" "$OBJ/patched/$b.cpp"
+      f="$OBJ/patched/$b.cpp"
+    fi
+    patch -s "$f" "$p"
   done
   em++ -O2 -fno-exceptions -w -I"$HERE" -I"$SRC" -DcreateEffectInstance=createEffectInstance_$id -Dfloat2strng=float2strng_$id -Dint2strng=int2strng_$id -c "$f" -o "$OBJ/$id.o"
 done

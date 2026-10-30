@@ -98,6 +98,11 @@ export interface TrackInstrument {
   /** A MIDI controller (0 to 119) moved to `value` (0 to 1): plugins get it as MIDI. */
   cc?: (cc: number, value: number, time: number) => void;
   /**
+   * Reset All Controllers (CC 121) at `time`. True if that puts every controller back where the
+   * fresh plugin has it (see resetsFresh in ccHold.ts); false where it may not.
+   */
+  resetControllers?: (time: number) => boolean;
+  /**
    * Start one note whose bend and pressure can then be moved on their own (per-note expression),
    * or null if it doesn't sound. Instruments without it play expressive notes as ordinary ones,
    * bending as a whole.

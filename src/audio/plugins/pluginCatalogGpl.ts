@@ -8,8 +8,8 @@ export const GPL_PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0",
   "gpl": true,
   "file": "gpl/surge.wasm",
-  "bytes": 5884401,
-  "hash": "e2f4cf094524",
+  "bytes": 5884680,
+  "hash": "6f9512005910",
   "plugins": [
    {
     "name": "Surge XT",
@@ -685,8 +685,8 @@ export const GPL_PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-2.0-or-later",
   "gpl": true,
   "file": "gpl/setbfree.wasm",
-  "bytes": 119919,
-  "hash": "b39496d68362",
+  "bytes": 119904,
+  "hash": "988832440235",
   "plugins": [
    {
     "name": "Tonewheel Organ",

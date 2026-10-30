@@ -3717,8 +3717,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT",
   "gpl": false,
   "file": "mda.wasm",
-  "bytes": 2240826,
-  "hash": "5119bb56d377",
+  "bytes": 2242753,
+  "hash": "b4a967be3478",
   "plugins": [
    {
     "name": "Ambience",
@@ -4167,8 +4167,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT / BSD / STK-4.3 (Faust library exception)",
   "gpl": false,
   "file": "faust.wasm",
-  "bytes": 547499,
-  "hash": "5ec99ae14964",
+  "bytes": 544432,
+  "hash": "0dc25c00e8f5",
   "plugins": [
    {
     "name": "Brass Model",

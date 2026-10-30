@@ -26,6 +26,7 @@ import {
 import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
 import { isBuiltinUrl } from '../plugins/builtinHost';
 import { NAMED_PARAM, paramNamesOf } from '../plugins/paramNames';
+import { resetsFresh } from '../ccHold';
 
 /**
  * A Plugin track's instrument (a WAM loaded from its URL) and the WAM effects on a track. Both
@@ -183,6 +184,11 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
     cc: (cc: number, value: number, time: number) => {
       if (!inst) return;
       sendMidi(inst, [0xb0, Math.max(0, Math.min(119, cc)), Math.max(0, Math.min(127, Math.round(value * 127)))], time);
+    },
+    resetControllers: (time: number) => {
+      if (!inst) return false;
+      sendMidi(inst, [0xb0, 121, 0], time);
+      return !!plugin && resetsFresh(plugin.url);
     },
     setPluginParam: (pluginId, paramId, value, time) => {
       if (!inst || pluginId !== plugin?.id) return false;

@@ -197,6 +197,43 @@ test('built-in plugins play from this copy (offline); plugins from other sites a
   assert.match(l.stderr, /plugins from other sites/);
 });
 
+test('a Faust instrument renders the same with no settings saved as with its own settings read back (as a live read saves them)', { skip, timeout: 300_000 }, async () => {
+  // What the studio reads back from a fresh instance: every parameter's value as it holds it
+  const mod = await WebAssembly.compile(readFileSync(join(ROOT, 'public/fledgetone-plugins/faust.wasm')));
+  const imports = {};
+  for (const i of WebAssembly.Module.imports(mod)) (imports[i.module] ??= {})[i.name] = () => 0;
+  const { exports: e } = await WebAssembly.instantiate(mod, imports);
+  e._initialize?.();
+  const text = (p) => {
+    const m = new Uint8Array(e.memory.buffer);
+    let end = p;
+    while (m[end]) end++;
+    return Buffer.from(m.subarray(p, end)).toString('utf8');
+  };
+  for (const name of ['Piano Model', 'Waveguide Brass']) {
+    let index = -1;
+    for (let i = 0; i < e.bb_count(); i++) if (JSON.parse(text(e.bb_info(i))).name === name) index = i;
+    assert.ok(index >= 0, name);
+    const h = e.bb_create(index, 44100);
+    const values = [...Array(e.bb_params(h))].map((_, i) => e.bb_get(h, i));
+    e.bb_destroy(h);
+    const files = [];
+    for (const state of [undefined, { builtin: 1, values }]) {
+      const song = JSON.parse(readFileSync(SONG, 'utf8'));
+      const keys = song.tracks.find((t) => t.name === 'Keys');
+      keys.instrumentKey = 'plugin';
+      keys.plugin = { id: 'faust-keys', url: `builtin:faust/${name}`, name, ...(state ? { state } : {}) };
+      const file = `faust-${files.length}.fledgetone.json`;
+      writeFileSync(join(work, file), JSON.stringify(song));
+      const r = await cli('render', file, '-o', `faust-${files.length}.wav`, '--offline', '--bars', '1-2');
+      assert.equal(r.code, 0, r.stderr);
+      files.push(join(work, `faust-${files.length}.wav`));
+    }
+    assert.ok(readFileSync(files[0]).equals(readFileSync(files[1])), `${name}: fresh and given its own settings back sound different`);
+    for (const f of files) rmSync(f);
+  }
+});
+
 /** The fixture song with only its keys, playing `notes` from bar 1 for 16 bars (and the clip's `extra`). */
 function keysSong(name, notes, extra = {}) {
   const song = JSON.parse(readFileSync(SONG, 'utf8'));

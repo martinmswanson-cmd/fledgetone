@@ -120,6 +120,15 @@ struct SurgeBB : BBPlugin
         else if (type == 0x80 || type == 0x90) synth->releaseNote(ch, d1, d2);
         else if (type == 0xe0) synth->pitchBend(ch, (d2 << 7 | d1) - 8192);
         else if (type == 0xb0 && (d1 == 123 || d1 == 120)) synth->allNotesOff();
+        else if (type == 0xb0 && d1 == 121)
+        {
+            // Reset All Controllers: the wheels, pedals and pressure back as a fresh synth has them,
+            // and the macros (CC 41 to 48 move them) at their own settings
+            synth->pitchBend(ch, 0);
+            synth->channelAftertouch(ch, 0);
+            for (int cc : {1, 2, 11, 64, 66}) synth->channelController(ch, cc, 0);
+            for (int i = 0; i < n_customcontrollers; i++) synth->setMacroParameter01(i, values[i]);
+        }
         else if (type == 0xb0) synth->channelController(ch, d1, d2);
         else if (type == 0xd0) synth->channelAftertouch(ch, d1);
     }
