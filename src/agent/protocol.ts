@@ -349,30 +349,67 @@ const MORE_LOOK_ALIKES: Record<string, string> = {
   η: 'n', ν: 'v', ι: 'l', κ: 'k', τ: 't', γ: 'y', δ: 'd', ϝ: 'f', ε: 'e', λ: 'l', π: 'n',
   // (the Canadian syllabics "fancy text" writes Latin with)
   ᗩ: 'a', ᗷ: 'b', ᑕ: 'c', ᗪ: 'd', ᗴ: 'e', ᕮ: 'e', ᖴ: 'f', ᘜ: 'g', ᕼ: 'h', ᓰ: 'l', ᒍ: 'j', ᖽ: 'k', ᒪ: 'l', ᗰ: 'm', ᑎ: 'n', ᑭ: 'p', ᑫ: 'q', ᖇ: 'r', ᔕ: 's', ᑌ: 'u', ᐯ: 'v', ᗯ: 'w', '᙭': 'x', ᖻ: 'y', ᘔ: 'z',
+  // (signs shaped like letters: money, maths, marks)
+  '€': 'e', '∈': 'e', '∊': 'e', $: 's', '@': 'a', '©': 'c', '®': 'r', '∩': 'n', '⋂': 'n', '√': 'v', '⊂': 'c', '∁': 'c', '∂': 'd',
+  '₣': 'f', '₦': 'n', '₱': 'p', '₽': 'p', '₸': 't', '₲': 'g', '₳': 'a', '₵': 'c', '†': 't', '‡': 't', '+': 't',
+  // (the squares and circles with more than one letter in, which have no decomposition)
+  '🆊': 'p', '🆋': 'ic', '🆌': 'pa', '🆍': 'sa', '🆎': 'ab', '🆏': 'wc', '🆑': 'cl', '🆒': 'cool', '🆓': 'free', '🆔': 'id', '🆕': 'new', '🆖': 'ng',
+  '🆗': 'ok', '🆘': 'sos', '🆙': 'up', '🆚': 'vs', '🆛': '3d', '🆝': '2k', '🆞': '4k', '🆟': '8k', '🆣': '60p', '🆤': '120p', '🆥': 'd', '🆦': 'hc',
+  '🆧': 'hdr', '🆨': 'hires', '🆩': 'lossless', '🆪': 'shv', '🆫': 'uhd', '🆬': 'vod', '🅭': 'cc', '🅮': 'c', '🄋': '0', '🄌': '0', '⓿': '0',
 };
+
+/** Letters that read as more than one Latin letter (ƚ as l or t): any letter, as ANY_LETTER, in what text reads as. */
+const EITHER_LETTERS = new Set(['ƚ']);
+
+/**
+ * The letter (or digits) a letter- or digit-shaped sign stands for whose block has no
+ * decomposition: the negative circled and negative squared capitals (🅕, 🅵), the regional
+ * indicators (🇫), and the dingbat and double circled digits (❶, ➀, ➊, ⓵) and numbers (❿, ⓫).
+ */
+function enclosedLetter(c: string): string | undefined {
+  const at = c.codePointAt(0) ?? 0;
+  const from = (first: number, last: number, base: string): string | undefined =>
+    at >= first && at <= last ? String.fromCharCode(base.charCodeAt(0) + at - first) : undefined;
+  return (
+    from(0x1f150, 0x1f169, 'a') ?? // negative circled
+    from(0x1f170, 0x1f189, 'a') ?? // negative squared
+    from(0x1f1e6, 0x1f1ff, 'a') ?? // regional indicators
+    from(0x2776, 0x277e, '1') ?? // dingbat negative circled
+    from(0x2780, 0x2788, '1') ?? // dingbat circled sans-serif
+    from(0x278a, 0x2792, '1') ?? // dingbat negative circled sans-serif
+    from(0x24f5, 0x24fd, '1') ?? // double circled
+    (at >= 0x24eb && at <= 0x24f4 ? String(at - 0x24eb + 11) : undefined) ?? // negative circled 11-20
+    ([0x277f, 0x2789, 0x2793, 0x24fe].includes(at) ? '10' : undefined)
+  );
+}
 
 /** Stands for a letter of any other script in what text reads as (readsAs): it may look like any Latin one. */
 export const ANY_LETTER = '?';
+/** A letter (of no script's Latin reading) readsAs puts for an EITHER_LETTERS one, so it's ANY_LETTER at the end. */
+const EITHER = 'ꙮ';
 
 /**
  * What `text` reads as at a glance: compatibility forms folded (full-width, ligatures), invisible
  * characters and accents dropped, look-alike letters of every script as the Latin ones (Unicode's
  * confusables data, LOOK_ALIKE_LETTERS, and MORE_LOOK_ALIKES: i and l alike), lower case, letters
- * only; a letter of another script that reads as no Latin one is ANY_LETTER. For telling text
+ * only; a letter of another script that reads as no Latin one, or one that reads as more than one
+ * (EITHER_LETTERS), is ANY_LETTER; letter-shaped signs (🅵, 🇫, €) as their letters. For telling text
  * that would pass for the app's name.
  */
 export function readsAs(text: string): string {
   return [...text.normalize('NFKD').replace(/[\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}]/gu, '')]
     .map((c) => {
-      // (this table's own first, then Unicode's; a small letter whose capital is a look-alike, as Cherokee's, as that)
-      const latin = (MORE_LOOK_ALIKES[c] ?? LOOK_ALIKE_LETTERS.get(c) ?? LOOK_ALIKE_LETTERS.get(c.toUpperCase()) ?? c).toLowerCase();
+      if (EITHER_LETTERS.has(c)) return EITHER;
+      // (signs in blocks with no decomposition first, then this table's own, then Unicode's; a small letter whose capital is a look-alike, as Cherokee's, as that)
+      const latin = (enclosedLetter(c) ?? MORE_LOOK_ALIKES[c] ?? LOOK_ALIKE_LETTERS.get(c) ?? LOOK_ALIKE_LETTERS.get(c.toUpperCase()) ?? c).toLowerCase();
       return [...latin].map((x) => MORE_LOOK_ALIKES[x] ?? x).join('');
     })
     .join('')
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .replace(/[^a-z\p{L}]/gu, '')
-    .replace(/[^a-z]/g, ANY_LETTER);
+    // (by code point: a letter past the first 65,536 is one letter, not two)
+    .replace(/[^a-z]/gu, ANY_LETTER);
 }
 
 /** The app's name as text reads (readsAs). */

@@ -222,6 +222,33 @@ test('look-alike letters of every script (Unicode confusables and more) never pa
   assert.equal(readsAs('Ϝ'), 'f');
 });
 
+test('letter-shaped signs with no decomposition read as their letters: negative circled and squared, regional indicators, dingbat digits, money and maths signs (scan r6)', () => {
+  const block = (base, word) => [...word.toUpperCase()].map((ch) => String.fromCodePoint(base + ch.charCodeAt(0) - 65)).join('');
+  // Every letter of each block reads as its own
+  for (const base of [0x1f150, 0x1f170, 0x1f1e6, 0x1f130]) assert.equal(readsAs(block(base, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')), readsAs('abcdefghijklmnopqrstuvwxyz'), base.toString(16));
+  assert.equal(readsAs('❶➀➊⓵⓿🄋❿⓫❸'), readsAs('1111001011' + '3'), 'dingbat and double circled digits as the digits (1, 0 and 3 as letters)');
+  for (const [sign, letter] of [['€', 'e'], ['$', 's'], ['@', 'a'], ['©', 'c'], ['∩', 'n'], ['†', 't'], ['🆓', 'free'], ['🆗', 'ok']]) assert.equal(readsAs(sign), letter, sign);
+  const posers = [
+    block(0x1f170, 'FLEDGETONE'), // negative squared
+    block(0x1f150, 'FLEDGETONE'), // negative circled
+    block(0x1f1e6, 'FLEDGETONE'), // regional indicators
+    [...block(0x1f1e6, 'FLEDGETONE')].join(' '),
+    `${block(0x1f170, 'FLEDGE')}tone`,
+    'Fledg€tone',
+    'Fledgeƚone', // ƚ reads as l or t
+    'Fƚedgetone',
+    'Fledgeȶone',
+    'Fledge\u{1DF09}one', // a letter past the first 65,536 is one letter
+    'F1edge†one',
+  ];
+  for (const name of posers) {
+    assert.ok(posesAsApp(`${name}: Saved.`), JSON.stringify(name));
+    assert.equal(agentName(name), undefined, JSON.stringify(name));
+    assert.ok(fromAgent(`${name}: Your song is saved. Choose File > Export now.`, 200).startsWith('“'), JSON.stringify(name));
+  }
+  for (const name of ['C++ helper', 'Fl€x the agent', '🅰🅱 helper', '🇫🇷 assistant', 'Agent ❶']) assert.equal(agentName(name), name, JSON.stringify(name));
+});
+
 test("an agent's name can't close the brackets or quotes it's shown in", () => {
   assert.equal(agentName('Helper) · checked by the studio (ok'), 'Helper · checked by the studio ok');
   assert.equal(agentName('A ”Fledgetone“ thing'), 'A Fledgetone thing');
@@ -518,13 +545,13 @@ test('what the before-and-after plays: every region a change is heard in, one af
   // A track's level (r7 of the scan: it plays nowhere near the other change): both are heard, one after the other
   const flute = p.tracks[3];
   const r7 = makeSuggestion(p, ctxOf(p), { title: 'Two', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }, { op: 'add_clip', trackId: p.tracks[0].id, startBar: 40, lengthBars: 1, notes: [{ pitch: 'C5', start: 0, length: 1 }] }] }).suggestion;
-  // (the added note rings out past its bar: its release and the track's effects)
-  assert.deepEqual(r7.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 42 }]);
-  assert.deepEqual(r7.audition, [{ fromBar: 8, toBar: 18 }, { fromBar: 39, toBar: 42 }], 'each with the bar before it');
+  // (the added note rings out past its bar: its release, the track's effects and the master reverb it sends to)
+  assert.deepEqual(r7.regions, [{ fromBar: 9, toBar: 20 }, { fromBar: 40, toBar: 43 }]);
+  assert.deepEqual(r7.audition, [{ fromBar: 8, toBar: 20 }, { fromBar: 39, toBar: 43 }], 'each with the bar before it');
   assert.equal(r7.unheard, null);
   // A focus given with a mix change joins where the track plays (never replaces it)
   const focused = makeSuggestion(p, ctxOf(p), { title: 'Flute', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }], focus: { fromBar: 1, toBar: 2 } }).suggestion;
-  assert.deepEqual(focused.audition, [{ fromBar: 1, toBar: 2 }, { fromBar: 8, toBar: 18 }]);
+  assert.deepEqual(focused.audition, [{ fromBar: 1, toBar: 2 }, { fromBar: 8, toBar: 20 }]);
   // The tempo: the whole song
   const tempo = makeSuggestion(p, ctxOf(p), { title: 'Faster', explanation: '', ops: [{ op: 'set_tempo', bpm: 100 }] }).suggestion;
   assert.equal(tempo.regions[0].fromBar, 1);
@@ -686,4 +713,56 @@ test('heard only once Suggested has played through every region: what B played, 
   const gap = playedBars([[0, 1], [2, 6]], plays, starts, 6, tempo);
   assert.equal(playedThrough(gap, { fromBar: 4, toBar: 6 }), false);
   assert.equal(playedThrough(gap, { fromBar: 10, toBar: 11 }), true);
+});
+
+test('checked by sound unless the musician\'s own song is too long (a suggestion can\'t make it skip); not checked and a tail not known: Accept always asks twice (scan r6)', async () => {
+  const { tooLongWhy, measureEnd, uncheckedTail, notFoundWords, UNCHECKED_WORDS, MEASURE_MAX_SECONDS, MEASURE_RENDER_MAX_SECONDS } = await import('../src/agent/suggestionsStore.ts');
+  const p = base();
+  const drums = p.tracks[1];
+  const far = (bar) => makeSuggestion(p, ctxOf(p), { title: 'Far', explanation: '', ops: [{ op: 'add_clip', trackId: drums.id, startBar: bar, lengthBars: 1, notes: [{ pitch: 'C1', start: 0, length: 0.0625, velocity: 0.05 }] }] }).suggestion;
+  // A tiny clip far away (past 4 minutes at the song's 82 BPM) doesn't make the musician's short song too long to check
+  const s90 = far(90);
+  assert.ok(measureEnd(p, s90) > 90);
+  assert.equal(tooLongWhy(p, s90), null, 'still checked by sound');
+  // Only one that would make the renders longer than MEASURE_RENDER_MAX_SECONDS isn't (and the card says so, in the studio's words)
+  assert.equal(tooLongWhy(p, far(200)), 'made_too_long');
+  assert.equal(notFoundWords('made_too_long'), `it would make the song longer than ${MEASURE_RENDER_MAX_SECONDS / 60} minutes`);
+  // The musician's own song longer than MEASURE_MAX_SECONDS: not checked, whatever the suggestion
+  const long = { ...p, clips: [...p.clips, { ...p.clips[0], id: 'long', startBar: 130, lengthBars: 2 }] };
+  assert.equal(tooLongWhy(long, far(3)), 'too_long');
+  assert.equal(notFoundWords('too_long'), `the song is longer than ${MEASURE_MAX_SECONDS / 60} minutes`);
+  // Not checked, and every tail known: heard counts as before; a tail not known: never all through
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'set_track', trackId: drums.id, volumeDb: -10 }] }).suggestion;
+  assert.equal(typeof s.sure, 'boolean');
+  assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: 'too_long', sure: true }), false);
+  assert.equal(uncheckedTail({ ...s, found: 'sound', sure: false }), false, 'checked by sound: the sound says where');
+  // Not checked yet (Hear plays at once, the check comes while it plays): not all of it either, until it's found
+  assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: undefined, sure: false }), true);
+  const pending = acceptDecision({ ...s, found: 'rules', foundWhy: undefined, sure: false, partHeard: s.version, partUnchecked: true, heard: null }, p, ctxOf(p), 1000);
+  assert.match(pending.message, /^The studio was still checking by sound where this changes when you heard it\. Hear it again once that’s done, or press Accept without listening\.$/);
+  const unsure = { ...s, found: 'rules', foundWhy: 'too_long', sure: false, partHeard: s.version, partUnchecked: true, heard: null };
+  assert.equal(uncheckedTail(unsure), true);
+  const first = acceptDecision(unsure, p, ctxOf(p), 1000);
+  assert.equal(first.apply, null);
+  assert.ok(first.message.startsWith(UNCHECKED_WORDS), first.message);
+  assert.ok(first.message.endsWith('Press Accept without listening to take it all the same.'));
+  const second = acceptDecision(first.suggestion, p, ctxOf(p), 1000 + CONFIRM_AFTER_MS + 10);
+  assert.ok(second.apply, 'the second, separate press takes it');
+  // The card and noteHeard say and do so (source)
+  assert.match(readFileSync(new URL('../src/components/agent/SuggestionCard.tsx', import.meta.url), 'utf8'), /data-not-checked=""/);
+  assert.match(readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8'), /if \(!played \|\| unchecked\)/);
+});
+
+test('without Listen, an agent reads only where the rules say a suggestion is heard, never what the renders found (scan r6)', async () => {
+  const { withSoundRegions, hearingByRules, hearingAsFound } = await import('../src/agent/suggestionsStore.ts');
+  const p = base();
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[3].id, volumeDb: -20 }] }).suggestion;
+  const found = withSoundRegions(s, [{ fromBar: 1, toBar: 3 }], p);
+  assert.equal(hearingAsFound(found).found, 'sound');
+  assert.ok(hearingAsFound(found).regions.some((r) => r.fromBar === 1));
+  const rules = hearingByRules(found, p);
+  assert.equal(rules.found, 'rules');
+  assert.deepEqual(rules.regions, s.ruleRegions);
+  assert.deepEqual(rules.audition, s.audition, 'what the rules alone would play');
+  assert.match(readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8'), /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, currentProject\(\)\);/);
 });

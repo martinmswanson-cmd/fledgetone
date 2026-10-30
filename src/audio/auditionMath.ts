@@ -33,6 +33,12 @@ export function sameBarOffset(elapsed: number, fromBar: number, from: { tempo: T
   return Math.max(0, Math.min(Math.max(0, to.seconds - 0.001), at));
 }
 
+/** Where the music ends: the last clip of a track that sounds (at least bar 2). */
+export function musicEnd(song: { tracks: Track[]; clips: readonly Pick<Clip, 'trackId' | 'startBar' | 'lengthBars'>[] }): number {
+  const ids = audibleIds(song.tracks);
+  return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+}
+
 /** The longest run-in rendered before a range: bars, and seconds. */
 export const PRE_ROLL_MAX_BARS = 8;
 export const PRE_ROLL_MAX_SECONDS = 20;

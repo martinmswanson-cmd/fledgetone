@@ -234,12 +234,12 @@ async function until(check, ms, what) {
     await card(s1).locator('[data-hear="suggested"]').click();
     const again = await until(async () => {
       const [s, a] = [await sg(s1), await audition()];
-      return a.phase === 'playing' && a.renderKey === `${s1}:${s.version}` && s.heard === s.version && !s.stale && { s, a };
+      return a.phase === 'playing' && a.renderKey.startsWith(`${s1}:${s.version}:`) && s.heard === s.version && !s.stale && { s, a };
     }, 120000, 'the new version to play').catch(() => null);
     const againLine = await line(s1);
     step(
       '2 changed while playing: Suggested renders it again and that version is heard',
-      stale.version === 1 && keyBefore === `${s1}:1` && !!again && again.s.version === 2 && /You heard it as it is now/.test(againLine),
+      stale.version === 1 && keyBefore.startsWith(`${s1}:1:`) && !!again && again.s.version === 2 && /You heard it as it is now/.test(againLine),
       `stale at v${stale.version}, playing ${keyBefore}; after Suggested: ${again ? `${again.a.renderKey}, heard v${again.s.heard}` : 'not made again'} "${againLine}"`
     );
     await stop(s1);
@@ -690,6 +690,15 @@ async function until(check, ms, what) {
       await playingOf(s13.id);
       await page.waitForTimeout(300);
       await stop(s13.id);
+      // (Stop also ends the search by sound that ran while it played, and what it found can still
+      // change the card's lines: Accept brought into view, as a musician would scroll to it, and
+      // the card left to stay put long enough to be pressed)
+      await card(s13.id).locator('[data-accept]').scrollIntoViewIfNeeded();
+      for (let last = null, since = Date.now(), end = Date.now() + 15000; Date.now() < end; await page.waitForTimeout(100)) {
+        const top = await card(s13.id).evaluate((el) => Math.round(el.getBoundingClientRect().top));
+        if (top !== last) [last, since] = [top, Date.now()];
+        else if (Date.now() - since > 1300) break;
+      }
       await card(s13.id).locator('[data-accept]').click();
       await page.waitForTimeout(300);
       const after13 = await sg(s13.id);
@@ -752,7 +761,11 @@ async function until(check, ms, what) {
       await card(lane13.id).locator('[data-hear="suggested"]').click();
       const finding13 = await until(async () => (await card(lane13.id).locator('[data-finding]').count()) > 0 || (await sg(lane13.id)).found === 'sound', 60000, 'finding where it changes').catch(() => false);
       await playingOf(lane13.id);
-      const found13 = await sg(lane13.id);
+      // (Hear doesn't wait for it: it's found while the before-and-after plays)
+      const found13 = await until(async () => {
+        const x = await sg(lane13.id);
+        return x.found === 'sound' && x;
+      }, 240000, 'where it changes found by sound').catch(async () => sg(lane13.id));
       const view13 = await call3('get_suggestion', { id: lane13.id });
       const heard13 = await until(async () => {
         const x = await sg(lane13.id);

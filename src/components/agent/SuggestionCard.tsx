@@ -11,7 +11,9 @@
  * says which it plays, which it leaves out, and which limit, 64 bars or 90 seconds). The names in
  * what it changes (an agent may have written them) are chips of their own (Named.tsx), never
  * part of the app's sentence. While where its changes are heard is being found by sound (whereHeard.ts)
- * it says "Finding where it changes…", with how far (Stop cancels a search the musician asked for).
+ * it says "Finding where it changes…", with how far (Stop cancels a search the musician asked for);
+ * one that couldn't be (too long, or the render failed) says it wasn't checked by sound, and, if
+ * some of its sound may ring on past what the rules count, that Accept always asks twice.
  * It says whether it was heard (Suggested played through every place), or heard only in part; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
  * of date or made for another song can't be accepted (its Accept stays, marked unavailable, so a
@@ -26,7 +28,10 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { stopFinding, useFinding } from '../../agent/whereHeard';
-import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, rangesWords, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
+import type { BarRange } from '../../agent/songDiff';
+import type { MeterMap } from '../../audio/tempoMap';
+import { useTimelineStore } from '../../store/timelineStore';
 import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp, SPACE_WORDS } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
 import { useConversation } from '../../agent/conversation';
@@ -36,17 +41,21 @@ import { FromYourAgent, NamedText } from './Named';
 /** An agent's title in quotes, once (one that poses as the app comes quoted already). */
 const quoted = (t: string) => (t.startsWith('“') && t.endsWith('”') ? t : `“${t}”`);
 
-const bars = rangesWords;
-
-/** The line under the buttons: where it is, and whether what Accept puts in was heard. */
-function statusLine(s: Suggestion): string {
+/** The line under the buttons: where it is, and whether what Accept puts in was heard (bars named as the ruler numbers them: `meter`). */
+function statusLine(s: Suggestion, meter: MeterMap | null): string {
+  const bars = (list: readonly BarRange[]) => rangesWords(list, meter);
   const part =
     isOpen(s) && s.heard !== s.version && s.partHeard === s.version
       ? s.unheard
-        ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}`
-        : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
+        ? `Heard only in part: ${unheardWords(s.unheard, s.limit, meter)}`
+        : s.partUnchecked && uncheckedTail(s)
+          ? s.foundWhy
+            ? `Heard, but maybe not all of it: ${UNCHECKED_WORDS[0].toLowerCase()}${UNCHECKED_WORDS.slice(1)}`
+            : 'Heard while the studio was still checking where it changes: hear it again once that’s done.'
+          : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
       : null;
-  if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
+  // (the song moved on since: that comes first, whatever was heard of it)
+  if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : s.stale ? 'The song changed since it was suggested: hear it again before you accept.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
   if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : (part ?? 'Not heard yet.');
   const words = STATUS_WORDS[s.status];
   return words[0].toUpperCase() + words.slice(1) + '.';
@@ -54,6 +63,11 @@ function statusLine(s: Suggestion): string {
 
 export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestion: s }) => {
   const audition = useAudition();
+  // (bars named as the ruler numbers them: by measure in a song not in 4/4)
+  const meterBase = useTimelineStore((t) => t.meter);
+  const meterPoints = useTimelineStore((t) => t.meterPoints);
+  const meter = React.useMemo(() => wordMeter({ meter: meterBase, meterPoints }), [meterBase, meterPoints]);
+  const bars = (list: readonly BarRange[]) => rangesWords(list, meter);
   const mine = audition.key === s.id;
   // The last press's answer, kept only until the suggestion's status or version moves on
   const [said, setSaid] = React.useState<{ text: string; at: string } | null>(null);
@@ -82,7 +96,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
   const askable = useConversation((c) => c.connection === s.connection) && s.connection !== undefined;
   const playing = mine && audition.phase === 'playing';
   // (where its changes are heard, being found by sound: both versions rendered whole)
-  const finding = useFinding((f) => (f.id === s.id && f.version === s.version ? f : null));
+  // (only one the musician asked for, by Hear: one in the background doesn't grow the card, so it never moves under a press)
+  const finding = useFinding((f) => (f.id === s.id && f.version === s.version && f.asked ? f : null));
 
   const hear = (which: 'a' | 'b') => {
     // (switched in step only while what plays is this version on the song as it is: else it's made and rendered again)
@@ -208,6 +223,12 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
               Too long to hear at once: {limitWords(s.limit)}. You hear the changes in {bars(heardRegions(s))}, not those in {bars(s.unheard)}.
             </span>
           )}
+          {open && s.found === 'rules' && s.foundWhy && (
+            <span data-not-checked="" className="w-full text-[11px] text-amber-300">
+              Not checked by sound ({notFoundWords(s.foundWhy)}): where it changes is worked out from the song’s settings.
+              {uncheckedTail(s) ? ' Some of its sound (a plugin, or an instrument’s release) may ring on past what plays, so Accept always asks for a second press.' : ''}
+            </span>
+          )}
           {open && s.focusLeftOut && s.focus && (
             <span data-focus-left-out="" className="w-full text-[11px] text-forge-muted">
               The bars your agent also asked to play ({bars([s.focus])}) are left out: they don’t fit with the changes.
@@ -280,7 +301,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           </>
         )}
         <span data-card-status="" className={`text-[11px] ${s.status === 'changed' || s.status === 'other_song' || message ? 'text-amber-300' : 'text-forge-muted'}`}>
-          {message ?? statusLine(s)}
+          {message ?? statusLine(s, meter)}
         </span>
         {askable && (
         <button

@@ -17,7 +17,7 @@
 import React from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { TOTAL_BARS } from '../../store/timelineTypes';
-import { useSuggestions, type Highlight } from '../../agent/suggestionsStore';
+import { barWords, useSuggestions, wordMeter, type Highlight } from '../../agent/suggestionsStore';
 import { useAudition } from '../../audio/auditionPlayer';
 import { FromYourAgent } from './Named';
 import { textName } from '../../agent/names';
@@ -66,8 +66,10 @@ function lanesView(): Rect | null {
   return { left, top, right, bottom: whole.bottom };
 }
 
-/** Bars [from, to) in words: "bar 7", "bars 7–8" (to not included). */
+/** Bars [from, to) in words: "bar 7", "bars 7–8" (to not included); in a song not in 4/4, the measures the ruler numbers there. */
 function barsWords(from: number, to: number): string {
+  const meter = wordMeter(useTimelineStore.getState());
+  if (meter) return barWords({ fromBar: from, toBar: to }, meter).replace('-', '–');
   const n = (v: number) => String(Math.round(v * 100) / 100);
   const last = Number.isInteger(from) && Number.isInteger(to) ? to - 1 : to;
   return last <= from ? `bar ${n(from)}` : `bars ${n(from)}–${n(last)}`;

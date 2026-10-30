@@ -11,7 +11,7 @@
  * spectrum), and the same bars track by track (renderRangeStems: each track's stem, as the Mix
  * check renders them). No store here: callers pass the song.
  */
-import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions, type RenderProgress } from './exportWav';
+import { channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions, type RenderProgress } from './exportWav';
 import { createLoudnessAnalyser, shortTermWindowFull } from './loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAnalysis';
 import type { MasterStats } from './effects/masterAfter';
@@ -57,11 +57,8 @@ export function renderOptionsFor(song: ListenSnapshot, fromBar: number, toBar: n
   };
 }
 
-/** Where the music ends: the last clip of a track that sounds (at least bar 2). */
-export function musicEnd(song: Pick<ListenSnapshot, 'tracks' | 'clips'>): number {
-  const ids = new Set(audibleTracks(song.tracks).map((t) => t.id));
-  return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
-}
+/** Where the music ends: the last clip of a track that sounds (at least bar 2): see auditionMath.ts. */
+export { musicEnd } from './auditionMath';
 
 /** `audio` without its first `frames` frames. */
 function trimStart(audio: AudioBuffer, frames: number): AudioBuffer {

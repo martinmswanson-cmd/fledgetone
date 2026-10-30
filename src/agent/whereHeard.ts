@@ -12,27 +12,32 @@
  *
  * It runs in the background as soon as a suggestion arrives (one at a time, after a moment of
  * quiet, never while the song plays: Play stops it, and it starts again once the song stops), and
- * at once when the musician presses Hear on one it hasn't been found for (the card says "Finding
- * where it changes…", and Stop cancels it). A song longer than MEASURE_MAX_SECONDS (before or
- * after) isn't rendered whole: the rules' regions alone are used (`foundWhy` 'too_long'), as when a
- * render fails ('failed').
+ * once its before-and-after starts when the musician presses Hear on one it hasn't been found for:
+ * Hear never waits for it, the rules' regions play at once (the card says "Finding where it
+ * changes…", said once to screen readers, and Stop cancels it), and what it finds besides makes it
+ * heard only in part until that's played too. A search whose result can't be used any more (the
+ * suggestion answered, changed or made again, another song) stops; the next waiting one follows
+ * whenever one ends. A song of the musician's longer than
+ * MEASURE_MAX_SECONDS isn't rendered whole (`foundWhy` 'too_long': decided by the song as it is,
+ * so a suggestion can't make it so), nor one a suggestion makes longer than
+ * MEASURE_RENDER_MAX_SECONDS ('made_too_long'): the rules' regions alone are used, as when a render
+ * fails ('failed'), and the card says it wasn't checked by sound; if its rules may count fewer bars
+ * than the truth (a tail the studio doesn't know: Suggestion.sure), Accept always asks for its
+ * second press (suggestionsStore.ts uncheckedTail).
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
 import { currentProject, useTimelineStore } from '../store/timelineStore';
-import { musicEnd, renderRange } from '../audio/listen';
+import { renderRange } from '../audio/listen';
 import { channelsOf } from '../audio/exportWav';
-import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { barToSeconds } from '../audio/tempoMap';
 import { barDifferences, changedRegions, type BarSpan } from './listenReport';
 import { listenSnapshot } from './listenSnapshot';
 import { useAudition } from '../audio/auditionPlayer';
-import { isOpen, rangeSeconds, updateSuggestion, useSuggestions, withSoundRegions, type Suggestion } from './suggestionsStore';
+import { announce, isOpen, measureEnd, tooLongWhy, updateSuggestion, useSuggestions, withSoundRegions, type NotFoundWhy, type Suggestion } from './suggestionsStore';
 import type { BarRange } from './songDiff';
 
-/** The longest song rendered whole to find where a suggestion is heard (the slower of before and after), seconds. */
-export const MEASURE_MAX_SECONDS = 240;
-/** Rendered past the end of the music (and of every region), seconds: what rings out after it. */
-export const MEASURE_TAIL_SECONDS = 4;
+export { MEASURE_MAX_SECONDS, MEASURE_RENDER_MAX_SECONDS, MEASURE_TAIL_SECONDS, MEASURE_UNSURE_TAIL_SECONDS, measureEnd, tooLongWhy } from './suggestionsStore';
 /** How long the studio waits, quiet, before finding where a suggestion is heard in the background, ms. */
 export const MEASURE_IDLE_MS = 1200;
 
@@ -59,22 +64,13 @@ function spansOf(song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>, end: number
   return out;
 }
 
-/**
- * The bars to render to find where `s` is heard, from bar 1: past the end of the music in either
- * version and of every region the rules found, by MEASURE_TAIL_SECONDS (in the slower of the two).
- */
-export function measureEnd(before: ProjectSnapshot, s: Pick<Suggestion, 'song' | 'ruleRegions'>): number {
-  const end = Math.max(musicEnd(before), musicEnd(s.song), ...s.ruleRegions.map((r) => r.toBar));
-  const past = Math.max(...[before, s.song].map((x) => secondsToBar(barToSeconds(end, tempoOf(x)) + MEASURE_TAIL_SECONDS, tempoOf(x))));
-  return Math.max(end + 1, Math.ceil(past - 1e-9));
-}
-
-type Found = { sound: BarRange[] } | { why: 'too_long' | 'failed' } | null;
+type Found = { sound: BarRange[] } | { why: NotFoundWhy } | null;
 
 /** Render `before` and `s.song` whole and compare them (null: aborted). */
 async function measure(before: ProjectSnapshot, s: Suggestion, signal: AbortSignal, progress: (f: number) => void): Promise<Found> {
+  const long = tooLongWhy(before, s);
+  if (long) return { why: long };
   const end = measureEnd(before, s);
-  if (rangeSeconds({ fromBar: 1, toBar: end }, [before, s.song]) > MEASURE_MAX_SECONDS) return { why: 'too_long' };
   try {
     const a = await renderRange(listenSnapshot(before), 1, end, { signal, progress: (f) => progress(f * 0.5) });
     if (signal.aborted) return null;
@@ -103,13 +99,20 @@ let job: Job | null = null;
 /** Whether `s` still needs finding: open, made on the song as it is, and not found by sound for this version (nor known it can't be). */
 export const needsFinding = (s: Suggestion): boolean => isOpen(s) && !s.stale && s.found === 'rules' && !s.foundWhy;
 
-/** Stop finding (for `id` only, if given). What was found so far is dropped. */
+/**
+ * Stop finding (for `id` only, if given). What was found so far is dropped; what's still waiting
+ * is found in the background again once it's quiet (queueFinding).
+ */
 export function stopFinding(id?: string): void {
   if (!job || (id !== undefined && job.id !== id)) return;
   job.controller.abort();
   job = null;
   useFinding.setState({ id: null, version: 0, progress: 0, asked: false });
+  queueFinding();
 }
+
+/** What the musician hears once when a search they asked for starts (polite: the before-and-after plays meanwhile). */
+export const FINDING_WORDS = 'Finding where it changes, by sound. You can listen meanwhile.';
 
 /**
  * Find where suggestion `id` is heard, by sound, on `before` (the song it's made on now), unless
@@ -125,13 +128,16 @@ export function findWhere(id: string, before: ProjectSnapshot = currentProject()
     if (asked && !job.asked) {
       job.asked = true;
       useFinding.setState({ asked: true });
+      announce(FINDING_WORDS);
     }
     return job.done;
   }
   stopFinding();
+  watchFinding();
   const controller = new AbortController();
   const version = s.version;
   useFinding.setState({ id, version, progress: 0, asked });
+  if (asked) announce(FINDING_WORDS);
   const done = (async () => {
     const found = await measure(before, s, controller.signal, (f) => {
       if (job?.controller === controller) useFinding.setState({ progress: f });
@@ -139,6 +145,8 @@ export function findWhere(id: string, before: ProjectSnapshot = currentProject()
     if (job?.controller !== controller) return false;
     job = null;
     useFinding.setState({ id: null, version: 0, progress: 0, asked: false });
+    // (whatever happened, the rest waiting are found next)
+    queueFinding();
     if (!found) return false;
     const now = useSuggestions.getState().suggestions.find((x) => x.id === id);
     if (!now || now.version !== version || now.stale || !isOpen(now)) return false;
@@ -162,18 +170,25 @@ export function queueFinding(): void {
   window.clearTimeout(idle);
   idle = window.setTimeout(() => {
     idle = 0;
-    if (job || useTimelineStore.getState().isPlaying) return;
+    // (the song playing: found again once it stops, see watchFinding; one being found: next after it)
+    if (useTimelineStore.getState().isPlaying) return;
+    if (job) return queueFinding();
     // (a before-and-after rendering now goes first: try again in a moment)
     if (useAudition.getState().phase === 'rendering') return queueFinding();
     const next = useSuggestions.getState().suggestions.find(needsFinding);
     if (!next) return;
-    void findWhere(next.id, currentProject(), false).then(() => queueFinding());
+    void findWhere(next.id, currentProject(), false);
   }, MEASURE_IDLE_MS);
 }
 
 let watching = false;
 
-/** Stop finding in the background while the song plays, and start again once it stops. Once. */
+/**
+ * Stop finding in the background while the song plays, and start again once it stops; stop a
+ * search whose result can't be used any more (its suggestion answered, out of date, made for
+ * another song, changed under it, or made again: one the musician asked for starts again on the
+ * version made), and find a suggestion's new version once it's made. Once.
+ */
 export function watchFinding(): void {
   if (watching) return;
   watching = true;
@@ -181,5 +196,17 @@ export function watchFinding(): void {
     if (st.isPlaying === prev.isPlaying) return;
     if (st.isPlaying) stopFinding();
     else queueFinding();
+  });
+  useSuggestions.subscribe((st, prev) => {
+    if (st.suggestions === prev.suggestions) return;
+    if (job) {
+      const { id, version, asked } = job;
+      const s = st.suggestions.find((x) => x.id === id);
+      if (!s || !isOpen(s) || s.stale || s.version !== version) {
+        stopFinding();
+        if (asked && s && needsFinding(s)) void findWhere(id, currentProject(), true);
+      }
+    }
+    if (!job && st.suggestions.some(needsFinding)) queueFinding();
   });
 }
