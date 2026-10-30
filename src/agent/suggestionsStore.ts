@@ -64,6 +64,13 @@ export interface Suggestion {
   /** Goes up each time `song` is made again; `heard` is the one last heard, every bar it changes. */
   version: number;
   heard: number | null;
+  /**
+   * The version whose Suggested side has played through every region the rules found
+   * (`ruleRegions`), whatever was found by sound: `heard` as an agent not allowed to listen reads
+   * it (handlers.ts), so nothing it reads moves with what the renders found. The studio's own
+   * `heard` decides what Accept does.
+   */
+  heardByRules?: number | null;
   /** The version last heard only in part (its Suggested side played, but not over every bar it changes: see `unheard`). */
   partHeard?: number | null;
   /** Heard in part because, though every region played, it isn't checked by sound and its tail isn't known (uncheckedTail). */
@@ -446,7 +453,8 @@ const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: Project
     sure: r.diff.sure,
     fallback: r.diff.audition,
     found: 'rules' as const,
-    foundWhy: undefined,
+    // (one that can't be checked by sound says so from the start: no check is begun or announced)
+    foundWhy: tooLongWhy(before, { song: r.song, ruleRegions: r.diff.regions, sure: r.diff.sure }) ?? undefined,
     soundRegions: undefined,
     audition: plan.plays,
     unheard: plan.unheard,
@@ -612,19 +620,23 @@ export function heardRegions(s: Pick<Suggestion, 'regions' | 'unheard'>): BarRan
 /** How many bars ranges hold. */
 const barCount = (list: readonly BarRange[]): number => list.reduce((n, r) => n + Math.max(1, Math.ceil(r.toBar) - Math.floor(r.fromBar)), 0);
 
-/** The limit a before-and-after keeps to, in words: "it plays at most 90 seconds". */
-export const limitWords = (limit: HearingLimit | null | undefined): string =>
-  limit === 'bars' ? `a before-and-after plays at most ${LIMITS.listenMaxBars} bars` : `a before-and-after plays at most ${LIMITS.listenMaxSeconds} seconds`;
+/** The limit a before-and-after keeps to, in words: "it plays at most 90 seconds" (in a song not in 4/4, `meter`, the bars as quarter notes: a bar there isn't a measure). */
+export const limitWords = (limit: HearingLimit | null | undefined, meter: MeterMap | null = null): string =>
+  limit === 'bars'
+    ? `a before-and-after plays at most ${meter ? `${LIMITS.listenMaxBars * 4} quarter notes` : `${LIMITS.listenMaxBars} bars`}`
+    : `a before-and-after plays at most ${LIMITS.listenMaxSeconds} seconds`;
 
 /** "bars 72-80 weren’t heard (a before-and-after plays at most 90 seconds)." */
 export const unheardWords = (unheard: readonly BarRange[], limit: HearingLimit | null | undefined, meter: MeterMap | null = null): string =>
-  `${rangesWords(unheard, meter)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit)}).`;
+  `${rangesWords(unheard, meter)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit, meter)}).`;
 
 /** Heard, but not checked by sound, and its tail not known (uncheckedTail): for the card and Accept. */
 export const UNCHECKED_WORDS = 'The studio couldn’t check this by sound, and some of it may ring on past what you heard.';
 
 /** Heard while the studio was still finding where it changes by sound, its tail not known (uncheckedTail). */
 export const CHECKING_WORDS = 'The studio was still checking by sound where this changes when you heard it.';
+/** What happens next for one heard while it was being checked: the check goes on in the background, and decides it by what played. */
+export const CHECKING_NEXT = 'If the check (which goes on in the background) finds nothing past what you heard, it counts as heard; if it finds more, hear that too.';
 
 /** A second press of Accept counts only this long after the first at the earliest, ms (a double-click doesn't confirm). */
 export const CONFIRM_AFTER_MS = 700;
@@ -664,7 +676,7 @@ export function acceptDecision(
       : fresh.partHeard === fresh.version && fresh.partUnchecked && uncheckedTail(fresh)
         ? fresh.foundWhy
           ? `${UNCHECKED_WORDS} Press Accept without listening to take it all the same.`
-          : `${CHECKING_WORDS} Hear it again once that’s done, or press Accept without listening.`
+          : `${CHECKING_WORDS} ${CHECKING_NEXT} Or press Accept without listening.`
       : fresh.partHeard === fresh.version
         ? `You heard only part of this: Suggested has to play through ${rangesWords(fresh.regions, meter)}. Hear it to the end, or press Accept without listening.`
         : fresh.status === 'changed' && fresh.heard !== null

@@ -385,16 +385,25 @@ function enclosedLetter(c: string): string | undefined {
 
 /** Stands for a letter of any other script in what text reads as (readsAs): it may look like any Latin one. */
 export const ANY_LETTER = '?';
+/**
+ * Stands for a sign, a punctuation mark or a digit that reads as no letter (✝, ◦, ┼, ⨍, ↁ, -, 7)
+ * in what text reads as (readsAs): it may stand in for a letter (Fledge✝one, Fledget◦ne) or sit
+ * between letters (F-l-e-d-g-e), so it's read as one letter or none.
+ */
+export const ANY_SIGN = '*';
 /** A letter (of no script's Latin reading) readsAs puts for an EITHER_LETTERS one, so it's ANY_LETTER at the end. */
 const EITHER = 'ꙮ';
+/** A sign, mark of punctuation or digit (not a space). */
+const SIGN = /[\p{S}\p{P}\p{N}]/u;
 
 /**
  * What `text` reads as at a glance: compatibility forms folded (full-width, ligatures), invisible
- * characters and accents dropped, look-alike letters of every script as the Latin ones (Unicode's
- * confusables data, LOOK_ALIKE_LETTERS, and MORE_LOOK_ALIKES: i and l alike), lower case, letters
- * only; a letter of another script that reads as no Latin one, or one that reads as more than one
- * (EITHER_LETTERS), is ANY_LETTER; letter-shaped signs (🅵, 🇫, €) as their letters. For telling text
- * that would pass for the app's name.
+ * characters, spaces and accents dropped, look-alike letters of every script as the Latin ones
+ * (Unicode's confusables data, LOOK_ALIKE_LETTERS, and MORE_LOOK_ALIKES: i and l alike), lower
+ * case; a letter of another script that reads as no Latin one, or one that reads as more than one
+ * (EITHER_LETTERS), is ANY_LETTER; letter-shaped signs (🅵, 🇫, €) as their letters, and any other
+ * sign, punctuation mark or digit ANY_SIGN (a letter, or nothing). For telling text that would
+ * pass for the app's name.
  */
 export function readsAs(text: string): string {
   return [...text.normalize('NFKD').replace(/[\p{Cf}\p{M}\p{Default_Ignorable_Code_Point}]/gu, '')]
@@ -402,29 +411,48 @@ export function readsAs(text: string): string {
       if (EITHER_LETTERS.has(c)) return EITHER;
       // (signs in blocks with no decomposition first, then this table's own, then Unicode's; a small letter whose capital is a look-alike, as Cherokee's, as that)
       const latin = (enclosedLetter(c) ?? MORE_LOOK_ALIKES[c] ?? LOOK_ALIKE_LETTERS.get(c) ?? LOOK_ALIKE_LETTERS.get(c.toUpperCase()) ?? c).toLowerCase();
-      return [...latin].map((x) => MORE_LOOK_ALIKES[x] ?? x).join('');
+      const read = [...latin].map((x) => MORE_LOOK_ALIKES[x] ?? x).join('');
+      // (a sign that reads as no letter: a letter, or nothing)
+      return !/\p{L}/u.test(read.normalize('NFKD')) && SIGN.test(c) ? ANY_SIGN : read;
     })
     .join('')
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
-    .replace(/[^a-z\p{L}]/gu, '')
+    .replace(/[^a-z\p{L}*]/gu, '')
     // (by code point: a letter past the first 65,536 is one letter, not two)
-    .replace(/[^a-z]/gu, ANY_LETTER);
+    .replace(/[^a-z*]/gu, ANY_LETTER);
 }
 
 /** The app's name as text reads (readsAs). */
 const APP_READS = 'fledgetone';
+/** How much of what a text reads as is matched against the app's name, code points. */
+const READS_MAX = 64;
 
-/** Whether `text` itself starts with what reads as the app's name (see posesAsApp). */
+/**
+ * Whether `text` itself starts with what reads as the app's name (see posesAsApp): each of the
+ * name's letters read there in turn, an ANY_LETTER as any one letter, an ANY_SIGN as any one or
+ * none, and at least three of them the name's own.
+ */
 function startsAsApp(text: string): boolean {
-  const reads = readsAs(text);
-  if (reads.length < APP_READS.length) return false;
-  let same = 0;
-  for (let i = 0; i < APP_READS.length; i++) {
-    if (reads[i] === APP_READS[i]) same++;
-    else if (reads[i] !== ANY_LETTER) return false;
+  const reads = [...readsAs(text)].slice(0, READS_MAX);
+  // best[j]: the most of the name's own letters that read its first j letters, so far (-1: can't)
+  let best = [0, ...new Array<number>(APP_READS.length).fill(-1)];
+  let found = false;
+  for (const r of reads) {
+    const next = new Array<number>(APP_READS.length + 1).fill(-1);
+    for (let j = 0; j <= APP_READS.length; j++) {
+      if (best[j] < 0) continue;
+      // (a sign read as nothing)
+      if (r === ANY_SIGN) next[j] = Math.max(next[j], best[j]);
+      if (j === APP_READS.length) continue;
+      if (r === APP_READS[j]) next[j + 1] = Math.max(next[j + 1], best[j] + 1);
+      else if (r === ANY_LETTER || r === ANY_SIGN) next[j + 1] = Math.max(next[j + 1], best[j]);
+    }
+    best = next;
+    if (best[APP_READS.length] >= 3) found = true;
+    if (found || best.every((b) => b < 0)) break;
   }
-  return same >= 3;
+  return found || best[APP_READS.length] >= 3;
 }
 
 /**

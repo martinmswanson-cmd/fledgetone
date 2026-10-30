@@ -8,7 +8,7 @@
  */
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
-import { insertTailSeconds } from './effects/spaceFx';
+import { feedsMasterDelay, feedsMasterReverb, ownInsertTail, playedTracks, slowestBpm } from './effectTails';
 import { secondsBetween, tempoAt, type MeterMap, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
@@ -270,22 +270,25 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
 /**
  * The most seconds a ring-out export runs past the end of its range, for release, reverb and echo
  * tails: as long as the reverb's impulse response, a track's own Delay or Reverb insert, the master
- * delay's repeats (when a track sends to it), or `least`
- * (RING_OUT_LISTEN), whichever is longest. An export's file ends sooner once its tails have died
- * away (see ringOutTail.ts).
+ * delay's repeats (when a track feeds it), or `least` (RING_OUT_LISTEN), whichever is longest. The
+ * tracks are read as they play (effectTails.ts playedTracks: their automation and their `clips`'
+ * controller and step lanes alike), a setting a lane moves at its longest, at the slowest tempo of
+ * `tempo`. An export's file ends sooner once its tails have died away (see ringOutTail.ts).
  */
-export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 120, least = RING_OUT_LISTEN): number {
+export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], tempo: Tempo = 120, least = RING_OUT_LISTEN, clips: readonly Clip[] = []): number {
+  const bpm = slowestBpm([tempo]);
+  const sounding = audibleTracks(playedTracks(tracks, clips, tempo));
   // A track's own Delay or Reverb insert can ring on longer than the master reverb
-  const inserts = audibleTracks(tracks).reduce((tail, t) => Math.max(tail, insertTailSeconds(t.fx, bpm)), 0);
+  const inserts = sounding.reduce((tail, t) => Math.max(tail, ownInsertTail(t, bpm)), 0);
   // The reverb rings as long as its impulse response: a recorded room's recording (up to the
   // length the reverb keeps), or the designed room's, whose lows ring longer than its decay (up to
   // 1.4 times, in a church: as much as 18 s)
   const hall = masterFx.room
     ? Math.min(ROOM_MAX_SECONDS, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay)
     : roomSeconds(masterFx.roomStyle ?? 'hall', designedDecay(masterFx.reverbDecay));
-  // The master delay's repeats, when a track feeds it, until they've fallen 60 dB (up to MAX_ECHO_TAIL)
+  // The master delay's repeats, when a track feeds it (a send or a send lane), until they've fallen 60 dB (up to MAX_ECHO_TAIL)
   let echoes = 0;
-  if (masterFx.delayFeedback > 0 && audibleTracks(tracks).some((t) => t.delaySend > 0)) {
+  if (masterFx.delayFeedback > 0 && sounding.some(feedsMasterDelay)) {
     const repeats = Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback));
     echoes = Math.min(MAX_ECHO_TAIL, repeats * delaySeconds(masterFx.delayTime, bpm));
   }
@@ -301,7 +304,7 @@ const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.star
  */
 function loopTailSeconds(opts: RenderOptions): number {
   // (the echoes are in it: see ringOutSeconds)
-  return ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm);
+  return ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), RING_OUT_LISTEN, opts.clips);
 }
 
 /** The tempo a render plays at. */
@@ -350,7 +353,7 @@ function planRender(opts: RenderOptions, latency = 0, slack = 0): RenderPlan {
     return { sampleRate, length: keepFrom + keepLength + slack, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
   }
   const keepLength =
-    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm, opts.ringOutMin)) * sampleRate);
+    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), opts.ringOutMin, opts.clips)) * sampleRate);
   return { sampleRate, length: lead + keepLength + slack, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
 }
 
@@ -787,13 +790,14 @@ async function renderTracksNow(opts: RenderOptions, sounding: Track[], onProgres
   return { channels: finishRender(rendered, plan, opts), sampleRate: plan.sampleRate, reverbImpulse };
 }
 
-/** Whether a render plays the lush reverb (the room style, no recorded room) and anything can reach it. */
-function lushFed(opts: Pick<RenderOptions, 'masterFx' | 'tracks'>): boolean {
-  return !opts.masterFx.room && opts.masterFx.roomStyle === 'lush' && feedsReverb(opts.tracks);
+/**
+ * Whether a render plays the lush reverb (the room style, no recorded room) and anything can reach
+ * it: a send, a distance, or a send lane, its clips' controller and step lanes included
+ * (effectTails.ts feedsMasterReverb, on the tracks as they play).
+ */
+function lushFed(opts: Pick<RenderOptions, 'masterFx' | 'tracks' | 'clips' | 'bpm' | 'tempoPoints'>): boolean {
+  return !opts.masterFx.room && opts.masterFx.roomStyle === 'lush' && playedTracks(opts.tracks, opts.clips, renderTempo(opts)).some(feedsMasterReverb);
 }
-
-/** Whether any of these tracks can send to the shared reverb (a send, a distance, or a send lane). */
-const feedsReverb = (tracks: readonly Track[]) => tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
 
 /** How many parts a render may run in at once on this computer, unless the options say. */
 function partsAllowed(opts: RenderOptions): number {
@@ -1295,7 +1299,7 @@ async function renderGraphHeld(
     // it holds. (Only rendering in one piece after the parts failed builds it here.)
     const section = bypassMaster ? null : createMixChain(context.destination, masterFx, bpm, opts.master);
     const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
-    const unfed = masterFx.roomStyle === 'lush' && !tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
+    const unfed = masterFx.roomStyle === 'lush' && !tracks.some(feedsMasterReverb);
     const busFx = section?.busFx ?? createBusEffects(mixBus, reverbSends || unfed ? { ...masterFx, roomStyle: 'hall' } : masterFx, bpm);
     if (reverbSends) {
       // Out on channels 3 and 4 (the stereo mix fills 1 and 2 and leaves them silent)

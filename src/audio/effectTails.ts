@@ -2,11 +2,17 @@
  * How long effects keep sounding after what goes into them stops, seconds: a track's own Delay and
  * Reverb inserts, and the master reverb and delay its sends feed. Plain arithmetic (no audio),
  * shared by the export's ring-out (exportWav.ts ringOutSeconds) and by where a suggestion's changes
- * are heard (agent/songDiff.ts).
+ * are heard (agent/songDiff.ts). Both read the tracks as they play (playedTracks): every way a
+ * setting can move over the song (the track's automation, its clips' controller lanes, by the
+ * usual meaning of a controller or the track's MIDI learn mappings, and its clips' step lanes) is
+ * then one automation lane, so one reading covers them all.
  */
-import type { MasterFx, TrackFx } from '../store/timelineTypes';
-import { ECHO_BEATS, ECHO_FEEDBACK_MAX } from '../store/timelineTypes';
+import type { Clip, MasterFx, Track, TrackFx } from '../store/timelineTypes';
+import { ECHO_BEATS, ECHO_FEEDBACK_MAX, isAutomationParam } from '../store/timelineTypes';
+import { withControllerLanes } from '../store/ccLanes';
+import { withStepLanes } from '../store/stepLanes';
 import { INSERT_ROOM, roomSeconds } from './effects/roomIR';
+import type { Tempo } from './tempoMap';
 
 /** Longest recorded room kept (seconds): a longer tail is faded out there */
 export const ROOM_MAX_SECONDS = 12;
@@ -56,3 +62,45 @@ export function masterDelaySeconds(fx: Pick<MasterFx, 'delayTime' | 'delayFeedba
   if (!(fx.delayFeedback > 0)) return delaySeconds(fx.delayTime, bpm);
   return Math.min(max, (echoRepeats(Math.min(0.8, fx.delayFeedback)) + 1) * delaySeconds(fx.delayTime, bpm));
 }
+
+/**
+ * The tracks as they play: their clips' controller lanes and step lanes added to their automation
+ * (the same merge a render plays: exportWav.ts, and the live engine: timelineStore.ts).
+ */
+export function playedTracks(tracks: Track[], clips: readonly Clip[], tempo: Tempo): Track[] {
+  return withStepLanes(withControllerLanes(tracks, clips), clips, tempo);
+}
+
+/** The slowest tempo of these, BPM (an echo's repeats are furthest apart there). */
+export function slowestBpm(tempos: ReadonlyArray<Tempo>): number {
+  const all = tempos.flatMap((t) => (typeof t === 'number' ? [t] : [t.bpm, ...(t.points ?? []).map((p) => p.bpm)]));
+  return Math.max(1, Math.min(...all.filter((b) => Number.isFinite(b) && b > 0)));
+}
+
+/** Whether a played track (playedTracks) has a lane for `param`. */
+const hasLane = (t: Pick<Track, 'automation'>, param: string) => !!t.automation?.some((l) => l.param === param);
+
+/** The settings of a played track's inserts its lanes move ("echo.feedback"), for insertTailSeconds' `varies`. */
+export function movingFx(t: Pick<Track, 'automation'>): Set<string> {
+  const out = new Set<string>();
+  for (const l of t.automation ?? []) if (l.param.startsWith('fx:')) out.add(l.param.slice(3));
+  return out;
+}
+
+/** A played track's own Delay and Reverb tail (seconds, at most `max`), its lane-moved settings at their longest. */
+export const ownInsertTail = (t: Pick<Track, 'fx' | 'automation'>, bpm: number, max = 60): number => insertTailSeconds(t.fx ?? {}, bpm, max, movingFx(t));
+
+/** Whether a played track can reach the master reverb: a send, a distance, or a send lane. */
+export const feedsMasterReverb = (t: Pick<Track, 'reverbSend' | 'distance' | 'automation'>): boolean => t.reverbSend > 0 || (t.distance ?? 0) > 0 || hasLane(t, 'reverbSend');
+
+/** Whether a played track can reach the master delay: a send or a send lane. */
+export const feedsMasterDelay = (t: Pick<Track, 'delaySend' | 'automation'>): boolean => t.delaySend > 0 || hasLane(t, 'delaySend');
+
+/**
+ * Whether every lane of a played track moves something these tails know about: a setting they
+ * read at its longest (the sends, an insert's mix, feedback or pre-delay), one that doesn't make
+ * anything ring longer (the level, pan, filter, EQ, a send to a return, the other insert
+ * settings), or a plugin's parameter (a plugin's tail is never known: see songDiff.ts). A lane for
+ * anything else isn't known here.
+ */
+export const lanesKnown = (t: Pick<Track, 'automation'>): boolean => (t.automation ?? []).every((l) => isAutomationParam(l.param));

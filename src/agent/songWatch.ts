@@ -17,7 +17,7 @@
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
-import { checkSuggestion, extKey, playedThrough, freshen, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import { checkSuggestion, extKey, playedThrough, freshen, hearingByRules, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
 import { partsChanged } from './revision';
 import { findWhere, needsFinding, stopFinding, useFinding } from './whereHeard';
 
@@ -112,6 +112,9 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
   return a.key === s.id && a.phase === 'playing' && a.renderKey === renderKeyOf(s) && !s.stale && isOpen(s);
 }
 
+/** Whether what B played (heardB) is of `s` as it is: its current version, on the song as it is now (whichever plan for it played). */
+const playedVersion = (s: Suggestion, a: Pick<AuditionState, 'key' | 'renderKey'>): boolean => a.key === s.id && !s.stale && isOpen(s) && !!a.renderKey?.startsWith(`${s.id}:${s.version}:`);
+
 /**
  * Note a suggestion heard once its Suggested side (B), of its current version on the song as it
  * is now, has played through every region where a change of it is heard: B's playhead went
@@ -120,12 +123,17 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
  * switched to Now, or too long to hear at once) it's heard in part (`partHeard`): the card says
  * so, and Accept still asks for its second press. So is one not checked by sound whose rules may
  * count fewer bars than the truth (uncheckedTail: a tail the studio doesn't know, and not found
- * by sound, or not yet), however much of it played. Run on every change of the audition.
+ * by sound, or not yet), however much of it played. Run on every change of the audition and of
+ * the suggestions: a check by sound that finishes after B stopped decides it by what B played.
  */
 export function noteHeard(a: AuditionState = useAudition.getState()): void {
-  if (a.key === null || a.phase !== 'playing' || !a.heardB.length) return;
+  if (a.key === null || !a.heardB.length) return;
+  noteHeardByRules(a);
   const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
-  if (!s || s.heard === s.version || !auditionCurrent(s, a)) return;
+  if (!s || s.heard === s.version) return;
+  // (what B played of this version counts, playing or stopped since, whichever plan for it played:
+  // a sound check that finishes later and finds nothing past it leaves it heard)
+  if (!playedVersion(s, a)) return;
   // (every bar of every region where a change is heard, played through on B)
   // (not checked by sound, with a tail the studio doesn't know: never heard all through)
   const played = !s.unheard && s.regions.every((r) => playedThrough(a.heardB, r));
@@ -138,6 +146,20 @@ export function noteHeard(a: AuditionState = useAudition.getState()): void {
   }
   // (heard now: an "Accept without listening" waiting from before goes back to Accept)
   updateSuggestion(s.id, { heard: s.version, armed: null });
+}
+
+/**
+ * Note a suggestion heard by its rules alone (`heardByRules`, what an agent not allowed to listen
+ * reads as `heard`) once B, of its current version on the song as it is now, has played through
+ * every region the rules found (all of them within what a before-and-after can play): whatever
+ * the sound check found, and whichever plan for it is playing (one found by sound before it plays
+ * the same version), so nothing of what the renders found shows in it.
+ */
+function noteHeardByRules(a: AuditionState): void {
+  const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
+  if (!s || s.heardByRules === s.version || !playedVersion(s, a)) return;
+  if (hearingByRules(s, currentProject()).unheard || !s.ruleRegions.every((r) => playedThrough(a.heardB, r))) return;
+  updateSuggestion(s.id, { heardByRules: s.version });
 }
 useAudition.subscribe((a) => noteHeard(a));
 // (found by sound while it plays, with nothing more to play: what played still counts)

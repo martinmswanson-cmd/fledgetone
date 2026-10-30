@@ -182,6 +182,16 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   2.7 ms per block, so the whole mix can glitch once at the restart. The held notes go with it.
   Rare now (the limits in paramLimits.ts keep the known blow-ups away); a restart prepared off the
   audio thread would remove it.
+- **Tails read the tracks as they play.** Where a suggestion is heard (`songDiff.ts trackTails`)
+  and an export's ring-out (`exportWav.ts ringOutSeconds`, `lushFed`) both read tracks through
+  `effectTails.ts playedTracks` (the same `withStepLanes(withControllerLanes(...))` merge the
+  render and the live engine play), so a CC 91/93 lane, a MIDI-learn CC mapped to `fx:` or a step
+  lane counts exactly as an automation lane does (`feedsMasterDelay`, `feedsMasterReverb`,
+  `movingFx`, at the slowest tempo: `slowestBpm`). Add a new way for a setting to move there, not
+  beside it; a lane `isAutomationParam` doesn't know leaves the rules not sure. A note of a track
+  another track's Pump ducks to (by `source`, or a drum track for kick/snare triggers) is heard as
+  long as the ducked track rings on. Without Listen an agent reads `heard` as `heardByRules`
+  (songWatch.ts), never the studio's own `heard`, which a sound check can change.
 - Wobble rates are `'1/4'`, `'1/8'`, `'1/16'` (not Tone's `'8n'`).
 - Sample libraries load from GitHub (`nbrosowsky/tonejs-instruments`, files spell sharps with `s`,
   e.g. `As3.mp3`) and the FluidR3 General MIDI set. Check a file exists before listing it.
