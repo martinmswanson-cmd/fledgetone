@@ -19,7 +19,7 @@
  * them from a folder; plugins load from fledgetone-plugins/ next to this file.
  */
 import { parseProject, safeFileName, type ProjectSnapshot } from '../store/project';
-import { importEmbeddedSounds } from '../audio/soundLibrary';
+import { importEmbeddedSounds, withLibrarySamples } from '../audio/soundLibrary';
 import { DEFAULT_MASTER_FX, defaultMasterSettings, normalizeTrackFx } from '../store/timelineTypes';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
 import { preloadFamily } from '../audio/plugins/builtinHost';
@@ -34,7 +34,7 @@ import { measureRender, renderRange, renderRangeStems, type RenderMeasure } from
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
 import { checkMix, duckedToKick, trackRole, type TrackMeasure } from '../audio/mixCheck';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
-import { barToSeconds } from '../audio/tempoMap';
+import { barToSeconds, FOUR_FOUR, type MeterMap } from '../audio/tempoMap';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { listenSnapshot } from '../agent/listenSnapshot';
 import { applyOps, OPS_VERSION } from '../agent/ops';
@@ -138,7 +138,8 @@ async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
     });
   }
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
-  return project;
+  // A Sampler's sound kept the old way (a data: URL) goes into the library, as opening the file in the app moves it
+  return { ...project, tracks: await withLibrarySamples(project.tracks) };
 }
 
 /** The plugins the tracks that sound play from other sites (not Fledgetone's built-in ones; a bypassed one plays no part). */
@@ -161,6 +162,8 @@ function songEnd(p: ProjectSnapshot): number {
 }
 
 const tempoOf = (p: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: p.bpm, points: p.tempoPoints ?? [] });
+/** The song's meter: its groove feels count from its measures (there's no store here to keep the studio's). */
+const meterOf = (p: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): MeterMap => ({ base: p.meter ?? FOUR_FOUR, points: p.meterPoints ?? [] });
 
 /** Render a song (its JSON as saved) as Export makes it, keeping the files for take. */
 export async function renderSong(projectJson: unknown, opts: RenderSongOptions = {}): Promise<RenderSongResult> {
@@ -186,6 +189,7 @@ export async function renderSong(projectJson: unknown, opts: RenderSongOptions =
     clips: p.clips,
     bpm: p.bpm,
     tempoPoints: p.tempoPoints,
+    meter: meterOf(p),
     swing: p.swing,
     startBar: fromBar,
     endBar: toBar,

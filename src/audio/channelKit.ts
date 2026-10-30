@@ -153,6 +153,7 @@ export async function buildChannelKit(song: GameKitSong, opts: { target: string;
     clips: song.clips,
     bpm: song.bpm,
     tempoPoints: song.tempoPoints,
+    meter: { base: song.meter ?? FOUR_FOUR, points: song.meterPoints ?? [] },
     swing: song.swing,
     masterFx: song.masterFx,
     master: song.master,

@@ -7,7 +7,7 @@
  * nothing here is saved with the song.
  */
 import { create } from 'zustand';
-import { useTimelineStore, masterFxOf, songTempo } from '../store/timelineStore';
+import { useTimelineStore, masterFxOf, songMeterOf, songTempo } from '../store/timelineStore';
 import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions } from './exportWav';
 import { musicEnd, renderOptionsFor, type ListenSnapshot } from './listen';
 import { measureLoudness } from './loudness';
@@ -66,7 +66,7 @@ export function cancelMixRender(): void {
 /** The song now, as listen.ts renders it. */
 function storeSnapshot(): ListenSnapshot {
   const s = useTimelineStore.getState();
-  return { tracks: s.tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: s.swing, masterFx: masterFxOf(s), master: s.master, intensity: { value: s.intensity, curves: s.intensityCurves } };
+  return { tracks: s.tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, meter: songMeterOf(s), swing: s.swing, masterFx: masterFxOf(s), master: s.master, intensity: { value: s.intensity, curves: s.intensityCurves } };
 }
 
 /** The song as the export would render it, bar 1 to the end (at most ANALYSE_SECONDS). */

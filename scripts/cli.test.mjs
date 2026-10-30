@@ -316,6 +316,36 @@ test('what the command line prints carries no terminal escapes or hidden charact
   assert.ok(!/^fledgetone: all checks passed/m.test(applied.stdout), 'the title stays on its line');
 });
 
+test('nor invisible characters: variation selectors, fillers, blank braille, the other default-ignorable ones (an emoji, a flag and a joined word kept)', { skip }, async () => {
+  // Hidden: variation selectors (U+FE00, U+E0100...), combining grapheme joiner, Hangul fillers, blank braille, a word joiner
+  const hidden = '\uFE00\u{E0100}\u{E01EF}\u034F\u115F\u1160\u3164\uFFA0\u2800\u2060\u180E';
+  // Kept: an emoji with its presentation selector and joiners, the Welsh flag, a Persian word with its ZWNJ
+  const kept = ['\u2764\uFE0F', '\u{1F469}\u200D\u{1F4BB}', '\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}', '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645'];
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  song.name = `Se${hidden}cret ${kept.join(' ')}`;
+  song.tracks[0].name = `B${hidden}ass`;
+  song.markers = [{ id: 'mk1', bar: 3, name: `Dro${hidden}p` }];
+  const path = join(tmp, 'hidden.fledgetone.json');
+  writeFileSync(path, JSON.stringify(song));
+  const invisible = /[\p{Default_Ignorable_Code_Point}\u2800]/u;
+  for (const args of [['info', path], ['info', path, '--json'], ['notes', path], ['notes', path, '--json'], ['check', path], ['diff', SONG, path], ['diff', SONG, path, '--json']]) {
+    const r = await cli(...args);
+    assert.ok(r.stdout.length > 0, args.join(' '));
+    // (what's left: only the joiners and selectors the kept words need)
+    const left = r.stdout.replace(new RegExp(kept.join('|'), 'gu'), '');
+    assert.ok(!invisible.test(left), `${args.join(' ')}: ${JSON.stringify(left.match(invisible))}`);
+    if (args[0] === 'info' && args.length === 2) {
+      assert.match(r.stdout, /Secret /);
+      for (const k of kept) assert.ok(r.stdout.includes(k), `${JSON.stringify(k)} kept`);
+    }
+    if (args[0] === 'notes' && args.length === 2) assert.match(r.stdout, /Bass/);
+  }
+  await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
+  const { safeText } = await import(pathToFileURL(join(CLI, 'src/print.ts')).href);
+  assert.equal(safeText(`a${hidden}b\r\n\tc`), 'ab\n\tc');
+  assert.equal(safeText('plain text, as it is'), 'plain text, as it is');
+});
+
 test('a file whose name only starts with two dots is inside the folder (the helper and the studio server)', { skip }, async () => {
   await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
   const { fileInRoot } = await import(pathToFileURL(join(CLI, 'src/files.ts')).href);

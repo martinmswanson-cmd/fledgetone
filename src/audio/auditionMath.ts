@@ -3,6 +3,7 @@ import { barToSeconds, secondsToBar, type Tempo, type TempoPoint } from './tempo
 import { durationToBars, type Clip, type NoteEvent, type Track } from '../store/timelineTypes';
 import { audibleIds } from '../store/buses';
 import { sustainNotes } from '../store/expression';
+import { INSTRUMENTS } from './instrumentCatalog';
 
 /**
  * The notes of a clip that sound, each with how long it sounds (bars), as the scheduler plays
@@ -37,23 +38,45 @@ export const PRE_ROLL_MAX_BARS = 8;
 export const PRE_ROLL_MAX_SECONDS = 20;
 
 /**
+ * How long a note of `track` rings on after it ends (seconds): a recorded instrument's ring as the
+ * track sets it, else its recordings' release, else RELEASE_ALLOWANCE_SECONDS (a synth's release,
+ * a plugin's: not known here).
+ */
+export const RELEASE_ALLOWANCE_SECONDS = 2;
+export function releaseSeconds(track: Pick<Track, 'instrumentKey' | 'ring'> | undefined): number {
+  const samples = track ? INSTRUMENTS[track.instrumentKey]?.samples : undefined;
+  const release = samples ? (track?.ring ?? samples.release) : undefined;
+  return typeof release === 'number' && release >= 0 ? release : RELEASE_ALLOWANCE_SECONDS;
+}
+
+/**
  * Where to start rendering to hear bars from `fromBar` as they sound in the song: the start of the
- * earliest note still sounding at `fromBar` (a held pad, a long bass note), at most
- * PRE_ROLL_MAX_BARS and PRE_ROLL_MAX_SECONDS earlier; `fromBar` itself if nothing is held over.
+ * earliest note still sounding at `fromBar` (a held pad, a long bass note, or one that ended just
+ * before it and is still ringing out: its release, see releaseSeconds), at most PRE_ROLL_MAX_BARS
+ * and PRE_ROLL_MAX_SECONDS earlier; `fromBar` itself if nothing is held over.
  */
 export function preRollStart(song: { tracks: Track[]; clips: readonly Clip[]; bpm: number; tempoPoints?: readonly TempoPoint[] }, fromBar: number): number {
   const ids = audibleIds(song.tracks);
+  const tempo = { bpm: song.bpm, points: [...(song.tempoPoints ?? [])] };
+  const fromSeconds = barToSeconds(fromBar, tempo);
+  const trackOf = new Map(song.tracks.map((t) => [t.id, t]));
   let start = fromBar;
   for (const c of song.clips) {
-    if (!ids.has(c.trackId) || c.startBar >= fromBar || c.startBar + c.lengthBars <= fromBar) continue;
+    if (!ids.has(c.trackId) || c.startBar >= fromBar) continue;
+    const clipEnd = c.startBar + c.lengthBars;
+    const release = releaseSeconds(trackOf.get(c.trackId));
+    // (a clip over well before the range: none of its notes can ring into it)
+    if (barToSeconds(clipEnd, tempo) + release <= fromSeconds) continue;
     for (const { note, bars } of soundingNotes(c)) {
       const at = c.startBar + note.startOffset;
-      if (at < start && at + bars > fromBar) start = at;
+      if (at >= start) continue;
+      // Sounding past fromBar, or ringing out into it
+      const end = Math.min(clipEnd, at + bars);
+      if (end > fromBar || barToSeconds(end, tempo) + release > fromSeconds) start = at;
     }
   }
   if (start >= fromBar) return fromBar;
-  const tempo = { bpm: song.bpm, points: [...(song.tempoPoints ?? [])] };
-  const bySeconds = secondsToBar(Math.max(0, barToSeconds(fromBar, tempo) - PRE_ROLL_MAX_SECONDS), tempo);
+  const bySeconds = secondsToBar(Math.max(0, fromSeconds - PRE_ROLL_MAX_SECONDS), tempo);
   return Math.max(1, start, fromBar - PRE_ROLL_MAX_BARS, bySeconds);
 }
 
@@ -92,4 +115,28 @@ export function restartHeldNotes(clips: readonly Clip[], at: number, fromBar: nu
     return { ...c, notes };
   });
   return changed ? out : (clips as Clip[]);
+}
+
+/** How long the end of a looped stretch crossfades into what leads into its start (seconds). */
+export const LOOP_FADE_SECONDS = 0.015;
+
+/**
+ * A render's channels from frame `trim` on, made to loop without a click: its last `fade` frames
+ * crossfade (equal power) into the `fade` frames just before `trim`, the music that leads into the
+ * stretch's start, so going round from its last frame to its first is a step the song itself takes.
+ * (Before frame 0 there's silence: a stretch rendered with no run-in fades out into it.) The render
+ * must end without a fade of its own.
+ */
+export function loopChannels(channels: readonly Float32Array<ArrayBuffer>[], trim: number, fade: number): Float32Array<ArrayBuffer>[] {
+  return channels.map((data) => {
+    const out = data.slice(Math.max(0, trim));
+    const n = Math.min(Math.max(0, Math.round(fade)), Math.floor(out.length / 2));
+    for (let i = 0; i < n; i++) {
+      const t = ((i + 0.5) / n) * (Math.PI / 2);
+      const k = out.length - n + i;
+      const lead = trim - n + i;
+      out[k] = out[k] * Math.cos(t) + (lead >= 0 ? data[lead] : 0) * Math.sin(t);
+    }
+    return out;
+  });
 }

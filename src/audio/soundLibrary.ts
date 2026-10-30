@@ -11,7 +11,7 @@ import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
 import { DspDropped, runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
 import type { Peaks } from './waveform';
-import type { ClipAudio, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
+import type { ClipAudio, CustomSample, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
 export type { EmbeddedSound, SoundMeta };
 
@@ -710,6 +710,27 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
 export async function importDataUrl(dataUrl: string, name: string): Promise<SoundMeta> {
   const data = await (await fetch(dataUrl)).blob();
   return importSoundFile(data, name);
+}
+
+/**
+ * `tracks` with each Sampler sound kept the old way (a data: URL on the track) moved into the
+ * library and the track pointed at it, as opening the file in the app does (timelineStore's
+ * prepareSounds), so it plays as it does there: decoded as every library sound is. One that can't
+ * be read or kept stays as it was (and plays from its data: URL, as it would in the app).
+ */
+export async function withLibrarySamples<T extends { sample?: CustomSample }>(tracks: T[]): Promise<T[]> {
+  return Promise.all(
+    tracks.map(async (t) => {
+      const sample = t.sample;
+      if (!sample?.dataUrl || sample.soundId) return t;
+      try {
+        const meta = await importDataUrl(sample.dataUrl, sample.name);
+        return { ...t, sample: { name: sample.name, soundId: meta.id, root: sample.root } };
+      } catch {
+        return t;
+      }
+    })
+  );
 }
 
 // ---------- project files ----------

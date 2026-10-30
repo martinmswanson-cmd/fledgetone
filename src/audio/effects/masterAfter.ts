@@ -167,9 +167,12 @@ export function masterAfter(
   ceilingDbtp = LIMITER_CEILING_DBTP,
   drops: readonly DropFrames[] = [],
   matchLufs?: number,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  /** Count what it did from this frame on (a listen's run-in before it isn't heard) */
+  statsFrom = 0
 ): MasterStats {
-  const inPeak = peakOf(left, right);
+  const from = Math.max(0, Math.min(left.length, Math.round(statsFrom)));
+  const inPeak = peakOf(left.subarray(from), right.subarray(from));
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
   const width = effectiveWidth(master);
   if (width) widthChannels(left, right, sampleRate, width);
@@ -190,8 +193,8 @@ export function masterAfter(
     if (loud.split !== undefined) clip = effectiveClipper({ ...master, loud: { ...master.loud, split: loud.split } }, ceilingDbtp);
   }
   scaleChannels(left, right, Math.fround(dbToGain(master.level + push)));
-  const clipper = clip ? clipChannels(left, right, sampleRate, clip) : undefined;
-  const busy = limiterLoad(left, right, sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));
+  const clipper = clip ? clipChannels(left, right, sampleRate, clip, from) : undefined;
+  const busy = limiterLoad(left.subarray(from), right.subarray(from), sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));
   limitChannels(left, right, sampleRate, ceilingDbtp);
   scaleChannels(left, right, dbToGain(volumeDb));
   if (loud) onProgress?.(1);
@@ -249,9 +252,11 @@ export interface MasterJob {
   ceilingDbtp: number;
   drops: DropFrames[];
   matchLufs?: number;
+  /** The frame its stats count from (absent: the start) */
+  statsFrom?: number;
 }
 
 /** masterAfter over a job's channels, in place. */
 export function runMasterJob(job: MasterJob, onProgress?: (fraction: number) => void): MasterStats {
-  return masterAfter(job.left, job.right ?? job.left, job.sampleRate, job.master, job.volumeDb, job.ceilingDbtp, job.drops, job.matchLufs, onProgress);
+  return masterAfter(job.left, job.right ?? job.left, job.sampleRate, job.master, job.volumeDb, job.ceilingDbtp, job.drops, job.matchLufs, onProgress, job.statsFrom);
 }

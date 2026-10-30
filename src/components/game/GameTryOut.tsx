@@ -18,6 +18,7 @@ import { gameKitSong } from '../timeline/gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
+import { PREVIEW_FADE_SECONDS } from '../../audio/previewFade';
 import { showToast } from '../timeline/toastStore';
 import { generateSfx, renderSfxStereo, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
 import { ensureSfxRecordings } from '../../audio/sfx/sfxRecordings';
@@ -122,7 +123,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
   const [panel, setPanel] = useState(false);
   const lastIntensity = useRef(0);
   // The game's music is the one preview playing (a suggestion's before-and-after, say, stops)
-  const claim = useExclusivePreview('game-try-out', () => music.current?.stop());
+  const claim = useExclusivePreview('game-try-out', () => music.current?.stop(PREVIEW_FADE_SECONDS));
 
   const say = useCallback((line: string) => setLog((l) => [line, ...l].slice(0, 4)), []);
 
@@ -249,7 +250,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     const m = music.current;
     const mp = mapRef.current;
     if (!m || !mp) return;
-    m.stop();
+    m.stop(PREVIEW_FADE_SECONDS);
     m.stopSfx();
     m.setEffect('none', 0.1);
     if (mp.calm) m.play(mp.calm);

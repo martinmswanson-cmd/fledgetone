@@ -9,7 +9,7 @@
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
 import { insertTailSeconds } from './effects/spaceFx';
-import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
+import { secondsBetween, tempoAt, type MeterMap, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { captureWamStates } from './wamHost';
@@ -45,7 +45,7 @@ import { expandAudioComps } from '../store/takes';
 import { decodePitchedSoundAt, holdRecordingsAt, loadCustomSample, songSampleLoads, type RenderRecordings } from './samplers/samplerManager';
 import { trackPlan } from './samplers/songSamples';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
-import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
+import { applyTempoAt, barToTicks, getSongMeter, scheduleTempo, ticksToBar } from './transport';
 import { markerCues } from './wavCues';
 import { ditherSeedOf, encodeChannels } from './wavFile';
 import { withTimeout } from './waitFor';
@@ -89,6 +89,12 @@ export interface RenderOptions {
   bpm: number;
   /** Tempo changes after bar 1 (none: one tempo throughout) */
   tempoPoints?: TempoPoint[];
+  /**
+   * The song's meter, where its measured groove feels count their steps from (see grooveFeels.ts).
+   * Absent: the studio's (getSongMeter), which only the app's store keeps up; a render made with
+   * no store (the command line's, a game's) passes its song's.
+   */
+  meter?: MeterMap;
   swing: number;
   /** 1-based bar range to render, [startBar, endBar). */
   startBar: number;
@@ -158,6 +164,8 @@ export interface RenderOptions {
   threads?: number;
   /** Told what the master section did after the render (how hard its clipper and limiter worked), for the Mix check. */
   onMasterStats?: (stats: MasterStats) => void;
+  /** Count what the master section did from this bar on (a listen's run-in before it is trimmed away); absent: the whole render. */
+  masterStatsFromBar?: number;
   /** (Set by the render itself: how far a Loud master's match has got, 0 to 1.) */
   onMatchProgress?: (fraction: number) => void;
 }
@@ -1024,11 +1032,21 @@ async function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: R
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
   const stats = await masterAfterOffThread(
-    { left: l, ...(r && r !== l ? { right: r } : {}), sampleRate: rendered.sampleRate, master: normalizeMasterSettings(opts.master), volumeDb: masterDb, ceilingDbtp: opts.peakCeilingDbtp ?? LIMITER_CEILING_DBTP, drops: dropFramesOf(opts, plan), matchLufs: opts.loudTargetLufs },
+    { left: l, ...(r && r !== l ? { right: r } : {}), sampleRate: rendered.sampleRate, master: normalizeMasterSettings(opts.master), volumeDb: masterDb, ceilingDbtp: opts.peakCeilingDbtp ?? LIMITER_CEILING_DBTP, drops: dropFramesOf(opts, plan), matchLufs: opts.loudTargetLufs, ...statsFrom(opts, plan) },
     opts.signal,
     opts.onMatchProgress
   );
   opts.onMasterStats?.(stats);
+}
+
+/**
+ * Where in a render the master section's stats start counting: the frame `masterStatsFromBar`
+ * reaches the clipper and limiter at (before the limiter's look-ahead, as dropFramesOf counts).
+ */
+function statsFrom(opts: RenderOptions, plan: RenderPlan): { statsFrom?: number } {
+  const bar = opts.masterStatsFromBar;
+  if (bar === undefined || bar <= opts.startBar || plan.passes > 1) return {};
+  return { statsFrom: Math.max(0, plan.keepFrom - createLimiterKernel(plan.sampleRate).latency) + Math.round(secondsBetween(opts.startBar, Math.min(bar, opts.endBar), renderTempo(opts)) * plan.sampleRate) };
 }
 
 /**
@@ -1347,10 +1365,14 @@ async function renderGraphHeld(
     // Pumps that follow a track hear its notes even when this render leaves it out (a stem)
     const sourceIds = new Set(strips.map((s) => s.pumpSource()).filter((id): id is string => !!id));
     const pumpOnTrack = sourceIds.size ? (trackId: string, time: number) => sourceIds.has(trackId) && strips.forEach((s) => s.pump(time, 'track', trackId)) : undefined;
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack);
+    const meter = opts.meter ?? getSongMeter();
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack, undefined, undefined, () => meter);
     const followsKick = strips.some((s) => pumpFollowsDrums(s.pumpTrigger()));
     const extra = [...(followsKick ? kickTracks : []), ...opts.tracks.filter((t) => sourceIds.has(t.id))].filter((t, i, all) => !instruments.has(t.id) && all.indexOf(t) === i);
     schedule.update([...tracks, ...extra], clips);
+    // Controller lanes of clips begun before the range start at their values there (a lane is sent
+    // only where it changes), set before the render begins as the automation is
+    schedule.hold(startBar, 0);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));
     pumpClock.update();
     // Audio clips play their sound files on the same Transport, from the right place in them

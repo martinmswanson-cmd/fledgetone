@@ -6,6 +6,7 @@ import { initAudio, liveMix } from './engine';
 import { decodeSound } from './soundLibrary';
 import { nativeInputOf } from './nativeNodes';
 import { claimPreview, registerPreview } from './exclusivePreview';
+import { fadeOut } from './previewFade';
 
 let playing: { source: AudioBufferSourceNode; amp: GainNode } | null = null;
 
@@ -41,18 +42,19 @@ export async function auditionPart(soundId: string, start: number, end: number):
   };
 }
 
-/** Stop what auditionPart is playing. */
+/** Stop what auditionPart is playing (with a short fade: never cut mid-waveform). */
 export function stopAudition(): void {
   if (!playing) return;
   const { source, amp } = playing;
   playing = null;
+  const end = fadeOut(amp);
   try {
-    source.stop();
+    source.stop(end + 0.005);
   } catch {
     // Already stopped
+    source.disconnect();
+    amp.disconnect();
   }
-  source.disconnect();
-  amp.disconnect();
 }
 
 // Another preview starting stops this one (one at a time, see exclusivePreview.ts)

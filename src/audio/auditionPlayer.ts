@@ -1,7 +1,8 @@
 /**
  * Hearing a suggestion before and after: the same bars rendered twice, A (the song now) and B (the
  * song as the suggestion would make it), each looped over exactly those bars through its own gain
- * after the master. A switch between them is a 20 ms crossfade at the same place in the music: the
+ * after the master (its end crossfaded into what leads into its start: renderLoop, so going round
+ * doesn't click). A switch between them is a 20 ms crossfade at the same place in the music: the
  * one switched to starts again at the bar (and part of a bar) the other had reached, so a
  * suggestion that changes the tempo (A and B of different lengths) still switches in step. Both are rendered as the export would (recordings as live playback has
  * them) and the song itself is never touched: no store change, no undo step, no autosave.
@@ -15,7 +16,7 @@
 import { create } from 'zustand';
 import { liveContext, afterMaster } from './liveContext';
 import { initAudio } from './engine';
-import { measureRender, renderRange, type ListenSnapshot } from './listen';
+import { measureRender, renderLoop, type ListenSnapshot } from './listen';
 import type { Tempo } from './tempoMap';
 import { sameBarOffset } from './auditionMath';
 import { claimPreview, registerPreview } from './exclusivePreview';
@@ -186,8 +187,8 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     let pair = cache?.renderKey === opts.renderKey ? cache : null;
     if (!pair) {
       const signal = controller.signal;
-      const a = await renderRange(opts.now, opts.fromBar, opts.toBar, { signal, progress: (f) => useAudition.setState({ progress: f * 0.45 }) });
-      const b = await renderRange(opts.suggested, opts.fromBar, opts.toBar, { signal, progress: (f) => useAudition.setState({ progress: 0.45 + f * 0.45 }) });
+      const a = await renderLoop(opts.now, opts.fromBar, opts.toBar, { signal, progress: (f) => useAudition.setState({ progress: f * 0.45 }) });
+      const b = await renderLoop(opts.suggested, opts.fromBar, opts.toBar, { signal, progress: (f) => useAudition.setState({ progress: 0.45 + f * 0.45 }) });
       const [ma, mb] = [await measureRender(a, signal), await measureRender(b, signal)];
       const diff = Number.isFinite(ma.lufs) && Number.isFinite(mb.lufs) ? mb.lufs - ma.lufs : Number.isFinite(mb.lufs) ? Infinity : 0;
       // A B much louder than A is turned down to A + the limit (a B from silence: to -23 LUFS-ish, by its own level)
