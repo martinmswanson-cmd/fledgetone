@@ -390,7 +390,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           ? `${fileBase} versions.zip`
           : `${fileBase}.${ext}`;
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * exportRate);
-  const tail = ringOutSeconds(masterFx, tracks, bpm);
+  const tail = ringOutSeconds(masterFx, tracks, tempo, undefined, clips);
 
   // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
   const startExport = () => countedRender(async () => {

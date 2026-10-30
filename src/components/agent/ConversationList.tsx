@@ -11,7 +11,8 @@
  */
 import React from 'react';
 import { RotateCw } from 'lucide-react';
-import { useSuggestions, shortText, announce, type AgentMessage } from '../../agent/suggestionsStore';
+import { useSuggestions, shortText, announce, wordMeter, type AgentMessage } from '../../agent/suggestionsStore';
+import { useTimelineStore } from '../../store/timelineStore';
 import { contextWords, putBack, useConversation, type OwnMessage } from '../../agent/conversation';
 import { retryMessage } from '../../agent/bridgeClient';
 import { deliveryWords } from './words';
@@ -31,6 +32,10 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
   const messages = useSuggestions((s) => s.messages);
   const suggestions = useSuggestions((s) => s.suggestions);
   const mine = useConversation((s) => s.mine);
+  // (bars named as the ruler numbers them: by measure in a song not in 4/4)
+  const meterBase = useTimelineStore((t) => t.meter);
+  const meterPoints = useTimelineStore((t) => t.meterPoints);
+  const meter = React.useMemo(() => wordMeter({ meter: meterBase, meterPoints }), [meterBase, meterPoints]);
   const current = useConversation((s) => s.connection);
   const connected = useSuggestions((s) => s.connection.state === 'paired');
   const latest = messages.at(-1);
@@ -101,7 +106,7 @@ export const ConversationList: React.FC<{ agent?: string; lastAgentRef: React.Re
     }
     const m = e.m;
     const about = titleOf(m.suggestionId);
-    const context = contextWords(m);
+    const context = contextWords(m, meter);
     return (
       <figure data-own-message={m.id} data-delivery={m.status} className="ml-6 rounded-md bg-violet-500/10 border border-violet-400/30 border-r-2 border-r-violet-400/70 px-2.5 py-1.5">
         <figcaption className="text-[10px] font-mono uppercase tracking-wider text-violet-200/80 text-right">You</figcaption>

@@ -124,6 +124,12 @@ export function findWhere(id: string, before: ProjectSnapshot = currentProject()
   const s = useSuggestions.getState().suggestions.find((x) => x.id === id);
   if (!s || !isOpen(s) || s.stale) return Promise.resolve(false);
   if (!needsFinding(s)) return Promise.resolve(true);
+  // (one that can't be checked by sound: said at once, never announced as begun)
+  const long = tooLongWhy(before, s);
+  if (long) {
+    updateSuggestion(id, (x) => (x.version === s.version ? { ...x, foundWhy: long } : x));
+    return Promise.resolve(true);
+  }
   if (job && job.id === id && job.version === s.version) {
     if (asked && !job.asked) {
       job.asked = true;

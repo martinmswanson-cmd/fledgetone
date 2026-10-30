@@ -19,6 +19,8 @@
 import { create } from 'zustand';
 import { CONVERSATION, hasVisibleText, readContext, type UserMessage, type UserMessageContext } from './protocol';
 import { agentIds } from './agentText';
+import { barWords } from './songDiff';
+import type { MeterMap } from '../audio/tempoMap';
 
 export type Delivery = 'sending' | 'sent' | 'seen' | 'not_sent';
 
@@ -148,17 +150,14 @@ export function selectionContext(s: {
 }
 
 /** What the musician's message carries along, in words (under it in the conversation). */
-export function contextWords(m: Pick<UserMessage, 'context'>): string | null {
+export function contextWords(m: Pick<UserMessage, 'context'>, meter: MeterMap | null = null): string | null {
   const c = m.context;
   if (!c) return null;
   const parts: string[] = [];
   if (c.selectedClipIds?.length) parts.push(`${c.selectedClipIds.length} selected clip${c.selectedClipIds.length === 1 ? '' : 's'}`);
   else if (c.selectedTrackId) parts.push('the selected track');
-  if (c.bars) {
-    const a = Math.floor(c.bars.fromBar);
-    const b = Math.max(a, Math.ceil(c.bars.toBar) - 1);
-    parts.push(a === b ? `bar ${a}` : `bars ${a}-${b}`);
-  }
+  // (as the ruler numbers them: by measure in a song not in 4/4, `meter`, see wordMeter)
+  if (c.bars) parts.push(barWords(c.bars, meter));
   if (c.editingClipId && !c.selectedClipIds?.includes(c.editingClipId)) parts.push('the clip being edited');
   return parts.length ? `With your selection: ${parts.join(', ')}` : 'With your selection';
 }

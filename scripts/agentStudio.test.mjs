@@ -249,6 +249,27 @@ test('letter-shaped signs with no decomposition read as their letters: negative 
   for (const name of ['C++ helper', 'Fl€x the agent', '🅰🅱 helper', '🇫🇷 assistant', 'Agent ❶']) assert.equal(agentName(name), name, JSON.stringify(name));
 });
 
+test('a sign, punctuation mark or digit in place of a letter of the app\'s name reads as that letter, or as nothing between its letters (scan r7)', () => {
+  const subs = { o: '◦⚬○⊙∘°•◯⭘⚪◎', e: '℮∊∈ɛ€ϵ', l: '|│ǀ∣❘┃׀ߊ', n: '∩⋂Π', t: '†┼✝ϯ⊤', d: '∂ↁ', g: '⅁ɡ', f: 'Ƒƒ⨍ϝ' };
+  const name = 'Fledgetone';
+  for (const [letter, list] of Object.entries(subs))
+    for (const c of list) {
+      const i = name.toLowerCase().lastIndexOf(letter);
+      const v = name.slice(0, i) + c + name.slice(i + 1);
+      assert.ok(posesAsApp(`${v}: saved`), `${v} (U+${c.codePointAt(0).toString(16)})`);
+      assert.ok(fromAgent(`${v}: Your song is saved.`, 200).startsWith('“'), v);
+      assert.equal(agentName(v), undefined, v);
+    }
+  assert.equal(agentName('F❘edget◦ne'), undefined);
+  // Between its letters, or after it, as before
+  for (const t of ['Fledge-tone: saved', 'F.l.e.d.g.e.t.o.n.e', 'Fled·ge·tone', "Fledgetone's mixer"]) assert.ok(posesAsApp(t), t);
+  // Ordinary sentences stay as they are
+  for (const t of ['Fled, got one more idea', 'Felt-tip done', 'Flee: get on it', 'Fixed the tone', 'File: get one', 'Fade: gentle one', 'Level -3 dB', 'Flute 2: tone', 'Find & get one', 'Fledged one', '1. Loudness', 'Fledg: alone']) {
+    assert.equal(posesAsApp(t), false, t);
+    assert.equal(fromAgent(t, 200), t, t);
+  }
+});
+
 test("an agent's name can't close the brackets or quotes it's shown in", () => {
   assert.equal(agentName('Helper) · checked by the studio (ok'), 'Helper · checked by the studio ok');
   assert.equal(agentName('A ”Fledgetone“ thing'), 'A Fledgetone thing');
@@ -739,7 +760,7 @@ test('checked by sound unless the musician\'s own song is too long (a suggestion
   // Not checked yet (Hear plays at once, the check comes while it plays): not all of it either, until it's found
   assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: undefined, sure: false }), true);
   const pending = acceptDecision({ ...s, found: 'rules', foundWhy: undefined, sure: false, partHeard: s.version, partUnchecked: true, heard: null }, p, ctxOf(p), 1000);
-  assert.match(pending.message, /^The studio was still checking by sound where this changes when you heard it\. Hear it again once that’s done, or press Accept without listening\.$/);
+  assert.match(pending.message, /^The studio was still checking by sound where this changes when you heard it\. If the check \(which goes on in the background\) finds nothing past what you heard, it counts as heard; if it finds more, hear that too\. Or press Accept without listening\.$/);
   const unsure = { ...s, found: 'rules', foundWhy: 'too_long', sure: false, partHeard: s.version, partUnchecked: true, heard: null };
   assert.equal(uncheckedTail(unsure), true);
   const first = acceptDecision(unsure, p, ctxOf(p), 1000);
@@ -764,5 +785,15 @@ test('without Listen, an agent reads only where the rules say a suggestion is he
   assert.equal(rules.found, 'rules');
   assert.deepEqual(rules.regions, s.ruleRegions);
   assert.deepEqual(rules.audition, s.audition, 'what the rules alone would play');
-  assert.match(readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8'), /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, currentProject\(\)\);/);
+  const handlers = readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8');
+  assert.match(handlers, /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, song\);/);
+  // (scan r7) and nothing that moves with them: heard by the rules' regions, no "finding", why not by sound only from the rules
+  assert.match(handlers, /heard: listen \? s\.heard !== null && s\.heard === s\.version : s\.heardByRules === s\.version,/);
+  assert.match(handlers, /const rulesWhy = listen \? null : tooLongWhy\(song, s\);/);
+  assert.match(handlers, /\.\.\.\(!listen\s+\? rulesWhy/);
+  const watch = readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8');
+  assert.match(watch, /if \(hearingByRules\(s, currentProject\(\)\)\.unheard \|\| !s\.ruleRegions\.every\(\(r\) => playedThrough\(a\.heardB, r\)\)\) return;/);
+  // (scan r7) what B played of a version counts after Stop too: a check by sound that finishes later and finds nothing past it leaves it heard
+  assert.match(watch, /if \(a\.key === null \|\| !a\.heardB\.length\) return;/);
+  assert.match(watch, /if \(!playedVersion\(s, a\)\) return;/);
 });

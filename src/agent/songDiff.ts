@@ -7,7 +7,8 @@
  * else (`text`). Also where each change is heard (`heard`, and all of them together in `regions`),
  * by rules that are never fewer bars than the truth: notes or a clip, its bars and its notes' tail
  * (the release, the track's effects and those of everything it plays into, as long as they ring:
- * trackTails; a tail not known here, a plugin's, leaves them not `sure`); one of a track's sound (its level, pan, instrument,
+ * trackTails, every lane that moves them counted; a tail not known here, a plugin's, leaves them
+ * not `sure`), and of every track whose Pump ducks to its notes, as long as that one rings on; one of a track's sound (its level, pan, instrument,
  * inserts, sends, routing...) or of its automation (a lane holds before and after its points), and
  * any change of a clip with controller or step lanes (what they hold carries into the track's
  * later clips), the bars where that track sounds (its clips with their tails, and the clips of
@@ -20,13 +21,13 @@
  */
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../store/timelineTypes';
-import { DEFAULT_MASTER_FX, durationToBars } from '../store/timelineTypes';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { DEFAULT_MASTER_FX, durationToBars, PUMP_RELEASE_MAX, pumpFollowsDrums } from '../store/timelineTypes';
+import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
 import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import { RELEASE_ALLOWANCE_SECONDS, releaseSeconds } from '../audio/auditionMath';
-import { insertTailSeconds, masterDelaySeconds, masterReverbSeconds } from '../audio/effectTails';
-import { busOf, liveSends } from '../store/buses';
+import { chainTail, feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
+import { liveSends } from '../store/buses';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
 import { nm, plainNames } from './names';
@@ -131,14 +132,17 @@ export const wordMeter = (song: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>):
   return isPlainMeter(map) ? null : map;
 };
 const bars = (from: number, to: number) => barWords({ fromBar: from, toBar: to }, sentenceMeter);
-/** "bar 7.5", or in a song not in 4/4, the measure (and beat) the ruler shows there: "bar 9", "bar 9 beat 2". */
-const barAt = (bar: number): string => {
-  if (!sentenceMeter) return `bar ${r1(bar)}`;
-  const m = toMeasureBeat(bar, sentenceMeter);
+/** "bar 7.5", or in a song not in 4/4 (`meter`, see wordMeter), the measure (and beat) the ruler shows there: "bar 9", "bar 9 beat 2". */
+export const positionWords = (bar: number, meter: MeterMap | null): string => {
+  if (!meter) return `bar ${r1(bar)}`;
+  const m = toMeasureBeat(bar, meter);
   return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
 };
-/** A clip's length: "4 bars", or in a song not in 4/4 (where a bar isn't a measure) in quarter notes. */
-const lengthWords = (lengthBars: number): string => (sentenceMeter ? `${r1(lengthBars * 4)} quarter notes` : `${r1(lengthBars)} bars`);
+/** A length: "4 bars", or in a song not in 4/4 (`meter`: where a bar isn't a measure) in quarter notes. */
+export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${r1(lengthBars * 4)} quarter notes` : `${r1(lengthBars)} bars`);
+const barAt = (bar: number): string => positionWords(bar, sentenceMeter);
+/** A clip's length (see lengthWordsIn). */
+const lengthWords = (lengthBars: number): string => lengthWordsIn(lengthBars, sentenceMeter);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const same = (a: unknown, b: unknown) => a === b || stableJson(a) === stableJson(b);
 const noteEnd = (n: NoteEvent) => n.startOffset + durationToBars(n.duration);
@@ -323,25 +327,16 @@ export function joinRanges(ranges: readonly BarRange[]): BarRange[] {
  * echo until its repeats have fallen 60 dB at the song's slowest tempo, a reverb its whole room;
  * a setting a lane moves at its longest), EFFECT_TAIL_SECONDS more for every other insert, and
  * then the longest way on of the bus it plays into and the returns it sends to (each with its own
- * Delay and Reverb, and on), and the master reverb and delay when it feeds them. A plugin
- * instrument's or a plugin effect's own tail isn't known here (not sure).
+ * Delay and Reverb, and on), and the master reverb and delay when it feeds them (a send, or a lane
+ * moving one). Every lane counts alike, read from the tracks as they play (effectTails.ts
+ * playedTracks: the track's automation, its clips' controller lanes, CC 91 and 93 or one its MIDI
+ * learn maps to a setting, and its clips' step lanes); a lane for a setting not known here, a
+ * plugin instrument's or a plugin effect's own tail isn't known (not sure).
  */
 export interface TrackTail {
   seconds: number;
   sure: boolean;
 }
-
-/** The lanes' settings of a track's inserts ("echo.feedback") that move, over its automation and its clips' step lanes, in `song`. */
-function movingFx(song: Pick<ProjectSnapshot, 'clips'>, track: Track): Set<string> {
-  const out = new Set<string>();
-  for (const l of track.automation ?? []) if (l.param.startsWith('fx:')) out.add(l.param.slice(3));
-  for (const c of song.clips) if (c.trackId === track.id) for (const l of c.stepLanes ?? []) if (l.target.startsWith('fx:')) out.add(l.target.slice(3));
-  return out;
-}
-
-/** The slowest tempo `songs` play at, BPM (an echo's repeats are furthest apart there). */
-const slowestBpm = (songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>>): number =>
-  Math.max(1, Math.min(...songs.flatMap((s) => [s.bpm, ...(s.tempoPoints ?? []).map((p) => p.bpm)]).filter((b) => Number.isFinite(b) && b > 0)));
 
 /** How long a note of `track` rings on as its instrument plays it (see TrackTail). */
 function noteTail(track: Track): TrackTail {
@@ -353,31 +348,21 @@ function noteTail(track: Track): TrackTail {
 
 /** Every track's tail in `songs` (the longest of its versions, sure only if every one is): see TrackTail. */
 export function trackTails(songs: readonly ProjectSnapshot[]): (id: string) => TrackTail {
-  const bpm = slowestBpm(songs);
+  const bpm = slowestBpm(songs.map((s) => ({ bpm: s.bpm, points: s.tempoPoints ?? [] })));
+  // Each version's tracks as they play: every lane that moves a setting (the track's automation,
+  // its clips' controller and step lanes) is then an automation lane (effectTails.ts playedTracks)
+  const played = songs.map((s) => ({ song: s, tracks: playedTracks(s.tracks, s.clips, { bpm: s.bpm, points: s.tempoPoints ?? [] }) }));
   const memo = new Map<string, TrackTail>();
-  /** What follows a track's own sound in `song`: the longest way on (see TrackTail). */
-  const onward = (song: ProjectSnapshot, t: Track, seen: Set<string>): TrackTail => {
-    let seconds = 0;
-    let sure = true;
-    const ways = [busOf(t, song.tracks), ...liveSends(t, song.tracks).map((x) => song.tracks.find((o) => o.id === x.to))];
-    for (const d of ways) {
-      if (!d || seen.has(d.id)) continue;
-      const own = fxTail(song, d);
-      const next = onward(song, d, new Set([...seen, d.id]));
-      seconds = Math.max(seconds, own.seconds + next.seconds);
-      sure &&= own.sure && next.sure;
-    }
-    // (the master reverb and delay, when it feeds them: the delay's echoes then ring in the reverb too)
-    const fx = song.masterFx ?? DEFAULT_MASTER_FX;
-    const lane = (p: string) => !!t.automation?.some((l) => l.param === p);
-    const room = t.reverbSend > 0 || (t.distance ?? 0) > 0 || lane('reverbSend') ? masterReverbSeconds(fx) : 0;
-    const echoes = t.delaySend > 0 || lane('delaySend') ? masterDelaySeconds(fx, bpm, Infinity) : 0;
-    return { seconds: Math.max(seconds, room + echoes), sure };
+  type Played = (typeof played)[number];
+  /** The master reverb and delay, when it feeds them (the delay's echoes counted into the reverb too, to be safe). */
+  const master = (song: Played) => (t: Track): number => {
+    const fx = song.song.masterFx ?? DEFAULT_MASTER_FX;
+    return (feedsMasterReverb(t) ? masterReverbSeconds(fx) : 0) + (feedsMasterDelay(t) ? masterDelaySeconds(fx, bpm, Infinity) : 0);
   };
-  /** A track's own inserts' tail in `song`. */
-  const fxTail = (song: ProjectSnapshot, t: Track): TrackTail => ({
-    seconds: insertTailSeconds(t.fx ?? {}, bpm, Infinity, movingFx(song, t)) + EFFECT_TAIL_SECONDS,
-    sure: !t.pluginFx?.some((p) => !p.bypass),
+  /** A track's own inserts' tail (its lane-moved settings at their longest); not sure with a plugin effect, or a lane for something not known here. */
+  const fxTail = (t: Track): TrackTail => ({
+    seconds: ownInsertTail(t, bpm, Infinity) + EFFECT_TAIL_SECONDS,
+    sure: !t.pluginFx?.some((p) => !p.bypass) && lanesKnown(t),
   });
   return (id) => {
     const known = memo.get(id);
@@ -385,11 +370,12 @@ export function trackTails(songs: readonly ProjectSnapshot[]): (id: string) => T
     let seconds = 0;
     let sure = true;
     let any = false;
-    for (const song of songs) {
+    for (const song of played) {
       const t = song.tracks.find((x) => x.id === id);
       if (!t) continue;
       any = true;
-      const parts = [noteTail(t), fxTail(song, t), onward(song, t, new Set([id]))];
+      // (its notes' release, then its inserts and everything after them: effectTails.ts chainTail)
+      const parts = [noteTail(t), chainTail(t, song.tracks, fxTail, master(song))];
       seconds = Math.max(seconds, parts.reduce((n, p) => n + p.seconds, 0));
       sure &&= parts.every((p) => p.sure);
     }
@@ -446,6 +432,25 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     seen.add(id);
     return tailOf(id).sure && feeders(id).every((f) => sureOf(f, seen));
   };
+  /**
+   * The tracks whose Pump ducks to `id`'s notes, in either version (one that follows it, or follows
+   * the drums when it's a drum track): a change of its notes moves their ducking too, which rings on
+   * through all that follows the Pump (their sends, bus and returns: their tail, and the Pump's
+   * release).
+   */
+  const pumped = (id: string): string[] => {
+    const out = new Set<string>();
+    for (const s of songs) {
+      const src = s.tracks.find((t) => t.id === id);
+      for (const t of s.tracks) {
+        const pump = t.fx?.pump;
+        if (t.id === id || !pump?.on) continue;
+        if ((pump.trigger === 'track' && pump.source === id) || (pumpFollowsDrums(pump.trigger) && !!src && isDrumKind(src.instrumentKey))) out.add(t.id);
+      }
+    }
+    return [...out];
+  };
+  const duckTail = (id: string) => tailOf(id).seconds + PUMP_RELEASE_MAX / 1000;
   const allSure = songs.every((s) => s.tracks.every((t) => tailOf(t.id).sure));
   const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
   const song: BarRange = { fromBar: 1, toBar: end };
@@ -456,10 +461,19 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     if (how === 'song') return { heard: [song], sure: allSure };
     if (how === 'from' && c.fromBar !== undefined) return { heard: c.fromBar < end ? joinRanges([{ fromBar: c.fromBar, toBar: end }]) : joinRanges([{ fromBar: c.fromBar, toBar: c.fromBar + 1 }]), sure: allSure };
     const tracks = c.trackId ? [c.trackId, ...(alsoTracks.get(c) ?? [])] : [];
-    if (how === 'track' && tracks.length) return { heard: joinRanges(tracks.flatMap((id) => sounds(id))), sure: tracks.every((id) => sureOf(id)) };
+    // (and the tracks whose Pump ducks to them: where those sound, past by their own tail)
+    const ducked = [...new Set(tracks.flatMap(pumped))].filter((id) => !tracks.includes(id));
+    if (how === 'track' && tracks.length) {
+      const own = tracks.flatMap((id) => sounds(id));
+      const duck = ducked.flatMap((p) => own.map((r) => ({ fromBar: r.fromBar, toBar: past(r.toBar, duckTail(p)) })));
+      return { heard: joinRanges([...own, ...duck]), sure: tracks.every((id) => sureOf(id)) && ducked.every((id) => tailOf(id).sure) };
+    }
     // (a change on a track rings on past its bars: its notes' release, the track's effects, and those it plays into)
     if (how === 'here' && c.fromBar !== undefined && c.toBar !== undefined)
-      return { heard: joinRanges([{ fromBar: c.fromBar, toBar: tracks.length ? Math.max(...tracks.map((id) => past(c.toBar!, tailOf(id).seconds))) : c.toBar }]), sure: tracks.every((id) => tailOf(id).sure) };
+      return {
+        heard: joinRanges([{ fromBar: c.fromBar, toBar: tracks.length ? Math.max(...tracks.map((id) => past(c.toBar!, tailOf(id).seconds)), ...ducked.map((id) => past(c.toBar!, duckTail(id)))) : c.toBar }]),
+        sure: tracks.every((id) => tailOf(id).sure) && ducked.every((id) => tailOf(id).sure),
+      };
     return { heard: [song], sure: allSure };
   };
 }

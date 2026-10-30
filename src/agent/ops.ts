@@ -53,7 +53,7 @@ import { INSTRUMENTS, canMoveClipBetween, isAudioKind, isDropKind, isDrumKind, i
 import { normalizePoints, specOf } from '../audio/automation';
 import { clampBpm, sortedPoints, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 import { defaultClipper } from '../audio/effects/clipper';
-import { diffSongs, type SongDiff } from './songDiff';
+import { diffSongs, lengthWordsIn, positionWords, wordMeter, type SongDiff } from './songDiff';
 import { checkSafetyMarked } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
@@ -351,6 +351,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   return { ...out, warnings: out.warnings.map(plainNames), notes: out.notes.map(plainNames), marked: { warnings: out.warnings, notes: out.notes } };
 }
 
+const upper = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
 function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string }): ApplyOutcome {
   const shape = checkOpsShape(doc);
   if (shape.length) return { ok: false, errors: shape };
@@ -359,6 +361,11 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   const warn = (text: string) => {
     if (!warnings.includes(text) && warnings.length < 100) warnings.push(text);
   };
+  // (places and lengths in the musician's words: in a song not in 4/4, by measure as the ruler numbers them, lengths in quarter notes)
+  const meter = wordMeter(base);
+  const at4 = (bar: number, exact: string) => (meter ? positionWords(bar, meter) : `bar ${exact}`);
+  const len4 = (bars: number, exact: string) => (meter ? lengthWordsIn(bars, meter) : `${exact} bars`);
+  const shortest = meter ? 'a sixteenth note' : '1/16 bar';
   const refs = new Map<string, { kind: 'track' | 'clip' | 'marker' | 'tempo'; id: string }>();
   let addedNotes = 0;
   const w: Work = {
@@ -678,7 +685,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       }
       case 'add_tempo_change': {
         const at1 = clamp(op.bar, 1 + 1 / 16, TOTAL_BARS);
-        if (Math.abs(at1 - op.bar) > EPS) warn(`A tempo change at bar ${op.bar} is off the timeline: put at bar ${round(at1, 4)}.`);
+        if (Math.abs(at1 - op.bar) > EPS) warn(`A tempo change at ${at4(op.bar, String(op.bar))} is off the timeline: put at ${at4(at1, String(round(at1, 4)))}.`);
         const bpm = clampBpm(op.bpm);
         if (Math.abs(bpm - op.bpm) > 0.005) warn(`A tempo of ${op.bpm} BPM is out of range: set to ${bpm} (40 to 240).`);
         const id = uid('tempo');
@@ -866,7 +873,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   function readLength(value: unknown, path: string): number {
     if (!isNum(value) || value <= 0) throw new OpFail(path, 'expected a length in bars, more than 0 (0.25 is a quarter note in 4/4)');
     if (value < MIN_LENGTH - EPS) {
-      warn(`A note length of ${value} bars is shorter than the shortest (1/16 bar): made 1/16.`);
+      warn(`A note length of ${len4(value, String(value))} is shorter than the shortest (${shortest}): made ${meter ? 'a sixteenth note' : '1/16'}.`);
       return MIN_LENGTH;
     }
     if (value > TOTAL_BARS) throw new OpFail(path, `at most ${TOTAL_BARS} bars`);
@@ -904,11 +911,11 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   function readClipLength(value: number, path: string, max = TOTAL_BARS): number {
     if (value <= 0) throw new OpFail(path, 'expected a length in bars, more than 0');
     if (value < MIN_LENGTH - EPS) {
-      warn(`A clip length of ${value} bars is shorter than the shortest (1/16 bar): made 1/16.`);
+      warn(`A clip length of ${len4(value, String(value))} is shorter than the shortest (${shortest}): made ${meter ? 'a sixteenth note' : '1/16'}.`);
       return MIN_LENGTH;
     }
     if (value > max + EPS) {
-      warn(`A clip ${value} bars long would run past the end of the timeline (bar ${TOTAL_BARS + 1}): made ${round(max, 4)} bars.`);
+      warn(`A clip ${len4(value, String(value))} long would run past the end of the timeline (${at4(TOTAL_BARS + 1, String(TOTAL_BARS + 1))}): made ${len4(max, String(round(max, 4)))}.`);
       return max;
     }
     return value;
@@ -917,7 +924,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   function readBar(value: number, path: string, max: number): number {
     if (value < 1 - EPS) throw new OpFail(path, 'song positions start at bar 1');
     if (value > max + EPS) {
-      warn(`Bar ${value} is past the end of the timeline: put at bar ${round(max, 4)}.`);
+      warn(`${upper(at4(value, String(value)))} is past the end of the timeline: put at ${at4(max, String(round(max, 4)))}.`);
       return max;
     }
     return value;

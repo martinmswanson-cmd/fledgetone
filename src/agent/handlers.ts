@@ -24,7 +24,7 @@ import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, hearingAsFound, hearingByRules, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, hearingAsFound, hearingByRules, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 import { queueFinding, stopFinding, useFinding } from './whereHeard';
@@ -35,17 +35,22 @@ const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, 
 /**
  * A suggestion as the agent reads it back. Where it's heard by sound (the whole song rendered
  * before and after) only with Listen allowed: without it, only the rules' regions and what a
- * before-and-after of those plays (hearingByRules), never a bar the renders found.
+ * before-and-after of those plays (hearingByRules), never a bar the renders found, nor anything
+ * that moves with them: `heard` is whether Suggested played through every region of the rules'
+ * (heardByRules), there's no `finding`, and `notBySound` is only what the rules say (the song, or
+ * the suggestion, too long to check: tooLongWhy).
  */
 const view = (s: Suggestion) => {
   const listen = useSuggestions.getState().permissions.listen;
-  const by = listen ? hearingAsFound(s) : hearingByRules(s, currentProject());
+  const song = currentProject();
+  const by = listen ? hearingAsFound(s) : hearingByRules(s, song);
   const finding = useFinding.getState().id === s.id && useFinding.getState().version === s.version;
+  const rulesWhy = listen ? null : tooLongWhy(song, s);
   return {
     id: s.id,
     title: s.title,
     status: s.status,
-    heard: s.heard !== null && s.heard === s.version,
+    heard: listen ? s.heard !== null && s.heard === s.version : s.heardByRules === s.version,
     changes: s.changes,
     warnings: s.warnings,
     notes: s.notes,
@@ -53,7 +58,17 @@ const view = (s: Suggestion) => {
     regions: by.regions,
     // How they were found: by the rules alone, or by the rules and by sound (the song rendered whole before and after, bar against bar)
     regionsBy: by.found === 'sound' ? 'rules and sound' : 'rules',
-    ...(by.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : finding ? { finding: true } : s.foundWhy ? { notBySound: notFoundWords(s.foundWhy), ...(uncheckedTail(s) ? { mayRingOn: true } : {}) } : {}),
+    ...(!listen
+      ? rulesWhy
+        ? { notBySound: notFoundWords(rulesWhy), ...(s.sure === false ? { mayRingOn: true } : {}) }
+        : {}
+      : by.found === 'sound'
+        ? { soundRegions: s.soundRegions ?? [] }
+        : finding
+          ? { finding: true }
+          : s.foundWhy
+            ? { notBySound: notFoundWords(s.foundWhy), ...(uncheckedTail(s) ? { mayRingOn: true } : {}) }
+            : {}),
     audition: by.audition,
     ...(by.unheard ? { unheard: by.unheard, limit: by.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
     ...(by.focusLeftOut ? { focusLeftOut: true } : {}),

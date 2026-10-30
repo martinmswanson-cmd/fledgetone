@@ -310,6 +310,98 @@ test('never fewer bars than the truth: a track tail is as long as its effects ri
   assert.ok(tail(withKeys(plain, () => ({ instrumentKey: 'bass808', bass808: { decay: 8 } }))).seconds >= 8);
 });
 
+test('never fewer bars than the truth: a tail counts every way a setting can move, automation, controller lanes (CC 91, CC 93, MIDI learn) and step lanes alike (scan r7)', async () => {
+  const { trackTails } = await import('../src/agent/songDiff.ts');
+  const { echoRepeats } = await import('../src/audio/effectTails.ts');
+  const a = base();
+  const keys = a.tracks[0];
+  const clip = a.clips.find((c) => c.trackId === keys.id);
+  // No sends, no echo of its own; the master delay fed back by 0.8 (a long tail when anything reaches it)
+  const plain = {
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0.8 },
+    tracks: a.tracks.map((t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], midiMap: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } })),
+    clips: a.clips.map((c) => ({ ...c, expression: undefined, stepLanes: undefined })),
+  };
+  const withKeys = (song, patch) => ({ ...song, tracks: song.tracks.map((t) => (t.id === keys.id ? { ...t, ...patch(t) } : t)) });
+  const withClip = (song, patch) => ({ ...song, clips: song.clips.map((c) => (c.id === clip.id ? { ...c, ...patch(c) } : c)) });
+  const tail = (song) => trackTails([song])(keys.id).seconds;
+  const bare = tail(plain);
+  const fed = tail(withKeys(plain, () => ({ delaySend: 0.5 })));
+  assert.ok(fed - bare > 15, 'the master delay rings on');
+  // The send moved by the track's automation, its clip's CC 93 lane, or its clip's step lane: each the same as a send
+  const ways = {
+    automation: withKeys(plain, () => ({ automation: [{ id: 'l', param: 'delaySend', points: [{ bar: 1, value: 1 }] }] })),
+    cc93: withClip(plain, () => ({ expression: { cc93: [{ at: 0, value: 1 }] } })),
+    step: withClip(plain, () => ({ stepLanes: [{ id: 's', target: 'delaySend', grid: 6, steps: [{ at: 0, value: 1 }] }] })),
+  };
+  for (const [way, song] of Object.entries(ways)) assert.ok(Math.abs(tail(song) - fed) < 1e-6, `${way}: ${tail(song)} vs ${fed}`);
+  // CC 91 reaches the master reverb
+  const roomy = { ...plain, masterFx: { ...plain.masterFx, reverbDecay: 10 } };
+  assert.ok(tail(withClip(roomy, () => ({ expression: { cc91: [{ at: 0, value: 1 }] } }))) - tail(roomy) >= 10, 'CC 91');
+  // A controller mapped by MIDI learn to the echo's feedback: at its highest
+  const echo = withKeys(plain, (t) => ({ fx: { ...t.fx, echo: { ...t.fx.echo, on: true, time: '1/2', feedback: 0.05, mix: 0.5 } } }));
+  const learned = withClip(withKeys(echo, () => ({ midiMap: [{ cc: 20, param: 'fx:echo.feedback' }] })), () => ({ expression: { cc20: [{ at: 0, value: 1 }] } }));
+  assert.ok(Math.abs(tail(learned) - bare - (echoRepeats(0.9) + 1)) < 1e-6, String(tail(learned) - bare));
+  // ...and by a step lane
+  const stepped = withClip(echo, () => ({ stepLanes: [{ id: 's', target: 'fx:echo.feedback', grid: 6, steps: [{ at: 0, value: 1 }] }] }));
+  assert.ok(Math.abs(tail(stepped) - tail(learned)) < 1e-6);
+  // A note added under each: heard until the echoes die away, and the rules sure of it
+  const late = (song) => ({ ...song, clips: [...song.clips, { ...clip, id: 'late', startBar: 60, notes: clip.notes.slice(0, 1) }] });
+  for (const [way, song] of Object.entries({ ...ways, learned, stepped })) {
+    const before = late(song);
+    const after = { ...before, clips: before.clips.map((c) => (c.id === clip.id ? { ...c, notes: [...c.notes, { id: 'n', note: 'C5', startOffset: 0.5, duration: '32n', velocity: 1 }] } : c)) };
+    const d = diffSongs(before, after);
+    const needs = clip.startBar + 0.5 + (tail(song) - bare) / 2;
+    assert.ok(d.regions[0].toBar >= needs, `${way}: ${JSON.stringify(d.regions)} short of ${needs}`);
+    assert.equal(d.sure, true, way);
+  }
+  // A lane for a setting not known here: not sure
+  assert.equal(trackTails([withKeys(plain, () => ({ automation: [{ id: 'x', param: 'fx:echo.time', points: [{ bar: 1, value: 1 }] }] }))])(keys.id).sure, false);
+});
+
+test('chainTail: one stage after another, the longest way out through buses and returns, then the master (shared with the export\'s ring-out, scan r7)', async () => {
+  const { chainTail } = await import('../src/audio/effectTails.ts');
+  const a = base();
+  const [lead, other] = a.tracks;
+  const bus = { ...other, id: 'bus-1', instrumentKey: 'bus', output: undefined, sends: undefined };
+  const ret = { ...other, id: 'ret-1', instrumentKey: 'return', output: undefined, sends: undefined };
+  const own = { [lead.id]: 4, 'bus-1': 2, 'ret-1': 10 };
+  const stage = (t) => ({ seconds: own[t.id] ?? 0, sure: t.id !== 'bus-1' });
+  const master = (t) => (t.id === 'ret-1' ? 3 : 1);
+  const tracks = [{ ...lead, output: 'bus-1', sends: [{ to: 'ret-1', level: 0.5 }] }, bus, ret];
+  // 4 s of its own, then the return's 10 s and the master's 3 s: longer than through the bus (2 + 1)
+  assert.deepEqual(chainTail(tracks[0], tracks, stage, master), { seconds: 17, sure: false });
+  // Alone: its own and the master's
+  assert.deepEqual(chainTail({ ...lead, output: undefined, sends: undefined }, tracks, stage, master), { seconds: 5, sure: true });
+  // A loop of sends is never followed round
+  const loop = [{ ...ret, sends: [{ to: 'ret-2', level: 1 }] }, { ...ret, id: 'ret-2', sends: [{ to: 'ret-1', level: 1 }] }];
+  assert.ok(Number.isFinite(chainTail(loop[0], loop, stage, master).seconds));
+});
+
+test('never fewer bars than the truth: a note of a track another track\'s Pump ducks to is heard as long as that track rings on (scan r7)', () => {
+  const a = base();
+  const [src, pad] = a.tracks;
+  const plain = {
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 10, delayTime: '4n', delayFeedback: 0.3 },
+    tracks: a.tracks.map((t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } })),
+  };
+  const ducking = (song, trigger) => ({ ...song, tracks: song.tracks.map((t) => (t.id === pad.id ? { ...t, reverbSend: 1, fx: { ...t.fx, pump: { ...t.fx.pump, on: true, trigger, source: src.id } } } : t)) });
+  const clip = plain.clips.find((c) => c.trackId === src.id);
+  const addNote = (song) => ({ ...song, clips: song.clips.map((c) => (c.id === clip.id ? { ...c, notes: [...c.notes, { id: 'n', note: 'C5', startOffset: 0, duration: '32n', velocity: 1 }] } : c)) });
+  const alone = diffSongs(plain, addNote(plain)).regions[0].toBar;
+  const s = ducking(plain, 'track');
+  const ducked = diffSongs(s, addNote(s)).regions[0].toBar;
+  // The pad's ducking rings on in the master reverb (10 s: five bars at 120 BPM)
+  assert.ok(ducked >= clip.startBar + 5, `${ducked}`);
+  assert.ok(ducked > alone);
+});
+
 test('in a song not in 4/4 the words name bars as the ruler numbers them, by measure; the numbers stay the song\'s bars (scan r6)', async () => {
   const { wordMeter, barWords } = await import('../src/agent/songDiff.ts');
   const a = { ...base(), meter: { num: 3, den: 4 }, meterPoints: [] };
@@ -329,4 +421,26 @@ test('in a song not in 4/4 the words name bars as the ruler numbers them, by mea
   // In 4/4, as before
   assert.equal(wordMeter(base()), null);
   assert.equal(barWords({ fromBar: 7, toBar: 10 }, null), 'bars 7-9');
+});
+
+test('in a song not in 4/4 the cautions, the before-and-after limit and the selection under a message name bars by measure too (scan r7)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const { limitWords, unheardWords } = await import('../src/agent/suggestionsStore.ts');
+  const { contextWords } = await import('../src/agent/conversation.ts');
+  const { wordMeter } = await import('../src/agent/songDiff.ts');
+  const a = { ...base(), meter: { num: 3, den: 4 }, meterPoints: [] };
+  const meter = wordMeter(a);
+  const out = applyOps(a, { opsVersion: 1, ops: [{ op: 'add_marker', name: 'End', bar: 500 }, { op: 'add_tempo_change', bar: 900, bpm: 90 }] }, { idBase: 'sg1' });
+  assert.ok(out.ok);
+  // (bar 500 starts 1996 beats in: measure 666 beat 2 of 3/4; bar 401, the end of the timeline, 1600 beats in: measure 534 beat 2)
+  assert.ok(out.warnings.includes('Bar 666 beat 2 is past the end of the timeline: put at bar 534 beat 2.'), JSON.stringify(out.warnings));
+  assert.ok(out.warnings.every((w) => !/\bbar 401\b|\bbar 500\b/.test(w)), JSON.stringify(out.warnings));
+  assert.equal(limitWords('bars', meter), 'a before-and-after plays at most 256 quarter notes');
+  assert.match(unheardWords([{ fromBar: 70, toBar: 74 }], 'bars', meter), /^bars 93-98 weren’t heard \(a before-and-after plays at most 256 quarter notes\)\.$/);
+  assert.equal(contextWords({ context: { bars: { fromBar: 5, toBar: 9 } } }, meter), 'With your selection: bars 6-11');
+  // In 4/4, as before
+  const plain = applyOps(base(), { opsVersion: 1, ops: [{ op: 'add_marker', name: 'End', bar: 500 }] }, { idBase: 'sg1' });
+  assert.ok(plain.warnings.includes('Bar 500 is past the end of the timeline: put at bar 401.'), JSON.stringify(plain.warnings));
+  assert.equal(limitWords('bars'), 'a before-and-after plays at most 64 bars');
+  assert.equal(contextWords({ context: { bars: { fromBar: 5, toBar: 9 } } }), 'With your selection: bars 5-8');
 });

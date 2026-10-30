@@ -28,7 +28,7 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { stopFinding, useFinding } from '../../agent/whereHeard';
-import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, ARMED_MS, CHECKING_NEXT, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
 import type { BarRange } from '../../agent/songDiff';
 import type { MeterMap } from '../../audio/tempoMap';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -51,7 +51,7 @@ function statusLine(s: Suggestion, meter: MeterMap | null): string {
         : s.partUnchecked && uncheckedTail(s)
           ? s.foundWhy
             ? `Heard, but maybe not all of it: ${UNCHECKED_WORDS[0].toLowerCase()}${UNCHECKED_WORDS.slice(1)}`
-            : 'Heard while the studio was still checking where it changes: hear it again once that’s done.'
+            : `Heard while the studio was still checking by sound where it changes. ${CHECKING_NEXT}`
           : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
       : null;
   // (the song moved on since: that comes first, whatever was heard of it)
@@ -220,7 +220,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           <span className="text-[11px] text-forge-muted">{bars(range)}</span>
           {open && s.unheard && (
             <span data-unheard="" className="w-full text-[11px] text-amber-300">
-              Too long to hear at once: {limitWords(s.limit)}. You hear the changes in {bars(heardRegions(s))}, not those in {bars(s.unheard)}.
+              Too long to hear at once: {limitWords(s.limit, meter)}. You hear the changes in {bars(heardRegions(s))}, not those in {bars(s.unheard)}.
             </span>
           )}
           {open && s.found === 'rules' && s.foundWhy && (
