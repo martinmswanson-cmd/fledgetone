@@ -11,6 +11,7 @@ import type { Clip, MasterFx, Track, TrackFx } from '../store/timelineTypes';
 import { ECHO_BEATS, ECHO_FEEDBACK_MAX, isAutomationParam } from '../store/timelineTypes';
 import { withControllerLanes } from '../store/ccLanes';
 import { withStepLanes } from '../store/stepLanes';
+import { busOf, liveSends } from '../store/buses';
 import { INSERT_ROOM, roomSeconds } from './effects/roomIR';
 import type { Tempo } from './tempoMap';
 
@@ -104,3 +105,30 @@ export const feedsMasterDelay = (t: Pick<Track, 'delaySend' | 'automation'>): bo
  * anything else isn't known here.
  */
 export const lanesKnown = (t: Pick<Track, 'automation'>): boolean => (t.automation ?? []).every((l) => isAutomationParam(l.param));
+
+/** A tail and whether all of it is known. */
+export interface Tail {
+  seconds: number;
+  sure: boolean;
+}
+
+/**
+ * How long what `t` plays rings on through everything after it (seconds), the longest way out:
+ * its own stage (`stage`: its inserts), then the longest of the bus it plays into and the returns
+ * it sends to (each the same way, on), and of the master effects it feeds (`master`), one after
+ * another. Shared by where a suggestion is heard (songDiff.ts trackTails) and an export's ring-out
+ * (exportWav.ts ringOutSeconds), each with its own stage and master; `tracks` as they play
+ * (playedTracks). Sure only if every stage on the way is.
+ */
+export function chainTail(t: Track, tracks: readonly Track[], stage: (t: Track) => Tail, master: (t: Track) => number, seen: ReadonlySet<string> = new Set([t.id])): Tail {
+  const own = stage(t);
+  let rest = master(t);
+  let sure = own.sure;
+  for (const d of [busOf(t, tracks), ...liveSends(t, tracks).map((x) => tracks.find((o) => o.id === x.to))]) {
+    if (!d || seen.has(d.id)) continue;
+    const next = chainTail(d, tracks, stage, master, new Set([...seen, d.id]));
+    rest = Math.max(rest, next.seconds);
+    sure &&= next.sure;
+  }
+  return { seconds: own.seconds + rest, sure };
+}

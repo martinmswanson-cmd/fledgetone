@@ -187,7 +187,10 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   `effectTails.ts playedTracks` (the same `withStepLanes(withControllerLanes(...))` merge the
   render and the live engine play), so a CC 91/93 lane, a MIDI-learn CC mapped to `fx:` or a step
   lane counts exactly as an automation lane does (`feedsMasterDelay`, `feedsMasterReverb`,
-  `movingFx`, at the slowest tempo: `slowestBpm`). Add a new way for a setting to move there, not
+  `movingFx`, at the slowest tempo: `slowestBpm`), and walk a track's way out through buses,
+  returns and the master with `chainTail` (each with its own stage and master numbers; the
+  ring-out counts a chain only where it's longer than its parts, so plain songs keep their exact
+  length). Add a new way for a setting to move there, not
   beside it; a lane `isAutomationParam` doesn't know leaves the rules not sure. A note of a track
   another track's Pump ducks to (by `source`, or a drum track for kick/snare triggers) is heard as
   long as the ducked track rings on. Without Listen an agent reads `heard` as `heardByRules`

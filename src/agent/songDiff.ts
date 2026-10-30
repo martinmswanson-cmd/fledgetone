@@ -26,8 +26,8 @@ import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
 import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import { RELEASE_ALLOWANCE_SECONDS, releaseSeconds } from '../audio/auditionMath';
-import { feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
-import { busOf, liveSends } from '../store/buses';
+import { chainTail, feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
+import { liveSends } from '../store/buses';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
 import { nm, plainNames } from './names';
@@ -354,23 +354,10 @@ export function trackTails(songs: readonly ProjectSnapshot[]): (id: string) => T
   const played = songs.map((s) => ({ song: s, tracks: playedTracks(s.tracks, s.clips, { bpm: s.bpm, points: s.tempoPoints ?? [] }) }));
   const memo = new Map<string, TrackTail>();
   type Played = (typeof played)[number];
-  /** What follows a track's own sound in `song`: the longest way on (see TrackTail). */
-  const onward = (song: Played, t: Track, seen: Set<string>): TrackTail => {
-    let seconds = 0;
-    let sure = true;
-    const ways = [busOf(t, song.tracks), ...liveSends(t, song.tracks).map((x) => song.tracks.find((o) => o.id === x.to))];
-    for (const d of ways) {
-      if (!d || seen.has(d.id)) continue;
-      const own = fxTail(d);
-      const next = onward(song, d, new Set([...seen, d.id]));
-      seconds = Math.max(seconds, own.seconds + next.seconds);
-      sure &&= own.sure && next.sure;
-    }
-    // (the master reverb and delay, when it feeds them: the delay's echoes then ring in the reverb too)
+  /** The master reverb and delay, when it feeds them (the delay's echoes counted into the reverb too, to be safe). */
+  const master = (song: Played) => (t: Track): number => {
     const fx = song.song.masterFx ?? DEFAULT_MASTER_FX;
-    const room = feedsMasterReverb(t) ? masterReverbSeconds(fx) : 0;
-    const echoes = feedsMasterDelay(t) ? masterDelaySeconds(fx, bpm, Infinity) : 0;
-    return { seconds: Math.max(seconds, room + echoes), sure };
+    return (feedsMasterReverb(t) ? masterReverbSeconds(fx) : 0) + (feedsMasterDelay(t) ? masterDelaySeconds(fx, bpm, Infinity) : 0);
   };
   /** A track's own inserts' tail (its lane-moved settings at their longest); not sure with a plugin effect, or a lane for something not known here. */
   const fxTail = (t: Track): TrackTail => ({
@@ -387,7 +374,8 @@ export function trackTails(songs: readonly ProjectSnapshot[]): (id: string) => T
       const t = song.tracks.find((x) => x.id === id);
       if (!t) continue;
       any = true;
-      const parts = [noteTail(t), fxTail(t), onward(song, t, new Set([id]))];
+      // (its notes' release, then its inserts and everything after them: effectTails.ts chainTail)
+      const parts = [noteTail(t), chainTail(t, song.tracks, fxTail, master(song))];
       seconds = Math.max(seconds, parts.reduce((n, p) => n + p.seconds, 0));
       sure &&= parts.every((p) => p.sure);
     }

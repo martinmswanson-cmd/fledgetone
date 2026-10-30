@@ -8,7 +8,7 @@
  */
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
-import { feedsMasterDelay, feedsMasterReverb, ownInsertTail, playedTracks, slowestBpm } from './effectTails';
+import { chainTail, feedsMasterDelay, feedsMasterReverb, ownInsertTail, playedTracks, slowestBpm } from './effectTails';
 import { secondsBetween, tempoAt, type MeterMap, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
@@ -270,14 +270,17 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
 /**
  * The most seconds a ring-out export runs past the end of its range, for release, reverb and echo
  * tails: as long as the reverb's impulse response, a track's own Delay or Reverb insert, the master
- * delay's repeats (when a track feeds it), or `least` (RING_OUT_LISTEN), whichever is longest. The
+ * delay's repeats (when a track feeds it), a track's Delay through the buses and returns it plays
+ * into and the master effects they feed, one after another (chainTail), or `least`
+ * (RING_OUT_LISTEN), whichever is longest. The
  * tracks are read as they play (effectTails.ts playedTracks: their automation and their `clips`'
  * controller and step lanes alike), a setting a lane moves at its longest, at the slowest tempo of
  * `tempo`. An export's file ends sooner once its tails have died away (see ringOutTail.ts).
  */
 export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], tempo: Tempo = 120, least = RING_OUT_LISTEN, clips: readonly Clip[] = []): number {
   const bpm = slowestBpm([tempo]);
-  const sounding = audibleTracks(playedTracks(tracks, clips, tempo));
+  const played = playedTracks(tracks, clips, tempo);
+  const sounding = audibleTracks(played);
   // A track's own Delay or Reverb insert can ring on longer than the master reverb
   const inserts = sounding.reduce((tail, t) => Math.max(tail, ownInsertTail(t, bpm)), 0);
   // The reverb rings as long as its impulse response: a recorded room's recording (up to the
@@ -287,12 +290,20 @@ export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], tempo: 
     ? Math.min(ROOM_MAX_SECONDS, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay)
     : roomSeconds(masterFx.roomStyle ?? 'hall', designedDecay(masterFx.reverbDecay));
   // The master delay's repeats, when a track feeds it (a send or a send lane), until they've fallen 60 dB (up to MAX_ECHO_TAIL)
-  let echoes = 0;
-  if (masterFx.delayFeedback > 0 && sounding.some(feedsMasterDelay)) {
-    const repeats = Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback));
-    echoes = Math.min(MAX_ECHO_TAIL, repeats * delaySeconds(masterFx.delayTime, bpm));
-  }
-  return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0, echoes);
+  const repeats = masterFx.delayFeedback > 0 ? Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback)) : 0;
+  const echoTail = Math.min(MAX_ECHO_TAIL, repeats * delaySeconds(masterFx.delayTime, bpm));
+  const echoes = echoTail > 0 && sounding.some(feedsMasterDelay) ? echoTail : 0;
+  // One after another: a track's Delay into the bus it plays into or the return it sends to, with
+  // their own Delay and Reverb, then the master reverb or delay any of them feeds (effectTails.ts
+  // chainTail, as where a suggestion is heard counts it). Only where that's longer than each part
+  // alone (the terms above) does it count, so a ring-out nothing chains in stays as it was.
+  const master = (t: Track) => Math.max(feedsMasterReverb(t) ? hall : 0, feedsMasterDelay(t) ? echoTail : 0);
+  const stage = (t: Track) => ({ seconds: ownInsertTail(t, bpm), sure: true });
+  const chains = sounding.reduce((tail, t) => {
+    const chain = chainTail(t, played, stage, master).seconds;
+    return chain > Math.max(stage(t).seconds, master(t)) + 1e-9 ? Math.max(tail, Math.min(MAX_ECHO_TAIL, chain) + 0.5) : tail;
+  }, 0);
+  return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0, echoes, chains);
 }
 
 /** The frames of a render's range (before any ring-out). */

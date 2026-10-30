@@ -362,6 +362,25 @@ test('never fewer bars than the truth: a tail counts every way a setting can mov
   assert.equal(trackTails([withKeys(plain, () => ({ automation: [{ id: 'x', param: 'fx:echo.time', points: [{ bar: 1, value: 1 }] }] }))])(keys.id).sure, false);
 });
 
+test('chainTail: one stage after another, the longest way out through buses and returns, then the master (shared with the export\'s ring-out, scan r7)', async () => {
+  const { chainTail } = await import('../src/audio/effectTails.ts');
+  const a = base();
+  const [lead, other] = a.tracks;
+  const bus = { ...other, id: 'bus-1', instrumentKey: 'bus', output: undefined, sends: undefined };
+  const ret = { ...other, id: 'ret-1', instrumentKey: 'return', output: undefined, sends: undefined };
+  const own = { [lead.id]: 4, 'bus-1': 2, 'ret-1': 10 };
+  const stage = (t) => ({ seconds: own[t.id] ?? 0, sure: t.id !== 'bus-1' });
+  const master = (t) => (t.id === 'ret-1' ? 3 : 1);
+  const tracks = [{ ...lead, output: 'bus-1', sends: [{ to: 'ret-1', level: 0.5 }] }, bus, ret];
+  // 4 s of its own, then the return's 10 s and the master's 3 s: longer than through the bus (2 + 1)
+  assert.deepEqual(chainTail(tracks[0], tracks, stage, master), { seconds: 17, sure: false });
+  // Alone: its own and the master's
+  assert.deepEqual(chainTail({ ...lead, output: undefined, sends: undefined }, tracks, stage, master), { seconds: 5, sure: true });
+  // A loop of sends is never followed round
+  const loop = [{ ...ret, sends: [{ to: 'ret-2', level: 1 }] }, { ...ret, id: 'ret-2', sends: [{ to: 'ret-1', level: 1 }] }];
+  assert.ok(Number.isFinite(chainTail(loop[0], loop, stage, master).seconds));
+});
+
 test('never fewer bars than the truth: a note of a track another track\'s Pump ducks to is heard as long as that track rings on (scan r7)', () => {
   const a = base();
   const [src, pad] = a.tracks;
