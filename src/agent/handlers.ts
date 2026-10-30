@@ -24,10 +24,10 @@ import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, isOpen, keepSuggestions, shortText, makeSuggestion, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
-import { MEASURE_MAX_SECONDS, queueFinding, stopFinding, useFinding } from './whereHeard';
+import { queueFinding, stopFinding, useFinding } from './whereHeard';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : undefined);
@@ -45,7 +45,7 @@ const view = (s: Suggestion) => ({
   regions: s.regions,
   // How they were found: by the rules alone, or by the rules and by sound (the song rendered whole before and after, bar against bar)
   regionsBy: s.found === 'sound' ? 'rules and sound' : 'rules',
-  ...(s.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : useFinding.getState().id === s.id && useFinding.getState().version === s.version ? { finding: true } : s.foundWhy ? { notBySound: s.foundWhy === 'too_long' ? `the song is longer than ${MEASURE_MAX_SECONDS / 60} minutes` : 'the render failed' } : {}),
+  ...(s.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : useFinding.getState().id === s.id && useFinding.getState().version === s.version ? { finding: true } : s.foundWhy ? { notBySound: notFoundWords(s.foundWhy), ...(uncheckedTail(s) ? { mayRingOn: true } : {}) } : {}),
   audition: s.audition,
   ...(s.unheard ? { unheard: s.unheard, limit: s.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
   ...(s.focusLeftOut ? { focusLeftOut: true } : {}),

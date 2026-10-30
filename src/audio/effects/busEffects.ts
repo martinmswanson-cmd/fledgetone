@@ -6,6 +6,7 @@ import { ROOM_STYLES, roomChannels, type RoomStyle } from './roomIR';
 import { LUSH_PROCESSOR, LUSH_WORKLET_SOURCE } from './lushReverb';
 import { dampingMakeup, LUSH_PRE_DELAY, lushDecay, RECORDED_ROOM_DAMP_HZ, REVERB_DAMP_HZ, REVERB_FILTER_Q, REVERB_LOW_CUT_HZ } from './lushAfter';
 import { createWorkletNode, loadWorklet } from '../worklets';
+import { delaySeconds, designedDecay, ROOM_MAX_SECONDS } from '../effectTails';
 
 /**
  * Shared return effects fed by every track's post-fader sends: one reverb and one
@@ -38,12 +39,8 @@ export interface BusEffects {
   dispose: () => void;
 }
 
-const BEATS: Record<string, number> = { '4n': 1, '8n.': 0.75, '8n': 0.5, '16n': 0.25 };
-
-/** Delay subdivision in seconds at a tempo (computed here so tempo changes stay in sync). */
-export function delaySeconds(subdivision: string, bpm: number): number {
-  return ((BEATS[subdivision] ?? 0.5) * 60) / bpm;
-}
+// (the plain arithmetic of the tails, shared with where a suggestion is heard: effectTails.ts)
+export { delaySeconds, designedDecay, ROOM_MAX_SECONDS } from '../effectTails';
 
 /** How long the input takes to move to a new impulse response's convolver (seconds) */
 const SWAP_FADE = 0.05;
@@ -357,10 +354,6 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   };
 }
 
-/** Longest recorded room kept (seconds): a longer tail is faded out there */
-export const ROOM_MAX_SECONDS = 12;
-/** The decay a designed room is built with, for the reverb's `decay` setting (seconds). */
-export const designedDecay = (decay: number) => Math.max(0.8, Math.min(12, decay));
 
 /**
  * A room recording made ready for the convolver: mono or stereo (a recording with more channels

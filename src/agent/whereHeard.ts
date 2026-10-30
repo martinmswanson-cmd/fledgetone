@@ -13,26 +13,27 @@
  * It runs in the background as soon as a suggestion arrives (one at a time, after a moment of
  * quiet, never while the song plays: Play stops it, and it starts again once the song stops), and
  * at once when the musician presses Hear on one it hasn't been found for (the card says "Finding
- * where it changes…", and Stop cancels it). A song longer than MEASURE_MAX_SECONDS (before or
- * after) isn't rendered whole: the rules' regions alone are used (`foundWhy` 'too_long'), as when a
- * render fails ('failed').
+ * where it changes…", and Stop cancels it). A song of the musician's longer than
+ * MEASURE_MAX_SECONDS isn't rendered whole (`foundWhy` 'too_long': decided by the song as it is,
+ * so a suggestion can't make it so), nor one a suggestion makes longer than
+ * MEASURE_RENDER_MAX_SECONDS ('made_too_long'): the rules' regions alone are used, as when a render
+ * fails ('failed'), and the card says it wasn't checked by sound; if its rules may count fewer bars
+ * than the truth (a tail the studio doesn't know: Suggestion.sure), Accept always asks for its
+ * second press (suggestionsStore.ts uncheckedTail).
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
 import { currentProject, useTimelineStore } from '../store/timelineStore';
-import { musicEnd, renderRange } from '../audio/listen';
+import { renderRange } from '../audio/listen';
 import { channelsOf } from '../audio/exportWav';
-import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { barToSeconds } from '../audio/tempoMap';
 import { barDifferences, changedRegions, type BarSpan } from './listenReport';
 import { listenSnapshot } from './listenSnapshot';
 import { useAudition } from '../audio/auditionPlayer';
-import { isOpen, rangeSeconds, updateSuggestion, useSuggestions, withSoundRegions, type Suggestion } from './suggestionsStore';
+import { isOpen, measureEnd, tooLongWhy, updateSuggestion, useSuggestions, withSoundRegions, type NotFoundWhy, type Suggestion } from './suggestionsStore';
 import type { BarRange } from './songDiff';
 
-/** The longest song rendered whole to find where a suggestion is heard (the slower of before and after), seconds. */
-export const MEASURE_MAX_SECONDS = 240;
-/** Rendered past the end of the music (and of every region), seconds: what rings out after it. */
-export const MEASURE_TAIL_SECONDS = 4;
+export { MEASURE_MAX_SECONDS, MEASURE_RENDER_MAX_SECONDS, MEASURE_TAIL_SECONDS, MEASURE_UNSURE_TAIL_SECONDS, measureEnd, tooLongWhy } from './suggestionsStore';
 /** How long the studio waits, quiet, before finding where a suggestion is heard in the background, ms. */
 export const MEASURE_IDLE_MS = 1200;
 
@@ -59,22 +60,13 @@ function spansOf(song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>, end: number
   return out;
 }
 
-/**
- * The bars to render to find where `s` is heard, from bar 1: past the end of the music in either
- * version and of every region the rules found, by MEASURE_TAIL_SECONDS (in the slower of the two).
- */
-export function measureEnd(before: ProjectSnapshot, s: Pick<Suggestion, 'song' | 'ruleRegions'>): number {
-  const end = Math.max(musicEnd(before), musicEnd(s.song), ...s.ruleRegions.map((r) => r.toBar));
-  const past = Math.max(...[before, s.song].map((x) => secondsToBar(barToSeconds(end, tempoOf(x)) + MEASURE_TAIL_SECONDS, tempoOf(x))));
-  return Math.max(end + 1, Math.ceil(past - 1e-9));
-}
-
-type Found = { sound: BarRange[] } | { why: 'too_long' | 'failed' } | null;
+type Found = { sound: BarRange[] } | { why: NotFoundWhy } | null;
 
 /** Render `before` and `s.song` whole and compare them (null: aborted). */
 async function measure(before: ProjectSnapshot, s: Suggestion, signal: AbortSignal, progress: (f: number) => void): Promise<Found> {
+  const long = tooLongWhy(before, s);
+  if (long) return { why: long };
   const end = measureEnd(before, s);
-  if (rangeSeconds({ fromBar: 1, toBar: end }, [before, s.song]) > MEASURE_MAX_SECONDS) return { why: 'too_long' };
   try {
     const a = await renderRange(listenSnapshot(before), 1, end, { signal, progress: (f) => progress(f * 0.5) });
     if (signal.aborted) return null;

@@ -17,7 +17,7 @@
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
-import { checkSuggestion, extKey, playedThrough, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import { checkSuggestion, extKey, playedThrough, freshen, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
 import { partsChanged } from './revision';
 import { findWhere } from './whereHeard';
 
@@ -114,14 +114,17 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
  * through each of their bars, to its end, at least once while B was heard (heardB). Only then does
  * one press of Accept take it. Before that (B played, but not all of it yet: stopped early,
  * switched to Now, or too long to hear at once) it's heard in part (`partHeard`): the card says
- * so, and Accept still asks for its second press. Run on every change of the audition.
+ * so, and Accept still asks for its second press. So is one not checked by sound whose rules may
+ * count fewer bars than the truth (uncheckedTail: a tail the studio doesn't know), however much of
+ * it played. Run on every change of the audition.
  */
 export function noteHeard(a: AuditionState = useAudition.getState()): void {
   if (a.key === null || a.phase !== 'playing' || !a.heardB.length) return;
   const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
   if (!s || s.heard === s.version || !auditionCurrent(s, a)) return;
   // (every bar of every region where a change is heard, played through on B)
-  const all = !s.unheard && s.regions.every((r) => playedThrough(a.heardB, r));
+  // (not checked by sound, with a tail the studio doesn't know: never heard all through)
+  const all = !s.unheard && !uncheckedTail(s) && s.regions.every((r) => playedThrough(a.heardB, r));
   if (!all) {
     if (s.partHeard !== s.version) updateSuggestion(s.id, { partHeard: s.version });
     return;

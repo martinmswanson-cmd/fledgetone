@@ -43,8 +43,8 @@ test('levels, pans, mutes and names in plain words', () => {
   assert.deepEqual(d.touchedTracks, [a.tracks[0].id]);
   assert.equal(d.bars, null);
   // A level change sits nowhere in particular: it's heard wherever the track plays (its clip, bars
-  // 1-16, and the bar its notes ring out into); the rename, nowhere
-  assert.deepEqual(d.regions, [{ fromBar: 1, toBar: 18 }]);
+  // 1-16, and the bars its notes ring out into: its release, and the master reverb it sends to); the rename, nowhere
+  assert.deepEqual(d.regions, [{ fromBar: 1, toBar: 19 }]);
   assert.deepEqual(d.changes.find((c) => /^Renames/.test(c.text)).heard, []);
   assert.deepEqual(d.audition, { fromBar: 1, toBar: 17 });
 });
@@ -53,9 +53,9 @@ test('where each change is heard: a track wherever it plays, a bus and a return 
   const a = base();
   const [keys, drums, bass, flute] = a.tracks;
   const end = (d) => Math.max(...d.regions.map((r) => r.toBar));
-  // The flute's level: only where the flute plays (bars 9-16, and its tail)
+  // The flute's level: only where the flute plays (bars 9-16, and its tail: its release, and the master reverb and delay it sends to)
   const quiet = diffSongs(a, { ...a, tracks: a.tracks.map((t) => (t === flute ? { ...t, volume: t.volume - 6 } : t)) });
-  assert.deepEqual(quiet.regions, [{ fromBar: 9, toBar: 18 }]);
+  assert.deepEqual(quiet.regions, [{ fromBar: 9, toBar: 20 }]);
   // The tempo, the master, a solo: the whole song
   for (const b of [{ ...a, bpm: 100 }, { ...a, master: { ...a.master, level: a.master.level - 2 } }, { ...a, tracks: a.tracks.map((t) => (t === bass ? { ...t, isSoloed: true } : t)) }]) {
     const d = diffSongs(a, b);
@@ -83,7 +83,8 @@ test('where each change is heard: a track wherever it plays, a bus and a return 
   const busDown = diffSongs(routed, { ...routed, tracks: routed.tracks.map((t) => (t.id === 'bus-1' ? { ...t, volume: t.volume - 3 } : t)) });
   assert.equal(busDown.regions.length, 1);
   assert.equal(busDown.regions[0].fromBar, 5, 'where the drums play');
-  assert.ok(busDown.regions[0].toBar >= 17 && busDown.regions[0].toBar <= 19, JSON.stringify(busDown.regions));
+  // (and the drums' tail through the bus, and the master reverb the bus sends to)
+  assert.ok(busDown.regions[0].toBar >= 17 && busDown.regions[0].toBar <= 21, JSON.stringify(busDown.regions));
   const retDown = diffSongs(routed, { ...routed, tracks: routed.tracks.map((t) => (t.id === 'ret-1' ? { ...t, volume: t.volume - 3 } : t)) });
   assert.equal(retDown.regions[0].fromBar, 9, 'where the flute plays');
   // A located change far from where a track whose level changes plays: both regions, apart
@@ -92,9 +93,9 @@ test('where each change is heard: a track wherever it plays, a bus and a return 
     tracks: a.tracks.map((t) => (t === flute ? { ...t, volume: t.volume - 6 } : t)),
     clips: [...a.clips, { ...a.clips[0], id: 'far', name: 'Tag', trackId: keys.id, startBar: 40, lengthBars: 1, notes: [], expression: undefined }],
   });
-  // (the clip with the tail of what it would play: the keys' release and effects)
-  assert.deepEqual(both.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 42 }]);
-  assert.equal(rangesWords(both.regions), 'bars 9-17 and bars 40-41');
+  // (the clip with the tail of what it would play: the keys' release and effects, and the master reverb they send to)
+  assert.deepEqual(both.regions, [{ fromBar: 9, toBar: 20 }, { fromBar: 40, toBar: 43 }]);
+  assert.equal(rangesWords(both.regions), 'bars 9-19 and bars 40-42');
 });
 
 test('joinRanges: whole bars, in order, overlapping and touching ones joined', () => {
@@ -251,4 +252,60 @@ test('never fewer bars than the truth: a clip with controller lanes changes the 
   const odd = diffSongs(a, { ...a, tracks: a.tracks.map((t) => (t === keys ? { ...t, someNewSetting: 3 } : t)) });
   assert.equal(odd.changes[0].hear, 'song');
   assert.equal(odd.regions[0].fromBar, 1);
+});
+
+test('never fewer bars than the truth: a track tail is as long as its effects ring, through the buses, returns and master effects it feeds (scan r6)', async () => {
+  const { trackTails, EFFECT_TAIL_SECONDS } = await import('../src/agent/songDiff.ts');
+  const { echoRepeats } = await import('../src/audio/effectTails.ts');
+  const a = base();
+  const keys = a.tracks[0];
+  const plain = { ...a, bpm: 120, tempoPoints: [], masterFx: { reverbDecay: 1, delayTime: '8n', delayFeedback: 0.35 }, tracks: a.tracks.map((t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0 })) };
+  const withKeys = (song, patch) => ({ ...song, tracks: song.tracks.map((t) => (t.id === keys.id ? { ...t, ...patch(t) } : t)) });
+  const tail = (song, id = keys.id) => trackTails([song])(id);
+  const bare = tail(plain).seconds;
+  // A half-note echo fed back by 0.85 at 120 BPM: a repeat a second, until they've fallen 60 dB
+  const echo = withKeys(plain, (t) => ({ fx: { ...t.fx, echo: { ...t.fx.echo, on: true, time: '1/2', feedback: 0.85, mix: 0.5 } } }));
+  const echoTail = tail(echo).seconds - bare;
+  assert.ok(Math.abs(echoTail - (echoRepeats(0.85) + 1)) < 1e-6, String(echoTail));
+  assert.ok(echoTail > 40, 'far past the old 1.5 seconds');
+  // A note added on bar 3: heard until the echoes die away, not one bar and a half later
+  const clip = echo.clips.find((c) => c.trackId === keys.id);
+  const added = diffSongs(echo, { ...echo, clips: echo.clips.map((c) => (c === clip ? { ...c, notes: [...c.notes, { id: 'n', note: 'C5', startOffset: 2, duration: '32n', velocity: 1 }] } : c)) });
+  assert.ok(added.regions[0].toBar >= clip.startBar + 2 + echoTail / 2, JSON.stringify(added.regions));
+  // Its feedback moved by a lane: at its highest
+  const moved = withKeys(echo, (t) => ({ fx: { ...t.fx, echo: { ...t.fx.echo, feedback: 0.1 } }, automation: [{ id: 'l', param: 'fx:echo.feedback', points: [{ bar: 1, value: 0.1 }] }] }));
+  assert.ok(Math.abs(tail(moved).seconds - bare - (echoRepeats(0.9) + 1)) < 1e-6);
+  // At the song's slowest tempo
+  const slow = { ...echo, tempoPoints: [{ id: 'tp', bar: 9, bpm: 60 }] };
+  assert.ok(tail(slow).seconds - bare > 2 * echoTail - 1e-6);
+  // A long reverb of its own
+  const room = withKeys(plain, (t) => ({ fx: { ...t.fx, reverb: { ...t.fx.reverb, on: true, decay: 12, mix: 0.6 } } }));
+  assert.ok(tail(room).seconds - bare >= 12);
+  // Through a bus with an echo, and a return with a reverb: each added on the way out
+  const bus = { ...keys, id: 'bus-1', name: 'Group', instrumentKey: 'bus', output: undefined, sends: undefined, fx: echo.tracks[0].fx };
+  const ret = { ...keys, id: 'ret-1', name: 'Hall', instrumentKey: 'return', output: undefined, sends: undefined, fx: room.tracks[0].fx };
+  const routed = { ...plain, tracks: [...withKeys(plain, () => ({ output: 'bus-1' })).tracks, bus, ret] };
+  assert.ok(tail(routed).seconds - bare >= echoTail + EFFECT_TAIL_SECONDS - 1e-6, 'through the bus');
+  const sent = { ...plain, tracks: [...withKeys(plain, () => ({ sends: [{ to: 'ret-1', level: 0.2 }] })).tracks, bus, ret] };
+  assert.ok(tail(sent).seconds - bare >= 12, 'through the return');
+  // The master delay and reverb, when it sends to them (or a lane moves its send)
+  const delayed = withKeys({ ...plain, masterFx: { ...plain.masterFx, delayTime: '4n', delayFeedback: 0.8 } }, () => ({ delaySend: 0.2 }));
+  assert.ok(tail(delayed).seconds - bare > 15, String(tail(delayed).seconds));
+  const laned = withKeys({ ...plain, masterFx: { ...plain.masterFx, reverbDecay: 10 } }, () => ({ automation: [{ id: 'r', param: 'reverbSend', points: [{ bar: 1, value: 0 }] }] }));
+  assert.ok(tail(laned).seconds - bare >= 10);
+  // Known tails are sure; a plugin effect's or a plugin instrument's isn't
+  assert.equal(tail(echo).sure, true);
+  assert.equal(added.sure, true);
+  const fx = withKeys(plain, () => ({ pluginFx: [{ id: 'p', url: 'https://example.invalid/fx/index.js', name: 'Space' }] }));
+  assert.equal(tail(fx).sure, false);
+  assert.equal(tail(withKeys(plain, () => ({ pluginFx: [{ id: 'p', url: 'x', name: 'Space', bypass: true }] }))).sure, true, 'bypassed: not heard');
+  assert.equal(tail(withKeys(plain, () => ({ instrumentKey: 'plugin', plugin: { id: 'i', url: 'x', name: 'Synth' } }))).sure, false);
+  // A track playing into a bus with a plugin effect: not sure either, and so neither is a change heard there
+  const unsureBus = { ...plain, tracks: [...withKeys(plain, () => ({ output: 'bus-1' })).tracks, { ...bus, pluginFx: [{ id: 'p', url: 'x', name: 'Space' }] }] };
+  assert.equal(tail(unsureBus).sure, false);
+  const busDown = diffSongs(unsureBus, { ...unsureBus, tracks: unsureBus.tracks.map((t) => (t.id === 'bus-1' ? { ...t, volume: t.volume - 3 } : t)) });
+  assert.equal(busDown.sure, false);
+  // A synth's own long release and an 808's decay count
+  assert.ok(tail(withKeys(plain, () => ({ instrumentKey: 'synthDesigner', synth: { amp: { attack: 0, decay: 0, sustain: 1, release: 9 } } }))).seconds >= 9);
+  assert.ok(tail(withKeys(plain, () => ({ instrumentKey: 'bass808', bass808: { decay: 8 } }))).seconds >= 8);
 });

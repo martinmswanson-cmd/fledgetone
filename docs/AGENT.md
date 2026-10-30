@@ -186,7 +186,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, or the render failed), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -203,7 +203,11 @@ played through each of them, to its end, at least once (stopping early, or heari
 hearing it in part). The regions are found two ways, and are both together, so they're never
 fewer bars than the truth. First by rules:
 
-- notes or a clip: their bars, and past them as they ring out (the track's release and effects);
+- notes or a clip: their bars, and past them as they ring out: the instrument's release, then
+  the track's own Delay and Reverb for as long as they ring (a delay until its repeats have
+  fallen 60 dB, at the song's slowest tempo; a setting a lane moves at its longest), and those of
+  every bus and return it plays into and the master reverb and delay it sends to, one after
+  another;
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,
@@ -223,8 +227,12 @@ Then by sound: the studio renders the whole song as it is and as suggested (in t
 as soon as the suggestion arrives, never while the song plays, or when the musician presses
 Hear: the card says "Finding where it changes…") and compares them bar by bar, as `listen` with
 ops does: every bar whose difference is above -70 dBFS joins the regions (`regionsBy` is then
-`"rules and sound"`, and `soundRegions` names those bars). A song longer than 4 minutes isn't
-rendered whole: its regions are the rules' alone (`notBySound`). A suggestion file's `regions`
+`"rules and sound"`, and `soundRegions` names those bars). A song longer than 4 minutes (the
+musician's song as it is: a suggestion can't make it so) isn't rendered whole, nor one a
+suggestion would make longer than 5 minutes: its regions are the rules' alone (`notBySound`), and
+the card says it wasn't checked by sound. If a tail the studio doesn't know is in them (a plugin
+instrument or effect, an instrument's release it can't read), `mayRingOn` is true and Accept
+always asks the musician for its second press: hearing it can't count as all of it. A suggestion file's `regions`
 (file mode) are the rules' alone: `listen` with the file and the ops says where it sounds
 different.
 

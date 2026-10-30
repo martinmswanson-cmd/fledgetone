@@ -11,7 +11,9 @@
  * says which it plays, which it leaves out, and which limit, 64 bars or 90 seconds). The names in
  * what it changes (an agent may have written them) are chips of their own (Named.tsx), never
  * part of the app's sentence. While where its changes are heard is being found by sound (whereHeard.ts)
- * it says "Finding where it changes…", with how far (Stop cancels a search the musician asked for).
+ * it says "Finding where it changes…", with how far (Stop cancels a search the musician asked for);
+ * one that couldn't be (too long, or the render failed) says it wasn't checked by sound, and, if
+ * some of its sound may ring on past what the rules count, that Accept always asks twice.
  * It says whether it was heard (Suggested played through every place), or heard only in part; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
  * of date or made for another song can't be accepted (its Accept stays, marked unavailable, so a
@@ -26,7 +28,7 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { stopFinding, useFinding } from '../../agent/whereHeard';
-import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, rangesWords, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp, SPACE_WORDS } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
 import { useConversation } from '../../agent/conversation';
@@ -44,7 +46,9 @@ function statusLine(s: Suggestion): string {
     isOpen(s) && s.heard !== s.version && s.partHeard === s.version
       ? s.unheard
         ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}`
-        : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
+        : uncheckedTail(s)
+          ? `Heard, but maybe not all of it: ${UNCHECKED_WORDS[0].toLowerCase()}${UNCHECKED_WORDS.slice(1)}`
+          : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
       : null;
   if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
   if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : (part ?? 'Not heard yet.');
@@ -206,6 +210,12 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           {open && s.unheard && (
             <span data-unheard="" className="w-full text-[11px] text-amber-300">
               Too long to hear at once: {limitWords(s.limit)}. You hear the changes in {bars(heardRegions(s))}, not those in {bars(s.unheard)}.
+            </span>
+          )}
+          {open && s.found === 'rules' && s.foundWhy && (
+            <span data-not-checked="" className="w-full text-[11px] text-amber-300">
+              Not checked by sound ({notFoundWords(s.foundWhy)}): where it changes is worked out from the song’s settings.
+              {uncheckedTail(s) ? ' Some of its sound (a plugin, or an instrument’s release) may ring on past what plays, so Accept always asks for a second press.' : ''}
             </span>
           )}
           {open && s.focusLeftOut && s.focus && (

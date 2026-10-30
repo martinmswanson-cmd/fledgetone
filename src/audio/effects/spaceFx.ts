@@ -3,7 +3,7 @@ import type { TrackFx } from '../../store/timelineTypes';
 import { ECHO_BEATS, REVERB_DECAY_MAX } from '../../store/timelineTypes';
 import { writeTime } from './lightFx';
 import { paramSetter as smoothParamSetter } from './smoothParam';
-import { INSERT_ROOM, insertRoomChannels, ROOM_STYLES, roomSeconds } from './roomIR';
+import { INSERT_ROOM, insertRoomChannels, ROOM_STYLES } from './roomIR';
 
 /**
  * The Delay and Reverb inserts: a track's own echoes and room, as against the shared master
@@ -181,16 +181,5 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   };
 }
 
-/** How long a track's own Delay and Reverb keep sounding after its last note (seconds). */
-export function insertTailSeconds(fx: Partial<TrackFx>, bpm: number): number {
-  let tail = 0;
-  if (fx.reverb?.on && fx.reverb.mix > 0) tail = Math.max(tail, roomSeconds(INSERT_ROOM, fx.reverb.decay) + fx.reverb.preDelay / 1000);
-  if (fx.echo?.on && fx.echo.mix > 0) {
-    const step = (ECHO_BEATS[fx.echo.time] ?? 0.5) * (60 / Math.max(1, bpm));
-    const fb = Math.min(0.9, fx.echo.feedback);
-    // Repeats until they've fallen 60 dB (ping-pong takes two steps a round trip, but each repeat still falls by fb)
-    const repeats = fb > 0.001 ? Math.log(0.001) / Math.log(fb) : 1;
-    tail = Math.max(tail, Math.min(60, (repeats + 1) * step));
-  }
-  return tail;
-}
+/** How long a track's own Delay and Reverb keep sounding after its last note (seconds): see effectTails.ts. */
+export { insertTailSeconds } from '../effectTails';
