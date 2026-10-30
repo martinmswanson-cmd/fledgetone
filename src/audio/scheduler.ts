@@ -11,7 +11,7 @@ import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, se
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, onClipBusRebuilt, onTrackHeardAgain, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
+import { getLiveClipBus, onClipBusRebuilt, onTrackHeardAgain, onVoicesLetGo, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -92,6 +92,25 @@ interface ClipEntry {
   groups: Array<[tick: number, group: NoteGroup]>;
   /** Its controller lanes' values, as they're sent (see ccHold.ts) */
   ccs: CcEvent[];
+  /** Whether its expression lanes bend (not only the mod wheel's dynamics) */
+  bends: boolean;
+  /** Whether some of its notes have their own bend */
+  noteBends: boolean;
+}
+
+/** A note with its own bend on an instrument that bends as a whole (see playExpressive). */
+interface BentNote {
+  trackId: string;
+  instrument: TrackInstrument;
+  start: number;
+  /** Its end (or where it stopped holding its bend: its instrument's next note after a jump) */
+  end: number;
+  /** Its bend over its length (audio time, cents) */
+  steps: Array<[number, number]>;
+  /** Its bends still to send, in time order: cents, or null for the song's bend there */
+  queue: Array<[number, number | null]>;
+  /** Where the song jumped away while it sounded: its bend stays as it was there */
+  cut?: number;
 }
 
 /** The part a clip's feel plays it as: one part, each drum row its own, or a Drum Rack's pads' parts (comma-separated, pad by pad). */
@@ -115,9 +134,11 @@ export interface ClipSchedule {
   /**
    * The same for one track, where its Transport is at `time`, if it's playing: for a track heard
    * again (unmuted, its solo changed) or a plugin that has just loaded, which missed the values
-   * sent meanwhile.
+   * sent meanwhile. A note with its own bend still sounding on it keeps that bend.
    */
   holdTrack: (trackId: string, time: number) => void;
+  /** Every voice has been let go (Stop, Pause, Free memory): no note played so far sounds on, nor keeps its bend at a hold point. */
+  letGo: () => void;
   dispose: () => void;
 }
 
@@ -195,8 +216,12 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
 function newEntry(clip: Clip, role: FeelPart | undefined, meter: MeterMap | undefined): ClipEntry {
   const groups = groupClipNotes(clip, role, meter);
   const ccs: CcEvent[] = [];
-  for (const [tick, g] of groups) if (g.cc) ccs.push({ at: tick, cc: g.cc.cc, value: g.cc.value });
-  return { clip, role, meter, groups, ccs };
+  let bends = false;
+  for (const [tick, g] of groups) {
+    if (g.cc) ccs.push({ at: tick, cc: g.cc.cc, value: g.cc.value });
+    if (g.pitch?.pitch) bends = true;
+  }
+  return { clip, role, meter, groups, ccs, bends, noteBends: clip.notes.some((n) => !!n.expr?.bend?.length) };
 }
 
 /** Can `prev`'s note groups be reused for `next`? (Selecting or renaming a clip doesn't move its notes.) */
@@ -299,9 +324,79 @@ export function createClipSchedule(
   const bentTracks = new Set<string>();
   /**
    * Notes played with their own bend on an instrument that bends as a whole (see playExpressive),
-   * kept while they may sound: when they start and end, and each bend sent for them (audio time, cents).
+   * kept while they may sound. Their bends are sent a moment before each is due (sendDue), in time
+   * order with everything else the instrument is sent, as a wheel's would be: the instruments
+   * follow a bend from when it's sent, and a jump or Stop leaves none of them to come.
    */
-  const bentNotes = new Map<TrackInstrument, Array<{ start: number; end: number; steps: Array<[number, number]> }>>();
+  const bentNotes = new Map<TrackInstrument, BentNote[]>();
+  /** The latest time each instrument has been sent a note's bend for (Stop centres it after that). */
+  const sentUntil = new Map<TrackInstrument, number>();
+  /**
+   * Instruments holding a bent note's bend where the song jumped away from it (a move of the
+   * playhead, the loop going round), until their next note begins or that note ends: then the
+   * song's own bend there.
+   */
+  const holding = new Map<TrackInstrument, number>();
+  /** How often the notes' bends are sent, in ticks (a 256th note), while any are to come */
+  const stepTicks = Math.max(1, Math.round(transport.PPQ / 64));
+  const stepSeconds = () => (stepTicks * 60) / (transport.bpm.value * transport.PPQ);
+  let stepper: number | null = null;
+  /** Send a note's bends due before `limit` (a step's cents, or the song's bend there: see jumpAway). */
+  const sendNote = (n: BentNote, limit: number) => {
+    let i = 0;
+    for (; i < n.queue.length && n.queue[i][0] < limit; i++) {
+      const [t, c] = n.queue[i];
+      if (c === null) holding.delete(n.instrument);
+      sendBend(n.trackId, n.instrument, c ?? laneBendAt(n.trackId, Math.round(transport.getTicksAtTime(t)), t), t);
+      sentUntil.set(n.instrument, Math.max(sentUntil.get(n.instrument) ?? -Infinity, t));
+    }
+    if (i) n.queue.splice(0, i);
+  };
+  const sendDue = (limit: number) => {
+    for (const list of bentNotes.values()) for (const n of list) if (n.queue.length) sendNote(n, limit);
+  };
+  /**
+   * The song jumps away at `time` (moved, or round the loop): a note with its own bend begun before
+   * and still sounding keeps the bend it has now (none of its bends to come are sent) until its
+   * instrument's next note or its own end, where the song's bend there takes over.
+   */
+  const jumpAway = (time: number) => {
+    for (const [instrument, list] of bentNotes) {
+      for (const n of list) {
+        if (n.start >= time || n.end <= time) continue;
+        n.cut ??= time;
+        n.queue = [[n.end, null]];
+        holding.set(instrument, time);
+      }
+    }
+  };
+  /**
+   * The song's bend on `instrument` takes over from a held one at `time` (its next note, or a clip's
+   * bend lane): the held note is forgotten. Returns when the song's bend is to be sent (not before
+   * the held one was: a note on the jump's own tick can come out a hair earlier), or undefined if
+   * it held none.
+   */
+  const endHolding = (instrument: TrackInstrument, time: number): number | undefined => {
+    const heldAt = holding.get(instrument);
+    if (heldAt === undefined) return undefined;
+    holding.delete(instrument);
+    for (const n of bentNotes.get(instrument) ?? []) {
+      if (n.cut === undefined || n.end <= time) continue;
+      n.end = time;
+      n.queue = [];
+    }
+    return Math.max(time, heldAt);
+  };
+  /** Every note let go (Stop, Pause, Free memory): bends already sent for later go back to centre after the last of them. */
+  const forgetNotes = () => {
+    for (const [instrument, list] of bentNotes) {
+      const until = sentUntil.get(instrument);
+      if (until !== undefined && list.length) sendBend(list[0].trackId, instrument, 0, until + 0.001);
+    }
+    bentNotes.clear();
+    sentUntil.clear();
+    holding.clear();
+  };
   const sendBend = (trackId: string, instrument: TrackInstrument, cents: number, time: number) => {
     if (cents !== 0) {
       bent.add(instrument);
@@ -311,11 +406,13 @@ export function createClipSchedule(
   };
   /** The bend of the latest-begun note with its own bend still sounding at `time` on `instrument` (undefined: none). */
   const noteBendAt = (instrument: TrackInstrument, time: number): number | undefined => {
-    let best: { start: number; steps: Array<[number, number]> } | undefined;
+    let best: BentNote | undefined;
     for (const n of bentNotes.get(instrument) ?? []) if (n.start <= time && time < n.end && (!best || n.start >= best.start)) best = n;
     if (!best) return undefined;
+    // (Held where the song jumped away from it)
+    const at = Math.min(time, best.cut ?? Infinity);
     let cents = best.steps[0]?.[1] ?? 0;
-    for (const [t, c] of best.steps) if (t <= time) cents = c;
+    for (const [t, c] of best.steps) if (t <= at) cents = c;
     return cents;
   };
   /**
@@ -326,8 +423,8 @@ export function createClipSchedule(
   const laneBendAt = (trackId: string, tick: number, time: number): number => {
     let best: PitchEvent | undefined;
     let bestTick = -Infinity;
-    for (const { clip, groups } of entries.values()) {
-      if (clip.trackId !== trackId) continue;
+    for (const { clip, groups, bends } of entries.values()) {
+      if (!bends || clip.trackId !== trackId) continue;
       // (Its bend events come first in its groups)
       for (const [at, g] of groups) {
         if (!g.pitch) break;
@@ -344,26 +441,26 @@ export function createClipSchedule(
   };
   /**
    * Each track's bend (or only `only`'s) as the song has it at `tick`: a note with its own bend
-   * still sounding keeps its bend (`notes`), else its clips' bend there, else centre. Only for
+   * still sounding keeps its bend, else its clips' bend there, else centre. Only for
    * the instruments the song bends, so a song without bends sends none. After the controllers'
    * reset (which centres a plugin's bend), at every hold point: a bend left by the place the song
    * came from (the loop's end, before a jump) doesn't carry on where it now plays.
    */
-  const holdBends = (tick: number, time: number, only: string | undefined, notes: boolean) => {
+  const holdBends = (tick: number, time: number, only: string | undefined) => {
     const ids = new Set<string>();
     for (const id of bentTracks) if (!only || id === only) ids.add(id);
-    for (const { clip, groups } of entries.values()) if ((!only || clip.trackId === only) && groups[0]?.[1].pitch) ids.add(clip.trackId);
+    for (const { clip, bends } of entries.values()) if (bends && (!only || clip.trackId === only)) ids.add(clip.trackId);
     for (const trackId of ids) {
       const instrument = instrumentFor(trackId);
       if (!instrument?.bend) continue;
-      const cents = (notes ? noteBendAt(instrument, time) : undefined) ?? laneBendAt(trackId, tick, time);
+      const cents = noteBendAt(instrument, time) ?? laneBendAt(trackId, tick, time);
       if (cents === 0 && !bent.has(instrument)) continue;
       onActivity?.(trackId, time, 0);
       sendBend(trackId, instrument, cents, time);
     }
   };
   /** Each track's controllers (or only `only`'s) at their values at `tick`, then its bend (see ClipSchedule.hold). */
-  const holdLanes = (tick: number, time: number, only?: string, notes = true) => {
+  const holdLanes = (tick: number, time: number, only?: string) => {
     const byTrack = new Map<string, CcEvent[][]>();
     for (const id of movedTracks) if (!only || id === only) byTrack.set(id, []);
     for (const { clip, ccs } of entries.values()) {
@@ -391,26 +488,38 @@ export function createClipSchedule(
       onActivity?.(trackId, time, 0);
       for (const [n, value] of sends) sendCc(trackId, instrument, n, value, time);
     }
-    holdBends(tick, time, only, notes);
+    holdBends(tick, time, only);
   };
   const onLoop = (time: number) => {
     if (loopOf) {
       currentLoop();
       wraps++;
     }
+    jumpAway(time);
     holdLanes(Math.round(transport.getTicksAtTime(time)), time);
   };
-  // (Tone says "start" when the Transport starts and when it's moved while playing)
+  // (Tone says "start" when the Transport starts and when it's moved while playing: then "stop"
+  // and "start" at one time, the voices sounding on, so their notes' bends are kept. Started again
+  // after a real stop or pause, every voice was let go meanwhile.)
+  let stoppedAt: number | null = null;
   const onStart = (time: number) => {
     wraps = 0;
+    if (stoppedAt !== null && stoppedAt !== time) {
+      bentNotes.clear();
+      sentUntil.clear();
+      holding.clear();
+    }
+    stoppedAt = null;
+    jumpAway(time);
     holdLanes(Math.round(transport.getTicksAtTime(time)), time);
   };
-  const onStop = () => {
+  const onStop = (time: number) => {
     wraps = 0;
-    // (Stopped, every voice is let go)
-    bentNotes.clear();
+    stoppedAt = time;
   };
-  const onPause = () => bentNotes.clear();
+  const onPause = (time: number) => {
+    stoppedAt = time;
+  };
   transport.on('loop', onLoop);
   transport.on('start', onStart);
   transport.on('stop', onStop);
@@ -455,13 +564,15 @@ export function createClipSchedule(
     if (instrument.bend && note.expr?.bend?.length && steps[0]?.cents) sendBend(trackId, instrument, steps[0].cents, time);
     instrument.play([note], time);
     if (!instrument.bend || !note.expr?.bend?.length) return;
-    for (const st of steps) sendBend(trackId, instrument, st.cents, time + st.at * spb);
-    sendBend(trackId, instrument, 0, time + length * spb);
-    // Kept while it sounds, for a hold point to keep its bend (the ones long gone let go of)
+    // Kept while it sounds, for a hold point to keep its bend (the ones long gone let go of); its
+    // bends, then back to centre at its end, sent as each comes due
     const end = time + length * spb;
-    const list = (bentNotes.get(instrument) ?? []).filter((n) => n.end > time - 1);
-    list.push({ start: time, end, steps: steps.map((st) => [time + st.at * spb, st.cents]) });
+    const bends = steps.map((st): [number, number] => [time + st.at * spb, st.cents]);
+    const n: BentNote = { trackId, instrument, start: time, end, steps: bends, queue: [...bends, [end, 0]] };
+    const list = (bentNotes.get(instrument) ?? []).filter((x) => x.end > time - 1 || x.queue.length);
+    list.push(n);
     bentNotes.set(instrument, list);
+    sendNote(n, stepper === null ? Infinity : time + stepSeconds());
   };
   /** Play notes at `time`, the expressive ones each on its own. */
   const playNotes = (trackId: string, instrument: TrackInstrument, notes: PlayableNote[], time: number) => {
@@ -520,7 +631,10 @@ export function createClipSchedule(
           if (!pitch || !!pitch.end !== ends) continue;
           const instrument = instrumentFor(trackId);
           // Bend and vibrato; the mod wheel is dynamics (handed back to velocity at the clip's end)
-          if (pitch.pitch && instrument?.bend) sendBend(trackId, instrument, pitchCents(pitch, tickTime), tickTime);
+          if (pitch.pitch && instrument?.bend) {
+            const at = (holding.size && endHolding(instrument, tickTime)) || tickTime;
+            sendBend(trackId, instrument, pitchCents(pitch, tickTime), at);
+          }
           if (instrument?.dynamics && (pitch.dyn !== undefined || pitch.end)) safely(() => instrument.dynamics!(pitch.end ? null : pitch.dyn!, tickTime));
         }
       }
@@ -534,7 +648,11 @@ export function createClipSchedule(
         if (pitch || cc) continue;
         const time = tickTime + lateOf(group);
         const instrument = instrumentFor(trackId);
-        if (instrument) safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
+        if (!instrument) continue;
+        // Its first note after a jump that left a bent note's bend held: the song's bend here first
+        const reset = holding.size && instrument.bend ? endHolding(instrument, time) : undefined;
+        if (reset !== undefined) sendBend(trackId, instrument, laneBendAt(trackId, tick, time), reset);
+        safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
       }
 
       if (onActivity) {
@@ -583,6 +701,8 @@ export function createClipSchedule(
       }
       entries = nextEntries;
       byTick = nextByTick;
+      // Notes with their own bend: their bends are sent as they come due (see sendDue)
+      if (stepper === null && [...entries.values()].some((e) => e.noteBends)) stepper = transport.scheduleRepeat((time) => sendDue(time + stepSeconds()), `${stepTicks}i`);
       runs = clipRuns(clips);
 
       for (const [tick, id] of events) {
@@ -604,16 +724,17 @@ export function createClipSchedule(
       if (transport.state !== 'started') return;
       const ticks = transport.getTicksAtTime(time);
       if (!Number.isFinite(ticks)) return;
-      // (Its notes may not have sounded, or were let go: the clips' bend only)
-      const instrument = instrumentFor(trackId);
-      if (instrument) bentNotes.delete(instrument);
-      holdLanes(Math.round(ticks), time, trackId, false);
+      // (A note with its own bend that sounds on while the track was silent keeps it; one that
+      // ended, or was let go, isn't kept: see noteBendAt and letGo)
+      holdLanes(Math.round(ticks), time, trackId);
     },
+    letGo: forgetNotes,
     dispose: () => {
       transport.off('loop', onLoop);
       transport.off('start', onStart);
       transport.off('stop', onStop);
       transport.off('pause', onPause);
+      if (stepper !== null) transport.clear(stepper);
       events.forEach((id) => transport.clear(id));
       events.clear();
       byTick.clear();
@@ -641,6 +762,8 @@ export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
 onClipBusRebuilt((trackId) => liveAudioClips?.restartTrack(trackId));
 // A track heard again, or its plugin just loaded, while playing: its controllers where the song is
 onTrackHeardAgain((trackId) => liveSchedule?.holdTrack(trackId, liveContext.now()));
+// Stop, Pause or Free memory let every voice go: no note's own bend is kept at a hold point after
+onVoicesLetGo(() => liveSchedule?.letGo());
 
 let tempoEvents: number[] = [];
 

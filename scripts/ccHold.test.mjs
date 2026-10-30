@@ -107,13 +107,27 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   // keeps its bend; else the clip's bend lane there, else centre), never a bend left from before
   assert.ok(reset.indexOf('if (liveBend !== undefined) sendBend(liveBend, time)') > reset.indexOf('[0xb0, 121, 0]'));
   assert.doesNotMatch(wam, /bendAt\(/);
-  assert.ok(sched.indexOf('holdBends(tick, time, only, notes)') > sched.indexOf('instrument.resetControllers!(time)'));
-  assert.match(sched, /const cents = \(notes \? noteBendAt\(instrument, time\) : undefined\) \?\? laneBendAt\(trackId, tick, time\);/);
+  assert.ok(sched.indexOf('holdBends(tick, time, only)') > sched.indexOf('instrument.resetControllers!(time)'));
+  assert.match(sched, /const cents = noteBendAt\(instrument, time\) \?\? laneBendAt\(trackId, tick, time\);/);
+  // A note's own bend is sent as it comes due (not all at its start), so a jump or Stop leaves none
+  // of it to come: a jump holds the bend it has until the instrument's next note (the song's bend
+  // there) or its end; Stop centres after what was sent; a move of the playhead (Tone's "stop" then
+  // "start" at one time) keeps the notes sounding on
+  assert.match(sched, /transport\.scheduleRepeat\(\(time\) => sendDue\(time \+ stepSeconds\(\)\), `\$\{stepTicks\}i`\)/);
+  assert.match(sched, /n\.queue = \[\[n\.end, null\]\];/);
+  assert.match(sched, /if \(reset !== undefined\) sendBend\(trackId, instrument, laneBendAt\(trackId, tick, time\), reset\);/);
+  assert.match(sched, /if \(stoppedAt !== null && stoppedAt !== time\) \{/);
+  assert.match(sched, /onVoicesLetGo\(\(\) => liveSchedule\?\.letGo\(\)\)/);
+  assert.doesNotMatch(sched, /bentNotes\.delete\(instrument\)/);
   assert.match(sched, /if \(cents === 0 && !bent\.has\(instrument\)\) continue;/);
   assert.match(reset, /for \(const \[n, v\] of liveCcs\) sendMidi\(inst, \[0xb0, n, v\], time\)/);
   const liveIn = readFileSync(new URL('../src/audio/liveInput.ts', import.meta.url), 'utf8');
   assert.match(liveIn, /instrument\.cc!\(message\.cc, message\.value, now, true\)/);
   assert.match(liveIn, /instrument\.bend!\(message\.cents, now, true\)/);
+  // The player's wheel held where the song's bend is at rest, on every instrument (a plugin keeps it itself)
+  const lt = readFileSync(new URL('../src/audio/liveTracks.ts', import.meta.url), 'utf8');
+  assert.match(lt, /bend\(live \|\| cents !== 0 \? cents : \(wheel \?\? 0\), time, live\);/);
+  assert.match(lt, /letGo\.forEach\(\(l\) => safely\(l\)\);/);
   // Heard again (unmute, solo) or a plugin just loaded: that track's controllers where the song is
   assert.match(sched, /onTrackHeardAgain\(\(trackId\) => liveSchedule\?\.holdTrack\(trackId, liveContext\.now\(\)\)\)/);
   const live = readFileSync(new URL('../src/audio/liveTracks.ts', import.meta.url), 'utf8');

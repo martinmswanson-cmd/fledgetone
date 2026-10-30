@@ -12,6 +12,9 @@
 //   once heard again it sounds as it does played through (its held value sent again).
 // - A bend at the loop's end: a loop of bars 1-3 whose bar 2 bends up a tone, bar 1 (a clip with
 //   no bend lane) in tune each time round, on Fledge Synth and on a built-in instrument.
+// - A held note's own bend: a long note bent up a tone keeps its bend when the playhead is moved
+//   while it sounds, and when its track is muted and unmuted; after Stop and play from elsewhere,
+//   the next (unbent) note is in tune. On Fledge Synth and on a built-in instrument.
 // Each compares the level of the sound's slope (its highs) over a stretch, recorded from the live
 // output (the bends: the pitch). It exits with 1 when one is off by more than 1 dB (or 1%). APP_URL overrides
 // http://localhost:5200/. Needs Playwright with Chromium.
@@ -44,6 +47,13 @@ const BENT = song([
 ]);
 BENT.tracks[0].plugin.state = { builtin: 1 };
 const BENT_LEAD = { ...BENT, tracks: [{ id: 't1', name: 'Lead', instrumentKey: 'lead', volume: -12, pan: 0, reverbSend: 0, delaySend: 0 }] };
+// One long C4 bent up a tone over its first 16th and held there, then a plain C4 at bar 5
+const LONG_BEND = song([
+  { id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 4, notes: [{ id: 'l1', note: 'C4', startOffset: 0, duration: '4:0:0', velocity: 0.8, expr: { bend: [{ at: 0, value: 0 }, { at: 0.0625, value: 2 }, { at: 4, value: 2 }] } }] },
+  { id: 'c2', trackId: 't1', name: 'B', startBar: 5, lengthBars: 2, notes: [{ id: 'l2', note: 'C4', startOffset: 0, duration: '2:0:0', velocity: 0.8 }] },
+]);
+LONG_BEND.tracks[0].plugin.state = { builtin: 1 };
+const LONG_BEND_LEAD = { ...LONG_BEND, tracks: BENT_LEAD.tracks };
 const HELD = song([{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 8, notes: notes(1, 8), expression: { cc1: [{ at: 0, value: 1 }] } }]);
 
 // In the page: play `steps` and return the highs' level (dB) over each stretch asked for
@@ -93,6 +103,24 @@ const RUN = async ({ text, loop, steps }) => {
       await sleep(step.mutedFor * 1000);
       s.getState().toggleMute('t1');
       await sleep((step.seconds - step.mutedFor) * 1000);
+    } else if (step.during) {
+      // While it plays: after each wait (seconds), move the playhead, mute or unmute, or stop and play from a bar
+      let waited = 0;
+      for (const [wait, act, bar] of step.during) {
+        await sleep(wait * 1000);
+        waited += wait;
+        if (act === 'seek') s.getState().seek(bar);
+        else if (act === 'mute') s.getState().toggleMute('t1');
+        else if (act === 'restart') {
+          await s.getState().togglePlay();
+          s.getState().stop();
+          await sleep(300);
+          waited += 0.3;
+          s.getState().seek(bar);
+          await s.getState().togglePlay();
+        }
+      }
+      await sleep((step.seconds - waited) * 1000);
     } else await sleep(step.seconds * 1000);
     if (s.getState().isPlaying) await s.getState().togglePlay();
     await sleep(600);
@@ -148,6 +176,28 @@ const RUN = async ({ text, loop, steps }) => {
       if (!ok) failed = true;
       console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}, a bend at the loop's end, bar 1 again, beat ${i + 1}: ${f.toFixed(1)} Hz, as ${b1.toFixed(1)} Hz`);
     });
+  }
+  // The held note before (1-1.6 s) and after (3-3.8 s) a move of the playhead, a mute and unmute, or Stop and play from bar 5, at 2 s
+  for (const [name, text] of [['Fledge Synth', LONG_BEND], ['a built-in instrument', LONG_BEND_LEAD]]) {
+    const at = [[1, 1.6], [3, 3.8]];
+    const [[b0, seek], [b1, unmuted], [b2, next]] = await run({
+      text: JSON.stringify(text),
+      steps: [
+        { seconds: 5, pitch: true, at, during: [[2, 'seek', 2.5]] },
+        { seconds: 5, pitch: true, at, during: [[2, 'mute'], [0.5, 'mute']] },
+        { seconds: 5, pitch: true, at, during: [[2, 'restart', 5]] },
+      ],
+    });
+    const tone = 2 ** (2 / 12);
+    const pitchCheck = (what, f, want) => {
+      const ok = Math.abs(f / want - 1) <= 0.01;
+      if (!ok) failed = true;
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}, a held note's own bend, ${what}: ${f.toFixed(1)} Hz, as ${want.toFixed(1)} Hz`);
+    };
+    for (const b of [b0, b1, b2]) pitchCheck('bent before', b, 261.63 * tone);
+    pitchCheck('the playhead moved while it sounds', seek, b0);
+    pitchCheck('muted and unmuted while it sounds', unmuted, b1);
+    pitchCheck('Stop, then the next note from elsewhere', next, b2 / tone);
   }
   await browser.close();
   process.exit(failed ? 1 : 0);
