@@ -194,6 +194,21 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [effect, setEffect] = useState<(typeof AUDITION_EFFECTS)[number]['id']>('none');
   const [params, setParams] = useState<Record<string, number>>({});
   const player = useRef<AdaptiveMusic | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Esc closes it, as it does every dialog (unless another one is open over it), wherever focus is
+  useEffect(() => {
+    if (box.current && !box.current.contains(document.activeElement)) box.current.focus();
+    const onKey = (e: KeyboardEvent) => {
+      const el = box.current;
+      if (e.key !== 'Escape' || !el) return;
+      const other = document.activeElement?.closest('[role="dialog"]');
+      const top = [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].pop();
+      if (other ? other !== el : top !== el) return;
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   // The pads are the one preview playing (a suggestion's before-and-after, say, stops; another stops them)
   const claim = useExclusivePreview('game-audition-pads', () => {
     player.current?.stop(PREVIEW_FADE_SECONDS);
@@ -254,8 +269,15 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-label="Audition like the game">
-      <div className="w-full max-w-xl rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl p-4 flex flex-col gap-3 text-xs text-forge-muted">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div
+        ref={box}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Audition like the game"
+        tabIndex={-1}
+        className="w-full max-w-xl rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl p-4 flex flex-col gap-3 text-xs text-forge-muted focus:outline-none"
+      >
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-forge-text">Audition like the game</span>
           <button type="button" onClick={onClose} className="ml-auto text-forge-muted hover:text-forge-text" aria-label="Close the audition">

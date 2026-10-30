@@ -16,7 +16,7 @@ import type { ListenComparison, ListenReport } from '../../../src/agent/listenRe
 import { readJson, readSong, sameFile, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions } from './browserRender';
 import { printErr, printOut, safeText } from './print';
-import { barRange, loudestText, suggestionIdBase, UsageError, type Flags } from './commands';
+import { barRange, loudnessText, suggestionIdBase, UsageError, type Flags } from './commands';
 
 const say = printOut;
 const r1 = (v: number | null) => (v === null ? '-' : (Math.round(v * 10) / 10).toFixed(1));
@@ -288,7 +288,7 @@ function reportText(r: ListenReport, label = ''): string[] {
   const m = r.mix;
   const lines = [
     `${label}${barsText(r.range.fromBar, r.range.toBar)}, ${r.heard}: ${clock(r.seconds)}`,
-    `  Loudness ${r1(m.lufs)} LUFS (${loudestText(m.shortTermMaxLufs, r.seconds)}), true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb)} dB`,
+    `  ${loudnessText(m.lufs, m.shortTermMaxLufs, r.seconds)}, true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb)} dB`,
     `  Master: the limiter takes up to ${r1(m.master.limiterMaxGrDb)} dB off${m.master.clipperMaxDb !== null ? `, the clipper up to ${r1(m.master.clipperMaxDb)} dB` : ''}`,
   ];
   if (m.regions.length) lines.push(`  Balance: ${m.regions.map((x) => `${x.name} ${signed(x.db)}`).join(', ')}`);

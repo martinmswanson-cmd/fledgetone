@@ -92,6 +92,8 @@ function watchDownload(lt: LiveTrack): void {
   instrument.ready.then(
     () => {
       if (lt.instrument === instrument) lt.loaded = true;
+      // (A plugin that loads while the song plays missed the controller values sent before)
+      if (lt.instrument === instrument) heardTrack(lt);
       // Its plugins' parameters, for the lane picker
       const plugins = [lt.applied?.plugin, ...(lt.applied?.pluginFx ?? [])].filter((p) => !!p);
       if (lt.instrument === instrument && plugins.length) void Promise.all(plugins.map((p) => readWamParams(p!.id, pluginParamInfo))).then(() => paramListeners.forEach((l) => l()));
@@ -247,7 +249,10 @@ export function syncLiveTracks(tracks: Track[]): void {
     }
     lt.applied = view;
     // A silent track's notes are skipped rather than played into a muted channel (or bus), saving CPU
+    const was = lt.audible;
     lt.audible = heard.has(track.id);
+    // Heard again (unmuted, a solo changed) while playing: its controllers sent meanwhile were skipped too
+    if (lt.audible && !was) heardTrack(lt);
   }
   // Each track plays into its bus's strip, or the master
   for (const track of tracks) {
@@ -456,6 +461,18 @@ export function onClipBusRebuilt(listener: (trackId: string) => void): void {
   busRebuilt.add(listener);
 }
 
+const heardAgain = new Set<(trackId: string) => void>();
+/**
+ * Told when a track's instrument may have missed what the song sent it (its controller values): it
+ * was silent and is heard again, its plugin has just loaded, or its voices were all let go.
+ */
+export function onTrackHeardAgain(listener: (trackId: string) => void): void {
+  heardAgain.add(listener);
+}
+function heardTrack(lt: LiveTrack): void {
+  for (const [id, t] of live) if (t === lt) heardAgain.forEach((l) => safely(() => l(id)));
+}
+
 export function getLiveClipBus(trackId: string): NativeBus | undefined {
   return live.get(trackId)?.instrument.clipBus;
 }
@@ -468,6 +485,8 @@ export function releaseAllLiveVoices(): void {
     // A bend left by a clip's expression ends with playback
     if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime));
   }
+  // (Let go while playing, as Free memory does: its controllers are set again where the song is)
+  for (const lt of live.values()) heardTrack(lt);
 }
 
 /** Play notes right now through a track's instrument and effects (piano-roll previews). */

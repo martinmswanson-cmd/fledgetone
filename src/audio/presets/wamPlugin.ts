@@ -167,6 +167,9 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       sendMidi(inst, [0xb0, 64, 0], now);
       sendMidi(inst, [0xb0, 123, 0], now);
       sendMidi(inst, [0xe0, 0, 64], now);
+      // Reset All Controllers: a controller lane's value is held to the end of the song, not past
+      // Stop (the mod wheel back to 0...; the scheduler sets them again where playback starts, see ccHold.ts)
+      sendMidi(inst, [0xb0, 121, 0], now);
       touched.clear();
       // (A tempo waiting with the cleared events never arrived)
       tempo = 0;

@@ -11,7 +11,7 @@ import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, se
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, onClipBusRebuilt, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
+import { getLiveClipBus, onClipBusRebuilt, onTrackHeardAgain, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -20,7 +20,7 @@ import type { Clip, ClipGroove, DrumHit, InstrumentKey, LoopRegion, NoteEvent, T
 import { clipHasConditions, clipRuns, isConditional, notePlays, passOf, type ClipRun } from '../store/noteChance';
 import { INSTRUMENTS, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
-import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
+import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
@@ -29,6 +29,7 @@ import { isPlainMeter, type MeterMap } from './tempoMap';
 import { padOfNote } from '../store/sampleKits';
 import { trackRole } from './mixCheck';
 import { pumpKitsOf } from '../store/freeze';
+import { clipCcEvents, heldCcAt, type CcEvent } from './ccHold';
 
 export { DRUM_NOTES } from './instruments';
 
@@ -89,6 +90,8 @@ interface ClipEntry {
   /** The song's meter its feel was placed in (a feel's steps count from each measure's start) */
   meter?: MeterMap;
   groups: Array<[tick: number, group: NoteGroup]>;
+  /** Its controller lanes' values, as they're sent (see ccHold.ts) */
+  ccs: CcEvent[];
 }
 
 /** The part a clip's feel plays it as: one part, each drum row its own, or a Drum Rack's pads' parts (comma-separated, pad by pad). */
@@ -100,12 +103,19 @@ export interface ClipSchedule {
   /** How far before its tick the earliest note pushed early (a feel, or a row's own shift) plays, in 16ths (0: none early) */
   earliest: () => number;
   /**
-   * Send each controller lane's value at `bar` to the instruments of the clips that started
-   * before it and are still playing there (a lane is sent only where its value changes, so a
-   * plugin would otherwise miss it). The schedule does this itself whenever its Transport starts,
-   * moves or loops back; a render calls it too, before it starts, so the plugins are set in time.
+   * Set each track's controllers to their values at `bar` in a playback of the whole song (the
+   * last value any of its clips sent before it, ended or not; at rest where none has: see
+   * ccHold.ts), since a lane is sent only where its value changes. The schedule does this itself
+   * whenever its Transport starts, moves or loops back; a render calls it too, before it starts,
+   * so the plugins are set in time.
    */
   hold: (bar: number, time: number) => void;
+  /**
+   * The same for one track, where its Transport is at `time`, if it's playing: for a track heard
+   * again (unmuted, its solo changed) or a plugin that has just loaded, which missed the values
+   * sent meanwhile.
+   */
+  holdTrack: (trackId: string, time: number) => void;
   dispose: () => void;
 }
 
@@ -176,21 +186,15 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
   // Pitch bend and vibrato, as events of their own (played before the notes of the same tick)
   const pitch: ClipEntry['groups'] = pitchEvents(clip).map((ev) => [barToTicks(clip.startBar + ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, pitch: ev }]);
   // Controller lanes, every 64th where they move (from the clip's start)
-  const cc: ClipEntry['groups'] = [];
-  for (const lane of lanesOf(clip.expression)) {
-    const n = laneCc(lane);
-    const points = clip.expression?.[lane];
-    if (n === null || !points?.length) continue;
-    let last = -1;
-    for (let at = 0; at < clip.lengthBars - 1e-9; at += 1 / 64) {
-      const value = at <= points[0].at ? points[0].value : exprValueAt(points, at);
-      const midi = Math.round(value * 127);
-      if (midi === last) continue;
-      last = midi;
-      cc.push([barToTicks(clip.startBar + at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, cc: { cc: n, value } }]);
-    }
-  }
+  const cc: ClipEntry['groups'] = clipCcEvents(clip).map((ev) => [barToTicks(ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, cc: { cc: ev.cc, value: ev.value } }]);
   return [...pitch, ...cc, ...groups.values()];
+}
+
+function newEntry(clip: Clip, role: FeelPart | undefined, meter: MeterMap | undefined): ClipEntry {
+  const groups = groupClipNotes(clip, role, meter);
+  const ccs: CcEvent[] = [];
+  for (const [tick, g] of groups) if (g.cc) ccs.push({ at: tick, cc: g.cc.cc, value: g.cc.value });
+  return { clip, role, meter, groups, ccs };
 }
 
 /** Can `prev`'s note groups be reused for `next`? (Selecting or renaming a clip doesn't move its notes.) */
@@ -277,23 +281,34 @@ export function createClipSchedule(
     }
     return loop;
   };
-  /** Each controller lane's value at `tick`, to the clips playing on through it (see ClipSchedule.hold). */
-  const holdLanes = (tick: number, time: number) => {
-    for (const { clip } of entries.values()) {
-      if (!clip.expression || tick <= barToTicks(clip.startBar) || tick >= barToTicks(clip.startBar + clip.lengthBars)) continue;
-      // (the value its last 64th sent, as the lane's own events step)
-      const at = Math.floor((ticksToBar(tick) - clip.startBar) * 64 + 1e-6) / 64;
-      const sends: Array<[number, number]> = [];
-      for (const lane of lanesOf(clip.expression)) {
-        const n = laneCc(lane);
-        const points = clip.expression[lane];
-        if (n !== null && points?.length) sends.push([n, at <= points[0].at ? points[0].value : exprValueAt(points, at)]);
-      }
-      if (!sends.length) continue;
-      const instrument = instrumentFor(clip.trackId);
+  /** The controllers sent to each instrument since it was made: the ones that may be off their rest (see ccHold.ts). */
+  const moved = new WeakMap<TrackInstrument, Set<number>>();
+  /** The tracks some controller has been sent to. */
+  const movedTracks = new Set<string>();
+  const sendCc = (trackId: string, instrument: TrackInstrument, cc: number, value: number, time: number) => {
+    let sent = moved.get(instrument);
+    if (!sent) moved.set(instrument, (sent = new Set()));
+    sent.add(cc);
+    movedTracks.add(trackId);
+    safely(() => instrument.cc!(cc, value, time));
+  };
+  /** Each track's controllers (or only `only`'s) at their values at `tick` (see ClipSchedule.hold). */
+  const holdLanes = (tick: number, time: number, only?: string) => {
+    const byTrack = new Map<string, CcEvent[][]>();
+    for (const id of movedTracks) if (!only || id === only) byTrack.set(id, []);
+    for (const { clip, ccs } of entries.values()) {
+      if (!ccs.length || (only && clip.trackId !== only)) continue;
+      const lists = byTrack.get(clip.trackId);
+      if (lists) lists.push(ccs);
+      else byTrack.set(clip.trackId, [ccs]);
+    }
+    for (const [trackId, lists] of byTrack) {
+      const instrument = instrumentFor(trackId);
       if (!instrument?.cc) continue;
-      onActivity?.(clip.trackId, time, 0);
-      for (const [n, value] of sends) safely(() => instrument.cc!(n, value, time));
+      const sends = heldCcAt(lists, tick, moved.get(instrument));
+      if (!sends.length) continue;
+      onActivity?.(trackId, time, 0);
+      for (const [n, value] of sends) sendCc(trackId, instrument, n, value, time);
     }
   };
   const onLoop = (time: number) => {
@@ -419,7 +434,7 @@ export function createClipSchedule(
       for (const { trackId, cc } of groups) {
         if (!cc) continue;
         const instrument = instrumentFor(trackId);
-        if (instrument?.cc) safely(() => instrument.cc!(cc.cc, cc.value, tickTime));
+        if (instrument?.cc) sendCc(trackId, instrument, cc.cc, cc.value, tickTime);
       }
       for (const group of groups) {
         const { trackId, notes, seeds, swung, pitch, cc } = group;
@@ -465,7 +480,7 @@ export function createClipSchedule(
         const prev = entries.get(clip.id);
         const role = feelRole(clip, trackById.get(clip.trackId), clips, roleMemo);
         const meter = role ? meterOf() : undefined;
-        const entry = prev && prev.role === role && prev.meter === meter && sameNotes(prev.clip, clip) ? prev : { clip, role, meter, groups: groupClipNotes(clip, role, meter) };
+        const entry = prev && prev.role === role && prev.meter === meter && sameNotes(prev.clip, clip) ? prev : newEntry(clip, role, meter);
         nextEntries.set(clip.id, entry);
         for (const [tick, group] of entry.groups) {
           const list = nextByTick.get(tick);
@@ -492,6 +507,11 @@ export function createClipSchedule(
       return most;
     },
     hold: (bar, time) => holdLanes(barToTicks(bar), time),
+    holdTrack: (trackId, time) => {
+      if (transport.state !== 'started') return;
+      const ticks = transport.getTicksAtTime(time);
+      if (Number.isFinite(ticks)) holdLanes(Math.round(ticks), time, trackId);
+    },
     dispose: () => {
       transport.off('loop', onLoop);
       transport.off('start', onStart);
@@ -521,6 +541,8 @@ export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
 
 // An Audio track rebuilt while playing (its plugin effects changed) carries on on its new bus
 onClipBusRebuilt((trackId) => liveAudioClips?.restartTrack(trackId));
+// A track heard again, or its plugin just loaded, while playing: its controllers where the song is
+onTrackHeardAgain((trackId) => liveSchedule?.holdTrack(trackId, liveContext.now()));
 
 let tempoEvents: number[] = [];
 

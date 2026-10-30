@@ -276,6 +276,52 @@ test("a controller lane's held value reaches the plugin in a range that starts a
   for (const f of ['wheel.fledgetone.json', 'nowheel.fledgetone.json']) rmSync(join(work, f));
 });
 
+test("a controller's value outlives its clip: bars 5 to 8 rendered alone sound as they do in the whole song", { skip, timeout: 300_000 }, async () => {
+  // The organ's wheel turned up by a clip of bars 1-2 and left there; the clip of bars 3-8 has no lane
+  const notes = (from, n) => [...Array(n)].flatMap((_, b) => ['C4', 'E4', 'G4'].map((x, i) => ({ id: `n${from}_${b}${i}`, note: x, startOffset: b, duration: '2n', velocity: 0.7 })));
+  const song = {
+    format: 'fledgetone-project',
+    version: 1,
+    modWheel: 'dynamics',
+    name: 'Organ wheel after its clip',
+    bpm: 120,
+    swing: 0,
+    loopRegion: { inBar: 1, outBar: 9, enabled: false },
+    tracks: [{ id: 't1', name: 'Organ', instrumentKey: 'plugin', volume: -12, pan: 0, reverbSend: 0, delaySend: 0, plugin: { id: 'p1', url: 'builtin:fledge/Fledge Synth', name: 'Fledge Synth', state: { builtin: 1, program: 23 } } }],
+    clips: [
+      { id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, notes: notes(1, 2), expression: { cc1: [{ at: 0, value: 1 }] } },
+      { id: 'c2', trackId: 't1', name: 'B', startBar: 3, lengthBars: 6, notes: notes(3, 6) },
+    ],
+  };
+  writeFileSync(join(work, 'after.fledgetone.json'), JSON.stringify(song));
+  for (const [out, bars] of [['after-whole.wav', null], ['after-5-8.wav', '5-8']]) {
+    const r = await cli('render', 'after.fledgetone.json', '-o', out, '--offline', '--target', 'none', ...(bars ? ['--bars', bars] : []));
+    assert.equal(r.code, 0, r.stderr);
+  }
+  const { readWav } = await import('../tools/cli/src/files.ts');
+  const whole = readWav(join(work, 'after-whole.wav'));
+  const part = readWav(join(work, 'after-5-8.wav'));
+  // Bars 5 to 8 (8 s in, at 120 BPM), but for the last second (the range's own ending)
+  const from = 8 * whole.sampleRate;
+  const n = 7 * whole.sampleRate;
+  let diff = 0;
+  let sig = 0;
+  for (let c = 0; c < 2; c++)
+    for (let i = 0; i < n; i++) {
+      const w = whole.channels[c][from + i];
+      diff += (w - part.channels[c][i]) ** 2;
+      sig += w * w;
+    }
+  const db = (v) => 10 * Math.log10(v / (2 * n) + 1e-30);
+  // A render begun at bar 5 differs from the whole song only as any fresh start does (about -56 dB
+  // here); the wheel left down would be about -43 dB
+  assert.ok(db(diff) < -52, `difference ${db(diff).toFixed(1)} dB (signal ${db(sig).toFixed(1)} dB)`);
+  const presence = (rep) => rep.mix.regions.find((r) => /^presence/.test(r.name)).db;
+  const [all, later] = [await listenJson('after.fledgetone.json', '1-8'), await listenJson('after.fledgetone.json', '5-8')];
+  assert.ok(Math.abs(presence(later) - presence(all)) < 0.5, `bars 5 to 8 (${presence(later)} dB) as bars 1 to 8 (${presence(all)} dB)`);
+  for (const f of ['after.fledgetone.json', 'after-whole.wav', 'after-5-8.wav']) rmSync(join(work, f));
+});
+
 test("a listen reports what the master did in the bars asked for, not in the run-in before them", { skip, timeout: 300_000 }, async () => {
   // Drums and bass in bars 1 to 4 pushed 15 dB into the limiter; a quiet note held from bar 1 to 9 makes a listen of bars 5 to 8 run in from bar 1
   const song = JSON.parse(readFileSync(SONG, 'utf8'));
