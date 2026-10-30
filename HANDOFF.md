@@ -214,10 +214,16 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   strummed guitars (guitarStrum.ts `lastStrum`), notes on some passes only (noteChance.ts runs of
   copies) and plugin instruments (not sure) make a note-level change heard from the change to where
   its track stops; the monophonic synths (`LEGATO_INSTRUMENTS`, and the Sub enhancer) along the run
-  of notes joined to it (each starting before the one before has rung out); swing on a clip
-  (`swingReadsClip`) the whole clip. Sounds are unchanged. A new instrument that keeps state from
-  note to note must be added there; songDiff.test.mjs checks the mono list against instruments.ts
-  and the takes against the catalogue.
+  of notes joined to it (each starting before the one before has rung out); instruments where a
+  new note can end one still sounding ('cuts', `cutsNotes`: every recorded or sampler-played
+  instrument (bowed legato crossfade, SAME_PITCH and MAX_NOTES in samplerManager.ts makeRoom), the
+  voice pools `VOICE_POOL_INSTRUMENTS` (keys, wavetable, brass: poly.ts), the designed synth with
+  `synth.mono`) along the same run, which starts with every note sounding over the change in either
+  version, so a short note added or removed under a held one is heard to the held note's end;
+  swing on a clip (`swingReadsClip`) the whole clip. Sounds are unchanged. A new instrument that
+  keeps state from note to note, or can cut a sounding note, must be added there;
+  songDiff.test.mjs checks the mono list and the voice-pool list against instruments.ts and the
+  takes against the catalogue.
 - **The before-and-after's cut in a song not in 4/4** (`suggestionsStore.ts hearingPlan`) falls on
   the last measure start at or before the bars that fit (`measureAt`), part way through a bar too:
   after a measure of another length none starts on a whole bar again. `without` (heardRegions,

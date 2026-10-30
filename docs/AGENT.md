@@ -222,7 +222,13 @@ fewer bars than the truth. First by rules:
   (down or up after the last), notes that play only on some passes, and a plugin instrument (whose
   own state the studio can't know: not sure) are heard from the change to where the track stops;
   a monophonic synth along the notes joined to it (each starting before the one before has rung
-  out); and a swung clip all of it (its swing is decided over the whole clip);
+  out); an instrument where a new note can end one still sounding (every recorded instrument, by
+  a bowed string's legato change, a fourth repeat of a pitch, or too many notes at once; the keys,
+  wavetable pad and brass synths, whose voices run out; the designed synth in mono) along every
+  note sounding over the change, to where it stops, and the notes joined to those, in the song as
+  it is and as suggested (a short note added under a long held one cuts it there, and taking one
+  away lets the held note ring on); and a swung clip all of it (its swing is decided over the
+  whole clip);
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,

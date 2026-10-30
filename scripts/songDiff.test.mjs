@@ -143,11 +143,13 @@ test('notes added, changed and removed, with their bars', () => {
   assert.deepEqual(d.regions, [{ fromBar: 5, toBar: 18 }]);
   assert.deepEqual(d.audition, { fromBar: 4, toBar: 18 });
   // On an instrument that plays every note the same whatever came before: its bars and their tail
-  const piano = (s) => ({ ...s, tracks: s.tracks.map((t) => (t.id === clip.trackId ? { ...t, instrumentKey: 'realGrandPiano' } : t)) });
-  const alone = diffSongs(piano(a), piano(b));
-  // (the piano rings on longer than the bass: two bars more)
-  assert.deepEqual(alone.regions, [{ fromBar: 5, toBar: 14 }]);
-  assert.deepEqual(alone.audition, { fromBar: 4, toBar: 14 });
+  const as = (key) => (s) => ({ ...s, tracks: s.tracks.map((t) => (t.id === clip.trackId ? { ...t, instrumentKey: key } : t)) });
+  const alone = diffSongs(as('pluck')(a), as('pluck')(b));
+  assert.deepEqual(alone.regions, [{ fromBar: 5, toBar: 13 }]);
+  assert.deepEqual(alone.audition, { fromBar: 4, toBar: 13 });
+  // (a recorded piano can cut a note still ringing for a newer one, see noteMemory.ts 'cuts': along
+  // the notes ringing into each other, here the whole clip, and the piano's longer tail)
+  assert.deepEqual(diffSongs(as('realGrandPiano')(a), as('realGrandPiano')(b)).regions, [{ fromBar: 5, toBar: 20 }]);
 });
 
 test('clips, markers, tempo and master', () => {
@@ -525,14 +527,19 @@ test('never fewer bars than the truth: a track that plays a note by the notes be
   const check = (s, label) => diffSongs(s, addNote(s));
 
   // Nothing remembered: the note's bars and its tail, nowhere near bar 9
-  const plain = check(song('realGrandPiano'));
-  assert.equal(carriesState({ instrumentKey: 'realGrandPiano' }), null);
+  const plain = check(song('pluck'));
+  assert.equal(carriesState({ instrumentKey: 'pluck' }), null);
   assert.ok(plain.regions.at(-1).toBar < 9, JSON.stringify(plain.regions));
-  assert.equal(plain.sure, true);
+  // (a recorded piano can cut a note still ringing: along the notes ringing into each other, still
+  // not past the gap, and sure: its release is known)
+  assert.deepEqual(carriesState({ instrumentKey: 'realGrandPiano' }), { reach: 'joined', sure: true, kinds: ['cuts'] });
+  const piano = check(song('realGrandPiano'));
+  assert.ok(reaches(piano, 4.5) && !reaches(piano, 9), JSON.stringify(piano.regions));
+  assert.equal(piano.sure, true);
 
   // Takes played in turn (a recorded bass, a recorded kit): every later clip of the track, sure
   for (const key of ['realElectricBass', 'studioKit']) {
-    assert.deepEqual(carriesState({ instrumentKey: key })?.kinds, ['takes'], key);
+    assert.deepEqual(carriesState({ instrumentKey: key })?.kinds, ['takes', 'cuts'], key);
     const d = check(song(key));
     assert.ok(reaches(d, 9) && reaches(d, 30), `${key} ${JSON.stringify(d.regions)}`);
     // (only where the track sounds: not the empty bars between)
@@ -541,14 +548,14 @@ test('never fewer bars than the truth: a track that plays a note by the notes be
     assert.equal(d.sure, true);
   }
   // Strummed (a guitar with one take: the direction of each strum follows the last)
-  assert.deepEqual(carriesState({ instrumentKey: 'realNylonGuitar' })?.kinds, ['strum']);
+  assert.deepEqual(carriesState({ instrumentKey: 'realNylonGuitar' })?.kinds, ['strum', 'cuts']);
   assert.ok(reaches(check(song('realNylonGuitar')), 30));
   // A change after the last clip is still only from the change on
   const late = diffSongs(song('realElectricBass'), addNote(song('realElectricBass'), 'b'));
   assert.ok(late.regions[0].fromBar >= 9 && reaches(late, 30), JSON.stringify(late.regions));
 
   // Passes: a note on some passes only, anywhere on the track, counts its clip's place in the run of copies
-  const cond = song('realGrandPiano', {}, [n(9, 0, '4n', { cond: { n: 2, of: 2 } })]);
+  const cond = song('pluck', {}, [n(9, 0, '4n', { cond: { n: 2, of: 2 } })]);
   assert.deepEqual(carriesState(cond.tracks[0], cond.clips)?.kinds, ['passes']);
   const passes = check(cond);
   assert.ok(reaches(passes, 30), JSON.stringify(passes.regions));
@@ -571,15 +578,15 @@ test('never fewer bars than the truth: a track that plays a note by the notes be
   joined.clips = joined.clips.map((c) => (c.id === 'b' ? { ...c, startBar: 5 } : c));
   assert.ok(reaches(check(joined), 6.5), 'B joins straight on');
   // (the Sub enhancer's sine carries on the same way, under any pitched instrument)
-  assert.deepEqual(carriesState({ instrumentKey: 'realGrandPiano', subLayer: { mode: 'octave', level: 0.5, decay: 0 } })?.kinds, ['legato']);
+  assert.deepEqual(carriesState({ instrumentKey: 'pluck', subLayer: { mode: 'octave', level: 0.5, decay: 0 } })?.kinds, ['legato']);
 
   // Swing decided over the whole clip: a note changed at its end can move its first notes
-  const swung = song('realGrandPiano');
+  const swung = song('pluck');
   swung.clips = swung.clips.map((c) => (c.id === 'a' ? { ...c, groove: { swing: 0.5, grid: 16 } } : c));
   assert.equal(swingReadsClip(swung.clips[0]), true);
   const sw = diffSongs(swung, addNote(swung, 'a', 3.5));
   assert.equal(sw.regions[0].fromBar, 1, JSON.stringify(sw.regions));
-  assert.ok(diffSongs(song('realGrandPiano'), addNote(song('realGrandPiano'), 'a', 3.5)).regions[0].fromBar >= 4);
+  assert.ok(diffSongs(song('pluck'), addNote(song('pluck'), 'a', 3.5)).regions[0].fromBar >= 4);
 
   // In step with the instruments: every monophonic one in instruments.ts (built by mono(), or
   // reading the legato glide) is listed, and only those
@@ -594,4 +601,78 @@ test('never fewer bars than the truth: a track that plays a note by the notes be
     const takes = Object.keys(def.samples?.samples ?? {}).some((name) => Number(name.split('|')[2] ?? 0) > 0);
     if (takes) assert.ok(carriesState({ instrumentKey: key })?.kinds.includes('takes'), key);
   }
+});
+
+test('never fewer bars than the truth: a new note that ends a note held over it hears the change to where the held note stops, and taking it away too (scan r10)', async () => {
+  const { carriesState, cutsNotes, VOICE_POOL_INSTRUMENTS } = await import('../src/audio/noteMemory.ts');
+  const { defaultSynthPatch } = await import('../src/store/synthPatch.ts');
+  const a = base();
+  const id = a.tracks[0].id;
+  const quiet = (t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], output: undefined, sends: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } });
+  const n = (k, note, at, duration) => ({ id: `n${k}`, note, startOffset: at, duration, velocity: 0.8 });
+  // One track: a C4 held for eight bars from bar 1, nothing else
+  const song = (instrumentKey, more = {}) => ({
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 },
+    tracks: [quiet({ ...a.tracks[0], instrumentKey, ...more })],
+    clips: [{ id: 'c', trackId: id, name: 'Line', startBar: 1, lengthBars: 8, notes: [n('held', 'C4', 0, '8m')] }],
+  });
+  const add = (s, notes) => ({ ...s, clips: s.clips.map((c) => ({ ...c, notes: [...c.notes, ...notes] })) });
+  const reaches = (d, bar) => d.regions.some((r) => r.fromBar <= bar && r.toBar > bar);
+  const short = (pitch, k = 'x', at = 0.25) => n(k, pitch, at, '16n');
+  const cases = [
+    // a bowed string's legato change crossfades the held note out
+    ['bowed legato', song('realViolin'), [short('A4')]],
+    // the oldest of SAME_PITCH repeats of a pitch fades out
+    ['same-pitch repeat', song('realPipeOrgan'), [short('C4', 'x1', 0.25), short('C4', 'x2', 0.3125), short('C4', 'x3', 0.375)]],
+    // past MAX_NOTES ringing at once, one fades out (the held note among them)
+    ['too many notes', song('realGrandPiano'), Array.from({ length: 64 }, (_, i) => n(`m${i}`, ['C', 'D', 'E', 'F', 'G', 'A', 'B'][i % 7] + (1 + Math.floor(i / 7)), 0.25, '16n'))],
+    // the designed synth in mono lets the note before give way
+    ['designed synth in mono', song('synthDesigner', { synth: { ...defaultSynthPatch(), mono: true } }), [short('E4')]],
+    // a voice pool with every voice busy retriggers one still sounding
+    ['voice pool', song('keys'), [short('E4')]],
+  ];
+  for (const [label, s, notes] of cases) {
+    assert.ok(cutsNotes(s.tracks[0]), label);
+    assert.ok(carriesState(s.tracks[0])?.kinds.includes('cuts'), label);
+    const added = diffSongs(s, add(s, notes));
+    // (to the held note's end at bar 9, past its release)
+    assert.ok(reaches(added, 1.5) && reaches(added, 8.9), `${label} ${JSON.stringify(added.regions)}`);
+    assert.equal(added.regions[0].fromBar, 1, label);
+    // (what a recorded instrument cuts is known: sure, so no second press for that alone)
+    if (s.tracks[0].instrumentKey.startsWith('real')) assert.equal(added.sure, true, label);
+    // Taking the short note away lets the held note ring on again: the same bars
+    const removed = diffSongs(add(s, notes), s);
+    assert.ok(reaches(removed, 8.9), `${label} removed ${JSON.stringify(removed.regions)}`);
+    // (and moving it, or changing it, the same)
+    const moved = diffSongs(add(s, notes), add(s, notes.map((x) => ({ ...x, startOffset: x.startOffset + 0.0625 }))));
+    assert.ok(reaches(moved, 8.9), `${label} moved ${JSON.stringify(moved.regions)}`);
+  }
+  // The designed synth's own voices (not in mono), the native synths: a voice each note, no limit
+  for (const s of [song('synthDesigner', { synth: defaultSynthPatch() }), song('pluck'), song('supersaw'), song('chipLead')]) {
+    assert.equal(cutsNotes(s.tracks[0]), false, s.tracks[0].instrumentKey);
+    const d = diffSongs(s, add(s, [short('E4')]));
+    assert.ok(!reaches(d, 4), `${s.tracks[0].instrumentKey} ${JSON.stringify(d.regions)}`);
+  }
+  // In mono in either version: the change of the patch is its own; a note added then reads both
+  const mono = song('synthDesigner', { synth: { ...defaultSynthPatch(), mono: true } });
+  const poly = song('synthDesigner', { synth: defaultSynthPatch() });
+  assert.ok(reaches(diffSongs(poly, { ...add(poly, [short('E4')]), tracks: mono.tracks }), 8.9));
+
+  // In step with the instruments: every synth that plays from a limited pool of voices is listed
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const presets = new URL('../src/audio/presets/', import.meta.url);
+  const pooled = new Set();
+  for (const f of readdirSync(presets).filter((x) => x.endsWith('.ts'))) {
+    const src = readFileSync(new URL(f, presets), 'utf8');
+    for (const m of src.matchAll(/export function (\w+)\([^]*?\n\}/g)) if (/createVoicePool\(/.test(m[0]) && m[1] !== 'createVoicePool') pooled.add(m[1]);
+  }
+  assert.ok(pooled.size > 0);
+  const source = readFileSync(new URL('../src/audio/instruments.ts', import.meta.url), 'utf8');
+  const build = source.slice(source.indexOf('function buildInstrument'));
+  const cases2 = [...build.matchAll(/((?:\s*case '\w+':)+)\s*(?:\{)?([\s\S]*?)(?=\n\s*case '|\n\s*default:)/g)];
+  const listed = new Set(cases2.filter(([, , body]) => [...pooled].some((f) => body.includes(`${f}(`))).flatMap(([, labels]) => [...labels.matchAll(/'(\w+)'/g)].map((m) => m[1])));
+  assert.deepEqual([...listed].sort(), [...VOICE_POOL_INSTRUMENTS].sort());
 });

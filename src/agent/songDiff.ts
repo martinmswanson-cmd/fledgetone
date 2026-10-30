@@ -481,7 +481,8 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
   });
   /**
    * What a track remembers from note to note (noteMemory.ts: takes played in turn, strums, passes,
-   * a plugin's own state, a monophonic synth carrying on), in either version.
+   * a plugin's own state, a monophonic synth carrying on, a new note cutting one still sounding),
+   * in either version.
    */
   const memoryMemo = new Map<string, NoteMemory | null>();
   const memoryOf = (id: string): NoteMemory | null => {
@@ -495,9 +496,11 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     return out;
   };
   /**
-   * The end of the run of `id`'s notes joined to a change from `from` to `to` (each starting before
-   * the run so far has rung out: its notes' release, see releaseSeconds), in either version: how far
-   * a monophonic synth carries the change on (noteMemory.ts 'legato').
+   * The end of the run of `id`'s notes joined to a change from `from` to `to`, in either version:
+   * every note still sounding at `from` (a note held over the change runs to its own end), then
+   * each starting before the run so far has rung out (its notes' release, see releaseSeconds). How
+   * far a monophonic synth carries the change on (noteMemory.ts 'legato'), and a note cut short by a
+   * newer one, or let ring again when that one goes (noteMemory.ts 'cuts').
    */
   const joinedEnd = (id: string, from: number, to: number): number => {
     let reach = to;
