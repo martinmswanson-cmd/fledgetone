@@ -35,6 +35,7 @@ second update on the same day gets `-2`, and so on).
 - **Without Listen ticked**, whether your agent reads a suggestion as heard depends only on the bars the studio's rules found, never on the check by sound (nor does anything else it reads).
 - **Agent text that spells the app's name with a sign in place of a letter** (a ring for an o, a cross for a t, a bar for an l) is now shown in quotes as the agent's, never as the studio's.
 - **The game audition pads** keep Tab inside their dialog and give focus back to where it was when they close, as every other dialog does.
+- **No more sound going round in a loop between a bus and a return**: a return could play into a bus that sent to that same return, so the sound fed back into itself, louder each time round, up to full level, and kept sounding after Stop. Routes like that can't be made any more: in the track menu and the Mixer, a bus or return that would make a loop is greyed out with the reason ("the sound would go round in a loop"), however long the way round. A song saved with such a loop opens without the send that closes it (the outputs stay), and it plays, exports and renders on the command line without it; `fledgetone check` lists it. Songs without a loop are unchanged.
 
 ## 2026.10.29 — Studio-quality sound: cleaner exports, recordings, pitch and stretch
 

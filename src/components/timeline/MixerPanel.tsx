@@ -10,7 +10,7 @@ import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes
 import { liveTrackPeak } from '../../audio/liveTracks';
 import { isOffscreen, useSkipOffscreen } from '../offscreen';
 import { UndoableRange } from '../UndoableRange';
-import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
+import { busTargets, isBus, isReturn, loopingBuses, loopingReturns, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
 import { onFrame } from '../frameTicker';
 import { useMixStudio } from '../../audio/mixStudio';
@@ -67,6 +67,9 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
   const ret = isReturn(track);
   const targets = busTargets(track, tracks);
   const returns = sendTargets(track, tracks);
+  // Routes that would send the sound round in a loop (a return playing back into this bus): shown greyed, with why
+  const loopBuses = loopingBuses(track, tracks);
+  const loopReturns = loopingReturns(track, tracks);
   const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
   const inserts = (['human', 'distortion', 'bassDrive', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'echo', 'reverb', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
   const root = useRef<HTMLDivElement>(null);
@@ -135,6 +138,12 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
           </label>
         );
       })}
+      {loopReturns.map((r) => (
+        <div key={r.id} className="w-full flex items-center justify-between gap-1 text-[9px] font-mono text-forge-muted opacity-50" title={`Can't send to ${r.name}: it plays back into ${track.name}, so the sound would go round in a loop`}>
+          <span className="truncate" style={{ color: r.color }}>→ {r.name}</span>
+          <span>loop</span>
+        </div>
+      ))}
       <label className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted">
         PAN {track.pan === 0 ? 'C' : `${track.pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(track.pan) * 100)}`}
         <UndoableRange min={-1} max={1} step={0.01} value={track.pan} onValue={(v) => s.setTrackPan(track.id, v)} resetValue={0} className="w-full h-1 accent-amber-400" aria-label={`${track.name} pan`} />
@@ -185,6 +194,11 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
         {targets.map((b) => (
           <option key={b.id} value={b.id}>
             → {b.name}
+          </option>
+        ))}
+        {loopBuses.map((b) => (
+          <option key={b.id} value={b.id} disabled title={`Can't play into ${b.name}: the sound would go round in a loop`}>
+            → {b.name} (would loop)
           </option>
         ))}
       </select>

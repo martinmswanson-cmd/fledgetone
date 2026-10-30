@@ -822,7 +822,8 @@ export const TrackInspector: React.FC = () => {
 
 /** Sends to the song's effect returns: a level each, and pre-fader (it ignores this track's fader) or post. */
 const ReturnSends: React.FC<{ track: Track }> = ({ track }) => {
-  const returns = useTimelineStore((s) => s.tracks).filter((t) => sendTargets(track, [t]).length > 0);
+  const tracks = useTimelineStore((s) => s.tracks);
+  const returns = sendTargets(track, tracks);
   if (isMixTrack(track)) return null;
   const s = useTimelineStore.getState();
   return (

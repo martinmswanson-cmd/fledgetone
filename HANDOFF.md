@@ -411,6 +411,12 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   it with `Track.output`. `soloLit` / `audibleIds` carry solo and mute through bus chains;
   `busFirst` orders renders so a bus strip exists before its inputs. A bus strip gets √2 input
   makeup (`trackStrip.ts`) so 0 dB centred is transparent through the double pan law.
+  Outputs and sends are one graph with no loop: `wouldLoop` / `sendWouldLoop` (via `routeReaches`)
+  refuse a route that closes one (store `setTrackOutput` / `setTrackSend`, agent ops, menus via
+  `busTargets` / `sendTargets`; `loopingBuses` / `loopingReturns` are shown greyed with why).
+  `loopSends` (memoised per track list) drops the send that closes a loop, in track order, outputs
+  kept: `liveSends` leaves those out, so live, export, renderParts, delay compensation and tails
+  never wire one, and `breakLoops` cuts them in `parseProject` and `loadProject`.
 - **Expression lanes** (`src/store/expression.ts`, tested): `Clip.expression = {bend, mod,
   sustain}`. Sustain lengthens notes (`sustainNotes`) before scheduling; bend and mod become pitch
   events every 1/128 bar where they move (`pitchEvents`), fired before notes. The recorded
