@@ -162,6 +162,9 @@ struct FaustPlugin : BBPlugin
             const Param &p = voices[0].params[userIndex[i]];
             values[i] = p.max > p.min ? (p.log && p.min > 0 ? logf(p.init / p.min) / logf(p.max / p.min) : (p.init - p.min) / (p.max - p.min)) : 0;
         }
+        // Every parameter plays as its value says (rounded to its steps), as it does once set: a
+        // fresh plugin sounds the same as one given its own settings back
+        for (int i = 0; i < (int)userIndex.size(); i++) apply(i, values[i]);
     }
     ~FaustPlugin()
     {
@@ -249,6 +252,15 @@ struct FaustPlugin : BBPlugin
             if (!sustain)
                 for (auto &v : voices)
                     if (v.on && !v.held) release(v);
+        }
+        else if (type == 0xb0 && d1 == 121)
+        {
+            // Reset All Controllers: no bend and the pedal up, as a fresh plugin has them
+            bend = 0;
+            for (auto &v : voices) setFreq(v);
+            sustain = false;
+            for (auto &v : voices)
+                if (v.on && !v.held) release(v);
         }
         else if (type == 0xb0 && (d1 == 123 || d1 == 120))
             for (auto &v : voices) v.held = false, release(v);

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <new>
 #include <string>
+#include <vector>
 
 // The plug-ins leave some of their state for the host's memory to have zeroed (it usually was):
 // every allocation here starts zeroed, so they start the same every time.
@@ -101,8 +102,47 @@ struct Def
 static const Def defs[] = {PLUGINS(ENTRY)};
 static const int count = sizeof(defs) / sizeof(defs[0]);
 
-/** The most MIDI messages kept for one block (the instruments themselves keep 40 notes a block) */
+/** Past this many messages waiting, a further controller of a kind already waiting replaces it (only the last counts) */
 #define QUEUE 256
+/** Past this many, only note-offs and resets are kept (a runaway stream) */
+#define QUEUE_MAX 4096
+/** The most messages handed over in one call */
+#define CALL_MAX 512
+/** The instruments keep 40 notes (and pedal changes) a block and drop the rest: more wait for the next block */
+#define NOTES_MAX 40
+
+struct Queued
+{
+    VstMidiEvent ev;
+    /** The block it arrived for */
+    int block;
+};
+struct Call
+{
+    VstInt32 numEvents;
+    VstIntPtr reserved;
+    VstEvent *events[CALL_MAX + 1];
+};
+
+static int kindOf(const VstMidiEvent &e) { return (unsigned char)e.midiData[0] & 0xf0; }
+static int d1Of(const VstMidiEvent &e) { return (unsigned char)e.midiData[1]; }
+static int d2Of(const VstMidiEvent &e) { return (unsigned char)e.midiData[2]; }
+/** An all-notes-off (CC 123 to 127) or all-sound-off (120) */
+static bool resets(const VstMidiEvent &e) { return kindOf(e) == 0xb0 && (d1Of(e) == 120 || d1Of(e) > 0x7a); }
+static bool startsNote(const VstMidiEvent &e) { return kindOf(e) == 0x90 && d2Of(e); }
+static bool endsNote(const VstMidiEvent &e) { return kindOf(e) == 0x80 || (kindOf(e) == 0x90 && !d2Of(e)); }
+/** Takes a place in the instrument's list of the block's notes: a note, a pedal, Reset All Controllers (it lets the pedal up) */
+static bool takesNote(const VstMidiEvent &e)
+{
+    int d1 = d1Of(e);
+    return kindOf(e) == 0x80 || kindOf(e) == 0x90 || (kindOf(e) == 0xb0 && (d1 == 64 || d1 == 66 || d1 == 121));
+}
+/** Only sets a value (a controller, the bend, pressure): of two of a kind waiting, the last is all that counts */
+static bool setsValue(const VstMidiEvent &e)
+{
+    int k = kindOf(e), d1 = d1Of(e);
+    return k == 0xe0 || k == 0xd0 || (k == 0xb0 && d1 < 120 && d1 != 64 && d1 != 66);
+}
 
 struct Inst
 {
@@ -110,14 +150,18 @@ struct Inst
     float instrument;
     float buf[4][BB_BLOCK];
     char text[128];
-    /** MIDI waiting for the next block. The instruments start their list of the block's notes
-     * afresh on every processEvents call, so all of a block's messages go to them in one call. */
-    VstMidiEvent queue[QUEUE];
-    int queued;
+    /** MIDI waiting to go in, in order. The instruments start their list of the block's notes
+     * afresh on every processEvents call, so all of a block's messages go to them in one call
+     * (at most 40 notes: the rest wait a block). Nothing that ends a note is ever dropped. */
+    std::vector<Queued> *queue;
+    Call call;
+    /** Blocks processed */
+    int block;
     /** An all-notes-off (CC 123 to 127) or all-sound-off (120) would cut the instruments' voices
      * dead (a click): the output fades out over `fadeLength` frames first, then the message goes
      * in while silent, and the output stays silent for `muteLength` more while what's left of the
-     * voices (the DX10's, the pianos') dies away. A new note ends the wait at once. */
+     * voices (the DX10's, the pianos') dies away. A new note waits for the quiet to end (40 ms at
+     * most) and plays from there, so it never starts over the old voices' tails. */
     VstMidiEvent reset;
     int fading, fadeLength, muted, muteLength;
 };
@@ -158,6 +202,12 @@ BB_EXPORT int bb_create(int i, float sampleRate)
     // As a host switches a plug-in on: suspend, then resume (which clears its buffers)
     in->fx->suspend();
     in->fx->resume();
+    // Every parameter set once, as the host sets them when it gives a plugin its settings back
+    // (a few work out their starting state otherwise: Ambience, Detune, Limiter), so a fresh
+    // plugin sounds the same as one given its own settings
+    for (int p = 0; p < in->fx->numParams; p++) in->fx->setParameter(p, in->fx->getParameter(p));
+    in->queue = new std::vector<Queued>();
+    in->queue->reserve(QUEUE);
     return (int)(intptr_t)in;
 }
 
@@ -165,6 +215,7 @@ BB_EXPORT int bb_create(int i, float sampleRate)
 BB_EXPORT void bb_destroy(int h)
 {
     delete IN->fx;
+    delete IN->queue;
     delete IN;
 }
 BB_EXPORT int bb_params(int h) { return IN->fx->numParams; }
@@ -189,47 +240,48 @@ BB_EXPORT const char *bb_param_display(int h, int i)
     return IN->text;
 }
 BB_EXPORT float *bb_buffer(int h, int w) { return IN->buf[w & 3]; }
-/** Hand the plug-in the messages waiting for this block, in one call (they all fall on its first frame). */
+/**
+ * Hand the plug-in the messages that can go in now, in one call (they all fall on its next frame):
+ * up to a note that must wait for the quiet after a reset, or past the 40 notes it keeps. A reset
+ * starts the fade instead (see Inst). A note-off for a note that waited and goes in in the same
+ * call waits a block, so the note sounds.
+ */
 static void sendQueued(Inst *in)
 {
-    if (!in->queued) return;
-    struct
+    std::vector<Queued> &q = *in->queue;
+    if (q.empty()) return;
+    in->call.numEvents = 0;
+    int notes = 0, done = 0;
+    bool started[128] = {};
+    for (; done < (int)q.size() && in->call.numEvents < CALL_MAX; done++)
     {
-        VstInt32 numEvents;
-        VstIntPtr reserved;
-        VstEvent *events[QUEUE + 1];
-    } evs = {};
-    for (int i = 0; i < in->queued; i++)
-    {
-        VstMidiEvent *ev = &in->queue[i];
-        unsigned char kind = (unsigned char)ev->midiData[0] & 0xf0, d1 = (unsigned char)ev->midiData[1];
-        bool resets = kind == 0xb0 && (d1 == 120 || d1 > 0x7a);
-        bool starts = kind == 0x90 && ev->midiData[2];
-        if (resets)
+        VstMidiEvent *ev = &q[done].ev;
+        bool waited = q[done].block < in->block;
+        if (resets(*ev))
         {
             // Fade out first (a second reset during the fade joins it)
             if (!in->fading && !in->muted) in->fading = in->fadeLength;
             in->reset = *ev;
             continue;
         }
-        if (starts && (in->fading || in->muted))
+        if (startsNote(*ev) && (in->fading || in->muted)) break;
+        if (takesNote(*ev))
         {
-            // A note to play: the reset goes in now, and the output is back
-            if (in->fading) evs.events[evs.numEvents++] = (VstEvent *)&in->reset;
-            in->fading = in->muted = 0;
+            if (notes >= NOTES_MAX || (waited && endsNote(*ev) && started[d1Of(*ev) & 127])) break;
+            notes++;
         }
-        evs.events[evs.numEvents++] = (VstEvent *)ev;
+        if (startsNote(*ev)) started[d1Of(*ev) & 127] = true;
+        in->call.events[in->call.numEvents++] = (VstEvent *)ev;
     }
-    in->queued = 0;
-    if (evs.numEvents) in->fx->processEvents((VstEvents *)&evs);
+    if (in->call.numEvents) in->fx->processEvents((VstEvents *)&in->call);
+    q.erase(q.begin(), q.begin() + done);
 }
 
-BB_EXPORT void bb_process(int h, int frames)
+/** Play `frames` frames from `at` in the block, with the fade and the quiet after a reset. */
+static void render(Inst *in, int at, int frames)
 {
-    Inst *in = IN;
-    sendQueued(in);
-    float *ins[2] = {in->buf[0], in->buf[1]};
-    float *outs[2] = {in->buf[2], in->buf[3]};
+    float *ins[2] = {in->buf[0] + at, in->buf[1] + at};
+    float *outs[2] = {in->buf[2] + at, in->buf[3] + at};
     in->fx->processReplacing(ins, outs, frames);
     if (in->instrument > 0 && in->instrument != 1)
         for (int i = 0; i < frames; i++) outs[0][i] *= in->instrument, outs[1][i] *= in->instrument;
@@ -257,17 +309,48 @@ BB_EXPORT void bb_process(int h, int frames)
     }
 }
 
+BB_EXPORT void bb_process(int h, int frames)
+{
+    Inst *in = IN;
+    sendQueued(in);
+    int at = 0;
+    while (at < frames)
+    {
+        int n = frames - at;
+        // (A note waiting for the quiet goes in where the quiet ends, in this block)
+        bool waiting = !in->queue->empty() && !in->fading && in->muted;
+        if (waiting && in->muted < n) n = in->muted;
+        render(in, at, n);
+        at += n;
+        if (waiting && at < frames) sendQueued(in);
+    }
+    in->block++;
+}
+
 BB_EXPORT void bb_midi(int h, int status, int d1, int d2)
 {
-    if (!IN->instrument || IN->queued >= QUEUE) return;
-    VstMidiEvent &ev = IN->queue[IN->queued++];
-    ev = {};
+    Inst *in = IN;
+    if (!in->instrument) return;
+    VstMidiEvent ev = {};
     ev.type = kVstMidiType;
     ev.byteSize = sizeof(VstMidiEvent);
     ev.deltaFrames = 0;
     ev.midiData[0] = (char)status;
     ev.midiData[1] = (char)d1;
     ev.midiData[2] = (char)d2;
+    std::vector<Queued> &q = *in->queue;
+    // A burst (a lane's values all at once): a controller already waiting, with only values
+    // after it, just takes the new value
+    if (q.size() >= QUEUE && setsValue(ev))
+        for (int j = (int)q.size() - 1; j >= 0 && setsValue(q[j].ev); j--)
+            if (kindOf(q[j].ev) == kindOf(ev) && (kindOf(ev) != 0xb0 || d1Of(q[j].ev) == d1))
+            {
+                q[j].ev = ev;
+                return;
+            }
+    // (Past that, a note-off, a pedal or a reset still goes in: nothing is left hanging)
+    if (q.size() >= QUEUE_MAX && !endsNote(ev) && !resets(ev) && !(kindOf(ev) == 0xb0 && (d1 == 64 || d1 == 66 || d1 == 121))) return;
+    q.push_back({ev, in->block});
 }
 
 BB_EXPORT int bb_programs(int h) { return IN->fx->numPrograms > 1 ? IN->fx->numPrograms : 0; }

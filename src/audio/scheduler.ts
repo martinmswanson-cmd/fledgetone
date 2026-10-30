@@ -305,8 +305,19 @@ export function createClipSchedule(
     for (const [trackId, lists] of byTrack) {
       const instrument = instrumentFor(trackId);
       if (!instrument?.cc) continue;
-      const sends = heldCcAt(lists, tick, moved.get(instrument));
-      if (!sends.length) continue;
+      // Moved since it was fresh: Reset All Controllers (CC 121) first, so every controller no clip
+      // has set by here is as the fresh plugin has it, then the held values. A plugin whose reset
+      // doesn't do all of that also gets the rests MIDI defines (see ccHold.ts).
+      const sent = moved.get(instrument);
+      let reset = false;
+      let fresh = false;
+      if (sent?.size && instrument.resetControllers) {
+        reset = true;
+        safely(() => void (fresh = instrument.resetControllers!(time)));
+      }
+      if (fresh) sent!.clear();
+      const sends = heldCcAt(lists, tick, fresh ? undefined : sent);
+      if (!sends.length && !reset) continue;
       onActivity?.(trackId, time, 0);
       for (const [n, value] of sends) sendCc(trackId, instrument, n, value, time);
     }

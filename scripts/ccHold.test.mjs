@@ -18,7 +18,7 @@ register(
   }
 }`)
 );
-const { clipCcEvents, heldCcAt, restingCc } = await import('../src/audio/ccHold.ts');
+const { clipCcEvents, heldCcAt, restingCc, resetsFresh } = await import('../src/audio/ccHold.ts');
 
 const clip = (startBar, lengthBars, expression) => ({ startBar, lengthBars, expression });
 /** What a whole-song playback has sent each controller by `bar` (every event before it, in order). */
@@ -95,11 +95,27 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   assert.match(release, /sendMidi\(inst, \[0xb0, 121, 0\], now\)/);
   const sched = readFileSync(new URL('../src/audio/scheduler.ts', import.meta.url), 'utf8');
   assert.match(sched, /transport\.on\('start', onStart\)/);
-  assert.match(sched, /heldCcAt\(lists, tick, moved\.get\(instrument\)\)/);
+  // A plugin moved since it was fresh: Reset All Controllers first, then the held values; the rests
+  // only for a plugin whose reset may not put back its own fresh controllers
+  assert.match(sched, /instrument\.resetControllers!\(time\)/);
+  assert.match(sched, /heldCcAt\(lists, tick, fresh \? undefined : sent\)/);
+  assert.match(wam, /resetControllers: \(time: number\) => \{[^}]*sendMidi\(inst, \[0xb0, 121, 0\], time\);\s*return !!plugin && resetsFresh\(plugin\.url\);/);
   // Heard again (unmute, solo) or a plugin just loaded: that track's controllers where the song is
   assert.match(sched, /onTrackHeardAgain\(\(trackId\) => liveSchedule\?\.holdTrack\(trackId, liveContext\.now\(\)\)\)/);
   const live = readFileSync(new URL('../src/audio/liveTracks.ts', import.meta.url), 'utf8');
   assert.match(live, /if \(lt\.audible && !was\) heardTrack\(lt\)/);
   const fledge = readFileSync(new URL('../engine/fledge-synth/src/synth.rs', import.meta.url), 'utf8');
   assert.match(fledge, /121 => self\.reset_controllers\(\)/);
+});
+
+test('Reset All Controllers puts the built-in families back as fresh; others also get the rests', () => {
+  for (const url of ['builtin:fledge/Fledge Synth', 'builtin:mda/JX10', 'builtin:faust/Piano Model', 'builtin:setbfree/Tonewheel Organ', 'builtin:surge/Surge XT'])
+    assert.ok(resetsFresh(url), url);
+  for (const url of ['builtin:mutable/Plaits', 'builtin:open303/Open303', 'https://plugins.example/synth/index.js', 'fledge/x'])
+    assert.ok(!resetsFresh(url), url);
+  // With the reset trusted, nothing but the values clips have sent (no rest that isn't the plugin's own:
+  // the organ's wheel at 0 would set its speaker to Slow)
+  const lists = [clipCcEvents(clip(5, 2, { cc1: [{ at: 0, value: 1 }], cc74: [{ at: 0, value: 0.9 }] }))];
+  assert.deepEqual(heldCcAt(lists, 1, undefined), []);
+  assert.deepEqual(heldCcAt(lists, 6, undefined), [[1, 1], [74, 0.9]]);
 });

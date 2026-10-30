@@ -161,9 +161,13 @@ clock, ahead of time, so the main thread being busy doesn't make notes late:
   the song. So wherever playback starts (Play, a seek, a loop going round, a render of some bars, a
   game kit's loop, a track unmuted or a plugin loaded mid-song), each of the track's controllers is
   set to its value there in a playback of the whole song, the last one any of its clips sent, or
-  back to rest if none has yet and MIDI defines a rest for it (mod wheel, breath, foot, pedals,
-  expression; others are left as they are) (`ccHold.ts`, applied by the clip schedule's `hold`). Stop sends
-  each plugin Reset All Controllers (CC 121, `wamPlugin.ts`), so nothing is left turned up.
+  as the fresh plugin has it if none has yet: a plugin sent a controller since it was made gets
+  Reset All Controllers (CC 121) first, which every built-in instrument family takes to mean its own
+  fresh controllers (preset by preset); any other plugin also gets the rests MIDI defines (mod
+  wheel, breath, foot, pedals, expression) (`ccHold.ts`, applied by the clip schedule's `hold`).
+  Stop sends each plugin Reset All Controllers (`wamPlugin.ts`), so nothing is left turned up. A
+  plugin given its own settings back sounds as it did fresh, so whether a live read of its settings
+  reached the track before an export makes no difference.
 - **The playhead** is drawn by a `requestAnimationFrame` loop in the store that reads where the
   listener is now (`getAudiblePositionBar`, which allows for output latency) and sets
   `playheadPosition`.

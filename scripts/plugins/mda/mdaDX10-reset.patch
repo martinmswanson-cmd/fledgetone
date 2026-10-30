@@ -1,0 +1,22 @@
+--- a/mdaDX10.cpp
++++ b/mdaDX10.cpp
+@@ -551,6 +551,19 @@
+             volume = 0.00000035f * (float)(midiData[2] * midiData[2]);
+             break;
+          
++          case 0x79:  //reset all controllers (Fledgetone: back where a fresh DX10 has them)
++            modwhl = 0.0f;
++            pbend = 1.0f;
++            volume = 0.0035f;
++            if(sustain)
++            {
++              sustain = 0;
++              notes[npos++] = event->deltaFrames;
++              notes[npos++] = SUSTAIN; //end all sustained notes
++              notes[npos++] = 0;
++            }
++            break;
++
+           case 0x40:  //sustain
+             sustain = midiData[2] & 0x40;
+             if(sustain==0)

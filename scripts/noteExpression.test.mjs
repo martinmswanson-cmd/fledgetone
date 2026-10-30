@@ -76,6 +76,59 @@ test("before a track's first controller lane its own setting plays, and between 
   assert.equal(laneValueAt(pan.points, 2), 1);
 });
 
+test('a lane a trim hides points of plays as its MIDI does: read through them at the clip\'s start and end', async () => {
+  const { laneValueAt } = await import('../src/audio/automation.ts');
+  const { exprValueAt } = await import('../src/store/expression.ts');
+  const { clipCcEvents } = await import('../src/audio/ccHold.ts');
+  // Trimmed at both ends: a ramp from before the clip's start to after its end
+  const points = [{ at: -0.5, value: 0 }, { at: 0.5, value: 0.5 }, { at: 1.5, value: 1 }];
+  const c = { ...clip(3, { cc74: points }), lengthBars: 1 };
+  const [lane] = controllerLanes(track(), [c]);
+  assert.equal(lane.param, 'filterCutoff');
+  for (const at of [0, 0.1, 0.25, 0.5, 0.75, 0.99, 1]) {
+    assert.ok(Math.abs(laneValueAt(lane.points, 3 + at) - exprValueAt(points, at)) < 1e-9, `at ${at}: ${laneValueAt(lane.points, 3 + at)}`);
+  }
+  assert.ok(Math.abs(laneValueAt(lane.points, 3) - 0.25) < 1e-9, 'not the hidden first point, nor a jump to the first one shown');
+  assert.ok(Math.abs(laneValueAt(lane.points, 6) - 0.75) < 1e-9, 'after the clip: what its end left (as the MIDI holds it)');
+  // The MIDI the plugin gets says the same at every 64th
+  for (const ev of clipCcEvents(c)) assert.ok(Math.abs(laneValueAt(lane.points, ev.at) - ev.value) < 1e-9, `MIDI at ${ev.at}`);
+  // Every point hidden before the start: the value they leave, from the clip's start
+  const [held] = controllerLanes(track(), [{ ...clip(2, { cc74: [{ at: -1, value: 0.4 }, { at: -0.5, value: 0.6 }] }), lengthBars: 1 }]);
+  assert.equal(laneValueAt(held.points, 2), 0.6);
+  assert.equal(laneValueAt(held.points, 2.5), 0.6);
+  // Nothing hidden: the points as they were (the track's own cutoff, then the lane from the clip's start)
+  const [plain] = controllerLanes(track(), [clip(2, { cc74: [{ at: 0.5, value: 0.4 }] })]);
+  const before = plain.points[0].value;
+  assert.deepEqual(plain.points, [{ bar: 1, value: before }, { bar: 2, value: before }, { bar: 2, value: 0.4 }, { bar: 2.5, value: 0.4 }]);
+});
+
+test('volume (CC 7) and expression (CC 11) on one track: expression scales volume', async () => {
+  const { laneValueAt } = await import('../src/audio/automation.ts');
+  const own = 10 ** (-12 / 80);
+  // Volume from bar 2, expression from bar 4, both at once in bar 6
+  const clips = [
+    clip(2, { cc7: [{ at: 0, value: 0.8 }] }),
+    clip(4, { cc11: [{ at: 0, value: 0.5 }] }),
+    clip(6, { cc7: [{ at: 0, value: 0 }, { at: 1, value: 1 }], cc11: [{ at: 0, value: 1 }, { at: 1, value: 0.25 }] }),
+  ];
+  const lanes = controllerLanes(track(), clips);
+  assert.equal(lanes.length, 1);
+  const [lane] = lanes;
+  assert.equal(lane.param, 'volume');
+  const at = (bar) => laneValueAt(lane.points, bar);
+  assert.equal(at(1.5), own, "the track's own before either");
+  assert.equal(at(2.5), 0.8, 'volume alone');
+  assert.ok(Math.abs(at(4.5) - 0.4) < 1e-9, `volume 0.8 times expression 0.5: ${at(4.5)}`);
+  for (const x of [0, 0.25, 0.5, 0.75]) {
+    const want = x * (1 - 0.75 * x);
+    assert.ok(Math.abs(at(6 + x) - want) < 1e-9, `bar ${6 + x}: ${at(6 + x)}, not ${want}`);
+  }
+  assert.ok(Math.abs(at(9) - 0.25) < 1e-9, 'after: both as they were left');
+  // Expression alone: as before, the volume lane itself
+  const [alone] = controllerLanes(track(), [clip(3, { cc11: [{ at: 0, value: 0.3 }] })]);
+  assert.equal(laneValueAt(alone.points, 3.5), 0.3);
+});
+
 test('a note bends and swells on its own', () => {
   const expr = normalizeNoteExpression({ bend: [{ at: 0.25, value: 2 }, { at: 0, value: 0 }], pressure: [{ at: 0, value: 0.5 }, { at: 0.5, value: 1 }] });
   assert.ok(isExpressive(expr));
