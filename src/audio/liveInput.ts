@@ -219,14 +219,14 @@ export function playMidi(message: MidiMessage, heard: number): void {
         // An MPE note's own bend (its range is 48 semitones)
         const cents = (message.cents / PITCH_BEND_RANGE_CENTS) * MPE_BEND_RANGE_CENTS;
         if (own.voice) safely(() => own.voice!.bend(cents, now));
-        else if (instrument?.bend) safely(() => instrument.bend!(cents, now));
+        else if (instrument?.bend) safely(() => instrument.bend!(cents, now, true));
         recorded = { kind: 'noteExpr', note: own.note, lane: 'bend', value: cents / 100 };
         break;
       }
       // In MPE only the master channel bends every note: a member channel with no note held
       // (its bend comes just before the note, or after it ended) bends nothing
       if (useMidiStore.getState().mpe && message.channel) break;
-      if (instrument?.bend) safely(() => instrument.bend!(message.cents, now));
+      if (instrument?.bend) safely(() => instrument.bend!(message.cents, now, true));
       break;
     }
     case 'pressure': {

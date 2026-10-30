@@ -88,8 +88,11 @@ export interface TrackInstrument {
    * played live as short sequenced notes (see liveInput.ts).
    */
   noteOn?: (note: PlayableNote, time: number) => NoteOff;
-  /** Pitch bend in cents, for the instruments whose voices can bend (the others ignore it). */
-  bend?: (cents: number, time: number) => void;
+  /**
+   * Pitch bend in cents, for the instruments whose voices can bend (the others ignore it).
+   * `live`: the wheel on the player's keyboard (a plugin keeps it where the song's bend is at rest).
+   */
+  bend?: (cents: number, time: number, live?: boolean) => void;
   /**
    * The mod wheel as dynamics (0 soft to 1 loud) from `time`, for instruments recorded at several
    * loudnesses (InstrumentDef.dynamics): played instead of the wheel's vibrato. null: no wheel.
