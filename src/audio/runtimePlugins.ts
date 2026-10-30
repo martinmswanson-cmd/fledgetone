@@ -4,7 +4,7 @@
  * game plays them without reaching fledgetone.com. GPL-licensed ones are listed apart, for the
  * kit's notice (gplCredits.ts). Pure, so Node can test it.
  */
-import type { PluginFamily } from './plugins/pluginTypes';
+import type { BuiltinPluginInfo, PluginFamily } from './plugins/pluginTypes';
 import type { Track } from '../store/timelineTypes';
 
 export interface SongPlugins {
@@ -16,6 +16,16 @@ export interface SongPlugins {
   missing: string[];
   /** Every file to carry: each family's WebAssembly and the preset files the song starts on (Surge's patches), as named in fledgetone-plugins/, and as asked for there (`url`, escaped) */
   files: Array<{ family: PluginFamily; path: string; url: string }>;
+}
+
+/**
+ * Where preset `name`'s file is, in fledgetone-plugins/: its `path` there, and the `url` to ask for
+ * it by (escaped). Its file name has only letters, digits, spaces, dots and dashes: "Bass+Drums"
+ * is the file "Bass and Drums", as a + or & in a path can reach a web server as something else.
+ */
+export function presetFilePath(files: NonNullable<BuiltinPluginInfo['presetFiles']>, name: string): { path: string; url: string } {
+  const file = files.files?.[name] ?? name;
+  return { path: `${files.dir}/${file}${files.ext}`, url: `${files.dir}/${file.split('/').map(encodeURIComponent).join('/')}${files.ext}` };
 }
 
 /** The plugins `tracks` play, of `families` (what the runtime offers). */
@@ -39,8 +49,8 @@ export function songPlugins(tracks: readonly Pick<Track, 'plugin' | 'pluginFx'>[
       const preset = (p.state as { preset?: unknown } | undefined)?.preset;
       const pf = info.presetFiles;
       if (pf && typeof preset === 'string' && pf.names.includes(preset)) {
-        const path = `${pf.dir}/${preset}${pf.ext}`;
-        files.set(path, { family, path, url: `${pf.dir}/${preset.split('/').map(encodeURIComponent).join('/')}${pf.ext}` });
+        const { path, url } = presetFilePath(pf, preset);
+        files.set(path, { family, path, url });
       }
     }
   const all = [...used.values()];

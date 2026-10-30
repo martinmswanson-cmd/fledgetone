@@ -56,7 +56,17 @@
     "presets": {
       "Surge XT": {
         "dir": "gpl/surge-patches",
-        "ext": ".fxp"
+        "ext": ".fxp",
+        "shownAs": {
+          "Basses/Mmm Pointy": "Basses/Mmm... Pointy!",
+          "Leads/Microcomputer": "Leads/\u00b5computer",
+          "MPE/Pad Plink n Move": "MPE/Pad Plink 'n' Move",
+          "Plucks/Lil Exploders": "Plucks/Lil' Exploders",
+          "Polysynths/Keep em Coming": "Polysynths/Keep 'em Coming",
+          "Polysynths/Ol Sampler": "Polysynths/Ol' Sampler",
+          "Sequences/S and H Classic": "Sequences/S&H Classic",
+          "Splits/Bass and Drums": "Splits/Bass+Drums"
+        }
       }
     },
     "source": "https://github.com/surge-synthesizer/surge",

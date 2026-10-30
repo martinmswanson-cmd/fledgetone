@@ -2,7 +2,9 @@
  * Surge XT (the Surge Synth Team, GPL-3.0) as a Fledgetone instrument: the whole synth engine,
  * with its factory patches as presets (the host fetches a patch file when one is chosen: see
  * bb_load). Its panel shows the patch's eight macros, the filter and envelope settings and the
- * volume; editing one changes both scenes, so layered and split patches follow.
+ * volume; editing one moves both scenes by the same amount, so layered and split patches follow
+ * and a scene set apart from the other in the patch stays set apart. A setting at the patch's own
+ * value leaves the patch untouched, so a restored sound plays exactly as the fresh patch does.
  */
 #include "../bbplug_impl.h"
 #include "SurgeSynthesizer.h"
@@ -25,6 +27,8 @@ struct SurgeBB : BBPlugin
     std::unique_ptr<SurgeSynthesizer> synth;
     /** Parameters after the macros: one per scene (both set together) */
     std::vector<std::pair<Parameter *, Parameter *>> params_;
+    /** Each one's values (0 to 1) in the patch as loaded: scene A's is the panel's, scene B keeps its offset */
+    std::vector<std::pair<float, float>> base_;
     std::vector<std::string> names;
     float outL[BLOCK_SIZE] = {}, outR[BLOCK_SIZE] = {};
     int pos = BLOCK_SIZE;
@@ -45,6 +49,7 @@ struct SurgeBB : BBPlugin
     {
         auto &patch = synth->storage.getPatch();
         params_.clear();
+        base_.clear();
         names.clear();
         for (int i = 0; i < n_customcontrollers; i++)
         {
@@ -80,12 +85,19 @@ struct SurgeBB : BBPlugin
         add("Drift", &SurgeSceneStorage::drift);
         names.push_back("Volume");
         params_.push_back({&patch.volume, nullptr});
+        for (auto &pp : params_) base_.push_back({pp.first->get_value_f01(), pp.second ? pp.second->get_value_f01() : 0.f});
         readValues();
+    }
+
+    /** Macro i's setting (0 to 1): where it's going, not where its smoothing has got to */
+    float macro(int i)
+    {
+        return ((ControllerModulationSource *)synth->storage.getPatch().scene[0].modsources[ms_ctrl1 + i])->get_target01(0);
     }
 
     void readValues()
     {
-        for (int i = 0; i < n_customcontrollers; i++) values[i] = synth->getMacroParameter01(i);
+        for (int i = 0; i < n_customcontrollers; i++) values[i] = macro(i);
         for (size_t k = 0; k < params_.size(); k++) values[n_customcontrollers + k] = params_[k].first->get_value_f01();
     }
 
@@ -93,14 +105,22 @@ struct SurgeBB : BBPlugin
     const char *paramName(int i) override { return names[i].c_str(); }
     void apply(int i, float v) override
     {
+        // Only what changes is written: writing a setting's own value back can still move the sound
         if (i < n_customcontrollers)
         {
-            synth->setMacroParameter01(i, v);
+            if (macro(i) != v) synth->setMacroParameter01(i, v);
             return;
         }
-        auto &pp = params_[i - n_customcontrollers];
-        synth->setParameter01(synth->idForParameter(pp.first), v, false, false);
-        if (pp.second) synth->setParameter01(synth->idForParameter(pp.second), v, false, false);
+        size_t k = i - n_customcontrollers;
+        auto &pp = params_[k];
+        if (pp.first->get_value_f01() != v) synth->setParameter01(synth->idForParameter(pp.first), v, false, false);
+        if (pp.second)
+        {
+            // Scene B: its own patch value moved as far as scene A was (the same value when they match)
+            float b = base_[k].second + (v - base_[k].first);
+            b = v == base_[k].first ? base_[k].second : b < 0 ? 0 : b > 1 ? 1 : b;
+            if (pp.second->get_value_f01() != b) synth->setParameter01(synth->idForParameter(pp.second), b, false, false);
+        }
     }
     void display(int i, char *o, int n) override
     {

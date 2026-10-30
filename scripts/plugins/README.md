@@ -76,7 +76,11 @@ sh setbfree/build.sh <setBfree checkout> ../../public/fledgetone-plugins/gpl/set
   changes WebAssembly needs; `surge/nofiles.c` answers its file lookups with "not found"), with
   `surge/bb_surge.cpp`. Its factory patches are separate files the app fetches when one is chosen
   (`bb_load`); `surge/patches.py` copies them, renaming the few named after artists, songs,
-  people or products and leaving out a few crude ones. Reset All Controllers puts the wheels,
+  people or products and leaving out a few crude ones; a name with characters a web server may
+  read wrongly in a path (+, &, quotes, letters outside ASCII) gets a plain file name, and
+  `shownAs` in `families.json` maps that file to the name shown (the catalog checks every file
+  name is plain). A panel setting moves both scenes by the same amount and writes nothing when
+  it's at the value in effect, so a restored sound is the fresh patch exactly. Reset All Controllers puts the wheels,
   pedals, pressure and bend back at rest and the macros (CC 41 to 48 move them) at their settings;
   a setting a patch itself has learned to a controller stays where the controller left it.
 - **Dragonfly Reverb**: the hall, room, plate and early-reflection reverbs' DSP with Freeverb3,

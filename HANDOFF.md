@@ -458,6 +458,20 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   reverbs, Plateau reverb, setBfree organ) only in `VITE_GPL_PLUGINS=1` builds: the dev server and `npm run build:full`
   (`dist-full/`). Never copy `public/fledgetone-plugins/gpl/` to the site before the app's source
   is published.
+  Surge's panel knob moves both scenes by the same amount (scene B keeps its offset from the
+  patch) and writes nothing when set to the value already in effect, so a restored sound is the
+  fresh patch exactly (checked over all 607 patches). Patch files have plain names (letters,
+  digits, spaces, dots, dashes): a patch shown as "Splits/Bass+Drums" is the file "Splits/Bass and
+  Drums.fxp", mapped by `shownAs` in `scripts/plugins/families.json` (the catalog's
+  `presetFiles.files`, `presetFilePath` in `runtimePlugins.ts`); songs keep the shown name. The
+  fallback download host needs the renamed files too.
+  At a hold point (loop wrap, seek, unmute, plugin ready) the Reset All Controllers the scheduler
+  sends also centres the bend, so `wamPlugin.ts` sends the bend in force there again right after
+  it: a held bent note stays bent. Controllers played live (`cc(..., live = true)` from
+  liveInput.ts) are sent again after it too; a clip lane on the same controller takes it over.
+  `ccLanes.ts`: volume and expression lanes are read by halving (`indexed`), and the memo keeps a
+  track's lanes through edits that don't touch them (pan, fader, name), the same lane objects
+  where the track's own setting for them is unchanged.
 - **Sound effects maker** (`src/audio/sfx/sfxSynth.ts`, `src/components/sfx/SfxMakerPanel.tsx`): layered
   sounds (up to 4 layers: waves, noise, FM, bell, crackle; SVF filter; seq notes) with drive, echo
   and reverb over the whole; ~70 kinds in `SFX_GROUPS`, `SFX_SETS` made with a shared style seed;

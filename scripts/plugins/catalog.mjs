@@ -25,6 +25,32 @@ function listFiles(dir, ext) {
   return out;
 }
 
+/**
+ * A family's preset files as the catalog lists them: each by the name it's shown by (`shownAs`
+ * maps a file name to it; else the file's own name), in the order of those names, with `files`
+ * for the ones whose file is named otherwise. Every file name is plain (letters, digits, spaces,
+ * dots, dashes): a web server may read a +, & or other letter in a path wrongly.
+ */
+function presetFiles(presets) {
+  const shownAs = presets.shownAs ?? {};
+  const files = {};
+  const entries = listFiles(join(pluginsDir, presets.dir), presets.ext).map((file) => {
+    if (!/^[A-Za-z0-9 ._/-]+$/.test(file)) throw new Error(`${presets.dir}/${file}${presets.ext}: give it a plain file name (see "shownAs" in families.json)`);
+    const name = shownAs[file] ?? file;
+    if (name !== file) files[name] = file;
+    return name;
+  });
+  for (const file of Object.keys(shownAs)) if (!(shownAs[file] in files)) throw new Error(`${presets.dir}/${file}${presets.ext} (shownAs) isn't there`);
+  // (As the files sort in a folder: by name with the extension)
+  const order = (s) => (s + presets.ext).split('/');
+  entries.sort((a, b) => {
+    const [x, y] = [order(a), order(b)];
+    for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i].localeCompare(y[i]);
+    return x.length - y.length;
+  });
+  return { dir: presets.dir, ext: presets.ext, names: entries, ...(Object.keys(files).length ? { files } : {}) };
+}
+
 const plain = [];
 const gpl = [];
 for (const f of families) {
@@ -56,7 +82,7 @@ for (const f of families) {
       about: info.about,
       ...(info.instrument ? { instrument: true } : {}),
       ...(info.tags?.length ? { tags: info.tags } : {}),
-      ...(presets ? { presetFiles: { dir: presets.dir, ext: presets.ext, names: listFiles(join(pluginsDir, presets.dir), presets.ext) } } : {}),
+      ...(presets ? { presetFiles: presetFiles(presets) } : {}),
     });
   }
   (f.gpl ? gpl : plain).push({ family: f.family, label: f.label, licence: f.licence, gpl: !!f.gpl, file: fileName, bytes: bytes.length, hash: createHash('sha1').update(bytes).digest('hex').slice(0, 12), plugins });

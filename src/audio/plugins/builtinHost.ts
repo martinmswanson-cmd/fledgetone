@@ -3,6 +3,7 @@ import { isNamedParam, NAMED_PARAM, rememberParamNames } from './paramNames';
 import { recordingBytes } from '../recordingStore';
 import { GPL_FAMILY_NAMES } from './pluginCatalog';
 import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
+import { presetFilePath } from '../runtimePlugins';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
@@ -158,9 +159,7 @@ export function setBuiltinGui(factory: GuiFactory): void {
 
 /** A preset file's bytes (downloaded once, then kept like the plugins). */
 function presetBytes(ref: BuiltinRef, name: string): Promise<ArrayBuffer> {
-  const files = ref.info.presetFiles!;
-  const path = `${files.dir}/${name.split('/').map(encodeURIComponent).join('/')}${files.ext}`;
-  return recordingBytes(pluginSource(ref.family), path);
+  return recordingBytes(pluginSource(ref.family), presetFilePath(ref.info.presetFiles!, name).url);
 }
 
 /** How long making an instance may take (after its family has downloaded). */

@@ -99,7 +99,15 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   // only for a plugin whose reset may not put back its own fresh controllers
   assert.match(sched, /instrument\.resetControllers!\(time\)/);
   assert.match(sched, /heldCcAt\(lists, tick, fresh \? undefined : sent\)/);
-  assert.match(wam, /resetControllers: \(time: number\) => \{[^}]*sendMidi\(inst, \[0xb0, 121, 0\], time\);\s*return !!plugin && resetsFresh\(plugin\.url\);/);
+  const reset = wam.slice(wam.indexOf('resetControllers: (time: number) => {'), wam.indexOf('setPluginParam:'));
+  assert.match(reset, /sendMidi\(inst, \[0xb0, 121, 0\], time\);/);
+  assert.match(reset, /return !!plugin && resetsFresh\(plugin\.url\);/);
+  // The reset centres the bend too: the bend in force there (a held bent note's, the player's wheel)
+  // and the knobs played live go again right after it
+  assert.ok(reset.indexOf('bendAt(time)') > reset.indexOf('[0xb0, 121, 0]'));
+  assert.match(reset, /for \(const \[n, v\] of liveCcs\) sendMidi\(inst, \[0xb0, n, v\], time\)/);
+  const liveIn = readFileSync(new URL('../src/audio/liveInput.ts', import.meta.url), 'utf8');
+  assert.match(liveIn, /instrument\.cc!\(message\.cc, message\.value, now, true\)/);
   // Heard again (unmute, solo) or a plugin just loaded: that track's controllers where the song is
   assert.match(sched, /onTrackHeardAgain\(\(trackId\) => liveSchedule\?\.holdTrack\(trackId, liveContext\.now\(\)\)\)/);
   const live = readFileSync(new URL('../src/audio/liveTracks.ts', import.meta.url), 'utf8');
