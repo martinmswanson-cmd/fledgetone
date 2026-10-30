@@ -309,3 +309,24 @@ test('never fewer bars than the truth: a track tail is as long as its effects ri
   assert.ok(tail(withKeys(plain, () => ({ instrumentKey: 'synthDesigner', synth: { amp: { attack: 0, decay: 0, sustain: 1, release: 9 } } }))).seconds >= 9);
   assert.ok(tail(withKeys(plain, () => ({ instrumentKey: 'bass808', bass808: { decay: 8 } }))).seconds >= 8);
 });
+
+test('in a song not in 4/4 the words name bars as the ruler numbers them, by measure; the numbers stay the song\'s bars (scan r6)', async () => {
+  const { wordMeter, barWords } = await import('../src/agent/songDiff.ts');
+  const a = { ...base(), meter: { num: 3, den: 4 }, meterPoints: [] };
+  const keys = a.tracks[0];
+  const clip = { ...a.clips.find((c) => c.trackId === keys.id), id: 'tag', startBar: 7, lengthBars: 1, notes: [], expression: undefined };
+  const d = diffSongs(a, { ...a, clips: [...a.clips, clip] });
+  const added = d.changes.find((c) => c.clipId === 'tag');
+  // (bar 7 of four quarter notes starts 24 beats in: the ruler's measure 9 of 3/4; one 4/4 bar runs into measure 10)
+  assert.match(added.text, /at bars 9-10\.$/, added.text);
+  assert.equal(added.fromBar, 7, 'the number is the song\'s bar');
+  const meter = wordMeter(a);
+  assert.equal(barWords({ fromBar: 7, toBar: 10 }, meter), 'bars 9-12');
+  assert.equal(barWords({ fromBar: 1, toBar: 2 }, meter), 'bars 1-2');
+  // A marker at a beat inside a measure
+  const marked = diffSongs(a, { ...a, markers: [...(a.markers ?? []), { id: 'mk', name: 'Hit', anchor: 'bar', bar: 7.25, seconds: 0 }] });
+  assert.match(marked.changes[0].text, /at bar 9 beat 2\.$/, marked.changes[0].text);
+  // In 4/4, as before
+  assert.equal(wordMeter(base()), null);
+  assert.equal(barWords({ fromBar: 7, toBar: 10 }, null), 'bars 7-9');
+});

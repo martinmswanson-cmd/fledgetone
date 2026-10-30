@@ -24,7 +24,7 @@ import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, hearingAsFound, hearingByRules, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 import { queueFinding, stopFinding, useFinding } from './whereHeard';
@@ -32,25 +32,34 @@ import { queueFinding, stopFinding, useFinding } from './whereHeard';
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, max) : undefined);
 
-/** A suggestion as the agent reads it back. */
-const view = (s: Suggestion) => ({
-  id: s.id,
-  title: s.title,
-  status: s.status,
-  heard: s.heard !== null && s.heard === s.version,
-  changes: s.changes,
-  warnings: s.warnings,
-  notes: s.notes,
-  // Where its changes are heard, what its before-and-after plays (one stretch after another), and what that leaves out
-  regions: s.regions,
-  // How they were found: by the rules alone, or by the rules and by sound (the song rendered whole before and after, bar against bar)
-  regionsBy: s.found === 'sound' ? 'rules and sound' : 'rules',
-  ...(s.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : useFinding.getState().id === s.id && useFinding.getState().version === s.version ? { finding: true } : s.foundWhy ? { notBySound: notFoundWords(s.foundWhy), ...(uncheckedTail(s) ? { mayRingOn: true } : {}) } : {}),
-  audition: s.audition,
-  ...(s.unheard ? { unheard: s.unheard, limit: s.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
-  ...(s.focusLeftOut ? { focusLeftOut: true } : {}),
-  ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}),
-});
+/**
+ * A suggestion as the agent reads it back. Where it's heard by sound (the whole song rendered
+ * before and after) only with Listen allowed: without it, only the rules' regions and what a
+ * before-and-after of those plays (hearingByRules), never a bar the renders found.
+ */
+const view = (s: Suggestion) => {
+  const listen = useSuggestions.getState().permissions.listen;
+  const by = listen ? hearingAsFound(s) : hearingByRules(s, currentProject());
+  const finding = useFinding.getState().id === s.id && useFinding.getState().version === s.version;
+  return {
+    id: s.id,
+    title: s.title,
+    status: s.status,
+    heard: s.heard !== null && s.heard === s.version,
+    changes: s.changes,
+    warnings: s.warnings,
+    notes: s.notes,
+    // Where its changes are heard, what its before-and-after plays (one stretch after another), and what that leaves out
+    regions: by.regions,
+    // How they were found: by the rules alone, or by the rules and by sound (the song rendered whole before and after, bar against bar)
+    regionsBy: by.found === 'sound' ? 'rules and sound' : 'rules',
+    ...(by.found === 'sound' ? { soundRegions: s.soundRegions ?? [] } : finding ? { finding: true } : s.foundWhy ? { notBySound: notFoundWords(s.foundWhy), ...(uncheckedTail(s) ? { mayRingOn: true } : {}) } : {}),
+    audition: by.audition,
+    ...(by.unheard ? { unheard: by.unheard, limit: by.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
+    ...(by.focusLeftOut ? { focusLeftOut: true } : {}),
+    ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}),
+  };
+};
 
 /** What's selected, by the ids the agent reads (agentIds: the same as get_song's). */
 export function viewSelection(s: Pick<ReturnType<typeof useTimelineStore.getState>, 'tracks' | 'clips' | 'selectedTrackId' | 'editingClipId'>) {

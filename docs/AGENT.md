@@ -186,7 +186,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it, only while you're allowed to listen: without it you read the rules' regions alone, and what a before-and-after of those plays; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -225,7 +225,9 @@ fewer bars than the truth. First by rules:
 
 Then by sound: the studio renders the whole song as it is and as suggested (in the background,
 as soon as the suggestion arrives, never while the song plays, or when the musician presses
-Hear: the card says "Finding where it changes…") and compares them bar by bar, as `listen` with
+Hear, while the before-and-after already plays the rules' regions: the card says "Finding where
+it changes…", and anything it finds besides makes the suggestion heard only in part until that's
+played too) and compares them bar by bar, as `listen` with
 ops does: every bar whose difference is above -70 dBFS joins the regions (`regionsBy` is then
 `"rules and sound"`, and `soundRegions` names those bars). A song longer than 4 minutes (the
 musician's song as it is: a suggestion can't make it so) isn't rendered whole, nor one a
@@ -527,6 +529,12 @@ and `clipper` are merged onto what they have (`list_master` gives their settings
 ```
 
 ## The song as the agent reads it
+
+Bars are four quarter notes long whatever the time signature: every bar number you send or read
+(`startBar`, `fromBar`, `regions`, a note's `bar`...) counts those. In a song not in 4/4 the
+musician's ruler numbers measures instead, so the sentences the studio writes for them (a
+suggestion's `changes`, the card) name the measures the ruler shows ("at bars 9-10" for your bar 7
+in 3/4), while the numbers stay your bars. In 4/4 the two are the same.
 
 `get_song` gives a summary of schema `fledgetone.agent-song/1`, at most 30 KB (detail is left out
 first, and `omitted` says what):

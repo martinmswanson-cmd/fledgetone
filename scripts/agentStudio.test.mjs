@@ -736,8 +736,11 @@ test('checked by sound unless the musician\'s own song is too long (a suggestion
   assert.equal(typeof s.sure, 'boolean');
   assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: 'too_long', sure: true }), false);
   assert.equal(uncheckedTail({ ...s, found: 'sound', sure: false }), false, 'checked by sound: the sound says where');
-  assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: undefined, sure: false }), false, 'not yet checked: Hear checks it first');
-  const unsure = { ...s, found: 'rules', foundWhy: 'too_long', sure: false, partHeard: s.version, heard: null };
+  // Not checked yet (Hear plays at once, the check comes while it plays): not all of it either, until it's found
+  assert.equal(uncheckedTail({ ...s, found: 'rules', foundWhy: undefined, sure: false }), true);
+  const pending = acceptDecision({ ...s, found: 'rules', foundWhy: undefined, sure: false, partHeard: s.version, partUnchecked: true, heard: null }, p, ctxOf(p), 1000);
+  assert.match(pending.message, /^The studio was still checking by sound where this changes when you heard it\. Hear it again once that’s done, or press Accept without listening\.$/);
+  const unsure = { ...s, found: 'rules', foundWhy: 'too_long', sure: false, partHeard: s.version, partUnchecked: true, heard: null };
   assert.equal(uncheckedTail(unsure), true);
   const first = acceptDecision(unsure, p, ctxOf(p), 1000);
   assert.equal(first.apply, null);
@@ -747,5 +750,19 @@ test('checked by sound unless the musician\'s own song is too long (a suggestion
   assert.ok(second.apply, 'the second, separate press takes it');
   // The card and noteHeard say and do so (source)
   assert.match(readFileSync(new URL('../src/components/agent/SuggestionCard.tsx', import.meta.url), 'utf8'), /data-not-checked=""/);
-  assert.match(readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8'), /!s\.unheard && !uncheckedTail\(s\) && s\.regions\.every/);
+  assert.match(readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8'), /if \(!played \|\| unchecked\)/);
+});
+
+test('without Listen, an agent reads only where the rules say a suggestion is heard, never what the renders found (scan r6)', async () => {
+  const { withSoundRegions, hearingByRules, hearingAsFound } = await import('../src/agent/suggestionsStore.ts');
+  const p = base();
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[3].id, volumeDb: -20 }] }).suggestion;
+  const found = withSoundRegions(s, [{ fromBar: 1, toBar: 3 }], p);
+  assert.equal(hearingAsFound(found).found, 'sound');
+  assert.ok(hearingAsFound(found).regions.some((r) => r.fromBar === 1));
+  const rules = hearingByRules(found, p);
+  assert.equal(rules.found, 'rules');
+  assert.deepEqual(rules.regions, s.ruleRegions);
+  assert.deepEqual(rules.audition, s.audition, 'what the rules alone would play');
+  assert.match(readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8'), /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, currentProject\(\)\);/);
 });

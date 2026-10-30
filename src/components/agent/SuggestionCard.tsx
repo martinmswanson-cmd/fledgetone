@@ -28,7 +28,10 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { stopFinding, useFinding } from '../../agent/whereHeard';
-import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
+import type { BarRange } from '../../agent/songDiff';
+import type { MeterMap } from '../../audio/tempoMap';
+import { useTimelineStore } from '../../store/timelineStore';
 import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp, SPACE_WORDS } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
 import { useConversation } from '../../agent/conversation';
@@ -38,19 +41,21 @@ import { FromYourAgent, NamedText } from './Named';
 /** An agent's title in quotes, once (one that poses as the app comes quoted already). */
 const quoted = (t: string) => (t.startsWith('“') && t.endsWith('”') ? t : `“${t}”`);
 
-const bars = rangesWords;
-
-/** The line under the buttons: where it is, and whether what Accept puts in was heard. */
-function statusLine(s: Suggestion): string {
+/** The line under the buttons: where it is, and whether what Accept puts in was heard (bars named as the ruler numbers them: `meter`). */
+function statusLine(s: Suggestion, meter: MeterMap | null): string {
+  const bars = (list: readonly BarRange[]) => rangesWords(list, meter);
   const part =
     isOpen(s) && s.heard !== s.version && s.partHeard === s.version
       ? s.unheard
-        ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}`
-        : uncheckedTail(s)
-          ? `Heard, but maybe not all of it: ${UNCHECKED_WORDS[0].toLowerCase()}${UNCHECKED_WORDS.slice(1)}`
+        ? `Heard only in part: ${unheardWords(s.unheard, s.limit, meter)}`
+        : s.partUnchecked && uncheckedTail(s)
+          ? s.foundWhy
+            ? `Heard, but maybe not all of it: ${UNCHECKED_WORDS[0].toLowerCase()}${UNCHECKED_WORDS.slice(1)}`
+            : 'Heard while the studio was still checking where it changes: hear it again once that’s done.'
           : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
       : null;
-  if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
+  // (the song moved on since: that comes first, whatever was heard of it)
+  if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : s.stale ? 'The song changed since it was suggested: hear it again before you accept.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
   if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : (part ?? 'Not heard yet.');
   const words = STATUS_WORDS[s.status];
   return words[0].toUpperCase() + words.slice(1) + '.';
@@ -58,6 +63,11 @@ function statusLine(s: Suggestion): string {
 
 export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestion: s }) => {
   const audition = useAudition();
+  // (bars named as the ruler numbers them: by measure in a song not in 4/4)
+  const meterBase = useTimelineStore((t) => t.meter);
+  const meterPoints = useTimelineStore((t) => t.meterPoints);
+  const meter = React.useMemo(() => wordMeter({ meter: meterBase, meterPoints }), [meterBase, meterPoints]);
+  const bars = (list: readonly BarRange[]) => rangesWords(list, meter);
   const mine = audition.key === s.id;
   // The last press's answer, kept only until the suggestion's status or version moves on
   const [said, setSaid] = React.useState<{ text: string; at: string } | null>(null);
@@ -86,7 +96,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
   const askable = useConversation((c) => c.connection === s.connection) && s.connection !== undefined;
   const playing = mine && audition.phase === 'playing';
   // (where its changes are heard, being found by sound: both versions rendered whole)
-  const finding = useFinding((f) => (f.id === s.id && f.version === s.version ? f : null));
+  // (only one the musician asked for, by Hear: one in the background doesn't grow the card, so it never moves under a press)
+  const finding = useFinding((f) => (f.id === s.id && f.version === s.version && f.asked ? f : null));
 
   const hear = (which: 'a' | 'b') => {
     // (switched in step only while what plays is this version on the song as it is: else it's made and rendered again)
@@ -290,7 +301,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           </>
         )}
         <span data-card-status="" className={`text-[11px] ${s.status === 'changed' || s.status === 'other_song' || message ? 'text-amber-300' : 'text-forge-muted'}`}>
-          {message ?? statusLine(s)}
+          {message ?? statusLine(s, meter)}
         </span>
         {askable && (
         <button

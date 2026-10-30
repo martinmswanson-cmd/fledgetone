@@ -23,7 +23,7 @@ import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../
 import { DEFAULT_MASTER_FX, durationToBars } from '../store/timelineTypes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
-import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
+import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import { RELEASE_ALLOWANCE_SECONDS, releaseSeconds } from '../audio/auditionMath';
 import { insertTailSeconds, masterDelaySeconds, masterReverbSeconds } from '../audio/effectTails';
 import { busOf, liveSends } from '../store/buses';
@@ -119,17 +119,42 @@ const INSERT_LABELS: Record<string, string> = {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const db = (v: number) => `${v > 0 ? '+' : ''}${r1(v)} dB`;
-const bars = (from: number, to: number) => {
-  const a = Math.floor(from + 1e-9);
-  const b = Math.max(a, Math.ceil(to - 1e-9) - 1);
-  return a === b ? `bar ${a}` : `bars ${a}-${b}`;
+/**
+ * The song's time signatures while diffSongs words its sentences, when they aren't plain 4/4
+ * throughout (null: they are, and a bar is a measure): its bars are then named as the ruler numbers
+ * them, by measure (wordMeter).
+ */
+let sentenceMeter: MeterMap | null = null;
+/** The meters of `song`, for words: null when it's plain 4/4 throughout (a bar is a measure). */
+export const wordMeter = (song: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): MeterMap | null => {
+  const map: MeterMap = { base: song.meter ?? FOUR_FOUR, points: song.meterPoints ?? [] };
+  return isPlainMeter(map) ? null : map;
 };
+const bars = (from: number, to: number) => barWords({ fromBar: from, toBar: to }, sentenceMeter);
+/** "bar 7.5", or in a song not in 4/4, the measure (and beat) the ruler shows there: "bar 9", "bar 9 beat 2". */
+const barAt = (bar: number): string => {
+  if (!sentenceMeter) return `bar ${r1(bar)}`;
+  const m = toMeasureBeat(bar, sentenceMeter);
+  return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
+};
+/** A clip's length: "4 bars", or in a song not in 4/4 (where a bar isn't a measure) in quarter notes. */
+const lengthWords = (lengthBars: number): string => (sentenceMeter ? `${r1(lengthBars * 4)} quarter notes` : `${r1(lengthBars)} bars`);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const same = (a: unknown, b: unknown) => a === b || stableJson(a) === stableJson(b);
 const noteEnd = (n: NoteEvent) => n.startOffset + durationToBars(n.duration);
 
-/** The changes from `before` to `after`. */
+/** The changes from `before` to `after` (their bars named in words as `before`'s ruler numbers them: see wordMeter). */
 export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
+  const was = sentenceMeter;
+  sentenceMeter = wordMeter(before);
+  try {
+    return diffWith(before, after);
+  } finally {
+    sentenceMeter = was;
+  }
+}
+
+function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   const changes: SongChange[] = [];
   const touchedTracks = new Set<string>();
   const touchedClips = new Set<string>();
@@ -156,10 +181,10 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   const tempoFrom = tempoChangeStart(bPoints, aPoints);
   for (const p of aPoints) {
     const old = bPoints.find((o) => o.id === p.id);
-    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
-    else if (!same(old, p)) add({ text: `Changes the tempo change at bar ${r1(old.bar)} to ${r1(p.bpm)} BPM at bar ${r1(p.bar)}.`, fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
+    if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at ${barAt(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: `Changes the tempo change at ${barAt(old.bar)} to ${r1(p.bpm)} BPM at ${barAt(p.bar)}.`, fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at bar ${r1(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
+  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at ${barAt(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
   tempoChanged ||= !same(bPoints, aPoints);
 
   // ---------- Time signature ----------
@@ -169,10 +194,10 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   const aMeters = after.meterPoints ?? [];
   for (const p of aMeters) {
     const old = bMeters.find((o) => o.id === p.id);
-    if (!old) add({ text: `Adds a change of time signature to ${meter(p)} at bar ${r1(p.bar)}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
-    else if (!same(old, p)) add({ text: `Changes the time signature change at bar ${r1(old.bar)} to ${meter(p)} at bar ${r1(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
+    if (!old) add({ text: `Adds a change of time signature to ${meter(p)} at ${barAt(p.bar)}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: `Changes the time signature change at ${barAt(old.bar)} to ${meter(p)} at ${barAt(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bMeters) if (!aMeters.some((o) => o.id === p.id)) add({ text: `Removes the change of time signature at bar ${r1(p.bar)} (${meter(p)}).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+  for (const p of bMeters) if (!aMeters.some((o) => o.id === p.id)) add({ text: `Removes the change of time signature at ${barAt(p.bar)} (${meter(p)}).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
 
   // ---------- Master ----------
   const masterBefore = changes.length;
@@ -209,15 +234,15 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   const am = after.markers ?? [];
   for (const m of am) {
     const old = bm.find((o) => o.id === m.id);
-    if (!old) add({ text: `Adds the marker ${nm(m.name)} at bar ${r1(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1, hear: 'silent' });
+    if (!old) add({ text: `Adds the marker ${nm(m.name)} at ${barAt(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1, hear: 'silent' });
     else {
       if (old.name !== m.name) add({ text: `Renames the marker ${nm(old.name)} to ${nm(m.name)}.`, markerId: m.id, hear: 'silent' });
       // A tempo change moves a marker held to its time by itself: only a move beyond that is the suggestion's
       const retimed = old.anchor === 'time' ? secondsToBar(old.seconds, { bpm: after.bpm, points: after.tempoPoints ?? [] }) : old.bar;
-      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker ${nm(m.name)} from bar ${r1(old.bar)} to bar ${r1(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
+      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker ${nm(m.name)} from ${barAt(old.bar)} to ${barAt(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
     }
   }
-  for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker ${nm(m.name)} (bar ${r1(m.bar)}).`, markerId: m.id, hear: 'silent' });
+  for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker ${nm(m.name)} (${barAt(m.bar)}).`, markerId: m.id, hear: 'silent' });
 
   // ---------- Where ----------
   for (const c of changes) {
@@ -251,16 +276,23 @@ export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): Song
   };
 }
 
-/** "bar 5" or "bars 5-8" for a range of whole song bars (end not included). */
-export const barWords = (r: BarRange): string => {
-  const a = Math.floor(r.fromBar);
-  const b = Math.max(a, Math.ceil(r.toBar) - 1);
+/**
+ * "bar 5" or "bars 5-8" for a range of whole song bars (end not included): in a song not in 4/4
+ * (`meter`, see wordMeter), the measures the ruler numbers there, every one the range touches.
+ */
+export const barWords = (r: BarRange, meter: MeterMap | null = null): string => {
+  let a = Math.floor(r.fromBar + 1e-9);
+  let b = Math.max(a, Math.ceil(r.toBar - 1e-9) - 1);
+  if (meter) {
+    a = toMeasureBeat(Math.max(1, r.fromBar), meter).measure;
+    b = Math.max(a, toMeasureBeat(Math.max(r.fromBar, r.toBar - 1e-6), meter).measure);
+  }
   return a === b ? `bar ${a}` : `bars ${a}-${b}`;
 };
 
-/** "bar 2, bars 5-8 and bar 70" for ranges of whole song bars; "no bars" for none. */
-export function rangesWords(list: readonly BarRange[]): string {
-  const words = list.map(barWords);
+/** "bar 2, bars 5-8 and bar 70" for ranges of whole song bars (by measure in a song not in 4/4: `meter`); "no bars" for none. */
+export function rangesWords(list: readonly BarRange[], meter: MeterMap | null = null): string {
+  const words = list.map((r) => barWords(r, meter));
   if (!words.length) return 'no bars';
   return words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
@@ -577,9 +609,9 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     add(moved);
   }
   if (Math.abs(a.startBar - b.startBar) > 1e-9)
-    add({ text: `Moves the clip ${n} from bar ${r1(a.startBar)} to bar ${r1(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
+    add({ text: `Moves the clip ${n} from ${barAt(a.startBar)} to ${barAt(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
   if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
-    add({ text: `Makes the clip ${n} ${r1(b.lengthBars)} bars long (was ${r1(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
+    add({ text: `Makes the clip ${n} ${lengthWords(b.lengthBars)} long (was ${lengthWords(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
   if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
   if (a.notes !== b.notes && !same(a.notes, b.notes)) {
     const before = new Map(a.notes.map((x) => [x.id, x]));

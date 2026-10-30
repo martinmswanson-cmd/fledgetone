@@ -23,7 +23,8 @@ import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from '
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
-import { joinRanges, rangesWords, type BarRange } from './songDiff';
+import { joinRanges, rangesWords, wordMeter, type BarRange } from './songDiff';
+import type { MeterMap } from '../audio/tempoMap';
 import type { BridgeInfo } from './bridgeProtocolClient';
 
 /**
@@ -65,6 +66,8 @@ export interface Suggestion {
   heard: number | null;
   /** The version last heard only in part (its Suggested side played, but not over every bar it changes: see `unheard`). */
   partHeard?: number | null;
+  /** Heard in part because, though every region played, it isn't checked by sound and its tail isn't known (uncheckedTail). */
+  partUnchecked?: boolean;
   /**
    * Accept pressed once for a version not heard: when, and for which version. A second, separate
    * press (CONFIRM_AFTER_MS to ARMED_MS later, same version) accepts it without listening.
@@ -421,11 +424,12 @@ export function tooLongWhy(before: ProjectSnapshot, s: Pick<Suggestion, 'song' |
 }
 
 /**
- * Whether `s` (its version now) wasn't checked by sound and its rules may count fewer bars than
- * the truth (a tail the studio doesn't know): then what its before-and-after plays can't be known
- * to be all of it, and Accept always asks for its second press.
+ * Whether `s` (its version now) isn't checked by sound (it can't be, `foundWhy`, or it isn't yet)
+ * and its rules may count fewer bars than the truth (a tail the studio doesn't know): then what
+ * its before-and-after plays can't be known to be all of it, and Accept asks for its second press
+ * (until it's found by sound, and heard over what that finds).
  */
-export const uncheckedTail = (s: Pick<Suggestion, 'found' | 'foundWhy' | 'sure'>): boolean => s.found === 'rules' && !!s.foundWhy && s.sure === false;
+export const uncheckedTail = (s: Pick<Suggestion, 'found' | 'foundWhy' | 'sure'>): boolean => s.found === 'rules' && s.sure === false;
 
 const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: ProjectSnapshot) => {
   const plan = hearingPlan(r.diff.regions, r.diff.audition, focus, [before, r.song]);
@@ -543,7 +547,7 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus, now) };
 }
 
-export { barWords, rangesWords } from './songDiff';
+export { barWords, rangesWords, wordMeter } from './songDiff';
 
 /**
  * `s` with where its changes are heard found by sound: its rules' regions and the bars where the
@@ -569,6 +573,36 @@ export function withSoundRegions(s: Suggestion, sound: readonly BarRange[], befo
   };
 }
 
+/** Where a suggestion is heard and what its before-and-after plays, as an agent may read it. */
+export interface AgentHearing {
+  found: 'rules' | 'sound';
+  regions: BarRange[];
+  audition: BarRange[];
+  unheard: BarRange[] | null;
+  limit: HearingLimit | null;
+  focusLeftOut: boolean;
+}
+
+/** All of it, as found (by the rules, and by sound once it is): for an agent allowed to listen. */
+export const hearingAsFound = (s: Suggestion): AgentHearing => ({
+  found: s.found,
+  regions: s.regions,
+  audition: s.audition,
+  unheard: s.unheard,
+  limit: s.limit ?? null,
+  focusLeftOut: !!s.focusLeftOut,
+});
+
+/**
+ * By the rules alone (the song's settings, never its sound): the rules' regions, and what a
+ * before-and-after of only those would play, on `before` (the song now). For an agent not allowed
+ * to listen: what the renders found where (a bar's sound above -70 dBFS) is the sound of the song.
+ */
+export function hearingByRules(s: Suggestion, before: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): AgentHearing {
+  const plan = hearingPlan(s.ruleRegions, s.fallback, s.focus, [before, s.song]);
+  return { found: 'rules', regions: s.ruleRegions.map((r) => ({ ...r })), audition: plan.plays, unheard: plan.unheard, limit: plan.limit, focusLeftOut: plan.focusLeftOut };
+}
+
 /** The regions of `s` (or the parts of them) its before-and-after plays: all of them, but what `unheard` leaves out. */
 export function heardRegions(s: Pick<Suggestion, 'regions' | 'unheard'>): BarRange[] {
   if (!s.unheard) return s.regions.map((r) => ({ ...r }));
@@ -583,11 +617,14 @@ export const limitWords = (limit: HearingLimit | null | undefined): string =>
   limit === 'bars' ? `a before-and-after plays at most ${LIMITS.listenMaxBars} bars` : `a before-and-after plays at most ${LIMITS.listenMaxSeconds} seconds`;
 
 /** "bars 72-80 weren’t heard (a before-and-after plays at most 90 seconds)." */
-export const unheardWords = (unheard: readonly BarRange[], limit: HearingLimit | null | undefined): string =>
-  `${rangesWords(unheard)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit)}).`;
+export const unheardWords = (unheard: readonly BarRange[], limit: HearingLimit | null | undefined, meter: MeterMap | null = null): string =>
+  `${rangesWords(unheard, meter)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit)}).`;
 
 /** Heard, but not checked by sound, and its tail not known (uncheckedTail): for the card and Accept. */
 export const UNCHECKED_WORDS = 'The studio couldn’t check this by sound, and some of it may ring on past what you heard.';
+
+/** Heard while the studio was still finding where it changes by sound, its tail not known (uncheckedTail). */
+export const CHECKING_WORDS = 'The studio was still checking by sound where this changes when you heard it.';
 
 /** A second press of Accept counts only this long after the first at the earliest, ms (a double-click doesn't confirm). */
 export const CONFIRM_AFTER_MS = 700;
@@ -619,13 +656,17 @@ export function acceptDecision(
     if (at - fresh.armed!.at >= CONFIRM_AFTER_MS) return { apply: fresh.song, suggestion: { ...fresh, armed: null } };
     return { apply: null, suggestion: fresh, message: '', ignored: true };
   }
+  // (bars named as the ruler numbers them)
+  const meter = wordMeter(now);
   const message =
     fresh.partHeard === fresh.version && fresh.unheard
-      ? `You heard only part of this: ${unheardWords(fresh.unheard, fresh.limit)} Press Accept without listening to take it all the same.`
-      : fresh.partHeard === fresh.version && uncheckedTail(fresh)
-        ? `${UNCHECKED_WORDS} Press Accept without listening to take it all the same.`
+      ? `You heard only part of this: ${unheardWords(fresh.unheard, fresh.limit, meter)} Press Accept without listening to take it all the same.`
+      : fresh.partHeard === fresh.version && fresh.partUnchecked && uncheckedTail(fresh)
+        ? fresh.foundWhy
+          ? `${UNCHECKED_WORDS} Press Accept without listening to take it all the same.`
+          : `${CHECKING_WORDS} Hear it again once that’s done, or press Accept without listening.`
       : fresh.partHeard === fresh.version
-        ? `You heard only part of this: Suggested has to play through ${rangesWords(fresh.regions)}. Hear it to the end, or press Accept without listening.`
+        ? `You heard only part of this: Suggested has to play through ${rangesWords(fresh.regions, meter)}. Hear it to the end, or press Accept without listening.`
         : fresh.status === 'changed' && fresh.heard !== null
       ? 'The song changed since you heard this, so what would go in hasn’t been heard. Hear it again, or press Accept without listening.'
       : fresh.status === 'changed'
