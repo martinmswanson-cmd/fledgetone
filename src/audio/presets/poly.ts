@@ -5,6 +5,7 @@
  */
 import * as Tone from 'tone';
 import { notLate } from './monotonic';
+import { createBendTimeline } from '../bendTimeline';
 import { chooseNoteToSteal } from '../samplers/noteStealing';
 
 /** Seconds a pool voice may sit silent before it's disposed. */
@@ -17,7 +18,7 @@ export interface PoolVoice {
   triggerRelease: (time?: Tone.Unit.Time) => unknown;
   envelope: { release: Tone.Unit.Time };
   /** Its pitch offset in cents (a MIDI pitch bend moves it). */
-  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown };
+  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown; cancelScheduledValues: (time: Tone.Unit.Time) => unknown };
   connect: (destination: Tone.InputNode) => unknown;
   toSeconds: (time?: Tone.Unit.Time) => number;
   dispose: () => unknown;
@@ -34,8 +35,8 @@ export interface VoicePool {
   trigger: (notes: string[], duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => void;
   /** Start one note at `time` and hold it until the returned handle releases it. */
   attack: (note: string, time: number, velocity: number) => HeldVoice;
-  /** Bend every sounding voice (and the ones to come) by `cents`. */
-  bend: (cents: number, time: number) => void;
+  /** Bend every sounding voice (and the ones to come) by `cents` from `time` (`cut`: see TrackInstrument.bend). */
+  bend: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
   releaseAll: () => void;
   dispose: () => void;
 }
@@ -65,8 +66,11 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
   const out = new Tone.Gain(1).connect(output);
   /** Each voice, its note's start and end, its velocity, and when its note was let go (Infinity while held) */
   let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number }[] = [];
-  /** The current pitch bend in cents, applied to every voice as it's taken. */
-  let bendCents = 0;
+  /** The pitch bend in cents, by time: a voice taken starts at the bend then, and follows the ones sent for later. */
+  const bends = createBendTimeline();
+  const follow = (voice: PoolVoice, time: number) => {
+    for (const [t, cents] of bends.after(time)) voice.detune.setTargetAtTime(cents, t, 0.005);
+  };
 
   const pick = (time: number) => {
     let free: (typeof voices)[number] | undefined;
@@ -82,13 +86,16 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
     }
     if (free) {
       // An idle voice takes up the bend now (bend() only moves the sounding ones)
-      free.voice.detune.setTargetAtTime(bendCents, time, 0.001);
+      free.voice.detune.setTargetAtTime(bends.at(time), time, 0.001);
+      follow(free.voice, time);
       return free;
     }
     if (voices.length < maxVoices) {
       const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
       v.voice.connect(out);
-      if (bendCents) v.voice.detune.setTargetAtTime(bendCents, time, 0.001);
+      const cents = bends.at(time);
+      if (cents) v.voice.detune.setTargetAtTime(cents, time, 0.001);
+      follow(v.voice, time);
       voices.push(v);
       return v;
     }
@@ -149,9 +156,11 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
         },
       };
     },
-    bend: (cents, time) => {
-      bendCents = cents;
+    bend: (cents, time, _live, cut) => {
       const t = notLate(out.context, time);
+      bends.set(cents, t, cut);
+      // (The bends set for later on every voice go: the ones each voice was given since it was taken)
+      if (cut) for (const v of voices) v.voice.detune.cancelScheduledValues(t);
       // Sounding voices glide over a few ms (a bend wheel moves in small steps); idle ones pick it up when taken
       for (const v of voices) if (v.end > t) v.voice.detune.setTargetAtTime(cents, t, 0.005);
     },

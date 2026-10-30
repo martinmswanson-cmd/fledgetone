@@ -3,6 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
 import { monotonicTime, notLate } from './monotonic';
 import { joinsNote } from '../legato';
+import { createBendTimeline } from '../bendTimeline';
 import {
   atAudioTime,
   attackDecay,
@@ -49,6 +50,8 @@ interface BassSource {
   nodes: AudioNode[];
   /** Slide to `freq` from `at`, most of the way in `seconds`. */
   glide: (freq: number, at: number, seconds: number) => void;
+  /** Drop the slides set for after `at` (the one under way carries on). */
+  cancel: (at: number) => void;
 }
 
 interface ToneSection {
@@ -101,9 +104,14 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
   const releaseTc = releaseConstant(patch.release);
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
   let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string; freq: number } | null = null;
-  /** The pitch bend (cents) the voice plays at: a note's own slide or dive, a bend lane */
-  let bendCents = 0;
-  const bent = (freq: number) => (bendCents ? freq * 2 ** (bendCents / 1200) : freq);
+  /** The pitch bend (cents) the voice plays at, by time: a note's own slide or dive, a bend lane (see bendTimeline.ts) */
+  const bends = createBendTimeline();
+  const bentBy = (freq: number, cents: number) => (cents ? freq * 2 ** (cents / 1200) : freq);
+  const bent = (freq: number, time: number) => bentBy(freq, bends.at(time));
+  /** The bends sent for after `from` on a voice playing `freq` until `until` */
+  const follow = (source: BassSource, freq: number, from: number, until: number) => {
+    for (const [t, cents] of bends.after(from)) if (t < until) source.glide(bentBy(freq, cents), t, 0.004);
+  };
 
   /**
    * Filters for one note, then a gain that switches between legato notes' filters. After them, not
@@ -141,7 +149,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         // Legato (the note starts before the last one ends, or right where it ends): slide the
         // playing voice to the new pitch, or stay on it (a tie). The envelope carries on (towards
         // this note's level) instead of starting again, and the release moves to this note's end.
-        v.source.glide(bent(note.freq), start, glide?.seconds ?? patch.glide);
+        // (The old note's bends to come go: the new one's from here)
+        if (bends.moved()) v.source.cancel(start);
+        v.source.glide(bent(note.freq, start), start, glide?.seconds ?? patch.glide);
+        if (bends.moved()) follow(v.source, note.freq, start, stopAt);
         const amp = v.voice.amp.gain;
         // (From the last note's end when that came first: its release is called off too)
         amp.cancelScheduledValues(Math.min(start, v.end));
@@ -180,7 +191,9 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         return;
       }
 
-      const source = patch.source(raw, bendCents ? { ...note, freq: bent(note.freq) } : note);
+      const cents = bends.at(start);
+      const source = patch.source(raw, cents ? { ...note, freq: bentBy(note.freq, cents) } : note);
+      if (bends.moved()) follow(source, note.freq, start, stopAt);
       const first = section(note, stopAt);
       const amp = raw.createGain();
       attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
@@ -194,11 +207,14 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       current = { voice, source, gate: first.gate, tone: first.tone, end, note: n.note, freq: note.freq };
     },
     /** Bend the sounding voice (and the notes after it) `cents` from their pitch, from `time`, gliding a few ms. */
-    bend: (cents: number, time: number) => {
-      if (!Number.isFinite(cents) || Math.abs(cents - bendCents) < 0.01) return;
-      bendCents = cents;
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
+      if (!Number.isFinite(cents)) return;
+      const t = notLate(bus.context, time);
       const v = current;
-      if (v && time < v.voice.stopAt) v.source.glide(bent(v.freq), notLate(bus.context, time), 0.004);
+      if (cut) v?.source.cancel(t);
+      else if (Math.abs(cents - bends.at(t)) < 0.01) return;
+      bends.set(cents, t, cut);
+      if (v && t < v.voice.stopAt) v.source.glide(bentBy(v.freq, cents), t, 0.004);
     },
     /**
      * End the note `note` at `time` (a key let go on a MIDI keyboard) if it's the one sounding:
@@ -227,8 +243,11 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
 }
 
 /** Oscillators gliding together; `ratios` are each one's frequency relative to the note's. */
-function glider(params: Array<[AudioParam, number]>): BassSource['glide'] {
-  return (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, Math.max(0.003, seconds) / 3));
+function glider(params: Array<[AudioParam, number]>): Pick<BassSource, 'glide' | 'cancel'> {
+  return {
+    glide: (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, Math.max(0.003, seconds) / 3)),
+    cancel: (at) => params.forEach(([param]) => param.cancelScheduledValues(at)),
+  };
 }
 
 /**
@@ -261,7 +280,7 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
         direct: sub,
         sources: [saw1, saw2, sub],
         nodes: [saw1, saw2, sub, drive],
-        glide: glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, low ? 1 : 0.5]]),
+        ...glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, low ? 1 : 0.5]]),
       };
     },
     tone: (raw, note, until) => {
@@ -378,7 +397,7 @@ export function createGrowlBass(output: Tone.InputNode, glide?: GlideRef) {
         direct: sub,
         sources: [fm, sub],
         nodes: [fm, drive, sub],
-        glide: glider([[fm.frequency, 1], [sub.frequency, 1]]),
+        ...glider([[fm.frequency, 1], [sub.frequency, 1]]),
       };
     },
     tone: (raw, note, until) => {
@@ -424,7 +443,7 @@ export function createReeseBass(output: Tone.InputNode, glide?: GlideRef) {
         main: drive,
         sources: oscs,
         nodes: [...oscs, drive],
-        glide: glider(oscs.map((o) => [o.frequency, 1])),
+        ...glider(oscs.map((o) => [o.frequency, 1])),
       };
     },
     tone: (raw, note) => {

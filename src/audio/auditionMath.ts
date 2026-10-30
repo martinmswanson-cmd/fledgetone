@@ -3,6 +3,7 @@ import { barToSeconds, secondsToBar, type Tempo, type TempoPoint } from './tempo
 import { durationToBars, type Clip, type NoteEvent, type Track } from '../store/timelineTypes';
 import { audibleIds } from '../store/buses';
 import { sustainNotes } from '../store/expression';
+import { HELD_CLIP } from '../store/noteChance';
 import { INSTRUMENTS } from './instrumentCatalog';
 
 /**
@@ -136,10 +137,12 @@ export function restartHeldNotes(clips: readonly Clip[], at: number, fromBar: nu
     // plays only the notes that start inside a clip; no lanes, so none of the clip's own move twice)
     if (c.startBar + c.lengthBars > at + eps) return [{ ...c, notes: c.notes.map((n) => again.get(n) ?? n) }];
     const held = [...again.values()].map((n) => ({ ...n, startOffset: 0 }));
-    const { pattern: _p, expression: _e, groove: _g, stepLanes: _s, takes: _t, comp: _c, ...rest } = c;
+    // (Its groove kept: a feel's accent goes by where each note really begins; its id says whose
+    // notes they are, for their chance, drift and passes: see ownClipId)
+    const { pattern: _p, expression: _e, stepLanes: _s, takes: _t, comp: _c, ...rest } = c;
     return [
       { ...c, notes: c.notes.filter((n) => !again.has(n)) },
-      { ...rest, id: `${c.id}~held`, startBar: at, lengthBars: Math.max(1 / 16, ...held.map((n) => durationToBars(n.duration))), notes: held } as Clip,
+      { ...rest, id: `${c.id}${HELD_CLIP}`, startBar: at, lengthBars: Math.max(1 / 16, ...held.map((n) => durationToBars(n.duration))), notes: held } as Clip,
     ];
   });
   return changed ? out : (clips as Clip[]);

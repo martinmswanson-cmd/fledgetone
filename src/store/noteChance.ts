@@ -126,6 +126,12 @@ export function clipHasConditions(c: Pick<Clip, 'notes'>): boolean {
   return has;
 }
 
+/** The end of the id of a clip made to begin a note held over a render's start again (see auditionMath.ts restartHeldNotes). */
+export const HELD_CLIP = '~held';
+
+/** The clip whose notes a clip plays: a held-over note's clip plays its own clip's (its chance, drift and passes). */
+export const ownClipId = (id: string): string => (id.endsWith(HELD_CLIP) ? id.slice(0, -HELD_CLIP.length) : id);
+
 /**
  * The run of copies of every clip that has notes playing only some of the time, by clip id
  * (clips without any aren't listed: their pass doesn't matter).
@@ -133,8 +139,14 @@ export function clipHasConditions(c: Pick<Clip, 'notes'>): boolean {
 export function clipRuns(clips: readonly Clip[]): Map<string, ClipRun> {
   const out = new Map<string, ClipRun>();
   const byTrack = new Map<string, Clip[]>();
+  const held: string[] = [];
   for (const c of clips) {
     if (c.audio || !clipHasConditions(c)) continue;
+    // (A held-over note's clip goes round with its own clip: see ownClipId)
+    if (ownClipId(c.id) !== c.id) {
+      held.push(c.id);
+      continue;
+    }
     const list = byTrack.get(c.trackId);
     if (list) list.push(c);
     else byTrack.set(c.trackId, [c]);
@@ -157,6 +169,10 @@ export function clipRuns(clips: readonly Clip[]): Map<string, ClipRun> {
       const same = own.map((r) => r.spans);
       for (const r of own) r.ids.forEach((id, index) => out.set(id, { index, chain: r.spans, same }));
     }
+  }
+  for (const id of held) {
+    const run = out.get(ownClipId(id));
+    if (run) out.set(id, run);
   }
   return out;
 }

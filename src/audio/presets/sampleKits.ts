@@ -7,6 +7,7 @@ import { alwaysStereo } from '../nativeNodes';
 import { copySetFor, decodePitchedSound } from '../samplers/samplerManager';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 import type { TrackPlan } from '../samplers/songSamples';
+import { createBendTimeline } from '../bendTimeline';
 
 /**
  * The Drum Rack and the Multi Sampler: the user's own sounds played from buffers, each hit or note
@@ -313,7 +314,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   let multi = initial;
   const buffers = new Map<string, AudioBuffer>();
   const voices = new Set<Voice>();
-  let bendCents = 0;
+  /** The pitch bend (cents) by time: a note starts at the one in force then and follows the ones sent for later (see bendTimeline.ts) */
+  const bends = createBendTimeline();
   let disposed = false;
   const copies = copySetFor(raw);
   /** Whether its copies keep its sounds' rate (twice the context's): a render's track whose notes bend (see prepare) */
@@ -334,10 +336,10 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     );
   const ready = load(multi);
 
-  const rateOf = (semis: number) => Math.pow(2, (semis + bendCents / 100) / 12);
-  /** The rate a voice plays its buffer at for `semis` (bend included): over its copy's own ratio, exactly 1 for the copy's pitch */
-  const rateFor = (v: Pick<Voice, 'k'>, semis: number) => {
-    const r = rateOf(semis) / v.k;
+  const rateOf = (semis: number, cents: number) => Math.pow(2, (semis + cents / 100) / 12);
+  /** The rate a voice plays its buffer at for `semis` under a bend of `cents`: over its copy's own ratio, exactly 1 for the copy's pitch */
+  const rateFor = (v: Pick<Voice, 'k'>, semis: number, cents: number) => {
+    const r = rateOf(semis, cents) / v.k;
     return Math.abs(r - 1) < 1e-12 ? 1 : r;
   };
 
@@ -370,13 +372,15 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     const source = raw.createBufferSource();
     // Away from its root: its copy at that pitch where it's made (a bend moves the rate from there;
     // under a bend already, a copy at the context's rate would be read between its frames: the sound)
-    const copy = semis && (wide || bendCents === 0) ? copies.find(buffer, wishFor(semis)) : undefined;
+    const cents = bends.at(at);
+    const copy = semis && (wide || cents === 0) ? copies.find(buffer, wishFor(semis)) : undefined;
     source.buffer = copy?.buffer ?? buffer;
     const k = copy?.ratio ?? 1;
     // (its rate from the first block it sounds in: the rate is read once a block, and set only at
     // `at` the block it starts in played at 1, up to 128 frames at the wrong speed)
-    source.playbackRate.value = rateFor({ k }, semis);
-    source.playbackRate.setValueAtTime(rateFor({ k }, semis), at);
+    source.playbackRate.value = rateFor({ k }, semis, cents);
+    source.playbackRate.setValueAtTime(rateFor({ k }, semis, cents), at);
+    for (const [t, c] of bends.after(at)) source.playbackRate.setTargetAtTime(rateFor({ k }, semis, c), t, 0.005);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity));
     const attack = Math.max(0.001, multi.attack);
@@ -420,7 +424,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       return {
         bend: (c, t) => {
           cents = c;
-          v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + cents / 100), Math.max(t, raw.currentTime));
+          const at = Math.max(t, raw.currentTime);
+          v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + cents / 100, bends.at(at)), at);
         },
         pressure: (p, t) => {
           if (v.released) return;
@@ -429,10 +434,11 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
         off: (t) => release(v, t),
       };
     },
-    bend: (cents: number, time: number) => {
-      bendCents = cents;
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
       const at = Math.max(time, raw.currentTime);
-      for (const v of voices) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis), at, 0.005);
+      if (cut) for (const v of voices) v.source.playbackRate.cancelScheduledValues(at);
+      bends.set(cents, at, cut);
+      for (const v of voices) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis, cents), at, 0.005);
     },
     releaseAll: () => {
       // Every voice still to end goes now, those already given their end too (a note played from
@@ -443,7 +449,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
         v.released = false;
         release(v, now);
       }
-      bendCents = 0;
+      bends.set(0, now, true);
     },
     ready,
     prepare: (plan: TrackPlan) =>

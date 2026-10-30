@@ -342,11 +342,19 @@ const RING_OUT_MARGIN = 0.5;
  * its own release or the tails after it, whichever is longer.
  */
 function ringOutFor(opts: RenderOptions): number {
+  return ringOutPlan(opts).seconds;
+}
+
+/**
+ * A ring-out render's time past its range (see ringOutFor), and whether a note sounding on past
+ * the range's end (by more than RING_OUT_MARGIN) is in it: what the export dialog says it runs to.
+ */
+export function ringOutPlan(opts: RenderOptions): { seconds: number; notesPlayOn: boolean } {
   const tails = ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), opts.ringOutMin, opts.clips);
   const held = heldPast(opts);
-  if (held.seconds <= RING_OUT_MARGIN) return tails;
+  if (held.seconds <= RING_OUT_MARGIN) return { seconds: tails, notesPlayOn: false };
   const after = Math.max(ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), 0, opts.clips), held.release + RING_OUT_MARGIN);
-  return Math.max(tails, held.seconds + after);
+  return { seconds: Math.max(tails, held.seconds + after), notesPlayOn: true };
 }
 
 /** The frames of a render's range (before any ring-out). */
@@ -358,8 +366,17 @@ const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.star
  */
 function loopTailSeconds(opts: RenderOptions): number {
   // (the echoes are in it: see ringOutSeconds)
-  return ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), RING_OUT_LISTEN, opts.clips);
+  const tails = ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), RING_OUT_LISTEN, opts.clips);
+  // A note sounding on past the loop's end (longer than the loop, or begun near its end) sounds
+  // into the passes after it for that long, then its release and the tails after it
+  const held = heldPast(opts);
+  if (held.seconds <= RING_OUT_MARGIN) return tails;
+  const after = Math.max(ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), 0, opts.clips), held.release + RING_OUT_MARGIN);
+  return Math.max(tails, Math.min(LOOP_HELD_MAX_SECONDS, held.seconds) + after);
 }
+
+/** The most a note held past a seamless loop's end adds to its warm-up (a drone of many minutes would make it endless). */
+const LOOP_HELD_MAX_SECONDS = 120;
 
 /** The tempo a render plays at. */
 const renderTempo = (opts: Pick<RenderOptions, 'bpm' | 'tempoPoints'>): TempoMap => ({ bpm: opts.bpm, points: opts.tempoPoints ?? [] });

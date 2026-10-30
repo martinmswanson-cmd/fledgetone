@@ -9,6 +9,7 @@ import type { NativeVoice } from './native';
 import { HELD_NOTE } from './edmSynths';
 import type { Envelope, LfoSync, OscWave, SynthPatch } from '../../store/synthPatch';
 import { defaultSynthPatch } from '../../store/synthPatch';
+import { createBendTimeline } from '../bendTimeline';
 
 /** Harmonics (amplitude by number, from 1) of the table waves (see OscWave). */
 const TABLES: Record<'pulse' | 'organ' | 'vowel', (k: number) => number> = {
@@ -120,8 +121,9 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   let patch = initial ?? defaultSynthPatch();
   let last: { voice: DesignerVoice; freq: number } | null = null;
   // Pitch bend (cents): the bend lane, vibrato and each note's own bend (scoops, slides) move every
-  // sounding voice's oscillators; a voice starting later starts at the bend reached
-  let bendCents = 0;
+  // sounding voice's oscillators; a voice starting later starts at the bend in force then, and
+  // follows the ones sent for after it (see bendTimeline.ts)
+  const bends = createBendTimeline();
   const live = new Set<DesignerVoice>();
 
   // A synced rate follows the tempo of this context's Transport (the export's has its own)
@@ -134,6 +136,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     if (!Number.isFinite(length) || !(freq > 0)) return;
     const end = start + Math.max(0.01, length);
 
+    const bendCents = bends.at(start);
     const ladder = p.filter.type === 'ladder';
     // A shaper oversampling 4x delays what passes through it by SHAPER_LATENCY['4x'] samples, and
     // the envelopes after it were voiced on that: where a shaper oversamples less (or not at all),
@@ -309,6 +312,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     // A note that dies away on its own (sustain 0) stops once it's 80 dB down, however long it's held
     const stopAt = Math.min(end + releaseTail(p.amp.release), p.amp.sustain > 0 ? Infinity : from + p.amp.attack + Math.max(0.001, p.amp.decay) * FADED);
     const voice: DesignerVoice = { start, stopAt, sources, nodes, amp, patch: p, filters, oscs, detunes, early, filterEarly };
+    for (const [t, cents] of bends.after(start)) if (t < stopAt) oscs.forEach((o, i) => o.detune.setTargetAtTime(detunes[i] + cents, t, 0.006));
     voices.add(voice);
     for (const v of live) if (v.stopAt < raw.currentTime) live.delete(v);
     live.add(voice);
@@ -336,10 +340,11 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
         if (voice.patch.filter.envAmount !== 0) voice.filters.forEach((f) => releaseTo(f.detune, Math.max(raw.currentTime, t - voice.filterEarly), 0, voice.patch.filterEnv.release));
       };
     },
-    bend: (cents: number, time: number) => {
-      if (Math.abs(cents - bendCents) < 0.01) return;
-      bendCents = cents;
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
       const t = notLate(bus.context, time);
+      if (cut) for (const v of live) v.oscs.forEach((o) => o.detune.cancelScheduledValues(t));
+      else if (Math.abs(cents - bends.at(t)) < 0.01) return;
+      bends.set(cents, t, cut);
       for (const v of live) {
         if (v.stopAt <= t) continue;
         v.oscs.forEach((o, i) => o.detune.setTargetAtTime(v.detunes[i] + cents, t, 0.006));
