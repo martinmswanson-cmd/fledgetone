@@ -24,7 +24,7 @@ register(
 const { partsChanged, RevisionCounter } = await import('../src/agent/revision.ts');
 const { closeMessage } = await import('../src/agent/bridgeProtocolClient.ts');
 const { acceptDecision, keepSuggestions, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
-const { AGENT_NAME_MAX, agentName, fromAgent, readsAs, typedCode } = await import('../src/agent/protocol.ts');
+const { AGENT_NAME_MAX, agentName, fromAgent, posesAsApp, readsAs, typedCode } = await import('../src/agent/protocol.ts');
 const { preRollStart, restartHeldNotes, sameBarOffset, PRE_ROLL_MAX_BARS } = await import('../src/audio/auditionMath.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
 const { followTracks } = await import('../src/store/drumFollow.ts');
@@ -174,6 +174,19 @@ test("what an agent writes is shown as the agent's: plain, never the app's name 
   assert.equal(readsAs('ＦＬＥＤＧＥＴＯＮＥ'), 'fledgetone');
   assert.equal(agentName('The app'), 'The app');
   assert.equal(fromAgent('a\u200bb\u2028c', 20), 'ab\nc', 'invisible characters gone, separators as line breaks');
+});
+
+test("the app's name after symbols, numbers or punctuation, or at the start of any line, is quoted too (scan r5)", () => {
+  for (const t of ['ℹ️ Fledgetone: update ready', 'ⓘ Fledgetone: update ready', '⚠ Fledgetone: update ready', '1. Fledgetone: update ready', '™ Fledgetone', '— Fledgetone says', '»Fledgetone«', 'Ⓕledgetone', 'ℱledgetone x']) {
+    assert.ok(posesAsApp(t), JSON.stringify(t));
+    assert.ok(fromAgent(t, 200).startsWith('“'), JSON.stringify(t));
+    assert.equal(agentName(t), undefined, JSON.stringify(t));
+  }
+  // Any line: only that line is quoted
+  assert.equal(fromAgent('Done.\nFledgetone: checked', 200), 'Done.\n“Fledgetone: checked”');
+  assert.equal(fromAgent('Line one.\n\n  ℹ Fledgetone: safe to accept', 200), 'Line one.\n\n“ℹ Fledgetone: safe to accept”');
+  // A word before it: it doesn't start with the name
+  for (const t of ['A Fledgetone notice', 'Try a softer kick', 'Made with Fledgetone']) assert.equal(fromAgent(t, 200), t, JSON.stringify(t));
 });
 
 test('look-alike letters of every script (Unicode confusables and more) never pass for the app\'s name; text in another script is never taken for it', () => {
@@ -505,8 +518,9 @@ test('what the before-and-after plays: every region a change is heard in, one af
   // A track's level (r7 of the scan: it plays nowhere near the other change): both are heard, one after the other
   const flute = p.tracks[3];
   const r7 = makeSuggestion(p, ctxOf(p), { title: 'Two', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }, { op: 'add_clip', trackId: p.tracks[0].id, startBar: 40, lengthBars: 1, notes: [{ pitch: 'C5', start: 0, length: 1 }] }] }).suggestion;
-  assert.deepEqual(r7.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 41 }]);
-  assert.deepEqual(r7.audition, [{ fromBar: 8, toBar: 18 }, { fromBar: 39, toBar: 41 }], 'each with the bar before it');
+  // (the added note rings out past its bar: its release and the track's effects)
+  assert.deepEqual(r7.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 42 }]);
+  assert.deepEqual(r7.audition, [{ fromBar: 8, toBar: 18 }, { fromBar: 39, toBar: 42 }], 'each with the bar before it');
   assert.equal(r7.unheard, null);
   // A focus given with a mix change joins where the track plays (never replaces it)
   const focused = makeSuggestion(p, ctxOf(p), { title: 'Flute', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }], focus: { fromBar: 1, toBar: 2 } }).suggestion;
@@ -610,4 +624,66 @@ test('a press left behind (dragged off, cancelled, on another button, long ago) 
   // A pointer's click with no press on this button behind it
   assert.equal(guardClick(click(accept, 1), 'sg'), 'unfinished');
   for (const r of ['unsettled', 'double', 'held', 'unfinished']) assert.ok(GUARD_WORDS[r].length > 10, r);
+});
+
+test('where a suggestion is heard, by sound: the bars two renders differ in (barDifferences, changedRegions), with the rules\' never dropped', async () => {
+  const { barDifferences, changedRegions, HEARD_DIFFERENCE_DB } = await import('../src/agent/listenReport.ts');
+  const { withSoundRegions } = await import('../src/agent/suggestionsStore.ts');
+  const rate = 100;
+  const bar = 2; // seconds a bar
+  const bars = 8;
+  const tone = (n, f = () => 0.5) => Float32Array.from({ length: n }, (_, i) => Math.sin(i) * f(i));
+  const a = [tone(bars * bar * rate), tone(bars * bar * rate)];
+  const spans = Array.from({ length: bars }, (_, i) => ({ start: i * bar, end: (i + 1) * bar }));
+  // The same: nothing differs
+  assert.deepEqual(changedRegions(barDifferences(a, a, rate, spans, spans), 1), []);
+  // Bar 3 louder, and a faint tail into bar 4 (above -70 dBFS), and a hair in bar 7 (below it: rounding)
+  const b = a.map((ch) => {
+    const out = ch.slice();
+    for (let i = 2 * bar * rate; i < 3 * bar * rate; i++) out[i] *= 2;
+    for (let i = 3 * bar * rate; i < 3 * bar * rate + 20; i++) out[i] += 0.01;
+    out[6 * bar * rate] += 1e-6;
+    return out;
+  });
+  const d = barDifferences(a, b, rate, spans, spans);
+  assert.equal(d[0], null);
+  assert.ok(d[2] > -20 && d[3] > HEARD_DIFFERENCE_DB && d[6] < HEARD_DIFFERENCE_DB, JSON.stringify(d));
+  assert.deepEqual(changedRegions(d, 1), [{ fromBar: 3, toBar: 5 }]);
+  // A tempo change at bar 6: bars that lie elsewhere in the other can't be lined up, and count as changed
+  const slower = spans.map((s, i) => (i < 5 ? s : { start: 10 + (i - 5) * 2.5, end: 10 + (i - 4) * 2.5 }));
+  const t = barDifferences(a, a, rate, spans, slower);
+  assert.deepEqual(t.slice(5), ['tempo', 'tempo', 'tempo']);
+  assert.deepEqual(changedRegions(t, 1), [{ fromBar: 6, toBar: 9 }]);
+  // The regions then: the rules' and the sound's, joined, and what plays made again for them
+  const p = base();
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[3].id, volumeDb: -20 }] }).suggestion;
+  assert.equal(s.found, 'rules');
+  const found = withSoundRegions(s, [{ fromBar: 2, toBar: 3 }, { fromBar: 12, toBar: 20 }], p);
+  assert.equal(found.found, 'sound');
+  assert.deepEqual(found.regions, [{ fromBar: 2, toBar: 3 }, { fromBar: 9, toBar: 20 }]);
+  assert.deepEqual(found.ruleRegions, s.regions);
+  assert.deepEqual(found.audition, [{ fromBar: 1, toBar: 3 }, { fromBar: 8, toBar: 20 }]);
+  // (none found by sound: the rules' alone, never fewer)
+  assert.deepEqual(withSoundRegions(s, [], p).regions, s.regions);
+});
+
+test('heard only once Suggested has played through every region: what B played, as song bars (playedBars, playedThrough)', async () => {
+  const { playedThrough } = await import('../src/agent/suggestionsStore.ts');
+  const { playedBars } = await import('../src/audio/auditionMath.ts');
+  const tempo = { bpm: 120, points: [] };
+  // Two stretches, bars 4-6 (4 s) and 10-11 (2 s): B's buffer is 6 s long
+  const plays = [{ fromBar: 4, toBar: 6 }, { fromBar: 10, toBar: 11 }];
+  const starts = [0, 4];
+  // Stopped 3 s in: bars 4 to 5.5 only
+  const early = playedBars([[0, 3]], plays, starts, 6, tempo);
+  assert.deepEqual(early, [{ fromBar: 4, toBar: 5.5 }]);
+  assert.equal(playedThrough(early, { fromBar: 4, toBar: 6 }), false);
+  // Played round, from part way: all of it
+  const round = playedBars([[0, 2], [2, 6]], plays, starts, 6, tempo);
+  assert.deepEqual(round, [{ fromBar: 4, toBar: 6 }, { fromBar: 10, toBar: 11 }]);
+  assert.ok(playedThrough(round, { fromBar: 4, toBar: 6 }) && playedThrough(round, { fromBar: 10, toBar: 11 }));
+  // Switched to Now for a second in the middle: not yet
+  const gap = playedBars([[0, 1], [2, 6]], plays, starts, 6, tempo);
+  assert.equal(playedThrough(gap, { fromBar: 4, toBar: 6 }), false);
+  assert.equal(playedThrough(gap, { fromBar: 10, toBar: 11 }), true);
 });

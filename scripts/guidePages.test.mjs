@@ -1,7 +1,7 @@
 // The guide's web pages (scripts/guide-pages.mjs): GUIDE.md split into sections and rendered to HTML.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 const { slug, splitSections, inline, renderSection, summary, guidePages } = await import('./guide-pages.mjs');
 const { SHOTS } = await import('./guide-shots/shots.mjs');
 
@@ -98,4 +98,19 @@ test("the guide's links to its own headings go to the page that has them, and ev
   const md = readFileSync(new URL('../GUIDE.md', import.meta.url), 'utf8');
   const left = linkAnchors(splitSections(md)).flatMap((s) => s.body).filter((line) => /\]\(#/.test(line));
   assert.deepEqual(left, []);
+});
+
+test("the licences carry Unicode's confusables data (the look-alike letters) with the Unicode License v3, in full", async () => {
+  const { parseLicenses } = await import('./licenses-page.mjs');
+  const entry = readFileSync(new URL('./look-alikes-LICENSE.txt', import.meta.url), 'utf8');
+  const [group] = parseLicenses(`Fledgetone includes the following open-source software.\n\n${entry.trim()}\n`);
+  assert.equal(group.entries[0].licence, 'Unicode-3.0');
+  assert.match(group.entries[0].name, /^Unicode confusables data/);
+  for (const words of ['UNICODE LICENSE V3', 'COPYRIGHT AND PERMISSION NOTICE', 'Copyright © 1991-', 'this copyright and permission notice appear with all copies', 'without prior written\nauthorization of the copyright holder.'])
+    assert.ok(group.entries[0].text.includes(words), words);
+  // The build writes it into third-party-licenses.txt whenever the look-alike letters are in it
+  const config = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
+  assert.match(config, /lookAlikes\.ts'\)\)\) sections\.push\(readFileSync\(join\(process\.cwd\(\), 'scripts\/look-alikes-LICENSE\.txt'\)/);
+  const dist = new URL('../dist/third-party-licenses.txt', import.meta.url);
+  if (existsSync(dist)) assert.ok(readFileSync(dist, 'utf8').includes('Unicode confusables data (Unicode-3.0)'), 'in the built file');
 });

@@ -8,6 +8,8 @@ import { builtinModules } from 'node:module';
 // outside and load from tools/cli/node_modules, so `npm install` in tools/cli comes first. The version and the agent guide (docs/AGENT.md) are
 // written in, so the bundle doesn't need the repository beside it.
 const version = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
+// (the look-alike letters in src/agent/lookAlikes.ts are Unicode's confusables data: its licence goes with the bundle)
+const unicodeNotice = readFileSync('scripts/look-alikes-LICENSE.txt', 'utf8').trim().split('\n').map((l) => `// ${l}`.trimEnd()).join('\n');
 const external = [...builtinModules, ...builtinModules.map((m) => `node:${m}`), /^@modelcontextprotocol\/sdk(\/|$)/, /^ws(\/|$)/, /^zod(\/|$)/, /^playwright(-core)?(\/|$)/];
 
 export default defineConfig({
@@ -25,7 +27,7 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       external,
-      output: { format: 'es', entryFileNames: 'fledgetone.mjs', banner: '#!/usr/bin/env node' },
+      output: { format: 'es', entryFileNames: 'fledgetone.mjs', banner: `#!/usr/bin/env node\n${unicodeNotice}` },
     },
   },
 });

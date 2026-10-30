@@ -256,7 +256,8 @@ test('things a suggestion may not do are refused in plain words', () => {
 
 test('the bars to hear a suggestion in start one bar before the change', () => {
   const out = mustApply(base(), [{ op: 'add_notes', clipId: BASS_CLIP, notes: [{ pitch: 'D2', start: 4, length: 1 }] }]);
-  assert.deepEqual(out.diff.audition, { fromBar: 8, toBar: 10 });
+  // (to past the note's bar: it rings out, its release and the track's effects)
+  assert.deepEqual(out.diff.audition, { fromBar: 8, toBar: 11 });
 });
 
 test('the same suggestion applied twice makes new ids the second time, and nothing is lost to repeated ids', () => {

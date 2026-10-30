@@ -8,14 +8,18 @@
  * counted: each caller gets its own stop).
  *
  * Hearing a suggestion lives here too (hearSuggestion): it's made again on the song as it is now
- * first, so what's heard is what Accept would put in, and the version heard is noted, once its
- * Suggested side (B) has played (noteHeard: hearing only Now hears nothing of the suggestion).
+ * first, so what's heard is what Accept would put in; where its changes are heard is found by
+ * sound if it isn't yet (whereHeard.ts: the song rendered whole before and after, bar against
+ * bar); and the version heard is noted once its Suggested side (B) has really played through
+ * every place its changes are heard (noteHeard: hearing only Now, or stopping early, isn't
+ * hearing it).
  */
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
-import { checkSuggestion, coveredBy, extKey, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import { checkSuggestion, extKey, playedThrough, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
 import { partsChanged } from './revision';
+import { findWhere } from './whereHeard';
 
 /** How often the watch looks at most, ms. */
 export const WATCH_MS = 150;
@@ -105,19 +109,19 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
 }
 
 /**
- * Note a suggestion heard once its Suggested side (B) plays, of its current version on the song as
- * it is now, over every region where a change of it is heard (each played whole): only then does
- * one press of Accept take it. Played over only some of them (too long to hear at once), it's
- * heard in part (`partHeard`): the card says which bars weren't, and Accept still asks for its
- * second press. Run on every change of the audition.
+ * Note a suggestion heard once its Suggested side (B), of its current version on the song as it
+ * is now, has played through every region where a change of it is heard: B's playhead went
+ * through each of their bars, to its end, at least once while B was heard (heardB). Only then does
+ * one press of Accept take it. Before that (B played, but not all of it yet: stopped early,
+ * switched to Now, or too long to hear at once) it's heard in part (`partHeard`): the card says
+ * so, and Accept still asks for its second press. Run on every change of the audition.
  */
 export function noteHeard(a: AuditionState = useAudition.getState()): void {
-  if (a.key === null || a.phase !== 'playing' || a.hearing !== 'b') return;
+  if (a.key === null || a.phase !== 'playing' || !a.heardB.length) return;
   const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
   if (!s || s.heard === s.version || !auditionCurrent(s, a)) return;
-  // (every region where a change is heard, each played whole)
-  const played = a.plays ?? [];
-  const all = !s.unheard && s.regions.every((r) => coveredBy(played, r));
+  // (every bar of every region where a change is heard, played through on B)
+  const all = !s.unheard && s.regions.every((r) => playedThrough(a.heardB, r));
   if (!all) {
     if (s.partHeard !== s.version) updateSuggestion(s.id, { partHeard: s.version });
     return;
@@ -135,11 +139,16 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
   const found = useSuggestions.getState().suggestions.find((x) => x.id === id);
   if (!found || !isOpen(found)) return;
   const nowSong = currentProject();
-  const s = freshen(found, nowSong, songContext());
-  if (s !== found) updateSuggestion(id, s);
-  if (!isOpen(s)) return;
+  const fresh = freshen(found, nowSong, songContext());
+  if (fresh !== found) updateSuggestion(id, fresh);
+  if (!isOpen(fresh)) return;
   // The song's own playback pauses (two things at once would be a mess)
   if (useTimelineStore.getState().isPlaying) useTimelineStore.getState().pause();
+  // Where its changes are heard, by sound (both versions rendered whole), unless it's known already
+  stopAudition();
+  if (!(await findWhere(id, nowSong))) return;
+  const s = useSuggestions.getState().suggestions.find((x) => x.id === id);
+  if (!s || !isOpen(s) || s.version !== fresh.version || s.stale) return;
   await startAudition({
     key: id,
     renderKey: renderKeyOf(s),

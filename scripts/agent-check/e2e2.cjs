@@ -263,7 +263,7 @@ async function until(check, ms, what) {
     const badReply = await call('say', { text: 'x', replyTo: 'u-nope' }).then(() => 'accepted', (e) => e.message);
     step(
       '3 say with replyTo shows as a reply, after it; the focus stays',
-      /From your agent“E2E agent”/.test(replyText) && /Replying to you: “Is the bass too busy/.test(replyText) && order.reply > order.mine && order.focus === 'TEXTAREA' && /replyTo/.test(badReply),
+      /From your agentE2E agent“E2E agent”/.test(replyText) && /Replying to you: “Is the bass too busy/.test(replyText) && order.reply > order.mine && order.focus === 'TEXTAREA' && /replyTo/.test(badReply),
       JSON.stringify(order)
     );
 
@@ -423,7 +423,7 @@ async function until(check, ms, what) {
     step(
       '7b another pairing: no Retry into it, put back and sent anew; names and a line for the earlier connection',
       ended.status === 'not_sent' && ended.words === 'Not sent — that connection ended' && ended.retry === 0 && ended.putBack === 1 && helperB.messages.length === 0 && !quietB.events.some((e) => e.event === 'user_message') &&
-        /E2E agent/.test(oldLabel) && lines.some((l) => /Earlier, with your agent“E2E agent”/i.test(l)) && lines.some((l) => /This connection: your agent“Second agent”/i.test(l)) &&
+        /E2E agent/.test(oldLabel) && lines.some((l) => /Earlier, with your agentE2E agent“E2E agent”/i.test(l)) && lines.some((l) => /This connection: your agentSecond agent“Second agent”/i.test(l)) &&
         putBack === 'First, a new question\n\nAre you still there?' && caretAtEnd && resent?.params.text === putBack && resent.params.id !== lostId && !resent.params.context,
       `${JSON.stringify(ended)}; helper B had ${helperB.messages.length}; old label ${oldLabel}; lines ${JSON.stringify(lines)}; sent anew ${resent?.params.id}`
     );

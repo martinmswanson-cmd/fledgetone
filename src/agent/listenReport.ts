@@ -2,8 +2,11 @@
  * What a listen reports, in plain JSON for an agent: the mix's loudness, true peak, crest and
  * balance, what the master section did, the loudness bar by bar, each track's own (when asked),
  * and findings in plain words. And the difference between two listens of the same bars (the song,
- * and the song with a suggestion), bar by bar, so an agent can tell where a change is heard.
- * Pure: the rendering and measuring are the runtime's (src/runtime/render.ts) and the studio's.
+ * and the song with a suggestion), bar by bar, so an agent can tell where a change is heard: the
+ * level of what changed in each bar (barDifferences, from the two renders' samples) and the bars
+ * that sound different (changedRegions), which the studio also uses to find where a suggestion is
+ * heard (whereHeard.ts). Pure: the rendering and measuring are the runtime's (src/runtime/render.ts)
+ * and the studio's.
  */
 import type { MasterStats } from '../audio/effects/masterAfter';
 import type { Finding } from '../audio/mixCheck';
@@ -148,7 +151,7 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
       afterLufs: a?.lufs ?? null,
       lufsChange: minus(a?.lufs ?? null, b.lufs),
       differenceDb: d === 'tempo' || d === null || d === undefined || d < SAME_DB ? null : tenth(d),
-      changed: d === 'tempo' || (typeof d === 'number' && d > HEARD_DIFFERENCE_DB),
+      changed: barChanged(d),
     };
   });
   const changed = bars.filter((b) => b.changed);
@@ -184,4 +187,61 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
   for (const r of mix.regions) if (Math.abs(r.db) >= 1) summary.push(`${r.name}: ${r.db > 0 ? '+' : ''}${r.db.toFixed(1)} dB against the whole.`);
   for (const t of tracks ?? []) if (t.lufs !== null && Math.abs(t.lufs) >= 0.5) summary.push(`"${t.name}" is ${Math.abs(t.lufs).toFixed(1)} LU ${t.lufs > 0 ? 'louder' : 'quieter'}.`);
   return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary } };
+}
+
+/** Where a bar lies in a render: seconds from the render's start, end not included. */
+export interface BarSpan {
+  start: number;
+  end: number;
+}
+
+/** Level of `b` - `a` over frames [from, to) (dBFS, null: the same sample for sample); a frame past either one's end counts as silence there. */
+export function differenceDb(a: readonly Float32Array[], b: readonly Float32Array[], from: number, to: number): number | null {
+  let sum = 0;
+  let n = 0;
+  const count = Math.max(a.length, b.length);
+  for (let c = 0; c < count; c++) {
+    const x = a[Math.min(c, a.length - 1)];
+    const y = b[Math.min(c, b.length - 1)];
+    if (!x || !y) continue;
+    for (let i = Math.max(0, from); i < to; i++) {
+      const d = (i < y.length ? y[i] : 0) - (i < x.length ? x[i] : 0);
+      sum += d * d;
+      n++;
+    }
+  }
+  return sum > 0 && n > 0 ? 10 * Math.log10(sum / n) : null;
+}
+
+/**
+ * Bar by bar, how loud what changed is between two renders of the same bars, `a` (before) and `b`
+ * (after), each bar where it lies in each (`spansA`, `spansB`, seconds): dBFS (differenceDb, null:
+ * the same), or 'tempo' for a bar that starts or ends at another time in one than in the other (by
+ * more than a frame: the tempo changed before it or in it), which can't be lined up and counts as
+ * changed.
+ */
+export function barDifferences(a: readonly Float32Array[], b: readonly Float32Array[], sampleRate: number, spansA: readonly BarSpan[], spansB: readonly BarSpan[]): Array<number | null | 'tempo'> {
+  return spansA.map((sa, i) => {
+    const sb = spansB[i];
+    if (!sb) return 'tempo';
+    const [a0, a1, b0, b1] = [sa.start, sa.end, sb.start, sb.end].map((t) => Math.round(t * sampleRate));
+    if (Math.abs(a0 - b0) > 1 || Math.abs(a1 - b1) > 1) return 'tempo';
+    return differenceDb(a, b, a0, a1);
+  });
+}
+
+/** Whether a bar's difference (barDifferences) sounds: above HEARD_DIFFERENCE_DB, or a bar that can't be lined up. */
+export const barChanged = (d: number | null | 'tempo' | undefined): boolean => d === 'tempo' || (typeof d === 'number' && d > HEARD_DIFFERENCE_DB);
+
+/** The bars that sound different (barChanged), `diffs[i]` being bar `firstBar + i`: whole bars, in order, touching ones joined. */
+export function changedRegions(diffs: ReadonlyArray<number | null | 'tempo'>, firstBar: number): Array<{ fromBar: number; toBar: number }> {
+  const out: Array<{ fromBar: number; toBar: number }> = [];
+  diffs.forEach((d, i) => {
+    if (!barChanged(d)) return;
+    const bar = firstBar + i;
+    const last = out.at(-1);
+    if (last && last.toBar === bar) last.toBar = bar + 1;
+    else out.push({ fromBar: bar, toBar: bar + 1 });
+  });
+  return out;
 }

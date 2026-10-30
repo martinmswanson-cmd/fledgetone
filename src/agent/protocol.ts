@@ -378,14 +378,8 @@ export function readsAs(text: string): string {
 /** The app's name as text reads (readsAs). */
 const APP_READS = 'fledgetone';
 
-/**
- * The app's name at the start of an agent's text: it could pass for the app speaking. Each letter
- * must read as the name's (readsAs), but a letter of another script that reads as no Latin one
- * counts as any letter (a look-alike no table names), as long as at least three of them read as
- * the name's own (and none as another letter): text in another script altogether is never taken
- * for the name.
- */
-export function posesAsApp(text: string): boolean {
+/** Whether `text` itself starts with what reads as the app's name (see posesAsApp). */
+function startsAsApp(text: string): boolean {
   const reads = readsAs(text);
   if (reads.length < APP_READS.length) return false;
   let same = 0;
@@ -397,12 +391,48 @@ export function posesAsApp(text: string): boolean {
 }
 
 /**
- * Text from an agent made safe to show as the agent's (plainAgentText, trimmed): text that starts
- * with the app's name is shown in quotes, so it never reads as the app's own words.
+ * What can come before a name and still leave it read as the start: symbols, numbers,
+ * punctuation, spaces, marks and invisible characters, and the letterlike symbols (ℹ, ™, ℅: some
+ * of which are letters to Unicode).
+ */
+const LEAD = /^[\p{S}\p{N}\p{P}\p{Z}\p{M}\p{Cf}\s\u2100-\u214F]/u;
+/** How far into a line's lead a name is looked for, code points. */
+const LEAD_MAX = 24;
+
+/** Whether one line starts with the app's name, after any lead of symbols, numbers or punctuation ("ℹ️ ", "1. ", "™ "). */
+function lineAsApp(line: string): boolean {
+  const chars = [...line];
+  for (let i = 0; i <= Math.min(LEAD_MAX, chars.length); i++) {
+    // (each place in the lead: a look-alike there, "Ⓕledgetone", is tried as the name's first letter too)
+    if (startsAsApp(chars.slice(i).join(''))) return true;
+    if (i < chars.length && !LEAD.test(chars[i])) return false;
+  }
+  return false;
+}
+
+/**
+ * The app's name at the start of an agent's text, or of any line of it: it could pass for the
+ * app speaking. Symbols, numbers, punctuation and spaces in front of it don't hide it ("ℹ️
+ * Fledgetone:", "1. Fledgetone"). Each letter must read as the name's (readsAs), but a letter of
+ * another script that reads as no Latin one counts as any letter (a look-alike no table names), as
+ * long as at least three of them read as the name's own (and none as another letter): text in
+ * another script altogether is never taken for the name.
+ */
+export function posesAsApp(text: string): boolean {
+  return text.split(/[\n\r\u2028\u2029]/).some(lineAsApp);
+}
+
+/**
+ * Text from an agent made safe to show as the agent's (plainAgentText, trimmed): each line that
+ * starts with the app's name (posesAsApp) is shown in quotes, so it never reads as the app's own words.
  */
 export function fromAgent(text: unknown, max: number): string {
   const plain = plainAgentText(text, max).replace(/\s+/g, (w) => (w.includes('\n') ? w : ' ')).trim();
-  return posesAsApp(plain) ? `“${plain}”` : plain;
+  if (!posesAsApp(plain)) return plain;
+  return plain
+    .split('\n')
+    .map((line) => (lineAsApp(line) ? `“${line.trim()}”` : line))
+    .join('\n');
 }
 
 /** The longest agent name shown. */

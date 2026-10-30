@@ -39,7 +39,7 @@ import type { MasterStats } from '../audio/effects/masterAfter';
 import { listenSnapshot } from '../agent/listenSnapshot';
 import { agentIdOf } from '../agent/agentText';
 import { applyOps, OPS_VERSION } from '../agent/ops';
-import { allFindings, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
+import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
 
 export type { ListenReport, ListenComparison } from '../agent/listenReport';
 
@@ -389,22 +389,6 @@ export async function listen(projectJson: unknown, opts: ListenOptions): Promise
   return (await hear(p, opts, opts.ops ? 'the song with those ops' : 'the song as it is', progress, [0, 1])).report;
 }
 
-/** Level of `b` - `a` over frames [from, to) (dBFS, null: the same sample for sample). */
-function differenceDb(a: Float32Array[], b: Float32Array[], from: number, to: number): number | null {
-  let sum = 0;
-  let n = 0;
-  for (let c = 0; c < Math.min(a.length, b.length); c++) {
-    const x = a[c];
-    const y = b[c];
-    for (let i = from; i < Math.min(to, x.length, y.length); i++) {
-      const d = y[i] - x[i];
-      sum += d * d;
-      n++;
-    }
-  }
-  return sum > 0 && n > 0 ? 10 * Math.log10(sum / n) : null;
-}
-
 /** The same bars before and after a suggestion's ops, and the difference between them bar by bar. */
 export async function compare(projectJson: unknown, opts: ListenOptions & { ops: unknown[] }): Promise<ListenComparison> {
   const progress = opts.onProgress ?? (() => {});
@@ -413,9 +397,8 @@ export async function compare(projectJson: unknown, opts: ListenOptions & { ops:
   const after = withOps(before, opts.ops, opts.idBase);
   const a = await hear(before, opts, 'the song as it is', progress, [0, 0.5]);
   const b = await hear(after, opts, 'the song with the suggestion', progress, [0.5, 1]);
-  const sameTempo = before.bpm === after.bpm && JSON.stringify(before.tempoPoints ?? []) === JSON.stringify(after.tempoPoints ?? []);
-  const rate = a.sampleRate;
-  const diffs = barSpans(before, opts.fromBar, opts.toBar).map((s) => (sameTempo ? differenceDb(a.channels, b.channels, Math.round(s.start * rate), Math.round(s.end * rate)) : ('tempo' as const)));
+  // (bar by bar, each where it lies in each render: one the tempo moved can't be lined up, and counts as changed)
+  const diffs = barDifferences(a.channels, b.channels, a.sampleRate, barSpans(before, opts.fromBar, opts.toBar), barSpans(after, opts.fromBar, opts.toBar));
   progress(1, 'Done');
   return compareListens(a.report, b.report, diffs);
 }

@@ -90,10 +90,11 @@ test('where each change is heard: a track wherever it plays, a bus and a return 
   const both = diffSongs(a, {
     ...a,
     tracks: a.tracks.map((t) => (t === flute ? { ...t, volume: t.volume - 6 } : t)),
-    clips: [...a.clips, { ...a.clips[0], id: 'far', name: 'Tag', trackId: keys.id, startBar: 40, lengthBars: 1, notes: [] }],
+    clips: [...a.clips, { ...a.clips[0], id: 'far', name: 'Tag', trackId: keys.id, startBar: 40, lengthBars: 1, notes: [], expression: undefined }],
   });
-  assert.deepEqual(both.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 41 }]);
-  assert.equal(rangesWords(both.regions), 'bars 9-17 and bar 40');
+  // (the clip with the tail of what it would play: the keys' release and effects)
+  assert.deepEqual(both.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 42 }]);
+  assert.equal(rangesWords(both.regions), 'bars 9-17 and bars 40-41');
 });
 
 test('joinRanges: whole bars, in order, overlapping and touching ones joined', () => {
@@ -171,4 +172,83 @@ test('a marker moved by the suggestion is said even when the tempo changes too; 
   const t = texts(diffSongs(timed, b));
   assert.ok(t.includes('Moves the marker "Groove" from bar 5 to bar 6.'), t.join('\n'));
   assert.ok(!t.some((x) => /"Hit"/.test(x)), t.join('\n'));
+});
+
+test('never fewer bars than the truth: a lane is heard wherever its track plays, not only at its points', () => {
+  const a = base();
+  const keys = a.tracks[0];
+  const where = (b) => diffSongs(a, b).regions;
+  const all = diffSongs(a, { ...a, tracks: a.tracks.map((t) => (t === keys ? { ...t, volume: t.volume - 3 } : t)) }).regions;
+  const lane = (points, param = 'volume') => ({ ...a, tracks: a.tracks.map((t) => (t === keys ? { ...t, automation: [{ param, points }] } : t)) });
+  // (scan r5: one point at bar 8 holds its value from bar 1 on, and to the end)
+  assert.deepEqual(where(lane([{ bar: 8, value: 0 }])), all);
+  for (const param of ['pan', 'send:reverb', 'fx:distortion.amount', 'inst:cutoff']) assert.deepEqual(where(lane([{ bar: 8, value: 0.2 }], param)), all, param);
+  // A point redrawn in the middle, or the last one: the whole of where the track plays (the lane moves from the point before)
+  const drawn = lane([{ bar: 1, value: 0.8 }, { bar: 9, value: 0.8 }, { bar: 16, value: 0.8 }]);
+  for (const v of [[0.8, 0, 0.8], [0.8, 0.8, 0]]) {
+    const redrawn = { ...drawn, tracks: drawn.tracks.map((t) => (t.id === keys.id ? { ...t, automation: [{ param: 'volume', points: [{ bar: 1, value: v[0] }, { bar: 9, value: v[1] }, { bar: 16, value: v[2] }] }] } : t)) };
+    const d = diffSongs(drawn, redrawn);
+    assert.equal(d.changes[0].hear, 'track');
+    assert.deepEqual(d.regions, all, JSON.stringify(v));
+  }
+  // Taken away: the same
+  assert.deepEqual(diffSongs(drawn, a).regions, all);
+});
+
+test('never fewer bars than the truth: a glide is heard from where it starts, before its own bar', () => {
+  const a = base();
+  const end = Math.max(...diffSongs(a, { ...a, bpm: 100 }).regions.map((r) => r.toBar));
+  // (scan r5: a glide to bar 24, after the clips end, speeds up every bar from bar 1)
+  const late = diffSongs(a, { ...a, tempoPoints: [{ id: 'g', bar: 24, bpm: 160, ramp: true }] });
+  assert.equal(late.regions[0].fromBar, 1);
+  assert.ok(late.regions.at(-1).toBar >= end);
+  const inside = diffSongs(a, { ...a, tempoPoints: [{ id: 'g', bar: 9, bpm: 120, ramp: true }] });
+  assert.deepEqual(inside.regions.map((r) => r.fromBar), [1]);
+  // With a point before it: from that point
+  const two = { ...a, tempoPoints: [{ id: 'p', bar: 5, bpm: 90, ramp: false }] };
+  assert.equal(diffSongs(two, { ...two, tempoPoints: [...two.tempoPoints, { id: 'g', bar: 13, bpm: 120, ramp: true }] }).regions[0].fromBar, 5);
+  // A jump: from its own bar; a jump whose next point glides into it: from the point before it (the glide starts there)
+  assert.equal(diffSongs(two, { ...two, tempoPoints: [...two.tempoPoints, { id: 'j', bar: 13, bpm: 120, ramp: false }] }).regions[0].fromBar, 13);
+  const glide = { ...a, tempoPoints: [{ id: 'p', bar: 5, bpm: 90, ramp: false }, { id: 'q', bar: 9, bpm: 100, ramp: false }, { id: 'g', bar: 13, bpm: 140, ramp: true }] };
+  const moved = diffSongs(glide, { ...glide, tempoPoints: glide.tempoPoints.map((p) => (p.id === 'q' ? { ...p, bpm: 110 } : p)) });
+  assert.equal(moved.regions[0].fromBar, 5);
+  // A glide taken away: from the point before it too
+  assert.equal(diffSongs(glide, { ...glide, tempoPoints: glide.tempoPoints.filter((p) => p.id !== 'g') }).regions[0].fromBar, 9);
+});
+
+test('never fewer bars than the truth: a clip with controller lanes changes the clips after it; notes ring out; what is not known is the whole song', () => {
+  const a = base();
+  const keys = a.tracks[0];
+  const first = { ...a.clips.find((c) => c.trackId === keys.id), id: 'held', startBar: 1, lengthBars: 4, expression: { sustain: [{ at: 0, value: 1 }] } };
+  const later = { ...first, id: 'later', startBar: 21, lengthBars: 4, expression: undefined };
+  const song = { ...a, clips: [...a.clips.filter((c) => c.trackId !== keys.id), first, later] };
+  const all = diffSongs(song, { ...song, tracks: song.tracks.map((t) => (t.id === keys.id ? { ...t, volume: t.volume - 3 } : t)) }).regions;
+  assert.ok(all.some((r) => r.fromBar <= 21 && r.toBar >= 25), JSON.stringify(all));
+  // (scan r5: removed, moved or made shorter, what its lanes held is gone from the later clips too)
+  const ops = [
+    { ...song, clips: song.clips.filter((c) => c.id !== 'held') },
+    { ...song, clips: song.clips.map((c) => (c.id === 'held' ? { ...c, startBar: 2 } : c)) },
+    { ...song, clips: song.clips.map((c) => (c.id === 'held' ? { ...c, lengthBars: 2 } : c)) },
+  ];
+  const holds = (regions, r) => regions.some((x) => x.fromBar <= r.fromBar && x.toBar >= r.toBar);
+  // (wherever the track plays, as it is and as it would be: a clip moved later plays later too)
+  for (const b of ops) {
+    const regions = diffSongs(song, b).regions;
+    assert.ok(all.every((r) => holds(regions, r)), JSON.stringify(regions));
+  }
+  // A clip without lanes: its bars, and the tail of its notes
+  const plain = { ...song, clips: song.clips.map((c) => (c.id === 'held' ? { ...c, expression: undefined } : c)) };
+  const gone = diffSongs(plain, { ...plain, clips: plain.clips.filter((c) => c.id !== 'held') });
+  assert.equal(gone.regions[0].fromBar, 1);
+  assert.ok(gone.regions[0].toBar > 5 && gone.regions[0].toBar < 21, JSON.stringify(gone.regions));
+  // A note added at the end of a clip: heard past the clip's end, as it rings out (release and effects)
+  const clip = plain.clips.find((c) => c.id === 'later');
+  const added = diffSongs(plain, { ...plain, clips: plain.clips.map((c) => (c === clip ? { ...c, notes: [...c.notes, { id: 'n', note: 'C5', startOffset: 3.75, duration: '16n', velocity: 1 }] } : c)) });
+  assert.equal(added.regions.length, 1);
+  assert.equal(added.regions[0].fromBar, 24);
+  assert.ok(added.regions[0].toBar >= 26, JSON.stringify(added.regions));
+  // A setting of a track the diff knows nothing of: the whole song
+  const odd = diffSongs(a, { ...a, tracks: a.tracks.map((t) => (t === keys ? { ...t, someNewSetting: 3 } : t)) });
+  assert.equal(odd.changes[0].hear, 'song');
+  assert.equal(odd.regions[0].fromBar, 1);
 });

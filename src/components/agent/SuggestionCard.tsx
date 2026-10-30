@@ -10,7 +10,9 @@
  * before-and-after plays them one after another (too long to hear at once: as much as fits, and it
  * says which it plays, which it leaves out, and which limit, 64 bars or 90 seconds). The names in
  * what it changes (an agent may have written them) are chips of their own (Named.tsx), never
- * part of the app's sentence. It says whether it was heard, or heard only in part; one the song changed under
+ * part of the app's sentence. While where its changes are heard is being found by sound (whereHeard.ts)
+ * it says "Finding where it changes…", with how far (Stop cancels a search the musician asked for).
+ * It says whether it was heard (Suggested played through every place), or heard only in part; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
  * of date or made for another song can't be accepted (its Accept stays, marked unavailable, so a
  * focus on it stays). Stop is there whenever it's being heard. A focus inside the card when its
@@ -23,6 +25,7 @@ import { Check, Headphones, MessageSquareReply, Square, X } from 'lucide-react';
 import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
+import { stopFinding, useFinding } from '../../agent/whereHeard';
 import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, rangesWords, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp, SPACE_WORDS } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
@@ -37,7 +40,12 @@ const bars = rangesWords;
 
 /** The line under the buttons: where it is, and whether what Accept puts in was heard. */
 function statusLine(s: Suggestion): string {
-  const part = isOpen(s) && s.heard !== s.version && s.partHeard === s.version && s.unheard ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}` : null;
+  const part =
+    isOpen(s) && s.heard !== s.version && s.partHeard === s.version
+      ? s.unheard
+        ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}`
+        : `Heard only in part: Suggested has to play through ${bars(s.regions)} to count as heard.`
+      : null;
   if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
   if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : (part ?? 'Not heard yet.');
   const words = STATUS_WORDS[s.status];
@@ -73,6 +81,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
   // (only the agent connected now can read what a message asks about)
   const askable = useConversation((c) => c.connection === s.connection) && s.connection !== undefined;
   const playing = mine && audition.phase === 'playing';
+  // (where its changes are heard, being found by sound: both versions rendered whole)
+  const finding = useFinding((f) => (f.id === s.id && f.version === s.version ? f : null));
 
   const hear = (which: 'a' | 'b') => {
     // (switched in step only while what plays is this version on the song as it is: else it's made and rendered again)
@@ -178,8 +188,17 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
                 {k === 'a' ? 'Now' : 'Suggested'}
               </button>
             ))}
-          {mine && audition.phase !== 'idle' && (
-            <button type="button" onClick={stopAudition} data-stop="" className="h-7 px-2 rounded-md border border-forge-border text-forge-text flex items-center gap-1 text-[12px]" aria-label="Stop hearing">
+          {((mine && audition.phase !== 'idle') || finding?.asked) && (
+            <button
+              type="button"
+              onClick={() => {
+                stopFinding(s.id);
+                stopAudition();
+              }}
+              data-stop=""
+              className="h-7 px-2 rounded-md border border-forge-border text-forge-text flex items-center gap-1 text-[12px]"
+              aria-label="Stop hearing"
+            >
               <Square className="w-3 h-3" aria-hidden /> Stop
             </button>
           )}
@@ -192,6 +211,14 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           {open && s.focusLeftOut && s.focus && (
             <span data-focus-left-out="" className="w-full text-[11px] text-forge-muted">
               The bars your agent also asked to play ({bars([s.focus])}) are left out: they don’t fit with the changes.
+            </span>
+          )}
+          {finding && (
+            <span data-finding="" className="w-full flex flex-col gap-1 text-[11px] text-forge-muted">
+              <span>Finding where it changes…</span>
+              <span className="w-full h-1 rounded bg-forge-border overflow-hidden" role="progressbar" aria-label="Finding where it changes" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(finding.progress * 100)}>
+                <span className="block h-full bg-cyan-500/70" style={{ width: `${Math.round(finding.progress * 100)}%` }} />
+              </span>
             </span>
           )}
           {mine && audition.phase === 'rendering' && (

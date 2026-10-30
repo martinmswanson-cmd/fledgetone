@@ -188,11 +188,11 @@ async function until(check, ms, what) {
       }, sid, { timeout: 120000 });
       const st = await A(() => window.__fledgetoneAgent.audition.useAudition.getState());
       if (st.error) throw new Error(`the before-and-after didn't play: ${st.error}`);
-      // (once it plays, that version counts as heard)
+      // (once Suggested has played through every place it changes, that version counts as heard)
       await page.waitForFunction((x) => {
         const s = window.__fledgetoneAgent.sg.useSuggestions.getState().suggestions.find((y) => y.id === x);
         return s.heard === s.version;
-      }, sid, { timeout: 2000 });
+      }, sid, { timeout: 180000 });
     };
     // The song as the store has it, what Accept puts in and Undo takes out
     const strip = (p) => JSON.stringify({ tracks: p.tracks, clips: p.clips.map(({ isSelected: _isSelected, ...c }) => c), bpm: p.bpm, tempoPoints: p.tempoPoints, markers: p.markers, master: p.master });
@@ -251,9 +251,9 @@ async function until(check, ms, what) {
         return r.left < corner.right - 0.5 || r.top < ruler.bottom - 0.5;
       }).length;
     });
-    // (the names an agent may have written are chips of their own, quoted for screen readers)
+    // (the names an agent may have written are chips of their own, the eye's only; screen readers hear each in plain quotes after it)
     const chips = await card.locator('[data-name-chip]').allTextContents();
-    step('3 card, caution and tint', /goes up by 9 dB/.test(cardText) && /Turns “Brass Stabs” up by 9 dB/.test(cardText) && chips.includes('“E2E agent”') && chips.includes('“Brass Stabs”') && tinted > 0 && overHeaders === 0, `${tinted} tinted boxes, ${overHeaders} over the headers or ruler, chips ${JSON.stringify(chips)}`);
+    step('3 card, caution and tint', /goes up by 9 dB/.test(cardText) && /Turns Brass Stabs“Brass Stabs” up by 9 dB/.test(cardText) && chips.includes('E2E agent') && chips.includes('Brass Stabs') && tinted > 0 && overHeaders === 0, `${tinted} tinted boxes, ${overHeaders} over the headers or ruler, chips ${JSON.stringify(chips)}`);
     if (SHOTS) {
       await page.screenshot({ path: path.join(SHOTS, 'panel-and-highlight.png') });
       await card.screenshot({ path: path.join(SHOTS, 'card.png') });

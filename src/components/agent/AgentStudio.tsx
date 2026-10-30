@@ -26,8 +26,9 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
     import('../../agent/listenSnapshot'),
     import('../../agent/conversation'),
     import('../../audio/exclusivePreview'),
-  ]).then(([sg, audition, listen, ops, handlers, tl, watch, snap, conv, preview]) => {
-    (window as unknown as Record<string, unknown>).__fledgetoneAgent = { sg, audition, listen, ops, handlers, tl, watch, snap, conv, preview };
+    import('../../agent/whereHeard'),
+  ]).then(([sg, audition, listen, ops, handlers, tl, watch, snap, conv, preview, where]) => {
+    (window as unknown as Record<string, unknown>).__fledgetoneAgent = { sg, audition, listen, ops, handlers, tl, watch, snap, conv, preview, where };
   });
 }
 

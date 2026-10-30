@@ -18,6 +18,9 @@ import { announce, shortText, useSuggestions } from '../../agent/suggestionsStor
 import { sendToAgent } from '../../agent/bridgeClient';
 import { deliveryWords } from './words';
 
+/** An Enter this soon after an input method's composition ended still commits it, ms (never sends). */
+const COMPOSE_GRACE_MS = 100;
+
 export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
   const draft = useConversation((s) => s.draft);
   const about = useConversation((s) => s.about);
@@ -27,6 +30,7 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
   const connected = useSuggestions((s) => s.connection.state === 'paired');
   const aboutTitle = useSuggestions((s) => (about ? s.suggestions.find((x) => x.id === about)?.title : undefined));
   const box = React.useRef<HTMLTextAreaElement>(null);
+  const composedAt = React.useRef(-Infinity);
   // (only spaces or invisible characters: nothing to send)
   const empty = !hasVisibleText(plainUserText(draft, CONVERSATION.textMaxChars));
   const left = CONVERSATION.textMaxChars - draft.length;
@@ -92,9 +96,16 @@ export const MessageBox: React.FC<{ onSent?: () => void }> = ({ onSent }) => {
         aria-label="Message your agent"
         aria-describedby="agent-compose-hint"
         onChange={(e) => useConversation.setState({ draft: e.target.value.slice(0, CONVERSATION.textMaxChars), note: null })}
+        onCompositionEnd={() => {
+          composedAt.current = performance.now();
+        }}
         onKeyDown={(e) => {
           keep(e);
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+          // (an input method's Enter commits what's being written, never sends: while composing, as
+          // keyCode 229 (Safari sends it after compositionend, with isComposing false), and just after
+          // a composition ended)
+          const committing = e.nativeEvent.isComposing || e.keyCode === 229 || performance.now() - composedAt.current < COMPOSE_GRACE_MS;
+          if (e.key === 'Enter' && !e.shiftKey && !committing) {
             e.preventDefault();
             send();
           }

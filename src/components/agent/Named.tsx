@@ -3,18 +3,23 @@
  * with each name as a chip of its own (NamedText), and an agent's name the same way (NameChip),
  * so a name an agent wrote, whatever it says (quotes, brackets, whole sentences), reads as a name,
  * never as more of the app's words. The chip holds the name as it is, in a box with its own
- * border and colour; screen readers hear it in quotes.
+ * border and colour; screen readers hear it in plain quotes, its own quotes and brackets taken out.
  */
 import React from 'react';
-import { nameParts } from '../../agent/names';
+import { nameParts, textName } from '../../agent/names';
 
-/** One name as a chip. */
+/**
+ * One name as a chip. Screen readers hear it as the plain words do (textName: in quotes, its own
+ * quote and bracket characters taken out, so it can't close them); the chip itself, the name as
+ * it is, is only for the eye.
+ */
 export const NameChip: React.FC<{ name: string }> = ({ name }) => (
-  <span data-name-chip="" className="inline-block max-w-full align-baseline mx-0.5 px-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-100 font-mono text-[0.95em] break-words normal-case tracking-normal">
-    <span className="sr-only">“</span>
-    {name}
-    <span className="sr-only">”</span>
-  </span>
+  <>
+    <span data-name-chip="" aria-hidden="true" className="inline-block max-w-full align-baseline mx-0.5 px-1 rounded border border-cyan-500/40 bg-cyan-500/10 text-cyan-100 font-mono text-[0.95em] break-words normal-case tracking-normal">
+      {name}
+    </span>
+    <span className="sr-only" data-name-said="">{`“${textName(name)}”`}</span>
+  </>
 );
 
 /** A sentence with its marked names as chips. */

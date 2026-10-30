@@ -108,7 +108,7 @@ export interface BridgeClient {
   setPermissions(p: Permissions): void;
   /** Leave: says bye and closes. */
   disconnect(reason?: string): void;
-  /** The connection opened (the WebSocket's open event): the helper's hello is waited for HELLO_TIMEOUT_MS. */
+  /** The connection is being made (the WebSocket was created; again at its open event, which changes nothing): the helper's hello is waited for HELLO_TIMEOUT_MS from the first call, so a connection that never opens is given up too. */
   opened(): void;
   /** The connection closed (from the WebSocket's close event). */
   closed(reason?: string): void;
