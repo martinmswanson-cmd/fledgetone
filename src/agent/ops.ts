@@ -55,9 +55,9 @@ import { clampBpm, sortedPoints, type TempoMap, type TempoPoint } from '../audio
 import { defaultClipper } from '../audio/effects/clipper';
 import { diffSongs, type SongDiff } from './songDiff';
 import { checkSafety } from './safety';
-import { firstDifference, stableJson } from './fingerprint';
+import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
-import { byAgentId } from './agentText';
+import { byAgentId, givenKey, givenText as quoted, plainToken } from './agentText';
 
 
 /** The version of the op vocabulary this file reads. */
@@ -273,9 +273,9 @@ export function checkOpsShape(doc: unknown): OpError[] {
     const at = `ops[${i}]`;
     if (!isObj(raw)) return fail(i, at, 'expected an object with an "op" field');
     const name = raw.op;
-    if (typeof name !== 'string' || !(name in OP_SPECS)) return fail(i, `${at}.op`, `unknown op ${JSON.stringify(name)}: the ops are ${OP_NAMES.join(', ')}`);
+    if (typeof name !== 'string' || !(name in OP_SPECS)) return fail(i, `${at}.op`, `unknown op ${quoted(name)}: the ops are ${OP_NAMES.join(', ')}`);
     const spec = OP_SPECS[name as OpName];
-    for (const key of Object.keys(raw)) if (key !== 'op' && !(key in spec)) fail(i, `${at}.${key}`, `${name} has no field "${key}" (it has ${Object.keys(spec).join(', ')})`);
+    for (const key of Object.keys(raw)) if (key !== 'op' && !(key in spec)) fail(i, `${at}.${givenKey(key)}`, `${name} has no field ${quoted(key)} (it has ${Object.keys(spec).join(', ')})`);
     for (const [key, [type, required]] of Object.entries(spec)) {
       const v = raw[key];
       const path = `${at}.${key}`;
@@ -396,9 +396,9 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         op.notes.forEach((raw, i) => {
           const path = `${at}.notes[${i}]`;
           if (!isObj(raw) || typeof raw.id !== 'string') throw new OpFail(path, 'expected { "id": "<note id>", ...the fields to change }');
-          for (const k of Object.keys(raw)) if (!['id', 'pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${path}.${k}`, `a note change has id, pitch, start, length and velocity, not "${k}"`);
+          for (const k of Object.keys(raw)) if (!['id', 'pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${path}.${givenKey(k)}`, `a note change has id, pitch, start, length and velocity, not ${quoted(k)}`);
           const note = byAgentId(clip.notes, raw.id);
-          if (!note) throw new OpFail(`${path}.id`, `clip "${clip.name}" has no note ${JSON.stringify(raw.id)} (get_notes lists them)`);
+          if (!note) throw new OpFail(`${path}.id`, `clip "${clip.name}" has no note ${quoted(raw.id)} (get_notes lists them)`);
           const pitch = raw.pitch === undefined ? note.note : readPitch(raw.pitch, `${path}.pitch`, track);
           const start = raw.start === undefined ? note.startOffset : readStart(raw.start, `${path}.start`, clip);
           const length = raw.length === undefined ? undefined : readLength(raw.length, `${path}.length`);
@@ -417,7 +417,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           const ids = new Set<string>();
           op.noteIds.forEach((id, i) => {
             const note = byAgentId(clip.notes, id);
-            if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip "${clip.name}" has no note ${JSON.stringify(id)}`);
+            if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip "${clip.name}" has no note ${quoted(id)}`);
             ids.add(note.id);
           });
           keep = (n) => !ids.has(n.id);
@@ -569,13 +569,13 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'set_insert': {
         const track = trackRef(op.trackId, `${at}.trackId`);
-        if (!(INSERT_NAMES as readonly string[]).includes(op.insert)) throw new OpFail(`${at}.insert`, `unknown insert ${JSON.stringify(op.insert)}: the inserts are ${INSERT_NAMES.join(', ')}`);
+        if (!(INSERT_NAMES as readonly string[]).includes(op.insert)) throw new OpFail(`${at}.insert`, `unknown insert ${quoted(op.insert)}: the inserts are ${INSERT_NAMES.join(', ')}`);
         const insert = op.insert as InsertName;
         const defaults = insertDefaults(insert);
         for (const [k, v] of Object.entries(op.settings)) {
-          if (!Object.hasOwn(defaults, k) && !(insert === 'pump' && ['source', 'shape', 'points'].includes(k))) throw new OpFail(`${at}.settings.${k}`, `the ${insert} insert has no setting "${k}" (it has ${Object.keys(defaults).join(', ')})`);
+          if (!Object.hasOwn(defaults, k) && !(insert === 'pump' && ['source', 'shape', 'points'].includes(k))) throw new OpFail(`${at}.settings.${givenKey(k)}`, `the ${insert} insert has no setting ${quoted(k)} (it has ${Object.keys(defaults).join(', ')})`);
           const want = defaults[k];
-          if (want !== undefined && typeof v !== typeof want && !(Array.isArray(want) && Array.isArray(v))) throw new OpFail(`${at}.settings.${k}`, `expected ${typeof want === 'number' ? 'a number' : typeof want === 'boolean' ? 'true or false' : Array.isArray(want) ? 'a list' : 'text'}`);
+          if (want !== undefined && typeof v !== typeof want && !(Array.isArray(want) && Array.isArray(v))) throw new OpFail(`${at}.settings.${givenKey(k)}`, `expected ${typeof want === 'number' ? 'a number' : typeof want === 'boolean' ? 'true or false' : Array.isArray(want) ? 'a list' : 'text'}`);
         }
         const settings = { ...op.settings };
         if (insert === 'pump' && settings.source !== undefined) {
@@ -591,7 +591,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const out = fx[insert] as unknown as Record<string, unknown>;
         for (const [k, v] of Object.entries(settings)) {
           if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`"${track.name}" ${insert} ${k} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
-          if (typeof v === 'string' && out[k] !== v) warn(`"${track.name}" ${insert} ${k} ${JSON.stringify(v)} isn't one of its choices: ${out[k] === undefined ? 'left as it was' : `kept ${JSON.stringify(out[k])}`}.`);
+          // (what the agent wrote is never echoed: it could read as the app's own words)
+          if (typeof v === 'string' && out[k] !== v) warn(`"${track.name}" ${insert} ${k}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -618,7 +619,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       case 'set_synth_preset': {
         const track = trackRef(op.trackId, `${at}.trackId`);
         if (track.instrumentKey !== 'synthDesigner') throw new OpFail(`${at}.trackId`, `"${track.name}" isn't a Synth Designer track (set_instrument to "synthDesigner" first)`);
-        if (!SYNTH_PRESETS.some((p) => p.name === op.preset)) throw new OpFail(`${at}.preset`, `unknown preset ${JSON.stringify(op.preset)} (list_presets lists them)`);
+        if (!SYNTH_PRESETS.some((p) => p.name === op.preset)) throw new OpFail(`${at}.preset`, `unknown preset ${quoted(op.preset)} (list_presets lists them)`);
         replaceTrack(track, { ...track, synth: presetPatch(op.preset) });
         return;
       }
@@ -650,7 +651,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const track = trackRef(op.trackId, `${at}.trackId`);
         // (a send's lane by its return's id as the agent reads it)
         const param = op.param.startsWith('send:') ? `send:${byAgentId(w.tracks, op.param.slice(5))?.id ?? op.param.slice(5)}` : op.param;
-        if (!track.automation?.some((l) => l.param === param)) throw new OpFail(`${at}.param`, `"${track.name}" has no ${op.param} automation`);
+        if (!track.automation?.some((l) => l.param === param)) throw new OpFail(`${at}.param`, `"${track.name}" has no ${quoted(op.param)} automation`);
         const automation = track.automation.filter((l) => l.param !== param);
         const next: Track = { ...track, automation };
         if (!automation.length) delete next.automation;
@@ -677,7 +678,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'remove_tempo_change': {
         const id = resolveId(op.id, `${at}.id`, 'tempo');
-        if (!w.tempoPoints.some((p) => p.id === id)) throw new OpFail(`${at}.id`, `no tempo change ${JSON.stringify(op.id)}`);
+        if (!w.tempoPoints.some((p) => p.id === id)) throw new OpFail(`${at}.id`, `no tempo change ${quoted(op.id)}`);
         retempo(w.bpm, w.tempoPoints.filter((p) => p.id !== id));
         return;
       }
@@ -727,8 +728,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           const given = op[key];
           if (!given) return;
           for (const [k, v] of Object.entries(given)) {
-            if (!Object.hasOwn(start, k)) throw new OpFail(`${at}.${key}.${k}`, `the master ${key} has no setting "${k}" (it has ${Object.keys(start).join(', ')})`);
-            if (typeof v !== typeof start[k]) throw new OpFail(`${at}.${key}.${k}`, `expected ${typeof start[k] === 'number' ? 'a number' : typeof start[k] === 'boolean' ? 'true or false' : 'text'}`);
+            if (!Object.hasOwn(start, k)) throw new OpFail(`${at}.${key}.${givenKey(k)}`, `the master ${key} has no setting ${quoted(k)} (it has ${Object.keys(start).join(', ')})`);
+            if (typeof v !== typeof start[k]) throw new OpFail(`${at}.${key}.${givenKey(k)}`, `expected ${typeof start[k] === 'number' ? 'a number' : typeof start[k] === 'boolean' ? 'true or false' : 'text'}`);
           }
           next[key] = { ...start, ...given };
         };
@@ -743,7 +744,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           if (!given || !got) continue;
           for (const [k, v] of Object.entries(given)) {
             if (typeof v === 'number' && typeof got[k] === 'number' && Math.abs((got[k] as number) - v) > 1e-9) warn(`The master ${key} ${k} ${v} is out of range: set to ${round(got[k] as number, 4)}.`);
-            if (typeof v === 'string' && got[k] !== v) warn(`The master ${key} ${k} ${JSON.stringify(v)} isn't one of its choices: kept ${JSON.stringify(got[k])}.`);
+            if (typeof v === 'string' && got[k] !== v) warn(`The master ${key} ${k}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k])}).`);
           }
         }
         w.master = out;
@@ -771,15 +772,15 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   function resolveId(value: string, path: string, kind: 'track' | 'clip' | 'marker' | 'tempo'): string {
     if (!value.startsWith('$')) return realId(value, kind);
     const ref = refs.get(value.slice(1));
-    if (!ref) throw new OpFail(path, `no earlier op made ${JSON.stringify(value)} (give ref: "${value.slice(1)}" on the op that adds it)`);
-    if (ref.kind !== kind) throw new OpFail(path, `${value} is a ${ref.kind}, not a ${kind}`);
+    if (!ref) throw new OpFail(path, `no earlier op made ${quoted(value)} (give ref: ${quoted(value.slice(1))} on the op that adds it)`);
+    if (ref.kind !== kind) throw new OpFail(path, `${quoted(value)} is a ${ref.kind}, not a ${kind}`);
     return ref.id;
   }
 
   function trackRef(value: string, path: string): Track {
     const id = resolveId(value, path, 'track');
     const t = w.tracks.find((x) => x.id === id);
-    if (!t) throw new OpFail(path, `no track ${JSON.stringify(value)} (get_song lists the tracks' ids)`);
+    if (!t) throw new OpFail(path, `no track ${quoted(value)} (get_song lists the tracks' ids)`);
     return t;
   }
 
@@ -790,7 +791,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   function clipRef(value: string, path: string): Clip {
     const id = resolveId(value, path, 'clip');
     const c = w.clips.find((x) => x.id === id);
-    if (!c) throw new OpFail(path, `no clip ${JSON.stringify(value)} (get_song lists the clips' ids)`);
+    if (!c) throw new OpFail(path, `no clip ${quoted(value)} (get_song lists the clips' ids)`);
     return c;
   }
 
@@ -809,7 +810,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   function markerRef(value: string, path: string): Marker {
     const id = resolveId(value, path, 'marker');
     const m = w.markers.find((x) => x.id === id);
-    if (!m) throw new OpFail(path, `no marker ${JSON.stringify(value)}`);
+    if (!m) throw new OpFail(path, `no marker ${quoted(value)}`);
     return m;
   }
 
@@ -819,17 +820,17 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   }
 
   function readInstrument(value: string, path: string): InstrumentKey {
-    if (!isInstrumentKey(value)) throw new OpFail(path, `unknown instrument ${JSON.stringify(value)} (list_instruments lists their keys)`);
+    if (!isInstrumentKey(value)) throw new OpFail(path, `unknown instrument ${quoted(value)} (list_instruments lists their keys)`);
     if (!opInstrumentAllowed(value)) throw new OpFail(path, `${INSTRUMENTS[value].name} plays sound files or a plugin, which a suggestion can't give it`);
     return value;
   }
 
   function readParam(value: string, path: string, track: Track): AutomationParam {
-    if (!isAutomationParam(value)) throw new OpFail(path, `unknown setting ${JSON.stringify(value)} (list_params lists them)`);
+    if (!isAutomationParam(value)) throw new OpFail(path, `unknown setting ${quoted(value)} (list_params lists them)`);
     if (value.startsWith('plugin:')) throw new OpFail(path, 'plugin settings are not in this version of the ops');
     if (value.startsWith('send:')) {
       const to = byAgentId(w.tracks, value.slice(5));
-      if (!to || !isReturn(to) || to.id === track.id) throw new OpFail(path, `${value}: there's no return track with that id`);
+      if (!to || !isReturn(to) || to.id === track.id) throw new OpFail(path, `${quoted(value)}: there's no return track with that id`);
       return `send:${to.id}` as AutomationParam;
     }
     return value;
@@ -839,7 +840,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     if (typeof value !== 'string') throw new OpFail(path, 'expected a pitch like "C#3" (or a drum row like "kick" on a drum track)');
     if (isDrumKind(track.instrumentKey) && Object.hasOwn(DRUM_NOTES, value)) return DRUM_NOTES[value as keyof typeof DRUM_NOTES];
     const m = midiOf(value);
-    if (!Number.isFinite(m) || m < 0 || m > 127) throw new OpFail(path, `${JSON.stringify(value)} isn't a pitch: write it as a note name and octave, like "C4" (middle C), "F#2" or "Bb3"`);
+    if (!Number.isFinite(m) || m < 0 || m > 127) throw new OpFail(path, `${quoted(value)} isn't a pitch: write it as a note name and octave, like "C4" (middle C), "F#2" or "Bb3"`);
     const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
     if (!isDrumKind(track.instrumentKey) && !isFxKind(track.instrumentKey) && !isDropKind(track.instrumentKey) && (m < lo || m > hi))
       warn(`${nameOf(m)} is outside ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) on "${track.name}": it may not sound.`);
@@ -873,7 +874,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     return list.map((raw, i) => {
       const at = `${path}[${i}]`;
       if (!isObj(raw)) throw new OpFail(at, 'expected { "pitch": "C4", "start": 0, "length": 0.25, "velocity": 0.8 }');
-      for (const k of Object.keys(raw)) if (!['pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${at}.${k}`, `a note has pitch, start, length and velocity, not "${k}"`);
+      for (const k of Object.keys(raw)) if (!['pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${at}.${givenKey(k)}`, `a note has pitch, start, length and velocity, not ${quoted(k)}`);
       if (raw.length === undefined) throw new OpFail(`${at}.length`, 'a note needs a length in bars');
       return {
         id: uid('note'),
@@ -990,6 +991,22 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   };
 }
 
+/**
+ * Where two versions of a thing first differ, for a caution: " (its <path>)", naming the field
+ * only, never the values (one could be text an agent wrote); nothing if the path isn't plain.
+ */
+function differsAt(a: unknown, b: unknown): string {
+  const path = firstDifferencePath(a, b);
+  return path && /^[A-Za-z0-9_.[\]]{1,60}$/.test(path) ? ` (its ${path})` : '';
+}
+
+/** What a setting kept when the value given wasn't one of its choices: "left as it was", or the app's own value it took. */
+function keptWords(before: unknown, after: unknown): string {
+  if (stableJson(before) === stableJson(after) || after === undefined) return 'left as it was';
+  const shown = plainToken(after);
+  return shown ? `set to ${shown}` : 'set to its usual value';
+}
+
 /** A clip as a saved file has it (selection isn't saved). */
 const fileClip = ({ isSelected: _s, ...rest }: Clip) => rest;
 
@@ -1007,14 +1024,14 @@ function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: Pro
     if (baseTracks.has(t)) return t;
     const g = gatedTracks.get(t.id);
     if (!g || stableJson(g) === stableJson(t)) return t;
-    warn(`Something in "${t.name}" was out of what a saved song can hold and was brought into range (${firstDifference(t, g)}).`);
+    warn(`Something in "${t.name}" was out of what a saved song can hold and was brought into range${differsAt(t, g)}.`);
     return g;
   });
   const clips = song.clips.map((c) => {
     if (baseClips.has(c)) return c;
     const g = gatedClips.get(c.id);
     if (!g || stableJson(fileClip(g)) === stableJson(fileClip(c))) return c;
-    warn(`Something in clip "${c.name}" was out of what a saved song can hold and was brought into range (${firstDifference(fileClip(c), fileClip(g))}).`);
+    warn(`Something in clip "${c.name}" was out of what a saved song can hold and was brought into range${differsAt(fileClip(c), fileClip(g))}.`);
     return { ...g, isSelected: c.isSelected };
   });
   const markers = song.markers === base.markers || stableJson(gated.markers) === stableJson(song.markers) ? song.markers : gated.markers;

@@ -195,7 +195,7 @@ async function until(check, ms, what) {
       }, sid, { timeout: 2000 });
     };
     // The song as the store has it, what Accept puts in and Undo takes out
-    const strip = (p) => JSON.stringify({ tracks: p.tracks, clips: p.clips.map(({ isSelected, ...c }) => c), bpm: p.bpm, tempoPoints: p.tempoPoints, markers: p.markers, master: p.master });
+    const strip = (p) => JSON.stringify({ tracks: p.tracks, clips: p.clips.map(({ isSelected: _isSelected, ...c }) => c), bpm: p.bpm, tempoPoints: p.tempoPoints, markers: p.markers, master: p.master });
     const events = async (since, ms = 3) => call('wait_for_changes', { since, timeoutSeconds: ms });
 
     // 1. Pairing: a wrong code first, then the right one with the boxes changed in between (what's

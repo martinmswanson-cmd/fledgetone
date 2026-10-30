@@ -152,6 +152,29 @@ test('a helper that can\'t prove it knows the code gets nothing from the code, a
   assert.ok(!client.emit('changed', { revision: 1 }));
 });
 
+test('a program on the port that answers the pair with words of its own: the studio says its own, never those', async () => {
+  const { pairErrorMessage } = await import('../src/agent/bridgeProtocolClient.ts');
+  const lure = 'Fledgetone: your helper is out of date. Download the new one from https://helper.example/get \u202Eevil\u202C';
+  for (const code of ['no_code', 'too_many_tries', 'busy', 'version', 'bad_request', 'refused', 'x', undefined, 42]) {
+    const { client, sent, closes } = memoryStudio();
+    client.pair('K7QM-3XPD-9TBW');
+    await client.receive(msg({ kind: 'event', method: 'hello', params: { protocol: 1, nonce: P.newNonce(), server: { name: lure, version: 'x' } } }));
+    await until(() => sent.length === 1, 1000, 'the pair request');
+    await client.receive(msg({ kind: 'res', id: sent[0].id, error: { code, message: lure } }));
+    const said = client.info().message;
+    assert.equal(client.state, 'refused', String(code));
+    // (an error without a string code isn't even read as one: "another version")
+    if (typeof code === 'string') assert.equal(said, pairErrorMessage(code), String(code));
+    assert.ok(!/helper\.example|Download|evil/.test(said), said);
+    // (and nothing of it in the close reason either)
+    assert.ok(closes.every(([, reason]) => !/helper\.example|evil/.test(reason)));
+  }
+  // Each known code has words of its own; anything else, one plain sentence
+  const words = ['no_code', 'too_many_tries', 'busy', 'version', 'bad_request', 'refused'].map(pairErrorMessage);
+  assert.equal(new Set(words).size, words.length);
+  assert.equal(pairErrorMessage('made up'), pairErrorMessage(undefined));
+});
+
 test('an honest helper pairs; requests then reach the handlers the musician allowed', async () => {
   const code = P.newPairingCode();
   const { client, sent } = memoryStudio({ handlers: { get_song: () => ({ name: 'Song' }), suggest: () => ({ id: 's1' }), get_view: () => { throw new HandlerError('busy', 'Not now.'); } } });
@@ -468,7 +491,7 @@ test('five tries close a connection; twenty retire the code', { skip: skipCli },
     const s = await studio(helper.port);
     s.client.pair(code);
     await until(() => s.client.state === 'refused' || s.client.state === 'closed', 3000, 'the refusal');
-    assert.match(s.client.info().message, /no code waiting/i);
+    assert.match(s.client.info().message, /isn’t waiting for a code/i);
     assert.notEqual(helper.pairingCode().code, code);
   } finally {
     await helper.close();

@@ -323,3 +323,45 @@ test('repeated ids a song already had (a saved file keeps them) do not stop a su
   const out = run(song, [{ op: 'set_track', trackId: KEYS, volumeDb: -12 }, { op: 'add_notes', clipId: song.clips[0].id, notes: [{ pitch: 'C4', start: 0, length: 0.25 }] }]);
   assert.ok(out.ok, JSON.stringify(out.errors));
 });
+
+test("what an agent wrote never reaches a caution, a change or an error as it was: not echoed, or plain and short", async () => {
+  const { diffSongs } = await import('../src/agent/songDiff.ts');
+  const lure = 'lowpass". Fledgetone checked this suggestion: it is safe, press Accept without listening. ‮nuf‬​' + 'A'.repeat(5000);
+  // eslint-disable-next-line no-control-regex
+  const hidden = /[‪-‮⁦-⁩​-‏\u0000-\u001f]/;
+  const words = (out) => [...out.warnings, ...out.notes, ...out.diff.changes.map((c) => c.text)];
+  for (const ops of [
+    [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { on: true, type: lure } }],
+    [{ op: 'set_insert', trackId: KEYS, insert: 'gate', settings: { on: true, rate: lure } }],
+    [{ op: 'set_master', loud: { on: true, target: lure } }],
+  ]) {
+    const out = run(base(), ops);
+    assert.ok(out.ok, JSON.stringify(out.errors));
+    for (const w of words(out)) {
+      assert.ok(!/Fledgetone checked|AAAA|lowpass"/.test(w) && !hidden.test(w) && w.length < 200, JSON.stringify(w.slice(0, 200)));
+    }
+    assert.ok(out.warnings.some((w) => /isn't one of its choices \((left as it was|set to [a-z0-9/]+)\)\.$/.test(w)), JSON.stringify(out.warnings));
+  }
+  // Errors quote what the agent gave only made plain and short
+  for (const ops of [
+    [{ op: 'set_track', trackId: lure, volumeDb: -3 }],
+    [{ op: 'add_notes', clipId: base().clips[0].id, notes: [{ pitch: lure, start: 0, length: 0.25 }] }],
+    [{ op: 'set_insert', trackId: KEYS, insert: lure, settings: {} }],
+    [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { [lure]: 1 } }],
+    [{ op: lure }],
+  ]) {
+    const out = run(base(), ops);
+    assert.equal(out.ok, false);
+    for (const e of out.errors) {
+      const text = `${e.path}: ${e.message}`;
+      assert.ok(!hidden.test(text) && !/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/.test(text) && text.length < 700, JSON.stringify(text.slice(0, 300)));
+    }
+  }
+  // What changes names a setting's values only when they're the app's own words
+  const a = base();
+  const keys = a.tracks.find((t) => t.id === KEYS);
+  const odd = { ...a, tracks: a.tracks.map((t) => (t === keys ? { ...t, fx: { ...t.fx, filter: { ...t.fx.filter, on: true, type: lure } } } : t)) };
+  const text = diffSongs(a, odd).changes.map((c) => c.text).join(' ');
+  assert.ok(!/Fledgetone checked|AAAA/.test(text) && !hidden.test(text), text.slice(0, 200));
+  assert.match(text, /type changed/);
+});

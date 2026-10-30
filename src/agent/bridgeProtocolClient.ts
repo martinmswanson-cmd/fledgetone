@@ -6,7 +6,9 @@
  *
  * Pairing (see protocol.ts): it waits for the helper's `hello`, sends `pair` with its nonce only,
  * and checks the helper's proof before it sends its own (`pair_confirm`): a helper that can't
- * prove it knows the code gets nothing about the code, and no handler runs. Until paired every
+ * prove it knows the code gets nothing about the code, and no handler runs; a refusal is said in
+ * the studio's own words, by its code (pairErrorMessage), never in the words the other end sent
+ * (before pairing that could be any program on the port). Until paired every
  * request is answered "not_paired". Once paired, each request goes to its handler if the musician
  * allowed what it needs (STUDIO_METHODS), else it's answered "not_allowed".
  */
@@ -135,6 +137,29 @@ export function closeMessage(code: number, was: BridgeState): string | undefined
   return undefined;
 }
 
+/**
+ * Why the helper refused a pairing step, in the studio's own words, from the error's code alone.
+ * Whatever the other end wrote in the error's message is never shown: before pairing it could be
+ * any program on the port (one that knows no code), and its words would read as the app's.
+ */
+export function pairErrorMessage(code: unknown): string {
+  switch (code) {
+    case 'no_code':
+      return 'Your agent’s helper isn’t waiting for a code (or that code has run out). Ask your agent to connect again: it gives you a new code.';
+    case 'too_many_tries':
+      return 'Too many wrong codes on this connection. Ask your agent to connect again: it gives you a new code.';
+    case 'busy':
+      return 'Your agent’s helper is busy with another try or another studio. Wait a moment, then try again.';
+    case 'version':
+      return 'The helper speaks another version of the connection. Update Fledgetone’s command line tools.';
+    case 'bad_request':
+      return 'The helper and the studio didn’t understand each other. Update Fledgetone’s command line tools.';
+    case 'refused':
+      return 'The helper refused the connection. Ask your agent to connect again for a new code.';
+  }
+  return 'The program on that port refused the connection. Check the port is the one your agent said.';
+}
+
 /** Close codes the client uses. */
 export const CLOSE = { refused: 4003, version: 4004, leaving: 4000, protocol: 4002 } as const;
 
@@ -196,7 +221,8 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     clearTimeout(p.timer);
     pending = null;
     if (error) {
-      refuse(error.message || 'The helper refused the connection.');
+      // (in the studio's own words, by its code: nothing the other end wrote is shown before it has proved itself)
+      refuse(pairErrorMessage(error.code));
       return;
     }
     if (p.step === 'pair') {

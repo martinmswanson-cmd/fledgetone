@@ -18,6 +18,7 @@
  */
 import { create } from 'zustand';
 import { CONVERSATION, hasVisibleText, readContext, type UserMessage, type UserMessageContext } from './protocol';
+import { agentIds } from './agentText';
 
 export type Delivery = 'sending' | 'sent' | 'seen' | 'not_sent';
 
@@ -121,15 +122,27 @@ export function addOwn(m: OwnMessage): void {
   useConversation.setState((st) => ({ mine: [...st.mine, m].slice(-CONVERSATION.keep) }));
 }
 
-/** The selection as a message's context: the selected track, clips and the bars they cover, the clip open in the editor. Undefined when nothing is selected. */
-export function selectionContext(s: { selectedTrackId: string | null; editingClipId: string | null; clips: readonly { id: string; isSelected: boolean; startBar: number; lengthBars: number }[] }): UserMessageContext | undefined {
+/**
+ * The selection as a message's context: the selected track, clips and the bars they cover, the
+ * clip open in the editor, each by the id the agent reads (agentIds: as get_song and get_view name
+ * it, an id that held hidden text by its plain reading or alias). Only the song's own: a track or
+ * clip that isn't in it is left out. Undefined when nothing is selected.
+ */
+export function selectionContext(s: {
+  selectedTrackId: string | null;
+  editingClipId: string | null;
+  tracks: readonly { id: string }[];
+  clips: readonly { id: string; isSelected: boolean; startBar: number; lengthBars: number }[];
+}): UserMessageContext | undefined {
   const picked = s.clips.filter((c) => c.isSelected);
   const from = picked.length ? Math.min(...picked.map((c) => c.startBar)) : 0;
   const to = picked.length ? Math.max(...picked.map((c) => c.startBar + c.lengthBars)) : 0;
+  const trackIds = agentIds(s.tracks.map((t) => t.id));
+  const clipIds = agentIds(s.clips.map((c) => c.id));
   return readContext({
-    selectedTrackId: s.selectedTrackId ?? undefined,
-    selectedClipIds: picked.map((c) => c.id),
-    editingClipId: s.editingClipId ?? undefined,
+    selectedTrackId: s.selectedTrackId === null ? undefined : trackIds.get(s.selectedTrackId),
+    selectedClipIds: picked.map((c) => clipIds.get(c.id)),
+    editingClipId: s.editingClipId === null ? undefined : clipIds.get(s.editingClipId),
     ...(picked.length ? { bars: { fromBar: from, toBar: to } } : {}),
   });
 }

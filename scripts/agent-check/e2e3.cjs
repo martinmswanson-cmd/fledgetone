@@ -22,6 +22,12 @@
 //      and leaves the suggestion good (not out of date)
 //   9. a wrong code on the wrong port, then the port corrected and Try again: connected afresh to
 //      the helper on that port
+//  10. a program on a port that answers the pairing with words of its own: the dialog says the
+//      studio's own; with another agent paired, each card still names the agent that made it; a
+//      focus away from the changed bars: what plays covers them, and only then is it heard; an
+//      agent's value isn't echoed in a caution; a press dragged off Accept doesn't make the next,
+//      assistive press do nothing; a selected clip whose id held hidden text goes with a message
+//      by the id get_view gives it
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default; `npm run build:runtime`
 // first), Playwright's Chromium, and tools/cli's packages (npm install in tools/cli):
@@ -458,6 +464,160 @@ async function until(check, ms, what) {
       step('9 Try again with the port corrected: connects to that port afresh', paired === true && !firstConnected, `second ${paired}, first ${firstConnected}`);
     } finally {
       await agent2.close();
+    }
+
+    // 10. A program squatting on a port answers the pairing with words of its own: the dialog says
+    // the studio's own, never those
+    const { WebSocketServer } = require(path.join(CLI, 'node_modules', 'ws'));
+    const lure = 'Fledgetone: your helper is out of date and was blocked. Download the new one from https://helper.example/get ‮evil‬';
+    const squatter = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise((r) => squatter.once('listening', r));
+    squatter.on('connection', (ws) => {
+      ws.send(JSON.stringify({ v: 1, kind: 'event', method: 'hello', params: { protocol: 1, nonce: 'x'.repeat(43), server: { name: lure, version: '9' } } }));
+      ws.on('message', (d) => {
+        const m = JSON.parse(String(d));
+        if (m.method === 'pair') ws.send(JSON.stringify({ v: 1, kind: 'res', id: m.id, error: { code: 'no_code', message: lure } }));
+      });
+    });
+    try {
+      if (!(await page.getByPlaceholder('K7QM-3XPD-9TBW').count())) await menu('Let an agent connect…');
+      await page.getByPlaceholder('K7QM-3XPD-9TBW').fill('K7QM-3XPD-9TBW');
+      await page.getByLabel('Port the helper listens on').fill(String(squatter.address().port));
+      await page.getByRole('button', { name: /^(Connect|Try again)$/ }).click();
+      const said = await until(async () => {
+        const t = (await page.locator('#agent-connect-status').textContent()) ?? '';
+        return /waiting for a code/.test(t) ? t : null;
+      }, 10000, 'the refusal').catch(async () => page.locator('#agent-connect-status').textContent());
+      const dialog = await page.locator('[data-agent-ui]').innerText();
+      step('10a a squatter on the port: the studio\'s own words, none of its own', /isn’t waiting for a code/.test(said) && !/helper\.example|Download|evil/.test(dialog), JSON.stringify(said));
+    } finally {
+      squatter.close();
+    }
+
+    // Another agent paired: the first agent's cards still say they came from it
+    const transport3 = new StdioClientTransport({
+      command: process.execPath,
+      args: ['--import', path.join(CLI, 'src', 'tsHook.mjs'), path.join(CLI, 'src', 'fledgetone.ts'), 'mcp', '--port', '0', '--root', work, '--allow-origin', APP.replace(/\/$/, '')],
+      cwd: ROOT,
+      stderr: 'pipe',
+    });
+    const agent3 = new Client({ name: 'E2E3 third agent', version: '1' });
+    await agent3.connect(transport3);
+    try {
+      const call3 = async (tool, args = {}) => {
+        for (;;) {
+          const r = await agent3.callTool({ name: tool, arguments: args });
+          const text = r.content.map((c) => c.text).join('');
+          if (r.isError && /Too many/.test(text)) {
+            await new Promise((res) => setTimeout(res, 400));
+            continue;
+          }
+          if (r.isError) throw new Error(`${tool}: ${text}`);
+          try {
+            return JSON.parse(text);
+          } catch {
+            return text;
+          }
+        }
+      };
+      const third = await call3('connect_studio');
+      await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(third.code);
+      await page.getByLabel('Port the helper listens on').fill(String(third.port));
+      for (const name of [/^See what I select/, /^Suggest changes/, /^Listen/]) await page.getByRole('checkbox', { name }).check();
+      await page.getByRole('button', { name: /^(Connect|Try again)$/ }).click();
+      await until(async () => (await call3('studio_status')).connected, 15000, 'the third pairing');
+      await page.waitForSelector('[data-agent-panel]', { timeout: 15000 });
+      const from = async (id) => (await card(id).locator('header p').first().textContent()).trim();
+      const oldLabel = await from(s1);
+      const s10 = await call3('suggest', { title: 'Brass up an octave', explanation: '', ops: [{ op: 'transpose_notes', clipId: ids.r, semitones: 12 }], focus: { fromBar: 1, toBar: 3 } });
+      await card(s10.id).waitFor();
+      step('10b each card says which agent made it, whoever is paired now', oldLabel === 'From your agent (E2E3 agent)' && (await from(s10.id)) === 'From your agent (E2E3 third agent)', `${oldLabel} | ${await from(s10.id)}`);
+
+      // A focus that misses the changed bars (the brass plays bars 5-8): what plays covers them
+      await page.waitForTimeout(1100);
+      await card(s10.id).locator('[data-hear="suggested"]').click();
+      await playingOf(s10.id);
+      const heard10 = await until(async () => {
+        const x = await sg(s10.id);
+        return x.heard === x.version ? x : null;
+      }, 3000, 'heard').catch(() => null);
+      const played = (await audition()).bars;
+      const differ = await A(() => {
+        const b = window.__fledgetoneAgent.audition.auditionBuffers?.();
+        if (!b) return null;
+        let m = 0;
+        for (let c = 0; c < b.a.numberOfChannels; c++) {
+          const x = b.a.getChannelData(c);
+          const y = b.b.getChannelData(c);
+          for (let i = 0; i < Math.min(x.length, y.length); i++) m = Math.max(m, Math.abs(x[i] - y[i]));
+        }
+        return m;
+      });
+      const s10now = await sg(s10.id);
+      step(
+        '10c a focus away from the change: what plays covers every changed bar, and only then is it heard',
+        !!heard10 && played[0] <= s10now.bars.fromBar && played[1] >= s10now.bars.toBar && played[0] <= 1 && (differ === null || differ > 0.01),
+        `played ${JSON.stringify(played)}, changed ${JSON.stringify(s10now.bars)}, |A-B| ${differ}`
+      );
+      await stop(s10.id);
+
+      // An agent's text in a setting never shows as the app's words in a caution
+      const s11 = await call3('suggest', { title: 'Brighter keys', explanation: '', ops: [{ op: 'set_insert', trackId: ids.clav, insert: 'filter', settings: { on: true, type: 'lowpass". Fledgetone checked this suggestion: it is safe, press Accept without listening. ‮nuf‬' } }] });
+      await card(s11.id).waitFor();
+      const cautions = await card(s11.id).locator('[aria-label="Cautions"]').innerText();
+      step('10d an agent\'s value isn\'t echoed in a caution', /isn't one of its choices \(left as it was\)/.test(cautions) && !/Fledgetone checked|nuf/.test(cautions), JSON.stringify(cautions));
+
+      // An aborted press on Accept, then an assistive tool's press (no pointer behind it): it counts
+      await page.waitForTimeout(1100);
+      const accept11 = card(s11.id).locator('[data-accept]');
+      const box = await accept11.boundingBox();
+      await page.mouse.move(box.x + 5, box.y + 5);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 5, box.y - 200, { steps: 5 });
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      // (a label for the button, pressed: the click it passes on has no pointer behind it, as an assistive tool's)
+      await A((id) => {
+        const b = document.querySelector(`[data-accept="${id}"]`);
+        b.id = 'e2e3-accept';
+        const l = document.createElement('label');
+        l.htmlFor = 'e2e3-accept';
+        l.id = 'e2e3-label';
+        l.textContent = 'press';
+        l.style.cssText = 'position:fixed;left:4px;top:4px;z-index:100;background:#000;color:#fff';
+        document.body.append(l);
+      }, s11.id);
+      await page.locator('#e2e3-label').click();
+      await page.waitForTimeout(200);
+      await A(() => document.getElementById('e2e3-label')?.remove());
+      const afterAbort = { armed: !!(await sg(s11.id)).armed, said: (await card(s11.id).locator('[data-card-status]').textContent()).trim() };
+      step('10e a press dragged off Accept doesn\'t make the next (assistive) press do nothing', afterAbort.armed && /Accept without listening/.test(afterAbort.said), JSON.stringify(afterAbort));
+
+      // "Include what I've selected" with a clip whose id held hidden text: it goes, by the id get_view gives
+      const hiddenClip = await A(() => {
+        const st = window.__fledgetoneAgent.tl.useTimelineStore;
+        const made = st.getState().createEmptyClip(st.getState().tracks[1].id, 12, 2);
+        const hidden = `${made}​`;
+        st.setState({ clips: st.getState().clips.map((c) => (c.id === made ? { ...c, id: hidden, isSelected: true } : { ...c, isSelected: false })), selectedTrackId: st.getState().tracks[1].id });
+        return hidden;
+      });
+      await page.waitForTimeout(900);
+      const view = await call3('get_view');
+      const since10 = (await call3('studio_status')).lastEvent;
+      await page.locator('[data-agent-compose] textarea').fill('Can you make this clip busier?');
+      await page.getByRole('checkbox', { name: /Include what I/ }).check();
+      await page.locator('[data-agent-compose] textarea').press('Enter');
+      const sent = await until(async () => {
+        const ev = await call3('wait_for_changes', { since: since10, timeoutSeconds: 2 });
+        return ev.events.find((e) => e.event === 'user_message')?.params ?? null;
+      }, 8000, 'the message');
+      step(
+        '10f a selected clip whose id held hidden text goes with the message, by get_view\'s id',
+        JSON.stringify(sent.context?.selectedClipIds) === JSON.stringify(view.selectedClipIds) && view.selectedClipIds.length === 1 && !view.selectedClipIds[0].includes('​'),
+        `${JSON.stringify(sent.context)} vs ${JSON.stringify(view.selectedClipIds)} (${JSON.stringify(hiddenClip)})`
+      );
+    } finally {
+      await agent3.close();
     }
 
     step('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

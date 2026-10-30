@@ -192,7 +192,7 @@ export const SuggestionsPanel: React.FC = () => {
               {connected ? 'No suggestions yet. Ask your agent for one: it appears here for you to hear before and after, then accept or dismiss.' : 'Suggestions from an agent you connect appear here. Nothing changes in your song until you accept one.'}
             </p>
           ) : (
-            suggestions.map((s) => <SuggestionCard key={s.id} suggestion={s} agent={agent} />)
+            suggestions.map((s) => <SuggestionCard key={s.id} suggestion={s} />)
           )}
           <ConversationList agent={agent} lastAgentRef={lastMessage} />
         </div>

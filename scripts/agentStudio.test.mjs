@@ -441,3 +441,81 @@ test('out of date, then what it changes put back: it waits again', () => {
   // Suggestions carry the connection they were made in
   assert.equal(makeSuggestion(p, ctxOf(p), { title: 'x', explanation: '', ops: [{ op: 'set_track', trackId: keys, pan: 0.2 }] }, 'sg-c', 0, 3).suggestion.connection, 3);
 });
+
+test('what the before-and-after plays covers every bar a suggestion changes, the agent\'s focus with them', async () => {
+  const { hearingRange, covers, NO_LONGER_FITS } = await import('../src/agent/suggestionsStore.ts');
+  const p = base();
+  const clip = p.clips.find((c) => c.notes.length && c.trackId === p.tracks[0].id);
+  const changedAt = { fromBar: clip.startBar, toBar: clip.startBar + clip.lengthBars };
+  // A focus that misses the change: joined with it, never instead of it
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'transpose_notes', clipId: clip.id, semitones: 12 }], focus: { fromBar: 40, toBar: 42 } }).suggestion;
+  assert.ok(covers(s.audition, s.bars), `${JSON.stringify(s.audition)} covers ${JSON.stringify(s.bars)}`);
+  assert.ok(covers(s.audition, changedAt));
+  assert.equal(s.unheard, null);
+  const near = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'transpose_notes', clipId: clip.id, semitones: 12 }], focus: { fromBar: 1, toBar: 2 } }).suggestion;
+  assert.deepEqual(near.audition, { fromBar: 1, toBar: Math.ceil(changedAt.toBar) }, 'the focus and the change together');
+  // Focus and change too long together: the focus goes, the change stays
+  const song = { bpm: 120, tempoPoints: [] };
+  const far = hearingRange({ fromBar: 5, toBar: 7 }, { fromBar: 4, toBar: 7 }, { fromBar: 100, toBar: 102 }, song);
+  assert.deepEqual(far, { audition: { fromBar: 4, toBar: 7 }, unheard: null });
+  // A change too long to hear at once (90 seconds: 45 bars at 120 BPM): its first bars, and which weren't
+  const long = hearingRange({ fromBar: 5, toBar: 80 }, { fromBar: 4, toBar: 20 }, undefined, song);
+  assert.deepEqual(long.audition, { fromBar: 4, toBar: 49 });
+  assert.deepEqual(long.unheard, { fromBar: 49, toBar: 80 });
+  // A mix change (no bars of its own): the agent's focus, or where the track plays
+  assert.deepEqual(hearingRange(null, { fromBar: 1, toBar: 9 }, { fromBar: 3, toBar: 5 }, song), { audition: { fromBar: 3, toBar: 5 }, unheard: null });
+  // Heard only in part: Accept says which bars weren't, and asks for its second press
+  const partly = { ...s, bars: { fromBar: 5, toBar: 80 }, unheard: { fromBar: 49, toBar: 80 }, partHeard: 1 };
+  const d = acceptDecision(partly, p, ctxOf(p), 1000);
+  assert.equal(d.apply, null);
+  assert.match(d.message, /bars 49-79 weren’t heard/);
+  assert.deepEqual(d.suggestion.armed, { version: 1, at: 1000 });
+  assert.deepEqual(acceptDecision(d.suggestion, p, ctxOf(p), 1000 + CONFIRM_AFTER_MS).apply, s.song, 'the second, separate press');
+  // Ops that no longer apply: the card says so in its own words, never the ops' errors
+  const gone = { ...p, clips: p.clips.filter((c) => c.id !== clip.id) };
+  const stale = { ...s, status: 'changed', stale: true };
+  const after = freshen(stale, gone, ctxOf(gone));
+  assert.equal(after.status, 'out_of_date');
+  assert.ok(after.outOfDate.every((x) => x === NO_LONGER_FITS || /^the clip/.test(x)), JSON.stringify(after.outOfDate));
+});
+
+test('a suggestion keeps the name of the agent that made it', () => {
+  const p = base();
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys down', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -20 }] }, 'sg-name', 1, 3, 'Alpha agent').suggestion;
+  assert.equal(s.agent, 'Alpha agent');
+  assert.equal(s.connection, 3);
+  // (made again on a changed song, it's still that agent's)
+  const elsewhere = { ...p, tracks: p.tracks.map((t, i) => (i === 2 ? { ...t, volume: -30 } : t)) };
+  assert.equal(freshen(checkSuggestion(s, elsewhere, ctxOf(elsewhere)), elsewhere, ctxOf(elsewhere)).agent, 'Alpha agent');
+});
+
+test('a press left behind (dragged off, cancelled, on another button, long ago) never makes an assistive tool\'s click count for nothing, and a click that doesn\'t count says why', async () => {
+  const { guardClick, guardDown, guardKey, GUARD_WORDS, PRESS_MAX_MS } = await import('../src/components/agent/cardGuard.ts');
+  const button = (name) => ({ name, closest: () => null });
+  const accept = button('accept');
+  const dismiss = button('dismiss');
+  const click = (target, detail = 0, extra = {}) => ({ currentTarget: target, detail, button: 0, ...extra });
+  const t0 = performance.now();
+  // No press behind it: an assistive tool's click counts
+  assert.equal(guardClick(click(accept), 'sg'), 'ok');
+  // A pointer press on another button, left behind: none
+  guardDown({ currentTarget: dismiss, button: 0 });
+  assert.equal(guardClick(click(accept), 'sg'), 'ok');
+  // A pointer press on this button over a second ago (dragged off, its click never came): none
+  guardDown({ currentTarget: accept, button: 0 });
+  assert.equal(guardClick(click(accept), 'sg', t0 + PRESS_MAX_MS + 500), 'ok');
+  // ...but just now: that click isn't an assistive tool's, and it says so
+  guardDown({ currentTarget: accept, button: 0 });
+  assert.equal(guardClick(click(accept), 'sg'), 'unfinished');
+  // Enter's own press on this button counts; a held Enter doesn't, and says so
+  const key = (target, repeat = false) => ({ currentTarget: target, key: 'Enter', repeat, preventDefault() {}, stopPropagation() {} });
+  guardKey(key(accept));
+  assert.equal(guardClick(click(accept), 'sg'), 'ok');
+  guardKey(key(accept, true));
+  assert.equal(guardClick(click(accept), 'sg'), 'held');
+  // A double-click's second click
+  assert.equal(guardClick(click(accept, 2), 'sg'), 'double');
+  // A pointer's click with no press on this button behind it
+  assert.equal(guardClick(click(accept, 1), 'sg'), 'unfinished');
+  for (const r of ['unsettled', 'double', 'held', 'unfinished']) assert.ok(GUARD_WORDS[r].length > 10, r);
+});

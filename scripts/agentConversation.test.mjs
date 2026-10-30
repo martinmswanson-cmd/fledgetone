@@ -187,11 +187,39 @@ test('the selection as context: the track, the clips and the bars they cover, or
     { id: 'c2', isSelected: false, startBar: 1, lengthBars: 4 },
     { id: 'c3', isSelected: true, startBar: 9, lengthBars: 2 },
   ];
-  const ctx = C.selectionContext({ selectedTrackId: 't1', editingClipId: null, clips });
+  const tracks = [{ id: 't1' }];
+  const ctx = C.selectionContext({ selectedTrackId: 't1', editingClipId: null, tracks, clips });
   assert.deepEqual(ctx, { selectedTrackId: 't1', selectedClipIds: ['c1', 'c3'], bars: { fromBar: 5, toBar: 11 } });
   assert.equal(C.contextWords({ context: ctx }), 'With your selection: 2 selected clips, bars 5-10');
-  assert.equal(C.selectionContext({ selectedTrackId: null, editingClipId: null, clips: clips.map((c) => ({ ...c, isSelected: false })) }), undefined);
+  assert.equal(C.selectionContext({ selectedTrackId: null, editingClipId: null, tracks, clips: clips.map((c) => ({ ...c, isSelected: false })) }), undefined);
   assert.equal(C.contextWords({}), null);
+  // A track that isn't the song's is left out
+  assert.equal(C.selectionContext({ selectedTrackId: 'gone', editingClipId: null, tracks, clips: [] }), undefined);
+});
+
+test('the selection as context names clips and tracks with hidden text in their ids as the agent reads them', async () => {
+  const { agentIds } = await import('../src/agent/agentText.ts');
+  const { readUserMessage } = await import('../src/agent/protocol.ts');
+  // A clip whose id held a hidden character, alone (read plain) and beside its plain twin (an alias)
+  const tracks = [{ id: 't1\u200b' }, { id: 't1' }];
+  const clips = [
+    { id: 'c1\u200b', isSelected: true, startBar: 1, lengthBars: 4 },
+    { id: 'c1', isSelected: true, startBar: 5, lengthBars: 4 },
+    { id: 'c2\u2060', isSelected: true, startBar: 9, lengthBars: 1 },
+  ];
+  const ctx = C.selectionContext({ selectedTrackId: 't1\u200b', editingClipId: 'c1\u200b', tracks, clips });
+  const clipIds = agentIds(clips.map((c) => c.id));
+  const trackIds = agentIds(tracks.map((t) => t.id));
+  assert.equal(ctx.selectedClipIds.length, 3, 'no clip dropped');
+  assert.deepEqual(ctx.selectedClipIds, clips.map((c) => clipIds.get(c.id)));
+  assert.ok(ctx.selectedClipIds[0].includes('~') && ctx.selectedClipIds[2] === 'c2', JSON.stringify(ctx.selectedClipIds));
+  assert.equal(ctx.selectedTrackId, trackIds.get('t1\u200b'));
+  assert.equal(ctx.editingClipId, clipIds.get('c1\u200b'));
+  // ...and the helper keeps them as they came (the alias form is an id)
+  const m = readUserMessage({ id: 'u-1', text: 'this one', at: 1, context: ctx });
+  assert.deepEqual(m.context, ctx);
+  // Not ids: dropped
+  assert.equal(readUserMessage({ id: 'u-2', text: 'x', at: 1, context: { selectedClipIds: ['a b', 'c"d', 'x~zz'] } }).context, undefined);
 });
 
 // ---------- The real helper ----------
