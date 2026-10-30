@@ -101,12 +101,25 @@ struct Def
 static const Def defs[] = {PLUGINS(ENTRY)};
 static const int count = sizeof(defs) / sizeof(defs[0]);
 
+/** The most MIDI messages kept for one block (the instruments themselves keep 40 notes a block) */
+#define QUEUE 256
+
 struct Inst
 {
     AudioEffect *fx;
     float instrument;
     float buf[4][BB_BLOCK];
     char text[128];
+    /** MIDI waiting for the next block. The instruments start their list of the block's notes
+     * afresh on every processEvents call, so all of a block's messages go to them in one call. */
+    VstMidiEvent queue[QUEUE];
+    int queued;
+    /** An all-notes-off (CC 123 to 127) or all-sound-off (120) would cut the instruments' voices
+     * dead (a click): the output fades out over `fadeLength` frames first, then the message goes
+     * in while silent, and the output stays silent for `muteLength` more while what's left of the
+     * voices (the DX10's, the pianos') dies away. A new note ends the wait at once. */
+    VstMidiEvent reset;
+    int fading, fadeLength, muted, muteLength;
 };
 
 static std::string json;
@@ -137,6 +150,8 @@ BB_EXPORT int bb_create(int i, float sampleRate)
     auto *in = new Inst();
     memset(in->buf, 0, sizeof(in->buf));
     in->instrument = defs[i].instrument;
+    in->fadeLength = (int)(sampleRate * 0.01f) + 1;
+    in->muteLength = (int)(sampleRate * 0.03f) + 1;
     in->fx = defs[i].make(nullptr);
     in->fx->setSampleRate(sampleRate);
     in->fx->setBlockSize(BB_BLOCK);
@@ -174,28 +189,85 @@ BB_EXPORT const char *bb_param_display(int h, int i)
     return IN->text;
 }
 BB_EXPORT float *bb_buffer(int h, int w) { return IN->buf[w & 3]; }
+/** Hand the plug-in the messages waiting for this block, in one call (they all fall on its first frame). */
+static void sendQueued(Inst *in)
+{
+    if (!in->queued) return;
+    struct
+    {
+        VstInt32 numEvents;
+        VstIntPtr reserved;
+        VstEvent *events[QUEUE + 1];
+    } evs = {};
+    for (int i = 0; i < in->queued; i++)
+    {
+        VstMidiEvent *ev = &in->queue[i];
+        unsigned char kind = (unsigned char)ev->midiData[0] & 0xf0, d1 = (unsigned char)ev->midiData[1];
+        bool resets = kind == 0xb0 && (d1 == 120 || d1 > 0x7a);
+        bool starts = kind == 0x90 && ev->midiData[2];
+        if (resets)
+        {
+            // Fade out first (a second reset during the fade joins it)
+            if (!in->fading && !in->muted) in->fading = in->fadeLength;
+            in->reset = *ev;
+            continue;
+        }
+        if (starts && (in->fading || in->muted))
+        {
+            // A note to play: the reset goes in now, and the output is back
+            if (in->fading) evs.events[evs.numEvents++] = (VstEvent *)&in->reset;
+            in->fading = in->muted = 0;
+        }
+        evs.events[evs.numEvents++] = (VstEvent *)ev;
+    }
+    in->queued = 0;
+    if (evs.numEvents) in->fx->processEvents((VstEvents *)&evs);
+}
+
 BB_EXPORT void bb_process(int h, int frames)
 {
-    float *ins[2] = {IN->buf[0], IN->buf[1]};
-    float *outs[2] = {IN->buf[2], IN->buf[3]};
-    IN->fx->processReplacing(ins, outs, frames);
-    if (IN->instrument > 0 && IN->instrument != 1)
-        for (int i = 0; i < frames; i++) outs[0][i] *= IN->instrument, outs[1][i] *= IN->instrument;
+    Inst *in = IN;
+    sendQueued(in);
+    float *ins[2] = {in->buf[0], in->buf[1]};
+    float *outs[2] = {in->buf[2], in->buf[3]};
+    in->fx->processReplacing(ins, outs, frames);
+    if (in->instrument > 0 && in->instrument != 1)
+        for (int i = 0; i < frames; i++) outs[0][i] *= in->instrument, outs[1][i] *= in->instrument;
+    if (in->fading || in->muted)
+    {
+        int i = 0;
+        for (; i < frames && in->fading; i++, in->fading--)
+        {
+            float g = (float)in->fading / (float)in->fadeLength;
+            outs[0][i] *= g, outs[1][i] *= g;
+        }
+        if (!in->fading && !in->muted)
+        {
+            // Faded out: now the reset, unheard
+            struct
+            {
+                VstInt32 numEvents;
+                VstIntPtr reserved;
+                VstEvent *events[2];
+            } evs = {1, 0, {(VstEvent *)&in->reset, nullptr}};
+            in->fx->processEvents((VstEvents *)&evs);
+            in->muted = in->muteLength;
+        }
+        for (; i < frames && in->muted; i++, in->muted--) outs[0][i] = outs[1][i] = 0;
+    }
 }
 
 BB_EXPORT void bb_midi(int h, int status, int d1, int d2)
 {
-    if (!IN->instrument) return;
-    VstMidiEvent ev = {};
+    if (!IN->instrument || IN->queued >= QUEUE) return;
+    VstMidiEvent &ev = IN->queue[IN->queued++];
+    ev = {};
     ev.type = kVstMidiType;
     ev.byteSize = sizeof(VstMidiEvent);
+    ev.deltaFrames = 0;
     ev.midiData[0] = (char)status;
     ev.midiData[1] = (char)d1;
     ev.midiData[2] = (char)d2;
-    VstEvents evs = {};
-    evs.numEvents = 1;
-    evs.events[0] = (VstEvent *)&ev;
-    IN->fx->processEvents(&evs);
 }
 
 BB_EXPORT int bb_programs(int h) { return IN->fx->numPrograms > 1 ? IN->fx->numPrograms : 0; }

@@ -11,6 +11,7 @@ import { initAudio, liveMix } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { PREVIEW_FADE_SECONDS } from '../../audio/previewFade';
 import { showToast } from './toastStore';
+import { useDialogFocus } from './useDialogFocus';
 
 /**
  * The Game preview's transition matrix (how each state hands over to each other one) and its
@@ -195,20 +196,9 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [params, setParams] = useState<Record<string, number>>({});
   const player = useRef<AdaptiveMusic | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  // Esc closes it, as it does every dialog (unless another one is open over it), wherever focus is
-  useEffect(() => {
-    if (box.current && !box.current.contains(document.activeElement)) box.current.focus();
-    const onKey = (e: KeyboardEvent) => {
-      const el = box.current;
-      if (e.key !== 'Escape' || !el) return;
-      const other = document.activeElement?.closest('[role="dialog"]');
-      const top = [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].pop();
-      if (other ? other !== el : top !== el) return;
-      onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // As every dialog: Esc closes it (unless another one is open over it) wherever focus is, Tab goes
+  // round inside it, and focus goes back where it was when it closes
+  useDialogFocus(box, onClose);
   // The pads are the one preview playing (a suggestion's before-and-after, say, stops; another stops them)
   const claim = useExclusivePreview('game-audition-pads', () => {
     player.current?.stop(PREVIEW_FADE_SECONDS);
