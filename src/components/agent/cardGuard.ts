@@ -125,17 +125,24 @@ export function guardKeyUp(): void {
   window.setTimeout(() => (repeating = false), 0);
 }
 
-/** On a guarded button's keydown: Enter (not held) starts a press; Space does nothing (and doesn't play the song). */
-export function guardKey(e: React.KeyboardEvent): void {
+/** What Accept says to Space, which doesn't press it. */
+export const SPACE_WORDS = 'Space doesn’t press Accept: press Enter.';
+
+/**
+ * On a guarded button's keydown: Enter (not held) starts a press; Space presses nothing (and
+ * doesn't play the song): 'space', for the card to say so (SPACE_WORDS).
+ */
+export function guardKey(e: React.KeyboardEvent): 'space' | undefined {
   listen();
   if (e.key === ' ' || e.code === 'Space') {
     e.preventDefault();
     e.stopPropagation();
-    return;
+    return 'space';
   }
-  if (e.key !== 'Enter') return;
+  if (e.key !== 'Enter') return undefined;
   if (e.repeat) repeating = true;
   down = e.repeat ? null : { button: e.currentTarget, top: cardTop(e.currentTarget), key: true, pointerButton: -1, at: performance.now() };
+  return undefined;
 }
 
 /** On another guarded button's keydown (Dismiss): Enter or Space, not held, starts a press. */

@@ -5,7 +5,8 @@
  * share (renderOptionsFor), the render itself (renderRange: through the master section, with the
  * recordings live playback has, exactly the bars asked for, notes held over from before
  * included; renderLoop: the same made to play looped, its end crossfaded into what leads into
- * its start), and its measurement (measureRender:
+ * its start; renderSequence: several stretches played one after another, looped as one, each
+ * crossfaded into what leads into the next), and its measurement (measureRender:
  * integrated and loudest-3-seconds loudness, true peak, crest and the balance across the
  * spectrum), and the same bars track by track (renderRangeStems: each track's stem, as the Mix
  * check renders them). No store here: callers pass the song.
@@ -16,7 +17,7 @@ import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAna
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { barToSeconds, type MeterMap, type TempoPoint } from './tempoMap';
-import { LOOP_FADE_SECONDS, loopChannels, preRollStart, restartHeldNotes } from './auditionMath';
+import { joinStretches, LOOP_FADE_SECONDS, loopChannels, preRollStart, restartHeldNotes, stretchOf, type RenderedStretch } from './auditionMath';
 import type { IntensityCurve } from '../store/intensity';
 
 /** The parts of a song a render needs. */
@@ -107,6 +108,40 @@ export async function renderLoop(song: ListenSnapshot, fromBar: number, toBar: n
   const out = new AudioBuffer({ numberOfChannels: channels.length, length: Math.max(1, channels[0].length), sampleRate: audio.sampleRate });
   channels.forEach((c, i) => out.copyToChannel(c, i));
   return out;
+}
+
+/**
+ * Render stretches of `song` (each [fromBar, toBar), in order) as renderRange does, one after
+ * another, made to be played looped as one (the before and after of a suggestion whose changes sit
+ * in several places): each one's end crossfades into the music leading into the next one's start
+ * (joinStretches), so going from one to the next doesn't click. `starts`: where each stretch
+ * begins in the buffer, seconds.
+ */
+export async function renderSequence(
+  song: ListenSnapshot,
+  plays: ReadonlyArray<{ fromBar: number; toBar: number }>,
+  opts: { signal?: AbortSignal; progress?: RenderProgress } = {}
+): Promise<{ buffer: AudioBuffer; starts: number[] }> {
+  const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
+  const total = plays.reduce((n, p) => n + Math.max(1e-9, barToSeconds(p.toBar, tempo) - barToSeconds(p.fromBar, tempo)), 0);
+  const parts: RenderedStretch[] = [];
+  let done = 0;
+  let rate = 44100;
+  for (const p of plays) {
+    const share = Math.max(1e-9, barToSeconds(p.toBar, tempo) - barToSeconds(p.fromBar, tempo)) / total;
+    const start = preRollStart(song, p.fromBar);
+    const from = start < p.fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, p.fromBar) } : song;
+    // (no 5 ms fade at the end: the crossfade takes its place)
+    const audio = await renderArrangement({ ...renderOptionsFor(from, start, p.toBar, opts.signal), noEndFade: true }, opts.progress ? (f) => opts.progress!(done + f * share) : undefined);
+    rate = audio.sampleRate;
+    const trim = start < p.fromBar ? Math.round((barToSeconds(p.fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate) : 0;
+    parts.push(stretchOf(channelsOf(audio), trim, LOOP_FADE_SECONDS * audio.sampleRate));
+    done += share;
+  }
+  const { channels, starts } = joinStretches(parts, LOOP_FADE_SECONDS * rate);
+  const buffer = new AudioBuffer({ numberOfChannels: Math.max(1, channels.length), length: Math.max(1, channels[0]?.length ?? 1), sampleRate: rate });
+  channels.forEach((c, i) => buffer.copyToChannel(c, i));
+  return { buffer, starts: starts.map((f) => f / rate) };
 }
 
 /**

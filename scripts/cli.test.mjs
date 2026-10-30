@@ -83,8 +83,23 @@ test('diff: what changed, in plain words', { skip }, async () => {
   assert.match(r.stdout, /- Turns "Glass" down by 2\.5 dB \(-23\.5 dB to -26 dB\)\./);
   assert.match(r.stdout, /- In "Kalimba" on "Kalimba": adds 2 notes in bar 8\./);
   assert.match(r.stdout, /- Adds the marker "Coda" at bar 13\./);
+  // Where it is heard: the track wherever it plays, the notes and the marker where they are
+  assert.match(r.stdout, /^\(Heard in bars? \d/m);
+  const json = await cli('diff', SONG, EDITED, '--json');
+  const d = JSON.parse(json.stdout);
+  assert.ok(Array.isArray(d.regions) && d.regions.length > 0);
+  assert.ok(d.changes.every((c) => !('marked' in c)), 'the plain words only');
+  assert.ok(!/[\uE000\uE001]/.test(json.stdout));
   const same = await cli('diff', SONG, SONG);
   assert.match(same.stdout, /No differences/);
+});
+
+test('mcp --allow-null-origin is no longer offered: it says to use --studio', { skip }, async () => {
+  const r = await cli('mcp', '--allow-null-origin');
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /--allow-null-origin is no longer offered.*--studio/s);
+  const help = await cli('--help');
+  assert.ok(!/allow-null-origin/.test(help.stdout));
 });
 
 test('apply: writes a new song equal to the edited fixture, and never over the song it reads', { skip }, async () => {

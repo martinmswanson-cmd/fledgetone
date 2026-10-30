@@ -4,34 +4,40 @@
  * (plain text), what it changes in plain words, its cautions in amber and its notes plain, a
  * before-and-after to hear (Now / Suggested, the same bars looped, switched in step), and Accept
  * (one undo step) or Dismiss. Accept and Dismiss answer only to a real click or key press on a card
- * that stayed where it was (cardGuard.ts), and a press that doesn't count says why. Its
- * before-and-after plays every bar it changes (a change too long to hear at once: its first bars,
- * and it says which it leaves out). It says whether it was heard, or heard only in part; one the song changed under
+ * that stayed where it was (cardGuard.ts), and a press that doesn't count says why (Space on
+ * Accept too: Enter presses it). Its heading names every place its changes are heard (a track's
+ * level wherever the track plays, the tempo or the master over the whole song), and its
+ * before-and-after plays them one after another (too long to hear at once: as much as fits, and it
+ * says which it plays, which it leaves out, and which limit, 64 bars or 90 seconds). The names in
+ * what it changes (an agent may have written them) are chips of their own (Named.tsx), never
+ * part of the app's sentence. It says whether it was heard, or heard only in part; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
  * of date or made for another song can't be accepted (its Accept stays, marked unavailable, so a
  * focus on it stays). Stop is there whenever it's being heard. A focus inside the card when its
  * buttons go (the agent withdrew it) comes to the card, never left on the page.
- * "Ask about this" ties the musician's next message to it (the message box takes the focus).
+ * "Ask about this" ties the musician's next message to it (the message box takes the focus): only
+ * on a card of the agent connected now (another connection's agent can't read it).
  */
 import React from 'react';
 import { Check, Headphones, MessageSquareReply, Square, X } from 'lucide-react';
 import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
-import { announce, ARMED_MS, barWords, isArmed, isOpen, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
-import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp } from './cardGuard';
+import { announce, ARMED_MS, heardRegions, isArmed, isOpen, limitWords, rangesWords, unheardWords, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { GUARD_WORDS, guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp, SPACE_WORDS } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
 import { useConversation } from '../../agent/conversation';
-import { fromYourAgent, louderWords, STATUS_WORDS } from './words';
+import { louderWords, STATUS_WORDS } from './words';
+import { FromYourAgent, NamedText } from './Named';
 
 /** An agent's title in quotes, once (one that poses as the app comes quoted already). */
 const quoted = (t: string) => (t.startsWith('“') && t.endsWith('”') ? t : `“${t}”`);
 
-const bars = barWords;
+const bars = rangesWords;
 
 /** The line under the buttons: where it is, and whether what Accept puts in was heard. */
 function statusLine(s: Suggestion): string {
-  const part = isOpen(s) && s.heard !== s.version && s.partHeard === s.version && s.unheard ? `Heard only in part: ${bars(s.unheard)} ${s.unheard.toBar - s.unheard.fromBar > 1 ? 'weren’t' : 'wasn’t'} heard.` : null;
+  const part = isOpen(s) && s.heard !== s.version && s.partHeard === s.version && s.unheard ? `Heard only in part: ${unheardWords(s.unheard, s.limit)}` : null;
   if (s.status === 'changed') return s.heard === s.version && !s.stale ? 'The song changed since it was suggested. You heard it as it is now.' : (part ?? 'The song changed since it was suggested: hear it again before you accept.');
   if (s.status === 'waiting') return s.heard === s.version ? 'Heard.' : (part ?? 'Not heard yet.');
   const words = STATUS_WORDS[s.status];
@@ -62,8 +68,10 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
     return () => window.clearTimeout(t);
   }, [s.id, s.armed?.at]);
   const open = isOpen(s);
-  // (every bar it changes, and the agent's focus with them if that fits: see hearingRange)
+  // (each place its changes are heard, one after another, and the agent's focus with them if that fits: see hearingPlan)
   const range = s.audition;
+  // (only the agent connected now can read what a message asks about)
+  const askable = useConversation((c) => c.connection === s.connection) && s.connection !== undefined;
   const playing = mine && audition.phase === 'playing';
 
   const hear = (which: 'a' | 'b') => {
@@ -112,7 +120,9 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
     >
       <header className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(s.agent)}</p>
+          <p className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">
+            <FromYourAgent name={s.agent} />
+          </p>
           <h3 className="text-[13px] font-semibold text-forge-text break-words">{quoted(s.title)}</h3>
         </div>
         <span className={`shrink-0 text-[10px] font-mono uppercase tracking-wider ${s.status === 'out_of_date' || s.status === 'other_song' ? 'text-amber-300' : 'text-forge-muted'}`}>{s.status.replace(/_/g, ' ')}</span>
@@ -120,29 +130,31 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
       {s.explanation && <blockquote className="border-l-2 border-cyan-500/50 pl-2 text-[12px] text-forge-muted whitespace-pre-wrap break-words">{s.explanation}</blockquote>}
 
       <div>
-        <h4 className="text-[10px] font-mono uppercase tracking-wider text-forge-muted">What changes{s.bars ? ` (${bars(s.bars)})` : ''}</h4>
+        <h4 className="text-[10px] font-mono uppercase tracking-wider text-forge-muted" data-regions="">
+          What changes ({s.regions.length ? `heard in ${bars(s.regions)}` : 'nothing to hear'})
+        </h4>
         <ul className="mt-1 list-disc pl-4 text-[12px] text-forge-text space-y-0.5">
-          {s.changes.map((c, i) => (
+          {(s.marked?.changes ?? s.changes).map((c, i) => (
             <li key={i} className="break-words">
-              {c}
+              <NamedText text={c} />
             </li>
           ))}
         </ul>
       </div>
       {s.warnings.length > 0 && (
         <ul aria-label="Cautions" className="text-[12px] text-amber-300 space-y-0.5">
-          {s.warnings.map((w, i) => (
+          {(s.marked?.warnings ?? s.warnings).map((w, i) => (
             <li key={i} className="break-words">
-              {w}
+              <NamedText text={w} />
             </li>
           ))}
         </ul>
       )}
       {s.notes.length > 0 && (
         <ul aria-label="Notes" className="text-[12px] text-forge-muted space-y-0.5">
-          {s.notes.map((n, i) => (
+          {(s.marked?.notes ?? s.notes).map((n, i) => (
             <li key={i} className="break-words">
-              {n}
+              <NamedText text={n} />
             </li>
           ))}
         </ul>
@@ -174,7 +186,12 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           <span className="text-[11px] text-forge-muted">{bars(range)}</span>
           {open && s.unheard && (
             <span data-unheard="" className="w-full text-[11px] text-amber-300">
-              It changes more than can be heard at once (90 seconds): you hear its first bars, {bars(range)}, not {bars(s.unheard)}.
+              Too long to hear at once: {limitWords(s.limit)}. You hear the changes in {bars(heardRegions(s))}, not those in {bars(s.unheard)}.
+            </span>
+          )}
+          {open && s.focusLeftOut && s.focus && (
+            <span data-focus-left-out="" className="w-full text-[11px] text-forge-muted">
+              The bars your agent also asked to play ({bars([s.focus])}) are left out: they don’t fit with the changes.
             </span>
           )}
           {mine && audition.phase === 'rendering' && (
@@ -196,7 +213,10 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
               // (not disabled: a button that's focused stays focused when the suggestion goes out of date)
               aria-disabled={!open}
               onPointerDown={guardDown}
-              onKeyDown={guardKey}
+              onKeyDown={(e) => {
+                // (Space never presses Accept: it says so, once a press)
+                if (guardKey(e) === 'space' && open && !e.repeat) say(SPACE_WORDS);
+              }}
               onKeyUp={guardKeyUp}
               onClick={(e) => {
                 if (!open) return;
@@ -235,6 +255,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
         <span data-card-status="" className={`text-[11px] ${s.status === 'changed' || s.status === 'other_song' || message ? 'text-amber-300' : 'text-forge-muted'}`}>
           {message ?? statusLine(s)}
         </span>
+        {askable && (
         <button
           type="button"
           data-keep-focus=""
@@ -249,6 +270,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
         >
           <MessageSquareReply className="w-3 h-3" aria-hidden /> Ask about this
         </button>
+        )}
       </footer>
     </article>
   );

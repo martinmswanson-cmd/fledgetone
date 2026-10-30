@@ -54,10 +54,11 @@ import { normalizePoints, specOf } from '../audio/automation';
 import { clampBpm, sortedPoints, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 import { defaultClipper } from '../audio/effects/clipper';
 import { diffSongs, type SongDiff } from './songDiff';
-import { checkSafety } from './safety';
+import { checkSafetyMarked } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
 import { byAgentId, givenKey, givenText as quoted, plainToken } from './agentText';
+import { nm, plainNames } from './names';
 
 
 /** The version of the op vocabulary this file reads. */
@@ -156,10 +157,12 @@ export interface ApplyResult {
   ok: true;
   /** The song with the ops applied (objects the ops didn't touch are the same objects as the song passed in). */
   song: ProjectSnapshot;
-  /** Plain-words cautions: values brought into range, big level jumps, notes out of an instrument's range. */
+  /** Plain-words cautions: values brought into range, big level jumps, notes out of an instrument's range (names in plain quotes: names.ts). */
   warnings: string[];
   /** Plain-words things worth knowing that need no care (a quiet track unmuted): shown, not in amber. */
   notes: string[];
+  /** The warnings and notes with each name marked, for showing the names apart (names.ts nameParts). */
+  marked: { warnings: string[]; notes: string[] };
   /** What changed, in plain words, with the tracks, clips and bars it touches (see songDiff.ts). */
   diff: SongDiff;
   /** The ids the ops' `ref` names stand for. */
@@ -342,6 +345,13 @@ const tempoOf = (w: Pick<Work, 'bpm' | 'tempoPoints'>): TempoMap => ({ bpm: w.bp
  * op's index.
  */
 export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: string }): ApplyOutcome {
+  const out = applyMarked(base, doc, opts);
+  // (the names in the words marked as they're made: in plain quotes here, apart on a card)
+  if (!out.ok) return { ok: false, errors: out.errors.map((e) => ({ ...e, message: plainNames(e.message) })) };
+  return { ...out, warnings: out.warnings.map(plainNames), notes: out.notes.map(plainNames), marked: { warnings: out.warnings, notes: out.notes } };
+}
+
+function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string }): ApplyOutcome {
   const shape = checkOpsShape(doc);
   if (shape.length) return { ok: false, errors: shape };
   const ops = (doc as OpsDocument).ops;
@@ -398,7 +408,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           if (!isObj(raw) || typeof raw.id !== 'string') throw new OpFail(path, 'expected { "id": "<note id>", ...the fields to change }');
           for (const k of Object.keys(raw)) if (!['id', 'pitch', 'start', 'length', 'velocity'].includes(k)) throw new OpFail(`${path}.${givenKey(k)}`, `a note change has id, pitch, start, length and velocity, not ${quoted(k)}`);
           const note = byAgentId(clip.notes, raw.id);
-          if (!note) throw new OpFail(`${path}.id`, `clip "${clip.name}" has no note ${quoted(raw.id)} (get_notes lists them)`);
+          if (!note) throw new OpFail(`${path}.id`, `clip ${nm(clip.name)} has no note ${quoted(raw.id)} (get_notes lists them)`);
           const pitch = raw.pitch === undefined ? note.note : readPitch(raw.pitch, `${path}.pitch`, track);
           const start = raw.start === undefined ? note.startOffset : readStart(raw.start, `${path}.start`, clip);
           const length = raw.length === undefined ? undefined : readLength(raw.length, `${path}.length`);
@@ -417,7 +427,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           const ids = new Set<string>();
           op.noteIds.forEach((id, i) => {
             const note = byAgentId(clip.notes, id);
-            if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip "${clip.name}" has no note ${quoted(id)}`);
+            if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip ${nm(clip.name)} has no note ${quoted(id)}`);
             ids.add(note.id);
           });
           keep = (n) => !ids.has(n.id);
@@ -429,7 +439,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           keep = (n) => n.startOffset < from - EPS || n.startOffset >= to - EPS;
         }
         const notes = clip.notes.filter(keep);
-        if (notes.length === clip.notes.length) warn(`remove_notes (op ${index}) found no notes to remove in "${clip.name}".`);
+        if (notes.length === clip.notes.length) warn(`remove_notes (op ${index}) found no notes to remove in ${nm(clip.name)}.`);
         else replaceClip(clip, { ...clip, notes });
         return;
       }
@@ -437,7 +447,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const clip = noteClip(op.clipId, `${at}.clipId`);
         const track = trackById(clip.trackId);
         if (isDrumKind(track.instrumentKey) || isFxKind(track.instrumentKey) || isDropKind(track.instrumentKey))
-          throw new OpFail(`${at}.clipId`, `"${track.name}" plays a drum, effect or move on each note, not a pitch: change the notes' pitch with change_notes instead`);
+          throw new OpFail(`${at}.clipId`, `${nm(track.name)} plays a drum, effect or move on each note, not a pitch: change the notes' pitch with change_notes instead`);
         if (!Number.isInteger(op.semitones) || Math.abs(op.semitones) > 48) throw new OpFail(`${at}.semitones`, 'expected a whole number of semitones, -48 to 48');
         const ids = op.noteIds ? new Set(op.noteIds.map((id) => byAgentId(clip.notes, id)?.id ?? id)) : null;
         const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
@@ -451,7 +461,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
           }
           return { ...n, note: nameOf(m) };
         });
-        if (held) warn(`${held} note${held === 1 ? '' : 's'} in "${clip.name}" would leave ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) and stayed where they were.`);
+        if (held) warn(`${held} note${held === 1 ? '' : 's'} in ${nm(clip.name)} would leave ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) and stayed where they were.`);
         replaceClip(clip, { ...clip, notes });
         return;
       }
@@ -482,7 +492,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (op.trackId !== undefined) {
           const to = trackRef(op.trackId, `${at}.trackId`);
           const from = trackById(clip.trackId);
-          if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of "${from.name}" (${INSTRUMENTS[from.instrumentKey].name}) can't play on "${to.name}" (${INSTRUMENTS[to.instrumentKey].name})`);
+          if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of ${nm(from.name)} (${INSTRUMENTS[from.instrumentKey].name}) can't play on ${nm(to.name)} (${INSTRUMENTS[to.instrumentKey].name})`);
           trackId = to.id;
         }
         const startBar = op.toBar === undefined ? clip.startBar : readBar(op.toBar, `${at}.toBar`, TOTAL_BARS + 1 - clip.lengthBars);
@@ -493,7 +503,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const clip = editableClip(op.clipId, `${at}.clipId`);
         const lengthBars = readClipLength(op.lengthBars, `${at}.lengthBars`, TOTAL_BARS + 1 - clip.startBar);
         const hidden = clip.notes.filter((n) => n.startOffset >= lengthBars - EPS).length;
-        if (hidden) warn(`"${clip.name}" gets shorter than ${hidden} of its notes: they stay in the clip but don't play.`);
+        if (hidden) warn(`${nm(clip.name)} gets shorter than ${hidden} of its notes: they stay in the clip but don't play.`);
         replaceClip(clip, { ...clip, lengthBars });
         return;
       }
@@ -508,7 +518,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (op.trackId !== undefined) {
           const to = trackRef(op.trackId, `${at}.trackId`);
           const from = trackById(clip.trackId);
-          if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of "${from.name}" can't play on "${to.name}"`);
+          if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of ${nm(from.name)} can't play on ${nm(to.name)}`);
           trackId = to.id;
         }
         const startBar = readBar(op.toBar, `${at}.toBar`, TOTAL_BARS + 1 - clip.lengthBars);
@@ -540,20 +550,20 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       case 'set_track': {
         const track = trackRef(op.trackId, `${at}.trackId`);
         const next: Track = { ...track };
-        if (op.volumeDb !== undefined) next.volume = clamped(op.volumeDb, -60, 6, `"${track.name}" volume`, 'dB');
-        if (op.pan !== undefined) next.pan = clamped(op.pan, -1, 1, `"${track.name}" pan`);
+        if (op.volumeDb !== undefined) next.volume = clamped(op.volumeDb, -60, 6, `${nm(track.name)} volume`, 'dB');
+        if (op.pan !== undefined) next.pan = clamped(op.pan, -1, 1, `${nm(track.name)} pan`);
         if (op.mute !== undefined) next.isMuted = op.mute;
         if (op.solo !== undefined) next.isSoloed = op.solo;
         if (op.name !== undefined) next.name = cleanName(op.name, `${at}.name`, 'a track name needs at least one letter')!;
-        if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `"${track.name}" reverb send`);
-        if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `"${track.name}" delay send`);
-        if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `"${track.name}" distance`);
+        if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `${nm(track.name)} reverb send`);
+        if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `${nm(track.name)} delay send`);
+        if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `${nm(track.name)} distance`);
         if (op.output !== undefined) {
           if (op.output === null) delete next.output;
           else {
             const bus = trackRef(op.output, `${at}.output`);
-            if (!isBus(bus)) throw new OpFail(`${at}.output`, `"${bus.name}" isn't a bus: a track plays into a bus, or the master (null)`);
-            if (bus.id === track.id || wouldLoop(track.id, bus.id, w.tracks)) throw new OpFail(`${at}.output`, `"${track.name}" can't play into "${bus.name}": the sound would go round in a loop`);
+            if (!isBus(bus)) throw new OpFail(`${at}.output`, `${nm(bus.name)} isn't a bus: a track plays into a bus, or the master (null)`);
+            if (bus.id === track.id || wouldLoop(track.id, bus.id, w.tracks)) throw new OpFail(`${at}.output`, `${nm(track.name)} can't play into ${nm(bus.name)}: the sound would go round in a loop`);
             next.output = bus.id;
           }
         }
@@ -563,7 +573,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       case 'set_eq': {
         const track = trackRef(op.trackId, `${at}.trackId`);
         const eq = { ...track.eq };
-        for (const band of ['low', 'mid', 'high'] as const) if (op[band] !== undefined) eq[band] = clamped(op[band]!, -24, 12, `"${track.name}" EQ ${band}`, 'dB');
+        for (const band of ['low', 'mid', 'high'] as const) if (op[band] !== undefined) eq[band] = clamped(op[band]!, -24, 12, `${nm(track.name)} EQ ${band}`, 'dB');
         replaceTrack(track, { ...track, eq });
         return;
       }
@@ -581,7 +591,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (insert === 'pump' && settings.source !== undefined) {
           if (typeof settings.source !== 'string') throw new OpFail(`${at}.settings.source`, 'expected the id of the track the Pump ducks to');
           const source = trackRef(settings.source, `${at}.settings.source`);
-          if (source.id === track.id) throw new OpFail(`${at}.settings.source`, `"${track.name}" can't duck to itself: give another track`);
+          if (source.id === track.id) throw new OpFail(`${at}.settings.source`, `${nm(track.name)} can't duck to itself: give another track`);
           // The id itself, never the "$ref" it was given as
           settings.source = source.id;
         }
@@ -590,9 +600,9 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
         for (const [k, v] of Object.entries(settings)) {
-          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`"${track.name}" ${insert} ${k} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
+          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${nm(track.name)} ${insert} ${k} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
           // (what the agent wrote is never echoed: it could read as the app's own words)
-          if (typeof v === 'string' && out[k] !== v) warn(`"${track.name}" ${insert} ${k}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
+          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insert} ${k}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -601,14 +611,14 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const track = trackRef(op.trackId, `${at}.trackId`);
         const key = readInstrument(op.instrument, `${at}.instrument`);
         if (key === track.instrumentKey) {
-          warn(`"${track.name}" already plays ${INSTRUMENTS[key].name}.`);
+          warn(`${nm(track.name)} already plays ${INSTRUMENTS[key].name}.`);
           return;
         }
         // The store's rules (setTrackInstrument): a bus or return is made as one, and the Drop pad's notes are moves, not notes
         if (isMixTrack({ instrumentKey: key })) throw new OpFail(`${at}.instrument`, 'a bus or a return is added with add_track, not switched to');
-        if (isAudioKind(track.instrumentKey)) throw new OpFail(`${at}.trackId`, `"${track.name}" plays sound files: its instrument can't change`);
+        if (isAudioKind(track.instrumentKey)) throw new OpFail(`${at}.trackId`, `${nm(track.name)} plays sound files: its instrument can't change`);
         if (isDropKind(key) !== isDropKind(track.instrumentKey) && w.clips.some((c) => c.trackId === track.id))
-          throw new OpFail(`${at}.instrument`, `"${track.name}" has clips: they can't switch between the Drop pad and an instrument`);
+          throw new OpFail(`${at}.instrument`, `${nm(track.name)} has clips: they can't switch between the Drop pad and an instrument`);
         const meta = INSTRUMENTS[key];
         const next: Track = { ...track, instrumentKey: key, name: meta.name, color: meta.color, ...(key === 'designedKit' ? designedKitStart(track) : {}) };
         delete next.plugin;
@@ -618,7 +628,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'set_synth_preset': {
         const track = trackRef(op.trackId, `${at}.trackId`);
-        if (track.instrumentKey !== 'synthDesigner') throw new OpFail(`${at}.trackId`, `"${track.name}" isn't a Synth Designer track (set_instrument to "synthDesigner" first)`);
+        if (track.instrumentKey !== 'synthDesigner') throw new OpFail(`${at}.trackId`, `${nm(track.name)} isn't a Synth Designer track (set_instrument to "synthDesigner" first)`);
         if (!SYNTH_PRESETS.some((p) => p.name === op.preset)) throw new OpFail(`${at}.preset`, `unknown preset ${quoted(op.preset)} (list_presets lists them)`);
         replaceTrack(track, { ...track, synth: presetPatch(op.preset) });
         return;
@@ -651,7 +661,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const track = trackRef(op.trackId, `${at}.trackId`);
         // (a send's lane by its return's id as the agent reads it)
         const param = op.param.startsWith('send:') ? `send:${byAgentId(w.tracks, op.param.slice(5))?.id ?? op.param.slice(5)}` : op.param;
-        if (!track.automation?.some((l) => l.param === param)) throw new OpFail(`${at}.param`, `"${track.name}" has no ${quoted(op.param)} automation`);
+        if (!track.automation?.some((l) => l.param === param)) throw new OpFail(`${at}.param`, `${nm(track.name)} has no ${quoted(op.param)} automation`);
         const automation = track.automation.filter((l) => l.param !== param);
         const next: Track = { ...track, automation };
         if (!automation.length) delete next.automation;
@@ -688,7 +698,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (!name) throw new OpFail(`${at}.name`, 'a marker name needs at least one letter');
         const marker = createMarker(bar, tempoOf(w), name);
         const there = w.markers.find((m) => Math.abs(m.bar - marker.bar) < 1e-6);
-        if (there) throw new OpFail(`${at}.bar`, `"${there.name}" is already at bar ${round(there.bar, 4)}`);
+        if (there) throw new OpFail(`${at}.bar`, `${nm(there.name)} is already at bar ${round(there.bar, 4)}`);
         w.markers = retimeMarkers([...w.markers, marker], tempoOf(w));
         remember(op.ref, 'marker', marker.id);
         return;
@@ -697,7 +707,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         const marker = markerRef(op.markerId, `${at}.markerId`);
         const bar = readBar(op.bar, `${at}.bar`, TOTAL_BARS + 1);
         const there = w.markers.find((m) => m !== marker && Math.abs(m.bar - bar) < 1e-6);
-        if (there) throw new OpFail(`${at}.bar`, `"${there.name}" is already at bar ${round(there.bar, 4)}`);
+        if (there) throw new OpFail(`${at}.bar`, `${nm(there.name)} is already at bar ${round(there.bar, 4)}`);
         w.markers = retimeMarkers(
           w.markers.map((m) => (m === marker ? placeMarker(m, bar, tempoOf(w)) : m)),
           tempoOf(w)
@@ -798,8 +808,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   /** A clip whose notes and frame an op may change: not an audio clip or a take folder (they play recordings). */
   function editableClip(value: string, path: string): Clip {
     const c = clipRef(value, path);
-    if (c.audio) throw new OpFail(path, `"${c.name}" is an audio clip: suggestions can't change audio clips yet`);
-    if (c.takes?.length) throw new OpFail(path, `"${c.name}" is a take folder: suggestions can't change recorded takes`);
+    if (c.audio) throw new OpFail(path, `${nm(c.name)} is an audio clip: suggestions can't change audio clips yet`);
+    if (c.takes?.length) throw new OpFail(path, `${nm(c.name)} is a take folder: suggestions can't change recorded takes`);
     return c;
   }
 
@@ -815,8 +825,8 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   }
 
   function clipHolder(track: Track, path: string) {
-    if (isAudioKind(track.instrumentKey)) throw new OpFail(path, `"${track.name}" plays sound files: suggestions can't add audio clips`);
-    if (isMixTrack(track)) throw new OpFail(path, `"${track.name}" is a ${isReturn(track) ? 'return' : 'bus'}: it holds no clips`);
+    if (isAudioKind(track.instrumentKey)) throw new OpFail(path, `${nm(track.name)} plays sound files: suggestions can't add audio clips`);
+    if (isMixTrack(track)) throw new OpFail(path, `${nm(track.name)} is a ${isReturn(track) ? 'return' : 'bus'}: it holds no clips`);
   }
 
   function readInstrument(value: string, path: string): InstrumentKey {
@@ -843,13 +853,13 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     if (!Number.isFinite(m) || m < 0 || m > 127) throw new OpFail(path, `${quoted(value)} isn't a pitch: write it as a note name and octave, like "C4" (middle C), "F#2" or "Bb3"`);
     const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
     if (!isDrumKind(track.instrumentKey) && !isFxKind(track.instrumentKey) && !isDropKind(track.instrumentKey) && (m < lo || m > hi))
-      warn(`${nameOf(m)} is outside ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) on "${track.name}": it may not sound.`);
+      warn(`${nameOf(m)} is outside ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) on ${nm(track.name)}: it may not sound.`);
     return nameOf(m);
   }
 
   function readStart(value: unknown, path: string, clip: Pick<Clip, 'lengthBars' | 'name'>): number {
     if (!isNum(value)) throw new OpFail(path, 'expected a number of bars from the start of the clip');
-    if (value < -EPS || value >= clip.lengthBars - EPS) throw new OpFail(path, `${value} is outside the clip: a note starts from 0 to under ${round(clip.lengthBars, 4)} bars into "${clip.name}"`);
+    if (value < -EPS || value >= clip.lengthBars - EPS) throw new OpFail(path, `${value} is outside the clip: a note starts from 0 to under ${round(clip.lengthBars, 4)} bars into ${nm(clip.name)}`);
     return round(Math.max(0, value), 9);
   }
 
@@ -869,7 +879,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   }
 
   function readNotes(list: unknown[], path: string, clip: Pick<Clip, 'lengthBars' | 'name'>, track: Track): NoteEvent[] {
-    if (isDropKind(track.instrumentKey) || isAudioKind(track.instrumentKey) || isMixTrack(track)) throw new OpFail(path, `"${track.name}" doesn't play notes a suggestion can add`);
+    if (isDropKind(track.instrumentKey) || isAudioKind(track.instrumentKey) || isMixTrack(track)) throw new OpFail(path, `${nm(track.name)} doesn't play notes a suggestion can add`);
     countNotes(list.length, path);
     return list.map((raw, i) => {
       const at = `${path}[${i}]`;
@@ -977,13 +987,14 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   song = withFileValues(base, song, gated, warn);
 
   const notes: string[] = [];
-  for (const text of checkSafety(base, song, notes)) warn(text);
+  for (const text of checkSafetyMarked(base, song, notes)) warn(text);
   const diff = diffSongs(base, song);
   return {
     ok: true,
     song,
     warnings,
     notes,
+    marked: { warnings, notes },
     diff,
     refs: Object.fromEntries([...refs].map(([k, v]) => [k, v.id])),
     idBase,
@@ -1024,14 +1035,14 @@ function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: Pro
     if (baseTracks.has(t)) return t;
     const g = gatedTracks.get(t.id);
     if (!g || stableJson(g) === stableJson(t)) return t;
-    warn(`Something in "${t.name}" was out of what a saved song can hold and was brought into range${differsAt(t, g)}.`);
+    warn(`Something in ${nm(t.name)} was out of what a saved song can hold and was brought into range${differsAt(t, g)}.`);
     return g;
   });
   const clips = song.clips.map((c) => {
     if (baseClips.has(c)) return c;
     const g = gatedClips.get(c.id);
     if (!g || stableJson(fileClip(g)) === stableJson(fileClip(c))) return c;
-    warn(`Something in clip "${c.name}" was out of what a saved song can hold and was brought into range${differsAt(fileClip(c), fileClip(g))}.`);
+    warn(`Something in clip ${nm(c.name)} was out of what a saved song can hold and was brought into range${differsAt(fileClip(c), fileClip(g))}.`);
     return { ...g, isSelected: c.isSelected };
   });
   const markers = song.markers === base.markers || stableJson(gated.markers) === stableJson(song.markers) ? song.markers : gated.markers;
@@ -1078,6 +1089,6 @@ function idTrouble(base: ProjectSnapshot, song: ProjectSnapshot): string | null 
   if (more(base.tempoPoints, song.tempoPoints) > 0) return 'two tempo changes share an id';
   const before = new Map(base.clips.map((c) => [c.id, c]));
   const clip = song.clips.find((c) => more(before.get(c.id)?.notes, c.notes) > 0);
-  if (clip) return `two notes in "${clip.name}" share an id`;
+  if (clip) return `two notes in ${nm(clip.name)} share an id`;
   return null;
 }

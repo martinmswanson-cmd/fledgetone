@@ -46,7 +46,7 @@ Lists
   list instruments|presets|starters|params|inserts|master [query] [--json]
 
 Your agent
-  mcp [--root <folder>] [--port <n>] [--dev] [--allow-null-origin] [--allow-origin <url>]
+  mcp [--root <folder>] [--port <n>] [--dev] [--allow-origin <url>]
       [--studio [--studio-port <n>]]
                                         The agent tools, as an MCP server on stdio. Files are read
                                         and written only inside --root (default: this folder).
@@ -203,6 +203,8 @@ async function studio(values: { port?: string; app?: string }): Promise<number> 
 
 /** The agent tools: an MCP server on stdio and the studio connection, until stdin closes. */
 async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow-null-origin'?: boolean; 'allow-origin'?: string[]; studio?: boolean; 'studio-port'?: string; app?: string; samples?: string; offline?: boolean; browser?: string; timeout?: string }): Promise<number> {
+  // (gone: a page with no origin of its own is also any website's sandboxed frame, which could then reach the helper)
+  if (values['allow-null-origin']) throw new cmd.UsageError('--allow-null-origin is no longer offered: any website could reach the helper through it. To use the studio from a copy on your computer, run fledgetone mcp --studio and open the address it gives.');
   const root = resolve(values.root ?? process.cwd());
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new cmd.UsageError(`--root ${root} isn't a folder`);
   const port = portOf(values.port, undefined, '--port');
@@ -220,7 +222,6 @@ async function mcp(values: { root?: string; port?: string; dev?: boolean; 'allow
   const bridge = new BridgeServer({
     port,
     dev: values.dev === true,
-    allowNull: values['allow-null-origin'] === true,
     studioOrigins: [...(studioServer?.origins ?? []), ...(values['allow-origin'] ?? [])].map((o) => {
       // An exact origin (scheme, host and port), as a page reports it
       let url: URL;

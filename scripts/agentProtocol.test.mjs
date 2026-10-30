@@ -84,7 +84,8 @@ test('which pages may connect, and at which address', () => {
   assert.ok(P.originAllowed('http://localhost:5173', { dev: true }));
   assert.ok(!P.originAllowed('http://localhost:3000', { dev: true }));
   assert.ok(!P.originAllowed('null'));
-  assert.ok(P.originAllowed('null', { allowNull: true }));
+  // (never a page with no origin of its own: any website's sandboxed frame reads so too)
+  assert.ok(!P.originAllowed('null', { allowNull: true, dev: true, studioOrigins: ['null'] }));
   assert.ok(P.originAllowed('http://127.0.0.1:47200', { studioOrigins: ['http://127.0.0.1:47200'] }));
   assert.ok(P.hostAllowed('127.0.0.1:47123', 47123));
   for (const h of ['localhost:47123', 'evil.example:47123', '127.0.0.1:47124', '127.0.0.1', undefined]) assert.ok(!P.hostAllowed(h, 47123), String(h));
@@ -173,6 +174,72 @@ test('a program on the port that answers the pair with words of its own: the stu
   const words = ['no_code', 'too_many_tries', 'busy', 'version', 'bad_request', 'refused'].map(pairErrorMessage);
   assert.equal(new Set(words).size, words.length);
   assert.equal(pairErrorMessage('made up'), pairErrorMessage(undefined));
+});
+
+test('a program on the port that speaks something else, or another version: said for what it is', async () => {
+  const { NOT_THE_HELPER, OTHER_VERSION, isOtherVersionHello } = await import('../src/agent/bridgeProtocolClient.ts');
+  const cases = [
+    ['hello there', NOT_THE_HELPER],
+    [JSON.stringify({ type: 'connected' }), NOT_THE_HELPER],
+    [JSON.stringify({ v: 1, kind: 'event', method: 'hello', params: { protocol: 1, nonce: 'short' } }), NOT_THE_HELPER],
+    [JSON.stringify({ v: 1, kind: 'event', method: 'hello', params: {} }), NOT_THE_HELPER],
+    [JSON.stringify({ v: 2, kind: 'event', method: 'hello', params: { protocol: 2, nonce: P.newNonce() } }), OTHER_VERSION],
+    [JSON.stringify({ v: 1, kind: 'event', method: 'hello', params: { protocol: 2, nonce: P.newNonce() } }), OTHER_VERSION],
+  ];
+  for (const [frame, want] of cases) {
+    const { client, closes } = memoryStudio();
+    client.pair('K7QM-3XPD-9TBW');
+    await client.receive(frame);
+    assert.equal(client.state, 'refused', frame);
+    assert.equal(client.info().message, want, frame);
+    assert.equal(closes.length, 1);
+  }
+  assert.ok(!isOtherVersionHello('{"v":1,"kind":"event","method":"hello","params":{"protocol":1}}'));
+  assert.ok(!isOtherVersionHello('nonsense'));
+});
+
+test("a program on the port that opens but never says hello: the studio stops waiting and says so", async (t) => {
+  const { HELLO_TIMEOUT_MS, NO_HELLO } = await import('../src/agent/bridgeProtocolClient.ts');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { client, closes } = memoryStudio();
+  client.pair('K7QM-3XPD-9TBW');
+  client.opened();
+  t.mock.timers.tick(HELLO_TIMEOUT_MS - 1);
+  assert.equal(client.state, 'waiting');
+  t.mock.timers.tick(1);
+  assert.equal(client.state, 'refused');
+  assert.equal(client.info().message, NO_HELLO);
+  assert.equal(closes.length, 1);
+  // One that does say hello in time goes on as before
+  const ok = memoryStudio();
+  ok.client.pair('K7QM-3XPD-9TBW');
+  ok.client.opened();
+  t.mock.timers.tick(HELLO_TIMEOUT_MS / 2);
+  await ok.client.receive(msg({ kind: 'event', method: 'hello', params: { protocol: 1, nonce: P.newNonce() } }));
+  t.mock.timers.tick(HELLO_TIMEOUT_MS / 2 + 1);
+  assert.equal(ok.client.state, 'proving', 'the pair step has a timer of its own');
+});
+
+test('the tries left as the other end says them: only a whole number from 0 to 5, and never more than the studio counts', async () => {
+  const { readAttemptsLeft } = await import('../src/agent/bridgeProtocolClient.ts');
+  for (const v of [4.5e15, 2.5, -1, 6, NaN, '3', null, undefined, Infinity]) assert.equal(readAttemptsLeft(v), undefined, String(v));
+  for (const v of [0, 1, 5]) assert.equal(readAttemptsLeft(v), v);
+  // A program that says a huge number: none shown, and after five wrong codes the connection's over all the same
+  const { client, sent } = memoryStudio();
+  client.pair('K7QM-3XPD-9TBW');
+  await client.receive(msg({ kind: 'event', method: 'hello', params: { protocol: 1, nonce: P.newNonce() } }));
+  for (let i = 0; i < P.LIMITS.triesPerConnection; i++) {
+    await until(() => sent.filter((m) => m.method === 'pair').length === i + 1, 1000, 'a pair request');
+    const pair = sent.filter((m) => m.method === 'pair').at(-1);
+    await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: 'A'.repeat(43), nonce: P.newNonce(), attemptsLeft: i === 0 ? 4.5e15 : 5 } }));
+    if (i < P.LIMITS.triesPerConnection - 1) {
+      assert.equal(client.state, 'wrong_code');
+      if (i === 0) assert.equal(client.info().attemptsLeft, undefined, 'a number no helper says is not shown');
+      else assert.equal(client.info().attemptsLeft, P.LIMITS.triesPerConnection - 1 - i, 'never more than the studio has left');
+      client.pair('K7QM-3XPD-9TBW');
+    }
+  }
+  assert.equal(client.state, 'refused');
 });
 
 test('an honest helper pairs; requests then reach the handlers the musician allowed', async () => {

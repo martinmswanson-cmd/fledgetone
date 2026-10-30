@@ -40,8 +40,11 @@ const view = (s: Suggestion) => ({
   changes: s.changes,
   warnings: s.warnings,
   notes: s.notes,
+  // Where its changes are heard, what its before-and-after plays (one stretch after another), and what that leaves out
+  regions: s.regions,
   audition: s.audition,
-  ...(s.unheard ? { unheard: s.unheard } : {}),
+  ...(s.unheard ? { unheard: s.unheard, limit: s.limit === 'bars' ? `${LIMITS.listenMaxBars} bars` : `${LIMITS.listenMaxSeconds} seconds` } : {}),
+  ...(s.focusLeftOut ? { focusLeftOut: true } : {}),
   ...(s.outOfDate ? { outOfDate: s.outOfDate } : {}),
 });
 

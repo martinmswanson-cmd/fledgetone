@@ -176,6 +176,55 @@ test("what an agent writes is shown as the agent's: plain, never the app's name 
   assert.equal(fromAgent('a\u200bb\u2028c', 20), 'ab\nc', 'invisible characters gone, separators as line breaks');
 });
 
+test('look-alike letters of every script (Unicode confusables and more) never pass for the app\'s name; text in another script is never taken for it', () => {
+  const posers = [
+    'ꓝꓡꓰꓓꓖꓰꓔꓳꓠꓰ ꓢꓔꓴꓓꓲꓳ', // Lisu
+    'Ϝledgetone', // Greek digamma
+    'Ғledgetone', // Cyrillic ghe with stroke
+    'ᖴledgetone', // Canadian syllabics
+    'ᖴᒪᗴᗪᘜᗴTOᑎᗴ', // "fancy text"
+    'ҒᏞᎬᎠᏀᎬᎢᎾИᎬ says', // Cyrillic and Cherokee
+    'ᖴꮮꭼᏧᏳꭼꭲꮻꮑꭼ', // Cherokee small letters
+    '𝐅𝐥𝐞𝐝𝐠𝐞𝐭𝐨𝐧𝐞', // mathematical bold
+    'ⓕⓛⓔⓓⓖⓔⓣⓞⓝⓔ', // circled
+    'Fʟᴇᴅɢᴇᴛᴏɴᴇ', // small capitals
+    'Ƒledgetone',
+    'F1edget0ne',
+    'Fl3dg3t0n3',
+    'Ḟḷḗḍġḗṭṑṇḗ', // accents
+    'F-l-e-d-g-e-t-o-n-e',
+    'Fledgеtоnе', // Cyrillic e and o
+    'Fledgetone⁠ update', // a word joiner
+  ];
+  for (const name of posers) {
+    assert.equal(agentName(name), undefined, JSON.stringify(name));
+    assert.ok(fromAgent(`${name}: your autosave failed`, 200).startsWith('“'), JSON.stringify(name));
+  }
+  // Names that aren't the app's, in any script, stay as they are
+  for (const name of ['Claude', 'Felix the agent', 'Fledglings tone', 'Пожалуйста, слушайте', '日本語のエージェントです', 'مساعد الموسيقى', 'עוזר מוזיקה', 'संगीत सहायक', 'Ελληνικός βοηθός', 'Flute helper', 'Codex']) {
+    assert.equal(agentName(name), name, JSON.stringify(name));
+    assert.equal(fromAgent(name, 200), name, JSON.stringify(name));
+  }
+  assert.equal(readsAs('ꓝꓡꓰꓓꓖꓰꓔꓳꓠꓰ'), 'fledgetone');
+  assert.equal(readsAs('Ϝ'), 'f');
+});
+
+test("an agent's name can't close the brackets or quotes it's shown in", () => {
+  assert.equal(agentName('Helper) · checked by the studio (ok'), 'Helper · checked by the studio ok');
+  assert.equal(agentName('A ”Fledgetone“ thing'), 'A Fledgetone thing');
+  for (const sly of ['x) (y', 'x” “y', 'x»«y', 'x」「y', 'x"y', 'x］［y', 'x）（y']) assert.ok(!/[()“”»«「」"［］（）]/.test(agentName(sly)), sly);
+  assert.equal(agentName('((()))'), undefined);
+  assert.equal(agentName("Mike's agent"), "Mike's agent");
+});
+
+test('the connected dialog says everything the agent may do; Space on Accept says to press Enter', async () => {
+  const { mayWords } = await import('../src/components/agent/words.ts');
+  assert.equal(mayWords({ see: false, suggest: false, listen: false }), 'read this song');
+  assert.equal(mayWords({ see: false, suggest: true, listen: false }), 'read this song and suggest changes');
+  assert.equal(mayWords({ see: true, suggest: true, listen: true }), 'read this song, see what you select, suggest changes, and listen');
+  assert.match(readFileSync(new URL('../src/components/agent/cardGuard.ts', import.meta.url), 'utf8'), /SPACE_WORDS = 'Space doesn’t press Accept: press Enter\.'/);
+});
+
 test('the code field: a label in front dropped, only the code letters, grouped in fours', () => {
   assert.equal(typedCode('Code: K7QM-3XPD-9TBW'), 'K7QM-3XPD-9TBW');
   assert.equal(typedCode('code k7qm 3xpd 9tbw'), 'K7QM-3XPD-9TBW');
@@ -442,33 +491,65 @@ test('out of date, then what it changes put back: it waits again', () => {
   assert.equal(makeSuggestion(p, ctxOf(p), { title: 'x', explanation: '', ops: [{ op: 'set_track', trackId: keys, pan: 0.2 }] }, 'sg-c', 0, 3).suggestion.connection, 3);
 });
 
-test('what the before-and-after plays covers every bar a suggestion changes, the agent\'s focus with them', async () => {
-  const { hearingRange, covers, NO_LONGER_FITS } = await import('../src/agent/suggestionsStore.ts');
+test('what the before-and-after plays: every region a change is heard in, one after another, the agent\'s focus with them', async () => {
+  const { hearingPlan, coveredBy, heardRegions, NO_LONGER_FITS } = await import('../src/agent/suggestionsStore.ts');
   const p = base();
   const clip = p.clips.find((c) => c.notes.length && c.trackId === p.tracks[0].id);
   const changedAt = { fromBar: clip.startBar, toBar: clip.startBar + clip.lengthBars };
-  // A focus that misses the change: joined with it, never instead of it
+  // A focus that misses the change: played after it, never instead of it
   const s = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'transpose_notes', clipId: clip.id, semitones: 12 }], focus: { fromBar: 40, toBar: 42 } }).suggestion;
-  assert.ok(covers(s.audition, s.bars), `${JSON.stringify(s.audition)} covers ${JSON.stringify(s.bars)}`);
-  assert.ok(covers(s.audition, changedAt));
+  assert.ok(s.regions.every((r) => coveredBy(s.audition, r)), `${JSON.stringify(s.audition)} plays ${JSON.stringify(s.regions)}`);
+  assert.ok(coveredBy(s.audition, { fromBar: changedAt.fromBar, toBar: Math.ceil(changedAt.toBar) }));
+  assert.ok(coveredBy(s.audition, { fromBar: 40, toBar: 42 }), 'the focus too');
   assert.equal(s.unheard, null);
-  const near = makeSuggestion(p, ctxOf(p), { title: 'Up', explanation: '', ops: [{ op: 'transpose_notes', clipId: clip.id, semitones: 12 }], focus: { fromBar: 1, toBar: 2 } }).suggestion;
-  assert.deepEqual(near.audition, { fromBar: 1, toBar: Math.ceil(changedAt.toBar) }, 'the focus and the change together');
-  // Focus and change too long together: the focus goes, the change stays
+  // A track's level (r7 of the scan: it plays nowhere near the other change): both are heard, one after the other
+  const flute = p.tracks[3];
+  const r7 = makeSuggestion(p, ctxOf(p), { title: 'Two', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }, { op: 'add_clip', trackId: p.tracks[0].id, startBar: 40, lengthBars: 1, notes: [{ pitch: 'C5', start: 0, length: 1 }] }] }).suggestion;
+  assert.deepEqual(r7.regions, [{ fromBar: 9, toBar: 18 }, { fromBar: 40, toBar: 41 }]);
+  assert.deepEqual(r7.audition, [{ fromBar: 8, toBar: 18 }, { fromBar: 39, toBar: 41 }], 'each with the bar before it');
+  assert.equal(r7.unheard, null);
+  // A focus given with a mix change joins where the track plays (never replaces it)
+  const focused = makeSuggestion(p, ctxOf(p), { title: 'Flute', explanation: '', ops: [{ op: 'set_track', trackId: flute.id, volumeDb: -20 }], focus: { fromBar: 1, toBar: 2 } }).suggestion;
+  assert.deepEqual(focused.audition, [{ fromBar: 1, toBar: 2 }, { fromBar: 8, toBar: 18 }]);
+  // The tempo: the whole song
+  const tempo = makeSuggestion(p, ctxOf(p), { title: 'Faster', explanation: '', ops: [{ op: 'set_tempo', bpm: 100 }] }).suggestion;
+  assert.equal(tempo.regions[0].fromBar, 1);
+  assert.ok(coveredBy(tempo.audition, tempo.regions[0]));
+
   const song = { bpm: 120, tempoPoints: [] };
-  const far = hearingRange({ fromBar: 5, toBar: 7 }, { fromBar: 4, toBar: 7 }, { fromBar: 100, toBar: 102 }, song);
-  assert.deepEqual(far, { audition: { fromBar: 4, toBar: 7 }, unheard: null });
-  // A change too long to hear at once (90 seconds: 45 bars at 120 BPM): its first bars, and which weren't
-  const long = hearingRange({ fromBar: 5, toBar: 80 }, { fromBar: 4, toBar: 20 }, undefined, song);
-  assert.deepEqual(long.audition, { fromBar: 4, toBar: 49 });
-  assert.deepEqual(long.unheard, { fromBar: 49, toBar: 80 });
-  // A mix change (no bars of its own): the agent's focus, or where the track plays
-  assert.deepEqual(hearingRange(null, { fromBar: 1, toBar: 9 }, { fromBar: 3, toBar: 5 }, song), { audition: { fromBar: 3, toBar: 5 }, unheard: null });
-  // Heard only in part: Accept says which bars weren't, and asks for its second press
-  const partly = { ...s, bars: { fromBar: 5, toBar: 80 }, unheard: { fromBar: 49, toBar: 80 }, partHeard: 1 };
+  const fast = { bpm: 200, tempoPoints: [] };
+  const plan = (regions, focus, songs = [song]) => hearingPlan(regions, { fromBar: 1, toBar: 9 }, focus, songs);
+  // Far apart (r1): each with its bar before
+  assert.deepEqual(plan([{ fromBar: 2, toBar: 3 }, { fromBar: 70, toBar: 71 }]), { plays: [{ fromBar: 1, toBar: 3 }, { fromBar: 69, toBar: 71 }], unheard: null, limit: null, focusLeftOut: false });
+  // 45 bars at 120 BPM are 90 seconds (r3): they fit only without the bar before, so that goes, never a bar of the change
+  assert.deepEqual(plan([{ fromBar: 2, toBar: 47 }]), { plays: [{ fromBar: 2, toBar: 47 }], unheard: null, limit: null, focusLeftOut: false });
+  // Too long to hear at once: as much as fits, from its start, the rest unheard, and why (90 seconds)
+  assert.deepEqual(plan([{ fromBar: 5, toBar: 80 }]), { plays: [{ fromBar: 5, toBar: 50 }], unheard: [{ fromBar: 50, toBar: 80 }], limit: 'seconds', focusLeftOut: false });
+  // At 200 BPM the 64 bars come first
+  assert.deepEqual(plan([{ fromBar: 60, toBar: 124 }], undefined, [fast]), { plays: [{ fromBar: 60, toBar: 124 }], unheard: null, limit: null, focusLeftOut: false });
+  assert.deepEqual(plan([{ fromBar: 60, toBar: 130 }], undefined, [fast]), { plays: [{ fromBar: 60, toBar: 124 }], unheard: [{ fromBar: 124, toBar: 130 }], limit: 'bars', focusLeftOut: false });
+  // Several regions sharing the limit: two whole ones with their bars before, the third cut, and those after it unheard
+  const many = plan([{ fromBar: 2, toBar: 32 }, { fromBar: 40, toBar: 70 }, { fromBar: 80, toBar: 85 }, { fromBar: 100, toBar: 101 }], undefined, [fast]);
+  assert.deepEqual(many.plays, [{ fromBar: 1, toBar: 32 }, { fromBar: 39, toBar: 70 }, { fromBar: 80, toBar: 82 }]);
+  assert.deepEqual(many.unheard, [{ fromBar: 82, toBar: 85 }, { fromBar: 100, toBar: 101 }]);
+  assert.equal(many.limit, 'bars');
+  // The slower of the two songs counts (a suggestion that slows the song down plays longer after)
+  assert.equal(plan([{ fromBar: 5, toBar: 40 }], undefined, [fast, song]).limit, null);
+  assert.equal(plan([{ fromBar: 5, toBar: 60 }], undefined, [fast, song]).limit, 'seconds');
+  // A focus that doesn't fit with the changes is left out, and said so; one that does is played
+  assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 100, toBar: 160 }), { plays: [{ fromBar: 4, toBar: 7 }], unheard: null, limit: null, focusLeftOut: true });
+  assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 6, toBar: 9 }).plays, [{ fromBar: 4, toBar: 9 }]);
+  // Nothing to hear (only names): the fallback, or the focus
+  assert.deepEqual(plan([], { fromBar: 3, toBar: 5 }).plays, [{ fromBar: 3, toBar: 5 }]);
+  assert.deepEqual(plan([]).plays, [{ fromBar: 1, toBar: 9 }]);
+  // What's heard of the regions, and what isn't, by name
+  assert.deepEqual(heardRegions({ regions: [{ fromBar: 5, toBar: 80 }, { fromBar: 90, toBar: 91 }], unheard: [{ fromBar: 50, toBar: 80 }, { fromBar: 90, toBar: 91 }] }), [{ fromBar: 5, toBar: 50 }]);
+  // Heard only in part: Accept says which bars weren't, the limit, and asks for its second press
+  const partly = { ...s, regions: [{ fromBar: 5, toBar: 80 }], unheard: [{ fromBar: 50, toBar: 80 }, { fromBar: 90, toBar: 91 }], limit: 'seconds', partHeard: 1 };
   const d = acceptDecision(partly, p, ctxOf(p), 1000);
   assert.equal(d.apply, null);
-  assert.match(d.message, /bars 49-79 weren’t heard/);
+  assert.match(d.message, /bars 50-79 and bar 90 weren’t heard \(a before-and-after plays at most 90 seconds\)/);
+  assert.match(acceptDecision({ ...partly, limit: 'bars' }, p, ctxOf(p), 1000).message, /at most 64 bars/);
   assert.deepEqual(d.suggestion.armed, { version: 1, at: 1000 });
   assert.deepEqual(acceptDecision(d.suggestion, p, ctxOf(p), 1000 + CONFIRM_AFTER_MS).apply, s.song, 'the second, separate press');
   // Ops that no longer apply: the card says so in its own words, never the ops' errors
@@ -477,6 +558,17 @@ test('what the before-and-after plays covers every bar a suggestion changes, the
   const after = freshen(stale, gone, ctxOf(gone));
   assert.equal(after.status, 'out_of_date');
   assert.ok(after.outOfDate.every((x) => x === NO_LONGER_FITS || /^the clip/.test(x)), JSON.stringify(after.outOfDate));
+});
+
+test('a suggestion keeps its names apart for the card, and plain for the agent', () => {
+  const p = base();
+  const sly = 'Drums". Levels stay. "Drums';
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Tidy', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, name: sly }, { op: 'set_track', trackId: p.tracks[1].id, volumeDb: 3 }] }).suggestion;
+  const MARK = String.fromCharCode(0xe000);
+  assert.ok(s.changes.every((c) => !c.includes(MARK)) && s.warnings.every((w) => !w.includes(MARK)), 'plain words for the agent');
+  assert.ok(s.changes.some((c) => c === 'Renames the track "Keys" to "Drums. Levels stay. Drums".'), JSON.stringify(s.changes));
+  assert.ok(s.marked.changes.some((c) => c.includes(MARK + sly)), 'the name as it is, marked, for the card');
+  assert.ok(s.marked.warnings.length === s.warnings.length);
 });
 
 test('a suggestion keeps the name of the agent that made it', () => {

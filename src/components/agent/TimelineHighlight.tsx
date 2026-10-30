@@ -19,7 +19,8 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { TOTAL_BARS } from '../../store/timelineTypes';
 import { useSuggestions, type Highlight } from '../../agent/suggestionsStore';
 import { useAudition } from '../../audio/auditionPlayer';
-import { fromYourAgent } from './words';
+import { FromYourAgent } from './Named';
+import { textName } from '../../agent/names';
 
 interface Box {
   left: number;
@@ -91,9 +92,9 @@ function targetBars(t: Highlight['target']): { from: number; to: number } | null
 function targetWords(t: Highlight['target']): string {
   const s = useTimelineStore.getState();
   if (t.bars) return barsWords(t.bars.fromBar, t.bars.toBar).replace(/^b/, 'B');
-  if (t.clip) return `Clip “${s.clips.find((x) => x.id === t.clip)?.name ?? ''}”`;
-  if (t.marker) return `Marker “${s.markers.find((x) => x.id === t.marker)?.name ?? ''}”`;
-  if (t.track) return `Track “${s.tracks.find((x) => x.id === t.track)?.name ?? ''}”`;
+  if (t.clip) return `Clip “${textName(s.clips.find((x) => x.id === t.clip)?.name)}”`;
+  if (t.marker) return `Marker “${textName(s.markers.find((x) => x.id === t.marker)?.name)}”`;
+  if (t.track) return `Track “${textName(s.tracks.find((x) => x.id === t.track)?.name)}”`;
   return '';
 }
 
@@ -176,12 +177,11 @@ export const TimelineHighlight: React.FC = () => {
         return b;
       };
       if (focused) {
-        const range = focused.bars ?? focused.audition;
         const tracks = focused.touchedTracks.length ? focused.touchedTracks : lanes.map((l) => (l as HTMLElement).dataset.lane!);
         for (const id of tracks) {
           const lane = laneOf(id);
           if (!lane) continue;
-          add(focused.bars ? laneBars(lane, range.fromBar, range.toBar, zoom) : lane.getBoundingClientRect(), 'tint');
+          add(focused.bars ? laneBars(lane, focused.bars.fromBar, focused.bars.toBar, zoom) : lane.getBoundingClientRect(), 'tint');
           // A mark at the lanes' left edge, always in view (the bars may be scrolled away)
           const lr = lane.getBoundingClientRect();
           add({ left: view.left, right: view.left + 4, top: lr.top, bottom: lr.bottom }, 'edge');
@@ -264,7 +264,7 @@ export const TimelineHighlight: React.FC = () => {
       ))}
       {note && (
         <div className="absolute max-w-[200px] rounded bg-forge-panel border border-cyan-400/60 px-2 py-1" style={{ left: note.left, top: note.top - 4 }} data-agent-note="">
-          <p className="text-[9px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</p>
+          <p className="text-[9px] font-mono uppercase tracking-wider text-forge-muted"><FromYourAgent name={agent} /></p>
           {note.text && <p className="text-[11px] text-forge-text whitespace-pre-wrap break-words">“{note.text}”</p>}
           {note.where && (
             <p className="text-[11px] font-semibold text-cyan-200" data-agent-note-where="">

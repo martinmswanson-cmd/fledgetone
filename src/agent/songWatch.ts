@@ -14,7 +14,7 @@
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
-import { checkSuggestion, covers, extKey, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import { checkSuggestion, coveredBy, extKey, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
 import { partsChanged } from './revision';
 
 /** How often the watch looks at most, ms. */
@@ -106,16 +106,18 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
 
 /**
  * Note a suggestion heard once its Suggested side (B) plays, of its current version on the song as
- * it is now, over every bar it changes: only then does one press of Accept take it. Played over
- * only some of them (a change too long to hear at once), it's heard in part (`partHeard`): the card
- * says which bars weren't, and Accept still asks for its second press. Run on every change of the audition.
+ * it is now, over every region where a change of it is heard (each played whole): only then does
+ * one press of Accept take it. Played over only some of them (too long to hear at once), it's
+ * heard in part (`partHeard`): the card says which bars weren't, and Accept still asks for its
+ * second press. Run on every change of the audition.
  */
 export function noteHeard(a: AuditionState = useAudition.getState()): void {
   if (a.key === null || a.phase !== 'playing' || a.hearing !== 'b') return;
   const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
   if (!s || s.heard === s.version || !auditionCurrent(s, a)) return;
-  const played = a.bars ? { fromBar: a.bars[0], toBar: a.bars[1] } : null;
-  const all = !s.unheard && (!s.bars || (played !== null && covers(played, s.bars)));
+  // (every region where a change is heard, each played whole)
+  const played = a.plays ?? [];
+  const all = !s.unheard && s.regions.every((r) => coveredBy(played, r));
   if (!all) {
     if (s.partHeard !== s.version) updateSuggestion(s.id, { partHeard: s.version });
     return;
@@ -126,7 +128,7 @@ export function noteHeard(a: AuditionState = useAudition.getState()): void {
 useAudition.subscribe((a) => noteHeard(a));
 
 /**
- * Hear suggestion `id` against the song now (its audition: every bar it changes, with the agent's focus if that fits), made again on
+ * Hear suggestion `id` against the song now (its audition: each region where a change is heard, one after another, with the agent's focus if that fits), made again on
  * the song as it is first. Once its Suggested side plays, that version counts as heard (noteHeard).
  */
 export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Promise<void> {
@@ -136,7 +138,6 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
   const s = freshen(found, nowSong, songContext());
   if (s !== found) updateSuggestion(id, s);
   if (!isOpen(s)) return;
-  const range = s.audition;
   // The song's own playback pauses (two things at once would be a mess)
   if (useTimelineStore.getState().isPlaying) useTimelineStore.getState().pause();
   await startAudition({
@@ -144,8 +145,7 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
     renderKey: renderKeyOf(s),
     now: listenSnapshot(nowSong),
     suggested: listenSnapshot(s.song),
-    fromBar: range.fromBar,
-    toBar: range.toBar,
+    plays: s.audition,
     hearing,
   });
   noteHeard();

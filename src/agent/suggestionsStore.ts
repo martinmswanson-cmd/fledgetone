@@ -4,8 +4,8 @@
  * page, and only the musician's Accept puts it in the song). Also the plain logic behind it:
  *
  * - making a suggestion from ops: applyOps with an id base of its own, the bars its
- *   before-and-after plays (hearingRange: every bar it changes, with the agent's focus if that
- *   fits), the name of the agent that made it, the fingerprints and names
+ *   before-and-after plays (hearingPlan: every region where a change is heard, one after another,
+ *   with the agent's focus if that fits), the name of the agent that made it, the fingerprints and names
  *   of what it touches, and the song it's for (its generation: New, Open, a link or Restore start
  *   another), the song's parts as undo sees them and what else a render hears (swing, intensity);
  * - checking it when the song changes, cheaply (fingerprints only): another song (it can't go
@@ -22,7 +22,7 @@ import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from '
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
-import type { BarRange } from './songDiff';
+import { rangesWords, type BarRange } from './songDiff';
 import type { BridgeInfo } from './bridgeProtocolClient';
 
 /**
@@ -53,7 +53,7 @@ export interface Suggestion {
   title: string;
   explanation: string;
   ops: Op[];
-  /** The bars the agent asked to hear it over: `audition` covers them too, if it can (hearingRange). */
+  /** The bars the agent asked to hear it over: `audition` plays them too, if they fit (hearingPlan). */
   focus?: BarRange;
   /** The song `song` was made from. */
   epoch: number;
@@ -74,17 +74,25 @@ export interface Suggestion {
   touchedHashes: Record<string, string>;
   touchedNames: Record<string, string>;
   status: SuggestionStatus;
-  /** The song as it would be, and what changes, in plain words. */
+  /** The song as it would be, and what changes, in plain words (each name in plain quotes: names.ts). */
   song: ProjectSnapshot;
   changes: string[];
   warnings: string[];
   notes: string[];
+  /** The same with each name marked, for the card to show the names apart (names.ts nameParts). */
+  marked?: { changes: string[]; warnings: string[]; notes: string[] };
   touchedTracks: string[];
   bars: BarRange | null;
-  /** The bars its before-and-after plays: every bar it changes, and the agent's focus with them, if that fits (hearingRange). */
-  audition: BarRange;
-  /** The bars it changes that `audition` can't reach (they'd take longer than a listen may to hear at once), or null. */
-  unheard: BarRange | null;
+  /** Where its changes are heard (SongDiff.regions): what its before-and-after must play for it to count as heard. */
+  regions: BarRange[];
+  /** The stretches its before-and-after plays, one after another (hearingPlan): every region, and the agent's focus if that fits. */
+  audition: BarRange[];
+  /** The bars of `regions` that `audition` can't reach (too long to hear at once), or null. */
+  unheard: BarRange[] | null;
+  /** The limit that left `unheard` out: LIMITS.listenMaxBars bars or LIMITS.listenMaxSeconds seconds. */
+  limit?: HearingLimit | null;
+  /** The agent's focus was left out of `audition` (it didn't fit with the changes). */
+  focusLeftOut?: boolean;
   /** Out of date: what changed under it. */
   outOfDate?: string[];
   /** Out of date: the song's parts when it went so (until they change, it's not checked again). */
@@ -181,11 +189,18 @@ export const waitingCount = (list: readonly Suggestion[]): number => list.filter
 /** Whether `s` was made from the song as it is in `ctx`. */
 export const sameSong = (s: Pick<Suggestion, 'epoch' | 'parts' | 'ext'>, ctx: SongContext): boolean => s.epoch === ctx.epoch && s.ext === ctx.ext && !partsChanged(s.parts, ctx.parts);
 
+/** The seconds bars [from, to) take, in the slowest of `songs` (a tempo change plays them at another length in each). */
+export function rangeSeconds(r: BarRange, songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>>): number {
+  return Math.max(0, ...songs.map((s) => {
+    const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
+    return barToSeconds(r.toBar, tempo) - barToSeconds(r.fromBar, tempo);
+  }));
+}
+
 /** A range of bars cut to at most the seconds a listen may take (LIMITS.listenMaxSeconds). */
 export function capSeconds(range: BarRange, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): BarRange {
-  const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   let to = range.toBar;
-  while (to - range.fromBar > 1 && barToSeconds(to, tempo) - barToSeconds(range.fromBar, tempo) > LIMITS.listenMaxSeconds) to--;
+  while (to - range.fromBar > 1 && rangeSeconds({ fromBar: range.fromBar, toBar: to }, [song]) > LIMITS.listenMaxSeconds) to--;
   return { fromBar: range.fromBar, toBar: to };
 }
 
@@ -198,39 +213,140 @@ const wholeBars = (r: BarRange): BarRange => {
 /** Whether `outer` holds every bar of `inner`. */
 export const covers = (outer: BarRange, inner: BarRange): boolean => outer.fromBar <= inner.fromBar + 1e-9 && outer.toBar >= inner.toBar - 1e-9;
 
+/** Whether the stretches `played` hold every bar of `inner` (each bar in one of them). */
+export const coveredBy = (played: readonly BarRange[], inner: BarRange): boolean => {
+  for (let bar = Math.floor(inner.fromBar + 1e-9); bar < Math.ceil(inner.toBar - 1e-9); bar++) if (!played.some((p) => p.fromBar <= bar + 1e-9 && p.toBar >= bar + 1 - 1e-9)) return false;
+  return true;
+};
+
 /** A range kept to what a listen may take: LIMITS.listenMaxBars bars and LIMITS.listenMaxSeconds seconds. */
 const listenable = (r: BarRange, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): BarRange => capSeconds({ fromBar: r.fromBar, toBar: Math.min(r.toBar, r.fromBar + LIMITS.listenMaxBars) }, song);
 
-/**
- * The bars a suggestion's before-and-after plays, so what's marked heard is what changes: every
- * bar it changes (`bars`, from one bar before, or `fallback` when nothing sits anywhere in
- * particular), joined with the agent's `focus` (never instead of it), at most what a listen may
- * take (90 seconds). If focus and change together are too long, the focus goes; if the change
- * alone is, its first bars are heard and `unheard` says which bars weren't (they then can't count
- * as heard: Accept asks for the second press).
- */
-export function hearingRange(bars: BarRange | null, fallback: BarRange, focus: BarRange | undefined, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): { audition: BarRange; unheard: BarRange | null } {
-  if (!bars) return { audition: listenable(focus ?? fallback, song), unheard: null };
-  const changed = wholeBars(bars);
-  const lead: BarRange = { fromBar: Math.max(1, changed.fromBar - 1), toBar: changed.toBar };
-  if (focus) {
-    const union = { fromBar: Math.min(focus.fromBar, changed.fromBar), toBar: Math.max(focus.toBar, changed.toBar) };
-    const both = listenable(union, song);
-    if (covers(both, union)) return { audition: both, unheard: null };
-  }
-  const audition = listenable(lead, song);
-  return { audition, unheard: covers(audition, changed) ? null : { fromBar: audition.toBar, toBar: changed.toBar } };
+/** Which limit kept a before-and-after from playing everything: LIMITS.listenMaxBars bars, or LIMITS.listenMaxSeconds seconds. */
+export type HearingLimit = 'bars' | 'seconds';
+
+/** What a suggestion's before-and-after plays, and what of the bars it changes that leaves out (hearingPlan). */
+export interface HearingPlan {
+  /** The stretches it plays, one after another, in the order of the song (looped as one). */
+  plays: BarRange[];
+  /** The bars it changes that aren't played (in order), or null: everything is heard. */
+  unheard: BarRange[] | null;
+  /** The limit that left them out, when some are. */
+  limit: HearingLimit | null;
+  /** The agent's focus couldn't be played along with the changes (it didn't fit). */
+  focusLeftOut: boolean;
 }
 
-const fromResult = (r: ApplyResult, focus: BarRange | undefined) => ({
-  song: r.song,
-  changes: r.diff.changes.map((c) => c.text),
-  warnings: r.warnings,
-  notes: r.notes,
-  touchedTracks: r.diff.touchedTracks,
-  bars: r.diff.bars,
-  ...hearingRange(r.diff.bars, r.diff.audition, focus, r.song),
-});
+/** Stretches in order, overlapping and touching ones joined. */
+const joinPlays = (list: readonly BarRange[]): BarRange[] => {
+  const out: BarRange[] = [];
+  for (const r of [...list].sort((x, y) => x.fromBar - y.fromBar)) {
+    const last = out.at(-1);
+    if (last && r.fromBar <= last.toBar + 1e-9) last.toBar = Math.max(last.toBar, r.toBar);
+    else out.push({ ...r });
+  }
+  return out;
+};
+
+/** `r` without the bars of `played`: the pieces left, in order. */
+const without = (r: BarRange, played: readonly BarRange[]): BarRange[] => {
+  const out: BarRange[] = [];
+  for (let bar = r.fromBar; bar < r.toBar; bar++) {
+    if (played.some((p) => p.fromBar <= bar && p.toBar >= bar + 1)) continue;
+    const last = out.at(-1);
+    if (last && last.toBar === bar) last.toBar = bar + 1;
+    else out.push({ fromBar: bar, toBar: bar + 1 });
+  }
+  return out;
+};
+
+/**
+ * What a suggestion's before-and-after plays, so that what's marked heard is what changes: each
+ * region where a change is heard (`regions`, see SongDiff.regions), one after another, in order,
+ * each with the bar before it to hear it coming in when that fits too (a region that fits only
+ * without it is played without it, never cut), all of it at most LIMITS.listenMaxBars bars and
+ * LIMITS.listenMaxSeconds seconds (in the slower of `songs`: the song now and as suggested). A
+ * region that doesn't fit is played as far as it does, and what's left of it and every region
+ * after it is `unheard` (they can't count as heard: Accept asks for its second press), with the
+ * limit that left them out. The agent's `focus` is played with them if it fits in what's left
+ * (never instead of a change: else it's left out). With nothing to hear (only names, markers or
+ * links change), `fallback` is played (or the focus).
+ */
+export function hearingPlan(regions: readonly BarRange[], fallback: BarRange, focus: BarRange | undefined, songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>>): HearingPlan {
+  if (!regions.length) return { plays: [listenable(focus ?? fallback, songs[songs.length - 1])], unheard: null, limit: null, focusLeftOut: false };
+  const plays: BarRange[] = [];
+  let bars = 0;
+  let seconds = 0;
+  const cost = (r: BarRange) => ({ bars: r.toBar - r.fromBar, seconds: rangeSeconds(r, songs) });
+  const over = (r: BarRange): HearingLimit | null => {
+    const c = cost(r);
+    if (bars + c.bars > LIMITS.listenMaxBars) return 'bars';
+    if (seconds + c.seconds > LIMITS.listenMaxSeconds + 1e-9) return 'seconds';
+    return null;
+  };
+  const take = (r: BarRange) => {
+    const c = cost(r);
+    bars += c.bars;
+    seconds += c.seconds;
+    plays.push(r);
+  };
+  const list = joinPlays(regions.map(wholeBars));
+  const unheard: BarRange[] = [];
+  let limit: HearingLimit | null = null;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (limit) {
+      unheard.push(r);
+      continue;
+    }
+    // (the bar before it, unless that's played already: the last stretch ends there)
+    const prevEnd = plays.at(-1)?.toBar ?? 0;
+    const lead: BarRange = { fromBar: Math.max(1, r.fromBar - 1, prevEnd), toBar: r.toBar };
+    if (!over(lead)) take(lead);
+    else if (!over(r)) take(r);
+    else {
+      // As far as it fits, from its start: the rest isn't heard
+      let to = r.toBar - 1;
+      while (to > r.fromBar && over({ fromBar: r.fromBar, toBar: to })) to--;
+      const fits = to > r.fromBar;
+      // (the limit the next bar would break)
+      limit = over({ fromBar: r.fromBar, toBar: fits ? to + 1 : r.fromBar + 1 }) ?? 'seconds';
+      if (fits) {
+        take({ fromBar: r.fromBar, toBar: to });
+        unheard.push({ fromBar: to, toBar: r.toBar });
+      } else unheard.push(r);
+    }
+  }
+  let focusLeftOut = false;
+  if (focus) {
+    const pieces = without(wholeBars(focus), plays);
+    const all = pieces.reduce((t, p) => ({ bars: t.bars + cost(p).bars, seconds: t.seconds + cost(p).seconds }), { bars: 0, seconds: 0 });
+    if (bars + all.bars <= LIMITS.listenMaxBars && seconds + all.seconds <= LIMITS.listenMaxSeconds + 1e-9) pieces.forEach(take);
+    else focusLeftOut = true;
+  }
+  return { plays: joinPlays(plays), unheard: unheard.length ? unheard : null, limit, focusLeftOut };
+}
+
+/** The stretches as one range, first bar to last (for what only needs to know where they lie). */
+export const spanOf = (list: readonly BarRange[]): BarRange => ({ fromBar: Math.min(...list.map((r) => r.fromBar)), toBar: Math.max(...list.map((r) => r.toBar)) });
+
+const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: ProjectSnapshot) => {
+  const plan = hearingPlan(r.diff.regions, r.diff.audition, focus, [before, r.song]);
+  return {
+    song: r.song,
+    changes: r.diff.changes.map((c) => c.text),
+    marked: { changes: r.diff.changes.map((c) => c.marked ?? c.text), warnings: r.marked.warnings, notes: r.marked.notes },
+    warnings: r.warnings,
+    notes: r.notes,
+    touchedTracks: r.diff.touchedTracks,
+    bars: r.diff.bars,
+    regions: r.diff.regions,
+    audition: plan.plays,
+    unheard: plan.unheard,
+    limit: plan.limit,
+    focusLeftOut: plan.focusLeftOut,
+  };
+};
 
 /**
  * A suggestion from an agent's request, on `base` (the song in `ctx`): its texts made plain and
@@ -276,7 +392,7 @@ export function makeSuggestion(
       touchedHashes: touchedHashes(base, ops),
       touchedNames: touchedNames(base, ops),
       status: 'waiting',
-      ...fromResult(out, focus),
+      ...fromResult(out, focus, base),
       createdAt: now,
       ...(connection !== undefined ? { connection } : {}),
       ...(agent ? { agent } : {}),
@@ -321,15 +437,27 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   const again = applyOps(now, { opsVersion: OPS_VERSION, ops: s.ops }, { idBase: s.idBase });
   // (the ops' errors quote what the agent wrote: the card says it in the app's own words instead)
   if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: [NO_LONGER_FITS], outOfDateAt: ctx.parts, armed: null };
-  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus) };
+  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus, now) };
 }
 
-/** "bar 5" or "bars 5-8" for a range of whole song bars (end not included). */
-export const barWords = (r: BarRange): string => {
-  const a = Math.floor(r.fromBar);
-  const b = Math.max(a, Math.ceil(r.toBar) - 1);
-  return a === b ? `bar ${a}` : `bars ${a}-${b}`;
-};
+export { barWords, rangesWords } from './songDiff';
+
+/** The regions of `s` (or the parts of them) its before-and-after plays: all of them, but what `unheard` leaves out. */
+export function heardRegions(s: Pick<Suggestion, 'regions' | 'unheard'>): BarRange[] {
+  if (!s.unheard) return s.regions.map((r) => ({ ...r }));
+  return s.regions.flatMap((r) => without(r, s.unheard!));
+}
+
+/** How many bars ranges hold. */
+const barCount = (list: readonly BarRange[]): number => list.reduce((n, r) => n + Math.max(1, Math.ceil(r.toBar) - Math.floor(r.fromBar)), 0);
+
+/** The limit a before-and-after keeps to, in words: "it plays at most 90 seconds". */
+export const limitWords = (limit: HearingLimit | null | undefined): string =>
+  limit === 'bars' ? `a before-and-after plays at most ${LIMITS.listenMaxBars} bars` : `a before-and-after plays at most ${LIMITS.listenMaxSeconds} seconds`;
+
+/** "bars 72-80 weren’t heard (a before-and-after plays at most 90 seconds)." */
+export const unheardWords = (unheard: readonly BarRange[], limit: HearingLimit | null | undefined): string =>
+  `${rangesWords(unheard)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit)}).`;
 
 /** A second press of Accept counts only this long after the first at the earliest, ms (a double-click doesn't confirm). */
 export const CONFIRM_AFTER_MS = 700;
@@ -363,7 +491,7 @@ export function acceptDecision(
   }
   const message =
     fresh.partHeard === fresh.version && fresh.unheard
-      ? `You heard only part of this: ${barWords(fresh.unheard)} ${fresh.unheard.toBar - fresh.unheard.fromBar > 1 ? 'weren’t' : 'wasn’t'} heard (too long to hear at once). Press Accept without listening to take it all the same.`
+      ? `You heard only part of this: ${unheardWords(fresh.unheard, fresh.limit)} Press Accept without listening to take it all the same.`
       : fresh.status === 'changed' && fresh.heard !== null
       ? 'The song changed since you heard this, so what would go in hasn’t been heard. Hear it again, or press Accept without listening.'
       : fresh.status === 'changed'
@@ -427,6 +555,9 @@ function flushAnnouncements() {
   lastSaid = Date.now();
   useSuggestions.setState({ announcement: text });
 }
+
+/** What waits to be said, and when the last announcement was (Date.now()): for the browser checks, to wait for the throttle deterministically. */
+export const announcePending = (): { waiting: number; lastSaid: number } => ({ waiting: waiting.length, lastSaid });
 
 /**
  * Say `text` in the live region: at most one announcement every ANNOUNCE_EVERY_MS, what comes

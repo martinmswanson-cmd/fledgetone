@@ -121,3 +121,37 @@ test('a looped stretch goes round without a click: its end crossfades into what 
   // A stretch shorter than two fades still loops (the fade shortened to fit)
   assert.equal(loopChannels([new Float32Array(100).fill(0.5)], 10, fade)[0].length, 90);
 });
+
+test('stretches played one after another (a suggestion that changes several places): each ends into what leads into the next, and A and B switch in the same stretch', async () => {
+  const { joinStretches, stretchOf, sequenceOffset } = await import('../src/audio/auditionMath.ts');
+  const rate = 44100;
+  const fade = LOOP_FADE_SECONDS * rate;
+  const tone = (hz, n) => new Float32Array(n).map((_, i) => 0.5 * Math.sin((2 * Math.PI * hz * i) / rate));
+  // Two stretches of different music, each rendered with a run-in
+  const one = tone(110, rate);
+  const two = tone(330, rate);
+  const trim = Math.round(0.3 * rate);
+  const parts = [stretchOf([one], trim, fade), stretchOf([two], trim, fade)];
+  const { channels, starts } = joinStretches(parts, fade);
+  assert.deepEqual(starts, [0, rate - trim]);
+  assert.equal(channels[0].length, 2 * (rate - trim));
+  // Each stretch begins as rendered; the first one's end leads into the second's run-in, and the second's into the first's
+  assert.equal(channels[0][0], one[trim]);
+  assert.equal(channels[0][starts[1]], two[trim]);
+  assert.ok(Math.abs(channels[0][starts[1] - 1] - two[trim - 1]) < 0.01, 'into the second stretch as the song plays into it');
+  assert.ok(Math.abs(channels[0].at(-1) - one[trim - 1]) < 0.01, 'and round into the first');
+  let inside = 0;
+  for (let i = 1; i < channels[0].length; i++) inside = Math.max(inside, Math.abs(channels[0][i] - channels[0][i - 1]));
+  assert.ok(inside < 0.05, `no step bigger than the music's own (${inside})`);
+  // One stretch alone: what loopChannels makes
+  const [alone] = loopChannels([one], trim, fade);
+  assert.deepEqual(joinStretches([stretchOf([one], trim, fade)], fade).channels[0], alone);
+  // Switching: the same stretch, the same bar in it, by each side's tempo (B at half A's tempo: twice as long)
+  const plays = [{ fromBar: 1, toBar: 3 }, { fromBar: 69, toBar: 71 }];
+  const a = { tempo: { bpm: 120, points: [] }, starts: [0, 4], seconds: 8 };
+  const b = { tempo: { bpm: 60, points: [] }, starts: [0, 8], seconds: 16 };
+  assert.equal(sequenceOffset(1, plays, a, b), 2, 'half a bar into the first stretch');
+  assert.equal(sequenceOffset(5, plays, a, b), 10, 'half a bar into the second');
+  assert.equal(sequenceOffset(10, plays, b, a), 5);
+  assert.equal(sequenceOffset(8 + 5, plays, a, b), 10, 'round again');
+});

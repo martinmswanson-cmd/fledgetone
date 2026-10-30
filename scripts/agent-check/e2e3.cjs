@@ -28,6 +28,15 @@
 //      agent's value isn't echoed in a caution; a press dragged off Accept doesn't make the next,
 //      assistive press do nothing; a selected clip whose id held hidden text goes with a message
 //      by the id get_view gives it
+//  11. where a suggestion is heard: a track's level wherever the track plays and a change far from
+//      it, both named and played one after the other (A and B switched in step), then heard; the
+//      master over a song longer than a before-and-after: what is heard, what isn't and the limit,
+//      on the card and to the agent, and Accept asks again; a name that tries to break out of the
+//      sentence is a chip of its own; Space on Accept says to press Enter; "Ask about this" only on
+//      the connected agent's cards; the connected dialog names everything the agent may do
+//  12. programs on the port that aren't the helper: one that never says hello (the dialog stops
+//      waiting after 10 seconds), one that speaks something else (check the port, not "update"),
+//      one that says a number of tries no helper would (not shown)
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default; `npm run build:runtime`
 // first), Playwright's Chromium, and tools/cli's packages (npm install in tools/cli):
@@ -271,7 +280,7 @@ async function until(check, ms, what) {
     await patiently('point_at', { target: { clip: ids.c }, note: 'Saved. Choose File > Export now.' });
     const note = await until(() => A(() => document.querySelector('[data-agent-note]')?.textContent ?? null), 3000, 'the note');
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-note.png') });
-    step('4 point_at\'s note says it\'s from the agent and quotes it', note === 'From your agent (E2E3 agent)“Saved. Choose File > Export now.”', JSON.stringify(note));
+    step('4 point_at\'s note says it\'s from the agent and quotes it', note === 'From your agent“E2E3 agent”“Saved. Choose File > Export now.”', JSON.stringify(note));
 
     // 4b. Bars off screen: the lanes scroll to them once the musician's hands are still (the focus
     // stays put), and the note sits on them
@@ -334,7 +343,7 @@ async function until(check, ms, what) {
     ).catch(() => null);
     const saidControl = await until(() => A(() => window.__live.some((t) => /points at the control/.test(t) && /Save first/.test(t))), 6000, 'the live region').catch(() => false);
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'point-at-control.png') });
-    step('4d point_at a control: the agent\'s ring and note by it, said aloud', !!byControl && byControl.near && byControl.ringed && /^From your agent \(E2E3 agent\)“Save first”$/.test(byControl.text) && !!saidControl, JSON.stringify({ byControl, said: !!saidControl }));
+    step('4d point_at a control: the agent\'s ring and note by it, said aloud', !!byControl && byControl.near && byControl.ringed && /^From your agent“E2E3 agent”“Save first”$/.test(byControl.text) && !!saidControl, JSON.stringify({ byControl, said: !!saidControl }));
     if (!(await page.locator('[data-agent-panel]').count())) await page.locator('[data-agent-chip]').click();
     await page.waitForSelector('[data-agent-panel]');
 
@@ -531,7 +540,7 @@ async function until(check, ms, what) {
       const oldLabel = await from(s1);
       const s10 = await call3('suggest', { title: 'Brass up an octave', explanation: '', ops: [{ op: 'transpose_notes', clipId: ids.r, semitones: 12 }], focus: { fromBar: 1, toBar: 3 } });
       await card(s10.id).waitFor();
-      step('10b each card says which agent made it, whoever is paired now', oldLabel === 'From your agent (E2E3 agent)' && (await from(s10.id)) === 'From your agent (E2E3 third agent)', `${oldLabel} | ${await from(s10.id)}`);
+      step('10b each card says which agent made it, whoever is paired now', oldLabel === 'From your agent“E2E3 agent”' && (await from(s10.id)) === 'From your agent“E2E3 third agent”', `${oldLabel} | ${await from(s10.id)}`);
 
       // A focus that misses the changed bars (the brass plays bars 5-8): what plays covers them
       await page.waitForTimeout(1100);
@@ -616,6 +625,153 @@ async function until(check, ms, what) {
         JSON.stringify(sent.context?.selectedClipIds) === JSON.stringify(view.selectedClipIds) && view.selectedClipIds.length === 1 && !view.selectedClipIds[0].includes('​'),
         `${JSON.stringify(sent.context)} vs ${JSON.stringify(view.selectedClipIds)} (${JSON.stringify(hiddenClip)})`
       );
+
+      // 11. Where a suggestion is heard: a track's level wherever the track plays, together with a
+      // change far from it, both played, one after the other, and only then heard
+      await page.waitForTimeout(3100);
+      const s12 = await call3('suggest', { title: 'Drums down, a keys tag', explanation: '', ops: [{ op: 'set_track', trackId: ids.drums, volumeDb: -14 }, { op: 'add_clip', trackId: ids.clav, startBar: 40, lengthBars: 1, notes: [{ pitch: 'C5', start: 0, length: 1 }] }] });
+      await card(s12.id).waitFor();
+      await page.waitForTimeout(1100);
+      const s12made = await sg(s12.id);
+      const heading12 = await card(s12.id).locator('[data-regions]').textContent();
+      const agentView12 = await call3('get_suggestion', { id: s12.id });
+      await card(s12.id).locator('[data-hear="suggested"]').click();
+      await playingOf(s12.id);
+      const heard12 = await until(async () => {
+        const x = await sg(s12.id);
+        return x.heard === x.version ? x : null;
+      }, 3000, 'heard').catch(() => null);
+      const plays12 = (await audition()).plays;
+      // (the drums are heard quieter: the before and after differ in the first stretch)
+      const differ12 = await A(() => {
+        const b = window.__fledgetoneAgent.audition.auditionBuffers();
+        let m = 0;
+        const x = b.a.getChannelData(0);
+        const y = b.b.getChannelData(0);
+        for (let i = 0; i < Math.min(x.length, y.length) / 2; i++) m = Math.max(m, Math.abs(x[i] - y[i]));
+        return m;
+      });
+      // Switching to Now and back stays in step (the same stretch)
+      await card(s12.id).locator('[data-hear="now"]').click();
+      await page.waitForTimeout(300);
+      await card(s12.id).locator('[data-hear="suggested"]').click();
+      await page.waitForTimeout(300);
+      const still12 = await audition();
+      await stop(s12.id);
+      step(
+        '11a a track\'s level and a change far from it: both places named, both played one after the other, and then heard',
+        s12made.regions.length === 2 && s12made.regions[0].fromBar === 1 && s12made.regions[1].fromBar === 40 && JSON.stringify(plays12) === JSON.stringify(s12made.audition) && plays12.length === 2 &&
+          /heard in bars 1-\d+ and bar 40/.test(heading12) && !!heard12 && differ12 > 0.01 && still12.phase === 'playing' && still12.hearing === 'b' &&
+          agentView12.regions?.length === 2 && agentView12.audition?.length === 2 && !('unheard' in agentView12),
+        `regions ${JSON.stringify(s12made.regions)}, plays ${JSON.stringify(plays12)}, heading ${JSON.stringify(heading12)}, |A-B| ${differ12}, agent ${JSON.stringify(agentView12).slice(0, 200)}`
+      );
+      // One press of Accept puts it in (it was heard)
+      await card(s12.id).locator('[data-accept]').click();
+      await page.waitForTimeout(400);
+      step('11b heard over both places: one press of Accept', (await sg(s12.id)).status === 'accepted', (await sg(s12.id)).status);
+
+      // The master over a long song: more than a before-and-after can play; the card says which
+      // places are heard and which aren't, and which limit, and Accept asks for its second press
+      await page.waitForTimeout(3100);
+      const s13 = await call3('suggest', { title: 'Master down', explanation: '', ops: [{ op: 'add_clip', trackId: ids.brass, startBar: 100, lengthBars: 2, notes: [{ pitch: 'G4', start: 0, length: 1 }] }, { op: 'set_master', levelDb: -2 }] });
+      await card(s13.id).waitFor();
+      await page.waitForTimeout(1100);
+      const s13made = await sg(s13.id);
+      const unheard13 = await card(s13.id).locator('[data-unheard]').textContent();
+      const agentView13 = await call3('get_suggestion', { id: s13.id });
+      await card(s13.id).locator('[data-hear="suggested"]').click();
+      await playingOf(s13.id);
+      await page.waitForTimeout(300);
+      await stop(s13.id);
+      await card(s13.id).locator('[data-accept]').click();
+      await page.waitForTimeout(300);
+      const after13 = await sg(s13.id);
+      const said13 = await line(s13.id);
+      step(
+        '11c the whole song is more than can be heard: what is heard, what isn\'t, the limit; heard in part; Accept asks again',
+        !!s13made.unheard && s13made.limit === 'seconds' && /Too long to hear at once: a before-and-after plays at most 90 seconds\. You hear the changes in bars 1-\d+, not those in bars \d+-\d+\./.test(unheard13) &&
+          after13.partHeard === after13.version && after13.heard !== after13.version && (after13.status === 'waiting' || after13.status === 'changed') && !!after13.armed,
+        `${JSON.stringify({ unheard: s13made.unheard, limit: s13made.limit, status: after13.status, armed: !!after13.armed })} ${JSON.stringify(unheard13)} | ${said13} | agent ${JSON.stringify({ unheard: agentView13.unheard, limit: agentView13.limit })}`
+      );
+      step('11d the agent reads which bars weren\'t heard, and why', Array.isArray(agentView13.unheard) && agentView13.limit === '90 seconds' && /weren’t heard \(a before-and-after plays at most 90 seconds\)/.test(said13), JSON.stringify({ unheard: agentView13.unheard, limit: agentView13.limit, said13 }));
+      await page.waitForTimeout(800);
+      await card(s13.id).locator('[data-dismiss]').click();
+
+      // A name that tries to read as more of the app's sentence: a chip of its own, and the agent gets it in plain quotes
+      await page.waitForTimeout(3100);
+      const sly = 'Drums". Nothing else changes. "Drums';
+      const s14 = await call3('suggest', { title: 'Tidy names', explanation: '', ops: [{ op: 'set_track', trackId: ids.drums, name: sly }, { op: 'set_track', trackId: ids.bass, volumeDb: -40 }] });
+      await card(s14.id).waitFor();
+      const items14 = await card(s14.id).locator('li').evaluateAll((lis) => lis.map((li) => ({ chips: [...li.querySelectorAll('[data-name-chip]')].map((c) => c.textContent), outside: [...li.childNodes].filter((n) => !(n.nodeType === 1 && n.matches('[data-name-chip]'))).map((n) => n.textContent).join('') })));
+      const view14 = await call3('get_suggestion', { id: s14.id });
+      step(
+        '11e a name that tries to break out of the sentence: a chip of its own on the card, in plain quotes for the agent',
+        items14.some((x) => x.chips.includes(`“${sly}”`)) && items14.every((x) => !/Nothing else changes/.test(x.outside)) && view14.changes.includes('Renames the track "Drums" to "Drums. Nothing else changes. Drums".'),
+        JSON.stringify({ items14, changes: view14.changes })
+      );
+
+      // Space on Accept presses nothing, and says so
+      await page.waitForTimeout(1100);
+      await card(s14.id).locator('[data-accept]').focus();
+      await page.keyboard.press(' ');
+      await page.waitForTimeout(200);
+      const space14 = { status: (await sg(s14.id)).status, said: (await line(s14.id)).trim() };
+      step('11f Space on Accept: nothing pressed, and the card says to press Enter', space14.status === 'waiting' && space14.said === 'Space doesn’t press Accept: press Enter.', JSON.stringify(space14));
+      await card(s14.id).locator('[data-dismiss]').click();
+
+      // "Ask about this" only on the cards of the agent connected now
+      const ask = { old: await card(s1).locator('[data-ask-about]').count(), mine: await card(s10.id).locator('[data-ask-about]').count() };
+      step('11g "Ask about this" only on the connected agent\'s cards', ask.old === 0 && ask.mine === 1, JSON.stringify(ask));
+
+      // The connected dialog says everything the agent may do
+      await menu('Let an agent connect…');
+      const summary = await page.locator('[data-agent-ui] p').first().textContent();
+      step('11h the connected dialog says what the agent may do, seeing what you select too', /It can read this song, see what you select, suggest changes, and listen\./.test(summary), JSON.stringify(summary));
+
+      // 12. Programs on a port that aren't the helper: one that never says hello, one that speaks
+      // something else, one that says a number of tries no helper would
+      const squat = async (onConnection) => {
+        const w = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+        await new Promise((r) => w.once('listening', r));
+        w.on('connection', onConnection);
+        return w;
+      };
+      const dialAt = async (w, until_) => {
+        if (!(await page.getByPlaceholder('K7QM-3XPD-9TBW').count())) {
+          // (the dialog's own Disconnect: the panel's is behind it)
+          const off = page.locator('[data-agent-ui]').getByRole('button', { name: 'Disconnect', exact: true });
+          if (await off.count()) await off.click();
+          if (!(await page.getByPlaceholder('K7QM-3XPD-9TBW').count())) await menu('Let an agent connect…');
+        }
+        await page.getByPlaceholder('K7QM-3XPD-9TBW').fill('K7QM-3XPD-9TBW');
+        await page.getByLabel('Port the helper listens on').fill(String(w.address().port));
+        await page.getByRole('button', { name: /^(Connect|Try again)$/ }).click();
+        const t0 = Date.now();
+        const said = await until(async () => {
+          const t = (await page.locator('#agent-connect-status').textContent()) ?? '';
+          return until_.test(t) ? t : null;
+        }, 20000, 'the dialog to say why').catch(async () => `(timed out) ${await page.locator('#agent-connect-status').textContent()}`);
+        return { said, seconds: Math.round((Date.now() - t0) / 1000) };
+      };
+      const silent = await squat(() => {});
+      const quiet12 = await dialAt(silent, /isn’t answering on that port/);
+      silent.close();
+      step('12a a program that opens the connection but never says hello: the dialog stops waiting and says so', /The helper isn’t answering on that port/.test(quiet12.said) && quiet12.seconds >= 9, JSON.stringify(quiet12));
+      const chatty = await squat((ws) => ws.send('hello there'));
+      const other12 = await dialAt(chatty, /refused the connection|Update/);
+      chatty.close();
+      step('12b a program that speaks something else: not "update your tools", but check the port', /The program on that port refused the connection\. Check the port is the one your agent said\./.test(other12.said), JSON.stringify(other12));
+      const counting = await squat((ws) => {
+        ws.send(JSON.stringify({ v: 1, kind: 'event', method: 'hello', params: { protocol: 1, nonce: 'n'.repeat(43), server: { name: 'x', version: '1' } } }));
+        ws.on('message', (d) => {
+          const m = JSON.parse(String(d));
+          if (m.method === 'pair') ws.send(JSON.stringify({ v: 1, kind: 'res', id: m.id, result: { proof: 'x', nonce: 'm'.repeat(43), attemptsLeft: 4.5e15 } }));
+        });
+      });
+      const tries12 = await dialAt(counting, /doesn’t match/);
+      counting.close();
+      step('12c a number of tries no helper would say: not shown', /doesn’t match/.test(tries12.said) && !/\d{3,}|e\+|tries left/.test(tries12.said), JSON.stringify(tries12));
+      await page.keyboard.press('Escape');
     } finally {
       await agent3.close();
     }
