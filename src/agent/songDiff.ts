@@ -29,6 +29,7 @@ import { clipSoundEnd, RELEASE_ALLOWANCE_SECONDS, releaseSeconds, soundingNotes 
 import { chainTail, feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
 import { liveSends } from '../store/buses';
 import { DUCK_BRIDGE, DUCK_LOOKAHEAD, DUCK_RELEASE } from '../store/duck';
+import { carriesState, swingReadsClip, type NoteMemory } from '../audio/noteMemory';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
 import { nm, plainNames } from './names';
@@ -474,6 +475,52 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     fromBar: Math.max(1, r.fromBar - duckBars(DUCK_LOOKAHEAD + DUCK_BRIDGE)),
     toBar: past(r.toBar + duckBars(DUCK_BRIDGE + DUCK_RELEASE), tailOf(id).seconds),
   });
+  /**
+   * What a track remembers from note to note (noteMemory.ts: takes played in turn, strums, passes,
+   * a plugin's own state, a monophonic synth carrying on), in either version.
+   */
+  const memoryMemo = new Map<string, NoteMemory | null>();
+  const memoryOf = (id: string): NoteMemory | null => {
+    if (memoryMemo.has(id)) return memoryMemo.get(id)!;
+    const clips = songs.flatMap((s) => s.clips.filter((c) => c.trackId === id));
+    const found = songs.flatMap((s) => s.tracks.filter((t) => t.id === id)).map((t) => carriesState(t, clips)).filter((m): m is NoteMemory => !!m);
+    const out: NoteMemory | null = found.length
+      ? { reach: found.some((m) => m.reach === 'onward') ? 'onward' : 'joined', sure: found.every((m) => m.sure), kinds: [...new Set(found.flatMap((m) => m.kinds))] }
+      : null;
+    memoryMemo.set(id, out);
+    return out;
+  };
+  /**
+   * The end of the run of `id`'s notes joined to a change from `from` to `to` (each starting before
+   * the run so far has rung out: its notes' release, see releaseSeconds), in either version: how far
+   * a monophonic synth carries the change on (noteMemory.ts 'legato').
+   */
+  const joinedEnd = (id: string, from: number, to: number): number => {
+    let reach = to;
+    for (const s of songs) {
+      const track = s.tracks.find((t) => t.id === id);
+      const ring = releaseSeconds(track);
+      const notes = s.clips
+        .filter((c) => c.trackId === id)
+        .flatMap((c) => soundingNotes(c).map(({ note, bars }) => ({ start: c.startBar + note.startOffset, end: c.startBar + note.startOffset + bars })))
+        .sort((x, y) => x.start - y.start);
+      let end = to;
+      for (const n of notes) {
+        if (n.end <= from) continue;
+        // (a sixteenth to spare: swing and the Human insert can move a note a little later)
+        if (n.start >= from && n.start > past(end, ring) + 1 / 16) break;
+        end = Math.max(end, n.end);
+      }
+      reach = Math.max(reach, end);
+    }
+    return reach;
+  };
+  /** A clip's bars in either version, when its swing is decided over the whole clip (noteMemory.ts swingReadsClip). */
+  const swingSpan = (clipId: string): BarRange | null => {
+    const versions = songs.flatMap((s) => s.clips.filter((c) => c.id === clipId));
+    if (!versions.some(swingReadsClip)) return null;
+    return { fromBar: Math.min(...versions.map((c) => c.startBar)), toBar: Math.max(...versions.map(clipSoundEnd)) };
+  };
   const allSure = songs.every((s) => s.tracks.every((t) => tailOf(t.id).sure));
   const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
   const song: BarRange = { fromBar: 1, toBar: end };
@@ -496,10 +543,25 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     }
     // (a change on a track rings on past its bars: its notes' release, the track's effects, and those it plays into)
     if (how === 'here' && c.fromBar !== undefined && c.toBar !== undefined) {
-      const here: BarRange = { fromBar: c.fromBar, toBar: tracks.length ? Math.max(...tracks.map((id) => past(c.toBar!, tailOf(id).seconds)), ...ducked.map((id) => past(c.toBar!, duckTail(id)))) : c.toBar };
+      // (a clip whose swing is decided over all of it: a change of one note can move any of them)
+      const swing = c.clipId ? swingSpan(c.clipId) : null;
+      const from = Math.min(c.fromBar, swing?.fromBar ?? Infinity);
+      let to = Math.max(c.toBar, swing?.toBar ?? -Infinity);
+      // (a track that plays a note by the notes before it: the change carries on, see noteMemory.ts)
+      const memories = c.clipId ? tracks.map((id) => ({ id, memory: memoryOf(id) })).filter((x) => !!x.memory) : [];
+      const onward: BarRange[] = [];
+      let notesMove = false;
+      for (const { id, memory } of memories) {
+        if (memory!.reach === 'joined') to = Math.max(to, joinedEnd(id, from, to));
+        else for (const r of sounds(id)) if (r.toBar > from) onward.push({ fromBar: Math.max(from, r.fromBar), toBar: r.toBar });
+        // (passes decide which notes play: what ducks to them moves on too)
+        if (memory!.kinds.includes('passes')) notesMove = true;
+      }
+      const duckTo = notesMove ? Math.max(to, ...onward.map((r) => r.toBar)) : to;
+      const here: BarRange = { fromBar: from, toBar: tracks.length ? Math.max(...tracks.map((id) => past(to, tailOf(id).seconds)), ...ducked.map((id) => past(duckTo, duckTail(id)))) : to };
       return {
-        heard: joinRanges([here, ...dipped.map((d) => dipRange({ fromBar: c.fromBar!, toBar: c.toBar! }, d))]),
-        sure: [...tracks, ...ducked, ...dipped].every((id) => tailOf(id).sure),
+        heard: joinRanges([here, ...onward, ...dipped.map((d) => dipRange({ fromBar: from, toBar: duckTo }, d))]),
+        sure: [...tracks, ...ducked, ...dipped].every((id) => tailOf(id).sure) && memories.every((x) => x.memory!.sure),
       };
     }
     return { heard: [song], sure: allSure };

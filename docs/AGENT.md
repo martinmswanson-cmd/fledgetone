@@ -216,7 +216,13 @@ fewer bars than the truth. First by rules:
   the drums), as long as the ducked track rings on; and, when that track is a proxy (the game's
   dialogue or sound effects, which every other track ducks under), wherever the others dip, from
   the dip's look-ahead before it to past its release by each of their tails. A note plays its
-  whole length, past its clip's end too, so it's heard until it stops;
+  whole length, past its clip's end too, so it's heard until it stops. Some instruments play a
+  note by the notes before it, so a note added, changed or taken away (or a clip) changes later
+  ones too: a recorded instrument that plays two takes of its notes in turn and a guitar's strums
+  (down or up after the last), notes that play only on some passes, and a plugin instrument (whose
+  own state the studio can't know: not sure) are heard from the change to where the track stops;
+  a monophonic synth along the notes joined to it (each starting before the one before has rung
+  out); and a swung clip all of it (its swing is decided over the whole clip);
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,

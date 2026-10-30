@@ -204,6 +204,16 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   all the starters, keep their exact length). Use clipSoundEnd, not `startBar + lengthBars`, for
   where a clip stops sounding. A change of a proxy track (duck.ts) is heard wherever every other
   track dips (look-ahead, bridge, release, their tail: songDiff `proxyDucked`/`dipRange`).
+- **Instruments that remember the notes before** (`src/audio/noteMemory.ts carriesState`, read by
+  songDiff's hearing rules): recorded instruments with a second take at some loudness (one count per
+  loudness for every pitch, samplerManager.ts `turn`; recorded kits per row, sampledKit.ts), the
+  strummed guitars (guitarStrum.ts `lastStrum`), notes on some passes only (noteChance.ts runs of
+  copies) and plugin instruments (not sure) make a note-level change heard from the change to where
+  its track stops; the monophonic synths (`LEGATO_INSTRUMENTS`, and the Sub enhancer) along the run
+  of notes joined to it (each starting before the one before has rung out); swing on a clip
+  (`swingReadsClip`) the whole clip. Sounds are unchanged. A new instrument that keeps state from
+  note to note must be added there; songDiff.test.mjs checks the mono list against instruments.ts
+  and the takes against the catalogue.
 - **What B played is kept on each suggestion** (`playedB`, per version and render; songWatch.ts
   recordPlayed/noteHeard over every suggestion), never read from the audition playing now, which
   starts again for each suggestion heard. Names in any sentence the studio writes go through
