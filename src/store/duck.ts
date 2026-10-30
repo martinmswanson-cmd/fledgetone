@@ -16,7 +16,7 @@ export const DUCK_RELEASE = 0.4;
 /** Gaps shorter than this (seconds) don't let the music back up */
 export const DUCK_BRIDGE = 0.35;
 
-/** Where the proxy tracks sound, in bars: each note, and each audio clip, merged. */
+/** Where the proxy tracks sound, in bars: each note (its whole length, as the scheduler plays it), and each audio clip, merged. */
 export function proxySpans(tracks: readonly Track[], clips: readonly Clip[], bpm: number): Array<{ from: number; to: number }> {
   const proxies = new Set(tracks.filter((t) => t.duckProxy && !t.isMuted).map((t) => t.id));
   if (!proxies.size) return [];
@@ -31,7 +31,8 @@ export function proxySpans(tracks: readonly Track[], clips: readonly Clip[], bpm
     for (const n of c.notes) {
       if (n.startOffset < 0 || n.startOffset >= c.lengthBars) continue;
       const from = c.startBar + n.startOffset;
-      spans.push({ from, to: Math.min(end, from + durationToBars(n.duration)) });
+      // (its whole length, past its clip's end too, as it plays)
+      spans.push({ from, to: from + durationToBars(n.duration) });
     }
   }
   spans.sort((a, b) => a.from - b.from);

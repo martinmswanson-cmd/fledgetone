@@ -195,6 +195,19 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   another track's Pump ducks to (by `source`, or a drum track for kick/snare triggers) is heard as
   long as the ducked track rings on. Without Listen an agent reads `heard` as `heardByRules`
   (songWatch.ts), never the studio's own `heard`, which a sound check can change.
+- **A note plays its whole length, past its clip's end too** (scheduler.ts, dropMoves.ts), though
+  the piano roll and clip view draw it cut at the clip's edge. Every end worked out from notes
+  counts that overhang: `auditionMath.ts clipSoundEnd` (musicEnd, preRollStart, restartHeldNotes,
+  which begins a note again in a clip of its own when its clip is over by the run-in), songDiff's
+  note, clip and track ranges, duck.ts proxy spans, and an export's ring-out (`exportWav.ts
+  heldPast`/`ringOutFor`: only past RING_OUT_MARGIN, so songs whose notes run on less than that,
+  all the starters, keep their exact length). Use clipSoundEnd, not `startBar + lengthBars`, for
+  where a clip stops sounding. A change of a proxy track (duck.ts) is heard wherever every other
+  track dips (look-ahead, bridge, release, their tail: songDiff `proxyDucked`/`dipRange`).
+- **What B played is kept on each suggestion** (`playedB`, per version and render; songWatch.ts
+  recordPlayed/noteHeard over every suggestion), never read from the audition playing now, which
+  starts again for each suggestion heard. Names in any sentence the studio writes go through
+  `nm()`; agentOps.test.mjs fuzzes every op with a hostile name and fails on one outside its marks.
 - Wobble rates are `'1/4'`, `'1/8'`, `'1/16'` (not Tone's `'8n'`).
 - Sample libraries load from GitHub (`nbrosowsky/tonejs-instruments`, files spell sharps with `s`,
   e.g. `As3.mp3`) and the FluidR3 General MIDI set. Check a file exists before listing it.

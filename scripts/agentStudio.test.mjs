@@ -449,9 +449,16 @@ test('a note held from before the run-in begins again at its start, for what is 
   assert.equal(out[1], clips[1], 'a clip after it untouched');
   assert.equal(restartHeldNotes(clips, 1, 5), clips, 'nothing held over bar 1: the same clips');
   assert.equal(restartHeldNotes([{ ...clips[0], notes: [note('crash', 20, '4m')] }], 22, 30)[0].notes[0].startOffset, 20, 'a one-shot over before the range stays put');
-  // Cut at its clip's end
-  const cut = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 10, notes: [note('n', 0, '40m')] }], 5, 8);
-  assert.ok(Math.abs(durationToBars(cut[0].notes[0].duration) - 6) < 1e-9);
+  // Running on past its clip's end, as the scheduler plays it: its whole length (scan r8)
+  const over = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 10, notes: [note('n', 0, '40m')] }], 5, 8);
+  assert.ok(Math.abs(durationToBars(over[0].notes[0].duration) - 36) < 1e-9);
+  // ...and its clip over by the run-in's start: begun again in a clip of its own there, no lanes of the clip's
+  const gone = restartHeldNotes([{ id: 'c', trackId: 't', startBar: 1, lengthBars: 2, expression: { bend: [{ at: 0, value: 0.5 }] }, notes: [note('n', 0, '40m'), note('m', 1, '4n')] }], 12, 20);
+  assert.equal(gone.length, 2);
+  assert.deepEqual(gone[0].notes.map((n) => n.id), ['m']);
+  assert.deepEqual([gone[1].id, gone[1].startBar, gone[1].expression, gone[1].notes[0].startOffset, gone[1].notes[0].heldFrom], ['c~held', 12, undefined, 0, 1]);
+  assert.ok(Math.abs(durationToBars(gone[1].notes[0].duration) - 29) < 1e-9);
+  assert.ok(gone[1].lengthBars >= 29 - 1e-9);
 });
 
 test("a restarted note's Human seed and feel come from where it really begins", () => {

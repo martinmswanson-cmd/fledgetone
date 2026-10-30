@@ -210,7 +210,10 @@ fewer bars than the truth. First by rules:
   to a setting, or a clip's step lane), and those of every bus and return it plays into and the
   master reverb and delay it sends to (or a lane of any kind moves its send to), one after
   another; and, when another track's Pump ducks to that track's notes (it follows that track, or
-  the drums), as long as the ducked track rings on;
+  the drums), as long as the ducked track rings on; and, when that track is a proxy (the game's
+  dialogue or sound effects, which every other track ducks under), wherever the others dip, from
+  the dip's look-ahead before it to past its release by each of their tails. A note plays its
+  whole length, past its clip's end too, so it's heard until it stops;
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,
@@ -313,7 +316,9 @@ A suggestion is a list of ops, applied in order:
 
 **Units are the app's own.** Song positions are bars from 1 (bar 5 is the start of the fifth
 bar; 5.5 is half way through it in 4/4). A note's `start` and `length` are in bars inside its
-clip (0.25 is a quarter note in 4/4, 0.0625 a 16th, the shortest). Pitches are names with an
+clip (0.25 is a quarter note in 4/4, 0.0625 a 16th, the shortest). A note that starts in its
+clip plays its whole length, even past the clip's end, as the studio plays it and exports it.
+Pitches are names with an
 octave: `"C4"` is middle C, `"F#2"`, `"Bb3"`. On drum tracks a note can also be a row's name:
 `kick`, `snare`, `clap`, `closedHat`, `openHat`, `tomLow`, `tomMid`, `tomHigh`, `cowbell`, `crash`,
 `ride`. Velocity is 0 to 1 (0.8 if left out). Levels are dB; pan is -1 (left) to 1 (right); sends,
@@ -538,7 +543,10 @@ Bars are four quarter notes long whatever the time signature: every bar number y
 musician's ruler numbers measures instead, so the sentences the studio writes for them (a
 suggestion's `changes` and `warnings`, the card) name the measures the ruler shows ("at bars 9-10"
 for your bar 7 in 3/4; "Bar 666 beat 2 is past the end of the timeline" for your bar 500), and
-lengths in quarter notes, while the numbers stay your bars. In 4/4 the two are the same.
+lengths in quarter notes, while the numbers stay your bars. In 4/4 the two are the same. A
+before-and-after too long to hear at once is cut where a measure starts. In those sentences the
+names of tracks, clips and markers (yours or the musician's) are marked as names, and a lane's
+points are counted from 1.
 
 `get_song` gives a summary of schema `fledgetone.agent-song/1`, at most 30 KB (detail is left out
 first, and `omitted` says what):

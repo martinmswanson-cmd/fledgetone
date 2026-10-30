@@ -429,16 +429,27 @@ const APP_READS = 'fledgetone';
 const READS_MAX = 64;
 
 /**
- * Whether `text` itself starts with what reads as the app's name (see posesAsApp): each of the
- * name's letters read there in turn, an ANY_LETTER as any one letter, an ANY_SIGN as any one or
- * none, and at least three of them the name's own.
+ * What can come before a name and still leave it read as the start: symbols, numbers,
+ * punctuation, spaces, marks and invisible characters, and the letterlike symbols (ℹ, ™, ℅: some
+ * of which are letters to Unicode).
  */
-function startsAsApp(text: string): boolean {
-  const reads = [...readsAs(text)].slice(0, READS_MAX);
+const LEAD = /^[\p{S}\p{N}\p{P}\p{Z}\p{M}\p{Cf}\s\u2100-\u214F]/u;
+
+/**
+ * Whether one line starts with what reads as the app's name (see posesAsApp), after any lead of
+ * symbols, numbers, punctuation or spaces ("ℹ️ ", "1. ", "™ ", however long): each of the name's
+ * letters read in turn, an ANY_LETTER as any one letter, an ANY_SIGN as any one or none, and at
+ * least three of them the name's own. The name may begin at any place in the lead (a look-alike
+ * there, "Ⓕledgetone", is its first letter) or right after it; past the lead, READS_MAX of what
+ * the rest reads as are read. One pass over the line, however long its lead.
+ */
+function lineAsApp(line: string): boolean {
+  const chars = [...line];
+  let k = 0;
+  while (k < chars.length && LEAD.test(chars[k])) k++;
   // best[j]: the most of the name's own letters that read its first j letters, so far (-1: can't)
   let best = [0, ...new Array<number>(APP_READS.length).fill(-1)];
-  let found = false;
-  for (const r of reads) {
+  const step = (r: string): boolean => {
     const next = new Array<number>(APP_READS.length + 1).fill(-1);
     for (let j = 0; j <= APP_READS.length; j++) {
       if (best[j] < 0) continue;
@@ -449,28 +460,18 @@ function startsAsApp(text: string): boolean {
       else if (r === ANY_LETTER || r === ANY_SIGN) next[j + 1] = Math.max(next[j + 1], best[j]);
     }
     best = next;
-    if (best[APP_READS.length] >= 3) found = true;
-    if (found || best.every((b) => b < 0)) break;
+    return best[APP_READS.length] >= 3;
+  };
+  for (let i = 0; i < k; i++) {
+    // (the name may begin here: before each character of the lead)
+    best[0] = Math.max(best[0], 0);
+    for (const r of readsAs(chars[i])) if (step(r)) return true;
   }
-  return found || best[APP_READS.length] >= 3;
-}
-
-/**
- * What can come before a name and still leave it read as the start: symbols, numbers,
- * punctuation, spaces, marks and invisible characters, and the letterlike symbols (ℹ, ™, ℅: some
- * of which are letters to Unicode).
- */
-const LEAD = /^[\p{S}\p{N}\p{P}\p{Z}\p{M}\p{Cf}\s\u2100-\u214F]/u;
-/** How far into a line's lead a name is looked for, code points. */
-const LEAD_MAX = 24;
-
-/** Whether one line starts with the app's name, after any lead of symbols, numbers or punctuation ("ℹ️ ", "1. ", "™ "). */
-function lineAsApp(line: string): boolean {
-  const chars = [...line];
-  for (let i = 0; i <= Math.min(LEAD_MAX, chars.length); i++) {
-    // (each place in the lead: a look-alike there, "Ⓕledgetone", is tried as the name's first letter too)
-    if (startsAsApp(chars.slice(i).join(''))) return true;
-    if (i < chars.length && !LEAD.test(chars[i])) return false;
+  // (...or right after it)
+  best[0] = Math.max(best[0], 0);
+  for (const r of [...readsAs(chars.slice(k).join(''))].slice(0, READS_MAX)) {
+    if (step(r)) return true;
+    if (best.every((b) => b < 0)) return false;
   }
   return false;
 }

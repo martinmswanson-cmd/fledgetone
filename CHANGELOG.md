@@ -34,6 +34,13 @@ second update on the same day gets `-2`, and so on).
 - **Bars by measure everywhere on a suggestion** in songs not in 4/4: its cautions ("past the end of the timeline"), the before-and-after's limit (in quarter notes) and the selection under your message now number bars as the ruler does.
 - **Without Listen ticked**, whether your agent reads a suggestion as heard depends only on the bars the studio's rules found, never on the check by sound (nor does anything else it reads).
 - **Agent text that spells the app's name with a sign in place of a letter** (a ring for an o, a cross for a t, a bar for an l) is now shown in quotes as the agent's, never as the studio's.
+- **Names in a suggestion's cautions**: a caution about an automation point brought into range now shows the track's name apart, as every other caution does, so a name your agent gave a track can't read as the studio's own words; it counts the points from 1 and names their bars by measure, as the ruler does. A send's lane in What changes shows its return's name apart too.
+- **Heard, even after hearing another suggestion**: if you heard all of a suggestion while the studio was still checking it by sound, then heard another one before the check was done, the first now still counts as heard once its check finds nothing past what you played.
+- **Too long to hear at once, in songs not in 4/4**: the before-and-after now stops where a measure starts, so the bars you hear and those you don't never share a measure, and its loop goes round on a measure.
+- **Very short notes in a caution**: a note or clip shorter than a sixteenth note is now said to be that, instead of "a note length of 0 quarter notes".
+- **A note that runs past its clip's end** plays its whole length, as it always has; now a suggestion's before-and-after, the check by sound and Accept count it to where it stops, and an export or a render on the command line rings out until it has (one ended 25 seconds early). Songs where no note runs on past the end of the song export exactly as before (all the starters do).
+- **Ducking under a proxy track**: a suggestion that changes the dialogue or sound-effects track the rest of the music ducks under is now heard wherever the music dips for it, and as long as the music's echoes and reverb carry the dip.
+- **Agent text that starts with a long row of signs** (lines, dots, emoji) before the app's name is now shown in quotes as the agent's, however long the row.
 - **The game audition pads** keep Tab inside their dialog and give focus back to where it was when they close, as every other dialog does.
 
 ## 2026.10.29 — Studio-quality sound: cleaner exports, recordings, pitch and stretch

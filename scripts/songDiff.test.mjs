@@ -444,3 +444,50 @@ test('in a song not in 4/4 the cautions, the before-and-after limit and the sele
   assert.equal(limitWords('bars'), 'a before-and-after plays at most 64 bars');
   assert.equal(contextWords({ context: { bars: { fromBar: 5, toBar: 9 } } }), 'With your selection: bars 5-8');
 });
+
+test('a note running on past its clip\'s end is heard to where it stops, as it plays (scan r8)', async () => {
+  const { clipSoundEnd, musicEnd } = await import('../src/audio/auditionMath.ts');
+  const a = base();
+  const plain = { ...a, bpm: 120, tempoPoints: [], masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 }, tracks: a.tracks.map((t) => ({ ...t, reverbSend: 0, delaySend: 0, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false } } })) };
+  const clip = { id: 'one', trackId: plain.tracks[0].id, name: 'One', startBar: 30, lengthBars: 1, notes: [{ id: 'x', note: 'E4', startOffset: 0, duration: '4n', velocity: 0.8 }] };
+  const before = { ...plain, clips: [...plain.clips, clip] };
+  const long = { id: 'long', note: 'C4', startOffset: 0.5, duration: '16m', velocity: 0.9 };
+  const after = { ...before, clips: before.clips.map((c) => (c.id === 'one' ? { ...c, notes: [...c.notes, long] } : c)) };
+  const grown = after.clips.find((c) => c.id === 'one');
+  assert.equal(clipSoundEnd(grown), 46.5);
+  assert.equal(clipSoundEnd(clip), 31);
+  // (a note hidden by a trim doesn't play, so it doesn't count)
+  assert.equal(clipSoundEnd({ ...grown, notes: [{ ...long, startOffset: 1 }] }), 31);
+  assert.ok(musicEnd(after) >= 46.5);
+  const d = diffSongs(before, after);
+  assert.ok(d.regions.at(-1).toBar >= 46.5, JSON.stringify(d.regions));
+  assert.match(texts(d).join(' '), /adds 1 note in bars 30-46/);
+  // Moving or removing the clip: where its note stops too
+  const moved = diffSongs(after, { ...after, clips: after.clips.map((c) => (c.id === 'one' ? { ...c, startBar: 33 } : c)) });
+  assert.ok(moved.regions.at(-1).toBar >= 49.5, JSON.stringify(moved.regions));
+  const removed = diffSongs(after, { ...after, clips: after.clips.filter((c) => c.id !== 'one') });
+  assert.ok(removed.regions.at(-1).toBar >= 46.5, JSON.stringify(removed.regions));
+});
+
+test('a change to a proxy track is heard wherever the tracks ducking under it dip, and ring on (scan r8)', async () => {
+  const { DUCK_LOOKAHEAD } = await import('../src/store/duck.ts');
+  const a = base();
+  const [voice, pad] = a.tracks;
+  const song = {
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    tracks: a.tracks.map((t) => (t.id === voice.id ? { ...t, duckProxy: { depth: 24 }, reverbSend: 0, delaySend: 0 } : t.id === pad.id ? { ...t, reverbSend: 1 } : t)),
+    clips: [...a.clips.filter((c) => c.trackId !== voice.id), { id: 'v', trackId: voice.id, name: 'Voice', startBar: 9, lengthBars: 1, notes: [{ id: 'v1', note: 'E5', startOffset: 0, duration: '2n', velocity: 0.9 }] }],
+  };
+  const gone = { ...song, clips: song.clips.filter((c) => c.id !== 'v') };
+  const d = diffSongs(song, gone);
+  const r = d.regions[0];
+  // From its look-ahead before the voice (in the bar before) to past the voice's end by the pad's reverb
+  assert.ok(r.fromBar <= 9 - (DUCK_LOOKAHEAD * 120) / 240, JSON.stringify(d.regions));
+  const alone = diffSongs({ ...song, tracks: song.tracks.map((t) => ({ ...t, duckProxy: undefined })) }, { ...gone, tracks: gone.tracks.map((t) => ({ ...t, duckProxy: undefined })) });
+  assert.ok(r.toBar > alone.regions[0].toBar, `${JSON.stringify(d.regions)} vs ${JSON.stringify(alone.regions)}`);
+  // A note of it changed, too
+  const moved = diffSongs(song, { ...song, clips: song.clips.map((c) => (c.id === 'v' ? { ...c, notes: [{ ...c.notes[0], duration: '1m' }] } : c)) });
+  assert.ok(moved.regions[0].fromBar < 9 && moved.regions[0].toBar > 11, JSON.stringify(moved.regions));
+});
