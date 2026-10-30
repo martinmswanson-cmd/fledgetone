@@ -62,6 +62,9 @@ export function trackSong(): void {
     if (selection && useSuggestions.getState().permissions.see) {
       window.clearTimeout(viewTimer);
       viewTimer = window.setTimeout(() => {
+        viewTimer = 0;
+        // (asked again now: "See what I select" may have been unticked meanwhile)
+        if (!useSuggestions.getState().permissions.see) return;
         const t = useTimelineStore.getState();
         client?.emit('view', { selectedTrackId: t.selectedTrackId, selectedClipIds: t.clips.filter((c) => c.isSelected).map((c) => c.id), editingClipId: t.editingClipId });
       }, 400);
@@ -69,6 +72,11 @@ export function trackSong(): void {
   });
   // Every answer to a suggestion (accepted, dismissed, out of date, undone...) goes to the agent
   const unsubS = useSuggestions.subscribe((s, prev) => {
+    // Unticked "See what I select": a view on its way doesn't go
+    if (prev.permissions.see && !s.permissions.see) {
+      window.clearTimeout(viewTimer);
+      viewTimer = 0;
+    }
     if (s.suggestions === prev.suggestions) return;
     const was = new Map(prev.suggestions.map((x) => [x.id, x.status]));
     for (const x of s.suggestions) if (was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
@@ -94,8 +102,10 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
   trackSong();
   useSuggestions.setState({ permissions: { ...permissions, read: true } });
   let ws: WebSocket;
+  // (the port dialed is the one the pairing proofs are bound to)
+  const dialed = Math.round(port);
   try {
-    ws = new WebSocket(`ws://127.0.0.1:${Math.round(port)}`);
+    ws = new WebSocket(`ws://127.0.0.1:${dialed}`);
   } catch {
     setInfo({ state: 'refused', message: 'That port can’t be reached.' });
     return;
@@ -105,6 +115,7 @@ export function connectAgent(code: string, port = DEFAULT_PORT, permissions: Per
     send: (text) => ws.send(text),
     close: (code_, reason) => ws.close(code_, reason),
     handlers: studioHandlers(),
+    port: dialed,
     app: { name: 'Fledgetone', version: APP_VERSION },
     permissions,
     onState: (info) => {

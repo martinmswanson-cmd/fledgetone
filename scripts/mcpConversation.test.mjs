@@ -79,6 +79,7 @@ test('the musician writes, the agent reads it and replies to it', { skip, timeou
       send: (t) => ws.send(t),
       close: (c, reason) => ws.close(c, reason),
       handlers: { say: (p) => (said.push(p), { ok: true, id: `m-${said.length}` }) },
+      port,
       app: { version: 'test' },
       onEvent: (method, params) => told.push({ method, params }),
     });

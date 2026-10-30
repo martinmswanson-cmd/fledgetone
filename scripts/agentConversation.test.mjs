@@ -215,6 +215,7 @@ async function pairedStudio() {
     send: (t) => ws.send(t),
     close: (c, reason) => ws.close(c, reason),
     handlers: {},
+    port: helper.port,
     app: { version: 'test' },
     onEvent: (method, params) => told.push({ method, params }),
   });

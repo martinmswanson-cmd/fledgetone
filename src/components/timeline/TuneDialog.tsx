@@ -14,6 +14,7 @@ import { decodeSound, importSoundFile, useSoundLibrary } from '../../audio/sound
 import { encodeChannels } from '../../audio/exportWav';
 import { audioSourceSeconds } from '../../store/audioClips';
 import { initAudio } from '../../audio/engine';
+import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { showToast } from './toastStore';
 
 /**
@@ -47,6 +48,16 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
   const player = useRef<AudioBufferSourceNode | null>(null);
+  // The clip heard (tuned or not) is the one preview playing (and another starting stops it)
+  const claim = useExclusivePreview('tune', () => {
+    try {
+      player.current?.stop();
+    } catch {
+      // Already ended
+    }
+    player.current = null;
+    setPlaying(false);
+  });
   const audio = clip?.audio;
   const original = audio?.tunedFrom ?? audio?.soundId;
   const meta = useSoundLibrary((s) => (original ? s.metas[original] : undefined));
@@ -106,6 +117,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     src.buffer = buf;
     src.connect(afterMaster());
     src.onended = () => setPlaying(false);
+    claim();
     src.start();
     player.current = src;
     setPlaying(true);

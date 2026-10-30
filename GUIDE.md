@@ -1525,7 +1525,7 @@ Fledgetone has no AI built in, no account and no keys. If you already use an age
 **Setting it up.** The agent talks to a small helper, `fledgetone mcp`, that runs on your computer (it comes with Fledgetone's source: see `docs/AGENT.md` there for the two commands that build it and how to add it to your agent). Then:
 
 1. Ask your agent to connect to Fledgetone. It gives you a code like `K7QM-3XPD-9TBW`.
-2. In Fledgetone, choose **View › Let an agent connect…** (or search for it), type the code, and tick what the agent may do: it can always **read the song**; it can also **see what you select**, **suggest changes** and **listen** (render a few bars and measure their loudness and balance; nothing plays). Leave the port at 47123 unless your agent says another.
+2. In Fledgetone, choose **View › Let an agent connect…** (or search for it), type the code, and tick what the agent may do: it can always **read the song**; it can also **see what you select**, **suggest changes** and **listen** (render a few bars and measure their loudness and balance; nothing plays). Leave the port at 47123 unless your agent says another (it says the port with the code).
 3. **Connect**. The header shows **Agent connected**; click it, or **View › Suggestions**, for the Suggestions panel. If the code was mistyped, type it again and press **Try again**: what's ticked at that moment is what the agent gets.
 
 The agent never opens the panel or moves the keyboard focus. The header's **Agent connected** button (**Suggestions** when no agent is connected) shows how many suggestions are waiting for you, and a dot when the agent has sent a message you haven't seen; on the panel, **Jump to new messages from your agent** takes you to them.

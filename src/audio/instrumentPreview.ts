@@ -8,6 +8,7 @@ import type { InstrumentKey } from './instrumentCatalog';
 import { FX_NOTES, INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from './instrumentCatalog';
 import { auditionInstrument, DRUM_NOTES, safely } from './instruments';
 import { auditionInput, initAudio } from './engine';
+import { claimPreview } from './exclusivePreview';
 
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const noteName = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
@@ -70,6 +71,8 @@ export async function previewInstrument(key: InstrumentKey): Promise<void> {
   // A second press while it plays doesn't pile another copy on top
   if (playing && playing.key === key && playing.until > now) return;
   const notes = previewNotes(key);
+  // (a short phrase, not stopped by others: but it stops a longer preview, so the two aren't heard at once)
+  claimPreview('instrument');
   for (const n of notes) safely(() => inst.play([{ note: n.note, duration: n.duration, velocity: 0.8 }], now + 0.02 + n.at));
   const seconds = Math.max(...notes.map((n) => n.at)) + 1.2;
   playing = { key, until: now + seconds };

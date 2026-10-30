@@ -61,12 +61,17 @@ test('proofs: the studio and the helper prove the same code differently, and a w
   const code = 'K7QM-3XPD-9TBW';
   const s = P.newNonce();
   const c = P.newNonce();
-  const studio = await P.studioProof(code, s, c);
-  const server = await P.serverProof(code, s, c);
+  const a = P.pairingAddress(47123);
+  assert.equal(a, '127.0.0.1:47123');
+  const studio = await P.studioProof(code, s, c, a);
+  const server = await P.serverProof(code, s, c, a);
   assert.notEqual(studio, server);
-  assert.equal(await P.studioProof('k7qm 3xpd 9tbw', s, c), studio);
-  assert.notEqual(await P.studioProof('K7QM-3XPD-9TBX', s, c), studio);
-  assert.notEqual(await P.studioProof(code, P.newNonce(), c), studio);
+  assert.equal(await P.studioProof('k7qm 3xpd 9tbw', s, c, a), studio);
+  assert.notEqual(await P.studioProof('K7QM-3XPD-9TBX', s, c, a), studio);
+  assert.notEqual(await P.studioProof(code, P.newNonce(), c, a), studio);
+  // Bound to the helper's address: the same code and nonces on another port prove nothing
+  assert.notEqual(await P.studioProof(code, s, c, P.pairingAddress(47124)), studio);
+  assert.notEqual(await P.serverProof(code, s, c, P.pairingAddress(47124)), server);
   assert.ok(P.sameProof(studio, studio));
   assert.ok(!P.sameProof(studio, server));
   assert.ok(!P.sameProof(studio, undefined));
@@ -108,6 +113,7 @@ function memoryStudio({ handlers = {}, permissions } = {}) {
     send: (t) => sent.push(JSON.parse(t)),
     close: (code, reason) => closes.push([code, reason]),
     handlers,
+    port: 47123,
     app: { version: 'test' },
     permissions,
     onState: (i) => states.push(i.state),
@@ -155,11 +161,11 @@ test('an honest helper pairs; requests then reach the handlers the musician allo
   await until(() => sent.length === 1, 1000, 'the pair request');
   const pair = sent[0];
   assert.deepEqual(pair.params.permissions, P.DEFAULT_PERMISSIONS);
-  await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: await P.serverProof(code, nonce, pair.params.nonce), nonce: P.newNonce(), attemptsLeft: 4 } }));
+  await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: await P.serverProof(code, nonce, pair.params.nonce, P.pairingAddress(47123)), nonce: P.newNonce(), attemptsLeft: 4 } }));
   await until(() => sent.length === 2, 1000, 'the confirm');
   const confirm = sent[1];
   assert.equal(confirm.method, 'pair_confirm');
-  assert.ok(P.sameProof(confirm.params.proof, await P.studioProof(code, nonce, pair.params.nonce)));
+  assert.ok(P.sameProof(confirm.params.proof, await P.studioProof(code, nonce, pair.params.nonce, P.pairingAddress(47123))));
   assert.equal(client.state, 'proving');
   await client.receive(msg({ kind: 'res', id: confirm.id, result: { server: { name: 'fledgetone', version: 'x' }, agent: 'An agent' } }));
   assert.equal(client.state, 'paired');
@@ -179,6 +185,50 @@ test('an honest helper pairs; requests then reach the handlers the musician allo
   await client.receive(msg({ kind: 'req', id: 'r6', method: 'listen', params: {} }));
   assert.equal(sent.at(-1).error.code, 'not_allowed');
   assert.ok(client.emit('changed', { revision: 2 }));
+});
+
+test('a listen under way when "Listen" is unticked: its result doesn\'t go, the agent hears not_allowed', async () => {
+  const code = P.newPairingCode();
+  let finish;
+  const { client, sent } = memoryStudio({
+    permissions: { read: true, see: false, suggest: false, listen: true },
+    handlers: { listen: () => new Promise((r) => (finish = r)), get_view: () => new Promise((r) => (finish = r)) },
+  });
+  const nonce = P.newNonce();
+  await client.receive(msg({ kind: 'event', method: 'hello', params: { protocol: 1, nonce, server: { name: 'fledgetone', version: 'x' } } }));
+  client.pair(code);
+  await until(() => sent.length === 1, 1000, 'the pair request');
+  const pair = sent[0];
+  await client.receive(msg({ kind: 'res', id: pair.id, result: { proof: await P.serverProof(code, nonce, pair.params.nonce, P.pairingAddress(47123)), nonce: P.newNonce(), attemptsLeft: 4 } }));
+  await until(() => sent.length === 2, 1000, 'the confirm');
+  await client.receive(msg({ kind: 'res', id: sent[1].id, result: { server: { name: 'fledgetone', version: 'x' } } }));
+  assert.equal(client.state, 'paired');
+  const answered = client.receive(msg({ kind: 'req', id: 'l1', method: 'listen', params: { fromBar: 1, toBar: 5 } }));
+  await until(() => typeof finish === 'function', 1000, 'the listen to start');
+  client.setPermissions({ read: true, see: false, suggest: false, listen: false });
+  finish({ mix: { lufs: -14 }, secret: 'the render' });
+  await answered;
+  const res = sent.find((m) => m.kind === 'res' && m.id === 'l1');
+  assert.equal(res.error.code, 'not_allowed');
+  assert.equal(res.result, undefined);
+  assert.ok(!JSON.stringify(sent).includes('the render'));
+  // Allowed again: a listen answers as usual
+  client.setPermissions({ read: true, see: false, suggest: false, listen: true });
+  finish = undefined;
+  const again = client.receive(msg({ kind: 'req', id: 'l2', method: 'listen', params: { fromBar: 1, toBar: 5 } }));
+  await until(() => typeof finish === 'function', 1000, 'the second listen');
+  finish({ mix: { lufs: -14 } });
+  await again;
+  assert.deepEqual(sent.find((m) => m.id === 'l2').result, { mix: { lufs: -14 } });
+  // The connection gone while one is under way: nothing is sent at all
+  finish = undefined;
+  const late = client.receive(msg({ kind: 'req', id: 'l3', method: 'listen', params: { fromBar: 1, toBar: 5 } }));
+  await until(() => typeof finish === 'function', 1000, 'the third listen');
+  const count = sent.length;
+  client.closed();
+  finish({ mix: { lufs: -14 } });
+  await late;
+  assert.equal(sent.length, count);
 });
 
 // ---------- The real helper ----------
@@ -227,6 +277,7 @@ async function studio(port, { permissions, handlers = {} } = {}) {
     send: (t) => ws.send(t),
     close: (code, reason) => ws.close(code, reason),
     handlers: { ...songReadHandlers({ song: () => song, revision: () => 3, appVersion: 'test' }), ...handlers },
+    port,
     app: { version: 'test' },
     permissions,
   });
@@ -300,6 +351,88 @@ test('a wrong code: told so with the tries left, then the right code pairs', { s
     s.client.disconnect();
   } finally {
     await helper.close();
+  }
+});
+
+test('a program on another port that relays to the real helper can\'t pair: the proofs are bound to the port dialed', { skip: skipCli }, async () => {
+  const { helper } = await startHelper();
+  // The relay: a WebSocket server of its own; each studio that dials it gets a connection to the
+  // helper (Origin faked, as any program can) with every frame passed on both ways, and read
+  const seen = [];
+  const relay = new WebSocket.WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise((r) => relay.once('listening', r));
+  const relayPort = relay.address().port;
+  relay.on('connection', (down) => {
+    const up = new WebSocket(`ws://127.0.0.1:${helper.port}`, { origin: ORIGIN });
+    const queue = [];
+    up.on('open', () => queue.splice(0).forEach((t) => up.send(t)));
+    up.on('message', (d) => (seen.push(['to studio', d.toString()]), down.send(d.toString())));
+    down.on('message', (d) => (seen.push(['to helper', d.toString()]), up.readyState === 1 ? up.send(d.toString()) : queue.push(d.toString())));
+    up.on('close', () => down.close());
+    down.on('close', () => up.close());
+  });
+  try {
+    const { code } = helper.pairingCode();
+    let reads = 0;
+    const s = await studio(relayPort, { handlers: { get_song: () => (reads++, { secret: true }) } });
+    s.client.pair(code);
+    await until(() => s.client.state === 'wrong_code' || s.client.state === 'refused' || s.client.state === 'paired', 3000, 'an answer through the relay');
+    assert.equal(s.client.state, 'wrong_code', 'the helper\'s proof, made for its own port, doesn\'t check out on the port dialed');
+    assert.match(s.client.info().message, /port/);
+    assert.ok(!helper.isPaired);
+    assert.ok(seen.every(([, t]) => JSON.parse(t).method !== 'pair_confirm'), 'the studio never proved itself through the relay');
+    await assert.rejects(helper.request('get_song'), (e) => e.code === 'not_connected');
+    assert.equal(reads, 0);
+    s.ws.close();
+    // The same code on the helper's own port pairs
+    const direct = await studio(helper.port);
+    direct.client.pair(code);
+    await until(() => direct.client.state === 'paired', 3000, 'pairing on the helper\'s own port');
+    direct.client.disconnect();
+  } finally {
+    relay.close();
+    await helper.close();
+  }
+});
+
+test('the usual port taken: the helper doesn\'t move to another by itself, says so, and takes it once it\'s free', { skip: skipCli }, async () => {
+  const { BridgeServer, DEFAULT_PORT } = await cliImport('src/bridgeServer.ts');
+  const net = await import('node:net');
+  // Hold the usual port (or find it held already)
+  const hold = net.createServer();
+  const held = await new Promise((r) => {
+    hold.once('error', () => r(false));
+    hold.listen(DEFAULT_PORT, '127.0.0.1', () => r(true));
+  });
+  const logs = [];
+  const helper = new BridgeServer({ version: 'test', log: (t) => logs.push(t) });
+  try {
+    assert.equal(await helper.start(), 0);
+    const st = helper.status();
+    assert.equal(st.listening, false);
+    assert.equal(st.portTaken, true);
+    assert.equal(st.port, DEFAULT_PORT);
+    assert.match(st.problem, new RegExp(`Port ${DEFAULT_PORT} .*taken.*--port 0`));
+    assert.ok(logs.some((l) => /taken/.test(l)));
+    assert.equal(await helper.tryListen(), 0, 'still taken');
+    if (held) {
+      await new Promise((r) => hold.close(r));
+      assert.equal(await helper.tryListen(), DEFAULT_PORT);
+      assert.equal(helper.status().listening, true);
+      assert.equal(helper.status().portTaken, undefined);
+    }
+  } finally {
+    if (held && hold.listening) await new Promise((r) => hold.close(r));
+    await helper.close();
+  }
+  // A port asked for with --port that's taken is an error, not another port
+  const a = await startHelper();
+  try {
+    const b = new BridgeServer({ port: a.helper.port, version: 'test', log: () => {} });
+    await assert.rejects(b.start(), (e) => e.code === 'EADDRINUSE');
+    await b.close();
+  } finally {
+    await a.helper.close();
   }
 });
 

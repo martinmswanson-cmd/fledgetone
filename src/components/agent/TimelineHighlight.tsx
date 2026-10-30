@@ -2,7 +2,8 @@
  * What the timeline shows of the agent: the bars of the tracks a suggestion changes, tinted while
  * its card has the pointer or focus or its before-and-after plays (with a mark at the lanes' left
  * edge, so the tracks show even with those bars scrolled away), and what the agent points at
- * (point_at: a track, a clip, some bars or a marker), ringed for a few seconds with its note.
+ * (point_at: a track, a clip, some bars or a marker), ringed for a few seconds with its note
+ * (marked "From your agent (name)" and quoted, as on the panel, so it never reads as the app's own).
  * Drawn over the lanes only (never the track headers, the ruler or anything outside the timeline)
  * from where the lanes and clips are on screen (found by their data-lane and data-clip-id
  * attributes), so the timeline itself doesn't change; it follows scrolling and zoom while it
@@ -12,6 +13,7 @@ import React from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useSuggestions } from '../../agent/suggestionsStore';
 import { useAudition } from '../../audio/auditionPlayer';
+import { fromYourAgent } from './words';
 
 interface Box {
   left: number;
@@ -38,6 +40,7 @@ function laneBars(lane: Element, from: number, to: number, zoom: number) {
 
 export const TimelineHighlight: React.FC = () => {
   const highlight = useSuggestions((s) => s.highlight);
+  const agent = useSuggestions((s) => s.connection.agent);
   const focusId = useSuggestions((s) => s.focusId);
   const auditionKey = useAudition((s) => (s.phase !== 'idle' ? s.key : null));
   // (one made for another song has nothing to show in this one)
@@ -101,7 +104,7 @@ export const TimelineHighlight: React.FC = () => {
         }
         add(r, 'ring');
         // The note sits inside the lanes, at the top left of what it's about
-        if (r) anchor = { left: Math.max(view.left + 4, Math.min(r.left + 4, view.right - 204)), top: Math.max(view.top + 4, Math.min(r.top + 4, view.bottom - 40)) };
+        if (r) anchor = { left: Math.max(view.left + 4, Math.min(r.left + 4, view.right - 204)), top: Math.max(view.top + 4, Math.min(r.top + 4, view.bottom - 56)) };
       }
       setBoxes((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out));
       setNote(h?.note && anchor ? { text: h.note, ...anchor } : null);
@@ -124,8 +127,9 @@ export const TimelineHighlight: React.FC = () => {
         />
       ))}
       {note && (
-        <div className="absolute max-w-[200px] rounded bg-forge-panel border border-cyan-400/60 px-2 py-1 text-[11px] text-forge-text whitespace-pre-wrap break-words" style={{ left: note.left, top: note.top - 4 }}>
-          {note.text}
+        <div className="absolute max-w-[200px] rounded bg-forge-panel border border-cyan-400/60 px-2 py-1" style={{ left: note.left, top: note.top - 4 }} data-agent-note="">
+          <p className="text-[9px] font-mono uppercase tracking-wider text-forge-muted">{fromYourAgent(agent)}</p>
+          <p className="text-[11px] text-forge-text whitespace-pre-wrap break-words">“{note.text}”</p>
         </div>
       )}
     </div>

@@ -71,7 +71,7 @@ Options of `fledgetone mcp`:
 | Option | What it does |
 | --- | --- |
 | `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files (`.json`) and audio (`.wav`, `.mp3`) only. |
-| `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one. If 47123 is taken it picks a free one and the pairing message says which. |
+| `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one (the pairing message says which). If 47123 is taken by another program, the helper doesn't move to another port by itself: it says so (on stderr, and `connect_studio` answers with what to do), tries 47123 again at each `connect_studio`, and the file tools work meanwhile. A port given with `--port` that's taken stops the helper with an error. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-null-origin` | Also let a page opened from a file on disk connect (the one-file build). |
 | `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
@@ -535,16 +535,20 @@ An error answer is `"error": {"code", "message"}` in place of `result`.
 1. The helper makes a code (12 characters of Crockford's base 32, `0123456789ABCDEFGHJKMNPQRSTVWXYZ`:
    60 bits, shown as `K7QM-3XPD-9TBW`; typed O counts as 0, I and L as 1) and the agent tells
    you. It lasts 10 minutes, and is used up once a studio pairs.
-2. The studio connects; the helper sends `hello` with its nonce S: `{protocol: 1, nonce, server}`.
+2. The studio connects to `127.0.0.1:<port>`, the port in its box; the helper sends `hello` with its nonce S: `{protocol: 1, nonce, server}`.
 3. The studio sends a `pair` request with its nonce C and nothing about the code: `{protocol: 1, nonce: C, app, permissions}`.
-4. The helper proves first: `{proof: HMAC-SHA-256(code, "C.S.server"), nonce: <S for the next try>, attemptsLeft}`.
-5. The studio checks that proof against the code you typed. If it doesn't match (a typo, or a
-   program that isn't the helper your agent started), it says so and sends nothing more; you can
-   type the code again (a new try, bound to the new nonces).
-6. Only if it matched does the studio send `pair_confirm` with `{proof: HMAC-SHA-256(code, "S.C.studio")}`.
+4. The helper proves first: `{proof: HMAC-SHA-256(code, "C.S.server.A"), nonce: <S for the next try>, attemptsLeft}`.
+   A is the address `127.0.0.1:<port>` with the port the helper listens on.
+5. The studio checks that proof against the code you typed, with A the address it dialed. If it
+   doesn't match (a typo, the wrong port, or a program that isn't the helper your agent started),
+   it says so and sends nothing more; you can type the code again (a new try, bound to the new nonces).
+6. Only if it matched does the studio send `pair_confirm` with `{proof: HMAC-SHA-256(code, "S.C.studio.A")}`.
    The helper checks it and answers `{server, agent}`: paired. No song data moves before this.
 
-The code itself never travels. Every try is counted before the helper works anything out, and
+The code itself never travels. Binding A into both proofs means a program on one port that
+passes the frames on to the real helper on another (a relay, which would read everything) can't
+pair: the helper's proof is for its own port, the studio checks it against the port it dialed,
+and they differ. Every try is counted before the helper works anything out, and
 it works out one at a time: five tries on a connection close it, twenty on one code retire the
 code (ask the agent for a new one). A `pair_confirm` with a wrong proof closes the connection.
 
@@ -602,14 +606,20 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   you'd show the song to.
 - **You choose, every time.** Pairing is per session, by a code you type. The agent reads only
   what you allowed (read-only until you tick more), and it can only suggest: there's no way for it
-  to accept, save, export or delete.
+  to accept, save, export or delete. Untick something and it stops at once: a selection about to
+  be sent isn't, and a listen under way stops and answers `not_allowed`. Selecting clips isn't an
+  edit, so an agent that may not see what you select doesn't hear of it as a `changed` either.
 - **Only Fledgetone's own pages connect.** The helper refuses pages from other sites (the Origin
   must be `https://fledgetone.com`, the studio it serves itself with `--studio`, the dev server
   with `--dev`, or a file on disk with `--allow-null-origin`), any address but `127.0.0.1:<port>` exactly (so another site can't reach
   it through a name of its own pointed at your computer), and a second studio while one is paired.
-- **Only the helper you started.** The pairing proof works both ways, the helper's first: a program
-  that took the port first can't pass for the helper, and the studio sends it nothing about the
-  code or the song.
+- **Only the helper you started, on the port you typed.** The pairing proof works both ways, the
+  helper's first, and both proofs are bound to the helper's address (`127.0.0.1:<port>`): a program
+  that took the port first can't pass for the helper, nor pass the connection on to the real
+  helper on another port (the proofs don't agree across two ports), and the studio sends it
+  nothing about the code or the song. The helper never moves to another port by itself when its
+  own is taken (it says so), the agent says the port with every code, and the studio starts at the
+  usual port each time rather than one typed before.
 - **Files stay in their folder.** The agent's file tools reach only `--root`, and only songs,
   suggestion files and audio. `apply` never writes over the song it reads, and `render_file`
   writes only audio files, never through a link or over a file unless asked.

@@ -5,6 +5,7 @@
 import { initAudio, liveMix } from './engine';
 import { decodeSound } from './soundLibrary';
 import { nativeInputOf } from './nativeNodes';
+import { claimPreview, registerPreview } from './exclusivePreview';
 
 let playing: { source: AudioBufferSourceNode; amp: GainNode } | null = null;
 
@@ -28,6 +29,7 @@ export async function auditionPart(soundId: string, start: number, end: number):
   amp.gain.linearRampToValueAtTime(0, at + seconds);
   source.connect(amp);
   amp.connect(into);
+  claimPreview('chop');
   source.start(at, from, seconds);
   source.stop(at + seconds + 0.01);
   const mine = { source, amp };
@@ -52,3 +54,6 @@ export function stopAudition(): void {
   source.disconnect();
   amp.disconnect();
 }
+
+// Another preview starting stops this one (one at a time, see exclusivePreview.ts)
+registerPreview('chop', stopAudition);

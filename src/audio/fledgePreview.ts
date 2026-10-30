@@ -11,6 +11,7 @@
 import { initAudio, liveMix, rawAudioState } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { nativeInputOf } from './nativeNodes';
+import { claimPreview, registerPreview } from './exclusivePreview';
 import { safely, type NoteOff } from './instruments';
 import { FLEDGE_PRESETS, FLEDGE_URL } from './plugins/fledgeMacros';
 import { matchGain, PHRASE_BPM, PHRASE_TAIL, phraseLength, presetPhrase, TOUR_PRESETS, TOUR_STEP, type PhraseNote } from './plugins/fledgePhrases';
@@ -43,6 +44,9 @@ export function stopFledgePreview(): void {
   stop?.();
   if (state) setState(null);
 }
+
+// Another preview starting stops this one (one at a time, see exclusivePreview.ts)
+registerPreview('fledge', stopFledgePreview);
 
 // The song starting stops a preview (it isn't heard over the song)
 useTimelineStore.subscribe((s, before) => {
@@ -112,6 +116,7 @@ export async function hearPresetOnTrack(trackId: string, preset: string | undefi
   };
   stopNow = finish;
   setState({ kind: 'track', trackId });
+  claimPreview('fledge');
   tick();
   await finished;
   return true;
@@ -243,6 +248,7 @@ export async function toggleFledgeTour(): Promise<void> {
     amp.gain.linearRampToValueAtTime(1, at + FADE_IN);
     source.connect(amp);
     amp.connect(into);
+    claimPreview('fledge');
     source.start(at);
     let ended!: () => void;
     const over = new Promise<void>((r) => (ended = r));

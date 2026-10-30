@@ -17,6 +17,7 @@ import { buildGameKitParts, type AudioManifest } from '../../audio/gameKit';
 import { gameKitSong } from '../timeline/gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio } from '../../audio/engine';
+import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { showToast } from '../timeline/toastStore';
 import { generateSfx, renderSfxStereo, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
 import { ensureSfxRecordings } from '../../audio/sfx/sfxRecordings';
@@ -120,6 +121,8 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
   const [log, setLog] = useState<string[]>([]);
   const [panel, setPanel] = useState(false);
   const lastIntensity = useRef(0);
+  // The game's music is the one preview playing (a suggestion's before-and-after, say, stops)
+  const claim = useExclusivePreview('game-try-out', () => music.current?.stop());
 
   const say = useCallback((line: string) => setLog((l) => [line, ...l].slice(0, 4)), []);
 
@@ -131,6 +134,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     const st = useTimelineStore.getState();
     // (A Play still waiting for sounds is called off too: it would start under the preview)
     if (st.isPlaying || st.loadingToPlay) st.pause();
+    claim();
     (async () => {
       try {
         await initAudio();
@@ -172,6 +176,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
         mapRef.current = guess;
         setMap(guess);
         setManifest(manifest);
+        claim();
         if (guess.calm) m.play(guess.calm);
         m.setIntensity(0.3, 0.1);
         // The guard naps until now, so the music is there for the chase
@@ -192,7 +197,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
       music.current = null;
       musicReady.current = false;
     };
-  }, [onClose, say, kind]);
+  }, [onClose, say, kind, claim]);
 
   /** A sound effect for a moment: the song's, or the preview's own. */
   const sfx = useCallback((moment: SfxMoment, pitch = 0) => {

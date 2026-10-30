@@ -141,6 +141,11 @@ export class RhythmGame {
     this.raf = requestAnimationFrame(tick);
   }
 
+  /** Stop the song (another preview started): the game stays where it is until start() again. */
+  silence() {
+    this.stopSong();
+  }
+
   private stopSong() {
     try {
       this.source?.stop();

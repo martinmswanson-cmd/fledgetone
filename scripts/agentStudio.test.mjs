@@ -40,10 +40,34 @@ test('the revision goes up only when an undo step\'s worth of the song changes',
   const c = new RevisionCounter();
   assert.equal(c.update({ tracks, clips, masterFx: { reverbDecay: 2 } }), 0);
   assert.equal(c.update({ tracks, clips, masterFx: { reverbDecay: 2 } }), 0, 'the shared effects rebuilt but the same');
-  assert.equal(c.update({ tracks: [...tracks], clips, masterFx: { reverbDecay: 2 } }), 1);
+  assert.equal(c.update({ tracks: [{ id: 't1' }], clips, masterFx: { reverbDecay: 2 } }), 1);
   assert.equal(c.update({ tracks, clips, masterFx: { reverbDecay: 3 } }), 2);
   assert.ok(!partsChanged({ a: tracks }, { a: tracks }));
   assert.ok(partsChanged({ a: tracks }, { a: tracks, b: 1 }));
+});
+
+test('selecting clips and folding folders aren\'t edits: the revision stays, a suggestion stays as it is', () => {
+  const p = base();
+  const parts = (clips, tracks = p.tracks) => ({ tracks, clips, markers: p.markers });
+  const c = new RevisionCounter();
+  c.update(parts(p.clips));
+  // As selectClip and clearSelection make them: new clip objects, only isSelected changed
+  const selected = p.clips.map((x, i) => (i === 1 ? { ...x, isSelected: !x.isSelected } : x));
+  assert.equal(c.update(parts(selected)), 0);
+  assert.equal(c.update(parts(selected.map((x) => ({ ...x, isSelected: false })))), 0);
+  const folded = p.tracks.map((t, i) => (i === 0 ? { ...t, folder: { id: 'f1', name: 'Drums', color: '#fff', collapsed: true } } : t));
+  const open = folded.map((t, i) => (i === 0 ? { ...t, folder: { id: 'f1', name: 'Drums', color: '#fff' } } : t));
+  assert.equal(c.update(parts(p.clips, folded)), 1, 'a folder made is an edit');
+  assert.equal(c.update(parts(p.clips, open)), 1, 'folding it isn\'t');
+  // Anything else about a clip is
+  assert.equal(c.update(parts(p.clips.map((x, i) => (i === 1 ? { ...x, startBar: x.startBar + 1 } : x)), open)), 2);
+  assert.equal(c.update(parts(p.clips.slice(1), open)), 3, 'a clip gone');
+  assert.equal(c.update(parts([...p.clips.slice(1), p.clips[0]], open)), 4, 'clips in another order');
+  // A suggestion made before the musician selected a clip is still the one they heard
+  const made = makeSuggestion(p, ctxOf(p), { title: 'Quieter', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -6 }] }, 'sg-sel');
+  assert.ok(made.ok);
+  const now = { ...p, clips: p.clips.map((x, i) => (i === 0 ? { ...x, isSelected: true } : x)) };
+  assert.equal(checkSuggestion(made.suggestion, now, ctxOf(now)), made.suggestion);
 });
 
 // The song as suggestions are checked against it: which song (epoch), its parts as undo sees them,
