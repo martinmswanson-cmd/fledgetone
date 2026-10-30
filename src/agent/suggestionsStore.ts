@@ -3,15 +3,17 @@
  * timeline highlights: a small store of its own, never saved (a suggestion lives as long as the
  * page, and only the musician's Accept puts it in the song). Also the plain logic behind it:
  *
- * - making a suggestion from ops: applyOps with an id base of its own, the fingerprints and names
+ * - making a suggestion from ops: applyOps with an id base of its own, the bars its
+ *   before-and-after plays (hearingRange: every bar it changes, with the agent's focus if that
+ *   fits), the name of the agent that made it, the fingerprints and names
  *   of what it touches, and the song it's for (its generation: New, Open, a link or Restore start
  *   another), the song's parts as undo sees them and what else a render hears (swing, intensity);
  * - checking it when the song changes, cheaply (fingerprints only): another song (it can't go
  *   in), out of date (something it changes was edited; it waits again if that's put back), or
  *   changed (it still fits, but the song moved on: it's applied again when it's heard or
  *   accepted, never before);
- * - what Accept should do: a changed suggestion goes in only as heard, or after a second press
- *   that says it wasn't; and, once accepted, whether an undo took it back out (and a redo in).
+ * - what Accept should do: a changed suggestion goes in only as heard (over every bar it changes),
+ *   or after a second press that says it wasn't; and, once accepted, whether an undo took it back out (and a redo in).
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
@@ -51,15 +53,17 @@ export interface Suggestion {
   title: string;
   explanation: string;
   ops: Op[];
-  /** The bars the agent asked to hear it over (else `audition`). */
+  /** The bars the agent asked to hear it over: `audition` covers them too, if it can (hearingRange). */
   focus?: BarRange;
   /** The song `song` was made from. */
   epoch: number;
   parts: Parts;
   ext: string;
-  /** Goes up each time `song` is made again; `heard` is the one last heard. */
+  /** Goes up each time `song` is made again; `heard` is the one last heard, every bar it changes. */
   version: number;
   heard: number | null;
+  /** The version last heard only in part (its Suggested side played, but not over every bar it changes: see `unheard`). */
+  partHeard?: number | null;
   /**
    * Accept pressed once for a version not heard: when, and for which version. A second, separate
    * press (CONFIRM_AFTER_MS to ARMED_MS later, same version) accepts it without listening.
@@ -77,7 +81,10 @@ export interface Suggestion {
   notes: string[];
   touchedTracks: string[];
   bars: BarRange | null;
+  /** The bars its before-and-after plays: every bar it changes, and the agent's focus with them, if that fits (hearingRange). */
   audition: BarRange;
+  /** The bars it changes that `audition` can't reach (they'd take longer than a listen may to hear at once), or null. */
+  unheard: BarRange | null;
   /** Out of date: what changed under it. */
   outOfDate?: string[];
   /** Out of date: the song's parts when it went so (until they change, it's not checked again). */
@@ -87,6 +94,8 @@ export interface Suggestion {
   createdAt: number;
   /** The connection the agent made it in (conversation.ts): only that agent reads, withdraws or listens to it. */
   connection?: number;
+  /** The name the agent paired with when it made it (its card says it came from that one, whoever is paired later). */
+  agent?: string;
 }
 
 /** A message from the agent (say), shown as plain text, attributed to it; `replyTo`: the musician's message it answers (conversation.ts). */
@@ -180,14 +189,47 @@ export function capSeconds(range: BarRange, song: Pick<ProjectSnapshot, 'bpm' | 
   return { fromBar: range.fromBar, toBar: to };
 }
 
-const fromResult = (r: ApplyResult) => ({
+/** The whole bars a range of song bars sits in. */
+const wholeBars = (r: BarRange): BarRange => {
+  const fromBar = Math.max(1, Math.floor(r.fromBar + 1e-9));
+  return { fromBar, toBar: Math.max(fromBar + 1, Math.ceil(r.toBar - 1e-9)) };
+};
+
+/** Whether `outer` holds every bar of `inner`. */
+export const covers = (outer: BarRange, inner: BarRange): boolean => outer.fromBar <= inner.fromBar + 1e-9 && outer.toBar >= inner.toBar - 1e-9;
+
+/** A range kept to what a listen may take: LIMITS.listenMaxBars bars and LIMITS.listenMaxSeconds seconds. */
+const listenable = (r: BarRange, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): BarRange => capSeconds({ fromBar: r.fromBar, toBar: Math.min(r.toBar, r.fromBar + LIMITS.listenMaxBars) }, song);
+
+/**
+ * The bars a suggestion's before-and-after plays, so what's marked heard is what changes: every
+ * bar it changes (`bars`, from one bar before, or `fallback` when nothing sits anywhere in
+ * particular), joined with the agent's `focus` (never instead of it), at most what a listen may
+ * take (90 seconds). If focus and change together are too long, the focus goes; if the change
+ * alone is, its first bars are heard and `unheard` says which bars weren't (they then can't count
+ * as heard: Accept asks for the second press).
+ */
+export function hearingRange(bars: BarRange | null, fallback: BarRange, focus: BarRange | undefined, song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>): { audition: BarRange; unheard: BarRange | null } {
+  if (!bars) return { audition: listenable(focus ?? fallback, song), unheard: null };
+  const changed = wholeBars(bars);
+  const lead: BarRange = { fromBar: Math.max(1, changed.fromBar - 1), toBar: changed.toBar };
+  if (focus) {
+    const union = { fromBar: Math.min(focus.fromBar, changed.fromBar), toBar: Math.max(focus.toBar, changed.toBar) };
+    const both = listenable(union, song);
+    if (covers(both, union)) return { audition: both, unheard: null };
+  }
+  const audition = listenable(lead, song);
+  return { audition, unheard: covers(audition, changed) ? null : { fromBar: audition.toBar, toBar: changed.toBar } };
+}
+
+const fromResult = (r: ApplyResult, focus: BarRange | undefined) => ({
   song: r.song,
   changes: r.diff.changes.map((c) => c.text),
   warnings: r.warnings,
   notes: r.notes,
   touchedTracks: r.diff.touchedTracks,
   bars: r.diff.bars,
-  audition: capSeconds(r.diff.audition, r.song),
+  ...hearingRange(r.diff.bars, r.diff.audition, focus, r.song),
 });
 
 /**
@@ -200,7 +242,8 @@ export function makeSuggestion(
   req: { title: unknown; explanation: unknown; ops: unknown; focus?: unknown },
   id = newSuggestionId(),
   now = Date.now(),
-  connection?: number
+  connection?: number,
+  agent?: string
 ): { ok: true; suggestion: Suggestion } | { ok: false; errors: OpError[]; message: string } {
   const title = fromAgent(req.title, LIMITS.titleMaxChars);
   if (!title) return { ok: false, errors: [], message: 'A suggestion needs a title.' };
@@ -210,8 +253,8 @@ export function makeSuggestion(
   const ops = req.ops as Op[];
   const f = req.focus as Partial<BarRange> | undefined;
   const focus =
-    f && typeof f.fromBar === 'number' && typeof f.toBar === 'number' && f.toBar > f.fromBar
-      ? capSeconds({ fromBar: Math.max(1, f.fromBar), toBar: Math.min(f.toBar, Math.max(1, f.fromBar) + LIMITS.listenMaxBars) }, out.song)
+    f && typeof f.fromBar === 'number' && typeof f.toBar === 'number' && Number.isFinite(f.fromBar) && Number.isFinite(f.toBar) && f.toBar > f.fromBar
+      ? listenable(wholeBars({ fromBar: Math.max(1, f.fromBar), toBar: Math.max(f.toBar, Math.max(1, f.fromBar) + 1) }), out.song)
       : undefined;
   return {
     ok: true,
@@ -227,14 +270,16 @@ export function makeSuggestion(
       ext: ctx.ext,
       version: 1,
       heard: null,
+      partHeard: null,
       armed: null,
       stale: false,
       touchedHashes: touchedHashes(base, ops),
       touchedNames: touchedNames(base, ops),
       status: 'waiting',
-      ...fromResult(out),
+      ...fromResult(out, focus),
       createdAt: now,
       ...(connection !== undefined ? { connection } : {}),
+      ...(agent ? { agent } : {}),
     },
   };
 }
@@ -266,14 +311,25 @@ function recheck(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): Suggest
   return sameSong(s, ctx) ? { ...rest, status: s.version > 1 ? 'changed' : 'waiting', stale: false, armed: null } : { ...rest, status: 'changed', stale: true, armed: null };
 }
 
+/** Why a suggestion whose ops no longer apply is out of date, on its card (and to its agent). */
+export const NO_LONGER_FITS = 'its changes no longer fit the song as it is now';
+
 /** A suggestion made again on the song now, if the song moved on since it was made (else as it is). */
 export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): Suggestion {
   const checked = checkSuggestion(s, now, ctx);
   if (!isOpen(checked) || (!checked.stale && sameSong(checked, ctx))) return checked;
   const again = applyOps(now, { opsVersion: OPS_VERSION, ops: s.ops }, { idBase: s.idBase });
-  if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: again.errors.map((e) => e.message), outOfDateAt: ctx.parts, armed: null };
-  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again) };
+  // (the ops' errors quote what the agent wrote: the card says it in the app's own words instead)
+  if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: [NO_LONGER_FITS], outOfDateAt: ctx.parts, armed: null };
+  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus) };
 }
+
+/** "bar 5" or "bars 5-8" for a range of whole song bars (end not included). */
+export const barWords = (r: BarRange): string => {
+  const a = Math.floor(r.fromBar);
+  const b = Math.max(a, Math.ceil(r.toBar) - 1);
+  return a === b ? `bar ${a}` : `bars ${a}-${b}`;
+};
 
 /** A second press of Accept counts only this long after the first at the earliest, ms (a double-click doesn't confirm). */
 export const CONFIRM_AFTER_MS = 700;
@@ -306,7 +362,9 @@ export function acceptDecision(
     return { apply: null, suggestion: fresh, message: '', ignored: true };
   }
   const message =
-    fresh.status === 'changed' && fresh.heard !== null
+    fresh.partHeard === fresh.version && fresh.unheard
+      ? `You heard only part of this: ${barWords(fresh.unheard)} ${fresh.unheard.toBar - fresh.unheard.fromBar > 1 ? 'weren’t' : 'wasn’t'} heard (too long to hear at once). Press Accept without listening to take it all the same.`
+      : fresh.status === 'changed' && fresh.heard !== null
       ? 'The song changed since you heard this, so what would go in hasn’t been heard. Hear it again, or press Accept without listening.'
       : fresh.status === 'changed'
         ? 'You haven’t heard this, and the song changed since it was suggested. Hear it first, or press Accept without listening.'

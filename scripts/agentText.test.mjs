@@ -255,6 +255,68 @@ test('ids that read the same once made plain are told apart, the same everywhere
   assert.equal(byAgentId([{ id: 'a\u200b' }, { id: 'a\u2060' }], both[1])?.id, 'a\u2060');
 });
 
+test('each id names one thing only: no plain id, hidden id or alias reads as another, whatever ids a file holds', () => {
+  const check = (ids, what) => {
+    const names = agentIds(ids);
+    const list = ids.map((id) => ({ id }));
+    const read = [...new Set(ids)].map((id) => names.get(id));
+    assert.equal(new Set(read).size, read.length, `${what}: two read the same: ${JSON.stringify(read)}`);
+    for (const id of new Set(ids)) {
+      const name = names.get(id);
+      assert.ok(name && !UNSEEN.test(name), `${what}: ${JSON.stringify(name)}`);
+      assert.equal(byAgentId(list, name)?.id, id, `${what}: ${JSON.stringify(name)} leads back to its own`);
+      // A plain id is always itself
+      if (agentText(id) === id) assert.equal(name, id);
+    }
+    // The order of the list changes nothing
+    const again = agentIds([...ids].reverse());
+    for (const id of ids) assert.equal(again.get(id), names.get(id), `${what}: order`);
+    return names;
+  };
+  // A plain id crafted to be another id's alias (as a song file can be): the hidden one goes longer
+  const hidden = 'track-2​';
+  const names = check([hidden, 'track-2', hiddenIdAlias(hidden)], 'alias taken');
+  assert.notEqual(names.get(hidden), hiddenIdAlias(hidden));
+  assert.ok(names.get(hidden).startsWith('track-2~'));
+  // Every longer alias taken too: then a counter
+  const all = [hidden, 'track-2', ...[6, 8, 10, 12, 16].map((n) => hiddenIdAlias(hidden, n)), `${hiddenIdAlias(hidden, 16)}-2`];
+  check(all, 'every alias taken');
+  // A hidden id whose plain reading is another hidden one's alias
+  const other = 'x⁠';
+  check([other, 'x', `${hiddenIdAlias(other)}​`, hidden], 'a hidden alias');
+  // Random sets from a small alphabet of plain, hidden and alias-shaped ids
+  let seed = 7;
+  const rnd = (n) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31), seed % n);
+  const bases = ['a', 'b', 'a~1', 'clip-1'];
+  const marks = ['', '​', '⁠', '­', tag('x')];
+  for (let round = 0; round < 300; round++) {
+    const ids = [];
+    for (let i = 0, n = 1 + rnd(7); i < n; i++) {
+      const base = bases[rnd(bases.length)];
+      const pick = rnd(4);
+      if (pick === 0 && ids.length) ids.push(hiddenIdAlias(ids[rnd(ids.length)], [6, 8, 10][rnd(3)]));
+      else if (pick === 1 && ids.length) ids.push(agentText(ids[rnd(ids.length)]));
+      else ids.push(base + marks[rnd(marks.length)] + (rnd(3) === 0 ? marks[rnd(marks.length)] : ''));
+    }
+    check(ids, JSON.stringify(ids));
+  }
+});
+
+test('the ops reach the track the agent read, never one whose plain id another\'s alias would be', () => {
+  const p = createStarter('lofi');
+  const hidden = `${p.tracks[1].id}​`;
+  // (a song file whose ids were made so a hidden id's short alias is another track's plain id)
+  const ids = [hidden, p.tracks[1].id, hiddenIdAlias(hidden)];
+  const song = parseProject(JSON.parse(JSON.stringify({ ...serializeProject(p), tracks: serializeProject(p).tracks.map((t, i) => (i < 3 ? { ...t, id: ids[i] } : t)), clips: serializeProject(p).clips.filter((c) => !p.tracks.slice(0, 3).some((t) => t.id === c.trackId)) })));
+  const read = toAgentSong(song, { appVersion: 'x' }).tracks.slice(0, 3).map((t) => t.id);
+  assert.equal(new Set(read).size, 3, JSON.stringify(read));
+  read.forEach((agentId, i) => {
+    const out = applyOps(song, { opsVersion: 1, ops: [{ op: 'set_track', trackId: agentId, volumeDb: -33 }] }, { idBase: 't' });
+    assert.ok(out.ok, JSON.stringify(out.errors));
+    assert.deepEqual(out.song.tracks.slice(0, 3).map((t) => t.volume === -33), [0, 1, 2].map((j) => j === i), `${agentId} changes only its own track`);
+  });
+});
+
 test('cleanForAgent leaves nothing uncleaned: deep nesting is cut, odd objects as their JSON or left out', () => {
   let deep = { name: `bottom${HIDDEN}` };
   for (let i = 0; i < 100; i++) deep = { next: [deep] };

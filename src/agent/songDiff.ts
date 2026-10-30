@@ -12,6 +12,7 @@ import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
 import { secondsToBar } from '../audio/tempoMap';
 import { stableJson } from './fingerprint';
+import { plainToken } from './agentText';
 
 /** One change, in plain words, with what it touches. */
 export interface SongChange {
@@ -212,8 +213,13 @@ function settingChanges(x: unknown, y: unknown): string {
   const out: string[] = [];
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     if (k === 'on' || same(a[k], b[k])) continue;
-    const show = (v: unknown) => (typeof v === 'number' ? String(Math.round(v * 1000) / 1000) : v === undefined ? 'none' : typeof v === 'object' ? 'changed' : String(v));
-    out.push(typeof b[k] === 'object' ? `${k} changed` : `${k} ${show(a[k])} to ${show(b[k])}`);
+    // (only the app's own words and numbers: a text an agent could have written is "changed", never shown)
+    const show = (v: unknown) => (v === undefined ? 'none' : plainToken(v));
+    const name = plainToken(k, 40);
+    if (!name) continue;
+    const from = show(a[k]);
+    const to = show(b[k]);
+    out.push(typeof b[k] === 'object' || from === null || to === null ? `${name} changed` : `${name} ${from} to ${to}`);
   }
   return out.slice(0, 4).join(', ') + (out.length > 4 ? `, and ${out.length - 4} more` : '');
 }

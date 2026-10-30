@@ -443,20 +443,27 @@ export interface UserMessageStatusParams {
 
 const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const shortId = (v: unknown) => (typeof v === 'string' && MESSAGE_ID.test(v) ? v : undefined);
+/**
+ * A track's or clip's id in a message's context, as the agent reads it (agentIds in agentText.ts):
+ * letters, digits and - _ . : + (a song file's ids can hold them), and the alias of an id that held
+ * hidden text ("clip-3~1a2b3c", with a counter "-2" at the most).
+ */
+const CONTEXT_ID = /^[A-Za-z0-9_.:+-]{1,128}(~[0-9a-f]{6,16}(-[0-9]{1,4})?)?$/;
+const contextId = (v: unknown) => (typeof v === 'string' && CONTEXT_ID.test(v) ? v : undefined);
 const bar = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 10_000 ? v : undefined);
 
-/** A message's context as either end keeps it: only the fields it may have, ids checked, at most CONVERSATION.contextClips clips. Undefined if nothing is left. */
+/** A message's context as either end keeps it: only the fields it may have, ids checked (CONTEXT_ID), at most CONVERSATION.contextClips clips. Undefined if nothing is left. */
 export function readContext(c: unknown): UserMessageContext | undefined {
   if (typeof c !== 'object' || c === null || Array.isArray(c)) return undefined;
   const o = c as Record<string, unknown>;
   const out: UserMessageContext = {};
-  const track = shortId(o.selectedTrackId);
+  const track = contextId(o.selectedTrackId);
   if (track) out.selectedTrackId = track;
   if (Array.isArray(o.selectedClipIds)) {
-    const clips = o.selectedClipIds.map(shortId).filter((x): x is string => !!x).slice(0, CONVERSATION.contextClips);
+    const clips = o.selectedClipIds.map(contextId).filter((x): x is string => !!x).slice(0, CONVERSATION.contextClips);
     if (clips.length) out.selectedClipIds = clips;
   }
-  const editing = shortId(o.editingClipId);
+  const editing = contextId(o.editingClipId);
   if (editing) out.editingClipId = editing;
   const b = o.bars as Record<string, unknown> | undefined;
   const from = bar(b?.fromBar);

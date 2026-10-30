@@ -39,20 +39,28 @@ export function fingerprint(value: unknown): string {
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Where two plain values first differ, as "path: a → b" (empty when they're the same). */
-export function firstDifference(a: unknown, b: unknown, path = ''): string {
+export const firstDifference = (a: unknown, b: unknown, path = ''): string => firstDifferencePath(a, b, path, true);
+
+/**
+ * Where two plain values first differ, as a path ("fx.filter.cutoff", "notes[3].velocity"; "value"
+ * for the values themselves; empty when they're the same). With `values`, the two values follow
+ * ("path: a → b").
+ */
+export function firstDifferencePath(a: unknown, b: unknown, path = '', values = false): string {
   if (stableJson(a) === stableJson(b)) return '';
   if (isObj(a) && isObj(b)) {
     for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
-      const d = firstDifference(a[k], b[k], path ? `${path}.${k}` : k);
+      const d = firstDifferencePath(a[k], b[k], path ? `${path}.${k}` : k, values);
       if (d) return d;
     }
   }
   if (Array.isArray(a) && Array.isArray(b) && a.length === b.length) {
     for (let i = 0; i < a.length; i++) {
-      const d = firstDifference(a[i], b[i], `${path}[${i}]`);
+      const d = firstDifferencePath(a[i], b[i], `${path}[${i}]`, values);
       if (d) return d;
     }
   }
+  if (!values) return path || 'value';
   const show = (v: unknown) => (v === undefined ? 'none' : JSON.stringify(v).slice(0, 40));
   return `${path || 'value'}: ${show(a)} → ${show(b)}`;
 }

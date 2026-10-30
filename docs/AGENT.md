@@ -184,9 +184,9 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them, and so is the release of one that ends just before it (it renders from up to 8 bars earlier and measures only the range, what the master's limiter and clipper did included; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
-| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
+| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. `focus` (`{fromBar, toBar}`) is bars you'd like heard: the before-and-after plays them along with every bar the suggestion changes (never instead of them), if both fit in 90 seconds; else just the changed bars, the first 90 seconds of them for a change longer than that (`get_suggestion` then gives `unheard`: those bars can't count as heard, and the musician accepts only with a second press) |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (over every bar it changes), and the bars its before-and-after plays (`audition`), or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -201,7 +201,7 @@ The musician can write to the agent from the message box at the foot of the Sugg
 message goes only when they press Send (or Enter), only to the paired helper, and carries only
 what they chose: the text (at most 2000 characters), the suggestion they asked about ("Ask about
 this" on a card gives `suggestionId`), and their selection if they ticked "Include what I've
-selected" while the agent may see it (`context: {selectedTrackId?, selectedClipIds?, editingClipId?, bars?}`).
+selected" while the agent may see it (`context: {selectedTrackId?, selectedClipIds?, editingClipId?, bars?}`, by the ids `get_song` and `get_view` give them).
 
 The agent gets each message from `wait_for_changes` (event `user_message`) and can read the whole
 conversation with `get_messages`. Each message on the panel says where it is: *Sent* (the helper
@@ -269,7 +269,10 @@ op that makes something can name it with `ref`, and later ops in the same sugges
 ```
 
 **Errors** name the op (counting from 0) and the field, like `ops[3].notes[1].pitch: "H2" isn't a
-pitch`, and nothing is applied. **Values out of range** are brought into range with a warning
+pitch`, and nothing is applied (what an op gave is quoted back made plain and at most 40
+characters). The warnings and what changes, which the musician reads on the card, never quote
+text an op gave: a setting given a value that isn't one of its choices says so, "(left as it
+was)". **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, or
 its fader, buses and the master together), a track unmuted (one that sits 12 dB or more under the
@@ -631,6 +634,9 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   address but one: the app's own site, for the recordings of instruments it doesn't have yet (the
   same files the app downloads; nothing about the song is sent). With `--offline` it downloads
   nothing. It's closed when the render ends, also when it fails or takes too long.
+- **Nothing a program on the port says is shown before it has proved itself.** If the pairing is
+  refused, the dialog says why in the studio's own words (by the error's code), never the words
+  the other end sent; nor is the name it gives in its `hello`.
 - **What an agent writes is shown as plain text**, its names cut to 64 characters. The names it
   gives in ops (a track's, a clip's, a marker's) are kept the same way: no control, invisible or
   direction characters ever reach the song, and a name of nothing visible is refused.
@@ -639,8 +645,9 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   agent without control characters or invisible ones (hidden tag text, zero-width characters,
   direction overrides), by the same rule as your messages. An id that held them is read, and can
   be named in ops, without them; if it would then read as another id (or as nothing), it's read
-  as `<id>~<6 letters>` instead, the same in every answer, so each id names one thing only. The
-  command line prints nothing from a file with terminal escapes in it.
+  as `<id>~<6 letters>` instead (more letters if another id already reads so: a file can be made
+  to), the same in every answer, so each id names one thing only. The command line prints nothing
+  from a file with terminal escapes in it.
 - **Each pairing is its own.** An agent sees, withdraws and listens to only the suggestions it
   made while paired this time, never those of an agent paired before.
 - **What you write to the agent** goes only when you press Send, only to the paired helper, and
