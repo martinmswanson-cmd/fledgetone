@@ -364,7 +364,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   // (places and lengths in the musician's words: in a song not in 4/4, by measure as the ruler numbers them, lengths in quarter notes)
   const meter = wordMeter(base);
   const at4 = (bar: number, exact: string) => (meter ? positionWords(bar, meter) : `bar ${exact}`);
-  const len4 = (bars: number, exact: string) => (meter ? lengthWordsIn(bars, meter) : `${exact} bars`);
+  const len4 = (bars: number, exact: string) => (meter ? lengthWordsIn(bars, meter) : `${exact} bar${exact === '1' ? '' : 's'}`);
   const shortest = meter ? 'a sixteenth note' : '1/16 bar';
   const refs = new Map<string, { kind: 'track' | 'clip' | 'marker' | 'tempo'; id: string }>();
   let addedNotes = 0;
@@ -446,7 +446,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           keep = (n) => n.startOffset < from - EPS || n.startOffset >= to - EPS;
         }
         const notes = clip.notes.filter(keep);
-        if (notes.length === clip.notes.length) warn(`remove_notes (op ${index}) found no notes to remove in ${nm(clip.name)}.`);
+        if (notes.length === clip.notes.length) warn(`Removing notes found none to remove in ${nm(clip.name)}.`);
         else replaceClip(clip, { ...clip, notes });
         return;
       }
@@ -925,10 +925,13 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
     return value;
   }
 
+  /** A position up to `max` (a clip's start: the last place it fits before the end of the timeline). */
   function readBar(value: number, path: string, max: number): number {
     if (value < 1 - EPS) throw new OpFail(path, 'song positions start at bar 1');
     if (value > max + EPS) {
-      warn(`${upper(at4(value, String(value)))} is past the end of the timeline: put at ${at4(max, String(round(max, 4)))}.`);
+      // (inside the timeline, but what starts there wouldn't fit before its end)
+      if (value <= TOTAL_BARS + 1 + EPS) warn(`A clip starting at ${at4(value, String(value))} wouldn't fit before the end of the timeline: moved to ${at4(max, String(round(max, 4)))}.`);
+      else warn(`${upper(at4(value, String(value)))} is past the end of the timeline: put at ${at4(max, String(round(max, 4)))}.`);
       return max;
     }
     return value;

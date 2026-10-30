@@ -256,8 +256,9 @@ test('things a suggestion may not do are refused in plain words', () => {
 
 test('the bars to hear a suggestion in start one bar before the change', () => {
   const out = mustApply(base(), [{ op: 'add_notes', clipId: BASS_CLIP, notes: [{ pitch: 'D2', start: 4, length: 1 }] }]);
-  // (to past the note's bar: it rings out, its release and the track's effects)
-  assert.deepEqual(out.diff.audition, { fromBar: 8, toBar: 11 });
+  // (to past the note's bar: it rings out, its release and the track's effects; and the upright
+  // bass plays its takes in turn, so every later note of the track changes too: to where it stops)
+  assert.deepEqual(out.diff.audition, { fromBar: 8, toBar: 18 });
 });
 
 test('the same suggestion applied twice makes new ids the second time, and nothing is lost to repeated ids', () => {
@@ -422,4 +423,26 @@ test('a length under a sixteenth note is worded without numbers, and no length i
   assert.equal(lengthWordsIn(0.001, waltz.meter ? { base: waltz.meter, points: [] } : null), '0.004 quarter notes');
   assert.equal(lengthWordsIn(0.001, null), '0.001 bars');
   assert.equal(lengthWordsIn(2.25, null), '2.3 bars');
+});
+
+test('cautions on the musician\'s card in plain words: no op names or counts, a clip that wouldn\'t fit said so, one bar or quarter note in the singular (scan r9)', async () => {
+  const { TOTAL_BARS } = await import('../src/store/timelineTypes.ts');
+  const { lengthWordsIn } = await import('../src/agent/songDiff.ts');
+  // A clip starting inside the timeline that wouldn't fit before its end: moved, and said so
+  const fit = mustApply(base(), [{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS - 1, lengthBars: 4, notes: [{ pitch: 'D2', start: 0, length: 1 }] }]);
+  assert.deepEqual(fit.warnings, [`A clip starting at bar ${TOTAL_BARS - 1} wouldn't fit before the end of the timeline: moved to bar ${TOTAL_BARS - 3}.`]);
+  // Past the end: as before
+  const past = mustApply(base(), [{ op: 'move_clip', clipId: BASS_CLIP, toBar: TOTAL_BARS + 50 }]);
+  assert.match(past.warnings[0], /^Bar \d+ is past the end of the timeline: put at bar \d+\.$/);
+  // Removing notes where there are none: no op name, no count
+  const none = mustApply(base(), [{ op: 'remove_notes', clipId: BASS_CLIP, fromBar: 300, toBar: 301 }]);
+  assert.equal(none.warnings.length, 1);
+  assert.match(none.warnings[0], /^Removing notes found none to remove in /);
+  assert.doesNotMatch(none.warnings.join(' '), /remove_notes|\bop \d/);
+  // One of a length
+  assert.equal(lengthWordsIn(1, null), '1 bar');
+  assert.equal(lengthWordsIn(0.25, { base: { num: 3, den: 4 }, points: [] }), '1 quarter note');
+  assert.equal(lengthWordsIn(2, null), '2 bars');
+  const resized = mustApply(base(), [{ op: 'resize_clip', clipId: BASS_CLIP, lengthBars: 1 }]);
+  assert.match(resized.diff.changes.map((c) => c.text).join(' '), /1 bar long \(was \d+ bars\)/);
 });

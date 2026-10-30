@@ -17,7 +17,7 @@
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
-import { barToSeconds, secondsToBar, toMeasureBeat } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar, measureAt } from '../audio/tempoMap';
 import { musicEnd } from '../audio/auditionMath';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
@@ -310,12 +310,15 @@ const joinPlays = (list: readonly BarRange[]): BarRange[] => {
 
 /** `r` without the bars of `played`: the pieces left, in order. */
 const without = (r: BarRange, played: readonly BarRange[]): BarRange[] => {
-  const out: BarRange[] = [];
-  for (let bar = r.fromBar; bar < r.toBar; bar++) {
-    if (played.some((p) => p.fromBar <= bar && p.toBar >= bar + 1)) continue;
-    const last = out.at(-1);
-    if (last && last.toBar === bar) last.toBar = bar + 1;
-    else out.push({ fromBar: bar, toBar: bar + 1 });
+  // (exactly: a cut where a measure starts can fall part way through a bar)
+  let out: BarRange[] = [{ ...r }];
+  for (const p of played) {
+    out = out.flatMap((x) => {
+      if (p.toBar <= x.fromBar + 1e-9 || p.fromBar >= x.toBar - 1e-9) return [x];
+      const left = p.fromBar > x.fromBar + 1e-9 ? [{ fromBar: x.fromBar, toBar: p.fromBar }] : [];
+      const right = p.toBar < x.toBar - 1e-9 ? [{ fromBar: p.toBar, toBar: x.toBar }] : [];
+      return [...left, ...right];
+    });
   }
   return out;
 };
@@ -357,11 +360,6 @@ export function hearingPlan(
     plays.push(r);
   };
   const meter = wordMeter(songs[0] ?? {});
-  const measureStart = (bar: number) => {
-    if (!meter) return true;
-    const m = toMeasureBeat(bar, meter);
-    return m.beat === 1 && m.hundredths === 0;
-  };
   const list = joinPlays(regions.map(wholeBars));
   const unheard: BarRange[] = [];
   let limit: HearingLimit | null = null;
@@ -383,8 +381,13 @@ export function hearingPlan(
       // (the limit the next bar would break)
       limit = over({ fromBar: r.fromBar, toBar: to > r.fromBar ? to + 1 : r.fromBar + 1 }) ?? 'seconds';
       // (in a song not in 4/4, cut where a measure starts, as the ruler numbers them: the bars heard
-      // and those not heard never share a measure, and the loop ends on one)
-      while (to > r.fromBar && !measureStart(to)) to--;
+      // and those not heard never share a measure, and the loop ends on one. The last one at or
+      // before the bars that fit, part way through a bar too: after a measure of another length
+      // none may start on a whole bar again. With none after the region's start, the plain cut)
+      if (meter && to > r.fromBar) {
+        const start = measureAt(to, meter).start;
+        if (start > r.fromBar + 1e-9) to = start;
+      }
       const fits = to > r.fromBar;
       if (fits) {
         take({ fromBar: r.fromBar, toBar: to });
@@ -623,6 +626,14 @@ export const hearingAsFound = (s: Suggestion): AgentHearing => ({
   limit: s.limit ?? null,
   focusLeftOut: !!s.focusLeftOut,
 });
+
+/**
+ * Whether the agent reads a suggestion as heard: the version it is now heard through (`listen`:
+ * the studio's own heard, which a check by sound can move; else heardByRules), and never while
+ * it's changed and not made again yet (`stale`: what was heard isn't what it would do now).
+ */
+export const heardForAgent = (s: Pick<Suggestion, 'heard' | 'heardByRules' | 'version' | 'stale'>, listen: boolean): boolean =>
+  !s.stale && (listen ? s.heard !== null && s.heard === s.version : s.heardByRules === s.version);
 
 /**
  * By the rules alone (the song's settings, never its sound): the rules' regions, and what a

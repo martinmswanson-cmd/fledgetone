@@ -189,7 +189,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
-| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it, only while you're allowed to listen; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions. Without Listen you read the rules' regions alone and what a before-and-after of those plays, `heard` is whether Suggested played through every one of the rules' regions, there's no `finding`, and `notBySound` is only the song or the suggestion being too long to check: nothing you read moves with what the check by sound found), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
+| `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end; never while it's `changed` and not made again yet), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it, only while you're allowed to listen; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions. Without Listen you read the rules' regions alone and what a before-and-after of those plays, `heard` is whether Suggested played through every one of the rules' regions, there's no `finding`, and `notBySound` is only the song or the suggestion being too long to check: nothing you read moves with what the check by sound found), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
 | `get_messages {since?, limit?}` | The conversation both ways, oldest first, 50 at a time (`last` back as `since` for the next page, `more` if there are more), with `unanswered`: your messages the agent hasn't replied to. Reading your messages shows them to you as seen |
 | `point_at {target, note?}` | Highlights a track, a clip, bars, a marker or a control for you (one a second) |
@@ -216,7 +216,13 @@ fewer bars than the truth. First by rules:
   the drums), as long as the ducked track rings on; and, when that track is a proxy (the game's
   dialogue or sound effects, which every other track ducks under), wherever the others dip, from
   the dip's look-ahead before it to past its release by each of their tails. A note plays its
-  whole length, past its clip's end too, so it's heard until it stops;
+  whole length, past its clip's end too, so it's heard until it stops. Some instruments play a
+  note by the notes before it, so a note added, changed or taken away (or a clip) changes later
+  ones too: a recorded instrument that plays two takes of its notes in turn and a guitar's strums
+  (down or up after the last), notes that play only on some passes, and a plugin instrument (whose
+  own state the studio can't know: not sure) are heard from the change to where the track stops;
+  a monophonic synth along the notes joined to it (each starting before the one before has rung
+  out); and a swung clip all of it (its swing is decided over the whole clip);
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,
@@ -547,7 +553,7 @@ musician's ruler numbers measures instead, so the sentences the studio writes fo
 suggestion's `changes` and `warnings`, the card) name the measures the ruler shows ("at bars 9-10"
 for your bar 7 in 3/4; "Bar 666 beat 2 is past the end of the timeline" for your bar 500), and
 lengths in quarter notes, while the numbers stay your bars. In 4/4 the two are the same. A
-before-and-after too long to hear at once is cut where a measure starts. In those sentences the
+before-and-after too long to hear at once is cut where a measure starts (part way through a bar, after a measure of another length: `audition` and `unheard` can then hold part-bars). In those sentences the
 names of tracks, clips and markers (yours or the musician's) are marked as names, and a lane's
 points are counted from 1.
 

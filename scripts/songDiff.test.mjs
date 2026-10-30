@@ -138,8 +138,16 @@ test('notes added, changed and removed, with their bars', () => {
   assert.equal(d.changes.length, 1);
   assert.match(d.changes[0].text, /^In "Bass" on "Bass": adds 1 note, changes 1 note, removes 1 note in bars 5-11\.$/);
   assert.deepEqual(d.touchedClips, [clip.id]);
-  assert.deepEqual(d.regions, [{ fromBar: 5, toBar: 12 }]);
-  assert.deepEqual(d.audition, { fromBar: 4, toBar: 12 });
+  // (the upright bass plays its takes in turn: a note more or less moves every later note of the
+  // track onto the other take, so it's heard to where the track stops, see noteMemory.ts)
+  assert.deepEqual(d.regions, [{ fromBar: 5, toBar: 18 }]);
+  assert.deepEqual(d.audition, { fromBar: 4, toBar: 18 });
+  // On an instrument that plays every note the same whatever came before: its bars and their tail
+  const piano = (s) => ({ ...s, tracks: s.tracks.map((t) => (t.id === clip.trackId ? { ...t, instrumentKey: 'realGrandPiano' } : t)) });
+  const alone = diffSongs(piano(a), piano(b));
+  // (the piano rings on longer than the bass: two bars more)
+  assert.deepEqual(alone.regions, [{ fromBar: 5, toBar: 14 }]);
+  assert.deepEqual(alone.audition, { fromBar: 4, toBar: 14 });
 });
 
 test('clips, markers, tempo and master', () => {
@@ -490,4 +498,100 @@ test('a change to a proxy track is heard wherever the tracks ducking under it di
   // A note of it changed, too
   const moved = diffSongs(song, { ...song, clips: song.clips.map((c) => (c.id === 'v' ? { ...c, notes: [{ ...c.notes[0], duration: '1m' }] } : c)) });
   assert.ok(moved.regions[0].fromBar < 9 && moved.regions[0].toBar > 11, JSON.stringify(moved.regions));
+});
+
+test('never fewer bars than the truth: a track that plays a note by the notes before it hears a note change to where it stops (scan r9)', async () => {
+  const { carriesState, LEGATO_INSTRUMENTS, swingReadsClip } = await import('../src/audio/noteMemory.ts');
+  const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
+  const a = base();
+  const id = a.tracks[0].id;
+  const quiet = (t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], output: undefined, sends: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } });
+  const n = (k, at, duration = '4n', extra = {}) => ({ id: `n${k}`, note: 'E3', startOffset: at, duration, velocity: 0.8, ...extra });
+  // One track: bars 1-4, 9-12 and 30; nothing else plays
+  const song = (instrumentKey, more = {}, lastNotes = [n(9, 0)]) => ({
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 },
+    tracks: [quiet({ ...a.tracks[0], instrumentKey, ...more })],
+    clips: [
+      { id: 'a', trackId: id, name: 'A', startBar: 1, lengthBars: 4, notes: [n(1, 0, '1m'), n(2, 1, '1m'), n(3, 2, '1m'), n(4, 3, '1m')] },
+      { id: 'b', trackId: id, name: 'B', startBar: 9, lengthBars: 4, notes: [n(5, 0, '1m')] },
+      { id: 'c', trackId: id, name: 'C', startBar: 30, lengthBars: 1, notes: lastNotes },
+    ],
+  });
+  const addNote = (s, clipId = 'a', at = 0.5) => ({ ...s, clips: s.clips.map((c) => (c.id === clipId ? { ...c, notes: [...c.notes, n('x', at, '16n')] } : c)) });
+  const reaches = (d, bar) => d.regions.some((r) => r.fromBar <= bar && r.toBar > bar);
+  const check = (s, label) => diffSongs(s, addNote(s));
+
+  // Nothing remembered: the note's bars and its tail, nowhere near bar 9
+  const plain = check(song('realGrandPiano'));
+  assert.equal(carriesState({ instrumentKey: 'realGrandPiano' }), null);
+  assert.ok(plain.regions.at(-1).toBar < 9, JSON.stringify(plain.regions));
+  assert.equal(plain.sure, true);
+
+  // Takes played in turn (a recorded bass, a recorded kit): every later clip of the track, sure
+  for (const key of ['realElectricBass', 'studioKit']) {
+    assert.deepEqual(carriesState({ instrumentKey: key })?.kinds, ['takes'], key);
+    const d = check(song(key));
+    assert.ok(reaches(d, 9) && reaches(d, 30), `${key} ${JSON.stringify(d.regions)}`);
+    // (only where the track sounds: not the empty bars between)
+    assert.ok(!reaches(d, 20), `${key} ${JSON.stringify(d.regions)}`);
+    assert.equal(d.regions[0].fromBar, 1);
+    assert.equal(d.sure, true);
+  }
+  // Strummed (a guitar with one take: the direction of each strum follows the last)
+  assert.deepEqual(carriesState({ instrumentKey: 'realNylonGuitar' })?.kinds, ['strum']);
+  assert.ok(reaches(check(song('realNylonGuitar')), 30));
+  // A change after the last clip is still only from the change on
+  const late = diffSongs(song('realElectricBass'), addNote(song('realElectricBass'), 'b'));
+  assert.ok(late.regions[0].fromBar >= 9 && reaches(late, 30), JSON.stringify(late.regions));
+
+  // Passes: a note on some passes only, anywhere on the track, counts its clip's place in the run of copies
+  const cond = song('realGrandPiano', {}, [n(9, 0, '4n', { cond: { n: 2, of: 2 } })]);
+  assert.deepEqual(carriesState(cond.tracks[0], cond.clips)?.kinds, ['passes']);
+  const passes = check(cond);
+  assert.ok(reaches(passes, 30), JSON.stringify(passes.regions));
+  // (removing a copy from the run moves the later ones' passes)
+  const run = { ...cond, clips: [...cond.clips, { ...cond.clips[2], id: 'c2', startBar: 31 }] };
+  assert.ok(reaches(diffSongs(run, { ...run, clips: run.clips.filter((c) => c.id !== 'c') }), 31));
+
+  // A plugin instrument: its own state isn't known here, so to the end and not sure
+  const plugin = check(song('plugin', { plugin: { id: 'i', url: 'x', name: 'Synth' } }));
+  assert.ok(reaches(plugin, 30));
+  assert.equal(plugin.sure, false);
+
+  // A monophonic synth: along the notes joined to the change (each starting before the one before
+  // rang out), not past a gap longer than its notes ring
+  assert.deepEqual(carriesState({ instrumentKey: 'bass' }), { reach: 'joined', sure: true, kinds: ['legato'] });
+  const mono = check(song('bass'));
+  assert.ok(reaches(mono, 4.5), JSON.stringify(mono.regions));
+  assert.ok(!reaches(mono, 9), JSON.stringify(mono.regions));
+  const joined = song('bass');
+  joined.clips = joined.clips.map((c) => (c.id === 'b' ? { ...c, startBar: 5 } : c));
+  assert.ok(reaches(check(joined), 6.5), 'B joins straight on');
+  // (the Sub enhancer's sine carries on the same way, under any pitched instrument)
+  assert.deepEqual(carriesState({ instrumentKey: 'realGrandPiano', subLayer: { mode: 'octave', level: 0.5, decay: 0 } })?.kinds, ['legato']);
+
+  // Swing decided over the whole clip: a note changed at its end can move its first notes
+  const swung = song('realGrandPiano');
+  swung.clips = swung.clips.map((c) => (c.id === 'a' ? { ...c, groove: { swing: 0.5, grid: 16 } } : c));
+  assert.equal(swingReadsClip(swung.clips[0]), true);
+  const sw = diffSongs(swung, addNote(swung, 'a', 3.5));
+  assert.equal(sw.regions[0].fromBar, 1, JSON.stringify(sw.regions));
+  assert.ok(diffSongs(song('realGrandPiano'), addNote(song('realGrandPiano'), 'a', 3.5)).regions[0].fromBar >= 4);
+
+  // In step with the instruments: every monophonic one in instruments.ts (built by mono(), or
+  // reading the legato glide) is listed, and only those
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../src/audio/instruments.ts', import.meta.url), 'utf8');
+  const build = source.slice(source.indexOf('function buildInstrument'));
+  const cases = [...build.matchAll(/((?:\s*case '\w+':)+)\s*(?:\{)?([\s\S]*?)(?=\n\s*case '|\n\s*default:)/g)];
+  const mono2 = new Set(cases.filter(([, , body]) => /\bmono\(|glideRef|create808Instrument/.test(body)).flatMap(([, labels]) => [...labels.matchAll(/'(\w+)'/g)].map((m) => m[1])));
+  assert.deepEqual([...mono2].sort(), [...LEGATO_INSTRUMENTS].sort());
+  // ...and every recorded instrument with a second take at some loudness plays its takes in turn
+  for (const [key, def] of Object.entries(INSTRUMENTS)) {
+    const takes = Object.keys(def.samples?.samples ?? {}).some((name) => Number(name.split('|')[2] ?? 0) > 0);
+    if (takes) assert.ok(carriesState({ instrumentKey: key })?.kinds.includes('takes'), key);
+  }
 });
