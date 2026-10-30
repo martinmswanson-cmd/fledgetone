@@ -10,6 +10,7 @@ import { downloadBlob, encodeChannels } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
 import { importSoundFile } from '../../audio/soundLibrary';
 import { initAudio } from '../../audio/engine';
+import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { showToast } from './toastStore';
 
 /**
@@ -38,6 +39,15 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
   const [rendered, setRendered] = useState<{ key: string; takes: Float32Array[][]; sampleRate: number } | null>(null);
   const seconds = useTimelineStore((s) => (clip ? (clip.lengthBars * 240) / tempoAt(clip.startBar, songTempo(s)) : 0));
   const playing = useRef<AudioBufferSourceNode | null>(null);
+  // A take heard is the one preview playing (and another starting stops it)
+  const claim = useExclusivePreview('variations', () => {
+    try {
+      playing.current?.stop();
+    } catch {
+      // Already ended
+    }
+    playing.current = null;
+  });
   if (!clip || !track) return null;
   const key = JSON.stringify([count, bounds, keepSends, seed]);
   const base = safe(clip.name || track.name);
@@ -80,6 +90,7 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.connect(afterMaster());
+    claim();
     src.start();
     playing.current = src;
   };

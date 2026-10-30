@@ -12,7 +12,7 @@ import React from 'react';
 import { Check, Headphones, MessageSquareReply, Square, X } from 'lucide-react';
 import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPlayer';
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
-import { hearSuggestion } from '../../agent/songWatch';
+import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { announce, ARMED_MS, isArmed, isOpen, updateSuggestion, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { guardClick, guardDown, guardKey, guardKeyPress, guardKeyUp } from './cardGuard';
 import { focusAfterAnswer } from './returnFocus';
@@ -64,7 +64,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
   const playing = mine && audition.phase === 'playing';
 
   const hear = (which: 'a' | 'b') => {
-    if (playing) return hearAudition(which);
+    // (switched in step only while what plays is this version on the song as it is: else it's made and rendered again)
+    if (playing && auditionCurrent(s, audition)) return hearAudition(which);
     void hearSuggestion(s.id, which);
   };
 

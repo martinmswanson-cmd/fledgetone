@@ -123,7 +123,11 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       listening = true;
       // Play pressed meanwhile: the render stops at once (the song's own playback comes first) and the agent hears busy
       const stop = new AbortController();
-      const unwatch = useTimelineStore.subscribe((st) => (st.isPlaying || st.loadingToPlay) && stop.abort());
+      const unwatch = useTimelineStore.subscribe((st) => (st.isPlaying || st.loadingToPlay) && stop.abort('playing'));
+      // "Listen" unticked, or the connection gone, meanwhile: the render stops too, and nothing of it goes
+      const unwatchAllowed = useSuggestions.subscribe(
+        (st, prev) => ((prev.permissions.listen && !st.permissions.listen) || (prev.connection.state === 'paired' && st.connection.state !== 'paired')) && stop.abort('not_allowed')
+      );
       try {
         let stats: MasterStats | undefined;
         const audio = await renderRange(listenSnapshot(song), fromBar, toBar, { signal: stop.signal, onMasterStats: (s) => (stats = s) });
@@ -149,10 +153,12 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
           findings,
         };
       } catch (err) {
+        if (stop.signal.aborted && stop.signal.reason === 'not_allowed') throw new HandlerError('not_allowed', 'The musician stopped allowing the agent to listen, so listening stopped.');
         if (stop.signal.aborted) throw new HandlerError('busy', 'The song started playing, so listening stopped; ask again when it stops.');
         throw err;
       } finally {
         unwatch();
+        unwatchAllowed();
         listening = false;
       }
     },
@@ -205,7 +211,7 @@ export function studioHandlers(): Partial<Record<StudioMethod, Handler>> {
       }
       const what = target.track ? 'a track' : target.clip ? 'a clip' : target.marker ? 'a marker' : 'some bars';
       useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 } });
-      announce(`Your agent points at ${what} on the timeline${note ? `: ${shortText(note)}` : '.'}`);
+      announce(`Your agent points at ${what} on the timeline${note ? `, saying “${shortText(note)}”` : '.'}`);
       return { ok: true, shown: given[0] };
     },
 

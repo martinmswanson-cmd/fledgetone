@@ -20,10 +20,20 @@ import { songContext } from './songWatch';
 export function applyAsOneStep(song: ProjectSnapshot): void {
   const tl = useTimelineStore.getState();
   const before = tl.tracks;
+  // What only the screen holds stays as it is now (a suggestion's song kept the selection and the
+  // folded folders of when it was made, and changing those isn't an edit, see revision.ts)
+  const selected = new Set(tl.clips.filter((c) => c.isSelected).map((c) => c.id));
+  const folded = new Map(tl.tracks.flatMap((t) => (t.folder ? [[t.folder.id, t.folder.collapsed] as const] : [])));
+  const clips = song.clips.map((c) => (c.isSelected === selected.has(c.id) ? c : { ...c, isSelected: selected.has(c.id) }));
+  const tracks = song.tracks.map((t) => {
+    if (!t.folder || !folded.has(t.folder.id) || !!t.folder.collapsed === !!folded.get(t.folder.id)) return t;
+    const { collapsed: _c, ...open } = t.folder;
+    return { ...t, folder: folded.get(t.folder.id) ? { ...open, collapsed: true } : open };
+  });
   tl.checkpoint();
   useTimelineStore.setState({
-    tracks: song.tracks,
-    clips: song.clips,
+    tracks,
+    clips,
     markers: song.markers ?? [],
     bpm: song.bpm,
     tempoPoints: song.tempoPoints ?? [],
@@ -37,7 +47,7 @@ export function applyAsOneStep(song: ProjectSnapshot): void {
   setLiveStripTempo(s.bpm);
   // Instruments the suggestion chose that play recordings: their sounds start loading now
   const had = new Map(before.map((t) => [t.id, t.instrumentKey]));
-  for (const t of song.tracks) if (had.get(t.id) !== t.instrumentKey && hasRecordings(t.instrumentKey)) void loadQuick(t.instrumentKey).catch(() => {});
+  for (const t of tracks) if (had.get(t.id) !== t.instrumentKey && hasRecordings(t.instrumentKey)) void loadQuick(t.instrumentKey).catch(() => {});
 }
 
 const find = (id: string): Suggestion | undefined => useSuggestions.getState().suggestions.find((s) => s.id === id);

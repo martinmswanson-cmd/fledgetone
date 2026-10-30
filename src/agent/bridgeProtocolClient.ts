@@ -18,6 +18,7 @@ import {
   newNonce,
   normalizeCode,
   agentName,
+  pairingAddress,
   parseMessage,
   PROTOCOL_VERSION,
   sameProof,
@@ -77,6 +78,11 @@ export interface BridgeClientOptions {
   /** Close the connection (the WebSocket's close: a 4000-4999 code and a reason). */
   close: (code: number, reason: string) => void;
   handlers: Handlers;
+  /**
+   * The port this connection dialed (127.0.0.1:<port>): both proofs are bound to it, so a program
+   * on this port that relays to a helper on another can't pass (see pairingAddress in protocol.ts).
+   */
+  port: number;
   /** This app, for the helper to show. */
   app: { name?: string; version: string };
   /** What the agent may do (read only until the musician ticks more). */
@@ -141,6 +147,7 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
   /** The request under way: the first step (`pair`, the helper proves) or the second (`pair_confirm`, the studio does), with the nonces it's bound to. */
   let pending: { step: 'pair' | 'confirm'; id: string; serverNonce: string; nonce: string; code: string; timer: ReturnType<typeof setTimeout> } | null = null;
   let pairCount = 0;
+  const address = pairingAddress(opts.port);
 
   const setState = (next: BridgeState, extra: Partial<BridgeInfo> = {}) => {
     state = next;
@@ -195,16 +202,16 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     if (p.step === 'pair') {
       const r = (result ?? {}) as Partial<PairChallenge>;
       if (typeof r.nonce === 'string' && r.nonce.length >= 16) serverNonce = r.nonce;
-      const expected = await serverProof(p.code, p.serverNonce, p.nonce);
+      const expected = await serverProof(p.code, p.serverNonce, p.nonce, address);
       if (!sameProof(r.proof, expected)) {
         // A mistyped code, or not the helper the agent started: either way nothing about the code went to it
         const left = typeof r.attemptsLeft === 'number' ? r.attemptsLeft : 0;
         if (left <= 0) refuse('That code doesn’t match, and there are no tries left. Ask your agent to connect again for a new code.');
-        else setState('wrong_code', { attemptsLeft: left, message: 'That code doesn’t match the one your agent gave. Check it and type it again. (If it’s right, this isn’t the helper your agent started: nothing was sent to it.)' });
+        else setState('wrong_code', { attemptsLeft: left, message: 'That code doesn’t match the one your agent gave. Check it and type it again. (If it’s right, check the port is the one your agent said: on this one is something other than the helper your agent started, and nothing was sent to it.)' });
         return;
       }
       // The helper knows the code: now the studio proves it does too
-      const proof = await studioProof(p.code, p.serverNonce, p.nonce);
+      const proof = await studioProof(p.code, p.serverNonce, p.nonce, address);
       if (state !== 'proving') return;
       const id = `pair-${++pairCount}`;
       pending = { ...p, step: 'confirm', id, timer: startTimer() };
@@ -223,13 +230,20 @@ export function createBridgeClient(opts: BridgeClientOptions): BridgeClient {
     if (state !== 'paired') return answerError(id, 'not_paired', 'Not paired yet.');
     if (!isStudioMethod(method)) return answerError(id, 'unknown_method', `The studio doesn't know "${method}".`);
     const need = STUDIO_METHODS[method];
-    if (!permissions[need]) return answerError(id, 'not_allowed', `The musician hasn't allowed the agent to ${need === 'see' ? 'see what they select' : need} (they can change that in Fledgetone).`);
+    const notAllowed = () => answerError(id, 'not_allowed', `The musician hasn't allowed the agent to ${need === 'see' ? 'see what they select' : need} (they can change that in Fledgetone).`);
+    if (!permissions[need]) return notAllowed();
     const handler = opts.handlers[method];
     if (!handler) return answerError(id, 'unavailable', `The studio can't ${method.replace(/_/g, ' ')} yet.`);
     try {
       const p = typeof params === 'object' && params !== null && !Array.isArray(params) ? (params as Record<string, unknown>) : {};
-      answer(id, await handler(p, { method, id }));
+      const result = await handler(p, { method, id });
+      // Asked again once it's done (a listen takes a while): what the musician stopped allowing meanwhile, or a connection gone, gets nothing of it
+      if (state !== 'paired') return;
+      if (!permissions[need]) return notAllowed();
+      answer(id, result);
     } catch (err) {
+      if (state !== 'paired') return;
+      if (!permissions[need]) return notAllowed();
       if (err instanceof HandlerError) answerError(id, err.code, err.message, err.extra);
       else answerError(id, 'failed', err instanceof Error ? err.message : 'Something went wrong in the studio.');
     }

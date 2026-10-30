@@ -11,11 +11,13 @@
  * code (K7QM-3XPD-9TBW, 60 bits), the agent asks the musician to type it in the studio. Neither
  * end ever sends the code. The helper opens with a `hello` event carrying its nonce S. The studio
  * sends a `pair` request with its nonce C and no proof; the helper answers with its own proof,
- * HMAC-SHA-256(code, C.S.server), and a fresh nonce for any next try. The studio checks that
+ * HMAC-SHA-256(code, C.S.server.A), and a fresh nonce for any next try. The studio checks that
  * proof against the code it was given: only if it matches does it send `pair_confirm` with
- * HMAC(code, S.C.studio), and the helper pairs once that checks out. So the studio never gives
- * anything about the code to a program that hasn't proved it knows it (a program squatting on
- * the port learns nothing), and nothing about the song goes out before both have proved it.
+ * HMAC(code, S.C.studio.A), and the helper pairs once that checks out. A is the helper's address,
+ * 127.0.0.1:<port>: the port the helper listens on, and the one the studio dialed (pairingAddress),
+ * so a program on another port relaying frames to the helper fails the check. So the studio never
+ * gives anything about the code to a program that hasn't proved it knows it (a program squatting
+ * on the port learns nothing), and nothing about the song goes out before both have proved it.
  *
  * Without a PAKE, one side has to prove first, and its proof could be guessed at offline: here
  * that's the helper, to whatever connects. It answers at most five tries a connection and twenty
@@ -194,10 +196,18 @@ async function hmac(code: string, text: string): Promise<string> {
   return toB64url(new Uint8Array(await globalThis.crypto.subtle.sign('HMAC', key, enc.encode(text))));
 }
 
-/** The studio's proof that it knows the code: HMAC(code, S.C.studio). */
-export const studioProof = (code: string, serverNonce: string, studioNonce: string) => hmac(code, `${serverNonce}.${studioNonce}.studio`);
-/** The helper's proof that it knows the code: HMAC(code, C.S.server). */
-export const serverProof = (code: string, serverNonce: string, studioNonce: string) => hmac(code, `${studioNonce}.${serverNonce}.server`);
+/**
+ * The address both proofs are bound to: where the helper listens, as the studio dialed it
+ * (`127.0.0.1:<port>`). The helper uses the port it actually listens on and the studio the one it
+ * actually connected to, so a program on another port that passes frames on to the real helper
+ * (a relay) can't make the two proofs agree: pairing through it fails.
+ */
+export const pairingAddress = (port: number): string => `127.0.0.1:${Math.round(port)}`;
+
+/** The studio's proof that it knows the code: HMAC(code, S.C.studio.address). */
+export const studioProof = (code: string, serverNonce: string, studioNonce: string, address: string) => hmac(code, `${serverNonce}.${studioNonce}.studio.${address}`);
+/** The helper's proof that it knows the code: HMAC(code, C.S.server.address). */
+export const serverProof = (code: string, serverNonce: string, studioNonce: string, address: string) => hmac(code, `${studioNonce}.${serverNonce}.server.${address}`);
 
 /** Two proofs compared in time that doesn't depend on where they differ. */
 export function sameProof(a: unknown, b: unknown): boolean {

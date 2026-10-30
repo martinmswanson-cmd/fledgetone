@@ -8,6 +8,7 @@ import { buildGameKitParts, type AudioManifest } from '../../audio/gameKit';
 import { gameKitSong } from './gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio, liveMix } from '../../audio/engine';
+import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { showToast } from './toastStore';
 
 /**
@@ -192,12 +193,19 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [effect, setEffect] = useState<(typeof AUDITION_EFFECTS)[number]['id']>('none');
   const [params, setParams] = useState<Record<string, number>>({});
   const player = useRef<AdaptiveMusic | null>(null);
+  // The pads are the one preview playing (a suggestion's before-and-after, say, stops; another stops them)
+  const claim = useExclusivePreview('game-audition-pads', () => {
+    player.current?.stop();
+    setCurrent(null);
+    setPending(null);
+  });
 
   useEffect(() => {
     let cancelled = false;
     const st = useTimelineStore.getState();
     // (A Play still waiting for sounds is called off too: it would start under the audition)
     if (st.isPlaying || st.loadingToPlay) st.pause();
+    claim();
     (async () => {
       try {
         await initAudio();
@@ -219,7 +227,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       cancelled = true;
       player.current?.stop();
     };
-  }, [onClose]);
+  }, [onClose, claim]);
 
   // Show which state is playing, and which one is waiting for its line
   useEffect(() => {
@@ -237,6 +245,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const go = (name: string) => {
     const p = player.current;
     if (!p) return;
+    claim();
     if (!p.current) {
       p.play(name);
       setCurrent(name);
@@ -281,7 +290,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             {manifest.stingers.length > 0 && (
               <div className="flex flex-wrap gap-1.5" role="group" aria-label="Stingers">
                 {manifest.stingers.map((s) => (
-                  <button key={s.name} type="button" onClick={() => player.current?.stinger(s.name)} className="h-8 px-3 rounded-md border border-amber-400/50 text-amber-100 hover:bg-amber-500/15">
+                  <button key={s.name} type="button" onClick={() => (claim(), player.current?.stinger(s.name))} className="h-8 px-3 rounded-md border border-amber-400/50 text-amber-100 hover:bg-amber-500/15">
                     {s.name}
                   </button>
                 ))}

@@ -8,10 +8,11 @@
  * counted: each caller gets its own stop).
  *
  * Hearing a suggestion lives here too (hearSuggestion): it's made again on the song as it is now
- * first, so what's heard is what Accept would put in, and the version heard is noted.
+ * first, so what's heard is what Accept would put in, and the version heard is noted, once its
+ * Suggested side (B) has played (noteHeard: hearing only Now hears nothing of the suggestion).
  */
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
-import { forgetAudition, startAudition, stopAudition, useAudition } from '../audio/auditionPlayer';
+import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
 import { checkSuggestion, extKey, freshen, isOpen, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
 import { partsChanged } from './revision';
@@ -92,9 +93,33 @@ export function watchSong(onChange?: (ctx: SongContext) => void): () => void {
   };
 }
 
+/** What's rendered for a suggestion's version (the audition's renderKey). */
+export const renderKeyOf = (s: Pick<Suggestion, 'id' | 'version'>): string => `${s.id}:${s.version}`;
+
+/**
+ * Whether the audition playing now is suggestion `s` as it is: its current version, made on the
+ * song as it is now (not stale). Otherwise Now and Suggested render it again (hearSuggestion).
+ */
+export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'renderKey' | 'phase'> = useAudition.getState()): boolean {
+  return a.key === s.id && a.phase === 'playing' && a.renderKey === renderKeyOf(s) && !s.stale && isOpen(s);
+}
+
+/**
+ * Note a suggestion heard once its Suggested side (B) plays, of its current version on the song as
+ * it is now: only then does one press of Accept take it. Run on every change of the audition.
+ */
+export function noteHeard(a: AuditionState = useAudition.getState()): void {
+  if (a.key === null || a.phase !== 'playing' || a.hearing !== 'b') return;
+  const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
+  if (!s || s.heard === s.version || !auditionCurrent(s, a)) return;
+  // (heard now: an "Accept without listening" waiting from before goes back to Accept)
+  updateSuggestion(s.id, { heard: s.version, armed: null });
+}
+useAudition.subscribe((a) => noteHeard(a));
+
 /**
  * Hear suggestion `id` against the song now (bars of its focus, else its audition), made again on
- * the song as it is first. Once it plays, that version counts as heard.
+ * the song as it is first. Once its Suggested side plays, that version counts as heard (noteHeard).
  */
 export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Promise<void> {
   const found = useSuggestions.getState().suggestions.find((x) => x.id === id);
@@ -108,15 +133,14 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
   if (useTimelineStore.getState().isPlaying) useTimelineStore.getState().pause();
   await startAudition({
     key: id,
-    renderKey: `${id}:${s.version}`,
+    renderKey: renderKeyOf(s),
     now: listenSnapshot(nowSong),
     suggested: listenSnapshot(s.song),
     fromBar: range.fromBar,
     toBar: range.toBar,
     hearing,
   });
-  const a = useAudition.getState();
+  noteHeard();
   const after = useSuggestions.getState().suggestions.find((x) => x.id === id);
-  if (a.key === id && a.phase === 'playing' && after && after.version === s.version && isOpen(after)) updateSuggestion(id, { heard: s.version });
-  else if (after && !isOpen(after)) forgetAudition(id);
+  if (after && !isOpen(after)) forgetAudition(id);
 }

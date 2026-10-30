@@ -26,7 +26,7 @@ import { makeSuggestionFile, SUGGESTION_FORMAT } from '../../../src/agent/sugges
 import { previewOps } from '../../../src/agent/studioReads';
 import { LIMITS, RateLimiter, type StudioMethod } from '../../../src/agent/protocol';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
-import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED } from './bridgeServer';
+import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED, portTakenMessage } from './bridgeServer';
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
 import { checkProblems, suggestionIdBase } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
@@ -118,9 +118,12 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     ({ waitSeconds, newCode }) =>
       guard(async () => {
         if (bridge.isPaired) return { ...bridge.status(), connected: true };
+        // The port taken when the helper started: try it again (it isn't swapped for another by itself)
+        const port = await bridge.tryListen();
+        if (!port) throw new Error(portTakenMessage(bridge.portTaken ?? DEFAULT_PORT));
         const { code, expiresAt } = bridge.pairingCode(newCode === true);
-        const port = bridge.port;
-        const say = `Open Fledgetone, choose "Let an agent connect…" and type the code ${code}${port !== DEFAULT_PORT ? ` (with the port set to ${port})` : ''}.`;
+        // (always the port: the studio dials the one in its box, and pairing works only on the helper's own)
+        const say = `Open Fledgetone, choose "Let an agent connect…", type the code ${code} and check the port is ${port}${port !== DEFAULT_PORT ? ' (not the usual one)' : ''}.`;
         if (waitSeconds) {
           const connected = await bridge.waitForPairing(waitSeconds * 1000);
           return connected ? { ...bridge.status(), connected: true } : { connected: false, code, expiresAt, port, say, hint: 'Not paired yet: call again to keep waiting.' };

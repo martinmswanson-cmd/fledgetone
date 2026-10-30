@@ -10,6 +10,7 @@ import { Gamepad2, Loader2, RotateCcw, X } from 'lucide-react';
 import { masterFxOf, useTimelineStore } from '../../store/timelineStore';
 import { audibleTracks, renderArrangement } from '../../audio/exportWav';
 import { initAudio } from '../../audio/engine';
+import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { barToSeconds } from '../../audio/tempoMap';
 import { onTheBeat, showcaseData } from '../../store/showcase';
 import { buildChart, type RhythmDifficulty } from '../../store/rhythmChart';
@@ -43,6 +44,8 @@ let cache: { key: string; buffer: AudioBuffer } | null = null;
 export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => void }> = ({ picker, onClose }) => {
   const host = useRef<HTMLDivElement>(null);
   const game = useRef<RhythmGame | null>(null);
+  // The game's song is the one preview playing (a suggestion's before-and-after, say, stops)
+  const claim = useExclusivePreview('rhythm-try-out', () => game.current?.silence());
   const [buffer, setBuffer] = useState<AudioBuffer | null>(null);
   const [progress, setProgress] = useState('Rendering the song.');
   const [difficulty, setDifficulty] = useState<RhythmDifficulty>(() => {
@@ -72,6 +75,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
     const stop = new AbortController();
     const st = useTimelineStore.getState();
     if (st.isPlaying || st.loadingToPlay) st.pause();
+    claim();
     (async () => {
       try {
         await initAudio();
@@ -95,7 +99,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
       cancelled = true;
       stop.abort();
     };
-  }, [notes, onClose]);
+  }, [notes, onClose, claim]);
 
   // The game: made again when the chart or the offset changes
   useEffect(() => {
@@ -112,12 +116,13 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
     });
     game.current = g;
     setResult(null);
+    claim();
     g.start();
     return () => {
       g.dispose();
       game.current = null;
     };
-  }, [buffer, chart, offset, difficulty]);
+  }, [buffer, chart, offset, difficulty, claim]);
 
   // The game takes its keys while it's open; R restarts, Esc closes
   useEffect(() => {
@@ -132,6 +137,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
       e.stopImmediatePropagation();
       if (down && e.code === 'KeyR' && !e.repeat) {
         setResult(null);
+        claim();
         game.current?.start();
         return;
       }
@@ -145,10 +151,11 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
       window.removeEventListener('keydown', onDown, true);
       window.removeEventListener('keyup', onUp, true);
     };
-  }, [onClose]);
+  }, [onClose, claim]);
 
   const restart = () => {
     setResult(null);
+    claim();
     game.current?.start();
   };
 

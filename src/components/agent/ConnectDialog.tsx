@@ -15,16 +15,6 @@ import { returnFocus } from './returnFocus';
 /** The privacy line, word for word (also in the guide and the command line's help). */
 export const PRIVACY_LINE = 'Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.';
 
-const PORT_KEY = 'fledgetone.agentPort';
-const readPort = () => {
-  try {
-    const n = Number(localStorage.getItem(PORT_KEY));
-    return Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_PORT;
-  } catch {
-    return DEFAULT_PORT;
-  }
-};
-
 /** The port as typed, or null if it isn't one. */
 const portOf = (text: string): number | null => {
   const n = Number(text.trim());
@@ -43,7 +33,9 @@ export const ConnectDialog: React.FC = () => {
   const info = useSuggestions((s) => s.connection);
   const permissions = useSuggestions((s) => s.permissions);
   const [code, setCode] = React.useState('');
-  const [portText, setPortText] = React.useState(() => String(readPort()));
+  // (the usual port each time, never the last one typed: the agent says the port with every code,
+  // and an old one remembered could be dialed after its helper moved, to whatever holds it now)
+  const [portText, setPortText] = React.useState(() => String(DEFAULT_PORT));
   const port = portOf(portText);
   // (a new pairing starts from reading only, whatever a previous agent was allowed)
   const [ask, setAsk] = React.useState<Permissions>(() => (info.state === 'paired' ? { ...permissions } : { ...DEFAULT_PERMISSIONS }));
@@ -67,11 +59,6 @@ export const ConnectDialog: React.FC = () => {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || port === null) return;
-    try {
-      localStorage.setItem(PORT_KEY, String(port));
-    } catch {
-      // Not kept: it starts at the default next time
-    }
     // (what's ticked now goes with every try, a second one too)
     if (info.state === 'wrong_code' && retryCode(code, ask)) return;
     connectAgent(code, port, ask);
@@ -132,7 +119,7 @@ export const ConnectDialog: React.FC = () => {
                 className="h-8 w-24 px-2 rounded-md border border-forge-border bg-forge-bg font-mono text-forge-text"
                 aria-label="Port the helper listens on"
               />
-              <span className="text-[11px]">{port === null ? 'A port is a number from 1 to 65535.' : port === DEFAULT_PORT ? 'The usual one. Change it only if your agent says another.' : 'Your agent said this one.'}</span>
+              <span className="text-[11px]">{port === null ? 'A port is a number from 1 to 65535.' : port === DEFAULT_PORT ? 'The usual one. Change it only if your agent says another.' : 'Only the one your agent said.'}</span>
             </label>
           </>
         )}

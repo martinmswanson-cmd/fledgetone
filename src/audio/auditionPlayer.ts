@@ -8,7 +8,9 @@
  *
  * Ears first: playback fades in, every switch and the stop fade, and a B more than LOUDER_LIMIT_LU
  * louder than A is played turned down to A + LOUDER_LIMIT_LU (the note says so). The caller pauses
- * the song's own playback first. A small store says what's happening, for the suggestion card.
+ * the song's own playback first, and it's one preview among the app's others: starting, it stops
+ * any other (Try it in a game, the audition pads...), and another starting stops it
+ * (exclusivePreview.ts). A small store says what's happening, for the suggestion card.
  */
 import { create } from 'zustand';
 import { liveContext, afterMaster } from './liveContext';
@@ -16,6 +18,7 @@ import { initAudio } from './engine';
 import { measureRender, renderRange, type ListenSnapshot } from './listen';
 import type { Tempo } from './tempoMap';
 import { sameBarOffset } from './auditionMath';
+import { claimPreview, registerPreview } from './exclusivePreview';
 
 /** How long a switch between A and B takes, seconds. */
 export const SWITCH_SECONDS = 0.02;
@@ -27,6 +30,8 @@ export const LOUDER_LIMIT_LU = 6;
 export interface AuditionState {
   /** The suggestion being heard (null: none). */
   key: string | null;
+  /** Exactly what's rendered for it (the caller's renderKey: the suggestion's version), or null. */
+  renderKey: string | null;
   phase: 'idle' | 'rendering' | 'playing';
   /** Rendering: how far, 0 to 1. */
   progress: number;
@@ -40,7 +45,7 @@ export interface AuditionState {
   bars: [number, number] | null;
 }
 
-export const useAudition = create<AuditionState>(() => ({ key: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, note: null, error: null, bars: null }));
+export const useAudition = create<AuditionState>(() => ({ key: null, renderKey: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, note: null, error: null, bars: null }));
 
 type Side = 'a' | 'b';
 
@@ -76,6 +81,9 @@ function ramp(param: AudioParam, to: number, seconds: number) {
   param.setValueAtTime(param.value, now);
   param.linearRampToValueAtTime(to, now + seconds);
 }
+
+/** This player's name among the previews (exclusivePreview.ts). */
+const AUDITION_PREVIEW = 'suggestion';
 
 /** Stop hearing (fading out). The renders are kept for next time. */
 export function stopAudition(): void {
@@ -171,7 +179,7 @@ const tempoOf = (s: ListenSnapshot): Tempo => ({ bpm: s.bpm, points: s.tempoPoin
 export async function startAudition(opts: { key: string; renderKey: string; now: ListenSnapshot; suggested: ListenSnapshot; fromBar: number; toBar: number; hearing?: Side }): Promise<void> {
   stopAudition();
   const hearing = opts.hearing ?? 'b';
-  useAudition.setState({ key: opts.key, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: [opts.fromBar, opts.toBar] });
+  useAudition.setState({ key: opts.key, renderKey: opts.renderKey, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: [opts.fromBar, opts.toBar] });
   const controller = new AbortController();
   rendering = controller;
   try {
@@ -204,6 +212,8 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     const voices = { a: loopVoice(ctx, pair.a, gains.a, at, 0, false), b: loopVoice(ctx, pair.b, gains.b, at, 0, false) };
     master.gain.setValueAtTime(0, at);
     master.gain.linearRampToValueAtTime(1, at + FADE_SECONDS);
+    // The one preview playing: Try it in a game, the audition pads, the SFX maker... stop
+    claimPreview(AUDITION_PREVIEW);
     playing = { voices, began: { a: at, b: at }, tempo: { a: tempoOf(opts.now), b: tempoOf(opts.suggested) }, fromBar: opts.fromBar, buffers: { a: pair.a, b: pair.b }, gains, heard: hearing, bLevel: pair.bLevel, master };
     const diff = pair.diff;
     useAudition.setState({
@@ -218,3 +228,6 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     useAudition.setState({ phase: 'idle', error: err instanceof Error ? err.message : String(err) });
   }
 }
+
+// Another preview starting stops this one (one at a time, see exclusivePreview.ts)
+registerPreview(AUDITION_PREVIEW, stopAudition);

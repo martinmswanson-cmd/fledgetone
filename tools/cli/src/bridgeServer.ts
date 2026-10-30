@@ -18,6 +18,7 @@ import {
   CONVERSATION,
   encodeMessage,
   hostAllowed,
+  pairingAddress,
   LIMITS,
   newNonce,
   newPairingCode,
@@ -35,11 +36,20 @@ import {
   type StudioMethod,
 } from '../../../src/agent/protocol';
 
-/** The port the helper listens on unless told otherwise (a random one when it's taken). */
+/**
+ * The port the helper listens on unless told otherwise. When it's taken the helper doesn't move
+ * to another by itself (the musician's studio would still dial this one, and find whatever holds
+ * it): it says so, keeps trying it whenever connect_studio is called, and the file tools work
+ * meanwhile. `--port 0` asks for any free port, `--port <n>` for that one.
+ */
 export const DEFAULT_PORT = 47123;
 
+/** What the agent and the musician are told while the port is taken. */
+export const portTakenMessage = (port: number): string =>
+  `Port ${port} on this computer is taken by another program (perhaps another Fledgetone helper), so the studio can't connect to this helper. Close that program and call connect_studio again, or restart this helper with --port 0 (any free port) or --port <another number>, and then the musician types that port in Fledgetone too. The file tools work meanwhile.`;
+
 export interface BridgeServerOptions {
-  /** The port: DEFAULT_PORT when absent, 0 for a random one. */
+  /** The port: DEFAULT_PORT when absent (not moved from if taken, see DEFAULT_PORT), 0 for a random one. */
   port?: number;
   /** Let the dev server's pages connect (localhost:5173 and 5200). */
   dev?: boolean;
@@ -123,6 +133,8 @@ export class BridgeServer {
   private readonly listeners = new Set<(e: StudioEventRecord) => void>();
   private readonly opts: BridgeServerOptions;
   port = 0;
+  /** The port wanted, while it's taken by another program (nothing listens here then). */
+  portTaken: number | null = null;
   /** Looks at each studio event before it's kept: its params as kept, or DROP (the conversation's check of user_message, conversation.ts). */
   eventFilter: ((event: string, params: unknown) => unknown) | null = null;
 
@@ -134,18 +146,33 @@ export class BridgeServer {
     (this.opts.log ?? ((t: string) => process.stderr.write(`fledgetone: ${t}\n`)))(text);
   }
 
-  /** Start listening; resolves with the port. The default port, if taken, falls back to a random one. */
+  /**
+   * Start listening; resolves with the port. A port given with --port that's taken is an error. The
+   * default port, if taken, isn't swapped for another (see DEFAULT_PORT): it resolves with 0, says
+   * so on stderr, and listen() tries it again later (connect_studio does).
+   */
   async start(): Promise<number> {
+    if (!this.heartbeat) {
+      this.heartbeat = setInterval(() => this.beat(), LIMITS.heartbeatMs);
+      this.heartbeat.unref?.();
+    }
+    return this.tryListen();
+  }
+
+  /** Listen on the port wanted, if not already: the port, or 0 while the default one is taken. */
+  async tryListen(): Promise<number> {
+    if (this.wss) return this.port;
     const want = this.opts.port ?? DEFAULT_PORT;
     try {
       this.port = await this.listen(want);
     } catch (err) {
       if (this.opts.port !== undefined || (err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
-      this.log(`port ${want} is taken: listening on another`);
-      this.port = await this.listen(0);
+      if (this.portTaken !== want) this.log(portTakenMessage(want));
+      this.portTaken = want;
+      this.port = 0;
+      return 0;
     }
-    this.heartbeat = setInterval(() => this.beat(), LIMITS.heartbeatMs);
-    this.heartbeat.unref?.();
+    this.portTaken = null;
     this.log(`waiting for the studio on 127.0.0.1:${this.port}`);
     return this.port;
   }
@@ -276,7 +303,8 @@ export class BridgeServer {
     if (code.tries >= LIMITS.triesPerCode) this.retire(code);
     conn.busy = true;
     try {
-      const proof = await serverProof(code.plain, serverNonce, p.nonce);
+      // (bound to the port this helper listens on: the studio binds the one it dialed, so a relay on another port fails)
+      const proof = await serverProof(code.plain, serverNonce, p.nonce, pairingAddress(this.port));
       if (conn.dead) return;
       this.send(conn, { kind: 'res', id: m.id, result: { proof, nonce: conn.nonce, attemptsLeft } });
     } finally {
@@ -296,7 +324,7 @@ export class BridgeServer {
     conn.busy = true;
     let ok: boolean;
     try {
-      ok = sameProof(proof, await studioProof(ex.code.plain, ex.serverNonce, ex.studioNonce));
+      ok = sameProof(proof, await studioProof(ex.code.plain, ex.serverNonce, ex.studioNonce, pairingAddress(this.port)));
     } finally {
       conn.busy = false;
     }
@@ -429,8 +457,7 @@ export class BridgeServer {
   status() {
     return {
       listening: this.wss !== null,
-      address: `ws://127.0.0.1:${this.port}`,
-      port: this.port,
+      ...(this.wss ? { address: `ws://127.0.0.1:${this.port}`, port: this.port } : this.portTaken !== null ? { port: this.portTaken, portTaken: true, problem: portTakenMessage(this.portTaken) } : {}),
       connected: this.paired !== null,
       ...(this.paired?.studio ? { studio: this.paired.studio } : {}),
       ...(this.code && !this.code.done && !this.code.retired && this.code.expires > Date.now() ? { codeWaiting: true } : {}),

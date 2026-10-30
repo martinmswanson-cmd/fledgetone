@@ -43,6 +43,7 @@ import {
 import { SFX_MATERIAL_LABELS, SFX_MATERIALS } from '../../audio/sfx/sfxModern';
 import { ensureSfxRecordings, sfxRecordingsReady } from '../../audio/sfx/sfxRecordings';
 import { SFX_RECORDING_SETS } from '../../audio/sfx/sfxRecordingSets';
+import { claimPreview, registerPreview } from '../../audio/exclusivePreview';
 
 interface Made {
   name: string;
@@ -200,6 +201,8 @@ function stop() {
   playing = null;
   playListeners.forEach((l) => l());
 }
+// Another preview starting stops these
+registerPreview('sfx-maker', stop);
 
 /** Play rendered samples (mono, or stereo channels) now (a loop goes round until stopped), stopping whatever was playing. */
 async function audition(samples: Float32Array | Float32Array[], sampleRate: number, loop = false, when = 0) {
@@ -213,6 +216,8 @@ async function audition(samples: Float32Array | Float32Array[], sampleRate: numb
   src.loop = loop;
   src.connect(afterMaster());
   if (!when) stop();
+  // (the one preview playing: a suggestion's before-and-after, say, stops)
+  claimPreview('sfx-maker');
   src.start(ctx.currentTime + when);
   playing = src;
   sounding.add(src);
