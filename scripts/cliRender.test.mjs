@@ -191,6 +191,9 @@ test('downloads: a proxy from the environment, and only whole files of the right
   assert.equal(br.proxyFromEnv({}), null);
   assert.deepEqual(br.proxyFromEnv({ HTTPS_PROXY: 'http://127.0.0.1:3128', NO_PROXY: 'example.org, .corp' }), { server: 'http://127.0.0.1:3128', bypass: '127.0.0.1,localhost,example.org,.corp' });
   assert.deepEqual(br.proxyFromEnv({ https_proxy: 'http://me:p%40ss@proxy.lan:8080' }), { server: 'http://proxy.lan:8080', bypass: '127.0.0.1,localhost', username: 'me', password: 'p@ss' });
+  assert.equal(br.proxyFromEnv({ HTTPS_PROXY: 'http://127.0.0.1:3128', NO_PROXY: '*' }), null, 'NO_PROXY=* means no proxy');
+  assert.equal(br.downloadProblem('fledgetone-plugins/surge/patches/Lead.fxp', 'application/octet-stream', Buffer.from('CcnK')), null, 'presets are kept');
+  assert.match(br.downloadProblem('x/Lead.fxp', 'text/html', Buffer.from('<html>')), /came as text\/html/);
   const mp3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(100)]);
   assert.equal(br.downloadProblem('a/C4_0_0.mp3@abc', 'audio/mpeg', mp3), null);
   assert.equal(br.downloadProblem('https://fledgetone.com/app/fledgetone-samples/x/C4.mp3?v=1', 'audio/mpeg', mp3), null);

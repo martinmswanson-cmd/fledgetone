@@ -141,10 +141,10 @@ async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
   return project;
 }
 
-/** The plugins the tracks that sound play from other sites (not Fledgetone's built-in ones). */
+/** The plugins the tracks that sound play from other sites (not Fledgetone's built-in ones; a bypassed one plays no part). */
 export function outsidePlugins(tracks: ProjectSnapshot['tracks']): Array<{ track: string; plugin: string; url: string }> {
   return audibleTracks(tracks).flatMap((t) =>
-    [t.plugin, ...(t.pluginFx ?? [])].filter((x) => !!x && !x.url.startsWith('builtin:')).map((x) => ({ track: t.name, plugin: x!.name || 'a plugin', url: x!.url }))
+    [t.plugin, ...(t.pluginFx ?? [])].filter((x) => !!x && !x.bypass && !x.url.startsWith('builtin:')).map((x) => ({ track: t.name, plugin: x!.name || 'a plugin', url: x!.url }))
   );
 }
 

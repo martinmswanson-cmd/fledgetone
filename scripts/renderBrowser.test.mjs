@@ -187,6 +187,11 @@ test('built-in plugins play from this copy (offline); plugins from other sites a
   assert.equal(r.code, 2);
   assert.match(r.stderr, /plugins from other sites.*"Keys" plays Web Reverb \(from https:\/\/plugins\.example\/reverb\/index\.js\).*Export it from the studio instead/s);
   assert.ok(!existsSync(join(work, 'web.wav')));
+  // Bypassed, it plays no part: the song renders
+  song.tracks.find((t) => t.name === 'Keys').pluginFx[0].bypass = true;
+  writeFileSync(join(work, 'web-plugin-off.fledgetone.json'), JSON.stringify(song));
+  const off = await cli('listen', 'web-plugin-off.fledgetone.json', '--bars', '1', '--offline');
+  assert.equal(off.code, 0, off.stderr);
   const l = await cli('listen', 'web-plugin.fledgetone.json', '--bars', '1', '--offline');
   assert.equal(l.code, 2);
   assert.match(l.stderr, /plugins from other sites/);

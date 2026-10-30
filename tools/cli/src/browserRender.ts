@@ -221,10 +221,10 @@ export function proxyFromEnv(env: NodeJS.ProcessEnv = process.env): { server: st
   } catch {
     return null;
   }
-  const noProxy = (env.NO_PROXY || env.no_proxy || '')
-    .split(',')
-    .map((x) => x.trim())
-    .filter((x) => x && x !== '*' && !/\s/.test(x));
+  const noProxyList = (env.NO_PROXY || env.no_proxy || '').split(',').map((x) => x.trim());
+  // (NO_PROXY=* : nothing goes through it)
+  if (noProxyList.includes('*')) return null;
+  const noProxy = noProxyList.filter((x) => x && !/\s/.test(x));
   const bypass = [...new Set(['127.0.0.1', 'localhost', ...noProxy])].join(',');
   return {
     server: `${url.protocol}//${url.host}`,
@@ -411,7 +411,7 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
           }
           return route.fulfill({ status: response.status(), headers: { ...response.headers(), 'access-control-allow-origin': '*' }, body });
         } catch (err) {
-          const why = ((err as Error).message ?? '').split('\n')[0];
+          const why = ((err as Error).message ?? '').split('\n')[0].replace(/^(route\.fetch: )+/, '');
           downloadFailed = true;
           opts.onLog?.(`couldn't download ${url}: ${why}`);
           return route.abort('failed');
@@ -496,6 +496,8 @@ const KINDS: Array<{ ext: RegExp; types: RegExp; magic: (b: Buffer) => boolean }
   { ext: /\.ogg$/i, types: /^(audio\/ogg|application\/ogg|application\/octet-stream)/i, magic: (b) => b.toString('latin1', 0, 4) === 'OggS' },
   { ext: /\.wasm$/i, types: /^(application\/wasm|application\/octet-stream)/i, magic: (b) => b[0] === 0 && b.toString('latin1', 1, 4) === 'asm' },
   { ext: /\.wav$/i, types: /^(audio\/(wav|x-wav|wave)|application\/octet-stream)/i, magic: (b) => b.toString('latin1', 0, 4) === 'RIFF' },
+  // (a plugin's preset: binary, any first bytes)
+  { ext: /\.fxp$/i, types: /^(application\/octet-stream|application\/x-fxp|binary\/octet-stream)/i, magic: () => true },
   { ext: /\.json$/i, types: /^(application\/json|text\/plain|application\/octet-stream)/i, magic: (b) => /^\s*[[{]/.test(b.toString('utf8', 0, 64)) },
 ];
 /** The biggest file a download may be (the largest plugin is about 10 MB, a recording well under 1). */
