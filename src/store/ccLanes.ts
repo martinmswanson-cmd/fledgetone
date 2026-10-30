@@ -1,6 +1,6 @@
 import type { AutomationLane, AutomationParam, Clip, Track } from './timelineTypes';
 import { laneCc, lanesOf } from './expression';
-import { normalizePoints } from '../audio/automation';
+import { normalizePoints, specOf } from '../audio/automation';
 import { isLiveParam } from './freeze';
 
 /**
@@ -9,7 +9,10 @@ import { isLiveParam } from './freeze';
  * the usual meaning of the common controllers (7 volume, 10 pan, 74 cutoff...). Over the song the
  * clips' lanes become automation lanes of their tracks, played by the automation engine live and
  * in exports. A track's own automation lane for the same setting wins. (Plugins also get the
- * controller itself, as MIDI: see the scheduler.)
+ * controller itself, as MIDI: see the scheduler.) As the MIDI does (ccHold.ts), the setting is the
+ * track's own until the first clip's lane, each clip's lane starts at its first point's value from
+ * the clip's start, and the value a clip leaves holds until the next clip's lane starts there: a
+ * step, never a glide across the gap between clips.
  */
 
 /** What the common controllers move when the track hasn't mapped them. */
@@ -45,9 +48,22 @@ export function controllerLanes(track: Track, clips: readonly Clip[]): Automatio
       if (track.freezing && isLiveParam(param)) continue;
       const points = (clip.expression![lane] ?? []).filter((p) => p.at >= -1e-9 && p.at <= clip.lengthBars + 1e-9);
       if (!points.length) continue;
-      const list = byParam.get(param) ?? [];
+      let list = byParam.get(param);
+      if (!list) {
+        list = [];
+        // Before it, the track's own setting (a plugin's parameter: as before, the lane's first value)
+        if (!param.startsWith('plugin:')) {
+          const spec = specOf(param, track);
+          list.push({ bar: Math.min(1, clip.startBar), value: spec.toNorm(spec.trackValue(track)) });
+        }
+        byParam.set(param, list);
+      }
+      // Held (the track's own, or what the clip before left) until this clip starts
+      const last = list[list.length - 1];
+      if (last && last.bar < clip.startBar) list.push({ bar: clip.startBar, value: last.value });
+      // From the clip's start, its first point's value (where there's no point at its start)
+      if (points[0].at > 1e-9) list.push({ bar: clip.startBar, value: points[0].value });
       for (const p of points) list.push({ bar: clip.startBar + p.at, value: p.value });
-      byParam.set(param, list);
     }
   }
   return [...byParam].map(([param, points]) => ({ param, points: normalizePoints(points) }));

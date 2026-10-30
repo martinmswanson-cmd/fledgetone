@@ -21,7 +21,7 @@ const MARKS = /[\uE000\uE001]/g;
  * the double quote (primes, ditto marks, the Hebrew gershayim...). The apostrophes (' and ’) and
  * the single opening quote stay: a name in double quotes can't be closed by them, and names use them.
  */
-const QUOTES_AND_BRACKETS = /(?![\u2018\u2019'])[\p{Ps}\p{Pe}\p{Pi}\p{Pf}"<>\uFF02\uFF1C\uFF1E\u2033\u2034\u2036\u2057\u3003\u05F4\u02DD\u02BA\u02EE\u030B\u030E\u02F5\u02F6\u201F\u2E42\u301D-\u301F]/gu;
+const QUOTES_AND_BRACKETS = /(?![\u2018\u2019'])(?:[\p{Ps}\p{Pe}\p{Pi}\p{Pf}"<>\uFF02\uFF1C\uFF1E\u2033\u2034\u2036\u2057\u3003\u05F4\u02DD\u02BA\u02EE\u02F5\u02F6\u201F\u2E42\u301D-\u301F]|\u030B|\u030E)/gu;
 
 /** A name for plain text: its quote and bracket characters (and name marks) gone (a bracket as a space), on one line; "…" if nothing is left. */
 export function textName(name: unknown): string {

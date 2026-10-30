@@ -352,6 +352,55 @@ test("a listen from where a pad's chord has just ended hears its release, as the
   for (const f of ['ambient.fledgetone.json', 'pad.fledgetone.json']) rmSync(join(work, f));
 });
 
+test('an mda instrument plays every note of a chord: the JX10 chord is not its top note alone', { skip, timeout: 300_000 }, async () => {
+  const song = (name, notes) => ({
+    format: 'fledgetone-project',
+    version: 1,
+    name,
+    bpm: 120,
+    swing: 0,
+    loopRegion: { inBar: 1, outBar: 3, enabled: false },
+    tracks: [{ id: 't1', name: 'Keys', instrumentKey: 'plugin', volume: -12, pan: 0, reverbSend: 0, delaySend: 0, plugin: { id: 'p1', url: 'builtin:mda/JX10', name: 'JX10', state: { builtin: 1, program: 0 } } }],
+    clips: [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, notes: notes.map((n, i) => ({ id: `n${i}`, note: n, startOffset: 0, duration: '1n', velocity: 0.8 })) }],
+  });
+  writeFileSync(join(work, 'chord.fledgetone.json'), JSON.stringify(song('chord', ['C3', 'E3', 'G3', 'C4'])));
+  writeFileSync(join(work, 'top.fledgetone.json'), JSON.stringify(song('top', ['C4'])));
+  for (const f of ['chord', 'top']) {
+    const r = await cli('render', `${f}.fledgetone.json`, '-o', `${f}.wav`, '--offline', '--target', 'none');
+    assert.equal(r.code, 0, r.stderr);
+  }
+  assert.ok(!readFileSync(join(work, 'chord.wav')).equals(readFileSync(join(work, 'top.wav'))), 'the chord sounds like its top note alone');
+  const [chord, top] = [await listenJson('chord.fledgetone.json', '1'), await listenJson('top.fledgetone.json', '1')];
+  // Four notes against one: clearly louder (it was the same, to the byte)
+  assert.ok(chord.mix.lufs - top.mix.lufs > 2, `chord ${chord.mix.lufs} LUFS, top note ${top.mix.lufs} LUFS`);
+  for (const f of ['chord.fledgetone.json', 'top.fledgetone.json', 'chord.wav', 'top.wav']) rmSync(join(work, f));
+});
+
+test("a controller lane mapped to a setting (CC 11, expression) leaves the bars before its clip at the track's own level", { skip, timeout: 300_000 }, async () => {
+  // A bass in bars 1-2 and 5-6; the clip of bars 5-6 has an expression lane at 10%
+  const notes = (p) => [0, 1].map((b) => ({ id: `${p}${b}`, note: 'C2', startOffset: b, duration: '2n', velocity: 0.8 }));
+  const song = (lane) => ({
+    format: 'fledgetone-project',
+    version: 1,
+    name: 'swell',
+    bpm: 120,
+    swing: 0,
+    loopRegion: { inBar: 1, outBar: 7, enabled: false },
+    tracks: [{ id: 't1', name: 'Bass', instrumentKey: 'bass', volume: -6, pan: 0, reverbSend: 0, delaySend: 0 }],
+    clips: [
+      { id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, notes: notes('a') },
+      { id: 'c2', trackId: 't1', name: 'B', startBar: 5, lengthBars: 2, notes: notes('b'), ...(lane ? { expression: { cc11: [{ at: 0, value: 0.1 }] } } : {}) },
+    ],
+  });
+  writeFileSync(join(work, 'swell-lane.fledgetone.json'), JSON.stringify(song(true)));
+  writeFileSync(join(work, 'swell-plain.fledgetone.json'), JSON.stringify(song(false)));
+  const [lane, plain] = [await listenJson('swell-lane.fledgetone.json', '1-6'), await listenJson('swell-plain.fledgetone.json', '1-6')];
+  for (const b of [0, 1]) assert.ok(Math.abs(lane.bars[b].lufs - plain.bars[b].lufs) < 0.1, `bar ${b + 1}: ${lane.bars[b].lufs} with the lane, ${plain.bars[b].lufs} without`);
+  // In its own clip the lane turns it down (10% of the fader is under its floor: silent)
+  assert.ok(plain.bars[4].lufs - (lane.bars[4].lufs ?? -Infinity) > 6, `bar 5: ${lane.bars[4].lufs} with the lane, ${plain.bars[4].lufs} without`);
+  for (const f of ['swell-lane.fledgetone.json', 'swell-plain.fledgetone.json']) rmSync(join(work, f));
+});
+
 test('stems: never matched to a loudness target (and the summary says so); an MP3 stem\'s length includes the ring-out', { skip, timeout: 300_000 }, async () => {
   const r = await cli('render', SONG, '--stems', 'stems-wav', '--target', 'club', '--bars', '1-2', '--offline', '--json');
   assert.equal(r.code, 0, r.stderr);

@@ -76,13 +76,17 @@ test('a controller moved and not set by then goes back to rest (a loop going rou
   // Loop of bars 1-9; the wheel goes up in bar 5: round again at bar 1 it must be down
   const lists = [clipCcEvents(clip(5, 2, { cc1: [{ at: 0, value: 1 }], cc11: [{ at: 0, value: 0.2 }], cc7: [{ at: 0, value: 0.1 }], cc74: [{ at: 0, value: 0.9 }] }))];
   assert.deepEqual(heldCcAt(lists, 1), [], 'a fresh plugin: nothing sent');
-  assert.deepEqual(heldCcAt(lists, 1, new Set([1, 7, 11, 74])), [[1, 0], [7, 100 / 127], [11, 1], [74, 64 / 127]]);
+  // Only the ones with a rest MIDI defines: volume and cutoff are left where the plugin has them
+  // (its own start isn't a standard one: the JX10's filter and resonance aren't at their middle)
+  assert.deepEqual(heldCcAt(lists, 1, new Set([1, 7, 11, 74])), [[1, 0], [11, 1]]);
   assert.deepEqual(heldCcAt(lists, 6, new Set([1])), [[1, 1], [7, 0.1], [11, 0.2], [74, 0.9]], 'past it, held');
   // One whose lane was taken away since it was sent
   assert.deepEqual(heldCcAt([], 3, new Set([2])), [[2, 0]]);
   assert.equal(restingCc(1), 0);
   assert.equal(restingCc(64), 0);
-  assert.equal(restingCc(10), 64 / 127);
+  assert.equal(restingCc(11), 1);
+  for (const cc of [2, 4, 65, 66, 67, 68, 69]) assert.equal(restingCc(cc), 0, `CC ${cc}`);
+  for (const cc of [3, 7, 8, 10, 70, 71, 74, 79, 91, 93, 119]) assert.equal(restingCc(cc), null, `CC ${cc}`);
 });
 
 test('Stop resets a plugin\'s controllers (Reset All Controllers), and the schedule sets them again where it starts', () => {

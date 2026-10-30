@@ -20,7 +20,7 @@ const { noteValueAt, noteSteps, isExpressive, normalizeNoteExpression } = await 
 const { createTake } = await import('../src/store/recording.ts');
 const { normalizeExpression, laneCc, lanesOf } = await import('../src/store/expression.ts');
 
-const track = (extra = {}) => ({ id: 't', name: 'Lead', instrumentKey: 'lead', fx: {}, ...extra });
+const track = (extra = {}) => ({ id: 't', name: 'Lead', instrumentKey: 'lead', volume: -6, pan: 0, fx: {}, ...extra });
 const clip = (startBar, expression) => ({ id: `c${startBar}`, trackId: 't', name: 'c', startBar, lengthBars: 1, notes: [], expression });
 
 test('controller lanes are read from files and named by number', () => {
@@ -37,7 +37,8 @@ test("a clip's controller lane becomes its track's automation of the setting it'
   assert.equal(ccTarget(track(), 20), undefined);
   const clips = [clip(3, { cc7: [{ at: 0, value: 0.2 }, { at: 0.5, value: 0.8 }] }), clip(1, { cc7: [{ at: 0, value: 1 }] })];
   const lanes = controllerLanes(track(), clips);
-  assert.deepEqual(lanes, [{ param: 'volume', points: [{ bar: 1, value: 1 }, { bar: 3, value: 0.2 }, { bar: 3.5, value: 0.8 }] }]);
+  // (From the clip at bar 1 on; held from its end until the clip at bar 3 starts, then a step)
+  assert.deepEqual(lanes, [{ param: 'volume', points: [{ bar: 1, value: 10 ** (-12 / 80) }, { bar: 1, value: 1 }, { bar: 3, value: 1 }, { bar: 3, value: 0.2 }, { bar: 3.5, value: 0.8 }] }]);
   // The track's own lane for the setting wins
   assert.deepEqual(controllerLanes(track({ automation: [{ param: 'volume', points: [{ bar: 1, value: 0.5 }] }] }), clips), []);
   // A frozen track's view keeps only its live settings' lanes; the copy rendered into the freeze the others
@@ -51,6 +52,28 @@ test("a clip's controller lane becomes its track's automation of the setting it'
   assert.equal(a, b);
   assert.notEqual(a[0], tracks[0]);
   assert.equal(withControllerLanes(tracks, [clip(1, { bend: [{ at: 0, value: 1 }] })]), tracks);
+});
+
+test("before a track's first controller lane its own setting plays, and between clips the value holds", async () => {
+  const { laneValueAt } = await import('../src/audio/automation.ts');
+  // A swell (CC 11) in bars 3 and 6: bars 1-2 at the track's own volume, not the swell's first value
+  const clips = [clip(3, { cc11: [{ at: 0.25, value: 0.3 }, { at: 1, value: 0.9 }] }), clip(6, { cc11: [{ at: 0, value: 0.1 }, { at: 1, value: 0.5 }] })];
+  const [lane] = controllerLanes(track(), clips);
+  const own = 10 ** (-12 / 80);
+  for (const bar of [1, 1.5, 2, 2.99]) assert.equal(laneValueAt(lane.points, bar), own, `bar ${bar}`);
+  // From the clip's start, its first point's value (as its MIDI)
+  assert.equal(laneValueAt(lane.points, 3), 0.3);
+  assert.equal(laneValueAt(lane.points, 3.2), 0.3);
+  // Between the clips: held at what the first left (no glide down to the next one's start), then a step
+  for (const bar of [4, 4.5, 5, 5.99]) assert.equal(laneValueAt(lane.points, bar), 0.9, `bar ${bar}`);
+  assert.equal(laneValueAt(lane.points, 6), 0.1);
+  assert.ok(Math.abs(laneValueAt(lane.points, 6.5) - 0.3) < 1e-9);
+  assert.equal(laneValueAt(lane.points, 9), 0.5);
+  // Pan: the track's own pan first
+  const [pan] = controllerLanes(track({ pan: -0.5 }), [clip(2, { cc10: [{ at: 0, value: 1 }] })]);
+  assert.equal(pan.param, 'pan');
+  assert.ok(Math.abs(laneValueAt(pan.points, 1.5) - 0.25) < 1e-9, String(laneValueAt(pan.points, 1.5)));
+  assert.equal(laneValueAt(pan.points, 2), 1);
 });
 
 test('a note bends and swells on its own', () => {

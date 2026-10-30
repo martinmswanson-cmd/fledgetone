@@ -662,6 +662,9 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   it's turned down (paramLimits.ts).
 - Seeking while playing lets every instrument's sounding notes ring to their written end (Stop and
   Pause release them).
+- The mda JX10 sounds about 1.5 dB darker in its highs (over 5 kHz, at about -72 dB) when bars
+  1-2 are played again after Stop or a loop going round than the first time, with or without
+  controller lanes: its own running state (likely its LFO's phase), not the controllers.
 
 ## On hold
 

@@ -31,7 +31,13 @@ instrument) or passes it (an effect) without NaNs.
 - **Airwindows**: Airwin Consolidated's sources as they are, with `airwindows/bb_airwin.cpp`.
 - **MDA**: the 2015 mda-vst source release, built against `mda/audioeffectx.h` (our own small
   stand-in for the plug-in SDK it was written for, which can't be redistributed). Instruments
-  get an output trim so they sit at the app's level.
+  get an output trim so they sit at the app's level. Their MIDI is queued and handed over in one
+  call before each block (they start their note list afresh on every call, so one message a call
+  kept only a block's last note), and an all-notes-off fades them out over 10 ms before it goes in.
+  One change to the source, applied to a copy as it's built (`mda/mdaPiano-loud.patch`; the
+  release's files stay as they are): the Piano zeroed a sample and printed a line wherever its
+  voices' sum went over 2 (a loud chord: a click), and now only drops a broken value (NaN or
+  infinite). Below that level it plays exactly as before.
 - **Open303**: its DSP code, with `open303/bb_open303.cpp` (presets ours).
 - **Mutable Instruments**: Plaits (each engine an instrument), Braids (its 47 shapes as presets), Rings, Elements and Clouds, with
   `mutable/bb_*.cpp`; `mutable/override/plaits/user_data.h` stands in for the module's flash
