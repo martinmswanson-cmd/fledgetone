@@ -83,47 +83,23 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
   /** The tempo last sent: a note goes with the tempo where it starts, when that has changed. */
   let tempo = 0;
   /**
-   * The bends sent (audio time, MIDI value) since the last let-go, in the order sent: a hold
-   * point's Reset All Controllers centres the bend, so the one in force there is sent again after
-   * it (a held note that's bent stays bent across a loop's wrap). Older ones are dropped as they go.
+   * The bend played live (the wheel on the player's keyboard), while it's off centre: a hold
+   * point's Reset All Controllers centres the bend, so it's sent again after it, and a song at rest
+   * (a clip's bend back to centre) leaves it where the player has it. A song's own bend takes it
+   * over. (The song's bend at a hold point is the scheduler's to send: see ClipSchedule.hold.)
    */
-  let bends: Array<[number, number]> = [];
+  let liveBend: number | undefined;
   /**
    * The controllers played live (a knob on the player's keyboard), each one's last value: a hold
    * point's reset puts them back as the player left them (the scheduler sends the clips' lanes'
    * own). A clip's lane sending the same controller takes it over.
    */
   const liveCcs = new Map<number, number>();
-  /** When the last Reset All Controllers was set to happen: what's sent for before then, after it was set, is sent again then */
+  /** When the last Reset All Controllers was set to happen: what's played live for before then, after it was set, is sent again then */
   let resetAt = -Infinity;
   const sendBend = (v: number, time: number) => {
     if (!inst) return;
     sendMidi(inst, [0xe0, v & 0x7f, v >> 7], time);
-    bends.push([time, v]);
-    if (resetAt > time) {
-      sendMidi(inst, [0xe0, v & 0x7f, v >> 7], resetAt);
-      bends.push([resetAt, v]);
-    }
-    if (bends.length > 256) {
-      // (All but the latest of the ones a second gone: that one is still in force until a later one)
-      const old = out.context.currentTime - 1;
-      let keep = -1;
-      bends.forEach(([t], i) => {
-        if (t < old && (keep < 0 || t >= bends[keep][0])) keep = i;
-      });
-      bends = bends.filter(([t], i) => i === keep || t >= old);
-    }
-  };
-  /** The bend in force at `time` (MIDI value; centred when none was sent before it). */
-  const bendAt = (time: number) => {
-    let at = -Infinity;
-    let v = 8192;
-    for (const [t, b] of bends)
-      if (t <= time && t >= at) {
-        at = t;
-        v = b;
-      }
-    return v;
   };
   /** Where in the song `time` is (beats), while the song plays; else undefined (playing by hand). */
   const beatAt = (time: number): number | undefined => {
@@ -192,7 +168,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       on(n, note.velocity, time);
       return (at: number) => off(n, at);
     },
-    bend: (cents: number, time: number) => {
+    bend: (cents: number, time: number, live?: boolean) => {
       if (!inst) return;
       // A bend wider than the plugin's range (a note's slide or dive) widens it, where the plugin
       // has a Bend range setting (Fledge Synth's): from then on every bend is sent on that range
@@ -200,7 +176,16 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
         bendRange = WIDE_BEND_CENTS;
         setWamParam(inst, `${NAMED_PARAM}${BEND_RANGE_PARAM}`, 1, time);
       }
-      sendBend(Math.max(0, Math.min(16383, Math.round(8192 + (cents / bendRange) * 8192))), time);
+      const v = Math.max(0, Math.min(16383, Math.round(8192 + (cents / bendRange) * 8192)));
+      if (live) {
+        liveBend = v === 8192 ? undefined : v;
+        sendBend(v, time);
+        if (resetAt > time) sendBend(v, resetAt);
+        return;
+      }
+      // The song's bend takes the wheel over; back at rest, the wheel is where the player has it
+      if (v !== 8192) liveBend = undefined;
+      sendBend(liveBend ?? v, time);
     },
     releaseAll: () => {
       if (!inst) return;
@@ -214,7 +199,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       // Stop (the mod wheel back to 0...; the scheduler sets them again where playback starts, see ccHold.ts)
       sendMidi(inst, [0xb0, 121, 0], now);
       touched.clear();
-      bends = [];
+      liveBend = undefined;
       liveCcs.clear();
       resetAt = -Infinity;
       // (A tempo waiting with the cleared events never arrived)
@@ -241,10 +226,9 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
     resetControllers: (time: number) => {
       if (!inst) return false;
       sendMidi(inst, [0xb0, 121, 0], time);
-      // (It centres the bend too: a note sounding here keeps the bend it has, and the knobs played
-      // live stay where the player left them, sent again after it)
-      const held = bendAt(time);
-      if (held !== 8192) sendBend(held, time);
+      // (It centres the bend too: the wheel and the knobs played live stay where the player left
+      // them, sent again after it; the song's own bend here the scheduler sends after this)
+      if (liveBend !== undefined) sendBend(liveBend, time);
       for (const [n, v] of liveCcs) sendMidi(inst, [0xb0, n, v], time);
       resetAt = Math.max(resetAt, time);
       return !!plugin && resetsFresh(plugin.url);

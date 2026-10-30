@@ -465,10 +465,16 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   Drums.fxp", mapped by `shownAs` in `scripts/plugins/families.json` (the catalog's
   `presetFiles.files`, `presetFilePath` in `runtimePlugins.ts`); songs keep the shown name. The
   fallback download host needs the renamed files too.
-  At a hold point (loop wrap, seek, unmute, plugin ready) the Reset All Controllers the scheduler
-  sends also centres the bend, so `wamPlugin.ts` sends the bend in force there again right after
-  it: a held bent note stays bent. Controllers played live (`cc(..., live = true)` from
-  liveInput.ts) are sent again after it too; a clip lane on the same controller takes it over.
+  At a hold point (start, loop wrap, seek, unmute, plugin ready) the scheduler sets each bent
+  track's bend to the song's there, after the Reset All Controllers (which centres a plugin's
+  bend): `holdBends` in scheduler.ts. A note with its own bend still sounding then keeps its bend
+  (`bentNotes`, notes played with `instrument.bend`), else the clip bend lane's value at that tick
+  (`laneBendAt`, the latest bend event of the track's clips, a clip's end back to rest), else
+  centre. Only instruments the song has bent (`bent`) or bends there get it, so songs without
+  bends are unchanged; it covers every instrument with `bend`, not only plugins. The wheel played
+  live (`bend(..., live = true)` from liveInput.ts) and live knobs (`cc(..., live = true)`) are
+  sent again after the reset by `wamPlugin.ts`; where the song's bend is at rest the wheel stays
+  as the player has it, and a clip lane on the same controller (or a song bend) takes it over.
   `ccLanes.ts`: volume and expression lanes are read by halving (`indexed`), and the memo keeps a
   track's lanes through edits that don't touch them (pan, fader, name), the same lane objects
   where the track's own setting for them is unchanged.
