@@ -4,7 +4,7 @@
  */
 import React, { useRef, useState } from 'react';
 import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines, Disc3 } from 'lucide-react';
-import { busTargets, isBus, isMixTrack, sendTargets } from '../../store/buses';
+import { busTargets, isBus, isMixTrack, loopingBuses, sendTargets } from '../../store/buses';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { TRACK_COLORS } from '../../store/timelineTypes';
@@ -80,6 +80,14 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
       icon: <Route className="w-3.5 h-3.5" style={{ color: b.color }} />,
       onClick: run(() => s.setTrackOutput(track.id, b.id)),
       disabled: track.output === b.id,
+    })),
+    // The buses whose sound already comes back to this track (through outputs or sends): greyed, with why
+    ...loopingBuses(track, tracks).map((b) => ({
+      key: `loop-${b.id}`,
+      label: `Can't play into “${b.name}”: the sound would go round in a loop`,
+      icon: <Route className="w-3.5 h-3.5" style={{ color: b.color }} />,
+      onClick: () => {},
+      disabled: true,
     })),
     ...(isBus(track)
       ? []

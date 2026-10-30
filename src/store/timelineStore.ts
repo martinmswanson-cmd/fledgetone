@@ -142,7 +142,7 @@ import {
   retimeMarkers,
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
-import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from './buses';
+import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
@@ -1827,6 +1827,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const track = s.tracks.find((t) => t.id === trackId);
         const ret = s.tracks.find((t) => t.id === returnId);
         if (!track || !ret || !isReturn(ret) || isReturn(track)) return s;
+        // Never a send whose return plays back round to the track (it would feed back, louder each time)
+        if (level !== null && sendWouldLoop(trackId, returnId, s.tracks)) return s;
         const rest = (track.sends ?? []).filter((x) => x.to !== returnId);
         const had = track.sends?.find((x) => x.to === returnId);
         if (level === null ? !had : had?.level === level) return s;
@@ -3196,7 +3198,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       useLauncher.setState({ segments: {}, start: null, last: null });
       // One track records at a time: a file with several armed keeps the first
       const armedId = p.tracks.find((t) => t.isArmed)?.id;
-      const safeTracks: Track[] = tidyFolders(tidySends(tidyRoutes(p.tracks))).map((t: Track) => ({
+      const safeTracks: Track[] = tidyFolders(tidySends(tidyRoutes(breakLoops(p.tracks)))).map((t: Track) => ({
         ...t,
         eq: t.eq ?? { low: 0, mid: 0, high: 0 },
         reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,

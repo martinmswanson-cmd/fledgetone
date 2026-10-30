@@ -17,6 +17,7 @@ import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, norma
 import type { FrameRate } from './timelineTypes';
 import { currentInstrumentKey, isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
+import { breakLoops } from './buses';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseGameSfx, type GameSfx } from './gameSfx';
@@ -513,7 +514,9 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     });
   const parsedTracks = tolerant(raw.tracks, parseTrack);
   if (raw.tracks.length && !parsedTracks.length) parseTrack(raw.tracks[0]); // nothing readable: say why
-  const tracks = parsedTracks.filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i);
+  // A route loop (a return playing into a bus that sends back to it) would feed back louder and
+  // louder: the send that closes it is dropped (buses.ts breakLoops; the same tracks when there's none)
+  const tracks = breakLoops(parsedTracks.filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i));
   const parsedClips = tolerant(raw.clips, parseClip);
   // (A track's clips go with it, and clips whose track was deleted long ago are dropped quietly: neither counts here)
   const unreadTracks = raw.tracks.length - parsedTracks.length;
