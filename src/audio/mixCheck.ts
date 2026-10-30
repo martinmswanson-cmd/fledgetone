@@ -15,6 +15,7 @@ import { midiOf } from '../store/noteTools';
 import { detrended, levelBetween, sumDb, type BandSpectrum } from './mixAnalysis';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { MasterStats } from './effects/masterAfter';
+import { busChain } from '../store/buses';
 
 /** What a track does in the mix, for knowing who to point at. */
 export type TrackRole = 'drums' | 'bass' | 'vocal' | 'music';
@@ -32,6 +33,11 @@ export function trackRole(track: Pick<Track, 'instrumentKey' | 'name' | 'id'>, c
     if (midis.length && midis[Math.floor(midis.length / 2)] < 45) return 'bass';
   }
   return 'music';
+}
+
+/** Whether a track is ducked to the kick already: a Pump on it or on a bus it plays through. */
+export function duckedToKick(track: Track, tracks: readonly Track[]): boolean {
+  return [track, ...busChain(track, tracks)].some((t) => t.fx.pump.on || !!t.duckProxy);
 }
 
 /** What was measured of one track's stem. */

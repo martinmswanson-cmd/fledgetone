@@ -37,6 +37,7 @@ import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
+import { renderMixdown, stemFileNames } from '../../audio/exportMix';
 import { AUDIO_FORMATS, encodeAudio, encodeTogether, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat, HeldReport } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
@@ -46,7 +47,6 @@ import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } fro
 import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, formatBarRange, frameRateLabel } from '../../store/timelineTypes';
-import type { Track } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
 
@@ -216,18 +216,6 @@ function durationLabel(seconds: number): string {
   return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
 }
 
-/** "<base> - <track>.<ext>" per stem, numbered " 2", " 3"... where names repeat (ignoring case, as most file systems do). */
-function stemFileNames(base: string, tracks: Track[], ext = 'wav'): string[] {
-  const used = new Set<string>();
-  return tracks.map((track) => {
-    // Cleaned apart, so a long project name can't cut the track name off
-    const stem = `${base} - ${safeFileName(track.name)}`;
-    let name = stem;
-    for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem} ${n}`;
-    used.add(name.toLowerCase());
-    return `${name}.${ext}`;
-  });
-}
 
 interface SegmentOption<T> {
   value: T;
@@ -588,23 +576,21 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           const label = VERSION_LABELS[version];
           const at = (f: number) => (vi + f) / versions.length;
           const detail = (what: string) => (many ? `${label}${what ? `: ${what}` : ''}` : what);
-          // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
-          const mixOpts = { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks, keepRingOut: settings.normalize, ...loudOpts };
-          let audio = await renderArrangement(mixOpts, (progress, stage) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail(stage === 'matching' ? 'Matching the loudness' : '') }));
-          controller.signal.throwIfAborted();
-          setStatus({ kind: 'rendering', fileName, progress: at(0.95), detail: detail('Measuring loudness') });
-          let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
+          // (the render, its loudness and the match to the target: exportMix.ts, as the command line renders too)
+          const mixed = await renderMixdown(
+            { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks },
+            { normalize: settings.normalize, target: targetById(settings.target), loudMaster: !!s.master.loud?.on, ceilingDbtp },
+            (progress, stage) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail(stage === 'matching' ? 'Matching the loudness' : '') }),
+            (step) => setStatus({ kind: 'rendering', fileName, progress: at(step === 'measuring' ? 0.95 : 0.97), detail: detail(step === 'measuring' ? 'Measuring loudness' : 'Matching the loudness') })
+          );
+          const { audio, reading } = mixed;
+          loudFound = mixed.loudFound ?? loudFound;
           let note = '';
           if (settings.normalize && loudMatch) {
-            audio = cutRingOut(audio, mixOpts);
-            reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
             note = loudNote();
             keepPush(version === 'full');
-          } else if (settings.normalize) {
-            setStatus({ kind: 'rendering', fileName, progress: at(0.97), detail: detail('Matching the loudness') });
-            const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp, ending === 'seamless');
-            reading = reached.reading;
-            audio = cutRingOut(audio, mixOpts);
+          } else if (settings.normalize && mixed.reached) {
+            const reached = mixed.reached;
             if (reached.shortDb > 0.3 && reached.capped)
               note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the Loud master (Master tab)`;
             else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;

@@ -1,0 +1,1016 @@
+{
+  "format": "fledgetone-project",
+  "version": 1,
+  "modWheel": "dynamics",
+  "name": "Render test song with a plugin",
+  "songId": "render-test-plugin-song",
+  "bpm": 120,
+  "swing": 0,
+  "loopRegion": {
+    "inBar": 1,
+    "outBar": 9,
+    "enabled": true
+  },
+  "tracks": [
+    {
+      "id": "track-fixture-1",
+      "name": "Drums",
+      "color": "#f59e0b",
+      "instrumentKey": "drums",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": 0,
+      "pan": 0,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0,
+      "delaySend": 0,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": false,
+          "bands": [
+            {
+              "on": false,
+              "type": "lowcut",
+              "freq": 40,
+              "gain": 0,
+              "q": 0.7071067811865476
+            },
+            {
+              "on": true,
+              "type": "lowshelf",
+              "freq": 120,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 2500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "highshelf",
+              "freq": 8000,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": false,
+              "type": "highcut",
+              "freq": 18000,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      },
+      "expressive": true,
+      "pluginFx": [
+        {
+          "id": "fx-adclip",
+          "url": "builtin:airwindows/ADClip7",
+          "name": "ADClip7"
+        }
+      ]
+    },
+    {
+      "id": "track-fixture-1f",
+      "name": "Bass",
+      "color": "#06b6d4",
+      "instrumentKey": "bass",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": 0,
+      "pan": 0,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0,
+      "delaySend": 0,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": false,
+          "bands": [
+            {
+              "on": false,
+              "type": "lowcut",
+              "freq": 40,
+              "gain": 0,
+              "q": 0.7071067811865476
+            },
+            {
+              "on": true,
+              "type": "lowshelf",
+              "freq": 120,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 2500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "highshelf",
+              "freq": 8000,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": false,
+              "type": "highcut",
+              "freq": 18000,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      },
+      "expressive": true
+    },
+    {
+      "id": "track-fixture-1p",
+      "name": "Keys",
+      "color": "#a855f7",
+      "instrumentKey": "keys",
+      "isMuted": false,
+      "isSoloed": false,
+      "isArmed": false,
+      "volume": 0,
+      "pan": 0,
+      "eq": {
+        "low": 0,
+        "mid": 0,
+        "high": 0
+      },
+      "reverbSend": 0.1,
+      "delaySend": 0,
+      "fx": {
+        "distortion": {
+          "on": false,
+          "amount": 0.3
+        },
+        "compressor": {
+          "on": false,
+          "threshold": -20,
+          "ratio": 4,
+          "makeup": 3
+        },
+        "chorus": {
+          "on": false,
+          "rate": 1.5,
+          "depth": 0.6,
+          "mix": 0.5
+        },
+        "filter": {
+          "on": false,
+          "type": "lowpass",
+          "cutoff": 1000,
+          "resonance": 0.7071067811865476,
+          "slope": 24
+        },
+        "pump": {
+          "on": false,
+          "depth": 0.7,
+          "release": 300,
+          "trigger": "kick"
+        },
+        "lofi": {
+          "on": false,
+          "crush": 0.5,
+          "tone": 5000,
+          "wow": 0.3,
+          "mix": 1
+        },
+        "gate": {
+          "on": false,
+          "rate": "1/16",
+          "depth": 0.9,
+          "length": 0.5
+        },
+        "echo": {
+          "on": false,
+          "time": "1/8d",
+          "feedback": 0.4,
+          "tone": 6000,
+          "pingPong": true,
+          "mix": 0.35
+        },
+        "reverb": {
+          "on": false,
+          "decay": 2.2,
+          "preDelay": 20,
+          "tone": 9000,
+          "mix": 0.3
+        },
+        "human": {
+          "on": false,
+          "timing": 0.5,
+          "dynamics": 0.5,
+          "pitch": 0.5
+        },
+        "peq": {
+          "on": false,
+          "bands": [
+            {
+              "on": false,
+              "type": "lowcut",
+              "freq": 40,
+              "gain": 0,
+              "q": 0.7071067811865476
+            },
+            {
+              "on": true,
+              "type": "lowshelf",
+              "freq": 120,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "bell",
+              "freq": 2500,
+              "gain": 0,
+              "q": 1
+            },
+            {
+              "on": true,
+              "type": "highshelf",
+              "freq": 8000,
+              "gain": 0,
+              "q": 0.7
+            },
+            {
+              "on": false,
+              "type": "highcut",
+              "freq": 18000,
+              "gain": 0,
+              "q": 0.7071067811865476
+            }
+          ]
+        },
+        "mbc": {
+          "on": false,
+          "lowFreq": 200,
+          "highFreq": 3000,
+          "attack": 0.01,
+          "release": 0.15,
+          "bands": [
+            {
+              "threshold": -24,
+              "ratio": 3,
+              "gain": 2
+            },
+            {
+              "threshold": -20,
+              "ratio": 2.5,
+              "gain": 1
+            },
+            {
+              "threshold": -22,
+              "ratio": 3,
+              "gain": 1.5
+            }
+          ]
+        }
+      },
+      "expressive": true
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip-fixture-2",
+      "trackId": "track-fixture-1",
+      "name": "Beat",
+      "startBar": 1,
+      "lengthBars": 8,
+      "notes": [
+        {
+          "id": "note-fixture-3",
+          "note": "C1",
+          "startOffset": 0,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-4",
+          "note": "C1",
+          "startOffset": 0.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-5",
+          "note": "C1",
+          "startOffset": 0.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-6",
+          "note": "C1",
+          "startOffset": 0.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-7",
+          "note": "D1",
+          "startOffset": 0.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-8",
+          "note": "D1",
+          "startOffset": 0.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-9",
+          "note": "C1",
+          "startOffset": 1,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-a",
+          "note": "C1",
+          "startOffset": 1.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-b",
+          "note": "C1",
+          "startOffset": 1.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-c",
+          "note": "C1",
+          "startOffset": 1.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-d",
+          "note": "D1",
+          "startOffset": 1.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-e",
+          "note": "D1",
+          "startOffset": 1.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-f",
+          "note": "C1",
+          "startOffset": 2,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-g",
+          "note": "C1",
+          "startOffset": 2.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-h",
+          "note": "C1",
+          "startOffset": 2.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-i",
+          "note": "C1",
+          "startOffset": 2.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-j",
+          "note": "D1",
+          "startOffset": 2.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-k",
+          "note": "D1",
+          "startOffset": 2.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-l",
+          "note": "C1",
+          "startOffset": 3,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-m",
+          "note": "C1",
+          "startOffset": 3.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-n",
+          "note": "C1",
+          "startOffset": 3.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-o",
+          "note": "C1",
+          "startOffset": 3.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-p",
+          "note": "D1",
+          "startOffset": 3.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-q",
+          "note": "D1",
+          "startOffset": 3.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-r",
+          "note": "C1",
+          "startOffset": 4,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-s",
+          "note": "C1",
+          "startOffset": 4.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-t",
+          "note": "C1",
+          "startOffset": 4.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-u",
+          "note": "C1",
+          "startOffset": 4.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-v",
+          "note": "D1",
+          "startOffset": 4.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-w",
+          "note": "D1",
+          "startOffset": 4.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-x",
+          "note": "C1",
+          "startOffset": 5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-y",
+          "note": "C1",
+          "startOffset": 5.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-z",
+          "note": "C1",
+          "startOffset": 5.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-10",
+          "note": "C1",
+          "startOffset": 5.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-11",
+          "note": "D1",
+          "startOffset": 5.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-12",
+          "note": "D1",
+          "startOffset": 5.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-13",
+          "note": "C1",
+          "startOffset": 6,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-14",
+          "note": "C1",
+          "startOffset": 6.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-15",
+          "note": "C1",
+          "startOffset": 6.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-16",
+          "note": "C1",
+          "startOffset": 6.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-17",
+          "note": "D1",
+          "startOffset": 6.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-18",
+          "note": "D1",
+          "startOffset": 6.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-19",
+          "note": "C1",
+          "startOffset": 7,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-1a",
+          "note": "C1",
+          "startOffset": 7.25,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-1b",
+          "note": "C1",
+          "startOffset": 7.5,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-1c",
+          "note": "C1",
+          "startOffset": 7.75,
+          "duration": "0.0625m",
+          "velocity": 0.9
+        },
+        {
+          "id": "note-fixture-1d",
+          "note": "D1",
+          "startOffset": 7.25,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1e",
+          "note": "D1",
+          "startOffset": 7.75,
+          "duration": "0.0625m",
+          "velocity": 0.8
+        }
+      ]
+    },
+    {
+      "id": "clip-fixture-1g",
+      "trackId": "track-fixture-1f",
+      "name": "Bassline",
+      "startBar": 1,
+      "lengthBars": 8,
+      "notes": [
+        {
+          "id": "note-fixture-1h",
+          "note": "A1",
+          "startOffset": 0,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1i",
+          "note": "A1",
+          "startOffset": 1,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1j",
+          "note": "F1",
+          "startOffset": 2,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1k",
+          "note": "G1",
+          "startOffset": 3,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1l",
+          "note": "A1",
+          "startOffset": 4,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1m",
+          "note": "A1",
+          "startOffset": 5,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1n",
+          "note": "F1",
+          "startOffset": 6,
+          "duration": "0.75m",
+          "velocity": 0.8
+        },
+        {
+          "id": "note-fixture-1o",
+          "note": "G1",
+          "startOffset": 7,
+          "duration": "0.75m",
+          "velocity": 0.8
+        }
+      ]
+    },
+    {
+      "id": "clip-fixture-1q",
+      "trackId": "track-fixture-1p",
+      "name": "Chords",
+      "startBar": 1,
+      "lengthBars": 8,
+      "notes": [
+        {
+          "id": "note-fixture-1r",
+          "note": "A3",
+          "startOffset": 0,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1s",
+          "note": "C4",
+          "startOffset": 0,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1t",
+          "note": "E4",
+          "startOffset": 0,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1u",
+          "note": "A3",
+          "startOffset": 2,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1v",
+          "note": "C4",
+          "startOffset": 2,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1w",
+          "note": "E4",
+          "startOffset": 2,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1x",
+          "note": "A3",
+          "startOffset": 4,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1y",
+          "note": "C4",
+          "startOffset": 4,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-1z",
+          "note": "E4",
+          "startOffset": 4,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-20",
+          "note": "A3",
+          "startOffset": 6,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-21",
+          "note": "C4",
+          "startOffset": 6,
+          "duration": "1.75m",
+          "velocity": 0.6
+        },
+        {
+          "id": "note-fixture-22",
+          "note": "E4",
+          "startOffset": 6,
+          "duration": "1.75m",
+          "velocity": 0.6
+        }
+      ]
+    }
+  ],
+  "masterFx": {
+    "reverbDecay": 11,
+    "delayTime": "8n",
+    "delayFeedback": 0.4
+  },
+  "fps": 30,
+  "dropFrame": false,
+  "markers": [],
+  "master": {
+    "glue": "standard",
+    "ott": {
+      "on": false,
+      "depth": 0.5,
+      "time": 0.3,
+      "inGain": 0,
+      "outGain": 0
+    },
+    "width": {
+      "on": false,
+      "amount": 1.3,
+      "monoBass": true
+    }
+  }
+}

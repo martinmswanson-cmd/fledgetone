@@ -6,9 +6,10 @@
  * recordings live playback has, exactly the bars asked for, notes held over from before
  * included), and its measurement (measureRender:
  * integrated and loudest-3-seconds loudness, true peak, crest and the balance across the
- * spectrum). No store here: callers pass the song.
+ * spectrum), and the same bars track by track (renderRangeStems: each track's stem, as the Mix
+ * check renders them). No store here: callers pass the song.
  */
-import { audibleTracks, channelsOf, renderArrangement, type RenderOptions, type RenderProgress } from './exportWav';
+import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions, type RenderProgress } from './exportWav';
 import { createLoudnessAnalyser } from './loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAnalysis';
 import type { MasterStats } from './effects/masterAfter';
@@ -83,6 +84,42 @@ export async function renderRange(
   if (start >= fromBar) return audio;
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   return trimStart(audio, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate));
+}
+
+/**
+ * Render bars [from, to) of `song` track by track: each sounding track's stem (its strip, sends and
+ * the shared reverb and delay, without the master section, as the Mix check renders them), from
+ * the same run-in as renderRange and trimmed the same way. `onStem` gets each one in turn, in the
+ * order of the tracks; returns the tracks rendered (those with a clip in the bars, or held into them).
+ */
+export async function renderRangeStems(
+  song: ListenSnapshot,
+  fromBar: number,
+  toBar: number,
+  onStem: (track: Track, channels: Float32Array[], sampleRate: number) => void | Promise<void>,
+  opts: { signal?: AbortSignal; progress?: (fraction: number, track: Track) => void } = {}
+): Promise<Track[]> {
+  const start = preRollStart(song, fromBar);
+  const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
+  const render: RenderOptions = { ...renderOptionsFor(from, start, toBar, opts.signal), bypassMaster: true };
+  const tracks = stemTracks(render);
+  if (!tracks.length) return [];
+  const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
+  const rate = render.sampleRate ?? 44100;
+  const trim = start < fromBar ? Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * rate) : 0;
+  const pending = [...tracks];
+  await renderStems(
+    render,
+    16,
+    (f, stem) => opts.progress?.(f, stem.track),
+    async (channels, sampleRate) => {
+      // (called once per stem, in order, after every stem has rendered)
+      const track = pending.shift()!;
+      await onStem(track, trim > 0 ? channels.map((c) => c.subarray(Math.min(trim, c.length - 1))) : channels, sampleRate);
+      return new Blob();
+    }
+  );
+  return tracks;
 }
 
 /** What a render measures. Silence (or under 0.4 s) has no loudness or balance: -Infinity and no regions. */

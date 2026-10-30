@@ -259,6 +259,19 @@ ops and the security model):
   markers, tempo and master), only from a real click on a card that stayed where it was
   (`cardGuard.ts`). The suggestion is marked accepted first, so the agent never hears it out of
   date on the way. `revision.ts` counts changes of `songParts` for the agent's `changed` events.
+- **Hearing a file, no studio open** (`fledgetone render` and `listen`, the helper's `render_file`
+  and `listen {file}`): the helper starts a headless browser (`tools/cli/src/browserRender.ts`,
+  playwright-core found at run time; launched as a server so its process can always be ended),
+  serves it a page on 127.0.0.1 (`staticServer.ts`) and refuses its every request but that
+  server's and the app's own site's recordings, which it keeps in `~/.cache/fledgetone`. The page
+  loads `dist-runtime/fledgetone-render.js` (`src/runtime/render.ts`, built without the store),
+  which renders with the Export dialog's own mixdown (`exportMix.ts`: render, loudness, target
+  match) and stems, or with `listen.ts` as the studio's listen does, and reports in the shape of
+  `src/agent/listenReport.ts` (bar by bar; per track through `renderRangeStems`; before and after
+  with the level of the difference in each bar). Files cross back a few megabytes at a time and are
+  written by the helper's safe writes (`files.ts`).
+- **The studio from the helper** (`studioServer.ts`): `fledgetone studio`, or `mcp --studio`, serves
+  a built app on 127.0.0.1:47200 for Safari and Brave; with `--studio` its origin is let in.
 
 ## The instruments
 
@@ -446,7 +459,8 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   twobirdsworkshop.com.
 - `npm run build:full`: the one-file build with the GPL plugins, in `dist-full/`.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
-  saved project (`src/runtime/player.ts`).
+  saved project (`src/runtime/player.ts`), and `dist-runtime/fledgetone-render.js`, the command
+  line's renderer (`src/runtime/render.ts`, `vite.render.config.ts`).
 
 fledgetone.com is made by Netlify from `master` on every push (`netlify.toml`: `npm run
 build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`,

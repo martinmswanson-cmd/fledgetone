@@ -150,11 +150,12 @@ export function diff(args: string[], flags: Flags): number {
 }
 
 /** "5-8" (bars 5 to 8, 8 included) or "5" as a range of song bars, end not included. */
-function barRange(text: string): { fromBar: number; toBar: number } {
+export function barRange(text: string): { fromBar: number; toBar: number } {
   const m = /^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?$/.exec(text);
   if (!m) throw new UsageError('--bars takes a bar or a range, like 5 or 5-8');
   const from = Number(m[1]);
   const to = m[2] ? Number(m[2]) : from;
+  if (from < 1) throw new UsageError('--bars: songs start at bar 1');
   if (to < from) throw new UsageError('--bars: the range ends before it starts');
   return { fromBar: from, toBar: to + 1 };
 }

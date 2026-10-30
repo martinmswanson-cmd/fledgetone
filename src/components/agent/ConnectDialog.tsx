@@ -157,7 +157,7 @@ export const ConnectDialog: React.FC = () => {
             <summary className="cursor-pointer text-forge-text">Nothing happens?</summary>
             <p className="mt-1">
               Chrome may ask whether this page can reach devices on your local network: allow it (the helper runs on this computer). Safari and Brave can block the connection to a helper on this
-              computer; a <span className="font-mono">fledgetone studio</span> mode that opens the studio from the helper itself is coming. Check too that the port matches what your agent said.
+              computer: start the helper with <span className="font-mono">--studio</span> and open the studio from the address it gives (at 127.0.0.1:47200), on this computer. Check too that the port matches what your agent said.
             </p>
           </details>
         )}

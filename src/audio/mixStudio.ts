@@ -12,9 +12,9 @@ import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, 
 import { musicEnd, renderOptionsFor, type ListenSnapshot } from './listen';
 import { measureLoudness } from './loudness';
 import { bandEnvelope, bandSpectrum, type BandSpectrum } from './mixAnalysis';
-import { checkMix, trackRole, type Finding, type TrackMeasure } from './mixCheck';
+import { checkMix, duckedToKick, trackRole, type Finding, type TrackMeasure } from './mixCheck';
 import { targetById } from './loudnessTarget';
-import { busChain, isMixTrack } from '../store/buses';
+import { isMixTrack } from '../store/buses';
 import { INSTRUMENTS } from './instrumentCatalog';
 import type { MasterStats } from './effects/masterAfter';
 import { LOUD_TARGETS, sameLoudMatch, type LoudMatch } from './effects/loudMaster';
@@ -74,11 +74,6 @@ function songOptions(signal: AbortSignal): RenderOptions {
   const song = storeSnapshot();
   const most = 1 + Math.max(1, Math.floor((ANALYSE_SECONDS * song.bpm) / 240));
   return renderOptionsFor(song, 1, Math.min(musicEnd(song), most), signal);
-}
-
-/** Whether a track is ducked to the kick already: a Pump on it or on a bus it plays through. */
-function ducked(track: Track, tracks: Track[]): boolean {
-  return [track, ...busChain(track, tracks)].some((t) => t.fx.pump.on || !!t.duckProxy);
 }
 
 async function run<T>(what: string, job: (signal: AbortSignal, progress: (f: number, what?: string) => void) => Promise<T>): Promise<T | null> {
@@ -165,7 +160,7 @@ export function runMixCheck(targetId = useMixStudio.getState().targetId): Promis
           spectrum: bandSpectrum(channels, sampleRate),
           lowEnv: bandEnvelope(channels, sampleRate, 40, 140),
           env: bandEnvelope(channels, sampleRate, 0, sampleRate / 2),
-          ducked: ducked(track, s.tracks),
+          ducked: duckedToKick(track, s.tracks),
           category: INSTRUMENTS[track.instrumentKey]?.category,
         });
         return new Blob();

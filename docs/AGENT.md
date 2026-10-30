@@ -13,6 +13,7 @@ the connection between the studio and the helper.
 
 - [Setting it up](#setting-it-up)
 - [Two ways to work: files, or live with the studio](#two-ways-to-work)
+- [Hearing a song file: render and listen](#hearing-a-song-file)
 - [The tools](#the-tools)
 - [The ops](#the-ops)
 - [The song as the agent reads it](#the-song-as-the-agent-reads-it)
@@ -47,6 +48,24 @@ servers are listed in a JSON file takes something like this:
 }
 ```
 
+To hear song files without the studio (`render_file`, and `listen` with a file; on the command
+line `fledgetone render` and `fledgetone listen`), the helper renders them in a browser on your
+computer that it starts and closes itself, with no window. That needs the app's renderer,
+
+```sh
+npm run build:runtime    # dist-runtime/fledgetone-render.js
+```
+
+playwright-core (which `npm install` in `tools/cli` brings: it's optional there, and downloads no
+browser), and a browser: an installed Google Chrome or Chromium is found by itself (Edge too);
+without one, `npx playwright-core install chromium` in `tools/cli` downloads one, or `--browser
+<path>` names one. Behind a proxy, set `HTTPS_PROXY` (and `NODE_EXTRA_CA_CERTS` if it has a
+certificate of its own) so recordings can download.
+
+Songs with plugins from other sites (not Fledgetone's built-in ones) aren't rendered: the helper
+doesn't run plugins from the internet, and says which tracks use them. Export those songs from
+the studio instead.
+
 Options of `fledgetone mcp`:
 
 | Option | What it does |
@@ -56,6 +75,11 @@ Options of `fledgetone mcp`:
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-null-origin` | Also let a page opened from a file on disk connect (the one-file build). |
 | `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
+| `--studio` | Also serve the studio itself on `127.0.0.1:47200` and let it connect: for Safari and Brave, which won't let fledgetone.com reach the helper (see [The studio from the helper](#the-studio-from-the-helper)). `--studio-port <n>` for another port, `--app <folder>` for another build. |
+| `--samples <folder>` | Instrument recordings for renders, laid out like `public/fledgetone-samples` (the default, in a copy of the repository). |
+| `--offline` | Renders download nothing: an instrument whose recordings aren't in the samples folder or kept from before can't play, and the render says so. |
+| `--browser <path>` | The browser renders use (else Chrome, Playwright's Chromium, Edge, then the usual places). Also `FLEDGETONE_BROWSER`. |
+| `--timeout <seconds>` | The longest a render or listen may take (default 600). |
 
 ## Two ways to work
 
@@ -75,6 +99,76 @@ song (always), see what you select, suggest changes, listen. Then the agent read
 is on screen, and its suggestions appear on the Suggestions panel with a title, an explanation,
 what changes, any warnings, and a before-and-after to hear. Disconnect at any time from the panel.
 
+## Hearing a song file
+
+`listen` with `file` renders bars of a song file and measures them, on your computer, with no
+studio open; `render_file` writes the song (or some bars of it) as a WAV or MP3 file in `--root`.
+Both render exactly as the app's Export does (the same code, built into
+`dist-runtime/fledgetone-render.js`), so what the agent measures is what the musician would
+export. On the command line, `fledgetone listen` and `fledgetone render` do the same (see
+[tools/cli/README.md](../tools/cli/README.md)).
+
+A listen gives the same report as a live one, and more:
+
+```json
+{
+  "range": { "fromBar": 9, "toBar": 17 },
+  "seconds": 16,
+  "heard": "the song as it is",
+  "renderMode": "playback",
+  "mix": {
+    "lufs": -14.2, "shortTermMaxLufs": -12.0, "truePeakDbtp": -1.0, "crestDb": 9.1,
+    "regions": [{ "name": "sub bass (under 60 Hz)", "db": -3.3 }, { "name": "bass (60-200 Hz)", "db": -3.4 }],
+    "master": { "limiterMaxGrDb": 2.1, "clipperMaxDb": null }
+  },
+  "bars": [{ "bar": 9, "lufs": -14.8 }, { "bar": 10, "lufs": -14.0 }],
+  "tracks": [{ "id": "track-2", "name": "Bass", "lufs": -20.1, "truePeakDbtp": -9.8, "crestDb": 11.2, "regions": [] }],
+  "checks": [{ "id": "mud", "level": "note", "title": "Muddy low mids", "detail": "...", "trackIds": ["track-3"] }],
+  "findings": ["Muddy low mids: There's 6.1 dB more between 200 and 500 Hz than ..."]
+}
+```
+
+- `mix`: integrated loudness (LUFS), the loudest 3 seconds, true peak (dBTP), crest (peak against
+  average, dB), the balance (each part of the spectrum against the whole, dB), and how much the
+  master's limiter and clipper took off the peaks (dB; `null`: the clipper is off).
+- `bars`: the loudness of each bar (a bar under 0.4 seconds has none: `null`).
+- `tracks` (with `perTrack: true`): each track that plays in the bars, rendered alone through its
+  own strip, sends and the shared reverb and delay, without the master section.
+- `checks` and `findings`: what the Mix check finds, in plain words, worst first (against the
+  streaming target, -14 LUFS). Without `perTrack` only the checks that need no tracks (the level,
+  the limiter, the clipper).
+
+With `suggestion` (a suggestion file in `--root`, as `suggest` writes) or `ops`, it renders the
+bars twice, before and after, and answers `{before, after, difference}`. `difference` has the
+changes of the mix's numbers (after minus before), of each track's, and bar by bar:
+
+```json
+{
+  "bars": [
+    { "bar": 4, "beforeLufs": -18.8, "afterLufs": -18.8, "lufsChange": 0, "differenceDb": null, "changed": false },
+    { "bar": 5, "beforeLufs": -18.6, "afterLufs": -18.5, "lufsChange": 0.1, "differenceDb": -41.3, "changed": true }
+  ],
+  "changedBars": { "fromBar": 5, "toBar": 7 },
+  "summary": ["Bars 5 to 6 sound different (what changed is up to -41.3 dBFS); the other bars sound the same."]
+}
+```
+
+`differenceDb` is the level of what changed: the after's samples minus the before's, in dBFS
+(`null`: the same; with a tempo change the two can't be lined up, and every bar counts as
+changed). A bar has `changed` when that is above -70 dBFS. Renders are exact (the same song
+renders to the same samples every time), so a bar the suggestion doesn't reach comes out the same,
+and `changedBars` is where it's heard (often a bar or so past the notes it adds, as they ring
+out). A suggestion file whose song has changed since it was made, or that was made for another
+song, is refused, as `fledgetone apply` refuses it.
+
+Limits are the live listen's: at most 64 bars or 90 seconds (before and after each), one listen or
+render at a time, 10 listens a minute. `render_file` makes at most 10 minutes of audio, never
+writes over a file unless `overwrite: true`, and only `.wav` and `.mp3` files inside `--root`.
+
+The first time a song uses a recorded instrument, its recordings download from fledgetone.com (the
+same files, from the same addresses, the app downloads); they're kept (in `~/.cache/fledgetone`,
+or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reaches nothing else.
+
 ## The tools
 
 | Tool | What it does |
@@ -86,7 +180,9 @@ what changes, any warnings, and a before-and-after to hear. Disconnect at any ti
 | `get_automation {file?, trackId?, param?}` | Automation lanes with every point |
 | `get_view` | What you have open and selected (if you allow it) |
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`). The helper keeps the last 200 events, and your messages apart from them (an edit never pushes one out); if some after `since` were dropped unread, the answer has `missed: true` and a hint: call `get_messages` and answer its `unanswered` |
-| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). Live only for now, one at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
+| `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard (it renders from up to 8 bars earlier and measures only the range). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
+| `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
+| `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file. At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
 | `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song) and whether the musician heard it as it is, or take one back |
@@ -480,6 +576,24 @@ point at anything in the Suggestions panel.
 **Limits:** frames up to 2 MB; a ping every 15 seconds (no answer: the connection is dropped);
 requests time out after 15 seconds (listening after 2 minutes); and the tools' own limits above.
 
+## The studio from the helper
+
+Safari and Brave don't let a page from fledgetone.com connect to a program on your computer. For
+them, the helper can serve the studio itself: start it with `--studio`
+
+```json
+"args": ["/path/to/fledgetone/tools/cli/dist/fledgetone.mjs", "mcp", "--root", "/path/to/your/songs", "--studio"]
+```
+
+and open the address it says on stderr, `http://127.0.0.1:47200/` (or `/app/`), in your browser
+on the same computer. It's the same app, served from a build in your copy of the repository
+(`npm run build`, or `npm run build:site`; `--app <folder>` for another), and the helper lets it
+connect. Its saved songs and settings are its own, apart from fledgetone.com's (a browser keeps
+them per address): save a song as a file to move it between the two.
+
+`fledgetone studio [--port 47200] [--app <folder>]` serves it on its own; a helper started apart
+from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
+
 ## Security and privacy
 
 - **Nothing leaves your computer because of Fledgetone.** The app sends nothing anywhere, the
@@ -490,14 +604,20 @@ requests time out after 15 seconds (listening after 2 minutes); and the tools' o
   what you allowed (read-only until you tick more), and it can only suggest: there's no way for it
   to accept, save, export or delete.
 - **Only Fledgetone's own pages connect.** The helper refuses pages from other sites (the Origin
-  must be `https://fledgetone.com`, the dev server with `--dev`, or a file on disk with
-  `--allow-null-origin`), any address but `127.0.0.1:<port>` exactly (so another site can't reach
+  must be `https://fledgetone.com`, the studio it serves itself with `--studio`, the dev server
+  with `--dev`, or a file on disk with `--allow-null-origin`), any address but `127.0.0.1:<port>` exactly (so another site can't reach
   it through a name of its own pointed at your computer), and a second studio while one is paired.
 - **Only the helper you started.** The pairing proof works both ways, the helper's first: a program
   that took the port first can't pass for the helper, and the studio sends it nothing about the
   code or the song.
 - **Files stay in their folder.** The agent's file tools reach only `--root`, and only songs,
-  suggestion files and audio. `apply` never writes over the song it reads.
+  suggestion files and audio. `apply` never writes over the song it reads, and `render_file`
+  writes only audio files, never through a link or over a file unless asked.
+- **Renders stay on your computer.** The browser that renders a file is started by the helper
+  with no window, opens only a page the helper serves on `127.0.0.1`, and is refused every other
+  address but one: the app's own site, for the recordings of instruments it doesn't have yet (the
+  same files the app downloads; nothing about the song is sent). With `--offline` it downloads
+  nothing. It's closed when the render ends, also when it fails or takes too long.
 - **What an agent writes is shown as plain text**, its names cut to 64 characters.
 - **What you write to the agent** goes only when you press Send, only to the paired helper, and
   carries your selection only if you tick "Include what I've selected" (and allow it to see what
