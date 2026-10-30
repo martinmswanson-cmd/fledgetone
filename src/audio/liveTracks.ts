@@ -469,8 +469,10 @@ export function onClipBusRebuilt(listener: (trackId: string) => void): void {
  */
 function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInstrument {
   const inst = createInstrument(...args);
-  const bend = inst.bend;
-  if (!bend || args[0] === 'plugin') return inst;
+  if (!inst.bend) return inst;
+  watchBendBack(inst);
+  const bend = inst.bend!;
+  if (args[0] === 'plugin') return inst;
   let wheel: number | undefined;
   /**
    * The song's centres sent ahead of their time (a bent note's end, sent with the note): a wheel
@@ -496,6 +498,68 @@ function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInst
     }
   };
   return inst;
+}
+
+/**
+ * Bends played live that outlast what they belonged to: an MPE note let go while bent on an
+ * instrument that bends as a whole keeps its bend through its release (and the pedal's hold), so
+ * its tail doesn't jump back. `back` sets the instrument where it goes next, just before its next
+ * note starts (a key or the song's), or once the tail has had `seconds` to end. Forgotten when
+ * another bend takes over (a wheel, a note's own bend, the song's) or every voice is let go.
+ */
+interface BendBack {
+  back: (time: number) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+const bendsBack = new Map<TrackInstrument, BendBack>();
+/** Hold the bend in force on `inst` until its next note, or `seconds` from now (none: the next note only). */
+export function holdBendTillNextNote(inst: TrackInstrument, back: (time: number) => void, seconds?: number): void {
+  forgetBendBack(inst);
+  const held: BendBack = { back };
+  if (seconds !== undefined) held.timer = setTimeout(() => bendsBack.get(inst) === held && bendBack(inst, liveMix.bus.context.currentTime), seconds * 1000);
+  bendsBack.set(inst, held);
+}
+/** Whether `inst` still holds a bend from holdBendTillNextNote. */
+export const holdsBend = (inst: TrackInstrument): boolean => bendsBack.has(inst);
+function forgetBendBack(inst: TrackInstrument): void {
+  const held = bendsBack.get(inst);
+  if (!held) return;
+  bendsBack.delete(inst);
+  if (held.timer !== undefined) clearTimeout(held.timer);
+}
+function bendBack(inst: TrackInstrument, time: number): void {
+  const held = bendsBack.get(inst);
+  if (!held) return;
+  forgetBendBack(inst);
+  safely(() => held.back(time));
+}
+/** Seconds before a note's start its instrument's held bend goes back (so the note starts on it, and its own bend at its start still wins). */
+const BACK_BEFORE_NOTE = 0.001;
+function watchBendBack(inst: TrackInstrument): void {
+  const before = (time: number) => {
+    if (!bendsBack.size) return;
+    bendBack(inst, Math.max(liveMix.bus.context.currentTime, time - BACK_BEFORE_NOTE));
+  };
+  const { play, noteOn, noteVoice, bend } = inst;
+  inst.play = (notes, time) => {
+    if (notes.length) before(time);
+    play(notes, time);
+  };
+  if (noteOn)
+    inst.noteOn = (note, time) => {
+      before(time);
+      return noteOn(note, time);
+    };
+  if (noteVoice)
+    inst.noteVoice = (note, time) => {
+      before(time);
+      return noteVoice(note, time);
+    };
+  // Any bend but the song's back at rest (a jump's too: it leaves a live bend where it is) takes over
+  inst.bend = (cents, time, live, cut) => {
+    if (live || cents !== 0) forgetBendBack(inst);
+    bend!(cents, time, live, cut);
+  };
 }
 
 const heardAgain = new Set<(trackId: string) => void>();
@@ -529,6 +593,7 @@ export function releaseAllLiveVoices(): void {
     // it isn't kept as the player's)
     if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime, true, true));
   }
+  for (const inst of [...bendsBack.keys()]) forgetBendBack(inst);
   letGo.forEach((l) => safely(l));
   // (Let go while playing, as Free memory does: its controllers are set again where the song is)
   for (const lt of live.values()) heardTrack(lt);

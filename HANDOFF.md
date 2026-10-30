@@ -550,8 +550,12 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   ready) keeps a sounding note's bend. The live wheel on built-ins and samplers is kept by
   `liveInstrument` in liveTracks.ts (the plugin does it itself): a song bend of centre sends the
   wheel's instead, and a centre sent ahead (a bent note's end) gets the wheel sent again there
-  when it moves. An MPE note's own bend on such an instrument is sent `live` and ends with the
-  note (`endMpeBend` in liveInput.ts: back to another bent MPE note's, else the master wheel).
+  when it moves. An MPE note's own bend on such an instrument is sent `live` and stays through
+  the note's release and the pedal's hold (`endMpeBend` in liveInput.ts, `holdBendTillNextNote`
+  in liveTracks.ts): the instrument goes back (to another bent MPE note's, else the master wheel)
+  just before its next note starts, a key's or the song's (`watchBendBack` wraps play/noteOn/
+  noteVoice), or once the tail has ended (a recorded instrument's release + 0.5 s, else 8 s);
+  any other bend but the song's centre takes over, and `releaseAllLiveVoices` forgets it.
   Check with scripts/audio-check/live-controllers.cjs.
   The export dialog memoises its frames and ring-out (`useMemo`), and `withControllerLanes`
   without a memo reuses each track's lanes for the same track object (`lastLanes`), so the
