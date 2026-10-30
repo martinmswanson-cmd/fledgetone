@@ -140,7 +140,10 @@ A listen gives the same report as a live one, and more:
 
 With `suggestion` (a suggestion file in `--root`, as `suggest` writes) or `ops`, it renders the
 bars twice, before and after, and answers `{before, after, difference}`. `difference` has the
-changes of the mix's numbers (after minus before), of each track's, and bar by bar:
+changes of the mix's numbers (after minus before), of each track's, and bar by bar. Its `lufs`
+(the mix's, and each track's) compares the same moments of both renders: each one's own
+integrated loudness can read the after louder when a change makes its quiet parts quieter still
+(the gate then leaves them out), so it isn't simply the after's `lufs` minus the before's:
 
 ```json
 {

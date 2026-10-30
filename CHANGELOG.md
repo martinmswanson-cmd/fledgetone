@@ -40,6 +40,7 @@ second update on the same day gets `-2`, and so on).
 - **Very short notes in a caution**: a note or clip shorter than a sixteenth note is now said to be that, instead of "a note length of 0 quarter notes".
 - **A note that runs past its clip's end** plays its whole length, as it always has; now a suggestion's before-and-after, the check by sound and Accept count it to where it stops, and an export or a render on the command line rings out until it has (one ended 25 seconds early). Songs where no note runs on past the end of the song export exactly as before (all the starters do).
 - **Ducking under a proxy track**: a suggestion that changes the dialogue or sound-effects track the rest of the music ducks under is now heard wherever the music dips for it, and as long as the music's echoes and reverb carry the dip.
+- **Louder or quieter, as it really is**: a suggestion that turned a part of your song down could say it was about 6 dB louder, because the loudness measure leaves out the quietest parts and the change made more of them quiet enough to be left out. The before-and-after (and the command line's listen) now compares the same moments of both, so a change of level reads as that change. A suggestion that really is much louder is still played turned down.
 - **Agent text that starts with a long row of signs** (lines, dots, emoji) before the app's name is now shown in quotes as the agent's, however long the row.
 - **The game audition pads** keep Tab inside their dialog and give focus back to where it was when they close, as every other dialog does.
 

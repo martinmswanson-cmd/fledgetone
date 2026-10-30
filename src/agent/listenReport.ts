@@ -141,7 +141,7 @@ const minus = (a: number | null, b: number | null): number | null => (a === null
  * suggestion). `differenceDb` is each bar's level of after minus before (see CompareBar), measured
  * by the caller from the two renders.
  */
-export function compareListens(before: ListenReport, after: ListenReport, differenceDb: ReadonlyArray<number | null | 'tempo'>): ListenComparison {
+export function compareListens(before: ListenReport, after: ListenReport, differenceDb: ReadonlyArray<number | null | 'tempo'>, pairedLufs?: number | null, trackPaired?: ReadonlyMap<string, number | null>): ListenComparison {
   const bars: CompareBar[] = before.bars.map((b, i) => {
     const a = after.bars[i];
     const d = differenceDb[i];
@@ -157,7 +157,9 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
   const changed = bars.filter((b) => b.changed);
   const changedBars = changed.length ? { fromBar: changed[0].bar, toBar: Math.min(before.range.toBar, changed[changed.length - 1].bar + 1) } : null;
   const mix = {
-    lufs: minus(after.mix.lufs, before.mix.lufs),
+    // (over the same moments of both, when the renders could be compared so: each one's integrated
+    // loudness alone reads the after louder when a change drops its quiet parts under the gate)
+    lufs: pairedLufs !== undefined && pairedLufs !== null && Number.isFinite(pairedLufs) ? tenth(pairedLufs) : minus(after.mix.lufs, before.mix.lufs),
     shortTermMaxLufs: minus(after.mix.shortTermMaxLufs, before.mix.shortTermMaxLufs),
     truePeakDbtp: minus(after.mix.truePeakDbtp, before.mix.truePeakDbtp),
     crestDb: minus(after.mix.crestDb, before.mix.crestDb),
@@ -169,7 +171,8 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
     tracks = ids.map((id) => {
       const b = before.tracks?.find((t) => t.id === id);
       const a = after.tracks?.find((t) => t.id === id);
-      return { id, name: (a ?? b)!.name, lufs: minus(a?.lufs ?? null, b?.lufs ?? null), truePeakDbtp: minus(a?.truePeakDbtp ?? null, b?.truePeakDbtp ?? null) };
+      const paired = trackPaired?.get(id);
+      return { id, name: (a ?? b)!.name, lufs: paired !== undefined && paired !== null && Number.isFinite(paired) && a && b ? tenth(paired) : minus(a?.lufs ?? null, b?.lufs ?? null), truePeakDbtp: minus(a?.truePeakDbtp ?? null, b?.truePeakDbtp ?? null) };
     });
   }
   const summary: string[] = [];
@@ -182,7 +185,7 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
       `${range(changedBars)} ${changedBars.toBar - changedBars.fromBar <= 1 ? 'sounds' : 'sound'} different${Number.isFinite(loudest) ? ` (what changed is up to ${loudest.toFixed(1)} dBFS)` : ''}${changed.length < changedBars.toBar - changedBars.fromBar ? ', not every bar between' : ''}${others ? '; the other bars sound the same' : ''}.`
     );
   }
-  if (mix.lufs !== null && Math.abs(mix.lufs) >= 0.1) summary.push(`Overall it is ${Math.abs(mix.lufs).toFixed(1)} LU ${mix.lufs > 0 ? 'louder' : 'quieter'} (${after.mix.lufs} against ${before.mix.lufs} LUFS).`);
+  if (mix.lufs !== null && Math.abs(mix.lufs) >= 0.1) summary.push(`Overall it is ${Math.abs(mix.lufs).toFixed(1)} LU ${mix.lufs > 0 ? 'louder' : 'quieter'} (${after.mix.lufs} against ${before.mix.lufs} LUFS${pairedLufs !== undefined && pairedLufs !== null && Number.isFinite(pairedLufs) ? ' measured alone; the change is over the same moments of both' : ''}).`);
   if (mix.truePeakDbtp !== null && Math.abs(mix.truePeakDbtp) >= 0.1) summary.push(`The true peak moves ${mix.truePeakDbtp > 0 ? 'up' : 'down'} ${Math.abs(mix.truePeakDbtp).toFixed(1)} dB, to ${after.mix.truePeakDbtp} dBTP.`);
   for (const r of mix.regions) if (Math.abs(r.db) >= 1) summary.push(`${r.name}: ${r.db > 0 ? '+' : ''}${r.db.toFixed(1)} dB against the whole.`);
   for (const t of tracks ?? []) if (t.lufs !== null && Math.abs(t.lufs) >= 0.5) summary.push(`"${t.name}" is ${Math.abs(t.lufs).toFixed(1)} LU ${t.lufs > 0 ? 'louder' : 'quieter'}.`);

@@ -325,3 +325,39 @@ test('a seamless loop is limited round its seam: its end leads into its start wi
     else assert.ok(step > 1, 'limited from silence to silence, the end runs hotter (the case this guards against)');
   }
 });
+
+test('two renders of the same moments compared block for block: a change that quiets the quiet parts reads quieter, not louder (scan r8)', async () => {
+  const { pairedLoudnessDiff } = await import('../src/audio/loudness.ts');
+  const sr = 48000;
+  const join = (...parts) => {
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  const run = (x) => {
+    const a = createLoudnessAnalyser(sr);
+    a.feed(x, x, x.length);
+    return { integrated: a.read().integrated, blocks: a.blocks() };
+  };
+  // A loud intro, then a long part 10 dB under it (inside the relative gate); the suggestion turns
+  // that part down 12 dB more (under the gate): its integrated loudness alone reads only the intro
+  const before = run(join(sine(sr, 1000, -14, 8), sine(sr, 1000, -24, 50)));
+  const after = run(join(sine(sr, 1000, -14, 8), sine(sr, 1000, -36, 50)));
+  assert.ok(after.integrated - before.integrated > 3, `alone, the after reads louder: ${after.integrated} against ${before.integrated}`);
+  const diff = pairedLoudnessDiff(before.blocks, after.blocks);
+  assert.ok(diff < -1, `over the same moments it is quieter: ${diff}`);
+  // A change of level everywhere reads as exactly that change, whatever the gate
+  const quiet = run(join(sine(sr, 1000, -22, 8), sine(sr, 1000, -32, 50)));
+  near(pairedLoudnessDiff(before.blocks, quiet.blocks), -8, 0.01, 'turned down 8 dB');
+  near(pairedLoudnessDiff(before.blocks, before.blocks), 0, 1e-9, 'the same');
+  // From silence: +Infinity; both silent: 0; not the same length: can't be compared (null)
+  const silent = run(new Float32Array(sr * 4));
+  const tone = run(sine(sr, 1000, -20, 4));
+  assert.equal(pairedLoudnessDiff(silent.blocks, tone.blocks), Infinity);
+  assert.equal(pairedLoudnessDiff(silent.blocks, silent.blocks), 0);
+  assert.equal(pairedLoudnessDiff(tone.blocks, run(sine(sr, 1000, -20, 6)).blocks), null);
+});

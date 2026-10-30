@@ -772,10 +772,16 @@ async function until(check, ms, what) {
         return x.heard === x.version ? x : null;
       }, 240000, 'the lane change heard').catch(() => null);
       const heardB13 = (await audition()).heardB;
+      // (covered as the app decides it: suggestionsStore playedThrough, whose 1/1000 of a bar is
+      // what a playhead read a moment before the end of the render still counts to)
+      const covered13 = await A(async ({ regions, played }) => {
+        const { playedThrough } = await import('/src/agent/suggestionsStore.ts');
+        return regions.every((r) => playedThrough(played, r));
+      }, { regions: found13.regions, played: heardB13 });
       await stop(lane13.id);
       step(
         '13a an automation lane is heard wherever its track plays (bars before and after its points too), found by sound as well, and heard once Suggested has played through all of it',
-        clavClips.every((r) => holds(lane13made.regions, r)) && lane13made.regions[0].fromBar === 1 && !!finding13 && found13.found === 'sound' && view13.regionsBy === 'rules and sound' && Array.isArray(view13.soundRegions) && !!heard13 && found13.regions.every((r) => heardB13.some((h) => h.fromBar <= r.fromBar && h.toBar >= r.toBar)),
+        clavClips.every((r) => holds(lane13made.regions, r)) && lane13made.regions[0].fromBar === 1 && !!finding13 && found13.found === 'sound' && view13.regionsBy === 'rules and sound' && Array.isArray(view13.soundRegions) && !!heard13 && covered13,
         JSON.stringify({ clavClips, rules: lane13made.regions, found: found13.found, regions: found13.regions, sound: view13.soundRegions, heardB13, heard: !!heard13 })
       );
       await card(lane13.id).locator('[data-dismiss]').click();

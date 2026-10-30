@@ -22,6 +22,7 @@ import { create } from 'zustand';
 import { liveContext, afterMaster } from './liveContext';
 import { initAudio } from './engine';
 import { measureRender, renderSequence, type ListenSnapshot } from './listen';
+import { pairedLoudnessDiff } from './loudness';
 import type { Tempo } from './tempoMap';
 import { playedBars, sequenceOffset } from './auditionMath';
 import { claimPreview, registerPreview } from './exclusivePreview';
@@ -271,7 +272,10 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
       const rb = await renderSequence(opts.suggested, plays, { signal, progress: (f) => useAudition.setState({ progress: 0.45 + f * 0.45 }) });
       const [a, b] = [ra.buffer, rb.buffer];
       const [ma, mb] = [await measureRender(a, signal), await measureRender(b, signal)];
-      const diff = Number.isFinite(ma.lufs) && Number.isFinite(mb.lufs) ? mb.lufs - ma.lufs : Number.isFinite(mb.lufs) ? Infinity : 0;
+      // (the same moments of each compared: their integrated loudness alone reads B louder when a
+      // change drops its quiet parts under the gate: pairedLoudnessDiff)
+      const paired = pairedLoudnessDiff(ma.blocks, mb.blocks);
+      const diff = paired ?? (Number.isFinite(ma.lufs) && Number.isFinite(mb.lufs) ? mb.lufs - ma.lufs : Number.isFinite(mb.lufs) ? Infinity : 0);
       // A B much louder than A is turned down to A + the limit (a B from silence: to -23 LUFS-ish, by its own level)
       const over = Number.isFinite(diff) ? diff - LOUDER_LIMIT_LU : Number.isFinite(mb.lufs) ? Math.max(0, mb.lufs + 23) : 0;
       pair = { key: opts.key, renderKey: opts.renderKey, a, b, starts: { a: ra.starts, b: rb.starts }, diff, bLevel: over > 0 ? 10 ** (-over / 20) : 1 };

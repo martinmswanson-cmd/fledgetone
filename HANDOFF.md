@@ -208,6 +208,11 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   recordPlayed/noteHeard over every suggestion), never read from the audition playing now, which
   starts again for each suggestion heard. Names in any sentence the studio writes go through
   `nm()`; agentOps.test.mjs fuzzes every op with a hostile name and fails on one outside its marks.
+- **Comparing two renders' loudness**: never subtract their integrated LUFS (the relative gate
+  drops different blocks on each side; turning quiet parts down read as "louder"). Use
+  `loudness.ts pairedLoudnessDiff` on `RenderMeasure.blocks` (audition levelDiff and its turn-down,
+  the command line's before-and-after `difference.mix.lufs` and tracks'). e2e checks of coverage
+  decide with the app's own `playedThrough`, not exact bar ends.
 - Wobble rates are `'1/4'`, `'1/8'`, `'1/16'` (not Tone's `'8n'`).
 - Sample libraries load from GitHub (`nbrosowsky/tonejs-instruments`, files spell sharps with `s`,
   e.g. `As3.mp3`) and the FluidR3 General MIDI set. Check a file exists before listing it.
