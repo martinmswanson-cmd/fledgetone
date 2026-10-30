@@ -310,7 +310,8 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
       phase: 'playing',
       progress: 1,
       levelDiff: Number.isFinite(diff) ? Math.round(diff * 10) / 10 : null,
-      note: pair.bLevel < 1 ? `The suggestion is ${Number.isFinite(diff) ? `about ${Math.round(diff)} dB` : 'much'} louder (in loudness): it plays turned down to about ${LOUDER_LIMIT_LU} dB louder than the song as it is.` : null,
+      // (a song silent there has no loudness to be louder than: it's only turned down)
+      note: pair.bLevel < 1 ? (Number.isFinite(diff) ? `The suggestion is about ${Math.round(diff)} dB louder (in loudness): it plays turned down to about ${LOUDER_LIMIT_LU} dB louder than the song as it is.` : 'The suggestion is much louder (in loudness): it plays turned down (the song is silent there).') : null,
     });
   } catch (err) {
     if (rendering === controller) rendering = null;

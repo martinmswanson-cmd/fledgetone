@@ -24,7 +24,7 @@ import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, hearingAsFound, hearingByRules, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, hearingAsFound, hearingByRules, heardForAgent, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 import { queueFinding, stopFinding, useFinding } from './whereHeard';
@@ -50,7 +50,7 @@ const view = (s: Suggestion) => {
     id: s.id,
     title: s.title,
     status: s.status,
-    heard: listen ? s.heard !== null && s.heard === s.version : s.heardByRules === s.version,
+    heard: heardForAgent(s, listen),
     changes: s.changes,
     warnings: s.warnings,
     notes: s.notes,

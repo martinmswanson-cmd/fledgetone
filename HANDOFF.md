@@ -214,6 +214,11 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   (`swingReadsClip`) the whole clip. Sounds are unchanged. A new instrument that keeps state from
   note to note must be added there; songDiff.test.mjs checks the mono list against instruments.ts
   and the takes against the catalogue.
+- **The before-and-after's cut in a song not in 4/4** (`suggestionsStore.ts hearingPlan`) falls on
+  the last measure start at or before the bars that fit (`measureAt`), part way through a bar too:
+  after a measure of another length none starts on a whole bar again. `without` (heardRegions,
+  the focus's pieces) subtracts exactly, so part-bars stay part-bars. An agent's `heard` comes from
+  `heardForAgent` (never while `stale`).
 - **What B played is kept on each suggestion** (`playedB`, per version and render; songWatch.ts
   recordPlayed/noteHeard over every suggestion), never read from the audition playing now, which
   starts again for each suggestion heard. Names in any sentence the studio writes go through

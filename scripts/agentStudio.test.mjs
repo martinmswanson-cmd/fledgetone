@@ -561,6 +561,7 @@ test('out of date, then what it changes put back: it waits again', () => {
 
 test('what the before-and-after plays: every region a change is heard in, one after another, the agent\'s focus with them', async () => {
   const { hearingPlan, coveredBy, heardRegions, NO_LONGER_FITS } = await import('../src/agent/suggestionsStore.ts');
+  const { measureAt } = await import('../src/audio/tempoMap.ts');
   const p = base();
   const clip = p.clips.find((c) => c.notes.length && c.trackId === p.tracks[0].id);
   const changedAt = { fromBar: clip.startBar, toBar: clip.startBar + clip.lengthBars };
@@ -603,13 +604,39 @@ test('what the before-and-after plays: every region a change is heard in, one af
   assert.deepEqual(many.unheard, [{ fromBar: 82, toBar: 85 }, { fromBar: 100, toBar: 101 }]);
   assert.equal(many.limit, 'bars');
   // In 3/4 the cut falls where a measure starts (bar 65 of four quarter notes is beat 2 of measure 86,
-  // bar 64 starts measure 85), so the
+  // which starts at bar 64.75), so the
   // bars heard and those not heard never share a measure and the loop ends on one
   const waltz = { ...fast, meter: { num: 3, den: 4 } };
   const cut = plan([{ fromBar: 1, toBar: 145 }], undefined, [waltz]);
-  assert.deepEqual(cut.plays, [{ fromBar: 1, toBar: 64 }]);
-  assert.deepEqual(cut.unheard, [{ fromBar: 64, toBar: 145 }]);
+  assert.deepEqual(cut.plays, [{ fromBar: 1, toBar: 64.75 }]);
+  assert.deepEqual(cut.unheard, [{ fromBar: 64.75, toBar: 145 }]);
   assert.equal(cut.limit, 'bars');
+  // (scan r9) After one measure of another length no measure starts on a whole bar again: the cut
+  // falls on the last measure start that fits, part way through a bar, never on bar 1 or nothing
+  const odd = { ...fast, meter: { num: 4, den: 4 }, meterPoints: [{ id: 'm1', bar: 2, num: 3, den: 4 }, { id: 'm2', bar: 2.75, num: 4, den: 4 }] };
+  const oddCut = plan([{ fromBar: 1, toBar: 145 }], undefined, [odd]);
+  assert.deepEqual(oddCut.plays, [{ fromBar: 1, toBar: 64.75 }]);
+  assert.deepEqual(oddCut.unheard, [{ fromBar: 64.75, toBar: 145 }]);
+  // (what's heard of it, for the card's words, is exactly what was played: measures 1-64 of the ruler)
+  assert.deepEqual(heardRegions({ regions: [{ fromBar: 1, toBar: 145 }], unheard: oddCut.unheard }), [{ fromBar: 1, toBar: 64.75 }]);
+  for (const [meterPoints, base] of [
+    [[{ id: 'a', bar: 2, num: 2, den: 4 }], { num: 4, den: 4 }],
+    [[{ id: 'a', bar: 40, num: 3, den: 4 }, { id: 'b', bar: 52.25, num: 5, den: 8 }], { num: 4, den: 4 }],
+    [[], { num: 7, den: 8 }],
+    [[{ id: 'a', bar: 30, num: 5, den: 4 }], { num: 3, den: 4 }],
+  ]) {
+    const m = { ...fast, meter: base, meterPoints };
+    for (const from of [1, 3, 37]) {
+      const p = plan([{ fromBar: from, toBar: from + 120 }], undefined, [m]);
+      const [play] = p.plays;
+      assert.equal(p.plays.length, 1, JSON.stringify(p));
+      // As near the 64 bars as a measure start allows (never more than a measure short), and the rest unheard from there
+      assert.ok(play.fromBar <= from && play.toBar > from + 62 && play.toBar <= from + 64, JSON.stringify(p));
+      assert.equal(p.unheard[0].fromBar, play.toBar);
+      const at = (bar) => measureAt(bar, { base: m.meter, points: m.meterPoints });
+      assert.ok(Math.abs(at(play.toBar).start - play.toBar) < 1e-9, `${JSON.stringify(meterPoints)} ${play.toBar}`);
+    }
+  }
   // The slower of the two songs counts (a suggestion that slows the song down plays longer after)
   assert.equal(plan([{ fromBar: 5, toBar: 40 }], undefined, [fast, song]).limit, null);
   assert.equal(plan([{ fromBar: 5, toBar: 60 }], undefined, [fast, song]).limit, 'seconds');
@@ -809,7 +836,9 @@ test('without Listen, an agent reads only where the rules say a suggestion is he
   const handlers = readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8');
   assert.match(handlers, /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, song\);/);
   // (scan r7) and nothing that moves with them: heard by the rules' regions, no "finding", why not by sound only from the rules
-  assert.match(handlers, /heard: listen \? s\.heard !== null && s\.heard === s\.version : s\.heardByRules === s\.version,/);
+  assert.match(handlers, /heard: heardForAgent\(s, listen\),/);
+  const store = readFileSync(new URL('../src/agent/suggestionsStore.ts', import.meta.url), 'utf8');
+  assert.match(store, /\(listen \? s\.heard !== null && s\.heard === s\.version : s\.heardByRules === s\.version\)/);
   assert.match(handlers, /const rulesWhy = listen \? null : tooLongWhy\(song, s\);/);
   assert.match(handlers, /\.\.\.\(!listen\s+\? rulesWhy/);
   const watch = readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8');
@@ -818,4 +847,17 @@ test('without Listen, an agent reads only where the rules say a suggestion is he
   // (scan r8) kept on the suggestion (playedB), of its current version, not stale, still open
   assert.match(watch, /s\.playedB && s\.playedB\.version === s\.version && !s\.stale && isOpen\(s\)/);
   assert.match(watch, /if \(!s \|\| !playedVersion\(s, a\)\) return;/);
+});
+
+test('an agent never reads a suggestion as heard while it is changed and not made again yet (scan r9)', async () => {
+  const { heardForAgent } = await import('../src/agent/suggestionsStore.ts');
+  const s = { heard: 2, heardByRules: 2, version: 2, stale: false };
+  assert.equal(heardForAgent(s, true), true);
+  assert.equal(heardForAgent(s, false), true);
+  assert.equal(heardForAgent({ ...s, stale: true }, true), false);
+  assert.equal(heardForAgent({ ...s, stale: true }, false), false);
+  assert.equal(heardForAgent({ ...s, heard: 1 }, true), false);
+  assert.equal(heardForAgent({ ...s, heardByRules: null }, false), false);
+  const { readFileSync } = await import('node:fs');
+  assert.match(readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8'), /heard: heardForAgent\(s, listen\)/);
 });

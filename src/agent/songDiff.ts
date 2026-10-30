@@ -141,7 +141,11 @@ export const positionWords = (bar: number, meter: MeterMap | null): string => {
   return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
 };
 /** A length: "4 bars", or in a song not in 4/4 (`meter`: where a bar isn't a measure) in quarter notes. */
-export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${lengthNumber(lengthBars * 4)} quarter notes` : `${lengthNumber(lengthBars)} bars`);
+export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => {
+  const n = lengthNumber(meter ? lengthBars * 4 : lengthBars);
+  const word = meter ? 'quarter note' : 'bar';
+  return `${n} ${word}${n === '1' ? '' : 's'}`;
+};
 /** A length's number to 1 decimal, but never 0 for a length that isn't (two figures then: 0.004). */
 const lengthNumber = (v: number): string => (r1(v) === 0 && v > 0 ? String(Number(v.toPrecision(2))) : String(r1(v)));
 const barAt = (bar: number): string => positionWords(bar, sentenceMeter);
