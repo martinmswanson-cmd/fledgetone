@@ -66,8 +66,10 @@ export const SuggestionsPanel: React.FC = () => {
       unwatch();
       wide.removeEventListener('change', setWidth);
       document.documentElement.style.removeProperty('--agent-panel-w');
-      // Closing the panel stops a before-and-after that's playing
+      // Closing the panel stops a before-and-after that's playing, and takes its tint off the
+      // timeline (the card under the pointer or focus is gone with it)
       stopAudition();
+      useSuggestions.setState({ focusId: null });
       returnFocus(agentOpeners.panel);
     };
   }, []);

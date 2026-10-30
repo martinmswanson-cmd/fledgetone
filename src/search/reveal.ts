@@ -49,14 +49,14 @@ export const AGENT_UI = '[data-agent-panel], [data-agent-ui], [data-agent-highli
  * Ring the control `selector` finds where it is, scrolled into view but not focused and nothing
  * opened: for an agent pointing something out without taking the keyboard. Never anything in the
  * agent's own parts of the page (AGENT_UI: their labels hold the agent's words, and scrolling
- * them could move a card under the pointer). Resolves false if there's no such control.
+ * them could move a card under the pointer). Resolves to the control rung, or null if there's no such control.
  */
-export async function ring(selector: string): Promise<boolean> {
+export async function ring(selector: string): Promise<HTMLElement | null> {
   const el = [...document.querySelectorAll<HTMLElement>(selector)].find((x) => !x.closest(AGENT_UI) && x.getClientRects().length > 0);
-  if (!el) return false;
+  if (!el) return null;
   el.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() });
   flash(el);
-  return true;
+  return el;
 }
 
 /** Click the button `selector` finds (to open what it opens), after bringing it into view. */

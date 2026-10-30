@@ -20,7 +20,7 @@ import { parseProject, serializeProject, type ProjectSnapshot } from '../store/p
 import { makeTrack } from '../store/trackFactory';
 import { syncPatterns, unlinked } from '../store/patterns';
 import { retimeAudioClips } from '../store/audioClips';
-import { cleanMarkerName, createMarker, nextMarkerName, placeMarker, retimeMarkers } from '../store/markers';
+import { cleanMarkerName, createMarker, MARKER_NAME_MAX, nextMarkerName, placeMarker, retimeMarkers } from '../store/markers';
 import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from '../store/buses';
 import { DRUM_NOTES } from '../store/drumNotes';
 import { midiOf, nameOf } from '../store/noteTools';
@@ -56,7 +56,7 @@ import { defaultClipper } from '../audio/effects/clipper';
 import { diffSongs, type SongDiff } from './songDiff';
 import { checkSafety } from './safety';
 import { firstDifference, stableJson } from './fingerprint';
-import { LIMITS } from './protocol';
+import { agentLabel, LIMITS } from './protocol';
 import { byAgentId } from './agentText';
 
 
@@ -544,11 +544,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
         if (op.pan !== undefined) next.pan = clamped(op.pan, -1, 1, `"${track.name}" pan`);
         if (op.mute !== undefined) next.isMuted = op.mute;
         if (op.solo !== undefined) next.isSoloed = op.solo;
-        if (op.name !== undefined) {
-          const name = op.name.trim().slice(0, 40);
-          if (!name) throw new OpFail(`${at}.name`, 'a track name needs at least one letter');
-          next.name = name;
-        }
+        if (op.name !== undefined) next.name = cleanName(op.name, `${at}.name`, 'a track name needs at least one letter')!;
         if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `"${track.name}" reverb send`);
         if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `"${track.name}" delay send`);
         if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `"${track.name}" distance`);
@@ -652,8 +648,10 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'remove_automation': {
         const track = trackRef(op.trackId, `${at}.trackId`);
-        if (!track.automation?.some((l) => l.param === op.param)) throw new OpFail(`${at}.param`, `"${track.name}" has no ${op.param} automation`);
-        const automation = track.automation.filter((l) => l.param !== op.param);
+        // (a send's lane by its return's id as the agent reads it)
+        const param = op.param.startsWith('send:') ? `send:${byAgentId(w.tracks, op.param.slice(5))?.id ?? op.param.slice(5)}` : op.param;
+        if (!track.automation?.some((l) => l.param === param)) throw new OpFail(`${at}.param`, `"${track.name}" has no ${op.param} automation`);
+        const automation = track.automation.filter((l) => l.param !== param);
         const next: Track = { ...track, automation };
         if (!automation.length) delete next.automation;
         replaceTrack(track, next);
@@ -685,7 +683,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'add_marker': {
         const bar = readBar(op.bar, `${at}.bar`, TOTAL_BARS + 1);
-        const name = op.name === undefined ? nextMarkerName(w.markers) : cleanMarkerName(op.name);
+        const name = op.name === undefined ? nextMarkerName(w.markers) : cleanMarkerName(agentLabel(op.name, MARKER_NAME_MAX));
         if (!name) throw new OpFail(`${at}.name`, 'a marker name needs at least one letter');
         const marker = createMarker(bar, tempoOf(w), name);
         const there = w.markers.find((m) => Math.abs(m.bar - marker.bar) < 1e-6);
@@ -707,7 +705,7 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
       }
       case 'rename_marker': {
         const marker = markerRef(op.markerId, `${at}.markerId`);
-        const name = cleanMarkerName(op.name);
+        const name = cleanMarkerName(agentLabel(op.name, MARKER_NAME_MAX));
         if (!name) throw new OpFail(`${at}.name`, 'a marker name needs at least one letter');
         w.markers = w.markers.map((m) => (m === marker ? { ...m, name } : m));
         return;
@@ -761,9 +759,9 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
   }
 
   /**
-   * The id of the thing an agent names: as given, or the one whose id reads so once made plain
-   * (the agent reads ids as agentText makes them: a file's id with hidden text in it is named
-   * without it). As given when none or several do.
+   * The id of the thing an agent names: as given, or the one it reads so (the agent reads ids as
+   * agentIds gives them: a file's id with hidden text in it is named without it, or by an alias
+   * of its own when that would read as another's). As given when none or several do.
    */
   function realId(value: string, kind: 'track' | 'clip' | 'marker' | 'tempo'): string {
     const list: ReadonlyArray<{ id: string }> = kind === 'track' ? w.tracks : kind === 'clip' ? w.clips : kind === 'marker' ? w.markers : w.tempoPoints;
@@ -914,10 +912,11 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
     return value;
   }
 
-  function cleanName(value: string | undefined, path: string): string | null {
+  /** A name the agent gives, as the song keeps it: agentLabel's (nothing hidden, one line), at most `max` characters. */
+  function cleanName(value: string | undefined, path: string, empty = 'a name needs at least one letter', max = 40): string | null {
     if (value === undefined) return null;
-    const name = value.replace(/[\s\p{Cc}]+/gu, ' ').trim().slice(0, 40);
-    if (!name) throw new OpFail(path, 'a name needs at least one letter');
+    const name = agentLabel(value, max);
+    if (!name) throw new OpFail(path, empty);
     return name;
   }
 

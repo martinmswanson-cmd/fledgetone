@@ -294,17 +294,44 @@ export class RateLimiter {
   }
 }
 
-/** Text from an agent as the studio shows it: plain text without control or text-direction characters, at most `max` characters. */
+/** `text` cut to at most `max` UTF-16 units between code points: never half of a surrogate pair at the end. */
+export function cutText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, Math.max(0, max));
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * What an agent's text may never hold: controls (C0 but tab and line breaks, DEL, C1), format
+ * characters (zero-width ones, direction marks, embeddings, overrides and isolates, tag
+ * characters), the other default-ignorable ones (fillers, variation selectors but the two
+ * presentation ones, which only pick emoji or text style) and halves of surrogate pairs.
+ */
+// eslint-disable-next-line no-control-regex
+const AGENT_HIDDEN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\p{Cf}\p{Cs}]|(?![\uFE0E\uFE0F])\p{Default_Ignorable_Code_Point}/gu;
+
+/** Text from an agent as the studio shows it: plain text without control, hidden or text-direction characters, at most `max` characters. */
 export function plainAgentText(text: unknown, max: number): string {
   if (typeof text !== 'string') return '';
-  return (
+  return cutText(
     text
       // (line and paragraph separators as plain line breaks; invisible format characters, as zero-width spaces and direction marks, gone)
       .replace(/[\u2028\u2029]/g, '\n')
-      // eslint-disable-next-line no-control-regex
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\p{Cf}]/gu, '')
-      .slice(0, max)
+      .replace(AGENT_HIDDEN, ''),
+    max
   );
+}
+
+/**
+ * A name or label an agent gives (a track's, a clip's, a marker's), as the song keeps it: plain
+ * text by plainAgentText's rule (nothing hidden, no controls or direction characters), on one
+ * line (white space as one space), trimmed, at most `max` characters, cut between code points.
+ * Empty when nothing visible is left (blank braille and fillers don't count).
+ */
+export function agentLabel(text: unknown, max: number): string {
+  const one = plainAgentText(text, Infinity).replace(/\s+/g, ' ').trim();
+  const cut = cutText(one, max).trim();
+  return hasVisibleText(cut) ? cut : '';
 }
 
 /** Letters that look like Latin ones (Cyrillic, Greek, digits and the like), as those letters. */
@@ -480,7 +507,8 @@ export function plainUserText(text: unknown, max: number): string {
     const cp = c.codePointAt(0)!;
     const prev = out.at(-1);
     const next = cps[i + 1];
-    if (CONTROL.test(c)) continue;
+    // (and a half of a surrogate pair, alone: it shows as a box, if at all)
+    if (CONTROL.test(c) || (cp >= 0xd800 && cp <= 0xdfff)) continue;
     if (cp === 0x1f3f4) {
       let j = i + 1;
       while (j < cps.length && cps[j].codePointAt(0)! >= 0xe0020 && cps[j].codePointAt(0)! <= 0xe007e) j++;
@@ -514,7 +542,7 @@ export function plainUserText(text: unknown, max: number): string {
     if (INVISIBLE.test(c)) continue;
     out.push(c);
   }
-  return out.join('').slice(0, max);
+  return cutText(out.join(''), max);
 }
 
 /** Whether text has anything to see (not only spaces and invisible characters, blank braille among them). */

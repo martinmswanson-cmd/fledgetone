@@ -5,7 +5,9 @@
  * (one undo step) or Dismiss. Accept and Dismiss answer only to a real click or key press on a card
  * that stayed where it was (cardGuard.ts). It says whether it was heard; one the song changed under
  * is made again when it's heard, and goes in unheard only after a second press of Accept; one out
- * of date or made for another song can't be accepted. Stop is there whenever it's being heard.
+ * of date or made for another song can't be accepted (its Accept stays, marked unavailable, so a
+ * focus on it stays). Stop is there whenever it's being heard. A focus inside the card when its
+ * buttons go (the agent withdrew it) comes to the card, never left on the page.
  * "Ask about this" ties the musician's next message to it (the message box takes the focus).
  */
 import React from 'react';
@@ -73,15 +75,37 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
   const unfocus = () => useSuggestions.getState().focusId === s.id && useSuggestions.setState({ focusId: null });
   const unsettled = 'That card just appeared or moved: press again if you meant it.';
 
+  // The keyboard focus inside this card when its buttons go (the agent withdrew it, say): it
+  // comes to the card itself, never left on the page's body
+  const card = React.useRef<HTMLElement>(null);
+  const focusInside = React.useRef(false);
+  React.useLayoutEffect(() => {
+    const el = card.current;
+    const now = document.activeElement;
+    if (el && focusInside.current && (!now || now === document.body || !now.isConnected)) el.focus({ preventScroll: true });
+  }, [s.status]);
+
   return (
     <article
+      ref={card}
       aria-label={`Suggestion from your agent: ${s.title}`}
       data-suggestion={s.id}
       // (focus can come here, never to a button, after the card before it is answered from the keyboard)
       tabIndex={-1}
       onMouseEnter={focus}
       onMouseLeave={unfocus}
-      onFocus={focus}
+      onFocus={() => {
+        focusInside.current = true;
+        focus();
+      }}
+      onBlur={(e) => {
+        // (a button taken away under the focus isn't the musician moving it: that's told by where it went)
+        const gone = e.target;
+        if (e.relatedTarget && card.current?.contains(e.relatedTarget as Node)) return;
+        window.setTimeout(() => {
+          if (gone.isConnected || (document.activeElement && document.activeElement !== document.body)) focusInside.current = !!card.current?.contains(document.activeElement);
+        }, 0);
+      }}
       className={`rounded-lg border p-3 flex flex-col gap-2 outline-none focus:ring-1 focus:ring-cyan-400/60 ${open ? 'border-forge-border bg-forge-bg/60' : 'border-forge-border/50 bg-forge-bg/30 opacity-80'}`}
     >
       <header className="flex items-start gap-2">
@@ -162,11 +186,13 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
           <>
             <button
               type="button"
-              disabled={!open}
+              // (not disabled: a button that's focused stays focused when the suggestion goes out of date)
+              aria-disabled={!open}
               onPointerDown={guardDown}
               onKeyDown={guardKey}
               onKeyUp={guardKeyUp}
               onClick={(e) => {
+                if (!open) return;
                 const press = guardClick(e, s.id);
                 if (press === 'ignore') return;
                 if (press === 'unsettled') return say(unsettled);
@@ -176,7 +202,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion; agent?: string }
                 if (answer === null && e.detail === 0) focusAfterAnswer(s.id);
               }}
               data-accept={s.id}
-              className="h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              className="h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25 aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-cyan-500/15 flex items-center gap-1"
             >
               <Check className="w-3.5 h-3.5" aria-hidden /> {armed ? 'Accept without listening' : 'Accept'}
             </button>

@@ -22,7 +22,7 @@ import { specOf } from '../audio/automation';
 import { barToSeconds, formatMeter, FOUR_FOUR, type TempoMap } from '../audio/tempoMap';
 import { INSERT_NAMES, insertDefaults } from './ops';
 import { stableJson } from './fingerprint';
-import { agentLine, cleanForAgent } from './agentText';
+import { agentIdOf, agentLine, byAgentId, cleanForAgent } from './agentText';
 
 export const AGENT_SONG_SCHEMA = 'fledgetone.agent-song/1';
 /** The most an AgentSong may weigh as JSON. */
@@ -107,12 +107,22 @@ function changedSettings(insert: string, settings: Record<string, unknown>): Rec
   return out;
 }
 
-function agentTrack(t: Track, tracks: readonly Track[]): AgentTrack {
+/** How an agent reads the ids of a song's tracks, clips, markers and tempo changes (agentIds). */
+interface SongIds {
+  track: (id: string) => string;
+  clip: (id: string) => string;
+  marker: (id: string) => string;
+  tempo: (id: string) => string;
+}
+
+const songIds = (p: ProjectSnapshot): SongIds => ({ track: agentIdOf(p.tracks), clip: agentIdOf(p.clips), marker: agentIdOf(p.markers ?? []), tempo: agentIdOf(p.tempoPoints ?? []) });
+
+function agentTrack(t: Track, tracks: readonly Track[], ids: SongIds): AgentTrack {
   const meta = INSTRUMENTS[t.instrumentKey];
   const kind = meta?.kind;
   const fx = t.fx as unknown as Record<string, { on?: boolean } & Record<string, unknown>>;
   return {
-    id: t.id,
+    id: ids.track(t.id),
     name: agentLine(t.name),
     instrument: { key: t.instrumentKey, name: agentLine(meta?.name ?? t.instrumentKey), category: meta?.category ?? '' },
     role: partKind(t.instrumentKey),
@@ -124,13 +134,13 @@ function agentTrack(t: Track, tracks: readonly Track[]): AgentTrack {
     delaySend: r(t.delaySend, 3),
     ...(t.distance ? { distance: r(t.distance, 3) } : {}),
     ...(t.eq.low || t.eq.mid || t.eq.high ? { eq: { ...t.eq } } : {}),
-    ...(t.output ? { output: t.output } : {}),
-    ...(t.sends?.length ? { sends: t.sends.map((s) => ({ to: s.to, level: r(s.level, 3) })) } : {}),
+    ...(t.output ? { output: ids.track(t.output) } : {}),
+    ...(t.sends?.length ? { sends: t.sends.map((s) => ({ to: ids.track(s.to), level: r(s.level, 3) })) } : {}),
     inserts: (INSERT_NAMES as readonly string[]).filter((k) => fx[k]?.on).map((k) => ({ insert: k, settings: changedSettings(k, fx[k]) })),
     automation: (t.automation ?? [])
       .filter((l) => l.points.length)
       .map((l) => ({
-        param: l.param,
+        param: l.param.startsWith('send:') ? `send:${ids.track(l.param.slice(5))}` : l.param,
         label: specOf(l.param, t, tracks).label,
         fromBar: r(l.points[0].bar),
         toBar: r(l.points[l.points.length - 1].bar),
@@ -174,26 +184,27 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
   const key = detectKey(p.clips, p.tracks);
   const master = normalizeMasterSettings(p.master ?? defaultMasterSettings());
   const byId = new Map(p.tracks.map((t) => [t.id, t]));
+  const ids = songIds(p);
   const song: AgentSong = {
     schema: AGENT_SONG_SCHEMA,
     revision: opts.revision ?? 0,
     app: { version: opts.appVersion ?? 'unknown', projectVersion: PROJECT_VERSION },
     ...(p.songId ? { songId: p.songId } : {}),
     name: agentLine(p.name, 200),
-    tempo: { bpm: p.bpm, changes: (p.tempoPoints ?? []).map((t) => ({ id: t.id, bar: r(t.bar), bpm: t.bpm, ramp: t.ramp === true })) },
+    tempo: { bpm: p.bpm, changes: (p.tempoPoints ?? []).map((t) => ({ id: ids.tempo(t.id), bar: r(t.bar), bpm: t.bpm, ramp: t.ramp === true })) },
     meter: { base: formatMeter(meterMap.base), changes: meterMap.points.map((m) => ({ bar: r(m.bar), meter: formatMeter(m) })) },
     key: key?.name ?? null,
     lengthBars: r(end - 1),
     lengthSeconds: r(barToSeconds(end, tempo), 2),
     loop: { inBar: r(p.loopRegion.inBar), outBar: r(p.loopRegion.outBar), on: p.loopRegion.enabled },
-    markers: (p.markers ?? []).map((m) => ({ id: m.id, name: agentLine(m.name), bar: r(m.bar), seconds: r(m.seconds, 3), heldTo: m.anchor })),
+    markers: (p.markers ?? []).map((m) => ({ id: ids.marker(m.id), name: agentLine(m.name), bar: r(m.bar), seconds: r(m.seconds, 3), heldTo: m.anchor })),
     sections: songSections(p.clips, p.markers ?? [], meterMap).map((s) => ({ name: agentLine(s.name), fromBar: r(s.from), toBar: r(s.to) })),
-    tracks: p.tracks.map((t) => agentTrack(t, p.tracks)),
+    tracks: p.tracks.map((t) => agentTrack(t, p.tracks, ids)),
     clips: p.clips.map((c) => {
       const range = noteRange(c, byId.get(c.trackId));
       return {
-        id: c.id,
-        trackId: c.trackId,
+        id: ids.clip(c.id),
+        trackId: ids.track(c.trackId),
         name: agentLine(c.name),
         startBar: r(c.startBar),
         lengthBars: r(c.lengthBars),
@@ -335,16 +346,21 @@ export function agentNotes(
 ): { notes: AgentNote[]; total: number; next?: string } {
   const limit = Number.isFinite(q.limit) ? Math.max(1, Math.min(MAX_NOTES_PER_CALL, Math.floor(q.limit!))) : MAX_NOTES_PER_CALL;
   const all: AgentNote[] = [];
+  const ids = songIds(p);
+  // (the clip and track asked for as the agent names them: by the ids it reads)
+  const clipId = q.clipId ? (byAgentId(p.clips, q.clipId)?.id ?? null) : undefined;
+  const trackId = q.trackId ? (byAgentId(p.tracks, q.trackId)?.id ?? null) : undefined;
   for (const c of p.clips) {
-    if (q.clipId && c.id !== q.clipId) continue;
-    if (q.trackId && c.trackId !== q.trackId) continue;
+    if (clipId !== undefined && c.id !== clipId) continue;
+    if (trackId !== undefined && c.trackId !== trackId) continue;
+    const noteId = agentIdOf(c.notes);
     for (const n of c.notes) {
       // A note past the clip's end (after a trim) doesn't play: it's left out
       if (n.startOffset < -1e-9 || n.startOffset >= c.lengthBars - 1e-9) continue;
       const bar = c.startBar + n.startOffset;
       if (q.fromBar !== undefined && bar < q.fromBar - 1e-9) continue;
       if (q.toBar !== undefined && bar >= q.toBar - 1e-9) continue;
-      all.push({ id: n.id, clipId: c.id, trackId: c.trackId, pitch: n.note, start: r(n.startOffset, 6), bar: r(bar, 6), length: r(durationToBars(n.duration), 6), velocity: r(n.velocity, 3) });
+      all.push({ id: noteId(n.id), clipId: ids.clip(c.id), trackId: ids.track(c.trackId), pitch: n.note, start: r(n.startOffset, 6), bar: r(bar, 6), length: r(durationToBars(n.duration), 6), velocity: r(n.velocity, 3) });
     }
   }
   all.sort((a, b) => a.bar - b.bar || a.trackId.localeCompare(b.trackId) || a.pitch.localeCompare(b.pitch));
@@ -356,11 +372,16 @@ export function agentNotes(
 
 /** Every automation lane (or one track's, or one setting's), with all its points. */
 export function agentAutomation(p: ProjectSnapshot, q: { trackId?: string; param?: string } = {}) {
+  const track = agentIdOf(p.tracks);
+  const only = q.trackId ? (byAgentId(p.tracks, q.trackId) ?? null) : undefined;
+  // (a send's setting names its return as the agent reads its id)
+  const paramOf = (param: string) => (param.startsWith('send:') ? `send:${track(param.slice(5))}` : param);
+  const wanted = q.param?.startsWith('send:') ? `send:${byAgentId(p.tracks, q.param.slice(5))?.id ?? q.param.slice(5)}` : q.param;
   return p.tracks
-    .filter((t) => !q.trackId || t.id === q.trackId)
+    .filter((t) => only === undefined || t === only)
     .flatMap((t) =>
       (t.automation ?? [])
-        .filter((l) => !q.param || l.param === q.param)
-        .map((l) => cleanForAgent({ trackId: t.id, track: agentLine(t.name), param: l.param, label: specOf(l.param, t, p.tracks).label, points: l.points.map((x) => ({ ...x })) }))
+        .filter((l) => !wanted || l.param === wanted)
+        .map((l) => cleanForAgent({ trackId: track(t.id), track: agentLine(t.name), param: paramOf(l.param), label: specOf(l.param, t, p.tracks).label, points: l.points.map((x) => ({ ...x })) }))
     );
 }

@@ -30,6 +30,8 @@ const { durationToBars } = await import('../src/store/timelineTypes.ts');
 const { followTracks } = await import('../src/store/drumFollow.ts');
 const { newKitDesign } = await import('../src/store/drumDesign.ts');
 const { applyOps } = await import('../src/agent/ops.ts');
+const { classifySuggestion } = await import('../src/agent/suggestion.ts');
+const { fingerprint } = await import('../src/agent/fingerprint.ts');
 const { createStarter } = await import('../src/store/starters.ts');
 
 const base = () => createStarter('lofi');
@@ -375,4 +377,67 @@ test("the agent code isn't in the app's first download: AgentMount loads it on d
     const src = readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /from '[^']*\/agent\/(?!AgentMount)[^']*'/, file);
   }
+});
+
+test("arming, a freeze and MIDI knobs aren't edits; mute and solo are, but never make a suggestion out of date", () => {
+  const p = base();
+  const keys = p.tracks[0].id;
+  const parts = (tracks) => ({ tracks, clips: p.clips, markers: p.markers });
+  const with0 = (patch) => p.tracks.map((t, i) => (i === 0 ? { ...t, ...patch } : t));
+  const c = new RevisionCounter();
+  c.update(parts(p.tracks));
+  assert.equal(c.update(parts(with0({ isArmed: true }))), 0, 'armed');
+  assert.equal(c.update(parts(with0({ isArmed: false }))), 0, 'disarmed');
+  assert.equal(c.update(parts(with0({ freezing: true }))), 0, 'freezing');
+  assert.equal(c.update(parts(with0({ frozen: { at: 1 } }))), 0, 'frozen');
+  assert.equal(c.update(parts(with0({ midiMap: [{ cc: 7, param: 'volume' }] }))), 0, 'MIDI learn');
+  assert.equal(c.update(parts(with0({ isMuted: true }))), 1, 'a mute is heard: it counts');
+  assert.equal(c.update(parts(with0({ isSoloed: true }))), 2);
+  // A suggestion on the track: muting, soloing, renaming or recolouring it doesn't put it out of date
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys down', explanation: '', ops: [{ op: 'set_track', trackId: keys, volumeDb: -20 }] }).suggestion;
+  for (const patch of [{ isMuted: true }, { isSoloed: true }, { name: 'Piano' }, { color: '#123456' }, { isArmed: true }]) {
+    const now = { ...p, tracks: with0(patch) };
+    const checked = checkSuggestion(s, now, ctxOf(now));
+    assert.notEqual(checked.status, 'out_of_date', JSON.stringify(patch));
+    // ...and made again on the song as it is, the musician's mute and solo stay
+    const fresh = freshen(checked, now, ctxOf(now));
+    assert.ok(isOpen(fresh), JSON.stringify(patch));
+    assert.equal(fresh.song.tracks[0].volume, -20);
+    // (arming isn't kept in a song file: Accept keeps the studio's own, see accept.ts)
+    for (const [k, v] of Object.entries(patch)) if (k !== 'isArmed') assert.deepEqual(fresh.song.tracks[0][k], v, `${k} as the musician left it`);
+  }
+  const armed = { ...p, tracks: with0({ isArmed: true }) };
+  assert.equal(checkSuggestion(s, armed, ctxOf(armed)), s, 'arming: as it was, still heard');
+  // A suggestion file from before (mute, solo, name and colour in its fingerprint) still fits
+  const legacy = { ...s, touchedHashes: { [`track:${keys}`]: fingerprint((({ isArmed: _a, freezing: _f, frozen: _z, midiMap: _m, ...rest }) => rest)(p.tracks[0])) } };
+  assert.equal(classifySuggestion(legacy, { song: p }).status, 'unchanged');
+});
+
+test('out of date, then what it changes put back: it waits again', () => {
+  const p = base();
+  const keys = p.tracks[0].id;
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys down', explanation: '', ops: [{ op: 'set_track', trackId: keys, volumeDb: -20 }] }, 'sg-back').suggestion;
+  const edited = { ...p, tracks: p.tracks.map((t, i) => (i === 0 ? { ...t, pan: 0.5 } : t)) };
+  const gone = checkSuggestion(s, edited, ctxOf(edited));
+  assert.equal(gone.status, 'out_of_date');
+  assert.equal(checkSuggestion(gone, edited, ctxOf(edited)), gone, 'the song as it went out of date: not checked again');
+  // Another edit, the track still changed: still out of date
+  const more = { ...edited, tracks: edited.tracks.map((t, i) => (i === 2 ? { ...t, volume: -12 } : t)) };
+  assert.equal(checkSuggestion(gone, more, ctxOf(more)).status, 'out_of_date');
+  // Undone (the very song it was made on): waiting, as it was
+  const back = checkSuggestion(gone, p, ctxOf(p));
+  assert.equal(back.status, 'waiting');
+  assert.equal(back.outOfDate, undefined);
+  assert.ok(isOpen(back));
+  assert.deepEqual(acceptDecision({ ...back, heard: 1 }, p, ctxOf(p)).apply, s.song);
+  // The pan put back by hand while another track changed: changed (made again when heard)
+  const byHand = { ...more, tracks: more.tracks.map((t, i) => (i === 0 ? p.tracks[0] : t)) };
+  const again = checkSuggestion(checkSuggestion(gone, more, ctxOf(more)), byHand, ctxOf(byHand));
+  assert.equal(again.status, 'changed');
+  assert.equal(again.stale, true);
+  assert.equal(freshen(again, byHand, ctxOf(byHand)).song.tracks[2].volume, -12);
+  // Another song: never back
+  assert.equal(checkSuggestion(gone, p, ctxOf(p, 2)).status, 'other_song');
+  // Suggestions carry the connection they were made in
+  assert.equal(makeSuggestion(p, ctxOf(p), { title: 'x', explanation: '', ops: [{ op: 'set_track', trackId: keys, pan: 0.2 }] }, 'sg-c', 0, 3).suggestion.connection, 3);
 });

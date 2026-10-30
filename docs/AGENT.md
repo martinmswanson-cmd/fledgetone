@@ -511,9 +511,11 @@ song).
 When it's applied (or accepted in the studio): the song unchanged, it applies; changed elsewhere
 but not in what it touches, it applies again to the song as it is now (in the studio it's made
 again when the musician hears it); something it touches changed or went, it's out of date and
-isn't applied. In the studio, Accept takes a suggestion in one press only as the musician last
-heard it, on the song as it is; otherwise the first press offers "Accept without listening" and
-a second, separate press accepts it. A suggestion made before another song was opened can't be
+isn't applied. A track's mute, solo, name and colour don't count (the musician's mute and solo
+stay as they are when it goes in). In the studio, a suggestion out of date waits again once what
+it touches is as it was (an undo, say), and Accept takes a suggestion in one press only as the
+musician last heard it, on the song as it is; otherwise the first press offers "Accept without
+listening" and a second, separate press accepts it. A suggestion made before another song was opened can't be
 accepted at all. The same ops on the same song always give the same new ids, so what you heard is what
 you get. Applied to a song that already holds ids made for it (the same suggestion applied a
 second time), they get new ones (`<id base>~2`, `~3`...), so no two things ever share an id.
@@ -629,13 +631,18 @@ from it then needs `--allow-origin http://127.0.0.1:47200` to let it connect.
   address but one: the app's own site, for the recordings of instruments it doesn't have yet (the
   same files the app downloads; nothing about the song is sent). With `--offline` it downloads
   nothing. It's closed when the render ends, also when it fails or takes too long.
-- **What an agent writes is shown as plain text**, its names cut to 64 characters.
+- **What an agent writes is shown as plain text**, its names cut to 64 characters. The names it
+  gives in ops (a track's, a clip's, a marker's) are kept the same way: no control, invisible or
+  direction characters ever reach the song, and a name of nothing visible is refused.
 - **What the agent reads of a song is plain text too.** A song file's names and ids (and the words
   built from them: what a suggestion changes, why it's out of date, a listen's tracks) reach the
   agent without control characters or invisible ones (hidden tag text, zero-width characters,
   direction overrides), by the same rule as your messages. An id that held them is read, and can
-  be named in ops, without them. The command line prints nothing from a file with terminal
-  escapes in it.
+  be named in ops, without them; if it would then read as another id (or as nothing), it's read
+  as `<id>~<6 letters>` instead, the same in every answer, so each id names one thing only. The
+  command line prints nothing from a file with terminal escapes in it.
+- **Each pairing is its own.** An agent sees, withdraws and listens to only the suggestions it
+  made while paired this time, never those of an agent paired before.
 - **What you write to the agent** goes only when you press Send, only to the paired helper, and
   carries your selection only if you tick "Include what I've selected" (and allow it to see what
   you select). It's kept in memory only (the tab, and the helper until you disconnect), never saved.

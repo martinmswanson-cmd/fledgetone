@@ -12,8 +12,10 @@
 //   6. Accept is one undo step, the song then exactly the ops applied to the song as it was, and the
 //      agent hears "accepted" and nothing before it
 //   7. Ctrl+Z puts the song back exactly, and the suggestion is undone (the agent hears); Ctrl+Y
-//   8. a suggestion whose clip is edited meanwhile goes out of date (Accept off), and the agent hears
-//      so; one being heard stops; one heard before the swing changed is heard again before Accept
+//   8. a suggestion whose clip is edited meanwhile goes out of date (Accept off, the focus kept on
+//      it), and the agent hears so; the clip put back, it waits again; withdrawn under the focus,
+//      the focus goes to its card; one being heard stops; one heard before the swing changed is
+//      heard again before Accept
 //   9. listen gives a finite loudness and true peak; the agent takes no focus and opens no panel;
 //      a new card goes at the end, ignores presses for a second, and Space presses its buttons when
 //      reached from the keyboard
@@ -23,14 +25,15 @@
 //  12. the agent's chunk failing to load leaves the studio up (the panel's space given back), with
 //      a note on top and Reload
 //
-// Along the way (0, 7b, 9a, 9d-9i, 10c, 10d): focus goes back somewhere sensible when the panel
+// Along the way (0, 7b, 8a, 9a, 9d-9i, 10c-10f): focus goes back somewhere sensible when the panel
 // closes; the old values put back by hand aren't an undo; no listening while the song plays, and
 // held notes are heard; a suggestion not heard needs a separate second press ("Accept without
 // listening": never a double-click, never Space, gone after 5 seconds); point_at can't reach the
 // panel; quick switches keep playing; the live region says agents' words short and at most one
 // every few seconds; messages never move the cards and are marked new; an assistive tool's press
 // counts and focus goes on after it; a second tab is told another is connected; a new pairing
-// starts from reading only.
+// starts from reading only (after Disconnect in the Change dialog too), and sees none of the
+// suggestions of the pairing before.
 //
 // Needs the dev server on a port from 5960 to 5969 (PORT=5960 by default), Playwright's Chromium,
 // and tools/cli's packages (npm install in tools/cli):
@@ -156,6 +159,27 @@ async function until(check, ms, what) {
     };
     // A new card ignores presses for a second (it may have slid under the pointer)
     const settle = () => page.waitForTimeout(1100);
+    // A button on a card brought into the list's view as the musician would, by the wheel over the
+    // list (a scroll made any other way, as Playwright's own before a click, moves the cards
+    // under the pointer, and a press then is ignored), then a moment for it to settle
+    const wheelInto = async (button) => {
+      const list = page.locator('[data-agent-panel] .overflow-y-auto').first();
+      let wheeled = false;
+      for (let i = 0; i < 40; i++) {
+        const off = await button.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const l = el.closest('.overflow-y-auto').getBoundingClientRect();
+          return r.top < l.top + 4 ? r.top - l.top - 40 : r.bottom > l.bottom - 4 ? r.bottom - l.bottom + 40 : 0;
+        });
+        if (!off) break;
+        const box = await list.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + Math.min(box.height / 2, 120));
+        await page.mouse.wheel(0, Math.max(-300, Math.min(300, off)));
+        await page.waitForTimeout(80);
+        wheeled = true;
+      }
+      if (wheeled) await settle();
+    };
     const hear = async (sid) => {
       await page.locator(`[data-suggestion="${sid}"] [data-hear="suggested"]`).click();
       await page.waitForFunction((x) => {
@@ -304,12 +328,43 @@ async function until(check, ms, what) {
     // 8. Out of date
     const second = await suggest({ title: 'Busier bass', explanation: 'A pickup into bar 5.', ops: [{ op: 'add_notes', clipId: ids.b, notes: [{ pitch: 'G2', start: 3.75, length: 0.25 }] }] });
     await page.locator(`[data-suggestion="${second.id}"]`).waitFor();
+    const accept2 = page.locator(`[data-suggestion="${second.id}"] [data-accept]`);
+    // (the keyboard on its Accept as it goes out of date: the focus stays there)
+    await accept2.focus();
+    await A(() => (window.__clipsBefore = window.__fledgetoneAgent.tl.useTimelineStore.getState().clips));
     await A((clipId) => window.__fledgetoneAgent.tl.useTimelineStore.getState().addNotes(clipId, [{ note: 'C3', startOffset: 2.25, duration: '16n', velocity: 0.7 }]), ids.b);
     await statusIs(second.id, 'out_of_date');
-    const disabled = await page.locator(`[data-suggestion="${second.id}"] [data-accept]`).isDisabled();
+    const disabled = (await accept2.getAttribute('aria-disabled')) === 'true';
+    const focusKept = await A((sid) => document.activeElement?.getAttribute('data-accept') === sid, second.id);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(200);
+    const pressedOff = (await sgOf(second.id)).status;
     const heard = await events(since, 5);
     since = heard.last;
-    step('8 out of date', disabled && heard.events.some((e) => e.event === 'suggestion' && e.params.id === second.id && e.params.status === 'out_of_date'), 'Accept is off, the agent was told');
+    step(
+      '8 out of date',
+      disabled && focusKept && pressedOff === 'out_of_date' && heard.events.some((e) => e.event === 'suggestion' && e.params.id === second.id && e.params.status === 'out_of_date'),
+      `Accept is off (focus kept on it: ${focusKept}, a press does nothing: ${pressedOff}), the agent was told`
+    );
+    // 8a. What it changes put back as it was: it waits again (the agent hears); then the agent
+    // withdraws it with the keyboard on its Dismiss: the focus goes to the card, not the page
+    await A(() => window.__fledgetoneAgent.tl.useTimelineStore.setState({ clips: window.__clipsBefore }));
+    const putBack = await statusIs(second.id, 'waiting').then(
+      () => 'waiting',
+      async () => (await sgOf(second.id)).status
+    );
+    const heardBack = await events(since, 5);
+    since = heardBack.last;
+    await page.locator(`[data-suggestion="${second.id}"] [data-dismiss]`).focus();
+    await call('withdraw_suggestion', { id: second.id });
+    await statusIs(second.id, 'withdrawn');
+    await page.waitForTimeout(200);
+    const focusAfterWithdraw = await A(() => (document.activeElement?.getAttribute('data-suggestion') ?? document.activeElement?.tagName) || 'none');
+    step(
+      '8a put back: it waits again; withdrawn under the focus: the focus on its card',
+      putBack === 'waiting' && heardBack.events.some((e) => e.event === 'suggestion' && e.params.id === second.id && e.params.status === 'waiting') && focusAfterWithdraw === second.id,
+      `${putBack}, focus on ${focusAfterWithdraw}`
+    );
 
     // 8b. Out of date while it's being heard: the before-and-after stops
     const third = await suggest({ title: 'Clav lower', explanation: '', ops: [{ op: 'transpose_notes', clipId: ids.c, semitones: -12 }] });
@@ -460,6 +515,7 @@ async function until(check, ms, what) {
     const accept7 = seventhCard.locator('[data-accept]');
     await seventhCard.waitFor();
     await settle();
+    await wheelInto(accept7);
     await accept7.click();
     const armedText = (await accept7.textContent()).trim();
     if (SHOTS) await seventhCard.screenshot({ path: path.join(SHOTS, 'card-accept-without-listening.png') });
@@ -473,6 +529,7 @@ async function until(check, ms, what) {
     const expired = await until(async () => ((await accept7.textContent()).trim() === 'Accept' ? 'Accept' : null), 2000, 'Accept again').catch(async () => (await accept7.textContent()).trim());
     // (the card changed back, and may have moved: let it settle)
     await settle();
+    await wheelInto(accept7);
     await accept7.dblclick();
     await page.waitForTimeout(300);
     const afterDouble = { status: (await sgOf(seventh.id)).status, text: (await accept7.textContent()).trim() };
@@ -481,6 +538,7 @@ async function until(check, ms, what) {
     const pointed = await call('point_at', { target: { control: 'Suggestion from your agent' } }).then(() => 'found', (e) => (/No control/.test(e.message) ? 'not found' : e.message));
     const scrollAfter = await A(() => document.querySelector('[data-agent-panel] .overflow-y-auto').scrollTop);
     await page.waitForTimeout(800);
+    await wheelInto(accept7);
     await accept7.click();
     await statusIs(seventh.id, 'accepted').catch(async () => {
       throw new Error(`9d: the second press didn't accept: "${(await accept7.textContent()).trim()}", ${await seventhCard.locator('[data-card-status]').textContent()}`);
@@ -575,7 +633,7 @@ async function until(check, ms, what) {
     await A(() => window.__fledgetoneAgent.tl.useTimelineStore.getState().newProject('blank'));
     await statusIs(fifth.id, 'other_song');
     const phase = await A(() => window.__fledgetoneAgent.audition.useAudition.getState().phase);
-    const off = await page.locator(`[data-suggestion="${fifth.id}"] [data-accept]`).isDisabled();
+    const off = (await page.locator(`[data-suggestion="${fifth.id}"] [data-accept]`).getAttribute('aria-disabled')) === 'true';
     const toldSong = await events(since, 5);
     since = toldSong.last;
     const kept = (await sgOf(fourth.id)).status;
@@ -608,8 +666,37 @@ async function until(check, ms, what) {
     const again = await call('connect_studio');
     await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(again.code);
     await page.getByLabel('Port the helper listens on').fill(String(again.port));
+    // (allowed to suggest and listen, so what it may not reach is only for being another pairing's)
+    await page.getByRole('checkbox', { name: /^Suggest changes/ }).check();
+    await page.getByRole('checkbox', { name: /^Listen/ }).check();
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
     await until(async () => (await call('studio_status')).connected, 10000, 'the reconnection');
+
+    // 10e. A new pairing is a new connection: the agent there sees, withdraws and listens to only
+    // what it suggests in it, never the suggestions of the pairing before
+    const listedNow = (await call('get_suggestion')).suggestions;
+    const oldOne = await call('get_suggestion', { id: fourth.id }).then(() => 'found', (e) => (/no suggestion with that id/i.test(e.message) ? 'not found' : e.message));
+    const withdrawOld = await call('withdraw_suggestion', { id: fifth.id }).then(() => 'withdrawn', (e) => (/no suggestion with that id/i.test(e.message) ? 'not found' : e.message));
+    const listenOld = await call('listen', { fromBar: 1, toBar: 2, suggestionId: fifth.id }).then(() => 'heard', (e) => (/no suggestion with that id/i.test(e.message) ? 'not found' : e.message));
+    step(
+      "10e a new pairing doesn't see the suggestions of the one before",
+      listedNow.length === 0 && oldOne === 'not found' && withdrawOld === 'not found' && listenOld === 'not found' && (await sgOf(fifth.id)).status === 'other_song',
+      `listed ${listedNow.length}, get ${oldOne}, withdraw ${withdrawOld}, listen ${listenOld}`
+    );
+
+    // 10f. Disconnect inside the Change dialog: the boxes go back to reading only for the next pairing
+    await page.locator('[data-agent-panel]').getByRole('button', { name: 'Change', exact: true }).click();
+    await page.getByRole('checkbox', { name: /^Suggest changes/ }).check();
+    await page.locator('form[data-agent-ui]').getByRole('button', { name: 'Disconnect' }).click();
+    await until(async () => !(await call('studio_status')).connected, 5000, 'the disconnect');
+    const tickedAfter = await Promise.all([/^See what I select/, /^Suggest changes/, /^Listen/].map((name) => page.getByRole('checkbox', { name }).isChecked()));
+    const third2 = await call('connect_studio');
+    await page.getByPlaceholder('K7QM-3XPD-9TBW').fill(third2.code);
+    await page.getByLabel('Port the helper listens on').fill(String(third2.port));
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await until(async () => (await call('studio_status')).connected, 10000, 'the reconnection');
+    const permsThen = (await call('studio_status')).permissions;
+    step('10f Disconnect in the dialog: the next pairing starts from reading only', tickedAfter.every((t) => !t) && !permsThen.see && !permsThen.suggest && !permsThen.listen, `${JSON.stringify(tickedAfter)} ${JSON.stringify(permsThen)}`);
 
     // 11. Closing the tab
     await page.close();

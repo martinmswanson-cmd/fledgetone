@@ -9,6 +9,7 @@
  */
 import { currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
 import type { ProjectSnapshot } from '../store/project';
+import type { Track } from '../store/timelineTypes';
 import { liveMix } from '../audio/engine';
 import { setLiveStripTempo } from '../audio/liveTracks';
 import { hasRecordings, loadQuick } from '../audio/samplers/samplerManager';
@@ -16,16 +17,31 @@ import { forgetAudition, stopAudition, useAudition } from '../audio/auditionPlay
 import { acceptDecision, isOpen, updateSuggestion, useSuggestions, type Suggestion } from './suggestionsStore';
 import { songContext } from './songWatch';
 
+/** What of a track only the moment holds (see revision.ts): kept as the studio has it at Accept. */
+const MOMENT = ['isArmed', 'frozen', 'freezing', 'midiMap'] as const;
+
 /** Put `song`'s edited parts into the store as one undo step. */
 export function applyAsOneStep(song: ProjectSnapshot): void {
   const tl = useTimelineStore.getState();
   const before = tl.tracks;
-  // What only the screen holds stays as it is now (a suggestion's song kept the selection and the
-  // folded folders of when it was made, and changing those isn't an edit, see revision.ts)
+  // What only the screen or the moment holds stays as it is now (a suggestion's song kept the
+  // selection, the folded folders, the armed track, the freezes and the MIDI knobs of when it was
+  // made, and changing those isn't an edit, see revision.ts; a freeze the suggestion's changes
+  // make out of date plays live, see freeze.ts)
   const selected = new Set(tl.clips.filter((c) => c.isSelected).map((c) => c.id));
   const folded = new Map(tl.tracks.flatMap((t) => (t.folder ? [[t.folder.id, t.folder.collapsed] as const] : [])));
+  const current = new Map(tl.tracks.map((t) => [t.id, t]));
   const clips = song.clips.map((c) => (c.isSelected === selected.has(c.id) ? c : { ...c, isSelected: selected.has(c.id) }));
-  const tracks = song.tracks.map((t) => {
+  const tracks = song.tracks.map((given) => {
+    const was = current.get(given.id);
+    let t = given;
+    const differs = (k: (typeof MOMENT)[number]) => !!was && JSON.stringify(t[k]) !== JSON.stringify(was[k]);
+    if (was && MOMENT.some(differs)) {
+      const next: Record<string, unknown> = { ...t };
+      for (const k of MOMENT) if (was[k] === undefined) delete next[k];
+      else next[k] = was[k];
+      t = next as unknown as Track;
+    }
     if (!t.folder || !folded.has(t.folder.id) || !!t.folder.collapsed === !!folded.get(t.folder.id)) return t;
     const { collapsed: _c, ...open } = t.folder;
     return { ...t, folder: folded.get(t.folder.id) ? { ...open, collapsed: true } : open };

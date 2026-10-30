@@ -4,9 +4,9 @@
  * at one revision can tell whether the song has moved on, and the agent hears of every edit. Each
  * part is compared by reference (edits replace objects rather than change them), the shared
  * reverb and delay settings by value (they're rebuilt on every read), and the clips and tracks
- * one by one without what only the screen holds (VIEW_ONLY: a clip selected or not, a folder
- * folded or not), so selecting a clip isn't an edit (nor something an agent that may not see the
- * selection hears of). Plain logic.
+ * one by one without what only the screen or the moment holds (VIEW_ONLY: a clip selected or
+ * not, a folder folded or not, a track armed, frozen or MIDI-mapped), so selecting a clip isn't
+ * an edit (nor something an agent that may not see the selection hears of). Plain logic.
  */
 
 /** The song's parts as undo sees them: the fields of songParts(s). */
@@ -21,13 +21,17 @@ function alikeBut(a: Obj, b: Obj, skip: readonly string[]): boolean {
   return true;
 }
 
-/** What only the screen holds: a clip's selection, and a track's folder folded (which has no undo step). */
-export const VIEW_ONLY = { clip: ['isSelected'], folder: ['collapsed'] } as const;
+/**
+ * What only the screen or the moment holds: a clip's selection, a track's folder folded (which
+ * has no undo step), a track armed to record, frozen or freezing (it sounds the same frozen) and
+ * its MIDI knobs. (Mute and solo change what's heard: they count.)
+ */
+export const VIEW_ONLY = { clip: ['isSelected'], track: ['folder', 'isArmed', 'frozen', 'freezing', 'midiMap'], folder: ['collapsed'] } as const;
 
 const sameClip = (a: unknown, b: unknown) => a === b || (isObj(a) && isObj(b) && alikeBut(a, b, VIEW_ONLY.clip));
 const sameTrack = (a: unknown, b: unknown) => {
   if (a === b) return true;
-  if (!isObj(a) || !isObj(b) || !alikeBut(a, b, ['folder'])) return false;
+  if (!isObj(a) || !isObj(b) || !alikeBut(a, b, VIEW_ONLY.track)) return false;
   return a.folder === b.folder || (isObj(a.folder) && isObj(b.folder) && alikeBut(a.folder, b.folder, VIEW_ONLY.folder));
 };
 const sameList = (a: unknown, b: unknown, same: (x: unknown, y: unknown) => boolean) =>
