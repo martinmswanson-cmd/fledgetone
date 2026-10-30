@@ -7,6 +7,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -119,6 +120,16 @@ test('a before-and-after: which bars changed, and the difference in plain words'
   assert.match(c.difference.summary[0], /^Bars 3 to 4 sound different \(what changed is up to -30\.0 dBFS\); the other bars sound the same\.$/);
   assert.match(c.difference.summary.join(' '), /0\.5 LU louder/);
   assert.ok(c.before === before && c.after === after, 'both reports are kept whole');
+  // (scan r8) the change over the same moments of both, when it's known: each one's integrated
+  // loudness alone can read the after louder though it's quieter (the gate leaves its quiet parts out)
+  const paired = compareListens(before, after, [null, null, -30, null], -2.04, new Map([['t', -8]]));
+  assert.equal(paired.difference.mix.lufs, -2);
+  assert.match(paired.difference.summary.join(' '), /Overall it is 2\.0 LU quieter \(-15\.5 against -16 LUFS measured alone; the change is over the same moments of both\)\./);
+  const withTracks = (r, lufs) => ({ ...r, tracks: [{ id: 't', name: 'Clav', lufs, truePeakDbtp: -3, crestDb: 10, regions: [] }] });
+  const tr = compareListens(withTracks(before, -20), withTracks(after, -17), [null, null, null, null], null, new Map([['t', -8]]));
+  assert.equal(tr.difference.tracks[0].lufs, -8);
+  assert.equal(tr.difference.mix.lufs, 0.5, 'not known: after minus before');
+  assert.match(readFileSync(new URL('../src/audio/auditionPlayer.ts', import.meta.url), 'utf8'), /const paired = pairedLoudnessDiff\(ma\.blocks, mb\.blocks\);/);
   // A tempo change can't be lined up sample by sample: every bar counts as changed
   assert.ok(compareListens(before, after, ['tempo', 'tempo', 'tempo', 'tempo']).difference.bars.every((b) => b.changed && b.differenceDb === null));
 });

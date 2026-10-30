@@ -25,6 +25,7 @@ import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds, designedDecay, ROOM_MAX_SECONDS } from './effects/busEffects';
 import { roomSeconds } from './effects/roomIR';
 import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
+import { releaseSeconds, soundingNotes } from './auditionMath';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, trackInstrumentOptions } from './instruments';
@@ -306,6 +307,48 @@ export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], tempo: 
   return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0, echoes, chains);
 }
 
+/**
+ * How long past the end of its range a note begun in it still sounds (seconds; 0 when none runs
+ * on), and that note's release: a note plays its whole length, past its clip's end and past the
+ * range's end too, so a ring-out export keeps it and the tails after it (see ringOutFor).
+ */
+export function heldPast(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'startBar' | 'endBar' | 'bpm' | 'tempoPoints'>): { seconds: number; release: number } {
+  const ids = new Set(audibleTracks(opts.tracks).map((t) => t.id));
+  const trackOf = new Map(opts.tracks.map((t) => [t.id, t]));
+  const tempo = renderTempo(opts);
+  let most = { seconds: 0, release: 0 };
+  for (const c of opts.clips) {
+    if (c.audio || !ids.has(c.trackId) || c.startBar >= opts.endBar || !c.notes?.length) continue;
+    for (const { note, bars } of soundingNotes(c)) {
+      const at = c.startBar + note.startOffset;
+      if (at < opts.startBar - 1e-9 || at >= opts.endBar - 1e-9 || at + bars <= opts.endBar + 1e-9) continue;
+      const seconds = secondsBetween(opts.endBar, at + bars, tempo);
+      const release = releaseSeconds(trackOf.get(c.trackId));
+      if (seconds + release > most.seconds + most.release) most = { seconds, release };
+    }
+  }
+  return most;
+}
+
+/**
+ * Past its longest tail, a ring-out runs this much longer (ringOutSeconds' half second): a note
+ * that runs on past the range's end by less than this is within it already.
+ */
+const RING_OUT_MARGIN = 0.5;
+
+/**
+ * The seconds a ring-out render runs past its range: its tails (ringOutSeconds), or, when a note
+ * still sounds past the range's end by more than RING_OUT_MARGIN (heldPast), that long and then
+ * its own release or the tails after it, whichever is longer.
+ */
+function ringOutFor(opts: RenderOptions): number {
+  const tails = ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), opts.ringOutMin, opts.clips);
+  const held = heldPast(opts);
+  if (held.seconds <= RING_OUT_MARGIN) return tails;
+  const after = Math.max(ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), 0, opts.clips), held.release + RING_OUT_MARGIN);
+  return Math.max(tails, held.seconds + after);
+}
+
 /** The frames of a render's range (before any ring-out). */
 const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.startBar, opts.endBar, renderTempo(opts)) * (opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
 
@@ -364,7 +407,7 @@ function planRender(opts: RenderOptions, latency = 0, slack = 0): RenderPlan {
     return { sampleRate, length: keepFrom + keepLength + slack, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
   }
   const keepLength =
-    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), opts.ringOutMin, opts.clips)) * sampleRate);
+    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutFor(opts)) * sampleRate);
   return { sampleRate, length: lead + keepLength + slack, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
 }
 

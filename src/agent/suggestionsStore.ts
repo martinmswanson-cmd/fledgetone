@@ -17,7 +17,7 @@
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
-import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar, toMeasureBeat } from '../audio/tempoMap';
 import { musicEnd } from '../audio/auditionMath';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
@@ -71,6 +71,14 @@ export interface Suggestion {
    * `heard` decides what Accept does.
    */
   heardByRules?: number | null;
+  /**
+   * What its Suggested side (B) has played of which version (the bars its playhead went through
+   * while B was heard, from the audition's heardB), kept on the suggestion itself: hearing another
+   * suggestion in between starts a new audition, and a check by sound that finishes later still
+   * decides this one by what B played of it (songWatch noteHeard). Plays of the same render
+   * (`renderKey`) add up; a new render of it starts again.
+   */
+  playedB?: { version: number; renderKey: string; bars: BarRange[] } | null;
   /** The version last heard only in part (its Suggested side played, but not over every bar it changes: see `unheard`). */
   partHeard?: number | null;
   /** Heard in part because, though every region played, it isn't checked by sound and its tail isn't known (uncheckedTail). */
@@ -318,13 +326,19 @@ const without = (r: BarRange, played: readonly BarRange[]): BarRange[] => {
  * each with the bar before it to hear it coming in when that fits too (a region that fits only
  * without it is played without it, never cut), all of it at most LIMITS.listenMaxBars bars and
  * LIMITS.listenMaxSeconds seconds (in the slower of `songs`: the song now and as suggested). A
- * region that doesn't fit is played as far as it does, and what's left of it and every region
+ * region that doesn't fit is played as far as it does (in a song not in 4/4, to the start of a
+ * measure), and what's left of it and every region
  * after it is `unheard` (they can't count as heard: Accept asks for its second press), with the
  * limit that left them out. The agent's `focus` is played with them if it fits in what's left
  * (never instead of a change: else it's left out). With nothing to hear (only names, markers or
  * links change), `fallback` is played (or the focus).
  */
-export function hearingPlan(regions: readonly BarRange[], fallback: BarRange, focus: BarRange | undefined, songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>>): HearingPlan {
+export function hearingPlan(
+  regions: readonly BarRange[],
+  fallback: BarRange,
+  focus: BarRange | undefined,
+  songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'> & Partial<Pick<ProjectSnapshot, 'meter' | 'meterPoints'>>>
+): HearingPlan {
   if (!regions.length) return { plays: [listenable(focus ?? fallback, songs[songs.length - 1])], unheard: null, limit: null, focusLeftOut: false };
   const plays: BarRange[] = [];
   let bars = 0;
@@ -341,6 +355,12 @@ export function hearingPlan(regions: readonly BarRange[], fallback: BarRange, fo
     bars += c.bars;
     seconds += c.seconds;
     plays.push(r);
+  };
+  const meter = wordMeter(songs[0] ?? {});
+  const measureStart = (bar: number) => {
+    if (!meter) return true;
+    const m = toMeasureBeat(bar, meter);
+    return m.beat === 1 && m.hundredths === 0;
   };
   const list = joinPlays(regions.map(wholeBars));
   const unheard: BarRange[] = [];
@@ -360,9 +380,12 @@ export function hearingPlan(regions: readonly BarRange[], fallback: BarRange, fo
       // As far as it fits, from its start: the rest isn't heard
       let to = r.toBar - 1;
       while (to > r.fromBar && over({ fromBar: r.fromBar, toBar: to })) to--;
-      const fits = to > r.fromBar;
       // (the limit the next bar would break)
-      limit = over({ fromBar: r.fromBar, toBar: fits ? to + 1 : r.fromBar + 1 }) ?? 'seconds';
+      limit = over({ fromBar: r.fromBar, toBar: to > r.fromBar ? to + 1 : r.fromBar + 1 }) ?? 'seconds';
+      // (in a song not in 4/4, cut where a measure starts, as the ruler numbers them: the bars heard
+      // and those not heard never share a measure, and the loop ends on one)
+      while (to > r.fromBar && !measureStart(to)) to--;
+      const fits = to > r.fromBar;
       if (fits) {
         take({ fromBar: r.fromBar, toBar: to });
         unheard.push({ fromBar: to, toBar: r.toBar });

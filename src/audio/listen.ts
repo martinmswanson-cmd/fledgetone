@@ -187,6 +187,8 @@ export interface RenderMeasure {
   crestDb: number;
   /** Each part of the spectrum against the whole, dB. */
   regions: Array<{ name: string; db: number }>;
+  /** The power of each 400 ms gating block, for comparing two renders of the same moments (pairedLoudnessDiff). */
+  blocks: number[];
 }
 
 /**
@@ -240,5 +242,6 @@ export async function measureRender(audio: AudioBuffer, signal?: AbortSignal): P
     truePeakDbtp: reading.truePeakMax,
     crestDb: peak > 0 ? 20 * Math.log10(peak) - 10 * Math.log10(sum / Math.max(1, channels.length * left.length)) : -Infinity,
     regions,
+    blocks: analyser.blocks(),
   };
 }

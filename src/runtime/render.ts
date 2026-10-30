@@ -29,7 +29,7 @@ import { renderMixdown, stemFileNames } from '../audio/exportMix';
 import { encodeTogether, type HeldReport } from '../audio/encoders';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, targetById } from '../audio/loudnessTarget';
-import { createLoudnessAnalyser } from '../audio/loudness';
+import { createLoudnessAnalyser, pairedLoudnessDiff } from '../audio/loudness';
 import { measureRender, renderRange, renderRangeStems, type RenderMeasure } from '../audio/listen';
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
 import { checkMix, duckedToKick, trackRole, type TrackMeasure } from '../audio/mixCheck';
@@ -287,6 +287,9 @@ interface Heard {
   report: ListenReport;
   channels: Float32Array[];
   sampleRate: number;
+  /** The mix's gating blocks (RenderMeasure.blocks), for the before-and-after's loudness change; each track's too (by its id as the agent reads it). */
+  blocks: number[];
+  trackBlocks: Map<string, number[]>;
 }
 
 /** The song with `ops` applied, or a plain error. */
@@ -329,6 +332,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const spectrum = bandSpectrum(channels.slice(0, 2), rate);
   const mixMeasure = { lufs: m.lufs, truePeakDb: m.truePeakDbtp, spectrum, stats };
   let tracks: ListenTrack[] | undefined;
+  const trackBlocks = new Map<string, number[]>();
   const measures: TrackMeasure[] = [];
   // Track ids as the agent reads them everywhere else (hidden ones as their aliases)
   const idOf = agentIdOf(song.tracks);
@@ -340,6 +344,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
       toBar,
       async (track, ch, sampleRate) => {
         const t = await measureRender(bufferOf(ch, sampleRate));
+        trackBlocks.set(idOf(track.id), t.blocks);
         tracks!.push({ id: idOf(track.id), name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions });
         measures.push({
           id: track.id,
@@ -370,7 +375,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
     checks,
     findings: allFindings(mixFindings(m, stats), checks),
   };
-  return { report, channels, sampleRate: rate };
+  return { report, channels, sampleRate: rate, blocks: m.blocks, trackBlocks };
 }
 
 /** Channels in an AudioBuffer (for measureRender). */
@@ -400,5 +405,10 @@ export async function compare(projectJson: unknown, opts: ListenOptions & { ops:
   // (bar by bar, each where it lies in each render: one the tempo moved can't be lined up, and counts as changed)
   const diffs = barDifferences(a.channels, b.channels, a.sampleRate, barSpans(before, opts.fromBar, opts.toBar), barSpans(after, opts.fromBar, opts.toBar));
   progress(1, 'Done');
-  return compareListens(a.report, b.report, diffs);
+  // (the mix's loudness change over the same moments of both: pairedLoudnessDiff)
+  const trackPaired = new Map([...b.trackBlocks].flatMap(([id, after]) => {
+    const before = a.trackBlocks.get(id);
+    return before ? [[id, pairedLoudnessDiff(before, after)] as const] : [];
+  }));
+  return compareListens(a.report, b.report, diffs, pairedLoudnessDiff(a.blocks, b.blocks), trackPaired);
 }

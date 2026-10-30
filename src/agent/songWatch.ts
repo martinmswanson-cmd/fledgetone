@@ -18,6 +18,7 @@ import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
 import { checkSuggestion, extKey, playedThrough, freshen, hearingByRules, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import type { BarRange } from './songDiff';
 import { partsChanged } from './revision';
 import { findWhere, needsFinding, stopFinding, useFinding } from './whereHeard';
 
@@ -112,31 +113,65 @@ export function auditionCurrent(s: Suggestion, a: Pick<AuditionState, 'key' | 'r
   return a.key === s.id && a.phase === 'playing' && a.renderKey === renderKeyOf(s) && !s.stale && isOpen(s);
 }
 
-/** Whether what B played (heardB) is of `s` as it is: its current version, on the song as it is now (whichever plan for it played). */
+/** Whether the audition `a` is of `s` as it is: its current version, on the song as it is now (whichever plan for it played). */
 const playedVersion = (s: Suggestion, a: Pick<AuditionState, 'key' | 'renderKey'>): boolean => a.key === s.id && !s.stale && isOpen(s) && !!a.renderKey?.startsWith(`${s.id}:${s.version}:`);
+
+/** Spans in order, overlapping and touching ones joined (never rounded to whole bars). */
+const joinSpans = (list: readonly BarRange[]): BarRange[] => {
+  const out: BarRange[] = [];
+  for (const r of [...list].sort((x, y) => x.fromBar - y.fromBar)) {
+    const last = out.at(-1);
+    if (last && r.fromBar <= last.toBar + 1e-9) last.toBar = Math.max(last.toBar, r.toBar);
+    else out.push({ fromBar: r.fromBar, toBar: r.toBar });
+  }
+  return out;
+};
+const sameSpans = (a: readonly BarRange[], b: readonly BarRange[]) => a.length === b.length && a.every((r, i) => Math.abs(r.fromBar - b[i].fromBar) < 1e-6 && Math.abs(r.toBar - b[i].toBar) < 1e-6);
+
+/**
+ * Keep what B plays of the suggestion the audition is of, on the suggestion itself (playedB): the
+ * audition's own heardB starts again for each suggestion heard, so what was played of another
+ * one before must not be read from it.
+ */
+function recordPlayed(a: AuditionState): void {
+  if (a.key === null || !a.renderKey || !a.heardB.length) return;
+  const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
+  if (!s || !playedVersion(s, a)) return;
+  const was = s.playedB?.version === s.version && s.playedB.renderKey === a.renderKey ? s.playedB.bars : [];
+  const bars = joinSpans([...was, ...a.heardB]);
+  if (s.playedB?.version === s.version && s.playedB.renderKey === a.renderKey && sameSpans(s.playedB.bars, bars)) return;
+  updateSuggestion(s.id, { playedB: { version: s.version, renderKey: a.renderKey, bars } });
+}
+
+/** What B played of `s` as it is now (its current version, not stale, still open), or null. */
+const playedOf = (s: Suggestion): BarRange[] | null => (s.playedB && s.playedB.version === s.version && !s.stale && isOpen(s) ? s.playedB.bars : null);
 
 /**
  * Note a suggestion heard once its Suggested side (B), of its current version on the song as it
  * is now, has played through every region where a change of it is heard: B's playhead went
- * through each of their bars, to its end, at least once while B was heard (heardB). Only then does
+ * through each of their bars, to its end, at least once while B was heard (playedB). Only then does
  * one press of Accept take it. Before that (B played, but not all of it yet: stopped early,
  * switched to Now, or too long to hear at once) it's heard in part (`partHeard`): the card says
  * so, and Accept still asks for its second press. So is one not checked by sound whose rules may
  * count fewer bars than the truth (uncheckedTail: a tail the studio doesn't know, and not found
  * by sound, or not yet), however much of it played. Run on every change of the audition and of
- * the suggestions: a check by sound that finishes after B stopped decides it by what B played.
+ * the suggestions, for every suggestion B played: a check by sound that finishes after B stopped
+ * decides it by what B played, even when another suggestion was heard in between.
  */
 export function noteHeard(a: AuditionState = useAudition.getState()): void {
-  if (a.key === null || !a.heardB.length) return;
-  noteHeardByRules(a);
-  const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
-  if (!s || s.heard === s.version) return;
-  // (what B played of this version counts, playing or stopped since, whichever plan for it played:
-  // a sound check that finishes later and finds nothing past it leaves it heard)
-  if (!playedVersion(s, a)) return;
+  recordPlayed(a);
+  for (const s of useSuggestions.getState().suggestions) {
+    const played = playedOf(s);
+    if (played?.length) noteOne(s, played);
+  }
+}
+
+function noteOne(s: Suggestion, playedB: readonly BarRange[]): void {
+  noteHeardByRules(s, playedB);
+  if (s.heard === s.version) return;
   // (every bar of every region where a change is heard, played through on B)
   // (not checked by sound, with a tail the studio doesn't know: never heard all through)
-  const played = !s.unheard && s.regions.every((r) => playedThrough(a.heardB, r));
+  const played = !s.unheard && s.regions.every((r) => playedThrough(playedB, r));
   const unchecked = uncheckedTail(s);
   if (!played || unchecked) {
     // (`partUnchecked`: every region played, but it isn't checked by sound: the card says that, not what's left to play)
@@ -152,13 +187,12 @@ export function noteHeard(a: AuditionState = useAudition.getState()): void {
  * Note a suggestion heard by its rules alone (`heardByRules`, what an agent not allowed to listen
  * reads as `heard`) once B, of its current version on the song as it is now, has played through
  * every region the rules found (all of them within what a before-and-after can play): whatever
- * the sound check found, and whichever plan for it is playing (one found by sound before it plays
+ * the sound check found, and whichever plan for it played (one found by sound before it plays
  * the same version), so nothing of what the renders found shows in it.
  */
-function noteHeardByRules(a: AuditionState): void {
-  const s = useSuggestions.getState().suggestions.find((x) => x.id === a.key);
-  if (!s || s.heardByRules === s.version || !playedVersion(s, a)) return;
-  if (hearingByRules(s, currentProject()).unheard || !s.ruleRegions.every((r) => playedThrough(a.heardB, r))) return;
+function noteHeardByRules(s: Suggestion, playedB: readonly BarRange[]): void {
+  if (s.heardByRules === s.version) return;
+  if (!s.ruleRegions.every((r) => playedThrough(playedB, r)) || hearingByRules(s, currentProject()).unheard) return;
   updateSuggestion(s.id, { heardByRules: s.version });
 }
 useAudition.subscribe((a) => noteHeard(a));

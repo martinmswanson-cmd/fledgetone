@@ -32,6 +32,11 @@ export interface LoudnessAnalyser {
   feed: (left: Float32Array, right: Float32Array, frames: number) => void;
   read: () => LoudnessReading;
   reset: () => void;
+  /**
+   * The power of every 400 ms gating block since the last reset (one ending every 100 ms, silent
+   * ones too), in order: for comparing two renders moment by moment (pairedLoudnessDiff).
+   */
+  blocks: () => number[];
 }
 
 /**
@@ -130,6 +135,8 @@ export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = 
   let blockPeaks: number[] = [];
   /** Powers of the 400 ms gating blocks that passed the absolute gate. */
   let gated: number[] = [];
+  /** Powers of every 400 ms gating block. */
+  let every: number[] = [];
   /** The block being filled. */
   let sum = 0;
   let count = 0;
@@ -141,6 +148,7 @@ export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = 
     blocks = [];
     blockPeaks = [];
     gated = [];
+    every = [];
     sum = 0;
     count = 0;
     blockPeak = 0;
@@ -164,6 +172,7 @@ export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = 
       let p = 0;
       for (let i = blocks.length - MOMENTARY_BLOCKS; i < blocks.length; i++) p += blocks[i];
       p /= MOMENTARY_BLOCKS;
+      every.push(p);
       if (lufs(p) > ABSOLUTE_GATE_LUFS) gated.push(p);
     }
     sum = 0;
@@ -247,7 +256,50 @@ export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = 
     };
   };
 
-  return { feed, read, reset };
+  return { feed, read, reset, blocks: () => every.slice() };
+}
+
+/**
+ * How much louder `b` is than `a` (LU), two renders of the same moments (their gating blocks, as
+ * LoudnessAnalyser.blocks gives them, block for block): over the same blocks on both sides, those
+ * that either side's integrated loudness counts (over the absolute gate and its own relative gate,
+ * BS.1770). Each one's integrated loudness alone can mislead: a change that makes the quiet parts
+ * quieter still drops them under B's relative gate, so B's integrated loudness reads only its loud
+ * parts and comes out higher, though nothing in it got louder. Here a change of level everywhere
+ * reads as exactly that change. +Infinity: only `b` has sound; 0: neither has; null: they aren't
+ * the same length (to a block), so they can't be compared block for block.
+ */
+export function pairedLoudnessDiff(a: readonly number[], b: readonly number[]): number | null {
+  if (Math.abs(a.length - b.length) > 1) return null;
+  const n = Math.min(a.length, b.length);
+  const lufs = (power: number) => (power > 0 ? -0.691 + 10 * Math.log10(power) : -Infinity);
+  const counted = (list: readonly number[]): boolean[] => {
+    const loud = list.slice(0, n).map((p) => lufs(p) > -70);
+    let mean = 0;
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      if (!loud[i]) continue;
+      mean += list[i];
+      k++;
+    }
+    if (!k) return loud;
+    const threshold = lufs(mean / k) - 10;
+    return loud.map((on, i) => on && lufs(list[i]) > threshold);
+  };
+  const [ca, cb] = [counted(a), counted(b)];
+  let pa = 0;
+  let pb = 0;
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    if (!ca[i] && !cb[i]) continue;
+    pa += a[i];
+    pb += b[i];
+    k++;
+  }
+  if (!k) return 0;
+  if (pa <= 0) return pb > 0 ? Infinity : 0;
+  if (pb <= 0) return -Infinity;
+  return 10 * Math.log10(pb / pa);
 }
 
 /** The worklet processor's name. */

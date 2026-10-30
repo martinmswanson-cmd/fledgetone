@@ -25,9 +25,10 @@ import { DEFAULT_MASTER_FX, durationToBars, PUMP_RELEASE_MAX, pumpFollowsDrums }
 import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
 import { formatPan, specOf } from '../audio/automation';
 import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
-import { RELEASE_ALLOWANCE_SECONDS, releaseSeconds } from '../audio/auditionMath';
+import { clipSoundEnd, RELEASE_ALLOWANCE_SECONDS, releaseSeconds, soundingNotes } from '../audio/auditionMath';
 import { chainTail, feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
 import { liveSends } from '../store/buses';
+import { DUCK_BRIDGE, DUCK_LOOKAHEAD, DUCK_RELEASE } from '../store/duck';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
 import { nm, plainNames } from './names';
@@ -139,7 +140,9 @@ export const positionWords = (bar: number, meter: MeterMap | null): string => {
   return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
 };
 /** A length: "4 bars", or in a song not in 4/4 (`meter`: where a bar isn't a measure) in quarter notes. */
-export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${r1(lengthBars * 4)} quarter notes` : `${r1(lengthBars)} bars`);
+export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => (meter ? `${lengthNumber(lengthBars * 4)} quarter notes` : `${lengthNumber(lengthBars)} bars`);
+/** A length's number to 1 decimal, but never 0 for a length that isn't (two figures then: 0.004). */
+const lengthNumber = (v: number): string => (r1(v) === 0 && v > 0 ? String(Number(v.toPrecision(2))) : String(r1(v)));
 const barAt = (bar: number): string => positionWords(bar, sentenceMeter);
 /** A clip's length (see lengthWordsIn). */
 const lengthWords = (lengthBars: number): string => lengthWordsIn(lengthBars, sentenceMeter);
@@ -223,14 +226,14 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   for (const c of after.clips) {
     const old = before.clips.find((o) => o.id === c.id);
     if (!old) {
-      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars, hear: hasLanes(c) ? 'track' : 'here' });
+      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
       continue;
     }
     if (old !== c) diffClip(old, c, trackName, add);
   }
   for (const c of before.clips) {
     if (!after.clips.some((o) => o.id === c.id) && after.tracks.some((t) => t.id === c.trackId))
-      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: c.startBar + c.lengthBars, hear: hasLanes(c) ? 'track' : 'here' });
+      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
   }
 
   // ---------- Markers ----------
@@ -402,7 +405,8 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     return Number.isFinite(until) ? Math.max(to, until) : to;
   };
   /** Where a clip of `track` sounds: from its start to past its end by its tail. */
-  const clipRange = (c: Clip): BarRange => ({ fromBar: c.startBar, toBar: past(c.startBar + c.lengthBars, tailOf(c.trackId).seconds) });
+  // (to where its last note stops: a note runs its whole length, past the clip's end too)
+  const clipRange = (c: Clip): BarRange => ({ fromBar: c.startBar, toBar: past(clipSoundEnd(c), tailOf(c.trackId).seconds) });
   const ranges = new Map<string, BarRange[]>();
   for (const s of songs)
     for (const c of s.clips) {
@@ -451,6 +455,25 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     return [...out];
   };
   const duckTail = (id: string) => tailOf(id).seconds + PUMP_RELEASE_MAX / 1000;
+  /**
+   * The tracks that duck under `id` when it's a proxy (the game's dialogue or sound effects, in
+   * either version: store/duck.ts): every other track but the proxies. A change of its notes,
+   * clips or mute moves their dip, which starts DUCK_LOOKAHEAD early, comes back over DUCK_RELEASE,
+   * bridges gaps under DUCK_BRIDGE, and rings on through all that follows it on those tracks
+   * (their sends, bus and returns: their tail).
+   */
+  const proxyDucked = (id: string): string[] => {
+    if (!songs.some((s) => s.tracks.some((t) => t.id === id && t.duckProxy))) return [];
+    const out = new Set<string>();
+    for (const s of songs) for (const t of s.tracks) if (t.id !== id && !t.duckProxy) out.add(t.id);
+    return [...out];
+  };
+  // (in bars, as duck.ts reckons them: by each version's tempo, the longer of the two)
+  const duckBars = (seconds: number) => Math.max(...songs.map((s) => (seconds * s.bpm) / 240));
+  const dipRange = (r: BarRange, id: string): BarRange => ({
+    fromBar: Math.max(1, r.fromBar - duckBars(DUCK_LOOKAHEAD + DUCK_BRIDGE)),
+    toBar: past(r.toBar + duckBars(DUCK_BRIDGE + DUCK_RELEASE), tailOf(id).seconds),
+  });
   const allSure = songs.every((s) => s.tracks.every((t) => tailOf(t.id).sure));
   const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
   const song: BarRange = { fromBar: 1, toBar: end };
@@ -463,17 +486,22 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     const tracks = c.trackId ? [c.trackId, ...(alsoTracks.get(c) ?? [])] : [];
     // (and the tracks whose Pump ducks to them: where those sound, past by their own tail)
     const ducked = [...new Set(tracks.flatMap(pumped))].filter((id) => !tracks.includes(id));
+    // (and, when one is a proxy, every track that ducks under it: from its look-ahead before to past its release by their tail)
+    const dipped = [...new Set(tracks.flatMap(proxyDucked))].filter((id) => !tracks.includes(id));
     if (how === 'track' && tracks.length) {
       const own = tracks.flatMap((id) => sounds(id));
       const duck = ducked.flatMap((p) => own.map((r) => ({ fromBar: r.fromBar, toBar: past(r.toBar, duckTail(p)) })));
-      return { heard: joinRanges([...own, ...duck]), sure: tracks.every((id) => sureOf(id)) && ducked.every((id) => tailOf(id).sure) };
+      const dips = dipped.flatMap((d) => own.map((r) => dipRange(r, d)));
+      return { heard: joinRanges([...own, ...duck, ...dips]), sure: tracks.every((id) => sureOf(id)) && [...ducked, ...dipped].every((id) => tailOf(id).sure) };
     }
     // (a change on a track rings on past its bars: its notes' release, the track's effects, and those it plays into)
-    if (how === 'here' && c.fromBar !== undefined && c.toBar !== undefined)
+    if (how === 'here' && c.fromBar !== undefined && c.toBar !== undefined) {
+      const here: BarRange = { fromBar: c.fromBar, toBar: tracks.length ? Math.max(...tracks.map((id) => past(c.toBar!, tailOf(id).seconds)), ...ducked.map((id) => past(c.toBar!, duckTail(id)))) : c.toBar };
       return {
-        heard: joinRanges([{ fromBar: c.fromBar, toBar: tracks.length ? Math.max(...tracks.map((id) => past(c.toBar!, tailOf(id).seconds)), ...ducked.map((id) => past(c.toBar!, duckTail(id)))) : c.toBar }]),
-        sure: tracks.every((id) => tailOf(id).sure) && ducked.every((id) => tailOf(id).sure),
+        heard: joinRanges([here, ...dipped.map((d) => dipRange({ fromBar: c.fromBar!, toBar: c.toBar! }, d))]),
+        sure: [...tracks, ...ducked, ...dipped].every((id) => tailOf(id).sure),
       };
+    }
     return { heard: [song], sure: allSure };
   };
 }
@@ -495,7 +523,7 @@ export function auditionRange(range: BarRange | null, song: Pick<ProjectSnapshot
     const start = Math.min(...clips.map((c) => c.startBar));
     return fit(start, start + 8);
   }
-  const end = song.clips.reduce((e, c) => Math.max(e, c.startBar + c.lengthBars), 1);
+  const end = song.clips.reduce((e, c) => Math.max(e, clipSoundEnd(c)), 1);
   return fit(1, Math.min(end, 9));
 }
 
@@ -581,7 +609,11 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
  */
 function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
   const n = nm(b.name);
-  const label = (l: AutomationLane) => specOf(l.param, b, tracks).label;
+  // (a send's lane is named by its return, whose name an agent may have written: marked as a name)
+  const label = (l: AutomationLane) => {
+    const to = l.param.startsWith('send:') ? tracks.find((t) => t.id === l.param.slice(5)) : undefined;
+    return to ? `Send → ${nm(to.name)}` : specOf(l.param, b, tracks).label;
+  };
   const span = (lanes: AutomationLane[]) => {
     const all = lanes.flatMap((l) => l.points.map((p) => p.bar));
     return all.length ? { fromBar: Math.min(...all), toBar: Math.max(...all) + 1 } : {};
@@ -618,14 +650,14 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
   const hear: HearWhere = hasLanes(a) || hasLanes(b) ? 'track' : 'here';
   const at = { trackId: b.trackId, clipId: b.id, hear };
   if (a.trackId !== b.trackId) {
-    const moved: SongChange = { text: `Moves the clip ${n} from ${trackName(a.trackId)} to ${trackName(b.trackId)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) };
+    const moved: SongChange = { text: `Moves the clip ${n} from ${trackName(a.trackId)} to ${trackName(b.trackId)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) };
     alsoTracks.set(moved, [a.trackId]);
     add(moved);
   }
   if (Math.abs(a.startBar - b.startBar) > 1e-9)
-    add({ text: `Moves the clip ${n} from ${barAt(a.startBar)} to ${barAt(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
+    add({ text: `Moves the clip ${n} from ${barAt(a.startBar)} to ${barAt(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
   if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
-    add({ text: `Makes the clip ${n} ${lengthWords(b.lengthBars)} long (was ${lengthWords(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(a.startBar + a.lengthBars, b.startBar + b.lengthBars) });
+    add({ text: `Makes the clip ${n} ${lengthWords(b.lengthBars)} long (was ${lengthWords(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
   if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
   if (a.notes !== b.notes && !same(a.notes, b.notes)) {
     const before = new Map(a.notes.map((x) => [x.id, x]));
@@ -636,13 +668,16 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     const touched = [...added, ...removed, ...changed, ...changed.map((x) => before.get(x.id)!)];
     const parts = [added.length && `adds ${plural(added.length, 'note')}`, changed.length && `changes ${plural(changed.length, 'note')}`, removed.length && `removes ${plural(removed.length, 'note')}`].filter(Boolean);
     const from = b.startBar + Math.max(0, Math.min(...touched.map((x) => x.startOffset)));
-    const to = b.startBar + Math.min(b.lengthBars, Math.max(...touched.map(noteEnd)));
+    // (to where the last of them stops: a note runs its whole length, past the clip's end too, and
+    // the sustain pedal holds it on; one hidden by a trim doesn't play, so its own length is enough)
+    const heldEnd = (x: NoteEvent) => Math.max(Math.min(b.lengthBars, noteEnd(x)), ...[a, b].flatMap((c) => soundingNotes({ ...c, notes: [x] }).map((h) => x.startOffset + h.bars)));
+    const to = b.startBar + Math.max(...touched.map(heldEnd));
     const where = to > from ? ` in ${bars(from, to)}` : '';
     // (heard in their bars and as they ring out after: the release and the track's effects, see hearing)
     add({ text: `In ${n} on ${trackName(b.trackId)}: ${parts.join(', ')}${where}.`, ...at, fromBar: from, toBar: Math.max(to, from + 1 / 16) });
   }
   if ((a.pattern ?? null) !== (b.pattern ?? null)) add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at, hear: 'silent' });
-  for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: b.startBar + b.lengthBars });
+  for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
   // (anything else about a clip, not known here: heard anywhere, for all that's known)
   const known = new Set(['id', 'trackId', 'startBar', 'lengthBars', 'name', 'notes', 'pattern', 'expression', 'groove', 'wobble', 'stepLanes', 'isSelected']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));

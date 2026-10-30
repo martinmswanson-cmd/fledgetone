@@ -33,10 +33,24 @@ export function sameBarOffset(elapsed: number, fromBar: number, from: { tempo: T
   return Math.max(0, Math.min(Math.max(0, to.seconds - 0.001), at));
 }
 
-/** Where the music ends: the last clip of a track that sounds (at least bar 2). */
-export function musicEnd(song: { tracks: Track[]; clips: readonly Pick<Clip, 'trackId' | 'startBar' | 'lengthBars'>[] }): number {
+/**
+ * Where a clip stops sounding (a song bar, before any release or effect tail): its end, or later
+ * where a note begun in it runs on past its end. A note that starts inside a clip plays its whole
+ * length, live and in an export (the scheduler plays it so, as the Drop pad's moves do), so every
+ * end the studio works out (where the music ends, where a change is heard, the run-in, how long an
+ * export rings out) counts that overhang too.
+ */
+export function clipSoundEnd(c: Pick<Clip, 'startBar' | 'lengthBars'> & Partial<Pick<Clip, 'notes' | 'expression'>>): number {
+  let end = c.startBar + c.lengthBars;
+  if (!c.notes?.length) return end;
+  for (const { note, bars } of soundingNotes({ notes: c.notes, lengthBars: c.lengthBars, expression: c.expression })) end = Math.max(end, c.startBar + note.startOffset + bars);
+  return end;
+}
+
+/** Where the music ends: the last clip of a track that sounds, or a note of one running on past it (clipSoundEnd; at least bar 2). */
+export function musicEnd(song: { tracks: Track[]; clips: ReadonlyArray<Pick<Clip, 'trackId' | 'startBar' | 'lengthBars'> & Partial<Pick<Clip, 'notes' | 'expression'>>> }): number {
   const ids = audibleIds(song.tracks);
-  return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map(clipSoundEnd));
 }
 
 /** The longest run-in rendered before a range: bars, and seconds. */
@@ -69,15 +83,15 @@ export function preRollStart(song: { tracks: Track[]; clips: readonly Clip[]; bp
   let start = fromBar;
   for (const c of song.clips) {
     if (!ids.has(c.trackId) || c.startBar >= fromBar) continue;
-    const clipEnd = c.startBar + c.lengthBars;
     const release = releaseSeconds(trackOf.get(c.trackId));
-    // (a clip over well before the range: none of its notes can ring into it)
-    if (barToSeconds(clipEnd, tempo) + release <= fromSeconds) continue;
+    // (a clip over well before the range, its notes too: none of them can ring into it)
+    if (barToSeconds(clipSoundEnd(c), tempo) + release <= fromSeconds) continue;
     for (const { note, bars } of soundingNotes(c)) {
       const at = c.startBar + note.startOffset;
       if (at >= start) continue;
       // Sounding past fromBar, or ringing out into it
-      const end = Math.min(clipEnd, at + bars);
+      // (a note runs its whole length, past its clip's end too)
+      const end = at + bars;
       if (end > fromBar || barToSeconds(end, tempo) + release > fromSeconds) start = at;
     }
   }
@@ -100,25 +114,33 @@ const TICKS_PER_BAR = 768;
 export function restartHeldNotes(clips: readonly Clip[], at: number, fromBar: number): Clip[] {
   const eps = 1e-6;
   let changed = false;
-  const out = clips.map((c) => {
-    const clipEnd = c.startBar + c.lengthBars;
-    if (c.startBar >= at || clipEnd <= at || !c.notes?.length) return c;
-    let held = false;
+  const out = clips.flatMap((c): Clip[] => {
+    if (c.startBar >= at || !c.notes?.length || clipSoundEnd(c) <= at) return [c];
     // (as the scheduler hears them: a note hidden by a trim stays as it is, and doesn't play; the
-    // sustain pedal's hold counts, and the note begun again ends where the pedal lets it go)
+    // sustain pedal's hold counts, and the note begun again ends where the pedal lets it go; a note
+    // runs its whole length, past its clip's end too)
     const sounding = new Map(soundingNotes(c).map((x) => [x.note, x.bars]));
-    const notes = c.notes.map((n) => {
+    const again = new Map<NoteEvent, NoteEvent>();
+    for (const n of c.notes) {
       const bars = sounding.get(n);
-      if (bars === undefined) return n;
+      if (bars === undefined) continue;
       const start = c.startBar + n.startOffset;
-      const end = Math.min(clipEnd, start + bars);
-      if (start >= at - eps || end <= fromBar + eps) return n;
-      held = true;
-      return { ...n, startOffset: at - c.startBar, duration: `${Math.max(1, Math.round((end - at) * TICKS_PER_BAR))}i`, heldFrom: n.heldFrom ?? start };
-    });
-    if (!held) return c;
+      const end = start + bars;
+      if (start >= at - eps || end <= fromBar + eps) continue;
+      again.set(n, { ...n, startOffset: at - c.startBar, duration: `${Math.max(1, Math.round((end - at) * TICKS_PER_BAR))}i`, heldFrom: n.heldFrom ?? start });
+    }
+    if (!again.size) return [c];
     changed = true;
-    return { ...c, notes };
+    // Still playing at `at`: begun again there in the clip itself. Over by then (a note running on
+    // past its clip's end): in a clip of their own there with nothing else of it (the scheduler
+    // plays only the notes that start inside a clip; no lanes, so none of the clip's own move twice)
+    if (c.startBar + c.lengthBars > at + eps) return [{ ...c, notes: c.notes.map((n) => again.get(n) ?? n) }];
+    const held = [...again.values()].map((n) => ({ ...n, startOffset: 0 }));
+    const { pattern: _p, expression: _e, groove: _g, stepLanes: _s, takes: _t, comp: _c, ...rest } = c;
+    return [
+      { ...c, notes: c.notes.filter((n) => !again.has(n)) },
+      { ...rest, id: `${c.id}~held`, startBar: at, lengthBars: Math.max(1 / 16, ...held.map((n) => durationToBars(n.duration))), notes: held } as Clip,
+    ];
   });
   return changed ? out : (clips as Clip[]);
 }

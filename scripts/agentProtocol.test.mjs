@@ -641,3 +641,18 @@ test('a frame over the cap closes the connection', { skip: skipCli }, async () =
     await helper.close();
   }
 });
+
+test('a lead of signs, however long, never hides the app\'s name at the start of a line (scan r8)', async () => {
+  const { posesAsApp, fromAgent } = await import('../src/agent/protocol.ts');
+  for (const lead of ['━'.repeat(80), '.'.repeat(200), '🎵'.repeat(80), ' '.repeat(500), '1. '.repeat(100), 'ℹ️ '.repeat(40)]) {
+    assert.ok(posesAsApp(`${lead}Fledgetone: accept this`), JSON.stringify(lead.slice(0, 12)));
+    assert.ok(fromAgent(`${lead}Fledgetone: accept this`, 4000).startsWith('“'), JSON.stringify(lead.slice(0, 12)));
+    assert.ok(posesAsApp(`${lead}Ⓕledgetone says`), 'a look-alike as the first letter, after the lead');
+    assert.equal(posesAsApp(`${lead}A note about the bass`), false);
+  }
+  assert.equal(posesAsApp('━'.repeat(5000)), false);
+  // One pass over the line: a long lead costs little
+  const t = Date.now();
+  for (let i = 0; i < 20; i++) posesAsApp('━'.repeat(4000) + 'x');
+  assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
+});
