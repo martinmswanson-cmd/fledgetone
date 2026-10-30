@@ -216,6 +216,13 @@ export interface ControllerMemo {
 export const controllerMemo = (): ControllerMemo => ({ byTrack: new Map(), input: null, output: null });
 
 /**
+ * Without a memo of its own, each track's lanes as last worked out for that very track object and
+ * its clips' lanes: the export dialog, a render's plan and the tails read the same song again and
+ * again, and a long recorded take's lanes take a while to merge.
+ */
+const lastLanes = new WeakMap<Track, { key: string; out: Track }>();
+
+/**
  * The tracks with their clips' controller lanes added to their automation. The same track objects
  * (and, with `memo`, the same array) while nothing that matters changes, so the engine leaves
  * their strips alone.
@@ -234,6 +241,10 @@ export function withControllerLanes(tracks: Track[], clips: readonly Clip[], mem
     if (!key) return t;
     const hit = memo?.byTrack.get(t.id);
     if (hit && hit.track === t && hit.key === key) return hit.out;
+    if (!memo) {
+      const last = lastLanes.get(t);
+      if (last && last.key === key) return last.out;
+    }
     // The track changed (its pan, fader, name...) but not what its lanes are made from: the same
     // lanes, with its own setting in front of them again
     const deps = bodyDeps(t);
@@ -244,6 +255,7 @@ export function withControllerLanes(tracks: Track[], clips: readonly Clip[], mem
     const lanes = same && hit.front === front ? hit.lanes : controllerLanes(t, clips, bodies);
     const next = lanes.length ? { ...t, automation: [...(t.automation ?? []), ...lanes] } : t;
     memo?.byTrack.set(t.id, { track: t, key, deps, bodies, front, lanes, out: next });
+    if (!memo) lastLanes.set(t, { key, out: next });
     return next;
   });
   if (memo) {

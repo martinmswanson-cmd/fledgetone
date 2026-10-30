@@ -49,6 +49,7 @@ import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, formatBarRange, frameRateLabel } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
+import { useSoundLibrary } from '../../audio/soundLibrary';
 
 /** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
 type Range = 'song' | 'loop' | 'game';
@@ -352,24 +353,25 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format);
   const room = useTimelineStore((s) => s.masterReverbRoom);
   const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
-  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
-  const planned: RenderOptions = {
-    tracks,
-    clips,
-    bpm,
-    tempoPoints,
-    swing: 0,
-    startBar: range === 'song' ? 1 : loop.inBar,
-    endBar: range === 'song' ? songEnd : loop.outBar,
-    masterFx,
-    master,
-    ending,
-    sampleRate: exportRate,
-    markers,
-  };
-  const { frames, passes } = exportFrames(planned);
-  const cueCount = exportCues(planned).length;
-  const stems = stemTracks(planned);
+  // (A recorded room's length, once it's known, sets the reverb's ring-out)
+  const roomLength = useSoundLibrary((s) => (room ? s.metas[room]?.seconds : undefined));
+  const masterFx = useMemo(
+    () => ({ reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) }),
+    [reverbDecay, delayTime, delayFeedback, room, roomStyle]
+  );
+  const startBar = range === 'song' ? 1 : loop.inBar;
+  const endBar = range === 'song' ? songEnd : loop.outBar;
+  const planned: RenderOptions = useMemo(
+    () => ({ tracks, clips, bpm, tempoPoints, swing: 0, startBar, endBar, masterFx, master, ending, sampleRate: exportRate, markers }),
+    [tracks, clips, bpm, tempoPoints, startBar, endBar, masterFx, master, ending, exportRate, markers]
+  );
+  // Worked out again only when what they depend on changes, not on every redraw (a render's
+  // progress redraws the dialog many times a second, and a song's controller lanes take a while)
+  // (roomLength: ringOutSeconds reads it from the sound library)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const { frames, passes } = useMemo(() => exportFrames(planned), [planned, roomLength]);
+  const cueCount = useMemo(() => exportCues(planned).length, [planned]);
+  const stems = useMemo(() => stemTracks(planned), [planned]);
   const stemsOnly = what === 'stems';
   const canExport = stemsOnly ? stems.length > 0 : range === 'loop' || songBars > 0;
 
@@ -390,7 +392,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           ? `${fileBase} versions.zip`
           : `${fileBase}.${ext}`;
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * exportRate);
-  const tail = ringOutSeconds(masterFx, tracks, tempo, undefined, clips);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tail = useMemo(() => ringOutSeconds(masterFx, tracks, tempo, undefined, clips), [masterFx, tracks, tempo, clips, roomLength]);
 
   // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
   const startExport = () => countedRender(async () => {

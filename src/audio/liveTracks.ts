@@ -214,7 +214,7 @@ export function syncLiveTracks(tracks: Track[]): void {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
         strip,
-        instrument: createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)),
+        instrument: liveInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)),
         applied: null,
         audible: true,
         failed: false,
@@ -226,7 +226,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.instrument.releaseAll();
       lt.instrument.dispose();
       const hadBus = !!lt.instrument.clipBus;
-      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, trackInstrumentOptions(track));
+      lt.instrument = liveInstrument(track.instrumentKey, lt.strip.input, trackInstrumentOptions(track));
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
@@ -461,6 +461,25 @@ export function onClipBusRebuilt(listener: (trackId: string) => void): void {
   busRebuilt.add(listener);
 }
 
+/**
+ * A track's live instrument. The player's wheel (a bend sent `live`) stays where it's held while
+ * the song's bend is at rest: a song's bend of centre (where playback starts, the loop goes round,
+ * a bent note ends) sends the wheel's instead, and a bend of the song's own takes the wheel over,
+ * as a plugin does it itself (wamPlugin.ts).
+ */
+function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInstrument {
+  const inst = createInstrument(...args);
+  const bend = inst.bend;
+  if (!bend || args[0] === 'plugin') return inst;
+  let wheel: number | undefined;
+  inst.bend = (cents, time, live) => {
+    if (live) wheel = cents === 0 ? undefined : cents;
+    else if (cents !== 0) wheel = undefined;
+    bend(live || cents !== 0 ? cents : (wheel ?? 0), time, live);
+  };
+  return inst;
+}
+
 const heardAgain = new Set<(trackId: string) => void>();
 /**
  * Told when a track's instrument may have missed what the song sent it (its controller values): it
@@ -468,6 +487,11 @@ const heardAgain = new Set<(trackId: string) => void>();
  */
 export function onTrackHeardAgain(listener: (trackId: string) => void): void {
   heardAgain.add(listener);
+}
+const letGo = new Set<() => void>();
+/** Told when every track's voices have been let go (Stop, Pause, Free memory): nothing played before sounds on. */
+export function onVoicesLetGo(listener: () => void): void {
+  letGo.add(listener);
 }
 function heardTrack(lt: LiveTrack): void {
   for (const [id, t] of live) if (t === lt) heardAgain.forEach((l) => safely(() => l(id)));
@@ -485,6 +509,7 @@ export function releaseAllLiveVoices(): void {
     // A bend left by a clip's expression ends with playback
     if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime));
   }
+  letGo.forEach((l) => safely(l));
   // (Let go while playing, as Free memory does: its controllers are set again where the song is)
   for (const lt of live.values()) heardTrack(lt);
 }
@@ -507,7 +532,7 @@ export function reloadInstrument(key: InstrumentKey): void {
     if (lt.instrumentKey !== key || !lt.failed) continue;
     safely(() => lt.instrument.releaseAll());
     lt.instrument.dispose();
-    lt.instrument = createInstrument(key, lt.strip.input, trackInstrumentOptions(lt.applied));
+    lt.instrument = liveInstrument(key, lt.strip.input, trackInstrumentOptions(lt.applied));
     watchDownload(lt);
   }
 }

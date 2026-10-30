@@ -512,6 +512,22 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   live (`bend(..., live = true)` from liveInput.ts) and live knobs (`cc(..., live = true)`) are
   sent again after the reset by `wamPlugin.ts`; where the song's bend is at rest the wheel stays
   as the player has it, and a clip lane on the same controller (or a song bend) takes it over.
+  A note's own bend on an instrument that bends as a whole is no longer sent all at the note's
+  start: `sendDue` sends each step a 256th note ahead from a Transport repeat (`stepper`, made only
+  when a clip has such notes, so other songs render as before), in time order with everything else
+  the instrument gets (the built-ins and samplers follow a bend from when it is sent, and keep one
+  bend value by call order). A jump (seek, loop wrap: `jumpAway`) leaves the note's bend where it is
+  (`cut`) until the instrument's next note or a clip bend lane (`endHolding`: the song's bend
+  there) or the note's end (`null` step: the song's bend there); Tone says "stop" then "start" at
+  one time on a seek, so `bentNotes` is only cleared on a real stop (`stoppedAt`) or when every
+  voice is let go (`onVoicesLetGo` from `releaseAllLiveVoices`: Stop, Pause, Free memory;
+  `forgetNotes` centres after the last step already sent). `holdTrack` (unmute, solo, plugin
+  ready) keeps a sounding note's bend. The live wheel on built-ins and samplers is kept by
+  `liveInstrument` in liveTracks.ts (the plugin does it itself): a song bend of centre sends the
+  wheel's instead. Check with scripts/audio-check/live-controllers.cjs.
+  The export dialog memoises its frames and ring-out (`useMemo`), and `withControllerLanes`
+  without a memo reuses each track's lanes for the same track object (`lastLanes`), so the
+  tails, the render's plan and the dialog don't merge long recorded lanes again each time.
   `ccLanes.ts`: volume and expression lanes are read by halving (`indexed`), and the memo keeps a
   track's lanes through edits that don't touch them (pan, fader, name), the same lane objects
   where the track's own setting for them is unchanged.
