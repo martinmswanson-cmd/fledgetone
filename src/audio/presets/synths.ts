@@ -12,6 +12,7 @@ import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
 import type { GlideRef } from '../instruments';
 import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
+import { createBendFeed } from '../bendFeed';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -24,19 +25,18 @@ interface HeldSynth {
 }
 
 /**
- * Bend a whole synth's detune (cents) from `time`: it's on the audio clock, so a bend sent ahead of
- * its time moves every note sounding then. `cut`: the bends set for after `time` go first.
+ * A key held on a MIDI keyboard, and the whole synth's bend: its detune (cents), on the audio
+ * clock, so a bend sent ahead of its time moves every note sounding then (given to the signal as
+ * it comes due, see bendFeed.ts). `cut`: the bends set for after `time` go first.
  */
-export function bendSignal(detune: HeldSynth['detune'], cents: number, time: number, cut?: boolean): void {
-  if (cut) detune.cancelScheduledValues(time);
-  detune.setTargetAtTime(cents, time, 0.005);
-}
-
-function heldNote(synth: HeldSynth, safeTime: (time?: Tone.Unit.Time) => number) {
+function heldNote(synth: HeldSynth & { context: Tone.BaseContext }, safeTime: (time?: Tone.Unit.Time) => number) {
+  const feed = createBendFeed(synth.context, synth.detune);
   return {
     attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
     release: (time: number) => synth.triggerRelease(time),
-    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bendSignal(synth.detune, cents, time, cut),
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => feed.bend(cents, time, cut),
+    /** Its bends stop being fed (with the synth's dispose) */
+    stopBends: feed.dispose,
   };
 }
 
@@ -153,14 +153,18 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   }).connect(output);
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide, 0);
+  const held = heldNote(synth, safeTime);
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
-    ...heldNote(synth, safeTime),
+    ...held,
     releaseAll: () => letGoMono(synth, glideFor),
-    dispose: () => synth.dispose(),
+    dispose: () => {
+      held.stopBends();
+      synth.dispose();
+    },
   };
 }
 
@@ -238,6 +242,7 @@ export function create808(output: Tone.InputNode, modern = false) {
       letGoToneSynth(synth, synth.context.currentTime);
     },
     dispose: () => {
+      held.stopBends();
       synth.dispose();
       drive.dispose();
       extra.forEach((n) => n.dispose());
@@ -261,14 +266,16 @@ export function createLead(output: Tone.InputNode, glide?: GlideRef) {
   }).connect(wide.input);
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide, 0.035);
+  const held = heldNote(synth, safeTime);
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
-    ...heldNote(synth, safeTime),
+    ...held,
     releaseAll: () => letGoMono(synth, glideFor),
     dispose: () => {
+      held.stopBends();
       synth.dispose();
       wide.dispose();
     },

@@ -58,6 +58,7 @@ import { normalizeMasterSettings, pumpFollowsDrums } from '../store/timelineType
 import { countedRender } from './renderBusy';
 import { isNativeApp, nativeShareFile } from '../native/nativeApp';
 import { minOf } from '../support/minMax';
+import { causeWords } from './exportFailure';
 
 /** Sample rates the export offers (88.2 and 96 kHz for WAV only: MP3 stops at 48 kHz). */
 export const SAMPLE_RATES = [44100, 48000, 88200, 96000] as const;
@@ -1556,7 +1557,8 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
       for (const w of warps) if (w.audio.soundId === id) await warpSound(id, sampleRate, w.audio, w.bpm);
     } catch (err) {
       const name = useSoundLibrary.getState().metas[id]?.name;
-      throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${err instanceof Error ? err.message : String(err)}`);
+      // (Why, in the app's words: the browser's own text put plainly, see exportFailure.ts)
+      throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${causeWords(err)}`, { cause: err });
     }
   }
 }

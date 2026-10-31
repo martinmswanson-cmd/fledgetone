@@ -136,7 +136,7 @@ const SONG = () =>
     name: 'Chance',
     bpm: 128,
     tracks: [{ id: 't1', name: 'Drums', color: '#f472b6', instrumentKey: 'drums', isMuted: false, isSoloed: false, isArmed: false, volume: -6, pan: 0, eq: { low: 0, mid: 0, high: 0 }, reverbSend: 0, delaySend: 0 }],
-    clips: [clip('k', 1, 1, [n('n1', 'C1', 0), n('n2', 'F#1', 0.125, { chance: 0.5 }), n('n3', 'F#1', 0.25, { cond: { n: 2, of: 4 } }), n('n4', 'D1', 0.5, { chance: 0.75, cond: { n: 1, of: 2 }, expr: { bend: [{ at: 0, value: 0 }, { at: 0.1, value: 1 }] } }), n('n5', 'A#1', 0.75, { chance: 'lots', cond: { n: 9, of: 2 } })])],
+    clips: [clip('k', 1, 1, [n('n1', 'C1', 0), n('n2', 'F#1', 0.125, { chance: 0.5 }), n('n3', 'F#1', 0.25, { cond: { n: 2, of: 4 } }), n('n4', 'D1', 0.5, { duration: '8n', chance: 0.75, cond: { n: 1, of: 2 }, expr: { bend: [{ at: 0, value: 0 }, { at: 0.1, value: 1 }] } }), n('n5', 'A#1', 0.75, { chance: 'lots', cond: { n: 9, of: 2 } })])],
   });
 const whens = (p) => p.clips[0].notes.map((x) => [x.note, x.chance, x.cond]).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 

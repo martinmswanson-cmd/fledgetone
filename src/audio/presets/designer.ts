@@ -10,6 +10,7 @@ import { HELD_NOTE } from './edmSynths';
 import type { Envelope, LfoSync, OscWave, SynthPatch } from '../../store/synthPatch';
 import { defaultSynthPatch } from '../../store/synthPatch';
 import { createBendTimeline } from '../bendTimeline';
+import { FEED_EVERY, feedFollower, followsNow } from '../bendFeed';
 
 /** Harmonics (amplitude by number, from 1) of the table waves (see OscWave). */
 const TABLES: Record<'pulse' | 'organ' | 'vowel', (k: number) => number> = {
@@ -111,6 +112,8 @@ interface DesignerVoice extends NativeVoice {
   early: number;
   /** The same for its filter envelope */
   filterEarly: number;
+  /** The bends it has been given up to (see feedFollower) */
+  fedTo: number;
 }
 
 /** `seed`: the track's (see trackSeed), which with the note and its time picks the noise of each note. */
@@ -125,6 +128,14 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   // follows the ones sent for after it (see bendTimeline.ts)
   const bends = createBendTimeline(() => raw.currentTime);
   const live = new Set<DesignerVoice>();
+  /** Give `v` the bends sent for later while it sounds: live, as they come due (see bendFeed.ts) */
+  const feed = (v: DesignerVoice) => feedFollower(v, v.stopAt, bends, bus.context, (cents, t) => v.oscs.forEach((o, i) => o.detune.setTargetAtTime(v.detunes[i] + cents, t, 0.006)));
+  const feeder = bus.context.isOffline
+    ? -1
+    : bus.context.setInterval(() => {
+        const now = raw.currentTime;
+        for (const v of live) if (v.stopAt > now) feed(v);
+      }, FEED_EVERY);
 
   // A synced rate follows the tempo of this context's Transport (the export's has its own)
   const lfoHz = (p: SynthPatch) => (p.lfo.sync === 'free' ? p.lfo.rate : 1 / (bus.toSeconds('4n') * SYNC_BEATS[p.lfo.sync]));
@@ -311,8 +322,8 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
 
     // A note that dies away on its own (sustain 0) stops once it's 80 dB down, however long it's held
     const stopAt = Math.min(end + releaseTail(p.amp.release), p.amp.sustain > 0 ? Infinity : from + p.amp.attack + Math.max(0.001, p.amp.decay) * FADED);
-    const voice: DesignerVoice = { start, stopAt, sources, nodes, amp, patch: p, filters, oscs, detunes, early, filterEarly };
-    for (const [t, cents] of bends.after(start, stopAt)) oscs.forEach((o, i) => o.detune.setTargetAtTime(detunes[i] + cents, t, 0.006));
+    const voice: DesignerVoice = { start, stopAt, sources, nodes, amp, patch: p, filters, oscs, detunes, early, filterEarly, fedTo: start };
+    feed(voice);
     voices.add(voice);
     for (const v of live) if (v.stopAt < raw.currentTime) live.delete(v);
     live.add(voice);
@@ -345,8 +356,9 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
       if (cut) for (const v of live) v.oscs.forEach((o) => o.detune.cancelScheduledValues(t));
       else if (Math.abs(cents - bends.at(t)) < 0.01) return;
       bends.set(cents, t, cut);
+      // (One given the bends only to sooner gets it when it's fed)
       for (const v of live) {
-        if (v.stopAt <= t) continue;
+        if (!followsNow(v, v.stopAt, t)) continue;
         v.oscs.forEach((o, i) => o.detune.setTargetAtTime(v.detunes[i] + cents, t, 0.006));
       }
     },
@@ -355,6 +367,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.05),
     dispose: () => {
+      if (feeder !== -1) bus.context.clearInterval(feeder);
       voices.stopAll();
       bus.dispose();
     },

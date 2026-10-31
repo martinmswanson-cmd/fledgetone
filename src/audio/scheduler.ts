@@ -10,7 +10,7 @@ import { liveContext, liveTransport } from './liveContext';
 import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
 import { safely } from './instruments';
-import type { PlayableNote, TrackInstrument } from './instruments';
+import type { PlayableNote, TrackInstrument, VoiceControl } from './instruments';
 import { getLiveClipBus, onClipBusRebuilt, onLiveNote, onTrackHeardAgain, onVoicesLetGo, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, songNotes, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
@@ -32,6 +32,7 @@ import { pumpKitsOf } from '../store/freeze';
 import { clipCcEvents, heldCcAt, type CcEvent } from './ccHold';
 import { bendTailSeconds } from './auditionMath';
 import { maxOf } from '../support/minMax';
+import { FEED_AHEAD, FEED_EVERY } from './bendFeed';
 
 export { DRUM_NOTES } from './instruments';
 
@@ -122,6 +123,19 @@ interface BentNote {
   steps: Array<[number, number]>;
   /** Where the song jumped away while it sounded: its bend stays as it was there */
   cut?: number;
+}
+
+/** A note on a voice of its own (see playExpressive): its steps, those given to its voice so far, and its end. */
+interface VoiceFeed {
+  voice: VoiceControl;
+  /** Its bend and pressure steps (bars into the note) */
+  steps: ReadonlyArray<{ at: number; cents: number; pressure: number }>;
+  /** The first not yet given */
+  next: number;
+  /** Its start and seconds per bar (audio time) */
+  time: number;
+  spb: number;
+  end: number;
 }
 
 /** The part a clip's feel plays it as: one part, each drum row its own, or a Drum Rack's pads' parts (comma-separated, pad by pad). */
@@ -443,8 +457,41 @@ export function createClipSchedule(
     for (const n of bentNotes.get(instrument) ?? []) if (n.cut !== undefined && n.end > time) n.end = n.until = time;
     return Math.max(time, heldAt);
   };
+  /**
+   * Live, the notes on voices of their own (see playExpressive) whose bend and pressure steps are
+   * still to be given to their voices: each step at most FEED_AHEAD ahead (see bendFeed.ts), then
+   * the note's end.
+   */
+  const voiceFeeds = new Set<VoiceFeed>();
+  let voiceFeedTimer: number | undefined;
+  /** Give `f`'s voice its steps up to `to` (and its end once it has them all): whether it has. */
+  const feedVoice = (f: VoiceFeed, to: number): boolean => {
+    for (; f.next < f.steps.length; f.next++) {
+      const st = f.steps[f.next];
+      const at = f.time + st.at * f.spb;
+      if (at > to) return false;
+      safely(() => {
+        f.voice.bend(st.cents, at);
+        f.voice.pressure(st.pressure, at);
+      });
+    }
+    safely(() => f.voice.off(f.end));
+    return true;
+  };
+  const stopFeeding = () => {
+    voiceFeeds.clear();
+    if (voiceFeedTimer !== undefined) liveContext.clearInterval(voiceFeedTimer);
+    voiceFeedTimer = undefined;
+  };
+  const feedVoices = () => {
+    const to = liveContext.rawContext.currentTime + FEED_AHEAD;
+    for (const f of voiceFeeds) if (feedVoice(f, to)) voiceFeeds.delete(f);
+    if (!voiceFeeds.size) stopFeeding();
+  };
   /** Every note let go (Stop, Pause, Free memory: the instruments have dropped their bends to come and centred). */
   const forgetNotes = () => {
+    // (and their voices: let go too)
+    stopFeeding();
     bentNotes.clear();
     holding.clear();
     soundsTo.clear();
@@ -691,11 +738,12 @@ export function createClipSchedule(
     const steps = noteSteps(note.expr!, length, Math.min(1 / 64, NOTE_STEP_SECONDS / spb));
     const voice = instrument.noteVoice?.(note, time);
     if (voice) {
-      for (const st of steps) {
-        voice.bend(st.cents, time + st.at * spb);
-        voice.pressure(st.pressure, time + st.at * spb);
+      const fed: VoiceFeed = { voice, steps, next: 0, time, spb, end: time + length * spb };
+      if (!live) feedVoice(fed, Infinity);
+      else if (!feedVoice(fed, liveContext.rawContext.currentTime + FEED_AHEAD)) {
+        voiceFeeds.add(fed);
+        voiceFeedTimer ??= liveContext.setInterval(feedVoices, FEED_EVERY);
       }
-      voice.off(time + length * spb);
       return;
     }
     // (Bent from its start, a dive: the bend goes first, so the note starts on it)
@@ -948,6 +996,7 @@ export function createClipSchedule(
       transport.off('pause', onPause);
       events.forEach((id) => transport.clear(id));
       events.clear();
+      stopFeeding();
       byTick.clear();
       entries.clear();
     },
