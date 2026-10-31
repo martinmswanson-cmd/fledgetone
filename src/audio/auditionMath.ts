@@ -117,6 +117,31 @@ export function preRollStart(song: { tracks: Track[]; clips: readonly Clip[]; bp
 const TICKS_PER_BAR = 768;
 
 /**
+ * Where to start rendering to hear bars from `fromBar` of each of `songs` alike (the before and
+ * after of a suggestion): the earliest of their run-ins (preRollStart), on the whole tick at or
+ * before it, as a render's Transport starts on a tick (see exportWav.ts). Rendered from one start
+ * and trimmed the same, two versions line up sample for sample, so only what changed differs
+ * (each from its own run-in, they were up to half a tick apart: every bar "sounded different").
+ * `fromBar` itself if neither has a run-in.
+ */
+export function sharedRunIn(songs: ReadonlyArray<Parameters<typeof preRollStart>[0]>, fromBar: number): number {
+  const start = Math.min(fromBar, ...songs.map((s) => preRollStart(s, fromBar)));
+  if (start >= fromBar) return fromBar;
+  return Math.max(1, Math.floor((start - 1) * TICKS_PER_BAR + 1e-6) / TICKS_PER_BAR + 1);
+}
+
+/**
+ * How many frames of a render begun at bar `start` (before `fromBar`) come before `fromBar`: from
+ * the tick its Transport starts on (the nearest to `start`), so the trimmed render starts exactly at
+ * `fromBar`. 0 when it starts at `fromBar` (no run-in).
+ */
+export function runInFrames(start: number, fromBar: number, tempo: Tempo, sampleRate: number): number {
+  if (start >= fromBar) return 0;
+  const onTick = Math.max(0, Math.round((start - 1) * TICKS_PER_BAR)) / TICKS_PER_BAR + 1;
+  return Math.max(0, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(onTick, tempo)) * sampleRate));
+}
+
+/**
  * `clips` with every note held over bar `at` (begun before it) and still sounding at `fromBar`
  * begun again at `at` for what's left of it: rendered from `at`, a drone or pad held from long
  * before (longer than any run-in) still sounds, its attack inside the run-in that's trimmed away.

@@ -31,6 +31,7 @@ import { exportCeilingDbtp } from '../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, targetById } from '../audio/loudnessTarget';
 import { createLoudnessAnalyser, pairedLoudnessDiff } from '../audio/loudness';
 import { measureRender, renderRange, renderRangeStems, type RenderMeasure } from '../audio/listen';
+import { sharedRunIn } from '../audio/auditionMath';
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
 import { checkMix, duckedToKick, trackRole, type TrackMeasure } from '../audio/mixCheck';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
@@ -319,12 +320,13 @@ function loudnessOf(channels: Float32Array[], sampleRate: number, a: number, b: 
   return analyser.read().integrated;
 }
 
-async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, progress: Progress, share: [number, number]): Promise<Heard> {
+/** `start`: the run-in to render from (one shared by a before-and-after's two versions: see compare), else its own. */
+async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, progress: Progress, share: [number, number], start?: number): Promise<Heard> {
   const { fromBar, toBar } = opts;
   const at = (f: number) => share[0] + f * (share[1] - share[0]);
   const song = listenSnapshot(p);
   let stats: MasterStats | undefined;
-  const audio = await renderRange(song, fromBar, toBar, { onMasterStats: (s) => (stats = s), progress: (f) => progress(at(f * (opts.perTrack ? 0.4 : 0.9)), `Rendering ${heard}`) });
+  const audio = await renderRange(song, fromBar, toBar, { start, onMasterStats: (s) => (stats = s), progress: (f) => progress(at(f * (opts.perTrack ? 0.4 : 0.9)), `Rendering ${heard}`) });
   const m: RenderMeasure = await measureRender(audio);
   const channels = channelsOf(audio);
   const rate = audio.sampleRate;
@@ -357,7 +359,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
           category: INSTRUMENTS[track.instrumentKey]?.category,
         });
       },
-      { progress: (f, track) => progress(at(0.4 + f * 0.55), `Rendering ${track.name} alone`) }
+      { start, progress: (f, track) => progress(at(0.4 + f * 0.55), `Rendering ${track.name} alone`) }
     );
   }
   const streaming = targetById(DEFAULT_TARGET);
@@ -400,8 +402,10 @@ export async function compare(projectJson: unknown, opts: ListenOptions & { ops:
   progress(0, 'Loading the song');
   const before = await prepare(projectJson);
   const after = withOps(before, opts.ops, opts.idBase);
-  const a = await hear(before, opts, 'the song as it is', progress, [0, 0.5]);
-  const b = await hear(after, opts, 'the song with the suggestion', progress, [0.5, 1]);
+  // Both from one run-in, so they line up sample for sample and only what changed differs (see sharedRunIn)
+  const start = sharedRunIn([listenSnapshot(before), listenSnapshot(after)], opts.fromBar);
+  const a = await hear(before, opts, 'the song as it is', progress, [0, 0.5], start);
+  const b = await hear(after, opts, 'the song with the suggestion', progress, [0.5, 1], start);
   // (bar by bar, each where it lies in each render: one the tempo moved can't be lined up, and counts as changed)
   const diffs = barDifferences(a.channels, b.channels, a.sampleRate, barSpans(before, opts.fromBar, opts.toBar), barSpans(after, opts.fromBar, opts.toBar));
   progress(1, 'Done');

@@ -33,6 +33,9 @@
 //   the clip: its tail after the clip's end sounds as a plain note's (the lane's bend held on).
 // - A key played live (the on-screen piano) while a song note's bent tail rings: it plays in tune
 //   (it took the song note's bend).
+// - A Multi Sampler note with its own bend under a clip's bend lane, in the file and live: its
+//   own bend adds to the lane's, as an MPE note's does to its master channel's (it played the
+//   lane's alone), held, sliding up, and with the lane moving while it sounds.
 //
 //   npx vite --port 5200                 (in another terminal)
 //   node scripts/audio-check/bends.cjs
@@ -50,6 +53,9 @@ const song = (key, clips, loop) => ({ format: 'fledgetone-project', version: 1, 
 const n = (id, note, startOffset, duration, velocity, bend) => ({ id, note, startOffset, duration, velocity, ...(bend ? { expr: { bend } } : {}) });
 const hz = (name) => 440 * 2 ** ((({ C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 })[name[0]] + (name[1] === '#' ? 1 : 0) + 12 * (Number(name.at(-1)) - 4)) / 12);
 const bent = (name, semis) => hz(name) * 2 ** (semis / 12);
+// A Multi Sampler of one sine over every key (the sine made in the page: see RENDER)
+const MULTI = { zones: [{ soundId: 'sine', name: 'sine', root: 69, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0.002, release: 0.1 };
+const multiSong = (clips) => ({ ...song('multiSampler', clips), tracks: [{ ...track('multiSampler'), multi: MULTI }] });
 
 const cases = [];
 // Overlapping bent notes: C4 +2 for a beat, G4 -2 from half a beat for two; G4 alone after 0.5 s
@@ -77,6 +83,17 @@ for (const key of ['realGrandPiano', 'realViolin', 'realCello'])
 for (const [key, at, from, len, toBar] of [['realGrandPiano', [2.5, 3.5], 0.5, '2m', 4], ['keys', [9, 10], 1.25, '4m', 7]])
   cases.push({ what: `${key}, a long bent note begun after a plain one let go of a bent one's tail`, song: song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: toBar - 1, notes: [n('n1', 'C4', 0, '4n', 0.3, [{ at: 0, value: 2 }]), n('n2', 'A5', 0.125, '2n', 0.15), n('n3', 'G4', from, len, 0.9, [{ at: 0, value: -2 }])] }]), toBar, at, want: bent('G4', -2), band: [320, 420] });
 
+// A Multi Sampler A4 a bar long with its own bend under a clip's bend lane: the two add (each voice bends on its own)
+const laneUp = { bend: [{ at: 0, value: 1 }, { at: 2, value: 1 }] };
+const multiCases = [
+  ['held +2 under a lane of +1', laneUp, [{ at: 0, value: 2 }], [0.5, 1.5], 3],
+  ['sliding up to +2 over a beat under a lane of +1', laneUp, [{ at: 0, value: 0 }, { at: 0.25, value: 2 }], [0.8, 1.6], 3],
+  ['held +1 under a lane moving from 0 to +2 while it sounds', { bend: [{ at: 0, value: 0 }, { at: 0.5, value: 0 }, { at: 0.625, value: 2 }, { at: 2, value: 2 }] }, [{ at: 0, value: 1 }], [1.55, 1.95], 3],
+  ['held +2, no lane', undefined, [{ at: 0, value: 2 }], [0.5, 1.5], 2],
+];
+const multiOf = ([, expression, bend]) => multiSong([{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, ...(expression ? { expression } : {}), notes: [n('a', 'A4', 0, '1m', 0.9, bend)] }]);
+for (const c of multiCases) cases.push({ what: `Multi Sampler, its own bend ${c[0]}`, song: multiOf(c), at: c[3], want: bent('A4', c[4]), band: [430, 540] });
+
 // In the page: render `text` (bars 1..toBar, `ending`) as Export does and return the strongest frequency in `band` over `at`, or the RMS (dB);
 // or, with `track`, the strongest frequency in its band every 5 ms over [t0, t1] (15 ms windows); or, with `levels`, the level (dB) of
 // each of `freqs` over that stretch; or, with `rms`, the RMS (dB) over each stretch
@@ -85,6 +102,14 @@ const RENDER = async ({ text, toBar, ending, at, band, track, levels, freqs, rms
   const X = await import('/src/audio/exportWav.ts');
   const T = await import('/src/store/timelineTypes.ts');
   const p = P.parseProject(JSON.parse(text));
+  // (the Multi Sampler's sine, a sound made here in memory, when `text` uses it)
+  if (text.includes('"sine"')) {
+    const SL = await import('/src/audio/soundLibrary.ts');
+    const b = new OfflineAudioContext(1, 44100 * 8, 44100).createBuffer(1, 44100 * 8, 44100);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 44100);
+    SL.provideMemorySound('sine', b);
+  }
   const opts = { tracks: p.tracks, clips: p.clips, bpm: p.bpm, tempoPoints: p.tempoPoints, swing: p.swing, startBar: 1, endBar: toBar, masterFx: p.masterFx ?? T.DEFAULT_MASTER_FX, ending, sampleRate: 44100, markers: [] };
   const audio = await X.renderArrangement(opts);
   const x = audio.getChannelData(0);
@@ -263,6 +288,14 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
   const store = await import('/src/store/timelineStore.ts');
   const P = await import('/src/store/project.ts');
   const LI = await import('/src/audio/liveInput.ts');
+  // (the Multi Sampler's sine, a sound made here in memory, when `text` uses it)
+  if (text.includes('"sine"')) {
+    const SL = await import('/src/audio/soundLibrary.ts');
+    const b = new OfflineAudioContext(1, 44100 * 8, 44100).createBuffer(1, 44100 * 8, 44100);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 44100);
+    SL.provideMemorySound('sine', b);
+  }
   const engine = await (await fetch('/src/audio/engine.ts')).text();
   const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -440,6 +473,15 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
     const f = got.filter(([t, , db]) => t > 1.45 && t < 2.0 && db > -65).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
     const med = f.length ? f[f.length >> 1] : 0;
     report(Math.abs(med / hz('E4') - 1) < 0.01, `${key}, a key played live in a song note's bent tail: ${med.toFixed(1)} Hz, want ${hz('E4').toFixed(1)} Hz`);
+  }
+  // The Multi Sampler's A4 with its own bend of +2 under a lane of +1, played live: as in the file (no key pressed: one played off the band, at the end)
+  {
+    const pg = await page();
+    const got = await pg.evaluate(KEY, { text: JSON.stringify(multiOf(multiCases[0])), keyAt: 2.6, keyFor: 0.1, midi: 36, seconds: 3, band: [430, 540] });
+    await pg.close();
+    const f = got.filter(([t, , db]) => t > 0.4 && t < 1.6 && db > -65).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
+    const med = f.length ? f[f.length >> 1] : 0;
+    report(Math.abs(med / bent('A4', 3) - 1) < 0.01, `Multi Sampler, its own bend held +2 under a lane of +1, live: ${med.toFixed(1)} Hz, want ${bent('A4', 3).toFixed(1)} Hz`);
   }
   await browser.close();
   process.exit(failed ? 1 : 0);
