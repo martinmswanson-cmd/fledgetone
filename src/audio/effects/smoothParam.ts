@@ -59,3 +59,15 @@ export function smoothSet(param: SmoothableParam, value: number, time: number, t
 export function paramSetter(timeOf: () => number): (param: AudioParam, value: number, ramp: number) => void {
   return (param, value, ramp) => smoothSet(param, value, timeOf(), ramp > 0 ? ramp / 3 : 0);
 }
+
+/**
+ * Fade `param` to 0 from `time` (time constant `tc`), from the level it has reached then: a fade in
+ * or out still under way is held where it is, not dropped (cancelScheduledValues() alone would leave
+ * the param at the last value set before `time`: full level in a fade-out, silence in a fade-in).
+ * Where the browser has no cancelAndHoldAtTime, what was scheduled from `time` is dropped.
+ */
+export function fadeOutFrom(param: SmoothableParam, time: number, tc: number): void {
+  if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(time);
+  else param.cancelScheduledValues(time);
+  param.setTargetAtTime(0, time, tc);
+}

@@ -198,16 +198,21 @@ function cancelPendingStart(): boolean {
   return true;
 }
 
+/*
+ * Stop and Pause take effect now, not at Tone's default (now + look-ahead): notes due in the
+ * look-ahead would otherwise still be handed out after Stop let every voice go, and ring on whole.
+ * What's already sounding fades as before (releaseAllVoices; audio clips declick, see audioClipSchedule).
+ */
 export function pauseTransport(): void {
   heading = null;
   if (cancelPendingStart()) return;
-  liveTransport.pause();
+  liveTransport.pause(liveContext.immediate());
 }
 
 export function stopTransport(): void {
   heading = null;
   if (cancelPendingStart()) return;
-  liveTransport.stop();
+  liveTransport.stop(liveContext.immediate());
 }
 
 export function seekTransport(bar: number): void {
