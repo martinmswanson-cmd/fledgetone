@@ -24,7 +24,7 @@ import { initAudio } from './engine';
 import { measureRender, renderSequence, type ListenSnapshot } from './listen';
 import { pairedLoudnessDiff } from './loudness';
 import type { Tempo } from './tempoMap';
-import { playedBars, sequenceOffset } from './auditionMath';
+import { playedBars, sequenceOffset, sharedRunIn } from './auditionMath';
 import { claimPreview, registerPreview } from './exclusivePreview';
 
 /** How long a switch between A and B takes, seconds. */
@@ -268,8 +268,10 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     let pair = cache?.renderKey === opts.renderKey ? cache : null;
     if (!pair) {
       const signal = controller.signal;
-      const ra = await renderSequence(opts.now, plays, { signal, progress: (f) => useAudition.setState({ progress: f * 0.45 }) });
-      const rb = await renderSequence(opts.suggested, plays, { signal, progress: (f) => useAudition.setState({ progress: 0.45 + f * 0.45 }) });
+      // (each stretch of both from one run-in, so they line up and a switch hears only what changed: sharedRunIn)
+      const runIns = plays.map((p) => sharedRunIn([opts.now, opts.suggested], p.fromBar));
+      const ra = await renderSequence(opts.now, plays, { signal, runIns, progress: (f) => useAudition.setState({ progress: f * 0.45 }) });
+      const rb = await renderSequence(opts.suggested, plays, { signal, runIns, progress: (f) => useAudition.setState({ progress: 0.45 + f * 0.45 }) });
       const [a, b] = [ra.buffer, rb.buffer];
       const [ma, mb] = [await measureRender(a, signal), await measureRender(b, signal)];
       // (the same moments of each compared: their integrated loudness alone reads B louder when a

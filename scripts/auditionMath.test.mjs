@@ -17,7 +17,7 @@ register(
   }
 }`)
 );
-const { preRollStart, restartHeldNotes, soundingNotes, releaseSeconds, RELEASE_ALLOWANCE_SECONDS, loopChannels, LOOP_FADE_SECONDS } = await import('../src/audio/auditionMath.ts');
+const { preRollStart, restartHeldNotes, soundingNotes, releaseSeconds, RELEASE_ALLOWANCE_SECONDS, loopChannels, LOOP_FADE_SECONDS, sharedRunIn, runInFrames } = await import('../src/audio/auditionMath.ts');
 const { sustainNotes } = await import('../src/store/expression.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
 
@@ -180,4 +180,27 @@ test('a clip with a held note begun again keeps its place in its run of copies (
   const got = passes(over);
   assert.ok(over.some((c) => c.id === 'C~held'));
   assert.deepEqual([got.A, got.B, got.C, got['C~held']], [0, 1, 2, 2]);
+});
+
+test('a before-and-after renders both versions from one run-in, on a whole tick, trimmed from that tick', () => {
+  // Before: a long note from bar 8 rings into bar 9. After: a short note added at 7.95 (off the tick grid), its release ringing into bar 9
+  const pad = { id: 'p', trackId: 't', startBar: 8, lengthBars: 2, notes: [note('long', 0, '1m')] };
+  const blip = { id: 'b', trackId: 't', startBar: 7, lengthBars: 1, notes: [note('blip', 0.95, '8n')] };
+  const before = songOf(pad);
+  const after = { ...before, clips: [pad, blip] };
+  assert.equal(preRollStart(before, 9), 8);
+  assert.ok(preRollStart(after, 9) < 8, 'the added note runs in from earlier (its release rings into bar 9)');
+  // One start for both: the earlier, put back to the tick at or before it (768 to a bar)
+  const start = sharedRunIn([before, after], 9);
+  assert.equal(start, sharedRunIn([after, before], 9), 'the same whichever comes first');
+  assert.ok(start <= preRollStart(after, 9) && start > preRollStart(after, 9) - 1 / 768);
+  assert.equal(((start - 1) * 768) % 1, 0, 'on a whole tick');
+  // Nothing held over in either: the range's own start
+  assert.equal(sharedRunIn([songOf({ ...pad, startBar: 1, lengthBars: 1, notes: [note('x', 0, '16n')] })], 9), 9);
+  // The trim runs from the tick the render's Transport starts on (the nearest), so the render begins exactly at fromBar
+  const tempo = { bpm: 120, points: [] };
+  assert.equal(runInFrames(8, 9, tempo, 44100), 88200, 'a bar at 120 bpm');
+  assert.equal(runInFrames(7.95, 9, tempo, 44100), Math.round(((8 * 768 - Math.round(6.95 * 768)) / 768) * 2 * 44100), 'from the tick nearest 7.95, not 7.95 itself');
+  assert.notEqual(runInFrames(7.95, 9, tempo, 44100), Math.round(1.05 * 2 * 44100));
+  assert.equal(runInFrames(9, 9, tempo, 44100), 0, 'no run-in, no trim');
 });

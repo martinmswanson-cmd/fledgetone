@@ -17,7 +17,7 @@ import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from './mixAna
 import type { MasterStats } from './effects/masterAfter';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { barToSeconds, type MeterMap, type TempoPoint } from './tempoMap';
-import { joinStretches, LOOP_FADE_SECONDS, loopChannels, preRollStart, restartHeldNotes, stretchOf, type RenderedStretch } from './auditionMath';
+import { joinStretches, LOOP_FADE_SECONDS, loopChannels, restartHeldNotes, runInFrames, sharedRunIn, stretchOf, type RenderedStretch } from './auditionMath';
 import type { IntensityCurve } from '../store/intensity';
 
 /** The parts of a song a render needs. */
@@ -70,23 +70,25 @@ function trimStart(audio: AudioBuffer, frames: number): AudioBuffer {
 
 /**
  * Render bars [from, to) of `song` through the master section, as they sound in the song: from a
- * run-in (preRollStart; notes held from before it begin again at its start: restartHeldNotes) so
- * notes held over from before are heard, then trimmed to start exactly at `fromBar`. `onMasterStats` hears what the master did.
+ * run-in (preRollStart on a whole tick: sharedRunIn; notes held from before it begin again at its
+ * start: restartHeldNotes) so notes held over from before are heard, then trimmed to start exactly
+ * at `fromBar` (runInFrames). `start`: the run-in to render from instead (one shared by the
+ * versions of a before-and-after, so they line up: sharedRunIn). `onMasterStats` hears what the master did.
  */
 export async function renderRange(
   song: ListenSnapshot,
   fromBar: number,
   toBar: number,
-  opts: { signal?: AbortSignal; progress?: RenderProgress; onMasterStats?: (s: MasterStats) => void } = {}
+  opts: { signal?: AbortSignal; progress?: RenderProgress; onMasterStats?: (s: MasterStats) => void; start?: number } = {}
 ): Promise<AudioBuffer> {
-  const start = preRollStart(song, fromBar);
+  const start = Math.min(fromBar, opts.start ?? sharedRunIn([song], fromBar));
   // (notes held from before the run-in begin again at its start, for what's left of them)
   const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
   // (what the master section did is counted from fromBar: the run-in isn't heard)
   const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), ...(opts.onMasterStats ? { onMasterStats: opts.onMasterStats, masterStatsFromBar: fromBar } : {}) }, opts.progress);
   if (start >= fromBar) return audio;
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
-  return trimStart(audio, Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate));
+  return trimStart(audio, runInFrames(start, fromBar, tempo, audio.sampleRate));
 }
 
 /**
@@ -95,12 +97,12 @@ export async function renderRange(
  * so going round doesn't click where a note is held over the start.
  */
 export async function renderLoop(song: ListenSnapshot, fromBar: number, toBar: number, opts: { signal?: AbortSignal; progress?: RenderProgress } = {}): Promise<AudioBuffer> {
-  const start = preRollStart(song, fromBar);
+  const start = sharedRunIn([song], fromBar);
   const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
   // (no 5 ms fade at the end: the crossfade takes its place)
   const audio = await renderArrangement({ ...renderOptionsFor(from, start, toBar, opts.signal), noEndFade: true }, opts.progress);
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
-  const trim = start < fromBar ? Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate) : 0;
+  const trim = runInFrames(start, fromBar, tempo, audio.sampleRate);
   const channels = loopChannels(channelsOf(audio), trim, LOOP_FADE_SECONDS * audio.sampleRate);
   const out = new AudioBuffer({ numberOfChannels: channels.length, length: Math.max(1, channels[0].length), sampleRate: audio.sampleRate });
   channels.forEach((c, i) => out.copyToChannel(c, i));
@@ -111,27 +113,28 @@ export async function renderLoop(song: ListenSnapshot, fromBar: number, toBar: n
  * Render stretches of `song` (each [fromBar, toBar), in order) as renderRange does, one after
  * another, made to be played looped as one (the before and after of a suggestion whose changes sit
  * in several places): each one's end crossfades into the music leading into the next one's start
- * (joinStretches), so going from one to the next doesn't click. `starts`: where each stretch
- * begins in the buffer, seconds.
+ * (joinStretches), so going from one to the next doesn't click. `runIns`: the run-in to render each
+ * stretch from (one shared with the other version of a before-and-after: sharedRunIn; absent: its
+ * own). `starts`: where each stretch begins in the buffer, seconds.
  */
 export async function renderSequence(
   song: ListenSnapshot,
   plays: ReadonlyArray<{ fromBar: number; toBar: number }>,
-  opts: { signal?: AbortSignal; progress?: RenderProgress } = {}
+  opts: { signal?: AbortSignal; progress?: RenderProgress; runIns?: ReadonlyArray<number> } = {}
 ): Promise<{ buffer: AudioBuffer; starts: number[] }> {
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   const total = plays.reduce((n, p) => n + Math.max(1e-9, barToSeconds(p.toBar, tempo) - barToSeconds(p.fromBar, tempo)), 0);
   const parts: RenderedStretch[] = [];
   let done = 0;
   let rate = 44100;
-  for (const p of plays) {
+  for (const [i, p] of plays.entries()) {
     const share = Math.max(1e-9, barToSeconds(p.toBar, tempo) - barToSeconds(p.fromBar, tempo)) / total;
-    const start = preRollStart(song, p.fromBar);
+    const start = Math.min(p.fromBar, opts.runIns?.[i] ?? sharedRunIn([song], p.fromBar));
     const from = start < p.fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, p.fromBar) } : song;
     // (no 5 ms fade at the end: the crossfade takes its place)
     const audio = await renderArrangement({ ...renderOptionsFor(from, start, p.toBar, opts.signal), noEndFade: true }, opts.progress ? (f) => opts.progress!(done + f * share) : undefined);
     rate = audio.sampleRate;
-    const trim = start < p.fromBar ? Math.round((barToSeconds(p.fromBar, tempo) - barToSeconds(start, tempo)) * audio.sampleRate) : 0;
+    const trim = runInFrames(start, p.fromBar, tempo, audio.sampleRate);
     parts.push(stretchOf(channelsOf(audio), trim, LOOP_FADE_SECONDS * audio.sampleRate));
     done += share;
   }
@@ -144,7 +147,7 @@ export async function renderSequence(
 /**
  * Render bars [from, to) of `song` track by track: each sounding track's stem (its strip, sends and
  * the shared reverb and delay, without the master section, as the Mix check renders them), from
- * the same run-in as renderRange and trimmed the same way. `onStem` gets each one in turn, in the
+ * the same run-in as renderRange and trimmed the same way (`start` as there). `onStem` gets each one in turn, in the
  * order of the tracks; returns the tracks rendered (those with a clip in the bars, or held into them).
  */
 export async function renderRangeStems(
@@ -152,16 +155,16 @@ export async function renderRangeStems(
   fromBar: number,
   toBar: number,
   onStem: (track: Track, channels: Float32Array[], sampleRate: number) => void | Promise<void>,
-  opts: { signal?: AbortSignal; progress?: (fraction: number, track: Track) => void } = {}
+  opts: { signal?: AbortSignal; progress?: (fraction: number, track: Track) => void; start?: number } = {}
 ): Promise<Track[]> {
-  const start = preRollStart(song, fromBar);
+  const start = Math.min(fromBar, opts.start ?? sharedRunIn([song], fromBar));
   const from = start < fromBar ? { ...song, clips: restartHeldNotes(song.clips, start, fromBar) } : song;
   const render: RenderOptions = { ...renderOptionsFor(from, start, toBar, opts.signal), bypassMaster: true };
   const tracks = stemTracks(render);
   if (!tracks.length) return [];
   const tempo = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   const rate = render.sampleRate ?? 44100;
-  const trim = start < fromBar ? Math.round((barToSeconds(fromBar, tempo) - barToSeconds(start, tempo)) * rate) : 0;
+  const trim = runInFrames(start, fromBar, tempo, rate);
   const pending = [...tracks];
   await renderStems(
     render,

@@ -618,6 +618,15 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   tempo. samplerManager's `releaseAll` leaves notes already let go (or stolen) to fade on (released
   again they restarted from the held level), and release sounds follow the bend
   (`releaseSounds`); the Drum Rack's Stop cut holds the level it has reached.
+  The Multi Sampler bends each note on its own (`noteVoice`): there a note's own bend (an
+  expressive note's, an MPE channel's) adds to the instrument's bend (a clip's bend lane, the
+  master wheel), as MPE's per-note bend adds to its master channel's; the whole-instrument rule
+  (a note's own bend off rest wins over the clip's) is only for instruments with one bend. Each
+  voice keeps its own bend by time (`Voice.own`, `ownAt` in sampleKits.ts): the instrument's
+  `bend` sets each voice to its own bend there plus the new one (and after a `cut` sets its own
+  bends still to come again), and a new own bend sets again the instrument's bends already sent
+  for after it (the look-ahead's few). The scheduler sends lane bends to it as to any instrument
+  (no `bentNotes` for per-voice notes), live and in exports alike.
   Check with scripts/audio-check/live-controllers.cjs and scripts/audio-check/bends.cjs (each case
   a bug found before: overlapping bent notes, long curves, Fledge wide bends, a piano under a clip
   bend, a note longer than a seamless loop, the cost of a long vibrato under chords live, a slide
