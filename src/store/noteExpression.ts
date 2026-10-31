@@ -1,5 +1,5 @@
-import type { ExprPoint, NoteExpression } from './timelineTypes';
-import { TOTAL_BARS } from './timelineTypes';
+import type { Clip, ExprPoint, NoteExpression } from './timelineTypes';
+import { durationToBars, TOTAL_BARS } from './timelineTypes';
 import { exprValueAt } from './expression';
 
 /**
@@ -62,15 +62,88 @@ export function normalizeNoteExpression(raw: unknown, length = Infinity): NoteEx
   return Object.keys(out).length ? out : undefined;
 }
 
-/** The note moves anything (a bend away from 0, a pressure below full). */
-export const isExpressive = (expr: NoteExpression | undefined): boolean =>
-  !!expr && (!!expr.bend?.some((p) => p.value !== 0) || !!expr.pressure?.some((p) => p.value !== 1));
+/** Every curve of a note's expression cut to its length (cutNoteLane): the very same object when none goes past it. */
+export function cutNoteExpression(expr: NoteExpression, length: number): NoteExpression {
+  let out: NoteExpression | undefined;
+  for (const { lane } of NOTE_LANES) {
+    const pts = expr[lane];
+    if (!pts?.length || !(pts[pts.length - 1].at > length)) continue;
+    (out ??= { ...expr })[lane] = cutNoteLane(pts, lane, length);
+  }
+  return out ?? expr;
+}
+
+type NoteWithCurves = { duration: string; expr?: NoteExpression };
+
+/**
+ * A note as long as `duration`, its curves (those of `curvesFrom`, the note itself unless given)
+ * cut to that length, as a saved file keeps them: what's past its end plays nothing, and the song
+ * sounds the same saved and opened again. Lengthened later, the cut part doesn't come back. Every
+ * edit that changes a note's length goes through here (or through fitNoteCurves).
+ */
+export function withNoteLength<N extends NoteWithCurves>(note: N, duration: string, curvesFrom: { expr?: NoteExpression } = note): N {
+  const { expr: _was, ...rest } = note;
+  const expr = curvesFrom.expr && cutNoteExpression(curvesFrom.expr, durationToBars(duration));
+  return (expr ? { ...rest, duration, expr } : { ...rest, duration }) as unknown as N;
+}
+
+/** The note with its curves cut to its own length: the very same note when nothing is past its end. */
+export function fitNoteCurves<N extends NoteWithCurves>(note: N): N {
+  if (!note.expr) return note;
+  const expr = cutNoteExpression(note.expr, durationToBars(note.duration));
+  return expr === note.expr ? note : { ...note, expr };
+}
+
+/** Notes with their curves cut to their lengths (fitNoteCurves): the very same list when none changes. */
+export function fitNotesCurves<N extends NoteWithCurves>(notes: N[]): N[] {
+  let out: N[] | undefined;
+  notes.forEach((n, i) => {
+    const fit = fitNoteCurves(n);
+    if (fit !== n) (out ??= [...notes])[i] = fit;
+  });
+  return out ?? notes;
+}
+
+/** A clip with every note's curves cut to its length, its takes' too (fitNotesCurves): the very same clip when none changes. */
+export function fitClipCurves(clip: Clip): Clip {
+  const notes = fitNotesCurves(clip.notes);
+  let takes: Clip['takes'];
+  clip.takes?.forEach((t, i) => {
+    const fit = t.notes && fitNotesCurves(t.notes);
+    if (fit !== t.notes) (takes ??= [...clip.takes!])[i] = { ...t, notes: fit };
+  });
+  return notes === clip.notes && !takes ? clip : { ...clip, notes, ...(takes ? { takes } : {}) };
+}
+
+/** Clips with their notes' curves cut (fitClipCurves), only those not in `before` looked at: the very same list when none changes. */
+export function fitClipsCurves(clips: Clip[], before: readonly Clip[] = []): Clip[] {
+  const old = new Set(before);
+  let out: Clip[] | undefined;
+  clips.forEach((c, i) => {
+    if (old.has(c)) return;
+    const fit = fitClipCurves(c);
+    if (fit !== c) (out ??= [...clips])[i] = fit;
+  });
+  return out ?? clips;
+}
+
+/**
+ * The note moves anything (a bend away from 0, a pressure below full), judged over its `length`
+ * (bars) only, on its curves as cut to it (cutNoteLane): what's past its end plays nothing.
+ */
+export const isExpressive = (expr: NoteExpression | undefined, length = Infinity): boolean => {
+  if (!expr) return false;
+  const cut = cutNoteExpression(expr, length);
+  return !!cut.bend?.some((p) => p.value !== 0) || !!cut.pressure?.some((p) => p.value !== 1);
+};
 
 /**
  * The note's expression as steps to play: every `step` bars over its `length` (bars), its bend in
  * cents and its pressure, only where either changes. The first is at 0. Past both curves' last
  * points nothing changes, so the steps stop there (a note many bars long costs no more than its
- * curves), and no note is stepped past the whole timeline (TOTAL_BARS).
+ * curves), and no note is stepped past the whole timeline (TOTAL_BARS). Only its `length` is
+ * stepped, so its steps are those of its curves cut to its length (cutNoteLane: the cut point
+ * lies on the line the curve takes there).
  */
 export function noteSteps(expr: NoteExpression, length: number, step = 1 / 64): Array<{ at: number; cents: number; pressure: number }> {
   const out: Array<{ at: number; cents: number; pressure: number }> = [];

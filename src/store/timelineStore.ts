@@ -146,7 +146,7 @@ import {
 import { rippleRules, type RippleEdit } from './ripple';
 import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
-import { tidyNoteLane, type NoteLane } from './noteExpression';
+import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
@@ -1197,6 +1197,11 @@ function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: 
         if (next.clips && next.clips !== s.clips && !unsynced.has(next.clips)) {
           const synced = syncPatterns(s.clips, next.clips);
           if (synced) next = { ...next, clips: synced };
+          // A note's curves end with it, as a saved file keeps them (noteExpression.ts cutNoteLane):
+          // whatever edit made a note shorter, what's past its end is cut, so the song sounds the
+          // same in the studio, in an export and saved and opened again
+          const fitted = fitClipsCurves(next.clips!, s.clips);
+          if (fitted !== next.clips) next = { ...next, clips: fitted };
         }
         // An edit that would go past the most a song opens with isn't made (it couldn't be kept:
         // the autosave and a saved file would open without what's past it). A new song (loadProject)
@@ -3412,7 +3417,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // Start downloading the recorded instruments, what the song plays on each first
       loadSongSamples(safeTracks, p.clips);
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
-      const loadedClips = shareLinkedContent(p.clips);
+      // (its notes' curves ending with them, as a saved file opens: see fitClipsCurves)
+      const loadedClips = shareLinkedContent(fitClipsCurves(p.clips));
       unsynced.add(loadedClips);
       const songId = p.songId || newSongId();
       // Noted as opening until the studio has shown it (App/Pocket useOpenedMark): a song that

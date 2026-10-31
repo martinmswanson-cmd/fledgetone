@@ -13,7 +13,7 @@ import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { StepLanes } from './StepLanes';
 import { stepLanesHeight } from './stepTargets';
 import { bendSupport, diveNotes, withSlide, slideOf, MAX_SLIDE } from '../../store/slides';
-import { noteValueAt } from '../../store/noteExpression';
+import { noteValueAt, withNoteLength } from '../../store/noteExpression';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
@@ -647,7 +647,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         const len = Math.max(gridUnits, Math.min(totalUnits - start, end - start));
         if (len === stretched) return;
         stretched = len;
-        store.setClipNotes(clip.id, currentNotes().map((n) => (originals.has(n.id) ? { ...n, duration: barsToDuration(len / UNITS_PER_BAR) } : n)));
+        store.setClipNotes(clip.id, currentNotes().map((n) => (originals.has(n.id) ? withNoteLength(n, barsToDuration(len / UNITS_PER_BAR), originals.get(n.id)) : n)));
         return;
       }
       // Nothing moves until the pointer has gone half a grid step. Then the grabbed note's start
@@ -676,7 +676,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           const start = unitsOf(o.startOffset);
           const len = Math.max(gridUnits, Math.min(totalUnits - start, noteUnits(o) + dUnits));
           if (n.id === primaryId) stretched = len;
-          return { ...n, duration: barsToDuration(len / UNITS_PER_BAR) };
+          // (its curves cut to the new length, from the note as the drag found it: made shorter
+          // and longer again in one drag, it keeps them)
+          return withNoteLength(n, barsToDuration(len / UNITS_PER_BAR), o);
         }
         const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, o.note) + dRows));
         return { ...n, startOffset: (unitsOf(o.startOffset) + dUnits) / UNITS_PER_BAR, note: rows[rowIdx].note };

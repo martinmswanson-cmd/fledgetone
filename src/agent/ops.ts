@@ -24,6 +24,7 @@ import { cleanMarkerName, createMarker, MARKER_NAME_MAX, nextMarkerName, placeMa
 import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from '../store/buses';
 import { DRUM_NOTES } from '../store/drumNotes';
 import { midiOf, nameOf } from '../store/noteTools';
+import { fitClipsCurves, withNoteLength } from '../store/noteExpression';
 import { presetPatch, SYNTH_PRESETS } from '../store/synthPatch';
 import { designedKitStart } from '../store/synthKits';
 import { followTracks } from '../store/drumFollow';
@@ -421,7 +422,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           const start = raw.start === undefined ? note.startOffset : readStart(raw.start, `${path}.start`, clip);
           const length = raw.length === undefined ? undefined : readLength(raw.length, `${path}.length`);
           const velocity = raw.velocity === undefined ? note.velocity : readVelocity(raw.velocity, `${path}.velocity`);
-          byId.set(note.id, { ...note, note: pitch, startOffset: start, ...(length !== undefined ? { duration: lengthText(length) } : {}), velocity });
+          const moved = { ...note, note: pitch, startOffset: start, velocity };
+          // (made shorter, its curves cut to its new length, as the studio's edits do)
+          byId.set(note.id, length !== undefined ? withNoteLength(moved, lengthText(length)) : moved);
         });
         replaceClip(clip, { ...clip, notes: clip.notes.map((n) => byId.get(n.id) ?? n) });
         return;
@@ -982,7 +985,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   let song: ProjectSnapshot = {
     ...base,
     tracks: w.tracks,
-    clips: w.clips,
+    // (every note of a clip the ops made or changed with its curves cut to its length, as the
+    // studio's edits and a saved file keep them: noteExpression.ts fitClipCurves)
+    clips: fitClipsCurves(w.clips, base.clips),
     markers: w.markers,
     bpm: w.bpm,
     master: w.master,
@@ -1022,13 +1027,32 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   };
 }
 
+/** A note's parts in words, for a caution. */
+const NOTE_PART_WORDS: Readonly<Record<string, string>> = { duration: 'length', startOffset: 'start', velocity: 'velocity', note: 'pitch', chance: 'chance', cond: 'passes' };
+
 /**
- * Where two versions of a thing first differ, for a caution: " (its <path>)", naming the field
- * only, never the values (one could be text an agent wrote); nothing if the path isn't plain.
+ * Where two versions of a thing first differ, for a caution, in plain words: " (a note's
+ * length)", " (its cutoff)", naming the part only, never the values (one could be text an agent
+ * wrote), and never the file's own field names; nothing if the part has no plain name.
  */
 function differsAt(a: unknown, b: unknown): string {
   const path = firstDifferencePath(a, b);
-  return path && /^[A-Za-z0-9_.[\]]{1,60}$/.test(path) ? ` (its ${path})` : '';
+  if (!path || !/^[A-Za-z0-9_.[\]]{1,200}$/.test(path)) return '';
+  const keys = path.split(/[.[\]]+/).filter((k) => k && !/^\d+$/.test(k));
+  if (keys[0] === 'notes' || keys[0] === 'takes') {
+    const of = keys[0] === 'notes' ? 'a note' : 'a take';
+    if (keys[0] === 'takes' && keys[1] !== 'notes') return ` (${of})`;
+    const part = keys[0] === 'notes' ? keys[1] : keys[2];
+    const lane = keys[keys.indexOf('expr') + 1];
+    if (part === 'expr') return lane === 'bend' || lane === 'pressure' ? ` (${of}'s ${lane} curve)` : ` (${of}'s curves)`;
+    const word = part !== undefined && Object.hasOwn(NOTE_PART_WORDS, part) ? NOTE_PART_WORDS[part] : undefined;
+    return word ? ` (${of}'s ${word})` : ` (${of})`;
+  }
+  if (keys[0] === 'expression') return ' (its controller lanes)';
+  if (keys[0] === 'stepLanes') return ' (its step lanes)';
+  const last = keys[keys.length - 1];
+  const word = last === undefined ? null : last === 'lengthBars' ? 'length' : last === 'startBar' ? 'start' : settingWord(last);
+  return word ? ` (its ${word})` : '';
 }
 
 /** What a setting kept when the value given wasn't one of its choices: "left as it was", or the app's own value it took. */
