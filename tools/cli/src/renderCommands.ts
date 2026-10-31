@@ -90,7 +90,7 @@ export function renderPlan(args: string[], flags: Flags): RenderPlan {
   const fmt = outPlan?.format ?? format ?? 'wav';
   if (rate > 48000 && (fmt === 'mp3' || (format ?? 'wav') === 'mp3')) throw new UsageError('MP3 stops at 48000 Hz: --rate 88200 and 96000 are for WAV');
   const bitsText = flags.bits === undefined ? '24' : String(flags.bits);
-  if (!(bitsText in BITS)) throw new UsageError('--bits takes 16, 24 or 32f (32-bit float)');
+  if (!Object.hasOwn(BITS, bitsText)) throw new UsageError('--bits takes 16, 24 or 32f (32-bit float)');
   if (flags.bits !== undefined && fmt === 'mp3' && !stemsDir) throw new UsageError('--bits is for WAV files');
   let stems: RenderPlan['stems'];
   if (stemsDir) {

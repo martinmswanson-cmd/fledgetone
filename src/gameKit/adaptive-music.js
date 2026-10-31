@@ -205,7 +205,8 @@ export class AdaptiveMusic {
    * volumes and each group's levels multiplied (the same sums as Fledgetone's gameParams.ts).
    */
   mix() {
-    const m = { intensity: null, filter: 20000, reverb: 0, volume: 1, layers: {} };
+    // (layers by group name: a table with no keys of its own, so a group called "constructor" is just a name)
+    const m = { intensity: null, filter: 20000, reverb: 0, volume: 1, layers: Object.create(null) };
     const clamp = (x) => Math.max(0, Math.min(1, x));
     for (const p of this.data?.parameters ?? []) {
       const v = clamp(this.params.get(p.name) ?? p.default ?? 0);
@@ -563,7 +564,7 @@ export class AdaptiveMusic {
    * 'lowHealth', 'dream' or 'none', over `seconds`. Sound effects aren't touched.
    */
   setEffect(name, seconds = 1) {
-    const e = EFFECTS[name];
+    const e = Object.hasOwn(EFFECTS, name) ? EFFECTS[name] : undefined;
     if (!e) throw new Error(`No effect called "${name}" (try ${Object.keys(EFFECTS).join(', ')})`);
     this.effect = name;
     this.baseFilter = e.filter;

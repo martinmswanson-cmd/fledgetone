@@ -1,4 +1,5 @@
 import type { Track } from './timelineTypes';
+import { own } from './ownKey';
 
 /**
  * Intensity: one number, 0 to 1, that a game turns up as things get exciting. Tracks belong to
@@ -48,7 +49,7 @@ export function curveLevel(curve: IntensityCurve, x: number): number {
 export function trackIntensityLevel(track: Pick<Track, 'stemGroup'> & { instrumentKey?: Track['instrumentKey'] }, curves: Record<string, IntensityCurve>, x: number): number {
   // A bus isn't a stem of its own (its tracks' stems carry its sound), so it follows no curve
   if (!track.stemGroup || track.instrumentKey === 'bus' || track.instrumentKey === 'return') return 1;
-  return curveLevel(curves[track.stemGroup] ?? defaultCurve(track.stemGroup), x);
+  return curveLevel(own(curves, track.stemGroup) ?? defaultCurve(track.stemGroup), x);
 }
 
 /** Tidy a curve: points clamped to 0..1, sorted by intensity, at least one. */
@@ -64,12 +65,13 @@ export function normalizeCurve(raw: unknown): IntensityCurve | null {
 /** Curves from a project file, by group name. */
 export function parseCurves(raw: unknown): Record<string, IntensityCurve> {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
-  const out: Record<string, IntensityCurve> = {};
-  for (const [group, curve] of Object.entries(raw)) {
-    const c = normalizeCurve(curve);
-    if (c && group.trim()) out[group.slice(0, 40)] = c;
-  }
-  return out;
+  // (by the names the musician gave the groups, whatever they are: a "__proto__" group is a group, not the table's prototype)
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([group, curve]) => {
+      const c = normalizeCurve(curve);
+      return c && group.trim() ? [[group.slice(0, 40), c] as const] : [];
+    })
+  );
 }
 
 /** The stem groups the tracks use, in track order. */

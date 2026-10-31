@@ -18,6 +18,7 @@ import { HOSTED_SETS } from './hostedSets';
 import { evenLevels, SET_LEVELS } from './samplers/setLevels';
 import { FLATS, nb, noteName } from './soundfontSets';
 import { RETRO_INSTRUMENTS } from './instrumentCatalogRetro';
+import { own } from '../store/ownKey';
 
 export const INSTRUMENT_KEYS = [
   // original set
@@ -969,7 +970,7 @@ for (const [key, tuning] of Object.entries(SAMPLE_TUNING)) {
 }
 
 export function isInstrumentKey(key: unknown): key is InstrumentKey {
-  return typeof key === 'string' && key in INSTRUMENTS;
+  return typeof key === 'string' && Object.hasOwn(INSTRUMENTS, key);
 }
 
 /**
@@ -1011,8 +1012,8 @@ const SNARE_STROKES = new Set(['Rimshot']);
 export function pumpHitOf(key: InstrumentKey | undefined, note: string): 'kick' | 'snare' | null {
   const def = key ? INSTRUMENTS[key] : undefined;
   if (!def || def.kind !== 'drums') return null;
-  const hit = PUMP_ROWS[note];
-  const label = def.rowLabels?.[note];
+  const hit = own(PUMP_ROWS, note);
+  const label = own(def.rowLabels, note);
   return hit && (!label || (hit === 'snare' && SNARE_STROKES.has(label))) ? hit : null;
 }
 

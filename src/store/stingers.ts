@@ -2,6 +2,7 @@ import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { currentInstrumentKey } from '../audio/instrumentCatalog';
 import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
 import { uid } from './timelineTypes';
+import { isPrototypeName } from './ownKey';
 import { NOTE_NAMES, type SongKey } from './songKey';
 
 /**
@@ -132,10 +133,14 @@ export function parseStingers(raw: unknown, isInstrument: (key: unknown) => key 
     s.instrumentKey = currentInstrumentKey(s.instrumentKey);
     if (typeof s.id !== 'string' || typeof s.name !== 'string' || !KINDS.has(s.kind as StingerKind) || !isInstrument(s.instrumentKey)) continue;
     if (!Array.isArray(s.notes) || typeof s.lengthBars !== 'number' || !(s.lengthBars > 0 && s.lengthBars <= 8)) continue;
-    const notes = s.notes.filter(
-      (n): n is NoteEvent =>
-        typeof n === 'object' && n !== null && typeof n.id === 'string' && typeof n.note === 'string' && typeof n.startOffset === 'number' && typeof n.duration === 'string' && typeof n.velocity === 'number'
-    );
+    const lengthBars = s.lengthBars;
+    const notes = s.notes
+      .filter(
+        (n): n is NoteEvent =>
+          typeof n === 'object' && n !== null && typeof n.id === 'string' && typeof n.note === 'string' && !isPrototypeName(n.note) && typeof n.startOffset === 'number' && typeof n.duration === 'string' && typeof n.velocity === 'number'
+      )
+      // In the stinger and no louder than a note can be (as the app makes them)
+      .map((n) => ({ ...n, startOffset: Math.max(0, Math.min(lengthBars, n.startOffset)), velocity: Math.max(0, Math.min(1, n.velocity)) }));
     out.push({
       id: s.id,
       name: s.name.slice(0, 80),

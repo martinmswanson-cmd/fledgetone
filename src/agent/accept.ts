@@ -10,6 +10,7 @@
 import { currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
 import type { ProjectSnapshot } from '../store/project';
 import type { Track } from '../store/timelineTypes';
+import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { liveMix } from '../audio/engine';
 import { setLiveStripTempo } from '../audio/liveTracks';
 import { hasRecordings, loadQuick } from '../audio/samplers/samplerManager';
@@ -20,8 +21,13 @@ import { songContext } from './songWatch';
 /** What of a track only the moment holds (see revision.ts): kept as the studio has it at Accept. */
 const MOMENT = ['isArmed', 'frozen', 'freezing', 'midiMap'] as const;
 
-/** Put `song`'s edited parts into the store as one undo step. */
-export function applyAsOneStep(song: ProjectSnapshot): void {
+/**
+ * Put `song`'s edited parts into the store as one undo step. All or nothing: false (and the song
+ * and its undo history exactly as they were) if it can't go in, checked first (an instrument this
+ * version doesn't have), and undone if putting it in fails part way.
+ */
+export function applyAsOneStep(song: ProjectSnapshot): boolean {
+  if (!song.tracks.every((t) => isInstrumentKey(t.instrumentKey))) return false;
   const tl = useTimelineStore.getState();
   const before = tl.tracks;
   // What only the screen or the moment holds stays as it is now (a suggestion's song kept the
@@ -46,7 +52,28 @@ export function applyAsOneStep(song: ProjectSnapshot): void {
     const { collapsed: _c, ...open } = t.folder;
     return { ...t, folder: folded.get(t.folder.id) ? { ...open, collapsed: true } : open };
   });
-  tl.checkpoint();
+  const was = { tracks: tl.tracks, clips: tl.clips, markers: tl.markers, bpm: tl.bpm, tempoPoints: tl.tempoPoints, master: tl.master, selectedTrackId: tl.selectedTrackId, past: tl.past, future: tl.future };
+  try {
+    put(song, tracks, clips, tl.selectedTrackId);
+  } catch {
+    // Back as it was, undo history and the live mix included (nothing of it stays half in)
+    try {
+      useTimelineStore.setState(was);
+      mixFollows();
+    } catch {
+      // (the song is back; the live mix catches up with its next change)
+    }
+    return false;
+  }
+  // Instruments the suggestion chose that play recordings: their sounds start loading now
+  const had = new Map(before.map((t) => [t.id, t.instrumentKey]));
+  for (const t of tracks) if (had.get(t.id) !== t.instrumentKey && hasRecordings(t.instrumentKey)) void loadQuick(t.instrumentKey).catch(() => {});
+  return true;
+}
+
+/** The step itself: a checkpoint, then the song's parts in one change, and what the store's setters do besides. */
+function put(song: ProjectSnapshot, tracks: Track[], clips: ProjectSnapshot['clips'], selectedTrackId: string | null): void {
+  useTimelineStore.getState().checkpoint();
   useTimelineStore.setState({
     tracks,
     clips,
@@ -54,16 +81,17 @@ export function applyAsOneStep(song: ProjectSnapshot): void {
     bpm: song.bpm,
     tempoPoints: song.tempoPoints ?? [],
     ...(song.master ? { master: song.master } : {}),
-    selectedTrackId: song.tracks.some((t) => t.id === tl.selectedTrackId) ? tl.selectedTrackId : (song.tracks[0]?.id ?? null),
+    selectedTrackId: song.tracks.some((t) => t.id === selectedTrackId) ? selectedTrackId : (song.tracks[0]?.id ?? null),
   });
-  // What the store's setters do besides: the master section and the tempo-synced effects in the live mix
+  mixFollows();
+}
+
+/** What the store's setters do besides: the master section and the tempo-synced effects in the live mix. */
+function mixFollows(): void {
   const s = useTimelineStore.getState();
   liveMix.inserts.apply(s.master);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   setLiveStripTempo(s.bpm);
-  // Instruments the suggestion chose that play recordings: their sounds start loading now
-  const had = new Map(before.map((t) => [t.id, t.instrumentKey]));
-  for (const t of tracks) if (had.get(t.id) !== t.instrumentKey && hasRecordings(t.instrumentKey)) void loadQuick(t.instrumentKey).catch(() => {});
 }
 
 const find = (id: string): Suggestion | undefined => useSuggestions.getState().suggestions.find((s) => s.id === id);
@@ -90,7 +118,11 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
   // (its undo step is named, so an undo or redo of exactly that step is told apart from the old values coming back)
   const step = `${id}@${Date.now()}`;
   updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step });
-  applyAsOneStep(decision.apply);
+  if (!applyAsOneStep(decision.apply)) {
+    // Nothing went in: the suggestion is as it was, and says so
+    updateSuggestion(id, { ...decision.suggestion, status: s.status, step: s.step });
+    return "This suggestion can't go into your song: nothing was changed.";
+  }
   tagLastStep(step);
   forgetAudition(id);
   return null;

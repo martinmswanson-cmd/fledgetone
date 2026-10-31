@@ -10,6 +10,7 @@ import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio, liveMix } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { PREVIEW_FADE_SECONDS } from '../../audio/previewFade';
+import { own } from '../../store/ownKey';
 import { showToast } from './toastStore';
 import { useDialogFocus } from './useDialogFocus';
 
@@ -371,7 +372,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   min={0}
                   max={1}
                   step={0.01}
-                  value={params[p.name] ?? p.default}
+                  value={own(params, p.name) ?? p.default}
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     setParams((was) => ({ ...was, [p.name]: v }));
@@ -380,7 +381,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   className="flex-1 accent-violet-400"
                   aria-label={`Audition parameter ${p.name}`}
                 />
-                <span className="w-10 text-right text-forge-text">{Math.round((params[p.name] ?? p.default) * 100)}%</span>
+                <span className="w-10 text-right text-forge-text">{Math.round((own(params, p.name) ?? p.default) * 100)}%</span>
               </label>
             ))}
             <div className="flex items-center gap-2">

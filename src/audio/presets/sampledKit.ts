@@ -136,7 +136,7 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     ready,
     prepare,
     hit,
-    has: (note: string) => note in buffers,
+    has: (note: string) => Object.hasOwn(buffers, note),
     loaded: () => loaded,
     releaseAll: () => voices.releaseAll(raw.currentTime),
     dispose: () => {

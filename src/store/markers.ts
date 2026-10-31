@@ -13,6 +13,8 @@ export const MARKER_NAME_MAX = 80;
 /** The end of the timeline: the last place a marker can be dragged or pushed to. */
 const LAST_BAR = TOTAL_BARS + 1;
 const EPS = 1e-6;
+/** A marker held to its time is at most this many seconds in (ten hours, as far as a video may start). */
+const MARKER_SECONDS_MAX = 36000;
 
 
 const byPosition = (a: Marker, b: Marker) => a.bar - b.bar;
@@ -165,7 +167,8 @@ export function parseMarkers(raw: unknown, bpm: Tempo): Marker[] {
     if (ids.has(id)) id = uid('marker');
     ids.add(id);
     const name = (typeof v.name === 'string' && cleanMarkerName(v.name)) || 'Marker';
-    const time = Math.max(0, seconds);
+    // (a marker held to its time may sit past the song's end, as a faster tempo can put it: up to ten hours)
+    const time = Math.max(0, Math.min(MARKER_SECONDS_MAX, seconds));
     markers.push(anchor === 'time' ? { id, name, anchor, bar: secondsToBar(time, bpm), seconds: time } : placeMarker({ id, name, anchor, bar, seconds }, bar, bpm));
   }
   return sortedOrSame(markers);

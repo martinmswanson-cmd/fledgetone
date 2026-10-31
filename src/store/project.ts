@@ -27,6 +27,7 @@ import { parseTransitions } from './transitions';
 import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 import { normalizeUserTable } from '../audio/plugins/userTable';
+import { isPrototypeName, withSafeIds } from './ownKey';
 
 /**
  * Project file format (.fledgetone.json) and browser autosave.
@@ -216,7 +217,7 @@ function parseMeterPoints(raw: unknown): MeterPoint[] {
   const out: MeterPoint[] = [];
   raw.forEach((v, i) => {
     const m = parseMeterValue(v);
-    if (m && isObj(v) && isNum(v.bar) && v.bar > 1) out.push({ id: isStr(v.id) && v.id ? v.id : `meter-${i}`, bar: v.bar, ...m });
+    if (m && isObj(v) && isNum(v.bar) && v.bar > 1) out.push({ id: isStr(v.id) && v.id ? v.id : `meter-${i}`, bar: Math.min(TOTAL_BARS, v.bar), ...m });
   });
   return sortedPoints(out);
 }
@@ -237,10 +238,26 @@ function parseSample(v: unknown): CustomSample | undefined {
   return { name: isStr(v.name) ? v.name : 'Sample', ...(soundId ? { soundId } : { dataUrl }), root: isStr(v.root) ? v.root : 'C4' };
 }
 
+/** A frozen sound's level is at most this far from 0 dB (the clip gain's range, see freezeActions.ts). */
+const FROZEN_GAIN_MAX_DB = 24;
+/** A frozen sound is at most this long (an hour: more than the largest freeze the app keeps). */
+const FROZEN_SECONDS_MAX = 3600;
+/** The track EQ's range, as the app's own setter has it (setTrackEq). */
+const EQ_MIN_DB = -24;
+const EQ_MAX_DB = 12;
+const eqDb = (v: unknown): number => (isNum(v) ? Math.max(EQ_MIN_DB, Math.min(EQ_MAX_DB, v)) : 0);
+
 /** A frozen track's freeze (its sound isn't in the file: elsewhere the track plays live until frozen again). */
 function parseFrozen(v: unknown): FrozenTrack | undefined {
   if (!isObj(v) || !isStr(v.soundId) || !isNum(v.startBar) || !isNum(v.seconds) || !isStr(v.fingerprint)) return undefined;
-  return { soundId: v.soundId, startBar: v.startBar, seconds: v.seconds, gainDb: isNum(v.gainDb) ? v.gainDb : 0, fingerprint: v.fingerprint };
+  // In what a freeze can be: on the timeline, and its level within the clip gain's ±24 dB (freezeActions.ts)
+  return {
+    soundId: v.soundId,
+    startBar: Math.max(1, Math.min(TOTAL_BARS, v.startBar)),
+    seconds: Math.max(0, Math.min(FROZEN_SECONDS_MAX, v.seconds)),
+    gainDb: isNum(v.gainDb) ? Math.max(-FROZEN_GAIN_MAX_DB, Math.min(FROZEN_GAIN_MAX_DB, v.gainDb)) : 0,
+    fingerprint: v.fingerprint,
+  };
 }
 
 /** A track's launcher slots: one per scene (the first kept), each a clip without a place in the song. */
@@ -295,11 +312,8 @@ export function parseTrack(raw: unknown): Track {
     // In range, whatever the file says (an out-of-range level throws in the audio engine)
     volume: isNum(v.volume) ? Math.max(-60, Math.min(6, v.volume)) : 0,
     pan: isNum(v.pan) ? Math.max(-1, Math.min(1, v.pan)) : 0,
-    eq: {
-      low: isNum(eqObj.low) ? eqObj.low : 0,
-      mid: isNum(eqObj.mid) ? eqObj.mid : 0,
-      high: isNum(eqObj.high) ? eqObj.high : 0,
-    },
+    // In the range the EQ's own controls have (an out-of-range gain would be far louder than the app can set)
+    eq: { low: eqDb(eqObj.low), mid: eqDb(eqObj.mid), high: eqDb(eqObj.high) },
     reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(REVERB_SEND_MAX, v.reverbSend)) : 0,
     ...(isNum(v.distance) && v.distance > 0 ? { distance: Math.min(1, v.distance) } : {}),
     delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
@@ -396,13 +410,15 @@ function parsePlugin(v: unknown): WamPlugin | null {
 }
 
 function parseNote(v: unknown): NoteEvent {
-  if (!isObj(v) || !isStr(v.id) || !isStr(v.note) || !isNum(v.startOffset) || !isStr(v.duration)) {
+  // (a pitch, never a name every object has: notes are looked up by pitch in the instruments' tables)
+  if (!isObj(v) || !isStr(v.id) || !isStr(v.note) || isPrototypeName(v.note) || !isNum(v.startOffset) || !isStr(v.duration)) {
     throw new Error('a note is malformed');
   }
   return {
     id: v.id,
     note: v.note,
-    startOffset: v.startOffset,
+    // No further from its clip's start than the whole timeline (a note can sit before its trimmed clip's start)
+    startOffset: Math.max(-TOTAL_BARS, Math.min(TOTAL_BARS, v.startOffset)),
     // A length the app can't read plays as a 16th rather than breaking playback
     duration: /^(\d+(\.\d+)?m|\d+:\d+(\.\d+)?(:\d+(\.\d+)?)?|\d+[nt]\.?|\d+i)$/.test(v.duration) ? v.duration : '16n',
     velocity: isNum(v.velocity) ? Math.max(0, Math.min(1, v.velocity)) : 0.8,
@@ -500,6 +516,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
   // (The file's own objects are changed: it was parsed for this)
   if (raw.modWheel !== 'dynamics') modWheelWasVibrato([raw.clips, raw.tracks, raw.launcher]);
+  // No id a table lookup could mistake for one of every object's own names (ownKey.ts)
+  withSafeIds(raw);
 
   // One of each id (a hand-edited or merged file can repeat one): the first is kept
   // A track or clip that can't be read (an instrument from a newer version, a damaged entry) is
@@ -571,7 +589,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
             key: raw.video.key,
             name: raw.video.name,
             type: isStr(raw.video.type) ? raw.video.type : 'video/mp4',
-            start: isNum(raw.video.start) ? raw.video.start : 0,
+            // (as the video's own setter has it: up to ten hours either way)
+            start: isNum(raw.video.start) ? Math.max(-VIDEO_START_MAX, Math.min(VIDEO_START_MAX, raw.video.start)) : 0,
             ...(isStr(raw.video.data) && raw.video.data.startsWith('data:') ? { data: raw.video.data } : {}),
           },
         }
@@ -579,6 +598,9 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     ...(unreadTracks || unreadClips ? { unread: { tracks: unreadTracks, clips: unreadClips } } : {}),
   };
 }
+
+/** How far a reference video may start from the song's start, in seconds (videoStore setStart). */
+const VIDEO_START_MAX = 36000;
 
 function parseMasterFx(v: unknown): MasterFx {
   if (!isObj(v)) return DEFAULT_MASTER_FX;
