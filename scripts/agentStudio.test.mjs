@@ -650,13 +650,27 @@ test('what the before-and-after plays: every region a change is heard in, one af
   // A focus that doesn't fit with the changes is left out, and said so; one that does is played
   assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 100, toBar: 160 }), { plays: [{ fromBar: 4, toBar: 7 }], unheard: null, limit: null, focusLeftOut: true });
   assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 6, toBar: 9 }).plays, [{ fromBar: 4, toBar: 9 }]);
-  // (scan r10) A focus played in the room a measure cut leaves: its bars aren't among those not heard
+  // (scan r10) A focus played in the room a measure cut leaves: its bars aren't among those not
+  // heard. (scan r11) In 9/4 its measure doesn't fit whole: the bar is played, and the measure it
+  // is only part of stays among those not heard, whole
   const nine = { bpm: 300, tempoPoints: [], meter: { num: 9, den: 4 }, meterPoints: [] };
   const roomy = plan([{ fromBar: 1, toBar: 100 }], { fromBar: 90, toBar: 91 }, [nine]);
   assert.ok(roomy.plays.some((r) => r.fromBar <= 90 && r.toBar >= 91), JSON.stringify(roomy));
-  for (const u of roomy.unheard) assert.ok(u.toBar <= 90 + 1e-9 || u.fromBar >= 91 - 1e-9, JSON.stringify(roomy));
-  assert.ok(roomy.unheard.some((u) => u.fromBar < 90) && roomy.unheard.some((u) => u.toBar > 91), JSON.stringify(roomy));
+  assert.deepEqual(roomy.unheard, [{ fromBar: 64, toBar: 100 }]);
   assert.equal(roomy.limit, 'bars');
+  // (scan r11) In 7/8 and 3/4 a focus a bar long plays the whole measures it touches: no measure
+  // is named both heard and not heard
+  const { rangesWords: measureWords, wordMeter: meterOfSong } = await import('../src/agent/songDiff.ts');
+  for (const meter of [{ num: 7, den: 8 }, { num: 3, den: 4 }]) {
+    const odd = { bpm: 60, tempoPoints: [{ id: 't', bar: 30, bpm: 300 }], meter, meterPoints: [] };
+    const p2 = plan([{ fromBar: 1, toBar: 100 }], { fromBar: 70, toBar: 71 }, [odd]);
+    const m = meterOfSong(odd);
+    const named = (list) => new Set(measureWords(list, m).match(/\d+(-\d+)?/g).flatMap((w) => { const [x, y = x] = w.split('-').map(Number); return Array.from({ length: y - x + 1 }, (_, i) => x + i); }));
+    const heard = named(heardRegions({ regions: [{ fromBar: 1, toBar: 100 }], unheard: p2.unheard }));
+    const not = named(p2.unheard);
+    assert.ok([...heard].every((x) => !not.has(x)), `${meter.num}/${meter.den} ${JSON.stringify(p2)}`);
+    assert.ok(p2.plays.some((r) => r.fromBar <= 70 && r.toBar >= 71), JSON.stringify(p2));
+  }
   // Nothing to hear (only names): the fallback, or the focus
   assert.deepEqual(plan([], { fromBar: 3, toBar: 5 }).plays, [{ fromBar: 3, toBar: 5 }]);
   assert.deepEqual(plan([]).plays, [{ fromBar: 1, toBar: 9 }]);

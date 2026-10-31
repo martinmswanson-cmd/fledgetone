@@ -342,7 +342,7 @@ test("what an agent wrote never reaches a caution, a change or an error as it wa
     for (const w of words(out)) {
       assert.ok(!/Fledgetone checked|AAAA|lowpass"/.test(w) && !hidden.test(w) && w.length < 200, JSON.stringify(w.slice(0, 200)));
     }
-    assert.ok(out.warnings.some((w) => /isn't one of its choices \((left as it was|set to [a-z0-9/]+)\)\.$/.test(w)), JSON.stringify(out.warnings));
+    assert.ok(out.warnings.some((w) => /isn't one of its choices \((left as it was|set to [a-zA-Z0-9/ ()-]+)\)\.$/.test(w)), JSON.stringify(out.warnings));
   }
   // Errors quote what the agent gave only made plain and short
   for (const ops of [

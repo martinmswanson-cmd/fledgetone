@@ -226,7 +226,20 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   keeps state from note to note, or can cut a sounding note, must be added there;
   songDiff.test.mjs checks the mono list and the voice-pool list against instruments.ts and the
   takes against the catalogue.
-- **Plain names for inserts and their settings** (`src/agent/settingWords.ts`): What changes
+- **Silent changes that aren't** (scan r11, songDiff.ts): a link or unlink counts as a note change
+  of the clip when its track has pass-dependent notes (`playsPasses`; noteChance.ts `contentKey`
+  groups linked clips by pattern), and any clip change on such a track is heard from the clip's
+  start (`passStart`). A track whose feel clips (groove feel without `role`) play as another part
+  in the other version (`mixCheck.ts feelPartOf`, shared with scheduler.ts feelRole: trackRole by
+  name and every clip's notes, or a rack's pad names) adds those clips' ranges to every change on
+  that track (`feelMoved`), and a note change in such a clip on a melodic part is heard over the
+  whole clip (melodicRoleOf reads all its notes). scheduler.ts `feelNotesOf` gives a render's
+  `~held` copies their own clip's notes at their real places (previews only; exports unchanged).
+  The only play-time readers of a track's name are these (checked: mix check, Duck to kick,
+  stage seats, arrange tools only write settings or report). `drumDesign` is now diffed (it was in `known` but
+  never compared).
+- **Plain names for inserts and their settings** (`src/agent/settingWords.ts`): values through
+  `valueWord` (on/off, the menus' choice words), a Pump's `source` by track name; What changes
   (songDiff) and the cautions (ops.ts set_insert/set_master) name inserts, settings and master parts
   through `insertLabel`/`settingWord`/`masterPartLabel`, never the file keys; add a new insert's or
   setting's name there. get_suggestion runs `refreshSuggestions` before answering, so the agent

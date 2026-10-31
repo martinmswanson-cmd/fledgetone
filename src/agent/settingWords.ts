@@ -82,6 +82,33 @@ const SETTING_WORDS: Readonly<Record<string, string>> = {
   ceiling: 'ceiling',
 };
 
+/**
+ * The settings with choices, by key, each choice in the words the studio's menus use ("low-pass",
+ * "kick and snare", "1/8 dotted"), never the song file's ("lowpass", "kickSnare", "1/8d").
+ */
+const CHOICE_WORDS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  type: { lowpass: 'low-pass', highpass: 'high-pass', bandpass: 'band-pass', lowcut: 'low cut', lowshelf: 'low shelf', bell: 'bell', notch: 'notch', highshelf: 'high shelf', highcut: 'high cut' },
+  slope: { 12: '12 dB', 24: '24 dB' },
+  trigger: { kick: 'kick', snare: 'snare', kickSnare: 'kick and snare', beat: 'every beat', eighth: 'every 8th note', track: 'a track' },
+  shape: { smooth: 'smooth', hard: 'hard cut', tick: 'short tick', swell: 'long swell', hole: 'hole for drums', drawn: 'drawn' },
+  time: { '1/32': '1/32', '1/16t': '1/16 triplet', '1/16': '1/16', '1/8t': '1/8 triplet', '1/16d': '1/16 dotted', '1/8': '1/8', '1/4t': '1/4 triplet', '1/8d': '1/8 dotted', '1/4': '1/4', '1/4d': '1/4 dotted', '1/2': '1/2' },
+  rate: { '1/8': '1/8', '1/8T': '1/8 triplet', '1/16': '1/16', '1/16T': '1/16 triplet', '1/32': '1/32' },
+  character: { tube: 'warm tube', hard: 'hard clip', fold: 'fold', crush: 'bitcrush' },
+  target: { streaming: 'streaming (-14 LUFS)', loud: 'loud (-9 LUFS)', club: 'club (-6 LUFS)' },
+  glue: { standard: 'standard', gentle: 'gentle', punchy: 'punchy', tight: 'tight', off: 'off' },
+};
+
+/**
+ * A setting's value in words: on or off for a switch, a choice as the menus name it (CHOICE_WORDS),
+ * a number as it is; null when it isn't plain (a text an agent could have written).
+ */
+export function valueWord(key: string, value: unknown): string | null {
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  // (a number is a choice only for the Filter's slope: the Chorus rate, the OTT time are numbers)
+  const word = typeof value === 'string' || (typeof value === 'number' && key === 'slope') ? CHOICE_WORDS[key]?.[String(value)] : undefined;
+  return word ?? plainToken(value);
+}
+
 /** An insert's name: "Delay" for echo, "Mono bass" for monoLow. */
 export const insertLabel = (key: string): string => INSERT_LABELS[key] ?? plainKey(key) ?? 'insert';
 

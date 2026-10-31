@@ -397,15 +397,32 @@ export function hearingPlan(
   }
   let focusLeftOut = false;
   if (focus) {
-    const pieces = without(wholeBars(focus), plays);
-    const all = pieces.reduce((t, p) => ({ bars: t.bars + cost(p).bars, seconds: t.seconds + cost(p).seconds }), { bars: 0, seconds: 0 });
-    if (bars + all.bars <= LIMITS.listenMaxBars && seconds + all.seconds <= LIMITS.listenMaxSeconds + 1e-9) pieces.forEach(take);
+    const fits = (pieces: BarRange[]) => {
+      const all = pieces.reduce((t, p) => ({ bars: t.bars + cost(p).bars, seconds: t.seconds + cost(p).seconds }), { bars: 0, seconds: 0 });
+      return bars + all.bars <= LIMITS.listenMaxBars && seconds + all.seconds <= LIMITS.listenMaxSeconds + 1e-9;
+    };
+    // (in a song not in 4/4, the whole measures it touches, as the ruler numbers them, when they fit)
+    const measures = meter ? without(wholeMeasures(wholeBars(focus), meter), plays) : null;
+    const pieces = measures && fits(measures) ? measures : without(wholeBars(focus), plays);
+    if (fits(pieces)) pieces.forEach(take);
     else focusLeftOut = true;
   }
-  // (what the focus plays of the bars left out is heard after all: the card never says bars it plays weren't)
-  const left = unheard.flatMap((u) => without(u, plays));
+  // (what the focus plays of the bars left out is heard after all: the card never says bars it plays
+  // weren't. In a song not in 4/4, a measure only part of which is played stays among those not
+  // heard, whole: no measure is named as both heard and not heard)
+  const left = joinPlays(unheard.flatMap((u) => without(u, plays).map((p) => (meter ? within(wholeMeasures(p, meter), u) : p))));
   return { plays: joinPlays(plays), unheard: left.length ? left : null, limit, focusLeftOut };
 }
+
+/** `r` cut to `bounds`. */
+const within = (r: BarRange, bounds: BarRange): BarRange => ({ fromBar: Math.max(r.fromBar, bounds.fromBar), toBar: Math.min(r.toBar, bounds.toBar) });
+
+/** `r` widened to the whole measures it touches (by `meter`). */
+const wholeMeasures = (r: BarRange, meter: MeterMap): BarRange => {
+  const fromBar = measureAt(r.fromBar, meter).start;
+  const last = measureAt(Math.max(r.fromBar, r.toBar - 1e-6), meter);
+  return { fromBar: Math.max(1, fromBar), toBar: Math.max(r.toBar, last.start + last.length) };
+};
 
 /** The stretches as one range, first bar to last (for what only needs to know where they lie). */
 export const spanOf = (list: readonly BarRange[]): BarRange => ({ fromBar: Math.min(...list.map((r) => r.fromBar)), toBar: Math.max(...list.map((r) => r.toBar)) });

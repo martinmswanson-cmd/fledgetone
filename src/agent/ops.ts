@@ -57,8 +57,8 @@ import { diffSongs, lengthWordsIn, positionWords, wordMeter, type SongDiff } fro
 import { checkSafetyMarked } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
-import { byAgentId, givenKey, givenText as quoted, plainToken } from './agentText';
-import { insertLabel, masterPartLabel, settingWord } from './settingWords';
+import { byAgentId, givenKey, givenText as quoted } from './agentText';
+import { insertLabel, masterPartLabel, settingWord, valueWord } from './settingWords';
 import { nm, plainNames } from './names';
 
 
@@ -610,7 +610,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         for (const [k, v] of Object.entries(settings)) {
           if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
           // (what the agent wrote is never echoed: it could read as the app's own words)
-          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
+          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k], k)}).`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -765,7 +765,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (!given || !got) continue;
           for (const [k, v] of Object.entries(given)) {
             if (typeof v === 'number' && typeof got[k] === 'number' && Math.abs((got[k] as number) - v) > 1e-9) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(got[k] as number, 4)}.`);
-            if (typeof v === 'string' && got[k] !== v) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k])}).`);
+            if (typeof v === 'string' && got[k] !== v) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k], k)}).`);
           }
         }
         w.master = out;
@@ -1027,9 +1027,9 @@ function differsAt(a: unknown, b: unknown): string {
 }
 
 /** What a setting kept when the value given wasn't one of its choices: "left as it was", or the app's own value it took. */
-function keptWords(before: unknown, after: unknown): string {
+function keptWords(before: unknown, after: unknown, key: string): string {
   if (stableJson(before) === stableJson(after) || after === undefined) return 'left as it was';
-  const shown = plainToken(after);
+  const shown = valueWord(key, after);
   return shown ? `set to ${shown}` : 'set to its usual value';
 }
 
