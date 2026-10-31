@@ -12,6 +12,8 @@
 //   loop file is as loud as with a note that just fills the loop (copies piled up pass by pass).
 // - The cost: a 16-bar note with a 256-point vibrato under 8th-note chords, played live, doesn't
 //   hold the page up for more than a couple of seconds (it froze it for half a minute).
+//   Nor do 32 notes 400 bars long with a 256-point bend each begun together on a Multi Sampler, or 20
+//   on a lead: no more than half a second (seconds on their own voices, minutes on the lead).
 // - A note's own slide in a clip with a bend lane at rest (or a vibrato lane): the slide plays as
 //   it does without the lane (the lane's value, said again every 16th, pulled it back each time).
 // - A note bent up a tone, let go: its release rings at the bent pitch (it went back to centre at
@@ -183,6 +185,14 @@ const RENDER = async ({ text, toBar, ending, at, band, track, levels, freqs, rms
 const PLAY = async ({ text, seconds }) => {
   const store = await import('/src/store/timelineStore.ts');
   const P = await import('/src/store/project.ts');
+  // (the Multi Sampler's sine, a sound made here in memory, when `text` uses it)
+  if (text.includes('"sine"')) {
+    const SL = await import('/src/audio/soundLibrary.ts');
+    const b = new OfflineAudioContext(1, 44100 * 8, 44100).createBuffer(1, 44100 * 8, 44100);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * 440 * i) / 44100);
+    SL.provideMemorySound('sine', b);
+  }
   const engine = await (await fetch('/src/audio/engine.ts')).text();
   const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -393,6 +403,24 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
     const ms = await pg.evaluate(PLAY, { text: JSON.stringify(song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: L, notes: [n('n1', 'A2', 0, `${L}m`, 0.6, vib), ...chords] }])), seconds: 10 });
     report(ms < 2000, `${key}, a long vibrato under chords played live: longest hold-up ${Math.round(ms)} ms`);
     await pg.close();
+  }
+  // Notes 400 bars long with a 256-point bend each, begun together: 32 on the Multi Sampler (each on a voice of its own) at
+  // 300 BPM, 20 on a lead (bending as a whole) at 240 BPM (the steps were all worked out, and every note's sent again over
+  // each earlier one's, as they began: seconds to minutes)
+  {
+    const LONG = 400;
+    const zig = [...Array(256)].map((_, i) => ({ at: +((i * LONG) / 255).toFixed(6), value: i % 2 ? 2 : -2 }));
+    const long = (count) => [...Array(count)].map((_, i) => n(`l${i}`, ['C4', 'E4', 'G4', 'B4'][i % 4], 0, `${LONG}m`, 0.05, zig));
+    const clip = (count) => [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 4, notes: long(count) }];
+    for (const [what, s] of [
+      ['Multi Sampler, 32', { ...multiSong(clip(32)), bpm: 300 }],
+      ['lead, 20', { ...song('lead', clip(20)), bpm: 240 }],
+    ]) {
+      const pg = await page();
+      const ms = await pg.evaluate(PLAY, { text: JSON.stringify(s), seconds: 6 });
+      report(ms < 500, `${what} notes 400 bars long with a 256-point bend each, begun together, played live: longest hold-up ${Math.round(ms)} ms`);
+      await pg.close();
+    }
   }
   const render = async (s, opts) => {
     const pg = await page();

@@ -117,7 +117,8 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   // its end; Stop, Pause and Free memory drop every bend to come and centre; a move of the playhead
   // (Tone's "stop" then "start" at one time) keeps the notes sounding on
   assert.doesNotMatch(sched, /scheduleRepeat/);
-  assert.match(sched, /for \(const \[t, cents\] of bends\) sendBend\(trackId, instrument, cents, t\);/);
+  // (live, sent to the bend window that gives them as they come due: see bendWindow.ts)
+  assert.match(sched, /if \(live\) windowFor\(trackId, instrument\)\.steps\(curve\);\s+else for \(const \[t, cents\] of curve\.pts\) sendBend\(trackId, instrument, cents, t\);/);
   assert.match(sched, /if \(reset !== undefined\) sendBend\(trackId, instrument, laneBendAt\(trackId, tick, time\), reset, true\);/);
   assert.match(sched, /if \(stoppedAt !== null && stoppedAt !== time\) forgetNotes\(\);/);
   assert.match(sched, /onVoicesLetGo\(\(\) => liveSchedule\?\.letGo\(\)\)/);

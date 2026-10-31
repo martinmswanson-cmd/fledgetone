@@ -151,8 +151,12 @@ function capNotes(raw: Record<string, unknown>, clips: Array<Record<string, unkn
   return dropped;
 }
 
-/** Cut lane points to MAX_LANE_POINTS a lane and MAX_SONG_POINTS in all (tracks' automation, clips' and takes' expression). Returns how many were left out. */
-function capPoints(raw: { tracks: unknown[] }, clips: Array<Record<string, unknown>>): number {
+/**
+ * Cut lane points to MAX_LANE_POINTS a lane and MAX_SONG_POINTS in all (tracks' automation, clips'
+ * and takes' expression, then the notes' own bend and pressure: every one is stepped through as
+ * its note plays). Returns how many were left out.
+ */
+function capPoints(raw: { tracks: unknown[]; stingers?: unknown }, clips: Array<Record<string, unknown>>): number {
   let left = MAX_SONG_POINTS;
   let dropped = 0;
   const cap = (owner: Record<string, unknown>, key: string) => {
@@ -175,6 +179,15 @@ function capPoints(raw: { tracks: unknown[] }, clips: Array<Record<string, unkno
     lanes(clip);
     if (Array.isArray(clip.takes)) clip.takes.forEach(lanes);
   }
+  const curves = (owner: unknown) => {
+    if (!isObj(owner) || !Array.isArray(owner.notes)) return;
+    for (const note of owner.notes) if (isObj(note) && isObj(note.expr)) for (const key of Object.keys(note.expr)) cap(note.expr, key);
+  };
+  for (const clip of clips) {
+    curves(clip);
+    if (Array.isArray(clip.takes)) clip.takes.forEach(curves);
+  }
+  if (Array.isArray(raw.stingers)) raw.stingers.forEach(curves);
   return dropped;
 }
 
@@ -225,6 +238,8 @@ const noteList = (part: Part, list: readonly unknown[] | undefined) => {
   const count = list?.length ?? 0;
   part.notes += count;
   if (count > part.clipNotes) part.clipNotes = count;
+  // (each note's own bend and pressure points count as lane points: see capPoints)
+  if (list) for (const note of list) if (isObj(note) && isObj(note.expr)) expression(part, note.expr);
 };
 const lane = (part: Part, list: unknown) => {
   const count = Array.isArray(list) ? list.length : 0;

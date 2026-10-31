@@ -73,19 +73,75 @@ export const isExpressive = (expr: NoteExpression | undefined): boolean =>
  * curves), and no note is stepped past the whole timeline (TOTAL_BARS).
  */
 export function noteSteps(expr: NoteExpression, length: number, step = 1 / 64): Array<{ at: number; cents: number; pressure: number }> {
+  const s = noteStepper(expr, length, step);
+  s.upTo(Infinity);
+  return s.steps;
+}
+
+/** A note's steps (see noteSteps) worked out as far as they're asked for: a long note's thousands at once held the page up. */
+export interface NoteStepper {
+  /** The steps worked out so far */
+  readonly steps: Array<{ at: number; cents: number; pressure: number }>;
+  /** Work out every step up to `bar` bars into the note (Infinity: all of them). */
+  upTo: (bar: number) => void;
+  /** Whether every step is worked out */
+  readonly done: boolean;
+}
+
+/**
+ * noteValueAt for `at` going only up, the same values: it walks on through the points instead of
+ * looking each one up from the end (thousands of steps through a 256-point curve).
+ */
+function walker(points: readonly ExprPoint[] | undefined, lane: NoteLane): (at: number) => number {
+  if (!points?.length) return () => noteLaneSpec(lane).rest;
+  const EPS = 1e-9;
+  let i = 0;
+  return (at) => {
+    if (at <= points[0].at) return points[0].value;
+    // (as exprValueAt: the last point at or before it, then on to the next)
+    while (i + 1 < points.length && points[i + 1].at <= at + EPS) i++;
+    const p = points[i];
+    const next = points[i + 1];
+    if (!next) return p.value;
+    const u = (at - p.at) / Math.max(EPS, next.at - p.at);
+    return p.value + (next.value - p.value) * u;
+  };
+}
+
+/** The steps of noteSteps, the same ones, worked out as they're asked for (see NoteStepper). */
+export function noteStepper(expr: NoteExpression, length: number, step = 1 / 64): NoteStepper {
   const out: Array<{ at: number; cents: number; pressure: number }> = [];
   const end = Math.min(TOTAL_BARS, length);
   let still = 0;
   for (const p of expr.bend ?? []) still = Math.max(still, p.at);
   for (const p of expr.pressure ?? []) still = Math.max(still, p.at);
-  for (let at = 0; at < end - 1e-9; at += step) {
-    const cents = noteValueAt(expr.bend, at, 'bend') * 100;
-    const pressure = noteValueAt(expr.pressure, at, 'pressure');
-    const last = out[out.length - 1];
-    const changed = !last || Math.abs(last.cents - cents) >= 0.5 || Math.abs(last.pressure - pressure) >= 0.005;
-    if (changed) out.push({ at, cents, pressure });
-    // (from here on every step has these values)
-    if (at >= still) break;
-  }
-  return out;
+  const bend = walker(expr.bend, 'bend');
+  const press = walker(expr.pressure, 'pressure');
+  let at = 0;
+  let done = false;
+  return {
+    steps: out,
+    get done() {
+      return done;
+    },
+    upTo: (bar) => {
+      while (!done && at <= bar) {
+        if (!(at < end - 1e-9)) {
+          done = true;
+          break;
+        }
+        const cents = bend(at) * 100;
+        const pressure = press(at);
+        const last = out[out.length - 1];
+        const changed = !last || Math.abs(last.cents - cents) >= 0.5 || Math.abs(last.pressure - pressure) >= 0.005;
+        if (changed) out.push({ at, cents, pressure });
+        // (from here on every step has these values)
+        if (at >= still) {
+          done = true;
+          break;
+        }
+        at += step;
+      }
+    },
+  };
 }
