@@ -447,6 +447,10 @@ test('in a song not in 4/4 the cautions, the before-and-after limit and the sele
   assert.ok(out.warnings.every((w) => !/\bbar 401\b|\bbar 500\b/.test(w)), JSON.stringify(out.warnings));
   assert.equal(limitWords('bars', meter), 'a before-and-after plays at most 256 quarter notes');
   assert.match(unheardWords([{ fromBar: 70, toBar: 74 }], 'bars', meter), /^bars 93-98 weren’t heard \(a before-and-after plays at most 256 quarter notes\)\.$/);
+  // (one measure named is "wasn't", though it spans two 4-beat bars: 5/4, scan r10)
+  const five = wordMeter({ ...base(), meter: { num: 5, den: 4 }, meterPoints: [] });
+  assert.match(unheardWords([{ fromBar: 64.75, toBar: 66 }], 'bars', five), /^bar 52 wasn’t heard /);
+  assert.match(unheardWords([{ fromBar: 64.75, toBar: 67.25 }], 'bars', five), /^bars 52-53 weren’t heard /);
   assert.equal(contextWords({ context: { bars: { fromBar: 5, toBar: 9 } } }, meter), 'With your selection: bars 6-11');
   // In 4/4, as before
   const plain = applyOps(base(), { opsVersion: 1, ops: [{ op: 'add_marker', name: 'End', bar: 500 }] }, { idBase: 'sg1' });
@@ -675,4 +679,60 @@ test('never fewer bars than the truth: a new note that ends a note held over it 
   const cases2 = [...build.matchAll(/((?:\s*case '\w+':)+)\s*(?:\{)?([\s\S]*?)(?=\n\s*case '|\n\s*default:)/g)];
   const listed = new Set(cases2.filter(([, , body]) => [...pooled].some((f) => body.includes(`${f}(`))).flatMap(([, labels]) => [...labels.matchAll(/'(\w+)'/g)].map((m) => m[1])));
   assert.deepEqual([...listed].sort(), [...VOICE_POOL_INSTRUMENTS].sort());
+});
+
+test('never fewer bars than the truth: a clip with no swing of its own swings by the song, decided over the whole clip (scan r10)', async () => {
+  const { swingReadsClip } = await import('../src/audio/noteMemory.ts');
+  const a = base();
+  const id = a.tracks[0].id;
+  const quiet = (t) => ({ ...t, instrumentKey: 'pluck', reverbSend: 0, delaySend: 0, distance: 0, automation: [], output: undefined, sends: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } });
+  // A clip starting a 32nd after bar 1, its notes on its own 16th grid, eight bars of them
+  const notes = Array.from({ length: 8 }, (_, b) => [b + 1 / 16, b + 5 / 16]).flat().map((at, i) => ({ id: `n${i}`, note: 'E3', startOffset: at, duration: '16n', velocity: 0.8 }));
+  const song = (swing, groove) => ({ ...a, bpm: 120, swing, tempoPoints: [], masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 }, tracks: [quiet(a.tracks[0])], clips: [{ id: 'c', trackId: id, name: 'Off', startBar: 1 + 1 / 32, lengthBars: 8, notes, ...(groove ? { groove } : {}) }] });
+  const add = (s) => ({ ...s, clips: s.clips.map((c) => ({ ...c, notes: [...c.notes, { id: 'x', note: 'G3', startOffset: 1 + 3 / 16 - 1 / 32, duration: '16n', velocity: 0.8 }] })) });
+  const reaches = (d, bar) => d.regions.some((r) => r.fromBar <= bar && r.toBar > bar);
+  // The song's swing (new songs start at 0.2) on a clip with none of its own: all of the clip
+  assert.equal(swingReadsClip({ startBar: 1 + 1 / 32 }, 0.2), true);
+  assert.equal(swingReadsClip({ startBar: 1 + 1 / 32 }, 0), false);
+  assert.equal(swingReadsClip({ startBar: 1 + 1 / 32, groove: { swing: 0, grid: 16 } }, 0.2), false);
+  // (on the song's grid the grid can't move: what a note changes stays in its own 8th)
+  assert.equal(swingReadsClip({ startBar: 5 }, 0.2), false);
+  assert.equal(swingReadsClip({ startBar: 5.25 + 1 / 16 }, 0.2), false);
+  const swung = diffSongs(song(0.2), add(song(0.2)));
+  assert.ok(reaches(swung, 1.1) && reaches(swung, 8.9), JSON.stringify(swung.regions));
+  // (the song's swing turned on in either version is enough)
+  assert.ok(reaches(diffSongs(song(0), add(song(0.2))), 8.9));
+  // Straight: only the note's bars
+  const straight = diffSongs(song(0), add(song(0)));
+  assert.ok(!reaches(straight, 6), JSON.stringify(straight.regions));
+  // The same clip on the song's grid: only the note's bars
+  const onGrid = (x) => ({ ...x, clips: x.clips.map((c) => ({ ...c, startBar: 1 })) });
+  const local = diffSongs(onGrid(song(0.2)), onGrid(add(song(0.2))));
+  assert.ok(!reaches(local, 6), JSON.stringify(local.regions));
+  // A clip whose own swing is off plays straight whatever the song's
+  const own = diffSongs(song(0.2, { swing: 0, grid: 16 }), add(song(0.2, { swing: 0, grid: 16 })));
+  assert.ok(!reaches(own, 6), JSON.stringify(own.regions));
+});
+
+test('cautions and What changes name inserts, their settings and the master parts in plain words, never the file keys (scan r10)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const a = base();
+  const t = a.tracks[0].id;
+  const out = applyOps(a, { opsVersion: 1, ops: [
+    { op: 'set_insert', trackId: t, insert: 'monoLow', settings: { on: true, freq: 99999 } },
+    { op: 'set_insert', trackId: t, insert: 'mbc', settings: { on: true, lowFreq: 99999 } },
+    { op: 'set_insert', trackId: t, insert: 'echo', settings: { on: true, time: 'never' } },
+    { op: 'set_master', ott: { on: true, depth: 99 } },
+  ] }, { idBase: 'sg1' });
+  assert.ok(out.ok, JSON.stringify(out));
+  const words = out.warnings.join('\n');
+  for (const raw of [/\bmonoLow\b/, /\bfreq\b/, /\bmbc\b/, /\blowFreq\b/, /\becho\b/, /\bott\b/]) assert.ok(!raw.test(words), `${raw} in\n${words}`);
+  assert.match(words, /Mono bass frequency 99999 is out of range/);
+  assert.match(words, /Multiband compressor low crossover 99999 is out of range/);
+  assert.match(words, /Delay time: the value given isn’t one of its choices|Delay time: the value given isn't one of its choices/);
+  assert.match(words, /The master OTT depth 99 is out of range/);
+  // An insert new to the track: its settings' values, never "none to"
+  const d = texts(diffSongs(a, out.song)).join('\n');
+  assert.ok(!/none to|\bfreq\b|\blowFreq\b/.test(d), d);
+  assert.match(d, /Turns on the Mono bass on .*\(frequency \d+\)/);
 });

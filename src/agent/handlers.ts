@@ -25,7 +25,7 @@ import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
 import { announce, freshen, hearingAsFound, hearingByRules, heardForAgent, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
-import { songContext } from './songWatch';
+import { refreshSuggestions, songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 import { queueFinding, stopFinding, useFinding } from './whereHeard';
 
@@ -151,6 +151,9 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
     },
 
     get_suggestion: (p) => {
+      // (checked against the song now first, as the song watch does after its short wait: an edit
+      // just made already counts, so it never reads as heard or waiting when it isn't)
+      refreshSuggestions();
       if (p.id !== undefined) return view(find(p.id));
       return { suggestions: mine().map(view) };
     },

@@ -228,7 +228,8 @@ fewer bars than the truth. First by rules:
   note sounding over the change, to where it stops, and the notes joined to those, in the song as
   it is and as suggested (a short note added under a long held one cuts it there, and taking one
   away lets the held note ring on); and a swung clip all of it (its swing is decided over the
-  whole clip);
+  whole clip: its own swing, or the song's for a clip with none of its own that starts off the
+  song's 16th grid);
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,

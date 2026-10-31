@@ -40,7 +40,8 @@
  * native synths (supersaw, pluck, chip: a voice each note, no limit); hats choking each other (a
  * hit cut short by another, within its own ring); drum noise (seeded by the hit's time); the
  * drummer styles, the chord and bass tools (they write notes, nothing at play time). A clip's swing
- * is decided over the whole clip (see swingReadsClip).
+ * is decided over the whole clip, the song's swing in a clip with none of its own too (see
+ * swingReadsClip).
  */
 import type { Clip, Track } from '../store/timelineTypes';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
@@ -121,9 +122,17 @@ export function carriesState(track: Pick<Track, 'instrumentKey' | 'plugin' | 'su
 /**
  * Whether a change of one of `clip`'s notes can move its other notes: with swing on (the clip's, or
  * a row's own), whether a note swings is decided over the whole clip (which 16th grid most of its
- * notes sit on, and an 8th with notes between its 16ths plays straight: transport.ts swungNotes).
+ * notes sit on, and an 8th with notes between its 16ths plays straight: transport.ts swungNotes,
+ * scheduler.ts groupClipNotes). A clip with no swing of its own plays the song's (`songSwing`) the
+ * same way; there the grid is the song's own unless the clip starts off it (only then can one note
+ * more or less move the grid, and every note's swing with it: else what a note changes stays in its
+ * own 8th).
  */
-export function swingReadsClip(clip: Pick<Clip, 'groove'>): boolean {
+export function swingReadsClip(clip: Pick<Clip, 'groove'> & Partial<Pick<Clip, 'startBar'>>, songSwing = 0): boolean {
   const g = clip.groove;
-  return !!g && (g.swing > 0 || Object.values(g.rows ?? {}).some((r) => (r?.swing ?? 0) > 0));
+  if (!g) return songSwing > 0 && offSongGrid(clip.startBar ?? 1);
+  return g.swing > 0 || Object.values(g.rows ?? {}).some((r) => (r?.swing ?? 0) > 0);
 }
+
+/** Whether a clip starting at `startBar` starts off the song's 16th grid, by the ticks the scheduler places it at (192 a quarter note: transport.ts barToTicks). */
+const offSongGrid = (startBar: number): boolean => Math.max(0, Math.round((startBar - 1) * 4 * 192)) % 48 !== 0;

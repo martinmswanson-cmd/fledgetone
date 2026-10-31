@@ -32,6 +32,7 @@ import { DUCK_BRIDGE, DUCK_LOOKAHEAD, DUCK_RELEASE } from '../store/duck';
 import { carriesState, swingReadsClip, type NoteMemory } from '../audio/noteMemory';
 import { stableJson } from './fingerprint';
 import { plainToken } from './agentText';
+import { insertLabel, settingWord } from './settingWords';
 import { nm, plainNames } from './names';
 
 /**
@@ -102,23 +103,6 @@ export const AUDITION_MAX_BARS = 16;
 /** How long a track's inserts other than its Delay and Reverb (a compressor's release, a chorus) are allowed to ring on, seconds (see TrackTail). */
 export const EFFECT_TAIL_SECONDS = 1.5;
 
-const INSERT_LABELS: Record<string, string> = {
-  distortion: 'Distortion',
-  compressor: 'Compressor',
-  chorus: 'Chorus',
-  filter: 'Filter',
-  pump: 'Pump',
-  lofi: 'Lo-fi',
-  gate: 'Gate',
-  echo: 'Delay',
-  reverb: 'Reverb',
-  human: 'Human',
-  peq: 'Parametric EQ',
-  mbc: 'Multiband compressor',
-  saturate: 'Saturation',
-  monoLow: 'Mono bass',
-  bassDrive: 'Bass Drive',
-};
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const db = (v: number) => `${v > 0 ? '+' : ''}${r1(v)} dB`;
@@ -308,6 +292,9 @@ export function rangesWords(list: readonly BarRange[], meter: MeterMap | null = 
   if (!words.length) return 'no bars';
   return words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
+
+/** Whether rangesWords names more than one bar (by measure in a song not in 4/4, as it does): for "were" or "was". */
+export const namesManyBars = (list: readonly BarRange[], meter: MeterMap | null = null): boolean => list.length > 1 || (list.length === 1 && barWords(list[0], meter).startsWith('bars '));
 
 /** The whole bars a range of song bars sits in (at least one, from bar 1). */
 export function wholeBars(r: BarRange): BarRange {
@@ -525,7 +512,8 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
   /** A clip's bars in either version, when its swing is decided over the whole clip (noteMemory.ts swingReadsClip). */
   const swingSpan = (clipId: string): BarRange | null => {
     const versions = songs.flatMap((s) => s.clips.filter((c) => c.id === clipId));
-    if (!versions.some(swingReadsClip)) return null;
+    // (a clip with no swing of its own plays the song's, in that version)
+    if (!songs.some((s) => s.clips.some((c) => c.id === clipId && swingReadsClip(c, s.swing ?? 0)))) return null;
     return { fromBar: Math.min(...versions.map((c) => c.startBar)), toBar: Math.max(...versions.map(clipSoundEnd)) };
   };
   const allSure = songs.every((s) => s.tracks.every((t) => tailOf(t.id).sure));
@@ -613,6 +601,12 @@ function diffMaster(a: MasterSettings | undefined, b: MasterSettings | undefined
   if (!!a.monoLow !== !!b.monoLow) add({ text: `${b.monoLow ? 'Keeps' : 'Stops keeping'} the master's low end in the middle.` });
 }
 
+/** " (sub layer, ring)": settings by their plain names, those not plain left out (nothing when none is). */
+const settingList = (keys: readonly string[]): string => {
+  const words = keys.map(settingWord).filter((w): w is string => !!w);
+  return words.length ? ` (${words.join(', ')})` : '';
+};
+
 /** "cutoff 1000 to 800, mix 0.3 to 0.5": the settings of an object that differ. */
 function settingChanges(x: unknown, y: unknown): string {
   const a = (x ?? {}) as Record<string, unknown>;
@@ -622,11 +616,13 @@ function settingChanges(x: unknown, y: unknown): string {
     if (k === 'on' || same(a[k], b[k])) continue;
     // (only the app's own words and numbers: a text an agent could have written is "changed", never shown)
     const show = (v: unknown) => (v === undefined ? 'none' : plainToken(v));
-    const name = plainToken(k, 40);
+    // (by its plain name: "low crossover", never the song file's "lowFreq")
+    const name = settingWord(k);
     if (!name) continue;
     const from = show(a[k]);
     const to = show(b[k]);
-    out.push(typeof b[k] === 'object' || from === null || to === null ? `${name} changed` : `${name} ${from} to ${to}`);
+    // (a setting there wasn't before, an insert new to the track: its value alone, never "none to 300")
+    out.push(typeof b[k] === 'object' || from === null || to === null ? `${name} changed` : a[k] === undefined ? `${name} ${to}` : `${name} ${from} to ${to}`);
   }
   return out.slice(0, 4).join(', ') + (out.length > 4 ? `, and ${out.length - 4} more` : '');
 }
@@ -653,7 +649,7 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
       const x = (a.fx as unknown as Record<string, unknown>)[k];
       const y = (b.fx as unknown as Record<string, unknown>)[k];
       if (same(x, y)) continue;
-      const label = INSERT_LABELS[k] ?? k;
+      const label = insertLabel(k);
       const on = (v: unknown) => !!(v as { on?: boolean } | undefined)?.on;
       if (on(x) !== on(y)) add({ text: `Turns ${on(y) ? 'on' : 'off'} the ${label} on ${n}${on(y) ? ` (${settingChanges(x, y) || 'as it was set'})` : ''}.`, ...at });
       else add({ text: `Changes the ${label} on ${n}${on(y) ? '' : ' (switched off)'}: ${settingChanges(x, y)}.`, ...at });
@@ -665,7 +661,7 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   const known = new Set(['name', 'instrumentKey', 'color', 'volume', 'pan', 'isMuted', 'isSoloed', 'reverbSend', 'delaySend', 'distance', 'output', 'eq', 'fx', 'synth', 'automation', 'sends', 'drumDesign']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
   // (settings not known here: heard anywhere, for all that's known)
-  if (other.length) add({ text: `Changes other settings of ${n} (${other.join(', ')}).`, trackId: b.id, hear: 'song' });
+  if (other.length) add({ text: `Changes other settings of ${n}${settingList(other)}.`, trackId: b.id, hear: 'song' });
 }
 
 /**
@@ -750,7 +746,7 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
   // (anything else about a clip, not known here: heard anywhere, for all that's known)
   const known = new Set(['id', 'trackId', 'startBar', 'lengthBars', 'name', 'notes', 'pattern', 'expression', 'groove', 'wobble', 'stepLanes', 'isSelected']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
-  if (other.length) add({ text: `Changes other settings of the clip ${n} (${other.join(', ')}).`, trackId: b.trackId, clipId: b.id, hear: 'song' });
+  if (other.length) add({ text: `Changes other settings of the clip ${n}${settingList(other)}.`, trackId: b.trackId, clipId: b.id, hear: 'song' });
 }
 
 /**

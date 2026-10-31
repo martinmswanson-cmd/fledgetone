@@ -23,7 +23,7 @@ register(
 );
 const { partsChanged, RevisionCounter } = await import('../src/agent/revision.ts');
 const { closeMessage } = await import('../src/agent/bridgeProtocolClient.ts');
-const { acceptDecision, keepSuggestions, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen } = await import('../src/agent/suggestionsStore.ts');
+const { acceptDecision, keepSuggestions, ARMED_MS, CONFIRM_AFTER_MS, isArmed, mergeAnnouncements, shortText, capSeconds, checkSuggestion, extKey, freshen, makeSuggestion, newSuggestionId, undoCheck, waitingCount, isOpen, heardForAgent } = await import('../src/agent/suggestionsStore.ts');
 const { AGENT_NAME_MAX, agentName, fromAgent, posesAsApp, readsAs, typedCode } = await import('../src/agent/protocol.ts');
 const { preRollStart, restartHeldNotes, sameBarOffset, PRE_ROLL_MAX_BARS } = await import('../src/audio/auditionMath.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
@@ -317,6 +317,13 @@ test('when the song changes: checked cheaply, made again only when heard or acce
   assert.equal(checked.stale, true);
   assert.equal(checked.song, s.song, 'not applied again by the check');
   assert.equal(checked.version, 1);
+  // That edit undone before it was made again: as it was, not stale, still heard (scan r10)
+  const undone = checkSuggestion({ ...checked, heard: 1, armed: { version: 1, at: 5 } }, p, ctxOf(p));
+  assert.equal(undone.status, 'waiting');
+  assert.equal(undone.stale, false);
+  assert.equal(undone.armed, null);
+  assert.ok(heardForAgent(undone, true));
+  assert.deepEqual(acceptDecision(undone, p, ctxOf(p), 10).apply, s.song, 'heard as the song is again: one press');
   // Made again (as Hear does): the song as it is now, a new version
   const fresh = freshen(checked, elsewhere, ctxOf(elsewhere));
   assert.equal(fresh.version, 2);
@@ -643,6 +650,13 @@ test('what the before-and-after plays: every region a change is heard in, one af
   // A focus that doesn't fit with the changes is left out, and said so; one that does is played
   assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 100, toBar: 160 }), { plays: [{ fromBar: 4, toBar: 7 }], unheard: null, limit: null, focusLeftOut: true });
   assert.deepEqual(plan([{ fromBar: 5, toBar: 7 }], { fromBar: 6, toBar: 9 }).plays, [{ fromBar: 4, toBar: 9 }]);
+  // (scan r10) A focus played in the room a measure cut leaves: its bars aren't among those not heard
+  const nine = { bpm: 300, tempoPoints: [], meter: { num: 9, den: 4 }, meterPoints: [] };
+  const roomy = plan([{ fromBar: 1, toBar: 100 }], { fromBar: 90, toBar: 91 }, [nine]);
+  assert.ok(roomy.plays.some((r) => r.fromBar <= 90 && r.toBar >= 91), JSON.stringify(roomy));
+  for (const u of roomy.unheard) assert.ok(u.toBar <= 90 + 1e-9 || u.fromBar >= 91 - 1e-9, JSON.stringify(roomy));
+  assert.ok(roomy.unheard.some((u) => u.fromBar < 90) && roomy.unheard.some((u) => u.toBar > 91), JSON.stringify(roomy));
+  assert.equal(roomy.limit, 'bars');
   // Nothing to hear (only names): the fallback, or the focus
   assert.deepEqual(plan([], { fromBar: 3, toBar: 5 }).plays, [{ fromBar: 3, toBar: 5 }]);
   assert.deepEqual(plan([]).plays, [{ fromBar: 1, toBar: 9 }]);
@@ -837,6 +851,9 @@ test('without Listen, an agent reads only where the rules say a suggestion is he
   assert.match(handlers, /const by = listen \? hearingAsFound\(s\) : hearingByRules\(s, song\);/);
   // (scan r7) and nothing that moves with them: heard by the rules' regions, no "finding", why not by sound only from the rules
   assert.match(handlers, /heard: heardForAgent\(s, listen\),/);
+  // (scan r10) get_suggestion checks the suggestions against the song now before answering, never
+  // the state from before the song watch's short wait: an edit just made counts at once
+  assert.match(handlers, /get_suggestion: \(p\) => \{(?:\s*\/\/[^\n]*)*\s*refreshSuggestions\(\);/);
   const store = readFileSync(new URL('../src/agent/suggestionsStore.ts', import.meta.url), 'utf8');
   assert.match(store, /\(listen \? s\.heard !== null && s\.heard === s\.version : s\.heardByRules === s\.version\)/);
   assert.match(handlers, /const rulesWhy = listen \? null : tooLongWhy\(song, s\);/);

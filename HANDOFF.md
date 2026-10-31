@@ -220,10 +220,15 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   voice pools `VOICE_POOL_INSTRUMENTS` (keys, wavetable, brass: poly.ts), the designed synth with
   `synth.mono`) along the same run, which starts with every note sounding over the change in either
   version, so a short note added or removed under a held one is heard to the held note's end;
-  swing on a clip (`swingReadsClip`) the whole clip. Sounds are unchanged. A new instrument that
+  swing on a clip (`swingReadsClip`, the song's swing for a clip with no groove that starts off the 16th grid) the whole clip. Sounds are unchanged. A new instrument that
   keeps state from note to note, or can cut a sounding note, must be added there;
   songDiff.test.mjs checks the mono list and the voice-pool list against instruments.ts and the
   takes against the catalogue.
+- **Plain names for inserts and their settings** (`src/agent/settingWords.ts`): What changes
+  (songDiff) and the cautions (ops.ts set_insert/set_master) name inserts, settings and master parts
+  through `insertLabel`/`settingWord`/`masterPartLabel`, never the file keys; add a new insert's or
+  setting's name there. get_suggestion runs `refreshSuggestions` before answering, so the agent
+  never reads a state from before the song watch's wait.
 - **The before-and-after's cut in a song not in 4/4** (`suggestionsStore.ts hearingPlan`) falls on
   the last measure start at or before the bars that fit (`measureAt`), part way through a bar too:
   after a measure of another length none starts on a whole bar again. `without` (heardRegions,
