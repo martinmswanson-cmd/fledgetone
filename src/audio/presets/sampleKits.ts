@@ -207,8 +207,16 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     const buffer = buffers.get(i);
     if (!pad || !buffer) return;
     const at = Math.max(time, raw.currentTime);
-    // A pad in a choke group cuts the others in it (and itself, retriggered)
-    if (pad.choke) for (const h of hits) if (rack?.pads[h.pad]?.choke === pad.choke) cut(h, at);
+    // A pad in a choke group cuts the others in it (and itself, retriggered) that started before
+    // it; one handed out already to start later (a song hit inside the look-ahead, under a live
+    // press) cuts this one when it starts: by time, the later hit always chokes the earlier
+    let chokedAt = Infinity;
+    if (pad.choke)
+      for (const h of hits) {
+        if (rack?.pads[h.pad]?.choke !== pad.choke || h.stopAt <= h.startAt) continue;
+        if (h.startAt <= at) cut(h, at);
+        else chokedAt = Math.min(chokedAt, h.startAt);
+      }
     const chain = chainFor(i, pad);
     const source = raw.createBufferSource();
     const ratio = Math.pow(2, pad.pitch / 12);
@@ -248,6 +256,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     source.stop(stopAt);
     const h: Hit = { source, env, pad: i, stopAt, startAt: at };
     hits.add(h);
+    if (chokedAt < stopAt) cut(h, chokedAt);
     source.onended = () => {
       hits.delete(h);
       source.disconnect();

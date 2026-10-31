@@ -14,7 +14,7 @@ import { getAudibleMoment } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
-import { fireStinger, playNotesAt, renderStinger } from '../../audio/stingerPlayer';
+import { fireStinger, handOut, playNotesAt, renderStinger, stingerAt, type HandedNotes } from '../../audio/stingerPlayer';
 import { ruleFor, transitionCue } from '../../store/transitions';
 import { bridgeFor } from '../../audio/gameKit';
 import { AuditionButton, TransitionMatrix } from './GameMatrix';
@@ -394,6 +394,13 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
 type Quantize = 'bar' | 'beat' | 'now';
 // (A rule's own timing can also be 'phrase' or 'end')
 
+/** A switch on its way (see GamePanel): 'pausing' while it pauses the song for its stinger or bridge. */
+interface Switching {
+  notes: HandedNotes[];
+  phase: 'waiting' | 'pausing' | 'bridge';
+  pausedAt?: number;
+}
+
 export const GamePanel: React.FC = () => {
   const markers = useTimelineStore((s) => s.markers);
   const clips = useTimelineStore((s) => s.clips);
@@ -402,7 +409,32 @@ export const GamePanel: React.FC = () => {
   const [quantize, setQuantize] = useState<Quantize>('bar');
   const [pending, setPending] = useState<string | null>(null);
   const timer = useRef<number>(0);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  /**
+   * The switch on its way: its cue, stinger and bridge notes (handed out a moment before they
+   * start, see handOut) until its line; then, with a stinger or bridge, the pause they play in.
+   */
+  const switching = useRef<Switching | null>(null);
+  /** Call the switch on its way off: its timers, and (before its line) its notes; the button stops pulsing. (Refs and setPending only: the same from any render) */
+  const callOff = () => {
+    clearTimeout(timer.current);
+    const sw = switching.current;
+    switching.current = null;
+    if (sw?.phase === 'waiting') for (const n of sw.notes) n.cancel();
+    setPending(null);
+  };
+  useEffect(() => {
+    // Stop or Pause before the line calls the switch off; during a stinger or bridge (paused by the
+    // switch itself), Play, Stop or a move calls off the state it would come in on (the bridge plays out)
+    const unsubscribe = useTimelineStore.subscribe((st) => {
+      const sw = switching.current;
+      if (!sw || sw.phase === 'pausing') return;
+      if (sw.phase === 'waiting' ? !st.isPlaying : st.isPlaying || st.playheadPosition !== sw.pausedAt) callOff();
+    });
+    return () => {
+      unsubscribe();
+      callOff();
+    };
+  }, []);
 
   const songEnd = maxOf(2, clips.map((c) => c.startBar + c.lengthBars));
   const sorted = [...markers].sort((a, b) => a.bar - b.bar);
@@ -412,7 +444,8 @@ export const GamePanel: React.FC = () => {
 
   const goTo = (sec: (typeof sections)[number]) => {
     const s = useTimelineStore.getState();
-    clearTimeout(timer.current);
+    // (a switch still on its way is called off: only this one plays)
+    callOff();
     const playingNow = sections.find((x) => Math.abs(x.from - s.loopRegion.inBar) < 1e-6 && Math.abs(x.to - s.loopRegion.outBar) < 1e-6 && s.loopRegion.enabled);
     const rule = ruleFor(s.transitions, playingNow?.id ?? null, sec.id);
     const cue = transitionCue(rule.kind, s.tracks);
@@ -424,6 +457,7 @@ export const GamePanel: React.FC = () => {
     const when = rule.quantize ?? quantize;
     const jump = () => {
       const st = useTimelineStore.getState();
+      switching.current = null;
       st.setLoopRange(sec.from, sec.to);
       if (!st.loopRegion.enabled) st.toggleLoop();
       st.seek(sec.from);
@@ -433,33 +467,47 @@ export const GamePanel: React.FC = () => {
       jump();
       // play(), not togglePlay(): a second press while sounds load mustn't call the first off
       if (!s.isPlaying) void s.play();
-      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1);
+      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1).catch(() => {});
       if (bridge && s.isPlaying) void fireStinger(bridge, 'now');
       return;
     }
     // On the next bar or beat line of the song, or a later one if the transition needs more room
     const heard = getAudibleMoment();
     const at = heard.bar;
+    const tempo = songTempo(s);
+    const meter = songMeterOf(s);
+    // The loop it plays in: past its end the song goes round to its start, not on (a line is a bar
+    // and how many times round from now)
+    const loopNow = s.loopRegion.enabled && at >= s.loopRegion.inBar - 1e-6 && at < s.loopRegion.outBar - 1e-6 ? { from: s.loopRegion.inBar, to: s.loopRegion.outBar } : null;
+    const state = playingNow && loopNow ? playingNow : undefined;
+    type Line = { bar: number; round: number };
+    const fold = (bar: number, round: number): Line => (loopNow && bar >= loopNow.to - 1e-6 ? { bar: loopNow.from, round: round + 1 } : { bar, round });
     // The song's own measure and beat lines (a 3/4 measure is 3/4 of a whole note)
-    const measure = measureAt(at, songMeterOf(s));
-    const unit = when === 'beat' ? measure.length / measure.meter.num : measure.length;
-    let next = measure.start + (Math.floor((at - measure.start) / unit + 1e-6) + 1) * unit;
-    // A phrase: every few bars from the state's start; the end: where its loop wraps
-    if (playingNow && when === 'phrase') {
-      const phrase = (rule.phraseBars ?? 4) * unit;
-      next = Math.min(playingNow.to, playingNow.from + Math.ceil((at - playingNow.from) / phrase - 1e-6) * phrase);
-    } else if (playingNow && when === 'end') next = playingNow.to;
-    if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
-    // The line on the clock the song plays by: `at` is what's heard now, which was played there an
-    // output latency ago (or is still to start). The cue, stinger and bridge start on it and the
-    // song stops on it (by the time heard, they'd come that much late, and the song's note on the
-    // line would sound before it stopped)
-    const lineOf = (bar: number) => heard.at + secondsBetween(at, bar, songTempo(s));
+    const unitAt = (bar: number) => {
+      const m = measureAt(bar, meter);
+      return { start: m.start, unit: when === 'beat' ? m.length / m.meter.num : m.length };
+    };
+    const gridAfter = (l: Line): Line => {
+      const { start, unit } = unitAt(l.bar);
+      return fold(start + (Math.floor((l.bar - start) / unit + 1e-6) + 1) * unit, l.round);
+    };
+    // A phrase: every few bars from the state's start (and its end); the end: where its loop wraps
+    const phrase = (rule.phraseBars ?? 4) * unitAt(at).unit;
+    const after = (l: Line): Line => (state && when === 'phrase' ? fold(Math.min(state.to, l.bar + phrase), l.round) : state && when === 'end' ? { bar: state.from, round: l.round + 1 } : gridAfter(l));
+    let next: Line = state && when === 'phrase' ? fold(Math.min(state.to, state.from + Math.ceil((at - state.from) / phrase - 1e-6) * phrase), 0) : state && when === 'end' ? { bar: state.from, round: 1 } : gridAfter({ bar: at, round: 0 });
+    // How far along the song plays to a line (in bars), and when it's there: the line on the clock
+    // the song plays by. `at` is what's heard now, which was played there an output latency ago (or
+    // is still to start). The cue, stinger and bridge start on it and the song stops on it (by the
+    // time heard, they'd come that much late, and the song's note on the line would sound before it
+    // stopped). Round the loop, the part from its start plays at its own tempo
+    const along = (l: Line) => (l.round === 0 || !loopNow ? l.bar - at : loopNow.to - at + (l.round - 1) * (loopNow.to - loopNow.from) + (l.bar - loopNow.from));
+    const lineOf = (l: Line) =>
+      heard.at + (l.round === 0 || !loopNow ? secondsBetween(at, l.bar, tempo) : secondsBetween(at, loopNow.to, tempo) + (l.round - 1) * secondsBetween(loopNow.from, loopNow.to, tempo) + secondsBetween(loopNow.from, l.bar, tempo));
+    if (cue) for (let i = 0; i < 64 && along(next) < cue.leadIn - 1e-6; i++) next = after(next);
     // A line too close to reach goes to the next one: a jump lands a look-ahead after it's made
     // (see seekTransport), and the stinger and bridge need a moment to be handed out
-    const step = playingNow && when === 'phrase' ? (rule.phraseBars ?? 4) * unit : playingNow && when === 'end' ? Math.max(unit, playingNow.to - playingNow.from) : unit;
     const earliest = liveContext.currentTime + (bridge || written ? 0 : liveContext.lookAhead) + 0.02;
-    for (let i = 0; i < 64 && lineOf(next) < earliest; i++) next += step;
+    for (let i = 0; i < 64 && lineOf(next) < earliest; i++) next = after(next);
     const lineAt = lineOf(next);
     /**
      * Run `then` when the audio clock is just short of `time`: looked at again as it nears, as the
@@ -470,29 +518,41 @@ export const GamePanel: React.FC = () => {
       if (left <= 15) then();
       else timer.current = window.setTimeout(() => onClock(time, then), left - 10);
     };
-    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, lineAt);
+    const sw: Switching = { notes: [], phase: 'waiting' };
+    const handed = (h: HandedNotes) => {
+      h.done.catch(() => {});
+      sw.notes.push(h);
+      return h;
+    };
+    switching.current = sw;
+    let cueNotes = cue ? handed(handOut(cue.instrumentKey, cue.notes, lineAt)) : null;
     setPending(sec.id);
     if (bridge || written) {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
       // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
-      if (bridge) void fireStinger(bridge, 'now', lineAt);
+      if (bridge) handed(stingerAt(bridge, lineAt));
       if (written) for (const c of written.clips) {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
-        if (key) void playNotesAt(key, c.notes, lineAt);
+        if (key) handed(handOut(key, c.notes, lineAt));
       }
       onClock(lineAt, () => {
         const st = useTimelineStore.getState();
-        // Stopped by then: the bridge plays out, and the song stays stopped
-        if (!st.isPlaying) return;
+        // Stopped by then: called off already (see callOff); the song stays stopped
+        if (switching.current !== sw) return;
+        if (!st.isPlaying) return callOff();
+        // From here the stinger (or bridge) plays out, whatever the transport does
+        sw.phase = 'pausing';
         st.pause();
-        const pausedAt = useTimelineStore.getState().playheadPosition;
+        sw.pausedAt = useTimelineStore.getState().playheadPosition;
+        sw.phase = 'bridge';
         timer.current = window.setTimeout(() => {
           // Stopped (or played, or moved) during the bridge: leave it as the user left it
           const now = useTimelineStore.getState();
-          if (now.isPlaying || now.playheadPosition !== pausedAt) return;
+          if (switching.current !== sw) return;
+          if (now.isPlaying || now.playheadPosition !== sw.pausedAt) return callOff();
           jump();
           void now.play();
-        }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
+        }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next.bar, tempo) - 40);
         // (Paused just ahead of the line: its notes, handed out already, are called off; see releaseAll)
       });
       return;
@@ -501,16 +561,25 @@ export const GamePanel: React.FC = () => {
     // (a crossfade can't be heard on one timeline: it cuts here; the audition pads play it).
     // A move while playing lands a look-ahead after it's made (see seekTransport)
     // (a page timer that came late, or a look-ahead grown meanwhile, would land it between
-    // lines: then it waits for the next line it can still reach)
-    const jumpOn = (bar: number) =>
-      onClock(lineOf(bar) - liveContext.lookAhead, () => {
+    // lines: then it waits for the next line it can still reach, and its cue moves with it)
+    const jumpOn = (line: Line) =>
+      onClock(lineOf(line) - liveContext.lookAhead, () => {
+        if (switching.current !== sw) return;
+        if (!useTimelineStore.getState().isPlaying) return callOff();
         // (where a jump now would land: the look-ahead may have changed since this was set)
         const lands = () => liveContext.currentTime + liveContext.lookAhead;
-        let later = bar;
-        for (let k = 0; k < 64 && lands() > lineOf(later) + 0.005; k++) later += step;
-        if (later !== bar) jumpOn(later);
+        let later = line;
+        for (let k = 0; k < 64 && lands() > lineOf(later) + 0.005; k++) later = after(later);
+        if (later !== line) {
+          if (cue && cueNotes) {
+            cueNotes.cancel();
+            sw.notes = sw.notes.filter((n) => n !== cueNotes);
+            cueNotes = handed(handOut(cue.instrumentKey, cue.notes, lineOf(later)));
+          }
+          jumpOn(later);
+        }
         // (a little early: looked at again a moment later)
-        else if (lands() < lineOf(bar) - 0.004) timer.current = window.setTimeout(() => jumpOn(bar), 2);
+        else if (lands() < lineOf(line) - 0.004) timer.current = window.setTimeout(() => jumpOn(line), 2);
         else jump();
       });
     jumpOn(next);
