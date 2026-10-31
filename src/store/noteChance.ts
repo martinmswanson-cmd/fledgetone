@@ -107,12 +107,15 @@ export interface ClipRun {
 const contentKeys = new WeakMap<NoteEvent[], string>();
 export function contentKey(c: Clip): string {
   if (c.pattern) return `p:${c.pattern}`;
-  let k = contentKeys.get(c.notes);
+  return `n:${c.lengthBars}:${notesKey(c.notes)}`;
+}
+function notesKey(notes: NoteEvent[]): string {
+  let k = contentKeys.get(notes);
   if (k === undefined) {
-    k = JSON.stringify(c.notes.map((n) => [n.note, n.startOffset, n.duration, n.velocity, n.chance, n.cond]));
-    contentKeys.set(c.notes, k);
+    k = JSON.stringify(notes.map((n) => [n.note, n.startOffset, n.duration, n.velocity, n.chance, n.cond]));
+    contentKeys.set(notes, k);
   }
-  return `n:${c.lengthBars}:${k}`;
+  return k;
 }
 
 const hasConditions = new WeakMap<NoteEvent[], boolean>();
@@ -124,6 +127,16 @@ export function clipHasConditions(c: Pick<Clip, 'notes'>): boolean {
     hasConditions.set(c.notes, has);
   }
   return has;
+}
+
+/**
+ * `notes`, `from`'s notes rewritten for a render (held notes begun again at its start, see
+ * auditionMath.ts restartHeldNotes), play as `from`'s do in its run of copies: the same content
+ * and conditions (see clipRuns), so the clip keeps its pass.
+ */
+export function keepContentKey(notes: NoteEvent[], from: Pick<Clip, 'notes'>): void {
+  contentKeys.set(notes, notesKey(from.notes));
+  hasConditions.set(notes, clipHasConditions(from));
 }
 
 /** The end of the id of a clip made to begin a note held over a render's start again (see auditionMath.ts restartHeldNotes). */

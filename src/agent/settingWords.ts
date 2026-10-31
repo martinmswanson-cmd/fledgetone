@@ -98,6 +98,9 @@ const CHOICE_WORDS: Readonly<Record<string, Readonly<Record<string, string>>>> =
   glue: { standard: 'standard', gentle: 'gentle', punchy: 'punchy', tight: 'tight', off: 'off' },
 };
 
+/** `table`'s own entry for `key` (never a name every object has: "toString", "constructor"). */
+const own = <T>(table: Readonly<Record<string, T>> | undefined, key: string): T | undefined => (table && Object.hasOwn(table, key) ? table[key] : undefined);
+
 /**
  * A setting's value in words: on or off for a switch, a choice as the menus name it (CHOICE_WORDS),
  * a number as it is; null when it isn't plain (a text an agent could have written).
@@ -105,19 +108,19 @@ const CHOICE_WORDS: Readonly<Record<string, Readonly<Record<string, string>>>> =
 export function valueWord(key: string, value: unknown): string | null {
   if (typeof value === 'boolean') return value ? 'on' : 'off';
   // (a number is a choice only for the Filter's slope: the Chorus rate, the OTT time are numbers)
-  const word = typeof value === 'string' || (typeof value === 'number' && key === 'slope') ? CHOICE_WORDS[key]?.[String(value)] : undefined;
+  const word = typeof value === 'string' || (typeof value === 'number' && key === 'slope') ? own(own(CHOICE_WORDS, key), String(value)) : undefined;
   return word ?? plainToken(value);
 }
 
 /** An insert's name: "Delay" for echo, "Mono bass" for monoLow. */
-export const insertLabel = (key: string): string => INSERT_LABELS[key] ?? plainKey(key) ?? 'insert';
+export const insertLabel = (key: string): string => own(INSERT_LABELS, key) ?? plainKey(key) ?? 'insert';
 
 /** A master part's name: "OTT", "stereo width". */
-export const masterPartLabel = (key: string): string => MASTER_PART_LABELS[key] ?? plainKey(key) ?? 'part';
+export const masterPartLabel = (key: string): string => own(MASTER_PART_LABELS, key) ?? plainKey(key) ?? 'part';
 
 /** A setting's name in words: "low crossover" for lowFreq, "pre-delay" for preDelay; a key not known here split into words; null when it isn't plain. */
 export function settingWord(key: string): string | null {
-  return SETTING_WORDS[key] ?? plainKey(key);
+  return own(SETTING_WORDS, key) ?? plainKey(key);
 }
 
 /** A key the studio has no name for, in words ("someSetting" is "some setting"), or null when it isn't plain (an agent could have written it). */

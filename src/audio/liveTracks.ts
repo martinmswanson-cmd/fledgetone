@@ -535,8 +535,28 @@ function bendBack(inst: TrackInstrument, time: number): void {
 }
 /** Seconds before a note's start its instrument's held bend goes back (so the note starts on it, and its own bend at its start still wins). */
 const BACK_BEFORE_NOTE = 0.001;
+/** While the song's own notes are played (see songNotes): not a note from outside the song. */
+let inSong = 0;
+/** Play the song's own notes (the scheduler): a note played meanwhile isn't one from outside it (see onLiveNote). */
+export function songNotes(play: () => void): void {
+  inSong++;
+  try {
+    play();
+  } finally {
+    inSong--;
+  }
+}
+const liveNotes = new Set<(inst: TrackInstrument, time: number) => void>();
+/**
+ * Told of every note played on a live instrument from outside the song (a key, a pad, note repeat,
+ * a preview), at its time: a song note ringing on with its bend lets go of it (the scheduler).
+ */
+export function onLiveNote(listener: (inst: TrackInstrument, time: number) => void): void {
+  liveNotes.add(listener);
+}
 function watchBendBack(inst: TrackInstrument): void {
   const before = (time: number) => {
+    if (!inSong) liveNotes.forEach((l) => safely(() => l(inst, time)));
     if (!bendsBack.size) return;
     bendBack(inst, Math.max(liveMix.bus.context.currentTime, time - BACK_BEFORE_NOTE));
   };

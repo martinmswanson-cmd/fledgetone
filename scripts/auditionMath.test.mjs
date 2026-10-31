@@ -155,3 +155,29 @@ test('stretches played one after another (a suggestion that changes several plac
   assert.equal(sequenceOffset(10, plays, b, a), 5);
   assert.equal(sequenceOffset(8 + 5, plays, a, b), 10, 'round again');
 });
+
+test('a clip with a held note begun again keeps its place in its run of copies (its pass)', async () => {
+  const { clipRuns, passOf } = await import('../src/store/noteChance.ts');
+  // Three copies of a 16-bar pad (not linked): a chord held all 16 bars, a fill on every 3rd pass
+  const notes = () => [{ id: 'n1', note: 'C4', startOffset: 0, duration: `${16 * 768}i`, velocity: 0.7 }, { id: 'n2', note: 'G5', startOffset: 15, duration: '4n', velocity: 0.7, cond: { n: 1, of: 3 } }];
+  const mk = (id, startBar, lengthBars = 16) => ({ id, trackId: 't', name: 'Pad', startBar, lengthBars, notes: notes() });
+  const passes = (clips) => {
+    const runs = clipRuns(clips);
+    return Object.fromEntries(clips.map((c) => [c.id, passOf(runs.get(c.id), 0, null)]));
+  };
+  const clips = [mk('A', 1), mk('B', 17), mk('C', 33)];
+  const whole = passes(clips);
+  assert.deepEqual(whole, { A: 0, B: 1, C: 2 });
+  // Heard from bar 47 with a run-in from bar 40: C's chord begun again there
+  const again = restartHeldNotes(clips, 40, 47);
+  assert.notEqual(again, clips);
+  assert.deepEqual(passes(again), whole);
+  // A note running on past its clip's end, playing on the 3rd pass only: the clip without it and
+  // the held-over one's own clip both keep the 3rd pass
+  const ring = (id, startBar) => ({ id, trackId: 't', name: 'Pad', startBar, lengthBars: 4, notes: [{ id: 'r', note: 'C4', startOffset: 0, duration: '8m', velocity: 0.7, cond: { n: 3, of: 3 } }] });
+  const short = [ring('A', 1), ring('B', 5), ring('C', 9)];
+  const over = restartHeldNotes(short, 14, 15);
+  const got = passes(over);
+  assert.ok(over.some((c) => c.id === 'C~held'));
+  assert.deepEqual([got.A, got.B, got.C, got['C~held']], [0, 1, 2, 2]);
+});
