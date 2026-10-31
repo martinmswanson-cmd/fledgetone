@@ -237,7 +237,7 @@ function monoPanner(raw: BaseAudioContext, interpretation: ChannelInterpretation
   return panner;
 }
 
-export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
+export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: { apartFromSolo?: boolean } = {}): TrackStrip {
   const input = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   // A delay of nothing, which passes the sound through sample for sample. It is here for the live
@@ -254,7 +254,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   }
   /** Where the chain of inserts starts. */
   const head = barrier ?? input;
-  const solo = new Tone.Solo();
+  // (`apartFromSolo`: a strip that isn't a track's, the Game tab's stingers: a track's solo doesn't silence it)
+  const solo = opts.apartFromSolo ? new Tone.Gain(1) : new Tone.Solo();
   // A mono source becomes the same sound on both sides here, for the pan to take apart
   solo.channelCount = 2;
   solo.channelCountMode = 'explicit';
@@ -1178,7 +1179,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         muted = mute;
         writeLevel(ramp);
       }
-      if (opts.muteOverride === undefined) solo.solo = track.isSoloed;
+      if (opts.muteOverride === undefined && solo instanceof Tone.Solo) solo.solo = track.isSoloed;
 
       // Set back on the stage, more of the track reaches the hall
       const distance = Math.max(0, Math.min(1, track.distance ?? 0));

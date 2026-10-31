@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { captureWamStates } from '../../audio/wamHost';
-import { getAudibleMoment } from '../../audio/transport';
+import { getAudibleMoment, transportStartsAt } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
@@ -20,6 +20,7 @@ import { bridgeFor } from '../../audio/gameKit';
 import { AuditionButton, TransitionMatrix } from './GameMatrix';
 import { gameKitSong } from './gameKitSong';
 import { liveContext } from '../../audio/liveContext';
+import { hasRecordings, loadSamplesForNotes } from '../../audio/samplers/samplerManager';
 import { livePlayhead } from '../../store/playheadClock';
 import { createZip } from '../../audio/zip';
 import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
@@ -399,6 +400,8 @@ const NOW_STEPS = 32;
 /** A switch on its way (see GamePanel): 'pausing' while it pauses the song for its stinger or bridge. */
 interface Switching {
   notes: HandedNotes[];
+  /** A written bridge's notes, on the song's own tracks: let go whenever the switch is called off */
+  bridge: HandedNotes[];
   phase: 'waiting' | 'pausing' | 'bridge';
   pausedAt?: number;
 }
@@ -422,6 +425,8 @@ export const GamePanel: React.FC = () => {
     const sw = switching.current;
     switching.current = null;
     if (sw?.phase === 'waiting') for (const n of sw.notes) n.cancel();
+    // (a written bridge plays on the song's tracks: Stop, Play or another press lets go of it, as of the song's notes)
+    for (const n of sw?.bridge ?? []) n.cancel();
     setPending(null);
   };
   useEffect(() => {
@@ -471,9 +476,12 @@ export const GamePanel: React.FC = () => {
     };
     if (!s.isPlaying) {
       jump();
-      // play(), not togglePlay(): a second press while sounds load mustn't call the first off
-      void s.play();
-      if (cue && cue.leadIn === 0) void handOut(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1, bpm).done.catch(() => {});
+      // play(), not togglePlay(): a second press while sounds load mustn't call the first off.
+      // The cue on the state's first beat: where the Transport starts, once it's set to
+      void s.play().then(() => {
+        if (!cue || cue.leadIn !== 0 || !useTimelineStore.getState().isPlaying) return;
+        void handOut(cue.instrumentKey, cue.notes, transportStartsAt() ?? liveContext.currentTime + 0.05, bpm).done.catch(() => {});
+      });
       return;
     }
     // ('now' while playing: as soon as it can be, on a fine grid (see unitAt), by the same way as
@@ -527,7 +535,7 @@ export const GamePanel: React.FC = () => {
       if (left <= 15) then();
       else timer.current = window.setTimeout(() => onClock(time, then), left - 10);
     };
-    const sw: Switching = { notes: [], phase: 'waiting' };
+    const sw: Switching = { notes: [], bridge: [], phase: 'waiting' };
     const handed = (h: HandedNotes) => {
       h.done.catch(() => {});
       sw.notes.push(h);
@@ -540,10 +548,15 @@ export const GamePanel: React.FC = () => {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
       // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
       if (bridge) handed(stingerAt(bridge, lineAt, bpm));
-      if (written) for (const c of written.clips) {
+      // A written bridge plays on its tracks' own instruments and strips, as the export renders it:
+      // handed out once the song has paused on the line (the pause lets go of what those play), its
+      // recordings fetched meanwhile
+      const parts = (written?.clips ?? []).flatMap((c) => {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
-        if (key) handed(handOut(key, c.notes, lineAt, written.bpm));
-      }
+        if (!key) return [];
+        if (hasRecordings(key)) void loadSamplesForNotes(key, c.notes).catch(() => {});
+        return [{ key, clip: c }];
+      });
       onClock(lineAt, () => {
         const st = useTimelineStore.getState();
         // Stopped by then: called off already (see callOff); the song stays stopped
@@ -554,14 +567,23 @@ export const GamePanel: React.FC = () => {
         st.pause();
         sw.pausedAt = useTimelineStore.getState().playheadPosition;
         sw.phase = 'bridge';
-        timer.current = window.setTimeout(() => {
+        for (const { key, clip } of parts) {
+          const h = handOut(key, clip.notes, lineAt, written!.bpm, 'drop', clip.trackId);
+          h.done.catch(() => {});
+          sw.bridge.push(h);
+        }
+        // The new state starts bridgeSeconds after the line, as the export's player starts it: the
+        // Transport set to start then, a look-ahead and a moment before it (see play; the moment
+        // leaves room for a page timer that comes late)
+        const starts = lineAt + bridgeSeconds;
+        onClock(starts - liveContext.lookAhead - 0.15, () => {
           // Stopped (or played, or moved) during the bridge: leave it as the user left it
           const now = useTimelineStore.getState();
           if (switching.current !== sw) return;
           if (now.isPlaying || now.playheadPosition !== sw.pausedAt) return callOff();
           jump();
-          void now.play();
-        }, bridgeSeconds * 1000 - 40);
+          void now.play(starts);
+        });
         // (Paused just ahead of the line: its notes, handed out already, are called off; see releaseAll)
       });
       return;
