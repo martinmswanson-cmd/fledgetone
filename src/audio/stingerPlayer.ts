@@ -66,6 +66,12 @@ interface Player {
   inst: TrackInstrument;
   /** Audio time until which what it was given may still sound (its notes' ends and a tail) */
   busyUntil: number;
+  /**
+   * Audio time from which it plays as it should: a synth just made takes its settings a
+   * look-ahead after it's made (its detuned voices' spread, set at the context's now()), and a
+   * note started before then keeps its voices out of step for as long as it sounds
+   */
+  readyAt: number;
 }
 const players = new Map<InstrumentKey, Player[]>();
 /** How many instruments of one kind at most (past that, the one free soonest is shared) */
@@ -82,7 +88,7 @@ function player(key: InstrumentKey, from: number): Player {
   }
   let free = list.find((p) => p.busyUntil <= from);
   if (!free && list.length < PLAYERS_PER_KIND) {
-    free = { inst: createInstrument(key, liveStrip(key).input, trackInstrumentOptions(stingerTrack('stinger', key))), busyUntil: 0 };
+    free = { inst: createInstrument(key, liveStrip(key).input, trackInstrumentOptions(stingerTrack('stinger', key))), busyUntil: 0, readyAt: liveContext.currentTime + liveContext.lookAhead + 0.02 };
     list.push(free);
   }
   free ??= list.reduce((a, b) => (b.busyUntil < a.busyUntil ? b : a));
@@ -174,7 +180,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
         const inst = scheduledInstrument(trackId);
         if (!inst) return finish();
         trackActivity(trackId, start, lastEnd);
-        p = { inst, busyUntil: 0 };
+        p = { inst, busyUntil: 0, readyAt: 0 };
       } else {
         p = player(key, liveContext.currentTime);
         // (lent from now: a switch handed out meanwhile takes another)
@@ -189,7 +195,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
       return;
     }
     // ('wait': ready too late for `start`, it all comes a moment later rather than without its first notes)
-    const from = late === 'wait' ? Math.max(start, liveContext.currentTime + 0.05 - firstOffset * secondsPerBar) : start;
+    const from = late === 'wait' ? Math.max(start, Math.max(liveContext.currentTime + 0.05, p.readyAt) - firstOffset * secondsPerBar) : start;
     if (lent) p.busyUntil = lentUntil = Math.max(p.busyUntil, from + lastEnd + RING_ON);
     const byStart = new Map<number, NoteEvent[]>();
     for (const n of notes) {
@@ -253,7 +259,8 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
   const before = p.busyUntil;
   p.busyUntil = Math.max(before, liveContext.currentTime + 30);
   await p.inst.ready;
-  const now = liveContext.currentTime + 0.05;
+  // (not before it plays as it should: one just made, see Player.readyAt)
+  const now = Math.max(liveContext.currentTime + 0.05, p.readyAt);
   const playing = liveTransport.state === 'started';
   // (`atTime`: a context time worked out by the caller, e.g. a transition's line)
   const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
