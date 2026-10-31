@@ -2,7 +2,9 @@
 // opening until the app has shown it (markOpening / markOpened in src/store/project.ts), and a
 // startup that finds the autosaved song still noted offers it back (the Restore banner, Pocket's
 // start screen) instead, marked, with the autosave cleared so later startups don't reopen it
-// either. The recovery screen's "set it aside" keeps the song and starts fresh. Each startup is a
+// either; so does one that took more than a few seconds to show (it froze the app). An autosave
+// that opens without some of it (past the most a song opens with) keeps its full copy apart.
+// The recovery screen's "set it aside" keeps the song and starts fresh. Each startup is a
 // fresh copy of project.ts over the same browser storage. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -104,4 +106,62 @@ test('set aside keeps an autosave of another song (the one a link replaced befor
   // it as any older session does (it's kept as a version too: reopenLastSong.ts setAsideAndStartFresh)
   assert.equal(session.project.songId, 'song-a');
   assert.equal(session.stopped, undefined);
+});
+
+test('a song that took more than a few seconds to show (it froze the app) stays noted: offered at the next startup, not opened by itself', async () => {
+  stored.clear();
+  let p = await startup();
+  const t = 1_000_000;
+  p.markOpening('song-a', t);
+  assert.ok(p.writeAutosave(songA).ok);
+  // Shown, but only after the page was held up for longer than a song may take
+  assert.equal(p.markOpened('song-a', t + p.SLOW_OPEN_MS + 1), false);
+  assert.equal(stored.get(OPENING), 'song-a');
+  p = await startup();
+  const session = p.preservePreviousSession();
+  assert.equal(session.stopped, true, 'offered, never opened again by itself');
+  // A song that showed in good time is cleared as before
+  stored.clear();
+  p = await startup();
+  p.markOpening('song-b', t);
+  assert.equal(p.markOpened('song-b', t + 1000), true);
+  assert.equal(stored.get(OPENING), undefined);
+});
+
+const LEFT_OUT = 'bos-beat-box.autosave.leftout';
+test('an autosave that opens without some of it keeps its full copy apart, and nothing writes over that copy', async () => {
+  stored.clear();
+  let p = await startup();
+  const { MAX_CLIP_NOTES } = p;
+  // (Song A with one clip past the most notes a clip opens with, as an older version could autosave it)
+  const file = JSON.parse(JSON.stringify({ ...p.serializeProject(songA), savedAt: 1 }));
+  file.clips[0].notes = Array.from({ length: MAX_CLIP_NOTES + 5 }, (_, i) => ({ id: `n${i}`, note: 'C4', startOffset: (i % 64) / 16, duration: '16n', velocity: 0.8 }));
+  const json = JSON.stringify(file);
+  stored.set(AUTOSAVE, json);
+  p = await startup();
+  const session = p.preservePreviousSession();
+  assert.equal(session.project.unread.notes, 5);
+  assert.equal(stored.get(LEFT_OUT), json, 'the full copy, apart');
+  assert.deepEqual(p.sessionLeftOut, { words: '5 notes over the most a song opens with (20,000 in a clip, 200,000 in all)', keptApart: true });
+  // The song as it opened autosaves as usual; the full copy stays
+  assert.ok(p.writeAutosave(session.project).ok);
+  assert.equal(stored.get(LEFT_OUT), json);
+
+  // No room for a copy: the autosave itself is the full copy, and isn't written over
+  stored.clear();
+  stored.set(AUTOSAVE, json);
+  const setItem = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = (k, v) => {
+    if (k === LEFT_OUT) throw new DOMException('full', 'QuotaExceededError');
+    setItem(k, v);
+  };
+  try {
+    p = await startup();
+    const again = p.preservePreviousSession();
+    assert.equal(p.sessionLeftOut.keptApart, false);
+    assert.deepEqual(p.writeAutosave(again.project), { ok: false, reason: 'full' });
+    assert.equal(stored.get(AUTOSAVE), json);
+  } finally {
+    globalThis.localStorage.setItem = setItem;
+  }
 });

@@ -8,7 +8,8 @@
  * instead of opened again, and kept as a version; the recovery screen sets the open one aside.
  */
 import { useEffect } from 'react';
-import { clearPreviousSession, hasWork, markOpened, markOpening, setAsideStoppedSong } from './project';
+import { clearPreviousSession, hasWork, markOpened, markOpening, sessionLeftOut, setAsideStoppedSong, type ProjectSnapshot } from './project';
+import { showToast } from '../components/timeline/toastStore';
 import { currentProject, onProjectReplaced, retryAutosave, useLastSession, useTimelineStore } from './timelineStore';
 import { keepVersion, keptVersion } from './versions';
 
@@ -25,7 +26,20 @@ export function reopenLastSong(): boolean {
   retryAutosave();
   useLastSession.setState({ session: null });
   useTimelineStore.getState().loadProject(session.project);
+  sayWhatWasLeftOut(session.project);
   return true;
+}
+
+/**
+ * After the last session (found at startup) opened without some of it: say so, and where its
+ * full copy is. Studio and Pocket, whether it opened by itself or from the offer to restore it.
+ */
+export function sayWhatWasLeftOut(project: ProjectSnapshot): void {
+  if (!project.unread || !sessionLeftOut) return;
+  const where = sessionLeftOut.keptApart
+    ? "Its full copy is kept in this browser, apart, so nothing writes over it."
+    : "Its full copy stays where it was in this browser, so nothing writes over it (there's no room to keep it apart).";
+  showToast(`Your last session opened without ${sessionLeftOut.words}. ${where}`);
 }
 
 /** How long the app shows a song that has just opened before it counts as shown. */
@@ -33,7 +47,8 @@ const SHOWN_AFTER_MS = 1000;
 
 /**
  * In the studio and in Pocket (inside StudioGuard): once a song that opened has been shown for a
- * moment, it's no longer noted as opening. Unmounted by a crash first, it stays noted.
+ * moment, it's no longer noted as opening. Unmounted by a crash first, it stays noted; so does one
+ * that took more than a few seconds to get there (it froze the app: markOpened, SLOW_OPEN_MS).
  */
 export function useOpenedMark(): void {
   useEffect(() => {

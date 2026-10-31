@@ -11,6 +11,7 @@ import { drummerGroove } from '../store/drumGroove';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
+import { sayWhatWasLeftOut } from '../store/reopenLastSong';
 import { clearPreviousSession } from '../store/project';
 import { STARTER_GROUPS, STARTERS } from '../store/starters';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
@@ -481,13 +482,14 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
             retryAutosave();
             useLastSession.setState({ session: null });
             useTimelineStore.getState().loadProject(session.project);
+            sayWhatWasLeftOut(session.project);
             usePocket.getState().set({ starting: false, section: 0, trackId: null });
           }}
         >
           <History className="w-6 h-6 text-cyan-300 shrink-0" />
           <span className="min-w-0">
             <span className="block font-semibold truncate">Carry on with {session.project.name}</span>
-            <span className="block text-xs text-forge-muted">{session.stopped ? "Your last song: it stopped the app from showing last time, so it wasn't opened again" : 'Your last song, as you left it'}</span>
+            <span className="block text-xs text-forge-muted">{session.stopped ? "Your last song: it froze or stopped the app last time, so it wasn't opened again" : 'Your last song, as you left it'}</span>
           </span>
         </button>
       )}

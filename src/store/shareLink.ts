@@ -1,4 +1,5 @@
 import { MAX_CLIP_NOTES, MAX_SONG_NOTES, parseProject, PROJECT_FORMAT, serializeProject } from './project';
+import { SONG_CAPS } from './songCaps';
 import { clipHasConditions } from './noteChance';
 import type { ProjectSnapshot } from './project';
 import { defaultTrackFx } from './timelineTypes';
@@ -266,11 +267,12 @@ function unpack(bytes: Uint8Array): { raw: unknown; leftOut: number } {
   let id = 0;
   let left = MAX_SONG_NOTES;
   let leftOut = 0;
-  const withNotes = (owner: WithoutNotes<{ notes: Note[] }>) => {
+  const withNotes = (owner: WithoutNotes<{ notes: Note[] }>, kept: boolean) => {
     const count = read.uint();
     // The notes past the most a song opens with are read past, not made: a short link can say a
-    // clip has millions (the bytes run out first: then it's cut short)
-    const keep = Math.max(0, Math.min(count, MAX_CLIP_NOTES, left));
+    // clip has millions (the bytes run out first: then it's cut short). So are the notes of a clip
+    // or stinger past the most a song has of those (parseProject leaves it out, and counts it)
+    const keep = kept ? Math.max(0, Math.min(count, MAX_CLIP_NOTES, left)) : 0;
     left -= keep;
     let ticks = 0;
     const notes = Array.from({ length: keep }, (): Note => {
@@ -284,15 +286,15 @@ function unpack(bytes: Uint8Array): { raw: unknown; leftOut: number } {
       read.uint();
       read.uint();
       read.uint();
-      leftOut++;
+      if (kept) leftOut++;
     }
     for (const [i, expr] of Array.isArray(owner.x) ? owner.x : []) if (notes[i]) notes[i].expr = expr as Note['expr'];
     for (const [i, when] of Array.isArray(owner.y) ? owner.y : []) if (notes[i] && when && typeof when === 'object') Object.assign(notes[i], { chance: (when as Note).chance, cond: (when as Note).cond });
     return { ...owner, x: undefined, y: undefined, notes };
   };
   const list = (v: unknown) => (Array.isArray(v) ? (v as Array<WithoutNotes<{ notes: Note[] }>>) : []);
-  const clips = list(raw.clips).map(withNotes);
-  const stingers = list(raw.stingers).map(withNotes);
+  const clips = list(raw.clips).map((c, i) => withNotes(c, i < SONG_CAPS.clips));
+  const stingers = list(raw.stingers).map((st, i) => withNotes(st, i < SONG_CAPS.stingers));
   const fx = defaultTrackFx();
   const tracks = (Array.isArray(raw.tracks) ? raw.tracks : []).map((t) => {
     const track = withDefaults(t, TRACK_DEFAULTS);

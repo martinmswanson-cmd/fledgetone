@@ -49,8 +49,8 @@ export const VersionsList: React.FC<{ touch?: boolean; onRestored: () => void }>
     if (!window.confirm(`Go back to ${v.name} from ${when}?\n\nThe song open now is kept as a version too, so you can come back to it.`)) return;
     setBusy(true);
     try {
-      const name = await restoreVersion(v.id);
-      showToast(`Back to ${name} from ${when}.`);
+      const { name, without } = await restoreVersion(v.id);
+      showToast(without ? `Back to ${name} from ${when}, without ${without}. The version itself is kept as it was.` : `Back to ${name} from ${when}.`);
       onRestored();
     } catch {
       showToast("That version couldn't be opened.");
