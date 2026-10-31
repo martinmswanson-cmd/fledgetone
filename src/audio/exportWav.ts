@@ -367,16 +367,13 @@ const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.star
 function loopTailSeconds(opts: RenderOptions): number {
   // (the echoes are in it: see ringOutSeconds)
   const tails = ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), RING_OUT_LISTEN, opts.clips);
-  // A note sounding on past the loop's end (longer than the loop, or begun near its end) sounds
-  // into the passes after it for that long, then its release and the tails after it
+  // A note that would sound on past the loop's end (longer than the loop, or begun near its end)
+  // ends where the loop goes round, as live (see createClipSchedule's loopTicksOf): its release
+  // rings into the next pass, with the tails after it
   const held = heldPast(opts);
   if (held.seconds <= RING_OUT_MARGIN) return tails;
-  const after = Math.max(ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), 0, opts.clips), held.release + RING_OUT_MARGIN);
-  return Math.max(tails, Math.min(LOOP_HELD_MAX_SECONDS, held.seconds) + after);
+  return Math.max(tails, ringOutSeconds(opts.masterFx, opts.tracks, renderTempo(opts), 0, opts.clips), held.release + RING_OUT_MARGIN);
 }
-
-/** The most a note held past a seamless loop's end adds to its warm-up (a drone of many minutes would make it endless). */
-const LOOP_HELD_MAX_SECONDS = 120;
 
 /** The tempo a render plays at. */
 const renderTempo = (opts: Pick<RenderOptions, 'bpm' | 'tempoPoints'>): TempoMap => ({ bpm: opts.bpm, points: opts.tempoPoints ?? [] });
@@ -1441,7 +1438,8 @@ async function renderGraphHeld(
     const sourceIds = new Set(strips.map((s) => s.pumpSource()).filter((id): id is string => !!id));
     const pumpOnTrack = sourceIds.size ? (trackId: string, time: number) => sourceIds.has(trackId) && strips.forEach((s) => s.pump(time, 'track', trackId)) : undefined;
     const meter = opts.meter ?? getSongMeter();
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack, undefined, undefined, () => meter);
+    const loopTicks = transport.loop ? ([barToTicks(startBar), barToTicks(endBar)] as const) : null;
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack, undefined, undefined, () => meter, () => loopTicks);
     const followsKick = strips.some((s) => pumpFollowsDrums(s.pumpTrigger()));
     const extra = [...(followsKick ? kickTracks : []), ...opts.tracks.filter((t) => sourceIds.has(t.id))].filter((t, i, all) => !instruments.has(t.id) && all.indexOf(t) === i);
     schedule.update([...tracks, ...extra], clips);

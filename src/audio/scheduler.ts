@@ -281,7 +281,14 @@ export function createClipSchedule(
    * Live playback reads the studio's (getSongMeter, kept in step with the song by the store); a
    * render passes its song's, so a render with no store (the command line's) plays the same.
    */
-  meterOf: () => MeterMap = getSongMeter
+  meterOf: () => MeterMap = getSongMeter,
+  /**
+   * The loop the Transport goes round (its in and out, in ticks; null: none), live or in a
+   * seamless render: a note played in it ends where it goes round (its release rings), so a note
+   * longer than what's left of the pass doesn't sound on under the next pass's copy of itself,
+   * piling up a copy every time round.
+   */
+  loopTicksOf: () => readonly [number, number] | null = () => null
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   /** Drop tracks: their notes play on the beat as written (no swing or shift), as an export reads them (dropMoves.ts) */
@@ -352,7 +359,9 @@ export function createClipSchedule(
       for (const n of sounding) {
         n.cut ??= time;
         holding.set(instrument, time);
-        // Its end: the song's bend there (unless its instrument's next note comes first, see endHolding)
+        // Its end: the song's bend there (unless its instrument's next note comes first, see
+        // endHolding; or another held one sounds on past it: the last to end)
+        if (sounding.some((m) => m.end > n.end)) continue;
         sendBend(n.trackId, instrument, laneBendAt(n.trackId, Math.round(transport.getTicksAtTime(n.end)), n.end), n.end);
       }
     }
@@ -543,7 +552,26 @@ export function createClipSchedule(
     const end = time + length * spb;
     const bends = steps.map((st): [number, number] => [time + st.at * spb, st.cents]);
     for (const [t, cents] of bends) sendBend(trackId, instrument, cents, t);
-    sendBend(trackId, instrument, 0, end);
+    // The latest-begun bent note sounding has the bend (see noteBendAt): one begun before and
+    // still sounding had its bends and its end sent already, so where they fall while this one
+    // sounds, this one's is sent again (sent later for the same time, it wins)
+    const own = (t: number) => {
+      let lo = 0;
+      let hi = bends.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (bends[mid][0] <= t) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo > 0 ? bends[lo - 1][1] : (bends[0]?.[1] ?? 0);
+    };
+    for (const o of bentNotes.get(instrument) ?? []) {
+      if (o.end <= time || o.start > time) continue;
+      for (const [t] of o.steps) if (t > time && t < end) sendBend(trackId, instrument, own(t), t);
+      if (o.end < end) sendBend(trackId, instrument, own(o.end), o.end);
+    }
+    // At its end: back to an earlier one still sounding, else centre
+    sendBend(trackId, instrument, noteBendAt(instrument, end) ?? 0, end);
     // Kept while it sounds, for a hold point to keep its bend (the ones long gone let go of)
     const list = (bentNotes.get(instrument) ?? []).filter((x) => x.end > time - 1);
     list.push({ trackId, instrument, start: time, end, steps: bends });
@@ -618,9 +646,15 @@ export function createClipSchedule(
         const instrument = instrumentFor(trackId);
         if (instrument?.cc) sendCc(trackId, instrument, cc.cc, cc.value, tickTime);
       }
+      // In a loop: a note ends where the loop goes round, at the latest (see loopTicksOf)
+      const loop = loopTicksOf();
+      const left = loop && tick >= loop[0] && tick < loop[1] ? loop[1] - tick : Infinity;
+      const ticksPerBar = transport.PPQ * 4;
+      const inPass = (notes: PlayableNote[]) => (left === Infinity || !notes.some((n) => durationToBars(n.duration) * ticksPerBar > left + 1e-6) ? notes : notes.map((n) => (durationToBars(n.duration) * ticksPerBar > left + 1e-6 ? { ...n, duration: `${left}i` } : n)));
       for (const group of groups) {
-        const { trackId, notes, seeds, swung, pitch, cc } = group;
+        const { trackId, seeds, swung, pitch, cc } = group;
         if (pitch || cc) continue;
+        const notes = inPass(group.notes);
         const time = tickTime + lateOf(group);
         const instrument = instrumentFor(trackId);
         if (!instrument) continue;
@@ -632,7 +666,7 @@ export function createClipSchedule(
 
       if (onActivity) {
         const spb = 240 / transport.bpm.value;
-        for (const group of groups) onActivity(group.trackId, tickTime + lateOf(group), group.notes.reduce((most, n) => Math.max(most, durationToBars(n.duration) * spb), 0));
+        for (const group of groups) onActivity(group.trackId, tickTime + lateOf(group), inPass(group.notes).reduce((most, n) => Math.max(most, durationToBars(n.duration) * spb), 0));
       }
       if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, tickTime + lateOf(group));
       if (!onKick) return;
@@ -722,7 +756,7 @@ let liveLoop: LoopRegion | null = null;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity, () => liveLoop);
+  liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity, () => liveLoop, getSongMeter, () => (liveLoop ? [barToTicks(liveLoop.inBar), barToTicks(liveLoop.outBar)] : null));
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
