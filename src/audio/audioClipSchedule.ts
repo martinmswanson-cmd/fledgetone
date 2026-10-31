@@ -326,7 +326,9 @@ export function createAudioClipSchedule(
   };
   const onStop = (time: number) => {
     running = false;
-    for (const voice of voices) stop(voice, time);
+    // Stop/Pause come at once (transport.ts), at a time already reached: still a declick fade, from now
+    const end = time <= raw.currentTime ? raw.currentTime + DECLICK_SECONDS : time;
+    for (const voice of voices) stop(voice, end);
   };
   transport.on('start', onStart);
   transport.on('loopStart', onStart);
