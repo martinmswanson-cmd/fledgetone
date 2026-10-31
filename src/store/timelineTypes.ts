@@ -1461,9 +1461,15 @@ const TICKS_PER_BAR = 768;
  * Convert a Tone duration to bars (4/4). Handles notation ("8n"), dotted notation ("8n."),
  * triplets ("8t", two thirds of an 8th), ticks ("80i"), whole bars ("1m", "2m": the starters and
  * stingers write long notes this way) and transport time "bars:quarters:sixteenths" (used for
- * lengths drawn in the piano roll).
+ * lengths drawn in the piano roll). No note is longer than the whole timeline (TOTAL_BARS): a file
+ * can say any length, and every note is stepped through and rung out over its length.
  */
 export function durationToBars(duration: string): number {
+  return Math.min(TOTAL_BARS, writtenBars(duration));
+}
+
+/** A length as written, however long (see durationToBars). */
+function writtenBars(duration: string): number {
   if (/^\d+(\.\d+)?m$/.test(duration)) return Math.max(0.0625, parseFloat(duration));
   if (duration.includes(':')) {
     const [b = 0, q = 0, s = 0] = duration.split(':').map(Number);
@@ -1489,7 +1495,8 @@ const NAMED_TICKS: Record<number, string> = { 24: '32n', 32: '16t', 64: '8t', 12
  * 32nd or a triplet by name ("32n", "16t", "8t", "4t"), else a tick count ("80i").
  */
 export function barsToDuration(bars: number): string {
-  const ticks = Math.max(1, Math.round(bars * TICKS_PER_BAR));
+  // (no longer than the whole timeline, as every note is: see durationToBars)
+  const ticks = Math.max(1, Math.min(TOTAL_BARS * TICKS_PER_BAR, Math.round(bars * TICKS_PER_BAR)));
   if (ticks % 48 === 0) {
     const sixteenths = ticks / 48;
     const named = NAMED_SIXTEENTHS[sixteenths];
@@ -1497,6 +1504,19 @@ export function barsToDuration(bars: number): string {
     return `${Math.floor(sixteenths / 16)}:${Math.floor((sixteenths % 16) / 4)}:${sixteenths % 4}`;
   }
   return NAMED_TICKS[ticks] ?? `${ticks}i`;
+}
+
+/** The lengths a note's duration can be written in: notation, "b:q:s", ticks, whole bars. */
+const NOTE_DURATION = /^(\d+(\.\d+)?m|\d+:\d+(\.\d+)?(:\d+(\.\d+)?)?|\d+[nt]\.?|\d+i)$/;
+
+/**
+ * A note's duration from a file, a link or a stinger: as written when the app can read it and
+ * it's no longer than the whole timeline; one longer is the whole timeline (TOTAL_BARS bars), and
+ * one the app can't read plays as a 16th rather than breaking playback.
+ */
+export function readNoteDuration(raw: unknown): string {
+  if (typeof raw !== 'string' || !NOTE_DURATION.test(raw)) return '16n';
+  return writtenBars(raw) > TOTAL_BARS ? barsToDuration(TOTAL_BARS) : raw;
 }
 
 let uidCounter = 0;

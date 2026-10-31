@@ -5,7 +5,7 @@ import { normalizeStepLanes } from './stepLanes';
 import { normalizeNoteExpression } from './noteExpression';
 import { normalizeChance, normalizeCond } from './noteChance';
 import { compSegments, normalizeTakes } from './takes';
-import { REVERB_SEND_MAX, RING_MAX, TOTAL_BARS, isAutomationParam } from './timelineTypes';
+import { REVERB_SEND_MAX, RING_MAX, TOTAL_BARS, isAutomationParam, readNoteDuration } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
@@ -454,8 +454,8 @@ function parseNote(v: unknown): NoteEvent {
     note: v.note,
     // No further from its clip's start than the whole timeline (a note can sit before its trimmed clip's start)
     startOffset: Math.max(-TOTAL_BARS, Math.min(TOTAL_BARS, v.startOffset)),
-    // A length the app can't read plays as a 16th rather than breaking playback
-    duration: /^(\d+(\.\d+)?m|\d+:\d+(\.\d+)?(:\d+(\.\d+)?)?|\d+[nt]\.?|\d+i)$/.test(v.duration) ? v.duration : '16n',
+    // A length the app can't read plays as a 16th rather than breaking playback; none is longer than the whole timeline
+    duration: readNoteDuration(v.duration),
     velocity: isNum(v.velocity) ? Math.max(0, Math.min(1, v.velocity)) : 0.8,
     ...(() => {
       const expr = normalizeNoteExpression(v.expr);
@@ -829,17 +829,23 @@ function keepLeftOutCopy(json: string, unread: NonNullable<ProjectSnapshot['unre
 
 /** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */
 export let autosaveUnreadable = false;
-/** An unreadable autosave that couldn't be copied aside: it's the only copy, so nothing autosaves over it. */
-let unreadableOnlyCopy = false;
+/**
+ * The autosave is the only full copy of what's stored (nothing autosaves over it): 'unreadable', one
+ * that couldn't be read and had no room to be copied aside; 'kept', one that opened without some of
+ * it and had no room for its full copy apart.
+ */
+let onlyCopy: 'unreadable' | 'kept' | null = null;
 /** True while the session the banner offers couldn't be copied aside (no room): autosave mustn't overwrite its only stored copy. */
 let previousOnlyInAutosave = false;
 
 /**
  * Why an autosave failed: the project doesn't fit in browser storage ('too-big'), it fits only
- * without the set-aside last session this page offers ('full': Dismiss makes room), or the
- * browser blocks storage for the site ('blocked').
+ * without the set-aside last session this page offers ('full': Dismiss makes room), the browser
+ * blocks storage for the site ('blocked'), or the stored song is kept as it was because there's no
+ * room to copy it aside: it couldn't be read ('unreadable'), or it opened without some of it
+ * ('kept'). Nothing the user can dismiss makes room for those two.
  */
-export type AutosaveFailure = 'too-big' | 'full' | 'blocked';
+export type AutosaveFailure = 'too-big' | 'full' | 'blocked' | 'unreadable' | 'kept';
 export type AutosaveResult = { ok: true } | { ok: false; reason: AutosaveFailure };
 
 /**
@@ -866,7 +872,7 @@ let offeringPrevious = false;
 export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
   // The session the banner offers is stored only in the autosave: keep it until Restore or Dismiss
   if (offeringPrevious && previousOnlyInAutosave) return { ok: false, reason: 'full' };
-  if (unreadableOnlyCopy) return { ok: false, reason: 'full' };
+  if (onlyCopy) return { ok: false, reason: onlyCopy };
   const json = JSON.stringify(packForStorage({ ...serializeProject(p), savedAt: Date.now(), tab: TAB_ID }));
   const failure = storeAutosave(json);
   if (failure !== 'too-big') return failure ? { ok: false, reason: failure } : { ok: true };
@@ -985,13 +991,13 @@ function setAsidePreviousSession(): SavedSession | null {
           localStorage.setItem(UNREADABLE_KEY, json);
         } catch {
           // No room for a copy: then the autosave itself is kept, and this session isn't autosaved
-          unreadableOnlyCopy = true;
+          onlyCopy = 'unreadable';
         }
         throw new Error('unreadable autosave');
       }
       // Opened without some of it (past the most a song opens with, or parts this version can't
       // read): its full copy is kept apart, or else the autosave is, as for an unreadable one
-      if (project.unread && !keepLeftOutCopy(json, project.unread)) unreadableOnlyCopy = true;
+      if (project.unread && !keepLeftOutCopy(json, project.unread)) onlyCopy = 'kept';
       if (hasWork(project)) {
         const savedAt = timeOf(raw, 'savedAt');
         // An autosave from an older version doesn't say when it was saved, only that it was before

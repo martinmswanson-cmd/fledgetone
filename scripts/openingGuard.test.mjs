@@ -159,9 +159,39 @@ test('an autosave that opens without some of it keeps its full copy apart, and n
     p = await startup();
     const again = p.preservePreviousSession();
     assert.equal(p.sessionLeftOut.keptApart, false);
-    assert.deepEqual(p.writeAutosave(again.project), { ok: false, reason: 'full' });
+    // (its own reason: nothing can be dismissed to make room, so the words don't point to Dismiss)
+    assert.deepEqual(p.writeAutosave(again.project), { ok: false, reason: 'kept' });
     assert.equal(stored.get(AUTOSAVE), json);
+    const { notAutosavedWords } = await import('../src/store/autosaveWords.ts');
+    for (const where of ['studio', 'pocket']) {
+      const words = notAutosavedWords('kept', where);
+      assert.match(words, /no room to keep a full copy of what this song opened without, so the stored copy is kept as it was/);
+      assert.doesNotMatch(words, /Dismiss/);
+    }
   } finally {
     globalThis.localStorage.setItem = setItem;
   }
+});
+
+test("an unreadable autosave with no room to copy it aside is kept, and the words don't point to Dismiss", async () => {
+  stored.clear();
+  stored.set(AUTOSAVE, '{"format":"not a song"');
+  const setItem = globalThis.localStorage.setItem;
+  globalThis.localStorage.setItem = (k, v) => {
+    if (k !== AUTOSAVE) throw new DOMException('full', 'QuotaExceededError');
+    setItem(k, v);
+  };
+  try {
+    const p = await startup();
+    assert.equal(p.preservePreviousSession(), null);
+    assert.deepEqual(p.writeAutosave(songA), { ok: false, reason: 'unreadable' });
+    assert.equal(stored.get(AUTOSAVE), '{"format":"not a song"');
+  } finally {
+    globalThis.localStorage.setItem = setItem;
+  }
+  const { notAutosavedWords } = await import('../src/store/autosaveWords.ts');
+  assert.doesNotMatch(notAutosavedWords('unreadable', 'studio'), /Dismiss/);
+  // Only 'full' (given only while the studio's banner offers the last session) points to Dismiss, and never in Pocket
+  assert.match(notAutosavedWords('full', 'studio'), /Dismiss your last session/);
+  for (const r of ['full', 'too-big', 'blocked', 'kept', 'unreadable', undefined]) assert.doesNotMatch(notAutosavedWords(r, 'pocket'), /Dismiss/);
 });

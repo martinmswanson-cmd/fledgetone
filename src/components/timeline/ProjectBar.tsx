@@ -19,6 +19,7 @@ import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
 import { STARTER_GROUPS, STARTERS } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
+import { notAutosavedWords } from '../../store/autosaveWords';
 
 const barButton =
   'h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-xs font-mono text-forge-muted hover:text-forge-text hover:border-forge-borderLight transition-colors';
@@ -195,11 +196,7 @@ const AutosaveStatusChip: React.FC = () => {
   return (
     <span role="status" className="flex items-center gap-1.5 text-[11px] text-red-400">
       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-      {status.reason === 'full'
-        ? 'Not autosaved: browser storage is full. Use Save, or Dismiss your last session below to make room.'
-        : status.reason === 'too-big'
-          ? 'Not autosaved: this project is too big for browser storage. Use Save.'
-          : 'Not autosaved: this browser is blocking storage for this site. Use Save.'}
+      {notAutosavedWords(status.reason, 'studio')}
     </span>
   );
 };

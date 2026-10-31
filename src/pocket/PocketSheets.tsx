@@ -11,6 +11,7 @@ import { drummerGroove } from '../store/drumGroove';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
+import { notAutosavedWords } from '../store/autosaveWords';
 import { sayWhatWasLeftOut } from '../store/reopenLastSong';
 import { clearPreviousSession } from '../store/project';
 import { STARTER_GROUPS, STARTERS } from '../store/starters';
@@ -138,9 +139,17 @@ const SongStorage: React.FC = () => {
   const [asked, setAsked] = useState(false);
   useEffect(() => void checkPersistence(), []);
   const where = isNativeApp() ? 'on this phone' : 'in this browser';
+  // (not saving itself just now: why, in the studio's words)
+  const status = useTimelineStore((s) => s.autosaveStatus);
   return (
     <div className="text-[11px] text-forge-muted space-y-1">
-      <p>The song saves itself {where} as you work. Save the file to keep a copy anywhere.</p>
+      {status?.ok === false ? (
+        <p role="status" className="text-red-400">
+          {notAutosavedWords(status.reason, 'pocket')}
+        </p>
+      ) : (
+        <p>The song saves itself {where} as you work. Save the file to keep a copy anywhere.</p>
+      )}
       {kept === true && <p className="text-emerald-300">Your songs and sounds are kept {where}, even when space runs low.</p>}
       {kept === false && (
         <p className="text-amber-200">

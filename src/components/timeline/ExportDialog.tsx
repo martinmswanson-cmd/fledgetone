@@ -51,6 +51,7 @@ import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
 import { useSoundLibrary } from '../../audio/soundLibrary';
 import { maxOf } from '../../support/minMax';
+import { exportFailureWords } from '../../audio/exportFailure';
 
 /** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
 type Range = 'song' | 'loop' | 'game';
@@ -641,7 +642,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       onClose();
     } catch (err) {
       if (controller.signal.aborted) setStatus({ kind: 'idle', note: 'Export cancelled.' });
-      else setStatus({ kind: 'idle', error: err instanceof Error ? err.message : String(err) });
+      else setStatus({ kind: 'idle', error: exportFailureWords(err) });
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
