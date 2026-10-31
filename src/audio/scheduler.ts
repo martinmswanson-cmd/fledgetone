@@ -11,7 +11,7 @@ import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, se
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, onClipBusRebuilt, onTrackHeardAgain, onVoicesLetGo, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
+import { getLiveClipBus, onClipBusRebuilt, onLiveNote, onTrackHeardAgain, onVoicesLetGo, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, songNotes, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -149,6 +149,8 @@ export interface ClipSchedule {
   holdTrack: (trackId: string, time: number) => void;
   /** Every voice has been let go (Stop, Pause, Free memory): no note played so far sounds on, nor keeps its bend at a hold point. */
   letGo: () => void;
+  /** `instrument` plays a note at `time` from outside the song (played live): a song note ringing on with its bend lets go of it (see BentNote.until). */
+  letGoTail: (instrument: TrackInstrument, time: number) => void;
   dispose: () => void;
 }
 
@@ -162,7 +164,15 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
   const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
   const groove = clip.groove && clip.groove.swing > 0 ? clip.groove : undefined;
   const clipStart = barToTicks(clip.startBar);
-  const swung = clip.groove && !groove ? ticks.map(() => false) : swungNotes(ticks, clipStart, liveTransport.PPQ, groove?.grid ?? 16);
+  // Which notes swing is decided by where they're written: a note begun again part way through,
+  // by a render (auditionMath.ts restartHeldNotes), counts where it really begins, so the clip
+  // swings as in the whole song, and isn't moved itself (it was struck before the render)
+  const placed = notes.some((n) => n.heldFrom !== undefined) ? notes.map((n, i) => (n.heldFrom !== undefined ? barToTicks(n.heldFrom) : ticks[i])) : ticks;
+  const swungAt = (at: readonly number[], grid: 8 | 16, which?: readonly number[]) => {
+    const flags = swungNotes(at, clipStart, liveTransport.PPQ, grid);
+    return placed === ticks ? flags : flags.map((f, k) => f && notes[which ? which[k] : k].heldFrom === undefined);
+  };
+  const swung = clip.groove && !groove ? ticks.map(() => false) : swungAt(placed, groove?.grid ?? 16);
   // Rows with a swing of their own swing by their own notes (a roll on the hats keeps only the hats' 8th straight)
   const rows = clip.groove?.rows;
   const rowSwing = new Map<string, { swing: number; grid: 8 | 16 }>();
@@ -172,7 +182,7 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
       const own = { swing: feel.swing, grid: feel.grid ?? clip.groove?.grid ?? 16 };
       rowSwing.set(row, own);
       const mine = notes.flatMap((n, i) => (n.note === row ? [i] : []));
-      const flags = own.swing > 0 ? swungNotes(mine.map((i) => ticks[i]), clipStart, liveTransport.PPQ, own.grid) : mine.map(() => false);
+      const flags = own.swing > 0 ? swungAt(mine.map((i) => placed[i]), own.grid, mine) : mine.map(() => false);
       mine.forEach((i, k) => (swung[i] = flags[k]));
     }
   }
@@ -319,6 +329,8 @@ export function createClipSchedule(
   /** The song's tempo map (live: the studio's; a render passes its song's): a note cut where the loop goes round is cut by it */
   tempoOf: () => Tempo = getLiveTempo
 ): ClipSchedule {
+  /** The live mix's: notes played meanwhile from outside the song can let go of a song note's bend (see letGoTail) */
+  const live = transport === liveTransport;
   let byTick = new Map<number, NoteGroup[]>();
   /** Drop tracks: their notes play on the beat as written (no swing or shift), as an export reads them (dropMoves.ts) */
   let straight = new Set<string>();
@@ -507,6 +519,41 @@ export function createClipSchedule(
     sendBend(trackId, instrument, laneBendAt(trackId, tick, at), at, true);
   };
   /**
+   * `b`, held, no longer rings on with its bend after its end (another note begun under it sounds
+   * on past it): the song's bend at its end, and where `b` sent its own again for after it (an
+   * earlier one's song's bend after its release, see playExpressive) up to `was`, its old end of
+   * ringing on: an earlier one still held has it there, else the clips'.
+   */
+  const letGoAtEnd = (trackId: string, instrument: TrackInstrument, b: BentNote, was: number) => {
+    const songAt = (t: number) => {
+      const held = heldBendAt(instrument, t, b);
+      return held !== undefined && Math.abs(held) >= REST_CENTS ? held : laneBendAt(trackId, Math.round(transport.getTicksAtTime(t)), t);
+    };
+    sendBend(trackId, instrument, songAt(b.end), b.end);
+    for (const o of bentNotes.get(instrument) ?? []) if (o !== b && o.start <= b.start && o.backAt !== undefined && o.backAt > b.end && o.backAt < was) sendBend(trackId, instrument, songAt(o.backAt), o.backAt);
+  };
+  /**
+   * `instrument` plays a note at `time` from outside the song (a key, a pad, note repeat, a
+   * preview): a song note ringing on with its bend lets go of it just before, the song's bend
+   * there taking over, as for the song's own next note (see backBefore). Not with `cut`: the song
+   * may have sent bends of its own for after it already (the look-ahead); the ringing ones' own
+   * bends sent for after it are sent again as the song's instead. Live only.
+   */
+  const letGoTail = (instrument: TrackInstrument, time: number) => {
+    if (!instrument.bend || transport.state !== 'started') return;
+    const list = bentNotes.get(instrument) ?? [];
+    const ringing = list.filter((n) => n.start < time && n.end <= time + 1e-9 && n.until > Math.max(n.end, time - BACK_BEFORE_NOTE));
+    // (One held has the bend: the key is bent with it, as the instrument bends as a whole)
+    if (!ringing.length || list.some((n) => n.start < time && n.end > time + 1e-9)) return;
+    const trackId = ringing[0].trackId;
+    const at = Math.max(Math.max(...ringing.map((n) => n.end)), time - BACK_BEFORE_NOTE);
+    const was = Math.max(...ringing.map((n) => n.until));
+    for (const n of ringing) n.until = Math.min(n.until, Math.max(n.end, at));
+    const laneAt = (t: number) => laneBendAt(trackId, Math.round(transport.getTicksAtTime(t)), t);
+    sendBend(trackId, instrument, laneAt(at), at);
+    for (const o of list) if (o.backAt !== undefined && o.backAt > at && o.backAt < was) sendBend(trackId, instrument, laneAt(o.backAt), o.backAt);
+  };
+  /**
    * The bend a track's clips have at `tick` in a playback of the whole song (cents, with the
    * vibrato's swing at `time`): the latest bend or vibrato event of its clips at or before it
    * (a clip's end puts it back to rest); 0 where none has bent it.
@@ -637,7 +684,7 @@ export function createClipSchedule(
     const spb = 240 / transport.bpm.value;
     // Played live after the page was held up, it starts late, as soon as it can: its bend from there,
     // so it starts at the start of its slide (an export plays every note at its time)
-    const time = transport === liveTransport ? Math.max(scheduled, liveContext.rawContext.currentTime) : scheduled;
+    const time = live ? Math.max(scheduled, liveContext.rawContext.currentTime) : scheduled;
     const length = durationToBars(note.duration);
     // Every 4 ms where it moves (no coarser than a 64th), so a slide or a dive glides rather than steps
     const steps = noteSteps(note.expr!, length, Math.min(1 / 64, NOTE_STEP_SECONDS / spb));
@@ -696,7 +743,8 @@ export function createClipSchedule(
       sendBend(trackId, instrument, laneBendAt(trackId, Math.round(transport.getTicksAtTime(until)), until), until);
     }
     // Kept while it sounds, for a hold point to keep its bend (the ones long gone let go of)
-    const list = (bentNotes.get(instrument) ?? []).filter((x) => x.until > time - 1);
+    // (and one whose song's bend after its release is still to come: see playNotes)
+    const list = (bentNotes.get(instrument) ?? []).filter((x) => x.until > time - 1 || (x.backAt ?? -Infinity) > time);
     list.push(note2);
     bentNotes.set(instrument, list);
   };
@@ -709,12 +757,13 @@ export function createClipSchedule(
         const end = time + durationToBars(n.duration) * spb;
         to = Math.max(to, end);
         // Begun while a bent note is held and sounding on past it: that note's bend ends with it
+        // (The song's bend it sent for after its release stays: a bent note begun later and still
+        // sounding there sends its own again there, see playExpressive)
         for (const b of bentNotes.get(instrument) ?? []) {
           if (!(b.start < time && time < b.end && end > b.end + 1e-9 && b.until > b.end)) continue;
+          const was = b.until;
           b.until = b.end;
-          b.backAt = undefined;
-          const held = heldBendAt(instrument, b.end, b);
-          sendBend(trackId, instrument, held !== undefined && Math.abs(held) >= REST_CENTS ? held : laneBendAt(trackId, Math.round(transport.getTicksAtTime(b.end)), b.end), b.end);
+          letGoAtEnd(trackId, instrument, b, was);
         }
       }
       soundsTo.set(instrument, to);
@@ -778,10 +827,10 @@ export function createClipSchedule(
             const reset = holding.size ? endHolding(instrument, tickTime) : undefined;
             // A note's own bend off rest wins over the clip's while it's held (the clip's, sent again
             // every 16th, pulled a slide back each time); ringing on after its end, until the clip
-            // bends off rest (see BentNote.until)
+            // bends off rest, or at once where its own bend is back at rest (see BentNote.until)
             const own = reset === undefined ? noteInForce(instrument, tickTime) : undefined;
             const ownOff = own !== undefined && Math.abs(noteBendAt(instrument, tickTime) ?? 0) >= REST_CENTS;
-            if (!own || (tickTime < own.end ? !ownOff : pitch.cents !== 0 || !!pitch.vib)) {
+            if (!own || (tickTime < own.end ? !ownOff : !ownOff || pitch.cents !== 0 || !!pitch.vib)) {
               if (own) for (const n of bentNotes.get(instrument) ?? []) if (n.end <= tickTime && n.until > tickTime) n.until = Math.max(n.end, tickTime - BACK_BEFORE_NOTE);
               sendBend(trackId, instrument, pitchCents(pitch, tickTime), reset ?? tickTime, reset !== undefined);
             }
@@ -812,7 +861,9 @@ export function createClipSchedule(
         if (reset !== undefined) sendBend(trackId, instrument, laneBendAt(trackId, tick, time), reset, true);
         // One ringing on with its bend lets go of it (see backBefore)
         else if (instrument.bend) backBefore(trackId, instrument, tick, time);
-        safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
+        // (The song's own notes, live: not ones played from outside it, see onLiveNote)
+        if (live) songNotes(() => safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time)));
+        else safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
       }
 
       if (onActivity) {
@@ -888,6 +939,7 @@ export function createClipSchedule(
       holdLanes(Math.round(ticks), time, trackId);
     },
     letGo: forgetNotes,
+    letGoTail,
     dispose: () => {
       transport.off('loop', onLoop);
       transport.off('start', onStart);
@@ -922,6 +974,8 @@ onClipBusRebuilt((trackId) => liveAudioClips?.restartTrack(trackId));
 onTrackHeardAgain((trackId) => liveSchedule?.holdTrack(trackId, liveContext.now()));
 // Stop, Pause or Free memory let every voice go: no note's own bend is kept at a hold point after
 onVoicesLetGo(() => liveSchedule?.letGo());
+// A key played live on an instrument whose song note rings on with its bend
+onLiveNote((inst, time) => liveSchedule?.letGoTail(inst, time));
 
 let tempoEvents: number[] = [];
 

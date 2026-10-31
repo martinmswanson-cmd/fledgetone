@@ -207,7 +207,9 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   so it doesn't pile up under its next copy; a seamless warm-up (`loopTailSeconds`) needs only
   its release and the tails. The clip restartHeldNotes makes is `<id>~held` (`HELD_CLIP`): it keeps its clip's
   groove, and the scheduler seeds its notes and counts its passes by its own clip
-  (`ownClipId` in noteChance.ts), so chance, Human drift and feel accents match. Use clipSoundEnd, not `startBar + lengthBars`, for
+  (`ownClipId` in noteChance.ts), so chance, Human drift and feel accents match; a clip whose
+  notes it rewrites keeps its place in its run of copies (`keepContentKey`: `clipRuns` keys runs
+  by notes), and swing is decided by where begun-again notes really begin (`heldFrom`). Use clipSoundEnd, not `startBar + lengthBars`, for
   where a clip stops sounding. A change of a proxy track (duck.ts) is heard wherever every other
   track dips (look-ahead, bridge, release, their tail: songDiff `proxyDucked`/`dipRange`).
 - **Instruments that remember the notes before** (`src/audio/noteMemory.ts carriesState`, read by
@@ -598,13 +600,18 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   A song note's own bend rings on with its release (`BentNote.until`: end + `bendTailSeconds`,
   shared with liveInput's MPE rule): nothing is sent at its end (unless an earlier bent note is
   still held: that one's), the song's bend is sent ahead at end + tail (`backAt`), and the
-  instrument's next note sends it 1 ms before itself with `cut` (`backBefore`). It rings on only
+  instrument's next note sends it 1 ms before itself with `cut` (`backBefore`); so does a note
+  played live on it (a key, a pad, note repeat, a preview: `onLiveNote` in liveTracks.ts, the
+  song's own notes played inside `songNotes`, `letGoTail`, without `cut` because the song's
+  look-ahead may already have sent bends for after it). A note cut short this way keeps `backAt`
+  (and stays listed while it's to come), so a bent note begun before it sends its own bend there
+  again (`letGoAtEnd`). It rings on only
   where no other note on the instrument sounds on past its end (`soundsTo`, and a note begun under
   it that does sends the song's bend at its end again): a held chord or a mono synth's legato note
   would be bent with it. `noteInForce` is
   the latest-begun held one, else the last to end of those ringing. A clip's bend/vibrato event is
-  skipped while a held note's own bend is off rest (`REST_CENTS`), and while one rings on unless
-  the clip's is off rest (it then takes over); `songBendAt` (hold points, jumps) is the note's
+  skipped while a held note's own bend is off rest (`REST_CENTS`), and while one rings on with its
+  bend off rest unless the clip's is off rest (it then takes over); `songBendAt` (hold points, jumps) is the note's
   where off rest, else the clip's. A live note started late after a stall bases its curve on
   when it really starts (`playExpressive`, live transport only). The loop cut (`left` in `fire`)
   is in seconds by the tempo map (`transport.bpm.getDurationOfTicks`), as ticks at the start

@@ -26,6 +26,13 @@
 //   jumped back to the note's full level for a moment).
 // - A slide played live while the page is held up just as the note is due: it starts at the
 //   start of its slide when the note starts late (it came in part way up).
+// - A long bent note begun while a shorter bent note is held, or after a plain note let go of a
+//   bent one's tail: it keeps its own bend past the shorter one's end and tail (it jumped back to
+//   its unbent pitch where that tail would have ended).
+// - A note scooped up to its pitch (its own bend back at rest) under a clip's bend that ends with
+//   the clip: its tail after the clip's end sounds as a plain note's (the lane's bend held on).
+// - A key played live (the on-screen piano) while a song note's bent tail rings: it plays in tune
+//   (it took the song note's bend).
 //
 //   npx vite --port 5200                 (in another terminal)
 //   node scripts/audio-check/bends.cjs
@@ -61,6 +68,14 @@ cases.push({ what: 'Grand piano, an earlier note under a clip bend', song: song(
 // A C4 bent up a tone for half a bar, an E4 begun under it and held on past its end: the E4 back in tune once the C4 has ended (the C4's bend rings on with its release only where nothing else sounds on)
 for (const key of ['keys', 'subBass', 'synthDesigner'])
   cases.push({ what: `${key}, a note begun under a bent one and held on past it`, song: song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, notes: [n('n1', 'C4', 0, '2n', 0.6, [{ at: 0, value: 2 }]), n('n2', 'E4', 0.25, '1m', 0.9)] }]), at: [1.4, 2.2], want: hz('E4'), band: [310, 380] });
+// A G4 bent down a tone for two bars, begun under a C4 bent up for a beat (recorded instruments, their tails short): the G4 keeps its
+// own bend after the C4's end and tail (the song's bend sent for after the C4's tail pulled it back to G4)
+for (const key of ['realGrandPiano', 'realViolin', 'realCello'])
+  cases.push({ what: `${key}, a long bent note begun under a shorter bent one, after the shorter one's tail`, song: song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 3, notes: [n('n1', 'C4', 0, '4n', 0.3, [{ at: 0, value: 2 }]), n('n2', 'G4', 0.125, '2m', 0.9, [{ at: 0, value: -2 }])] }]), toBar: 4, at: [2.5, 3.5], want: bent('G4', -2), band: [320, 420] });
+// The same with a quiet plain A5 between (begun under the C4, held on past it) and the G4 begun after the C4's end, while its tail
+// would still ring (on keys a synth's long tail, the G4 begun 2 s after the C4's end): the G4 keeps its bend there too
+for (const [key, at, from, len, toBar] of [['realGrandPiano', [2.5, 3.5], 0.5, '2m', 4], ['keys', [9, 10], 1.25, '4m', 7]])
+  cases.push({ what: `${key}, a long bent note begun after a plain one let go of a bent one's tail`, song: song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: toBar - 1, notes: [n('n1', 'C4', 0, '4n', 0.3, [{ at: 0, value: 2 }]), n('n2', 'A5', 0.125, '2n', 0.15), n('n3', 'G4', from, len, 0.9, [{ at: 0, value: -2 }])] }]), toBar, at, want: bent('G4', -2), band: [320, 420] });
 
 // In the page: render `text` (bars 1..toBar, `ending`) as Export does and return the strongest frequency in `band` over `at`, or the RMS (dB);
 // or, with `track`, the strongest frequency in its band every 5 ms over [t0, t1] (15 ms windows); or, with `levels`, the level (dB) of
@@ -242,6 +257,68 @@ const STALL = async ({ text, stall, stallAt, seconds }) => {
   return out;
 };
 
+// Play `text` live from bar 1, press the on-screen key `midi` `keyAt` seconds in for `keyFor` seconds, and return the strongest frequency in
+// `band` and the level every 0.1 s (80 ms windows) from the first sound, for `seconds`
+const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
+  const store = await import('/src/store/timelineStore.ts');
+  const P = await import('/src/store/project.ts');
+  const LI = await import('/src/audio/liveInput.ts');
+  const engine = await (await fetch('/src/audio/engine.ts')).text();
+  const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const s = store.useTimelineStore;
+  s.getState().loadProject(P.parseProject(JSON.parse(text)));
+  s.setState({ selectedTrackId: 't1' });
+  await sleep(3000);
+  await T.start();
+  const rec = new T.Recorder();
+  T.getDestination().connect(rec);
+  s.getState().seek(1);
+  await sleep(300);
+  rec.start();
+  await s.getState().togglePlay();
+  await sleep(keyAt * 1000);
+  LI.pressScreenKey(midi, true);
+  await sleep(keyFor * 1000);
+  LI.pressScreenKey(midi, false);
+  await sleep((seconds - keyAt - keyFor) * 1000);
+  if (s.getState().isPlaying) s.getState().stop();
+  await sleep(300);
+  const b = await new AudioContext().decodeAudioData(await (await rec.stop()).arrayBuffer());
+  const x = b.getChannelData(0);
+  const sr = b.sampleRate;
+  const onset = Math.max(0, x.findIndex((v) => Math.abs(v) > 0.003));
+  const goertzel = (a, f) => {
+    const k = (2 * Math.PI * f) / sr;
+    const c = 2 * Math.cos(k);
+    let s1 = 0;
+    let s2 = 0;
+    for (let i = 0; i < a.length; i++) {
+      const s0 = a[i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (a.length - 1))) + c * s1 - s2;
+      s2 = s1;
+      s1 = s0;
+    }
+    return s1 * s1 + s2 * s2 - c * s1 * s2;
+  };
+  const out = [];
+  for (let t = 0.1; t < seconds - 0.2; t += 0.1) {
+    const a = x.subarray(onset + Math.round(t * sr), onset + Math.round((t + 0.08) * sr));
+    let best = 0;
+    let bf = 0;
+    let e = 0;
+    for (const v of a) e += v * v;
+    for (let f = band[0]; f <= band[1]; f += 0.5) {
+      const p = goertzel(a, f);
+      if (p > best) {
+        best = p;
+        bf = f;
+      }
+    }
+    out.push([t, bf, 10 * Math.log10(e / a.length + 1e-20)]);
+  }
+  return out;
+};
+
 (async () => {
   const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
   let failed = 0;
@@ -314,6 +391,16 @@ const STALL = async ({ text, stall, stallAt, seconds }) => {
     const d = await lv('D4');
     report(b[0] - b[1] < d[0] - d[1] + 10, `${key}, a C4 under a clip bend up a tone, after its end: C4 ${(b[0] - b[1]).toFixed(1)} dB against D4 (a played D4: ${(d[0] - d[1]).toFixed(1)} dB)`);
   }
+  // A C4 scooped up to its pitch (its own bend back at rest) under a clip's bend up a tone that ends with the clip, before the note: its
+  // tail after the clip's end as a plain note's (the lane's last value held through it)
+  for (const key of ['wavetable', 'synthDesigner', 'keys']) {
+    const lane = { bend: [{ at: 0, value: 2 }, { at: 0.5, value: 2 }] };
+    const tr = { toBar: 2, track: { t0: 1.03, t1: 1.12, band: [250, 300] } };
+    const med = (f) => f.slice().sort((p, q) => p - q)[f.length >> 1];
+    const a = med(await render(song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 0.5, expression: lane, notes: [n('a', 'C4', 0, '2n', 0.9, [{ at: 0, value: -1 }, { at: 0.05, value: 0 }])] }]), tr));
+    const b = med(await render(song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 0.5, expression: lane, notes: [n('a', 'C4', 0, '2n', 0.9)] }]), tr));
+    report(Math.abs(a / b - 1) < 0.01, `${key}, a scooped note's tail after its clip's bend ends: ${a.toFixed(1)} Hz, a plain note's ${b.toFixed(1)} Hz`);
+  }
   // Seamless loop of bars 1-3, 120 BPM then 60 from bar 2 (6 s): an A3 from bar 1.5 held 100 bars sounds to the loop's end
   {
     const s = { ...song('synthDesigner', [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, notes: [n('a', 'A3', 0.5, '100m', 0.6)] }], { inBar: 1, outBar: 3, enabled: true }), tempoPoints: [{ id: 'tp', bar: 2, bpm: 60, ramp: false }] };
@@ -342,6 +429,17 @@ const STALL = async ({ text, stall, stallAt, seconds }) => {
       if (Math.abs(c) > Math.abs(worst)) worst = c;
     }
     report(Math.abs(worst) < 40, `${key === 'plugin' ? 'Fledge Synth' : key}, a slide played live with the page held up as it starts: off the slide by up to ${worst.toFixed(0)} cents`);
+  }
+  // A C4 bent up a tone for half a bar (1 s), nothing after it; an E4 played live on the on-screen piano 1.5 s after Play, in
+  // the C4's bent tail: the E4 in tune (the song's bend kept for the C4's tail bent it to F#4)
+  for (const key of ['keys', 'synthDesigner', 'realGrandPiano']) {
+    const pg = await page();
+    const s = song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 4, notes: [n('a', 'C4', 0, '2n', 0.9, [{ at: 0, value: 2 }])] }]);
+    const got = await pg.evaluate(KEY, { text: JSON.stringify(s), keyAt: 1.5, keyFor: 0.8, midi: 64, seconds: 3.2, band: [240, 400] });
+    await pg.close();
+    const f = got.filter(([t, , db]) => t > 1.45 && t < 2.0 && db > -65).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
+    const med = f.length ? f[f.length >> 1] : 0;
+    report(Math.abs(med / hz('E4') - 1) < 0.01, `${key}, a key played live in a song note's bent tail: ${med.toFixed(1)} Hz, want ${hz('E4').toFixed(1)} Hz`);
   }
   await browser.close();
   process.exit(failed ? 1 : 0);

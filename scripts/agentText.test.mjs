@@ -328,3 +328,17 @@ test('cleanForAgent leaves nothing uncleaned: deep nesting is cut, odd objects a
   }
   assert.deepEqual(cleanForAgent({ a: new Odd(), when: new Date(0), f: () => 1 }), { a: null, when: '1970-01-01T00:00:00.000Z', f: null });
 });
+
+test('setting words: names every object has ("toString", "constructor") are no setting, insert or choice', async () => {
+  const { insertLabel, masterPartLabel, settingWord, valueWord } = await import('../src/agent/settingWords.ts');
+  for (const key of ['toString', 'constructor', 'hasOwnProperty', 'valueOf', '__proto__']) {
+    for (const word of [settingWord(key), insertLabel(key), masterPartLabel(key), valueWord(key, 'name'), valueWord('type', key)]) assert.ok(word === null || typeof word === 'string', `${key}: ${typeof word}`);
+    assert.notEqual(insertLabel(key), 'Object');
+  }
+  // (the table's own entries still read)
+  assert.equal(valueWord('type', 'lowpass'), 'low-pass');
+  assert.equal(valueWord('constructor', 'name'), 'name');
+  assert.equal(valueWord('type', 'toString'), 'toString');
+  assert.equal(settingWord('toString'), 'to string');
+  assert.equal(insertLabel('compressor'), 'Compressor');
+});
