@@ -1439,7 +1439,7 @@ async function renderGraphHeld(
     const pumpOnTrack = sourceIds.size ? (trackId: string, time: number) => sourceIds.has(trackId) && strips.forEach((s) => s.pump(time, 'track', trackId)) : undefined;
     const meter = opts.meter ?? getSongMeter();
     const loopTicks = transport.loop ? ([barToTicks(startBar), barToTicks(endBar)] as const) : null;
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack, undefined, undefined, () => meter, () => loopTicks);
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack, undefined, undefined, () => meter, () => loopTicks, () => tempo);
     const followsKick = strips.some((s) => pumpFollowsDrums(s.pumpTrigger()));
     const extra = [...(followsKick ? kickTracks : []), ...opts.tracks.filter((t) => sourceIds.has(t.id))].filter((t, i, all) => !instruments.has(t.id) && all.indexOf(t) === i);
     schedule.update([...tracks, ...extra], clips);

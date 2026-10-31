@@ -207,7 +207,7 @@ When a change touches sound, also run the sound checks (they need the dev server
 node scripts/audio-check/repeat.cjs              # exports repeat exactly, sample for sample
 node scripts/audio-check/starters-loudness.cjs   # every starter's loudness (IDS=<id> for some)
 node scripts/audio-check/live-controllers.cjs    # live: a plugin's held controllers after Stop, a loop, an unmute
-node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost
+node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost, releases, Stop, stalls
 ```
 
 Two generated files are checked by the tests. Regenerate them when you change what they're built

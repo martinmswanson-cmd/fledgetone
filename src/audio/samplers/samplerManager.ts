@@ -2108,6 +2108,8 @@ function samplerVoice(
    * (tremolo picking and chugs would otherwise damp every string between picks).
    */
   const comingReleases: Array<{ note: string; at: number; src: AudioBufferSourceNode }> = [];
+  /** Release sounds still sounding (see releaseSound): they follow the bend as the notes do. */
+  const releaseSounds = new Set<{ src: AudioBufferSourceNode; rate: number }>();
   /**
    * The sound of `s`'s key being let go at `at` (a harpsichord's jack, a piano's damper), if the
    * instrument has them and the note is still ringing: as loud against the note as they were
@@ -2127,16 +2129,23 @@ function samplerVoice(
     // (its copy at the note's pitch where there's one: see pitched)
     const sound = pitched(found.buffer, found.interval);
     src.buffer = sound.buffer;
-    src.playbackRate.value = sound.rate;
+    const begin = Math.max(at, raw.currentTime);
+    // At the bend in force, following the bends to come while it sounds (as the note did)
+    src.playbackRate.value = sound.rate * ratioAt(begin);
+    const ringing = { src, rate: sound.rate };
+    // (Well past its end at the lowest bend: it's let go when it ends)
+    for (const [t, cents] of bends.after(begin, begin + (sound.buffer.duration / sound.rate) * 4)) src.playbackRate.setTargetAtTime(sound.rate * 2 ** (cents / 1200), t, 0.005);
+    releaseSounds.add(ringing);
     const g = raw.createGain();
     g.gain.value = Math.min(4, level);
     src.connect(g).connect(into);
-    src.start(Math.max(at, raw.currentTime));
+    src.start(begin);
     if (strummed) {
       for (let i = comingReleases.length - 1; i >= 0; i--) if (comingReleases[i].at < at - 1) comingReleases.splice(i, 1);
       comingReleases.push({ note: s.note, at: Math.max(at, raw.currentTime), src });
     }
     src.onended = () => {
+      releaseSounds.delete(ringing);
       src.disconnect();
       g.disconnect();
     };
@@ -2239,9 +2248,12 @@ function samplerVoice(
       // (By the clock, not the bend's time: one sent ahead, a long note's vibrato, mustn't drop the
       // notes that end before it from the bends sent for nearer times after it)
       prune(raw.currentTime);
-      if (cut) for (const s of sounding) for (const src of sourcesOf(s)) src.playbackRate.cancelScheduledValues(time);
-      else if (Math.abs(next - ratioAt(time)) < 1e-6) return;
+      if (cut) {
+        for (const s of sounding) for (const src of sourcesOf(s)) src.playbackRate.cancelScheduledValues(time);
+        for (const r of releaseSounds) r.src.playbackRate.cancelScheduledValues(time);
+      } else if (Math.abs(next - ratioAt(time)) < 1e-6) return;
       bends.set(cents, time, cut);
+      for (const r of releaseSounds) r.src.playbackRate.setTargetAtTime(r.rate * next, time, 0.005);
       // (Each note it reaches: one followed only to its end gets it once it's let go, see followOn)
       for (const s of sounding) if (s.until > time && time <= (s.followedTo ?? Infinity)) bendSound(s, next, time);
     },
@@ -2271,7 +2283,9 @@ function samplerVoice(
       // (Stopped: the wheel's dynamics wait for the next clip or wheel to set them)
       dyn = null;
       const now = raw.currentTime;
-      for (const s of sounding) if (s.until > now) releaseAt(s, now, false);
+      // (One already let go, or fading under a newer note, falls on as it was: released again it
+      // would start its release from the level it was held at, a jump back up)
+      for (const s of sounding) if (s.until > now && s.releasedAt > now && !s.stolen) releaseAt(s, now, false);
     },
     ready,
     prepare: async (plan) => {

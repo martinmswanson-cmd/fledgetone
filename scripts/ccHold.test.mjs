@@ -103,12 +103,14 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   assert.match(reset, /sendMidi\(inst, \[0xb0, 121, 0\], time\);/);
   assert.match(reset, /return !!plugin && resetsFresh\(plugin\.url\);/);
   // The reset centres the bend too: the player's wheel and the knobs played live go again right
-  // after it, and the scheduler then sends the song's own bend there (a bent note still sounding
-  // keeps its bend; else the clip's bend lane there, else centre), never a bend left from before
+  // after it, and the scheduler then sends the song's own bend there (a bent note still sounding,
+  // or ringing on after its end, keeps its bend off rest; else the clip's bend lane there, else
+  // centre), never a bend left from before
   assert.ok(reset.indexOf('if (liveBend !== undefined) sendBend(liveBend, time)') > reset.indexOf('[0xb0, 121, 0]'));
   assert.doesNotMatch(wam, /bendAt\(/);
   assert.ok(sched.indexOf('holdBends(tick, time, only)') > sched.indexOf('instrument.resetControllers!(time)'));
-  assert.match(sched, /const cents = noteBendAt\(instrument, time\) \?\? laneBendAt\(trackId, tick, time\);/);
+  assert.match(sched, /const cents = songBendAt\(trackId, instrument, tick, time\);/);
+  assert.match(sched, /return own !== undefined && Math\.abs\(own\) >= REST_CENTS \? own : laneBendAt\(trackId, tick, time\);/);
   // A note's own bend is sent in full when it starts, on the audio clock (a busy page can't hold a
   // slide up, a render's ring-out hears it out); a jump drops what's to come and holds the bend it
   // has until the instrument's next note (the song's bend there, cutting the held note's end) or

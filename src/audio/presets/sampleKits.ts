@@ -178,10 +178,13 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
   const ready = load(rack);
 
   /** Fade out and stop a hit at `time` (a choke, or all notes off). */
-  const cut = (hit: Hit, time: number) => {
+  /** Cut `hit` short from `time` (`hold`: from the level it has reached, Stop's, as a fade at its end mustn't jump back up first). */
+  const cut = (hit: Hit, time: number, hold = false) => {
     if (hit.stopAt <= time) return;
     const at = Math.max(time, raw.currentTime);
-    hit.env.gain.cancelScheduledValues(at);
+    const g = hit.env.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+    if (hold && g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(at);
+    else g.cancelScheduledValues(at);
     hit.env.gain.setTargetAtTime(0, at, 0.002);
     hit.source.stop(at + 0.015);
     hit.stopAt = at + 0.015;
@@ -254,7 +257,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
       return () => {};
     },
     releaseAll: () => {
-      for (const h of hits) cut(h, raw.currentTime);
+      for (const h of hits) cut(h, raw.currentTime, true);
     },
     ready,
     // (every tuned pad's copy: a render's notes don't change what a pad plays)
