@@ -6,6 +6,9 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Your agent hears every change of what you select once you allow it**: ticking "See what I select" after connecting, then putting the selection back as it was when you connected, told your agent nothing, so it went on thinking the old selection was still there.
+- **Redo is read out like Undo**: a Redo that puts an accepted suggestion back into your song is now said by a screen reader, as Undo already was.
+- **Your agent is disconnected when the studio stops showing**: when something went wrong and the studio showed its recovery screen, your agent stayed connected and could go on reading the song and making suggestions no one could see. It's now disconnected, and told the studio stopped showing.
 - **The studio never goes blank**: if something goes wrong while the studio or Pocket is drawn, a plain screen now takes its place, offering to set the song that's open aside and start fresh. The song isn't deleted: it's kept in Versions and offered back when the app opens, and a song that stopped the app from showing is never opened again by itself at the next start (the Restore banner and Pocket's start screen say so).
 - **A song with hundreds of thousands of notes opens**: a short share link or a song file with a clip of about 200,000 notes left the studio blank, again at every reload. A song now opens with at most 20,000 notes in a clip and 200,000 in all (the busiest starter has under 800), and says plainly how many notes past that were left out; drawing and working out a song's highest and lowest no longer breaks on a long list.
 - **Pointing at a control tells your agent nothing about your screen**: unless you let it see your view, your agent gets the same answer when it points at a control whether that control is on screen or not (it could tell what was open from the answer). With See ticked, it's told when there's no such control on screen, as before.
