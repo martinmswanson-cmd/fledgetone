@@ -51,6 +51,8 @@ interface Hit {
   env: GainNode;
   pad: number;
   stopAt: number;
+  /** When it starts sounding */
+  startAt: number;
 }
 
 /**
@@ -186,6 +188,15 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
   const cut = (hit: Hit, time: number) => {
     if (hit.stopAt <= time) return;
     const at = Math.max(time, raw.currentTime);
+    if (hit.startAt >= at) {
+      // Not started yet: it never sounds (a fade from now would fade the gain's 1 before its
+      // first setting, and the hit would play a moment of it at full level)
+      hit.env.gain.cancelScheduledValues(0);
+      hit.env.gain.value = 0;
+      hit.source.stop(hit.startAt);
+      hit.stopAt = hit.startAt;
+      return;
+    }
     fadeOutFrom(hit.env.gain, at, 0.002);
     hit.source.stop(at + 0.015);
     hit.stopAt = at + 0.015;
@@ -235,7 +246,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     env.connect(chain.input);
     source.start(at, offset, chop.seconds / k);
     source.stop(stopAt);
-    const h: Hit = { source, env, pad: i, stopAt };
+    const h: Hit = { source, env, pad: i, stopAt, startAt: at };
     hits.add(h);
     source.onended = () => {
       hits.delete(h);
@@ -307,16 +318,19 @@ interface Voice {
   /** When it's been told to stop (Infinity: not yet; it ends by itself at its sound's end, whatever bends do to its speed) */
   stopAt: number;
   released: boolean;
-  /** Its own bend (an expressive or MPE note's, see noteVoice) by time, [time, cents] in time order: it adds to the instrument's */
-  own: [number, number][];
+  /**
+   * Its own bend (an expressive or MPE note's, see noteVoice) by time, [time, cents, lane] in time
+   * order: it adds to the instrument's, `lane` the instrument's bend it was last set on there
+   */
+  own: [number, number, number][];
   /** Till when it follows the instrument's bends (its end and release, Infinity when not known) */
   until: number;
   /** When it starts sounding */
   startAt: number;
 }
 
-/** A voice's own bend at `time` (cents): the latest of its own points at or before it, else 0 */
-const ownAt = (v: Pick<Voice, 'own'>, time: number): number => {
+/** The index of a voice's first own point after `time` */
+const ownAfter = (v: Pick<Voice, 'own'>, time: number): number => {
   let lo = 0;
   let hi = v.own.length;
   while (lo < hi) {
@@ -324,8 +338,24 @@ const ownAt = (v: Pick<Voice, 'own'>, time: number): number => {
     if (v.own[mid][0] <= time) lo = mid + 1;
     else hi = mid;
   }
-  return lo > 0 ? v.own[lo - 1][1] : 0;
+  return lo;
 };
+
+/**
+ * A voice's own bend at `time` (cents), as its rate moves: in a straight line from each of its own
+ * points to the next (see noteVoice), its last after them, 0 before any
+ */
+const ownAt = (v: Pick<Voice, 'own'>, time: number): number => {
+  const i = ownAfter(v, time);
+  if (i === 0) return 0;
+  if (i === v.own.length) return v.own[i - 1][1];
+  const [t0, c0] = v.own[i - 1];
+  const [t1, c1] = v.own[i];
+  return c0 + ((c1 - c0) * (time - t0)) / (t1 - t0);
+};
+
+/** Seconds a voice with its own bend still to come glides to the instrument's new bend in (see `bend`) */
+const OWN_GLIDE = 0.005;
 
 export function createMultiInstrument(output: Tone.InputNode, initial: MultiSample | undefined): TrackInstrument & { setMulti: (multi: MultiSample | undefined) => void } {
   const out = new Tone.Gain(1).connect(output);
@@ -456,8 +486,9 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
           // (only those already sent: a few, the look-ahead's; later ones read it, see `bend`)
           const later = bends.after(at, Math.min(v.until, v.stopAt));
           if (later.length) v.source.playbackRate.cancelScheduledValues(at + 1e-7);
-          v.own.push([at, cents]);
-          v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + cents / 100, bends.at(at)), at);
+          const lane = bends.at(at);
+          v.own.push([at, cents, lane]);
+          v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + cents / 100, lane), at);
           for (const [lt, lc] of later) if (lt > at + 1e-7) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis + cents / 100, lc), lt, 0.005);
         },
         pressure: (p, t) => {
@@ -469,14 +500,38 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     },
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
       const at = Math.max(time, raw.currentTime);
+      /** The instrument's bend in force just before this one */
+      const before = bends.at(at - 1e-7);
       if (cut) for (const v of voices) v.source.playbackRate.cancelScheduledValues(at);
       bends.set(cents, at, cut);
       for (const v of voices) {
         if (v.stopAt <= at) continue;
-        // (on top of the voice's own bend there: see noteVoice)
-        v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis + ownAt(v, at) / 100, cents), at, 0.005);
-        // (a cut dropped its own bends still to come too: set again)
-        if (cut) for (const [t, c] of v.own) if (t > at) v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + c / 100, bends.at(t)), t);
+        const i = ownAfter(v, at);
+        if (i === v.own.length) {
+          // (on top of the voice's own bend there: see noteVoice)
+          v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis + ownAt(v, at) / 100, cents), at, 0.005);
+          continue;
+        }
+        // Its own bend still to come (a slide, sent whole when it started) was set on the
+        // instrument's bend known then: where that's changed, it's set again from here on the
+        // instrument's bend at each of its points, gliding to it as a voice without one does (a
+        // cut dropped them anyway)
+        let changed = cut;
+        for (let j = i; j < v.own.length && !changed; j++) changed = v.own[j][2] !== bends.at(v.own[j][0]);
+        if (!changed) continue;
+        const rate = v.source.playbackRate;
+        if (!cut) rate.cancelScheduledValues(at);
+        rate.setValueAtTime(rateFor(v, v.semis + ownAt(v, at) / 100, before), at);
+        const glide = at + OWN_GLIDE;
+        rate.linearRampToValueAtTime(rateFor(v, v.semis + ownAt(v, glide) / 100, bends.at(glide)), glide);
+        for (let j = i; j < v.own.length; j++) {
+          const point = v.own[j];
+          point[2] = bends.at(point[0]);
+          if (point[0] > glide) rate.linearRampToValueAtTime(rateFor(v, v.semis + point[1] / 100, point[2]), point[0]);
+        }
+        // (and the instrument's bends already sent for after its last own point, on that)
+        const last = v.own[v.own.length - 1];
+        for (const [t, c] of bends.after(Math.max(last[0], glide), Math.min(v.until, v.stopAt))) rate.setTargetAtTime(rateFor(v, v.semis + last[1] / 100, c), t, 0.005);
       }
     },
     releaseAll: () => {

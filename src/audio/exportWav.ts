@@ -204,6 +204,8 @@ const MAX_ECHO_TAIL = 60;
  * due less than 5 ms after the render position as late and push it back (see monotonic.ts).
  */
 const PREROLL_SECONDS = 0.25;
+/** Frames at the start of the pre-roll the shared delay hears nothing in (two render blocks: see buildGraph) */
+const DELAY_HUSH_FRAMES = 256;
 /** The most parts a mix renders in at once (see renderTracks). */
 const MAX_PARTS = 4;
 /** A render shorter than this (seconds, tails included) is done in one piece: setting up the parts would cost more than they save. */
@@ -1370,6 +1372,13 @@ async function renderGraphHeld(
     const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
     const unfed = masterFx.roomStyle === 'lush' && !tracks.some(feedsMasterReverb);
     const busFx = section?.busFx ?? createBusEffects(mixBus, reverbSends || unfed ? { ...masterFx, roomStyle: 'hall' } : masterFx, bpm);
+    // The shared delay's echo loop renders what reaches it in a render's very first block a
+    // little differently from one render to the next (in Chromium), and a plugin's idle voices
+    // whisper from the first frame: nothing reaches it in the pre-roll's first blocks (silence,
+    // thrown away), so the same song always renders the same
+    const delayFeed = (busFx.delayInput.input as unknown as GainNode).gain;
+    delayFeed.setValueAtTime(0, 0);
+    delayFeed.setValueAtTime(1, DELAY_HUSH_FRAMES / sampleRate);
     if (reverbSends) {
       // Out on channels 3 and 4 (the stereo mix fills 1 and 2 and leaves them silent)
       const raw = native.destination;
