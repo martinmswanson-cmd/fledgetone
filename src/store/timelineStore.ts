@@ -412,7 +412,8 @@ interface TimelineState {
   viewJumps: number;
 
   // Transport
-  play: () => Promise<void>;
+  /** Play from the playhead: at once, or at audio time `at` when that's still ahead (the Game tab's new state after a bridge). */
+  play: (at?: number) => Promise<void>;
   pause: () => void;
   togglePlay: () => Promise<void>;
   stop: () => void;
@@ -1624,7 +1625,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     future: [],
 
     // ---------- Transport ----------
-    play: async () => {
+    play: async (startAt) => {
       await initAudio();
       if (get().isPlaying || waitingToPlay) return;
       // Instruments still downloading: wait for them (a while at most), or the first notes are lost
@@ -1648,7 +1649,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const countMeter = meterAt(s.playheadPosition, songMeterOf(s));
       const beat = 240 / tempoAt(s.playheadPosition, songTempo(s)) / countMeter.den;
       const countIn = armed && s.recordOptions.countIn ? countMeter.num : 0;
-      const at = liveMix.bus.context.now() + 0.03 + countIn * beat;
+      // (not before a moment past the look-ahead, which the Transport has already scheduled up to)
+      const at = Math.max(typeof startAt === 'number' && Number.isFinite(startAt) ? startAt : 0, liveMix.bus.context.now() + 0.03) + countIn * beat;
       startTransportAt(s.playheadPosition, at);
       if (countIn) stopCountIn = countInClicks(at, countIn, beat);
       if (armed) startTake(armed.id, s.playheadPosition, at);

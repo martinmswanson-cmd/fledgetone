@@ -1,6 +1,8 @@
 import { liveMix, initAudio } from './engine';
 import { liveContext, liveTransport } from './liveContext';
-import { createInstrument, type TrackInstrument } from './instruments';
+import { createInstrument, trackInstrumentOptions, type TrackInstrument } from './instruments';
+import { createTrackStrip, type TrackStrip } from './effects/trackStrip';
+import { scheduledInstrument, trackActivity } from './liveTracks';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
 import { hasRecordings, loadSamplesForNotes, type RenderRecordings } from './samplers/samplerManager';
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
@@ -13,6 +15,45 @@ import { maxOf, minOf } from '../support/minMax';
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
  * game would, and rendered to WAV files for the export.
  */
+
+/**
+ * The track a stinger (or a transition's cue) is rendered on for the export (see renderStinger):
+ * its strip at 0 dB in the middle, a little of it to the reverb. The previews play through live
+ * strips set the same way (see liveStrip), so what's heard is what the kit's file holds.
+ */
+function stingerTrack(name: string, instrumentKey: InstrumentKey): Track {
+  return {
+    id: 'stinger',
+    name,
+    color: '#fff',
+    instrumentKey,
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: 0,
+    pan: 0,
+    eq: { low: 0, mid: 0, high: 0 },
+    fx: defaultTrackFx(),
+    reverbSend: 0.15,
+    delaySend: 0,
+  };
+}
+
+/**
+ * The live strip the previews' instruments of `key` play into, set as the export's (one per kind
+ * of sound: a drum kit's is folded to mono as its track's is), made on first use and kept until
+ * the page closes.
+ */
+const strips = new Map<InstrumentKey, TrackStrip>();
+function liveStrip(key: InstrumentKey): TrackStrip {
+  let strip = strips.get(key);
+  if (strip) return strip;
+  // (apart from the tracks' solos: a soloed track doesn't silence a stinger, as before)
+  strip = createTrackStrip(liveMix.bus, liveMix.busFx, { apartFromSolo: true });
+  strip.apply(stingerTrack('stinger', key), { ramp: 0 });
+  strips.set(key, strip);
+  return strip;
+}
 
 /**
  * The instruments stingers, cues and bridges play on, a few per kind of sound (kept until the
@@ -41,7 +82,7 @@ function player(key: InstrumentKey, from: number): Player {
   }
   let free = list.find((p) => p.busyUntil <= from);
   if (!free && list.length < PLAYERS_PER_KIND) {
-    free = { inst: createInstrument(key, liveMix.auditionInput), busyUntil: 0 };
+    free = { inst: createInstrument(key, liveStrip(key).input, trackInstrumentOptions(stingerTrack('stinger', key))), busyUntil: 0 };
     list.push(free);
   }
   free ??= list.reduce((a, b) => (b.busyUntil < a.busyUntil ? b : a));
@@ -93,12 +134,16 @@ const lateAllowance = () => Math.max(0.1, liveContext.lookAhead);
  * out at once: a stinger or bridge that has started is never called off, and plays out whatever
  * the page does meanwhile (a stall). A note whose time has gone by a little (a late timer) is
  * played at once, part-way: from then to its end; later than lateAllowance it is left out.
+ * With `trackId`, the notes play on that track's own live instrument and strip (a written bridge,
+ * as the export renders it on the song's tracks), not on one of the pool's.
  */
-export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: number, bpm: number, late: 'drop' | 'wait' = 'drop'): HandedNotes {
+export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: number, bpm: number, late: 'drop' | 'wait' = 'drop', trackId?: string): HandedNotes {
   let cancelled = false;
   let timer = 0;
   let own: Player | null = null;
   let handed = false;
+  /** The pool's instrument lent to it, and until when it was free before (given back if nothing went out) */
+  let lent: { p: Player; before: number } | null = null;
   let finish = () => {};
   let fail: (e: unknown) => void = () => {};
   const done = new Promise<void>((resolve, reject) => {
@@ -110,19 +155,32 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     cancelled = true;
     clearTimeout(timer);
     if (own && handed) own.inst.releaseAll();
+    // Nothing handed out: the instrument is free again as it was (unless another took it meanwhile)
+    if (lent && !handed && lent.p.busyUntil === lentUntil) lent.p.busyUntil = lent.before;
     finish();
   };
   const secondsPerBar = 240 / bpm;
   const firstOffset = notes.length ? minOf(notes.map((n) => n.startOffset)) : 0;
   const lastEnd = notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0;
+  /** The busy-until it set on the pool's instrument last (see cancel) */
+  let lentUntil = -1;
   void (async () => {
     let p: Player;
     try {
       if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
       if (cancelled) return;
-      p = player(key, liveContext.currentTime);
-      // (lent from now: a switch handed out meanwhile takes another)
-      p.busyUntil = Math.max(p.busyUntil, start + lastEnd + RING_ON + 1);
+      if (trackId !== undefined) {
+        // On the track's own instrument and strip (a written bridge, while the song is paused)
+        const inst = scheduledInstrument(trackId);
+        if (!inst) return finish();
+        trackActivity(trackId, start, lastEnd);
+        p = { inst, busyUntil: 0 };
+      } else {
+        p = player(key, liveContext.currentTime);
+        // (lent from now: a switch handed out meanwhile takes another)
+        lent = { p, before: p.busyUntil };
+        p.busyUntil = lentUntil = Math.max(p.busyUntil, start + lastEnd + RING_ON + 1);
+      }
       await p.inst.ready;
       if (cancelled) return;
       own = p;
@@ -132,7 +190,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     }
     // ('wait': ready too late for `start`, it all comes a moment later rather than without its first notes)
     const from = late === 'wait' ? Math.max(start, liveContext.currentTime + 0.05 - firstOffset * secondsPerBar) : start;
-    p.busyUntil = Math.max(p.busyUntil, from + lastEnd + RING_ON);
+    if (lent) p.busyUntil = lentUntil = Math.max(p.busyUntil, from + lastEnd + RING_ON);
     const byStart = new Map<number, NoteEvent[]>();
     for (const n of notes) {
       const at = from + n.startOffset * secondsPerBar;
@@ -218,21 +276,7 @@ interface RenderContext {
 /** A stinger rendered on its own through the song's master section, ringing out, as a WAV. */
 export async function renderStinger(stinger: Stinger, song: RenderContext, sampleRate: SampleRate = 44100, recordings: RenderRecordings = 'file'): Promise<Blob> {
   if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
-  const track: Track = {
-    id: 'stinger',
-    name: stinger.name,
-    color: '#fff',
-    instrumentKey: stinger.instrumentKey,
-    isMuted: false,
-    isSoloed: false,
-    isArmed: false,
-    volume: 0,
-    pan: 0,
-    eq: { low: 0, mid: 0, high: 0 },
-    fx: defaultTrackFx(),
-    reverbSend: 0.15,
-    delaySend: 0,
-  };
+  const track = stingerTrack(stinger.name, stinger.instrumentKey);
   const clip: Clip = {
     id: 'stinger-clip',
     trackId: track.id,
