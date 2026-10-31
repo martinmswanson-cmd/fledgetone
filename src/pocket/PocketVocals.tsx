@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Grid2x2, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
-import { useTimelineStore } from '../store/timelineStore';
+import { allOrNothing, useTimelineStore } from '../store/timelineStore';
 import { isAudioKind } from '../audio/instrumentCatalog';
 import { holdTake, startMic, type MicSession } from '../audio/micRecorder';
 import { transportStartsAt, getAudiblePositionBar } from '../audio/transport';
@@ -31,15 +31,20 @@ import { useMicAsk } from './useMicAsk';
 
 let takeCount = 0;
 
-/** A new vocal track with the clean lead chain on. Returns its id. */
-export function addVocalTrack(): string {
-  const s = useTimelineStore.getState();
-  const count = s.tracks.filter((t) => /^Vocals\b/.test(t.name)).length;
-  const id = s.addTrack('audio', count ? `Vocals ${count + 1}` : 'Vocals');
-  applyVocalChain(id, 'clean');
-  // (addTrack and the chain are one undo step)
-  useTimelineStore.setState((st) => ({ past: st.past.slice(0, -1) }));
-  return id;
+/** A new vocal track with the clean lead chain on. Returns its id (null: no room for a track, a toast says so). */
+export function addVocalTrack(): string | null {
+  const done = allOrNothing(() => {
+    const s = useTimelineStore.getState();
+    const count = s.tracks.filter((t) => /^Vocals\b/.test(t.name)).length;
+    const id = s.addTrack('audio', count ? `Vocals ${count + 1}` : 'Vocals');
+    // (no room for a track: nothing more, and no undo step is taken away)
+    if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return null;
+    applyVocalChain(id, 'clean');
+    // (addTrack and the chain are one undo step)
+    useTimelineStore.setState((st) => ({ past: st.past.slice(0, -1) }));
+    return id;
+  });
+  return done.done ? done.value : null;
 }
 
 export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed }) => {
@@ -84,6 +89,8 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
       const wav = encodeChannels(take.channels, take.sampleRate, 24);
       const sound = await importSoundFile(new Blob([wav], { type: 'audio/wav' }), `${name}.wav`);
       const target = useTimelineStore.getState().tracks.some((t) => t.id === track?.id) ? track!.id : addVocalTrack();
+      // (no room for a new track: a toast said so)
+      if (!target) return;
       const message = useTimelineStore.getState().addAudioClips(target, Math.max(1, take.startBar), [sound]);
       showToast(message ?? `Recorded ${name} (${(take.channels[0].length / take.sampleRate).toFixed(1)} s)`);
     } catch (err) {
@@ -254,7 +261,8 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                       onClick={() => {
                         setPadding(null);
                         const placed = clipToPad(c.id, undefined, 'Your pads');
-                        showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
+                        // (false: no room for a track, a toast said so)
+                        if (placed !== false) showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
                       }}
                     >
                       Whole take on a pad
@@ -265,7 +273,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                       onClick={() => {
                         setPadding(null);
                         void chopClipToPads(c.id).then(
-                          (r) => showToast(r ? `${r.chops} chops of "${c.name}" on the pads of a new track, ${c.name} chops: play them from its pads` : `Couldn't find hits in ${c.name}`),
+                          (r) => r !== false && showToast(r ? `${r.chops} chops of "${c.name}" on the pads of a new track, ${c.name} chops: play them from its pads` : `Couldn't find hits in ${c.name}`),
                           (err) => showToast(`Couldn't chop ${c.name}: ${err instanceof Error ? err.message : String(err)}`)
                         );
                       }}

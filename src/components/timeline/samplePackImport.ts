@@ -3,7 +3,7 @@
  * into Drum Rack kits, Multi Sampler instruments, an Audio track of its loops and pads for its other
  * one-shots, each sound loaded into the library once. Says what it made, and what it left out and why.
  */
-import { useTimelineStore } from '../../store/timelineStore';
+import { allOrNothing, useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, SoundMeta } from '../../store/timelineTypes';
 import { defaultMulti, defaultRack, mapZones } from '../../store/sampleKits';
 import { baseName, packName, planPack, type PackPlan } from '../../store/samplePack';
@@ -86,44 +86,49 @@ export async function importSamplePack(files: readonly PathFile[]): Promise<void
   const name = packName(files.map((f) => ({ path: f.path, size: f.file.size })));
   let kits = 0;
   let instruments = 0;
-  for (const kit of plan.kits) {
-    const rack = rackOf(kit, loaded);
-    if (!rack.pads.some((p) => p.soundId)) continue;
-    const id = s.addTrack('drumRack', kit.name);
-    useTimelineStore.getState().setTrackRack(id, rack, false);
-    kits++;
-  }
-  for (const inst of plan.instruments) {
-    const sounds = inst.files.flatMap((f) => {
-      const meta = loaded.get(f.file);
-      return meta ? [{ soundId: meta.id, name: baseName(files[f.file].path), root: f.root }] : [];
-    });
-    if (sounds.length < 2) continue;
-    const id = s.addTrack('multiSampler', inst.name);
-    useTimelineStore.getState().setTrackMulti(id, { ...defaultMulti(), zones: mapZones(sounds) }, false);
-    instruments++;
-  }
-  // Other one-shots: pads of their own, 16 a rack
   const shots = plan.oneShots.filter((i) => loaded.has(i));
-  for (let k = 0; k * RACK_PADS < shots.length; k++) {
-    const part = shots.slice(k * RACK_PADS, (k + 1) * RACK_PADS);
-    const rack = rackOf({ name: '', pads: part.map((file) => ({ file, name: baseName(files[file].path).slice(0, 40) })) }, loaded);
-    const id = s.addTrack('drumRack', `${name} one-shots${k ? ` ${k + 1}` : ''}`.slice(0, 40));
-    useTimelineStore.getState().setTrackRack(id, rack, false);
-  }
-  // Loops: end to end on an Audio track, muted so they don't play over the song
-  const loops = plan.loops.flatMap((i) => (loaded.has(i) ? [loaded.get(i)!] : []));
   let loopCount = 0;
-  if (loops.length) {
-    const message = s.addAudioClips(null, 1, loops);
-    const st = useTimelineStore.getState();
-    const id = st.selectedTrackId;
-    if (message) showToast(message);
-    else if (id) {
-      loopCount = st.clips.filter((c) => c.trackId === id).length;
-      useTimelineStore.setState({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, name: `${name} loops`.slice(0, 40), isMuted: true } : t)) });
+  // All or nothing: a pack that would go past the most a song can have (256 tracks...) loads none
+  // of it (a toast says so; the sounds stay in the library)
+  const done = allOrNothing(() => {
+    for (const kit of plan.kits) {
+      const rack = rackOf(kit, loaded);
+      if (!rack.pads.some((p) => p.soundId)) continue;
+      const id = s.addTrack('drumRack', kit.name);
+      useTimelineStore.getState().setTrackRack(id, rack, false);
+      kits++;
     }
-  }
+    for (const inst of plan.instruments) {
+      const sounds = inst.files.flatMap((f) => {
+        const meta = loaded.get(f.file);
+        return meta ? [{ soundId: meta.id, name: baseName(files[f.file].path), root: f.root }] : [];
+      });
+      if (sounds.length < 2) continue;
+      const id = s.addTrack('multiSampler', inst.name);
+      useTimelineStore.getState().setTrackMulti(id, { ...defaultMulti(), zones: mapZones(sounds) }, false);
+      instruments++;
+    }
+    // Other one-shots: pads of their own, 16 a rack
+    for (let k = 0; k * RACK_PADS < shots.length; k++) {
+      const part = shots.slice(k * RACK_PADS, (k + 1) * RACK_PADS);
+      const rack = rackOf({ name: '', pads: part.map((file) => ({ file, name: baseName(files[file].path).slice(0, 40) })) }, loaded);
+      const id = s.addTrack('drumRack', `${name} one-shots${k ? ` ${k + 1}` : ''}`.slice(0, 40));
+      useTimelineStore.getState().setTrackRack(id, rack, false);
+    }
+    // Loops: end to end on an Audio track, muted so they don't play over the song
+    const loops = plan.loops.flatMap((i) => (loaded.has(i) ? [loaded.get(i)!] : []));
+    if (loops.length) {
+      const message = s.addAudioClips(null, 1, loops);
+      const st = useTimelineStore.getState();
+      const id = st.selectedTrackId;
+      if (message) showToast(message);
+      else if (id) {
+        loopCount = st.clips.filter((c) => c.trackId === id).length;
+        useTimelineStore.setState({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, name: `${name} loops`.slice(0, 40), isMuted: true } : t)) });
+      }
+    }
+  });
+  if (!done.done) return;
   const made = [
     ...(kits ? [plural(kits, 'Drum Rack kit')] : []),
     ...(instruments ? [plural(instruments, 'Multi Sampler instrument')] : []),

@@ -135,7 +135,8 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
                 className="w-full text-left px-3 py-2.5 rounded-xl active:bg-white/5 text-sm truncate"
                 onClick={() => {
                   const placed = clipToPad(c.id, target);
-                  showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
+                  // (false: no room for a track, a toast said so)
+                  if (placed !== false) showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
                 }}
               >
                 {c.name} <span className="text-[11px] text-forge-muted">bar {Math.round(c.startBar * 10) / 10}</span>

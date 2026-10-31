@@ -92,6 +92,8 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
     const where = target.startsWith('new:') ? { sound: target.slice(4) as DarkSound } : { trackId: target };
     const result = writeDarkMelody({ ...o, root, seed }, replace && written.current ? { ...where, replaceClipId: written.current } : where, at);
     if (!result) return showToast('Pick a melody track (or a new one): drums, audio and FX tracks take no melody.');
+    // (it would go past the most a song can have: nothing was done)
+    if (typeof result === 'string') return showToast(result);
     written.current = result.clipId;
     setTarget(result.trackId);
     showToast(`Dark melody in ${NOTE_NAMES[root]} ${DARK_SCALES.find((s) => s.id === o.scale)!.name.toLowerCase()}, idea ${seed}. Press Play to hear it; Undo takes it back.`);

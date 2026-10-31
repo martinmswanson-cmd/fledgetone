@@ -6,7 +6,8 @@
  * markers, so live playback and every export hear them the same. The maths is in darkMelody.ts,
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
-import { songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
 import { TOTAL_BARS, barsToDuration, uid } from './timelineTypes';
 import { darkMelody, DARK_SOUNDS, DARK_STYLES, type DarkMelodyOptions, type DarkSound } from './darkMelody';
@@ -32,14 +33,18 @@ const CUT_FADE = 0.005;
 
 /**
  * Run `edit` as one undo step: one snapshot before it, and whatever store actions it calls (an
- * insert of bars, a new track) fold into that one.
+ * insert of bars, a new track) fold into that one. All or nothing: if a change in it would go past
+ * the most a song can have, nothing is done (no undo step, the redo history kept) and it returns
+ * what to say about that (null when it was done).
  */
-function oneStep<T>(edit: () => T): T {
-  tl().checkpoint();
-  const past = tl().past;
-  const result = edit();
-  useTimelineStore.setState({ past, future: [] });
-  return result;
+function oneStep(edit: () => void): string | null {
+  const made = allOrNothing(() => {
+    tl().checkpoint();
+    const past = tl().past;
+    edit();
+    useTimelineStore.setState({ past, future: [] });
+  }, true);
+  return made.done ? null : pastCapsWords(made.past);
 }
 
 /** A track's clips between `from` and `to`, cut at both ends. */
@@ -92,9 +97,9 @@ function withMarker(markers: readonly Marker[], bar: number, name: string): Mark
 /**
  * Write a dark melody: onto `trackId` at `atBar` (a new clip), onto a new track of `sound` (after
  * the selected track), or in place of the notes of `replaceClipId` (the "New idea" button after a
- * first write). One undo step. Returns the clip's id and track's id.
+ * first write). One undo step. Returns the clip's id and track's id, or what to say if it would go past the caps (nothing done).
  */
-export function writeDarkMelody(o: DarkMelodyOptions, where: { trackId?: string; sound?: DarkSound; replaceClipId?: string }, atBar: number): { clipId: string; trackId: string } | null {
+export function writeDarkMelody(o: DarkMelodyOptions, where: { trackId?: string; sound?: DarkSound; replaceClipId?: string }, atBar: number): { clipId: string; trackId: string } | string | null {
   const s = tl();
   const style = DARK_STYLES.find((d) => d.id === o.style)!;
   const name = `Dark melody (${style.name.toLowerCase()})`;
@@ -104,8 +109,8 @@ export function writeDarkMelody(o: DarkMelodyOptions, where: { trackId?: string;
     const track = s.tracks.find((t) => t.id === replace.trackId);
     if (track) {
       const notes = fitToInstrument(raw, track.instrumentKey);
-      oneStep(() => useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === replace.id ? { ...c, notes, lengthBars: o.bars, name } : c)) })));
-      return { clipId: replace.id, trackId: track.id };
+      const refused = oneStep(() => useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === replace.id ? { ...c, notes, lengthBars: o.bars, name } : c)) })));
+      return refused ?? { clipId: replace.id, trackId: track.id };
     }
   }
   const at = Math.max(1, Math.min(TOTAL_BARS + 1 - o.bars, Math.round(atBar)));
@@ -113,11 +118,13 @@ export function writeDarkMelody(o: DarkMelodyOptions, where: { trackId?: string;
   if (existing && (isAudioKind(existing.instrumentKey) || trackRole(existing) === 'drums' || trackRole(existing) === 'mix' || trackRole(existing) === 'fx')) return null;
   const clipId = uid('clip');
   let trackId = existing?.id ?? '';
-  oneStep(() => {
+  const refused = oneStep(() => {
     if (!existing) {
       const def = DARK_SOUNDS.find((d) => d.id === (where.sound ?? style.sound))!;
       const after = tl().selectedTrackId;
       trackId = tl().addTrack(def.instrument, `${def.name} melody`);
+      // (no room for a track: nothing is done, see oneStep)
+      if (!tl().tracks.some((t) => t.id === trackId)) return;
       // Under the selected track, where the person is working
       useTimelineStore.setState((st) => {
         const made = st.tracks.find((t) => t.id === trackId)!;
@@ -133,7 +140,7 @@ export function writeDarkMelody(o: DarkMelodyOptions, where: { trackId?: string;
       selectedTrackId: trackId,
     }));
   });
-  return { clipId, trackId };
+  return refused ?? { clipId, trackId };
 }
 
 // ---------- Drop-outs and stops ----------
@@ -194,9 +201,10 @@ export function dropOut(trackIds: readonly string[], from: number, to: number): 
   let changed = 0;
   const s = tl();
   if (!s.clips.some((c) => ids.has(c.trackId) && c.startBar < to - EPS && c.startBar + c.lengthBars > from + EPS)) return 'Those tracks play nothing there.';
-  oneStep(() => {
+  const refused = oneStep(() => {
     changed = cutTracks(ids, from, to);
   });
+  if (refused) return refused;
   return changed ? `Dropped out ${trackIds.length} track${trackIds.length === 1 ? '' : 's'} from bar ${fmt(from)} to ${fmt(to)}.` : 'Those tracks play nothing there.';
 }
 
@@ -210,9 +218,10 @@ export function addStop(bar: number, beats: 1 | 0.5): string {
   // reverb of the master section isn't a track, so its tail of what came before still rings)
   const ids = new Set(tl().tracks.map((t) => t.id));
   let changed = 0;
-  oneStep(() => {
+  const refused = oneStep(() => {
     changed = cutTracks(ids, from, to);
   });
+  if (refused) return refused;
   return changed ? `Stop: silence for ${beats === 1 ? 'the last beat' : 'the last half beat'} of bar ${Math.round(bar)}.` : 'Nothing plays there to stop.';
 }
 
@@ -237,15 +246,18 @@ export function addDropFx(kind: DropFx, dropBar: number, bars: number, early = 0
   const free = (t: Track) => !s.clips.some((c) => c.trackId === t.id && c.startBar < drop - EPS && c.startBar + c.lengthBars > from + EPS);
   const note = kind === 'riser' ? FX_NOTES.riser : FX_NOTES.reverseCrash;
   const ring = Math.max(1 / 16, len - early);
-  oneStep(() => {
+  const refused = oneStep(() => {
     let track = s.tracks.find((t) => isFxKind(t.instrumentKey) && free(t));
     if (!track) {
       const id = tl().addTrack('fx', 'Drop FX');
-      track = tl().tracks.find((t) => t.id === id)!;
+      track = tl().tracks.find((t) => t.id === id);
+      // (no room for a track: nothing is done, see oneStep)
+      if (!track) return;
     }
     const notes: NoteEvent[] = [{ id: newId(), note, startOffset: 0, duration: barsToDuration(ring), velocity: 0.85 }];
     useTimelineStore.setState((st) => ({ clips: [...st.clips, noteClip(undefined, track!.id, kind === 'riser' ? 'Riser' : 'Reverse cymbal', from, len, notes)] }));
   });
+  if (refused) return refused;
   return `${kind === 'riser' ? 'Riser' : 'Reverse cymbal'} into bar ${drop}${early ? `, ending ${early === 0.25 ? 'a beat' : 'half a beat'} early` : ''}.`;
 }
 
@@ -273,7 +285,7 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   const newDrums = mode === 'pattern' ? drummer(drumStyle, len, 0.7, Math.min(4, len), seed, newId) : undefined;
   const label = SWITCH_MODES.find((m) => m.id === mode)!.name;
   let error = null as string | null;
-  oneStep(() => {
+  const refused = oneStep(() => {
     error = tl().insertBars(b, len);
     if (error) return;
     const made: Clip[] = [];
@@ -290,6 +302,7 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
     }
     useTimelineStore.setState((st) => ({ clips: [...st.clips, ...made], markers: retimeMarkers(withMarker(st.markers, b, 'Beat switch'), songTempo(st)) }));
   });
+  if (refused) return refused;
   if (error) {
     tl().undo();
     return error;
@@ -319,7 +332,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
     .filter((p) => p.parts.length && p.role !== 'mix');
   if (!plan.length) return `Bars ${from}-${to - 1} are empty: make a loop there first.`;
   let error = null as string | null;
-  oneStep(() => {
+  const refused = oneStep(() => {
     if (total > loopBars) error = tl().insertBars(to, total - loopBars);
     if (error) return;
     const tempo = songTempo(tl());
@@ -372,6 +385,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
       return { clips: [...kept.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...made], markers: retimeMarkers(markers, songTempo(st)) };
     });
   });
+  if (refused) return refused;
   if (error) {
     tl().undo();
     return error;
@@ -436,11 +450,13 @@ export function placeTag(from: number, every: number): string {
   const bars = tagBars(from, end, every, tagLength(from)).filter((b) => b + tagLength(b) <= TOTAL_BARS + 1);
   if (!bars.length) return 'No room for the tag there.';
   let count = 0;
-  oneStep(() => {
+  const refused = oneStep(() => {
     let track = tl().tracks.find((t) => t.name === TAG_TRACK_NAME && isAudioKind(t.instrumentKey));
     if (!track) {
       const id = tl().addTrack('audio', TAG_TRACK_NAME);
-      track = tl().tracks.find((t) => t.id === id)!;
+      track = tl().tracks.find((t) => t.id === id);
+      // (no room for a track: nothing is done, see oneStep)
+      if (!track) return;
     }
     const trackId = track.id;
     const taken = tl().clips.filter((c) => c.trackId === trackId);
@@ -457,5 +473,6 @@ export function placeTag(from: number, every: number): string {
       tracks: st.tracks.map((t) => (t.id === trackId ? { ...t, duckProxy: { depth: TAG_DUCK_DB }, reverbSend: 0 } : t)),
     }));
   });
+  if (refused) return refused;
   return count ? `Tag placed ${count === 1 ? `at bar ${bars[0]}` : `${count} times, every ${every} bars`}; the beat dips ${TAG_DUCK_DB} dB under it.` : 'The tag is already there.';
 }

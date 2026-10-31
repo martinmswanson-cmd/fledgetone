@@ -33,7 +33,7 @@ import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useLivePlayhead } from '../../store/playheadClock';
-import { songTempo, useTimelineStore } from '../../store/timelineStore';
+import { allOrNothing, editStep, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
@@ -552,19 +552,24 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           showToast(room >= TOTAL_BARS + 1 - live.startBar ? 'That would go past the end of the song.' : 'No room: the next clip on this track starts there.');
           return;
         }
+        const begun = chord ?? { at: entryRef.current.at, ids: [], names: new Set<string>() };
+        const id = uid('note');
+        // (all or nothing: a note past the most a song can have isn't entered, a toast says so)
+        const done = allOrNothing(() => {
+          // One undo step for the whole chord (and the clip growing for it)
+          if (!chord) store.checkpoint();
+          // Past the clip's end: it grows to the bar the note ends in (no further than the room)
+          const endBars = (begun.at + length) / UNITS_PER_BAR;
+          if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.min(room, Math.ceil(endBars - 1e-9)));
+          const note = { note: name, startOffset: begun.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
+          store.setClipNotes(clip.id, [...(useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? []), { ...note, id }]);
+        });
+        if (!done.done) return;
         held.add(n.midi);
         if (!chord) {
-          chord = { at: entryRef.current.at, ids: [], names: new Set() };
+          chord = begun;
           entered.current.push(chord);
-          // One undo step for the whole chord (and the clip growing for it)
-          store.checkpoint();
         }
-        // Past the clip's end: it grows to the bar the note ends in (no further than the room)
-        const endBars = (chord.at + length) / UNITS_PER_BAR;
-        if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.min(room, Math.ceil(endBars - 1e-9)));
-        const note = { note: name, startOffset: chord.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
-        const id = uid('note');
-        store.setClipNotes(clip.id, [...(useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? []), { ...note, id }]);
         const ids = [id];
         chord.ids.push(...ids);
         chord.names.add(name);
@@ -793,8 +798,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         default: return target;
       }
     })();
-    store.checkpoint();
-    store.setClipNotes(clip.id, [...rest, ...out]);
+    const done = editStep(() => {
+      store.setClipNotes(clip.id, [...rest, ...out]);
+      return true;
+    }, false);
+    if (!done) return;
     if (selected.size) setSelected(new Set(out.map((n) => n.id)));
     // Rows grow to fit notes moved past them (an octave up)
     const needed = rowsFor(instrument, [...rest, ...out], slicer);
@@ -1302,8 +1310,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           pitched={!namedRows}
           apply={(next, select) => {
             const store = useTimelineStore.getState();
-            store.checkpoint();
-            store.setClipNotes(clip.id, next);
+            const done = editStep(() => {
+              store.setClipNotes(clip.id, next);
+              return true;
+            }, false);
+            if (!done) return;
             setSelected(new Set(select ?? []));
             // Rows grow to fit notes past them
             const needed = rowsFor(instrument, next, slicer);

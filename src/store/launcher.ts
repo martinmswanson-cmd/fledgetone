@@ -1,4 +1,4 @@
-import { songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, editStep, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import type { Clip, LauncherSlot, SlotClip, Track } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { isMixTrack } from './buses';
@@ -116,16 +116,18 @@ export function trackState(trackId: string, bar: number): { playing: number | nu
 
 // ---------- Filling slots (one undo step each) ----------
 
+// (Each all or nothing against the caps, see editStep: past them, nothing is done and a toast says so)
 function setSlots(trackId: string, change: (slots: LauncherSlot[]) => LauncherSlot[]): void {
-  tl().checkpoint();
-  useTimelineStore.setState((s) => ({
-    tracks: s.tracks.map((t) => {
-      if (t.id !== trackId) return t;
-      const slots = change(t.slots ?? []).sort((a, b) => a.scene - b.scene);
-      const { slots: _old, ...rest } = t;
-      return slots.length ? { ...rest, slots } : rest;
-    }),
-  }));
+  editStep(() => {
+    useTimelineStore.setState((s) => ({
+      tracks: s.tracks.map((t) => {
+        if (t.id !== trackId) return t;
+        const slots = change(t.slots ?? []).sort((a, b) => a.scene - b.scene);
+        const { slots: _old, ...rest } = t;
+        return slots.length ? { ...rest, slots } : rest;
+      }),
+    }));
+  }, undefined);
 }
 
 /** One slot clip from clips of one track: everything from the first start to the last end. */
@@ -161,8 +163,11 @@ export function clearSlot(trackId: string, scene: number): void {
   setSlots(trackId, (slots) => slots.filter((s) => s.scene !== scene));
 }
 
-/** Move (or with `copy`, copy) a slot to another scene and/or another track of the same kind of sound. */
-export function moveSlot(fromTrack: string, fromScene: number, toTrack: string, toScene: number, copy = false): boolean {
+/**
+ * Move (or with `copy`, copy) a slot to another scene and/or another track of the same kind of
+ * sound. False if it can't go there; null if it would go past the caps (nothing done, a toast says so).
+ */
+export function moveSlot(fromTrack: string, fromScene: number, toTrack: string, toScene: number, copy = false): boolean | null {
   const s = tl();
   const src = s.tracks.find((t) => t.id === fromTrack);
   const dst = s.tracks.find((t) => t.id === toTrack);
@@ -170,41 +175,46 @@ export function moveSlot(fromTrack: string, fromScene: number, toTrack: string, 
   if (!slot || !dst || isMixTrack(dst) || (fromTrack === toTrack && fromScene === toScene)) return false;
   // Audio plays only on Audio tracks, notes only on instruments
   if (!!slot.clip.audio !== (dst.instrumentKey === 'audio')) return false;
-  s.checkpoint();
-  useTimelineStore.setState((st) => ({
-    tracks: st.tracks.map((t) => {
-      let slots = t.slots ?? [];
-      if (t.id === fromTrack && !copy) slots = slots.filter((x) => x.scene !== fromScene);
-      if (t.id === toTrack) slots = [...slots.filter((x) => x.scene !== toScene), { scene: toScene, clip: slot.clip }].sort((a, b) => a.scene - b.scene);
-      if (slots === t.slots) return t;
-      const { slots: _old, ...rest } = t;
-      return slots.length ? { ...rest, slots } : rest;
-    }),
-  }));
-  return true;
+  return editStep(() => {
+    useTimelineStore.setState((st) => ({
+      tracks: st.tracks.map((t) => {
+        let slots = t.slots ?? [];
+        if (t.id === fromTrack && !copy) slots = slots.filter((x) => x.scene !== fromScene);
+        if (t.id === toTrack) slots = [...slots.filter((x) => x.scene !== toScene), { scene: toScene, clip: slot.clip }].sort((a, b) => a.scene - b.scene);
+        if (slots === t.slots) return t;
+        const { slots: _old, ...rest } = t;
+        return slots.length ? { ...rest, slots } : rest;
+      }),
+    }));
+    return true;
+  }, null);
 }
 
-/** The selected clips into the launcher: each track's into its first empty slot (or `scene`). Returns how many slots were filled. */
-export function sendSelectionToLauncher(scene?: number): number {
+/**
+ * The selected clips into the launcher: each track's into its first empty slot (or `scene`).
+ * Returns how many slots were filled (null: none, it would go past the caps, a toast says so).
+ */
+export function sendSelectionToLauncher(scene?: number): number | null {
   const s = tl();
   const byTrack = new Map<string, Clip[]>();
   for (const c of s.clips) if (c.isSelected) byTrack.set(c.trackId, [...(byTrack.get(c.trackId) ?? []), c]);
   if (!byTrack.size) return 0;
-  s.checkpoint();
   let filled = 0;
-  useTimelineStore.setState((st) => ({
-    tracks: st.tracks.map((t) => {
-      const clips = byTrack.get(t.id);
-      const clip = clips && slotFromClips(clips);
-      if (!clip || isMixTrack(t)) return t;
-      const used = new Set((t.slots ?? []).map((x) => x.scene));
-      let at = scene ?? 0;
-      if (scene === undefined) while (used.has(at) && at < MAX_SCENES - 1) at++;
-      filled++;
-      return { ...t, slots: [...(t.slots ?? []).filter((x) => x.scene !== at), { scene: at, clip }].sort((a, b) => a.scene - b.scene) };
-    }),
-  }));
-  return filled;
+  return editStep(() => {
+    useTimelineStore.setState((st) => ({
+      tracks: st.tracks.map((t) => {
+        const clips = byTrack.get(t.id);
+        const clip = clips && slotFromClips(clips);
+        if (!clip || isMixTrack(t)) return t;
+        const used = new Set((t.slots ?? []).map((x) => x.scene));
+        let at = scene ?? 0;
+        if (scene === undefined) while (used.has(at) && at < MAX_SCENES - 1) at++;
+        filled++;
+        return { ...t, slots: [...(t.slots ?? []).filter((x) => x.scene !== at), { scene: at, clip }].sort((a, b) => a.scene - b.scene) };
+      }),
+    }));
+    return filled;
+  }, null);
 }
 
 /** The clips of a track between `from` and `to`, cut at both ends. */
@@ -223,9 +233,10 @@ function clipsBetween(s: ReturnType<typeof tl>, trackId: string, from: number, t
 
 /**
  * A stretch of the arrangement as one scene: each track with something there gets a slot of
- * exactly that length (its clips there, cut at the edges). Returns how many slots were filled.
+ * exactly that length (its clips there, cut at the edges). Returns how many slots were filled
+ * (null: none, it would go past the caps, a toast says so).
  */
-export function sceneFromRange(from: number, to: number, scene: number, name?: string): number {
+export function sceneFromRange(from: number, to: number, scene: number, name?: string): number | null {
   const s = tl();
   const slots = new Map<string, SlotClip>();
   for (const t of s.tracks) {
@@ -246,32 +257,39 @@ export function sceneFromRange(from: number, to: number, scene: number, name?: s
     slots.set(t.id, clip);
   }
   if (!slots.size) return 0;
-  s.checkpoint();
-  useTimelineStore.setState((st) => ({
-    tracks: st.tracks.map((t) => {
-      const clip = slots.get(t.id);
-      if (!clip) return t;
-      return { ...t, slots: [...(t.slots ?? []).filter((x) => x.scene !== scene), { scene, clip }].sort((a, b) => a.scene - b.scene) };
-    }),
-  }));
-  return slots.size;
+  return editStep(() => {
+    useTimelineStore.setState((st) => ({
+      tracks: st.tracks.map((t) => {
+        const clip = slots.get(t.id);
+        if (!clip) return t;
+        return { ...t, slots: [...(t.slots ?? []).filter((x) => x.scene !== scene), { scene, clip }].sort((a, b) => a.scene - b.scene) };
+      }),
+    }));
+    return slots.size;
+  }, null);
 }
 
-/** Every section of the song (between its markers, or every 4 or 8 bars) as a scene, in order. Returns how many scenes. */
-export function scenesFromSections(): number {
+/**
+ * Every section of the song (between its markers, or every 4 or 8 bars) as a scene, in order.
+ * Returns how many scenes (null: none, they would go past the caps, a toast says so).
+ */
+export function scenesFromSections(): number | null {
   const s = tl();
   const sections = songSections(s.clips, s.markers, songMeterOf(s)).slice(0, MAX_SCENES);
   if (!sections.length) return 0;
-  // One undo step for them all: the song before them, whatever the history held
-  s.checkpoint();
-  const past = tl().past;
-  let made = 0;
-  sections.forEach((sec, i) => {
-    if (sceneFromRange(sec.from, sec.to, i, sec.name)) made++;
+  const done = allOrNothing(() => {
+    // One undo step for them all: the song before them, whatever the history held
+    tl().checkpoint();
+    const past = tl().past;
+    let made = 0;
+    sections.forEach((sec, i) => {
+      if (sceneFromRange(sec.from, sec.to, i, sec.name)) made++;
+    });
+    // (none made: no step at all)
+    useTimelineStore.setState(made ? { past, future: [] } : { past: past.slice(0, -1) });
+    return made;
   });
-  // (none made: no step at all)
-  useTimelineStore.setState(made ? { past, future: [] } : { past: past.slice(0, -1) });
-  return made;
+  return done.done ? done.value : null;
 }
 
 /** Empty a whole scene row. */
@@ -295,9 +313,9 @@ export function clearScene(scene: number): void {
  * What was played in the launcher, from its first launch to where it stopped, written into the
  * arrangement (one undo step): where a track played a slot, copies of its clip; where it was
  * stopped, nothing; where it played its arrangement, that stays. Returns the bars written, or
- * null if there's no session.
+ * null if there's no session (false: it would go past the caps, nothing done, a toast says so).
  */
-export function writeSessionToArrangement(): { from: number; to: number } | null {
+export function writeSessionToArrangement(): { from: number; to: number } | null | false {
   const L = useLauncher.getState();
   const s = tl();
   const live = launcherActive(L.segments) && L.start !== null;
@@ -353,9 +371,10 @@ export function writeSessionToArrangement(): { from: number; to: number } | null
     }
     kept.push(...pieces);
   }
-  s.checkpoint();
-  useTimelineStore.setState({ clips: [...kept, ...add] });
-  return { from: start, to: end };
+  return editStep<{ from: number; to: number } | false>(() => {
+    useTimelineStore.setState({ clips: [...kept, ...add] });
+    return { from: start, to: end };
+  }, false);
 }
 
 // When the transport stops, the session ends: the song plays its arrangement again (Write to arrangement can still write it)

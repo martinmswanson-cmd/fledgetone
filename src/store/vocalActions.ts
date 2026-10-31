@@ -5,7 +5,8 @@
  * vocalChains.ts and vocalDouble.ts; this file only applies it.
  */
 import { withClipHeld } from './clipJobs';
-import { useTimelineStore } from './timelineStore';
+import { allOrNothing, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import { withVocalChain, vocalChain, type VocalChainId } from './vocalChains';
 import { uid, type Clip, type Track } from './timelineTypes';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
@@ -69,7 +70,6 @@ async function doubleClipNow(clipId: string): Promise<string> {
   const still = now.clips.find((c) => c.id === clipId);
   const from = now.tracks.find((t) => t.id === source.id);
   if (!still?.audio || !from) return 'The take was removed while it was being doubled.';
-  now.checkpoint();
   // The take's sound (its chain, sends, routing and folder), lower; not its automation, plugins or dialogue dip
   const track: Track = {
     id: uid('track'),
@@ -101,10 +101,15 @@ async function doubleClipNow(clipId: string): Promise<string> {
   const copy: Clip = { ...still, id: uid('clip'), trackId: track.id, name: `${still.name} double`, isSelected: false, audio };
   delete copy.takes;
   delete copy.comp;
-  useTimelineStore.setState((st) => {
-    const at = st.tracks.findIndex((t) => t.id === from.id) + 1;
-    return { tracks: [...st.tracks.slice(0, at), track, ...st.tracks.slice(at)], clips: [...st.clips, copy] };
-  });
+  // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
+  const done = allOrNothing(() => {
+    useTimelineStore.getState().checkpoint();
+    useTimelineStore.setState((st) => {
+      const at = st.tracks.findIndex((t) => t.id === from.id) + 1;
+      return { tracks: [...st.tracks.slice(0, at), track, ...st.tracks.slice(at)], clips: [...st.clips, copy] };
+    });
+  }, true);
+  if (!done.done) return pastCapsWords(done.past);
   return `Doubled "${still.name}" onto "${track.name}": left and right, ${-DOUBLE_LEVEL_DB} dB lower. Undo takes it away.`;
 }
 

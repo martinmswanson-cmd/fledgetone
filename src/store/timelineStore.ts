@@ -78,7 +78,7 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
-import { editPastCaps, pastCapsWords, type CapKind } from './songCaps';
+import { capsWords, editPastCaps, MAX_CLIP_NOTES, MAX_LANE_POINTS, pastCapsWords, SONG_CAPS, type CapKind } from './songCaps';
 import { showToast } from '../components/timeline/toastStore';
 import { livePlayhead, setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
@@ -1118,21 +1118,92 @@ function tellPastCaps(kinds: CapKind[]): void {
   queueMicrotask(() => showToast(pastCapsWords(kinds)));
 }
 
+/**
+ * Undo and Redo put back a song that was: never refused by the caps (refusing would lose work), even
+ * if one somehow went past one (a song that is past a cap can still be made smaller).
+ */
+let puttingBack = false;
+/** An all-or-nothing edit in progress (allOrNothing): the caps it met, told once at its end. */
+let edit: { past: CapKind[] } | null = null;
+/** The store's own set, without the caps or the linked clips: puts a whole state back exactly. */
+let putExactly: ((s: TimelineState) => void) | null = null;
+
+/** A change the caps refuse: told at once, or at the end of the all-or-nothing edit it's part of. */
+function refuse(kinds: CapKind[]): void {
+  if (edit) {
+    for (const k of kinds) if (!edit.past.includes(k)) edit.past.push(k);
+  } else tellPastCaps(kinds);
+}
+
+/**
+ * Make an edit of several steps (a checkpoint, then its changes) all or nothing against the caps:
+ * if any change in it would go past one, the store goes back exactly as it was before it (no undo
+ * step, the redo history kept), the caps are told once (unless `quiet`) and `done` is false. An
+ * error part way also puts it back, then is thrown on.
+ */
+export function allOrNothing<T>(make: () => T, quiet = false): { done: true; value: T } | { done: false; past: CapKind[] } {
+  if (edit) {
+    // (inside another: that one decides, and puts everything back)
+    const value = make();
+    return { done: true, value };
+  }
+  const before = useTimelineStore.getState();
+  const checkpointBefore = pendingCheckpoint;
+  const mine = { past: [] as CapKind[] };
+  edit = mine;
+  let value: T;
+  try {
+    value = make();
+  } catch (e) {
+    edit = null;
+    putBack(before, checkpointBefore);
+    throw e;
+  }
+  edit = null;
+  if (!mine.past.length) return { done: true, value };
+  putBack(before, checkpointBefore);
+  if (!quiet) tellPastCaps(mine.past);
+  return { done: false, past: mine.past };
+}
+
+/**
+ * A checkpoint, then `make`'s changes: one undo step, all or nothing against the caps (see
+ * allOrNothing). `refused` is what it gives when the caps refuse it (nothing done, told in a toast).
+ */
+export function editStep<T>(make: () => T, refused: T): T {
+  const made = allOrNothing(() => {
+    useTimelineStore.getState().checkpoint();
+    return make();
+  });
+  return made.done ? made.value : refused;
+}
+
+function putBack(state: TimelineState, checkpoint: HistoryEntry | null): void {
+  if (useTimelineStore.getState() !== state) putExactly?.(state);
+  pendingCheckpoint = checkpoint;
+}
+
 /** A whole new song's clips (loadProject): not an edit of the clips before, so nothing to sync with them (their ids may even repeat). */
 const unsynced = new WeakSet<Clip[]>();
 type SetState = (partial: TimelineState | Partial<TimelineState> | ((s: TimelineState) => TimelineState | Partial<TimelineState>), replace?: boolean) => void;
 function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: { setState: SetState }) => TimelineState) {
   return (rawSet: SetState, get: () => TimelineState, api: { setState: SetState }) => {
+    putExactly = (state) => rawSet(state, true);
     const set: SetState = (partial, replace) =>
       rawSet((s) => {
         let next = typeof partial === 'function' ? partial(s) : partial;
+        // Linked clips follow first: the caps measure the song as it would be, every copy counted
+        if (next.clips && next.clips !== s.clips && !unsynced.has(next.clips)) {
+          const synced = syncPatterns(s.clips, next.clips);
+          if (synced) next = { ...next, clips: synced };
+        }
         // An edit that would go past the most a song opens with isn't made (it couldn't be kept:
         // the autosave and a saved file would open without what's past it). A new song (loadProject)
-        // was measured as it was read
-        if (next !== s && (next.clips || next.tracks || next.markers || next.tempoPoints || next.meterPoints || next.stingers) && !(next.clips && unsynced.has(next.clips))) {
+        // was measured as it was read; Undo and Redo put back a song that was
+        if (next !== s && !puttingBack && (next.clips || next.tracks || next.markers || next.tempoPoints || next.meterPoints || next.stingers) && !(next.clips && unsynced.has(next.clips))) {
           const past = editPastCaps(s, { ...s, ...next });
           if (past.length) {
-            tellPastCaps(past);
+            refuse(past);
             return s;
           }
         }
@@ -1144,9 +1215,7 @@ function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: 
             pendingCheckpoint = null;
           }
         }
-        if (!next.clips || next.clips === s.clips || unsynced.has(next.clips)) return next;
-        const synced = syncPatterns(s.clips, next.clips);
-        return synced ? { ...next, clips: synced } : next;
+        return next;
       }, replace);
     api.setState = set;
     return config(set, get, api);
@@ -1154,6 +1223,15 @@ function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: 
 }
 
 export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, get) => {
+  /** Undo's and Redo's change: a song that was, never refused by the caps. */
+  const putBackStep = (patch: Partial<TimelineState>) => {
+    puttingBack = true;
+    try {
+      set(patch);
+    } finally {
+      puttingBack = false;
+    }
+  };
   /**
    * Change one track. `record` makes it its own undo step (clicks, menus); continuous controls
    * (sliders) leave it false because their gesture checkpoint()s once at its start.
@@ -1226,43 +1304,133 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const takeClip: TakeClip = result.clip;
     const grid = options.quantize;
     const withIds = (notes: TakeClip['notes']) => notes.map((n) => ({ ...n, id: uid('note') }));
-    const played = (takeClip.takes ?? [takeClip]).map((t) => ({ notes: withIds(t.notes), ...(t.expression ? { expression: t.expression } : {}) }));
+    // What a song can hold (songCaps.ts) is kept, never the whole take refused: each pass's notes and
+    // lane points up to a clip's and a lane's most, the latest passes up to a folder's most takes,
+    // then as much as the song's totals leave room for; what's left out is said plainly
+    const left = { passes: 0, notes: 0, points: 0 };
+    const kinds = new Set<CapKind>();
+    const capPass = (p: { notes: NoteEvent[]; expression?: Clip['expression'] }) => {
+      let { notes, expression } = p;
+      if (notes.length > MAX_CLIP_NOTES) {
+        left.notes += notes.length - MAX_CLIP_NOTES;
+        kinds.add('notes');
+        notes = notes.slice(0, MAX_CLIP_NOTES);
+      }
+      if (expression && Object.values(expression).some((l) => Array.isArray(l) && l.length > MAX_LANE_POINTS)) {
+        const cut: Record<string, unknown> = {};
+        for (const [k, l] of Object.entries(expression)) {
+          if (Array.isArray(l) && l.length > MAX_LANE_POINTS) {
+            left.points += l.length - MAX_LANE_POINTS;
+            kinds.add('points');
+            cut[k] = l.slice(0, MAX_LANE_POINTS);
+          } else cut[k] = l;
+        }
+        expression = cut as Clip['expression'];
+      }
+      return { notes, ...(expression ? { expression } : {}) };
+    };
+    let played = (takeClip.takes ?? [takeClip]).map((t) => capPass({ notes: withIds(t.notes), ...(t.expression ? { expression: t.expression } : {}) }));
+    /** Whether the song with these clips keeps within the caps (as the store's set checks). */
+    const fits = (clips: Clip[]) => {
+      const now = get();
+      return editPastCaps(now, { ...now, clips }).length === 0;
+    };
+    /** The most of `count` (0 to count) for which `ok` holds, `ok` holding for fewer if for more. */
+    const most = (count: number, ok: (n: number) => boolean) => {
+      let lo = 0;
+      let hi = count;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (ok(mid)) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    };
+    const tell = () => {
+      const parts = [
+        ...(left.passes ? [`the first ${left.passes.toLocaleString('en-US')} pass${left.passes === 1 ? '' : 'es'}`] : []),
+        ...(left.notes ? [`${left.notes.toLocaleString('en-US')} note${left.notes === 1 ? '' : 's'}`] : []),
+        ...(left.points ? [`${left.points.toLocaleString('en-US')} lane point${left.points === 1 ? '' : 's'}`] : []),
+      ];
+      if (parts.length) showToast(`The take is in, without ${parts.join(' and ')}: past the most a song can have (${capsWords([...kinds])}).`);
+    };
+    const nothingKept = () => showToast(`The take couldn't be kept: the song already has the most it can have (${capsWords([...kinds])}).`);
     // With takes on, recording over a clip of the same span adds to it as more takes
-    const same = options.takes
+    let same = options.takes
       ? s.clips.find((c) => c.trackId === trackId && !c.audio && Math.abs(c.startBar - takeClip.startBar) < EPS && Math.abs(c.lengthBars - takeClip.lengthBars) < EPS)
       : undefined;
+    // (a folder already holding the most takes: the new ones make a folder of their own)
+    if (same && (same.takes?.length || 1) >= SONG_CAPS.takes) same = undefined;
     if (same || played.length > 1) {
+      // The latest passes, as many as the folder has room for
+      const room = SONG_CAPS.takes - (same ? same.takes?.length || 1 : 0);
+      if (played.length > room) {
+        left.passes += played.length - room;
+        kinds.add('takes');
+        played = played.slice(-room);
+      }
       // A take folder: quantized as it's made (one undo step), each take as it was played otherwise
       const q = (notes: NoteEvent[]) => (grid === 'off' ? notes : quantizeTakeClip({ ...(same ?? ({} as Clip)), startBar: takeClip.startBar, lengthBars: takeClip.lengthBars, notes } as Clip, grid).notes);
-      let folder: Clip = same ?? {
-        id: uid('clip'),
-        trackId,
-        name: `Take ${maxOf(0, s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`,
-        startBar: takeClip.startBar,
-        lengthBars: takeClip.lengthBars,
-        notes: q(played[0].notes),
-        isSelected: true,
-        ...(played[0].expression ? { expression: played[0].expression } : {}),
-      };
-      for (const [i, t] of played.entries()) {
-        if (!same && i === 0) {
-          folder = { ...folder, takes: [{ id: uid('take'), name: 'Take 1', notes: folder.notes, ...(t.expression ? { expression: t.expression } : {}) }] };
-          continue;
+      const folderId = uid('clip');
+      const name = `Take ${maxOf(0, s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`;
+      const folderOf = (passes: typeof played): Clip => {
+        let folder: Clip = same ?? {
+          id: folderId,
+          trackId,
+          name,
+          startBar: takeClip.startBar,
+          lengthBars: takeClip.lengthBars,
+          notes: q(passes[0].notes),
+          isSelected: true,
+          ...(passes[0].expression ? { expression: passes[0].expression } : {}),
+        };
+        for (const [i, t] of passes.entries()) {
+          if (!same && i === 0) {
+            folder = { ...folder, takes: [{ id: uid('take'), name: 'Take 1', notes: folder.notes, ...(t.expression ? { expression: t.expression } : {}) }] };
+            continue;
+          }
+          folder = addTake(folder, { id: uid('take'), name: `Take ${(folder.takes?.length ?? 1) + 1}`, notes: q(t.notes), ...(t.expression ? { expression: t.expression } : {}) });
         }
-        folder = addTake(folder, { id: uid('take'), name: `Take ${(folder.takes?.length ?? 1) + 1}`, notes: q(t.notes), ...(t.expression ? { expression: t.expression } : {}) });
+        folder = { ...applyComp(folder, () => uid('note')), isSelected: true };
+        // (the comp is notes of the clip too: no more than a clip holds)
+        return folder.notes.length > MAX_CLIP_NOTES ? { ...folder, notes: folder.notes.slice(0, MAX_CLIP_NOTES) } : folder;
+      };
+      const clipsWith = (folder: Clip) => {
+        const st = get();
+        return same
+          ? st.clips.map((c) => (c.id === same!.id ? folder : c.isSelected ? { ...c, isSelected: false } : c))
+          : [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), folder];
+      };
+      let folder = folderOf(played);
+      if (!fits(clipsWith(folder))) {
+        // As many of the latest passes as the song has room for...
+        const keep = most(played.length, (n) => n > 0 && fits(clipsWith(folderOf(played.slice(-n)))));
+        const before = played;
+        played = played.slice(-Math.max(1, keep));
+        left.passes += before.length - played.length;
+        if (!keep) {
+          // ...or of the latest one, as many of its notes as there's room for
+          const last = played[0];
+          const notes = most(last.notes.length, (n) => fits(clipsWith(folderOf([{ ...last, notes: last.notes.slice(0, n) }]))));
+          const cut = { ...last, notes: last.notes.slice(0, notes) };
+          if (!fits(clipsWith(folderOf([cut])))) {
+            for (const k of editPastCaps(get(), { ...get(), clips: clipsWith(folderOf([cut])) })) kinds.add(k);
+            nothingKept();
+            return;
+          }
+          left.notes += last.notes.length - notes;
+          played = [cut];
+        }
+        for (const k of editPastCaps(get(), { ...get(), clips: clipsWith(folderOf(before)) })) kinds.add(k);
+        folder = folderOf(played);
       }
-      folder = { ...applyComp(folder, () => uid('note')), isSelected: true };
-      set((st) => ({
-        clips: same
-          ? st.clips.map((c) => (c.id === same.id ? folder : c.isSelected ? { ...c, isSelected: false } : c))
-          : [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), folder],
-        ...pushPast(st),
-      }));
+      set((st) => ({ clips: clipsWith(folder), ...pushPast(st) }));
+      tell();
       return;
     }
     // One past the highest "Take N" already on the track
     const taken = s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0));
-    const clip: Clip = {
+    let clip: Clip = {
       id: uid('clip'),
       trackId,
       name: `Take ${maxOf(0, taken) + 1}`,
@@ -1270,12 +1438,26 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       lengthBars: takeClip.lengthBars,
       notes: played[0].notes,
       isSelected: true,
-      ...(takeClip.expression ? { expression: takeClip.expression } : {}),
+      ...(played[0].expression ? { expression: played[0].expression } : {}),
     };
+    const clipsWith = (c: Clip) => [...get().clips.map((x) => (x.isSelected ? { ...x, isSelected: false } : x)), c];
+    if (!fits(clipsWith(clip))) {
+      for (const k of editPastCaps(get(), { ...get(), clips: clipsWith(clip) })) kinds.add(k);
+      // As many of its notes as there's room for
+      const notes = most(clip.notes.length, (n) => fits(clipsWith({ ...clip, notes: clip.notes.slice(0, n) })));
+      const cut = { ...clip, notes: clip.notes.slice(0, notes) };
+      if (!fits(clipsWith(cut))) {
+        nothingKept();
+        return;
+      }
+      left.notes += clip.notes.length - notes;
+      clip = cut;
+    }
     set((st) => ({
-      clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
+      clips: clipsWith(clip),
       ...pushPast(st),
     }));
+    tell();
     if (grid === 'off') return;
     const quantized = quantizeTakeClip(clip, grid);
     set((st) => ({ clips: st.clips.map((c) => (c.id === clip.id ? quantized : c)), ...pushPast(st) }));
@@ -3130,7 +3312,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const entry = s.past[s.past.length - 1];
       // An insert / delete bars takes the loop and the playhead back with it (and its redo moves them again)
       const spot = entry.ripple && rippleSpot(s, entry.ripple, true);
-      set({
+      putBackStep({
         ...restoreEntry(s, entry),
         past: s.past.slice(0, -1),
         future: [sameStep(historyEntry(s), entry), ...s.future].slice(0, HISTORY_LIMIT),
@@ -3151,7 +3333,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const s = get();
       const entry = s.future[0];
       const spot = entry.ripple && rippleSpot(s, entry.ripple, false);
-      set({
+      putBackStep({
         ...restoreEntry(s, entry),
         future: s.future.slice(1),
         past: [...s.past.slice(-(HISTORY_LIMIT - 1)), sameStep(historyEntry(s), entry)],
