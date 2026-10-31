@@ -16,7 +16,7 @@ import type { ListenComparison, ListenReport } from '../../../src/agent/listenRe
 import { readJson, readSong, sameFile, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions } from './browserRender';
 import { printErr, printOut, safeText } from './print';
-import { barRange, loudnessText, suggestionIdBase, UsageError, type Flags } from './commands';
+import { barRange, loudnessText, sayLeftOut, suggestionIdBase, UsageError, type Flags } from './commands';
 import { maxOf } from '../../../src/support/minMax';
 
 const say = printOut;
@@ -196,6 +196,7 @@ function renderText(r: RenderResult): string[] {
 
 export async function render(args: string[], flags: Flags): Promise<number> {
   const plan = renderPlan(args, flags);
+  sayLeftOut(readSong(plan.song));
   const result = await renderSongFile(plan, browserOptions(flags));
   if (flags.json) say(JSON.stringify({ ...(result.mix ? { mix: result.mix } : {}), ...(result.stems ? { stems: result.stems } : {}), written: result.written }, null, 2));
   else {
@@ -301,6 +302,7 @@ function reportText(r: ListenReport, label = ''): string[] {
 export async function listen(args: string[], flags: Flags): Promise<number> {
   const plan = listenPlan(args, flags);
   const song = readSong(plan.song);
+  sayLeftOut(song);
   const hearWith = opsToHear(song, plan);
   const result = await listenSongFile(plan.song, { fromBar: plan.fromBar, toBar: plan.toBar, perTrack: plan.perTrack, with: hearWith }, browserOptions(flags, 'Listening'));
   if (flags.json) {

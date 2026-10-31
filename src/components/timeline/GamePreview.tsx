@@ -5,7 +5,7 @@
  */
 import { CostumesPanel, StateOptionsPanel } from './GameCostumes';
 import { GameParamsPanel } from './GameParams';
-import { measureAt, secondsBetween, tempoAt } from '../../audio/tempoMap';
+import { measureAt, secondsBetween } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
@@ -14,7 +14,7 @@ import { getAudibleMoment } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
-import { fireStinger, handOut, playNotesAt, renderStinger, stingerAt, type HandedNotes } from '../../audio/stingerPlayer';
+import { fireStinger, handOut, renderStinger, stingerAt, type HandedNotes } from '../../audio/stingerPlayer';
 import { ruleFor, transitionCue } from '../../store/transitions';
 import { bridgeFor } from '../../audio/gameKit';
 import { AuditionButton, TransitionMatrix } from './GameMatrix';
@@ -263,7 +263,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
     const stinger = st().stingers.find((x) => x.id === id);
     if (!stinger) return;
     try {
-      const at = await fireStinger(stinger, timing);
+      const at = await fireStinger(stinger, timing, st().bpm);
       const wait = Math.max(0, (at - liveContext.currentTime) * 1000);
       window.setTimeout(() => setLit(id), wait);
       window.setTimeout(() => setLit((cur) => (cur === id ? null : cur)), wait + 400);
@@ -392,6 +392,8 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
  */
 
 type Quantize = 'bar' | 'beat' | 'now';
+/** 'At once' while playing: the switch goes on the first of this many steps a measure it can reach */
+const NOW_STEPS = 32;
 // (A rule's own timing can also be 'phrase' or 'end')
 
 /** A switch on its way (see GamePanel): 'pausing' while it pauses the song for its stinger or bridge. */
@@ -455,6 +457,10 @@ export const GamePanel: React.FC = () => {
     const written = rule.kind === 'bridge' ? bridgeFor(gameKitSong(), sec, rule.bridgeBars ?? 1, songTempo(s), { base: s.meter, points: s.meterPoints }) : null;
     const bridgeBars = bridge ? Math.max(1, Math.ceil(bridge.lengthBars - 1e-6)) : written ? written.lengthBars : 0;
     const when = rule.quantize ?? quantize;
+    // The tempo the export plays them at (see gameKit.ts): a stinger and a cue at the song's own
+    // tempo, a written bridge at the new state's; and the seconds the state waits for them
+    const bpm = s.bpm;
+    const bridgeSeconds = bridge ? (bridgeBars * 240) / bpm : written ? (written.lengthBars * 240) / written.bpm : 0;
     const jump = () => {
       const st = useTimelineStore.getState();
       switching.current = null;
@@ -463,14 +469,15 @@ export const GamePanel: React.FC = () => {
       st.seek(sec.from);
       setPending(null);
     };
-    if (!s.isPlaying || when === 'now') {
+    if (!s.isPlaying) {
       jump();
       // play(), not togglePlay(): a second press while sounds load mustn't call the first off
-      if (!s.isPlaying) void s.play();
-      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1).catch(() => {});
-      if (bridge && s.isPlaying) void fireStinger(bridge, 'now');
+      void s.play();
+      if (cue && cue.leadIn === 0) void handOut(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1, bpm).done.catch(() => {});
       return;
     }
+    // ('now' while playing: as soon as it can be, on a fine grid (see unitAt), by the same way as
+    // a line: its stinger or bridge, then the state; a cue's lead-in first, as the exported player does)
     // On the next bar or beat line of the song, or a later one if the transition needs more room
     const heard = getAudibleMoment();
     const at = heard.bar;
@@ -485,7 +492,7 @@ export const GamePanel: React.FC = () => {
     // The song's own measure and beat lines (a 3/4 measure is 3/4 of a whole note)
     const unitAt = (bar: number) => {
       const m = measureAt(bar, meter);
-      return { start: m.start, unit: when === 'beat' ? m.length / m.meter.num : m.length };
+      return { start: m.start, unit: when === 'beat' ? m.length / m.meter.num : when === 'now' ? m.length / NOW_STEPS : m.length };
     };
     const gridAfter = (l: Line): Line => {
       const { start, unit } = unitAt(l.bar);
@@ -495,19 +502,21 @@ export const GamePanel: React.FC = () => {
     const phrase = (rule.phraseBars ?? 4) * unitAt(at).unit;
     const after = (l: Line): Line => (state && when === 'phrase' ? fold(Math.min(state.to, l.bar + phrase), l.round) : state && when === 'end' ? { bar: state.from, round: l.round + 1 } : gridAfter(l));
     let next: Line = state && when === 'phrase' ? fold(Math.min(state.to, state.from + Math.ceil((at - state.from) / phrase - 1e-6) * phrase), 0) : state && when === 'end' ? { bar: state.from, round: 1 } : gridAfter({ bar: at, round: 0 });
-    // How far along the song plays to a line (in bars), and when it's there: the line on the clock
+    // When the song is at a line: the line on the clock
     // the song plays by. `at` is what's heard now, which was played there an output latency ago (or
     // is still to start). The cue, stinger and bridge start on it and the song stops on it (by the
     // time heard, they'd come that much late, and the song's note on the line would sound before it
     // stopped). Round the loop, the part from its start plays at its own tempo
-    const along = (l: Line) => (l.round === 0 || !loopNow ? l.bar - at : loopNow.to - at + (l.round - 1) * (loopNow.to - loopNow.from) + (l.bar - loopNow.from));
     const lineOf = (l: Line) =>
       heard.at + (l.round === 0 || !loopNow ? secondsBetween(at, l.bar, tempo) : secondsBetween(at, loopNow.to, tempo) + (l.round - 1) * secondsBetween(loopNow.from, loopNow.to, tempo) + secondsBetween(loopNow.from, l.bar, tempo));
-    if (cue) for (let i = 0; i < 64 && along(next) < cue.leadIn - 1e-6; i++) next = after(next);
+    // A cue's lead-in starts that many seconds before the line (the export's, at the song's own
+    // tempo), from what's heard now on; and its start must still be ahead of the audio clock
+    const lead = cue ? (cue.leadIn * 240) / bpm : 0;
     // A line too close to reach goes to the next one: a jump lands a look-ahead after it's made
     // (see seekTransport), and the stinger and bridge need a moment to be handed out
     const earliest = liveContext.currentTime + (bridge || written ? 0 : liveContext.lookAhead) + 0.02;
-    for (let i = 0; i < 64 && lineOf(next) < earliest; i++) next = after(next);
+    const reachable = (l: Line) => lineOf(l) >= earliest && lineOf(l) - lead >= Math.max(heard.at, liveContext.currentTime + 0.02);
+    for (let i = 0; i < 4 * NOW_STEPS && !reachable(next); i++) next = after(next);
     const lineAt = lineOf(next);
     /**
      * Run `then` when the audio clock is just short of `time`: looked at again as it nears, as the
@@ -525,15 +534,15 @@ export const GamePanel: React.FC = () => {
       return h;
     };
     switching.current = sw;
-    let cueNotes = cue ? handed(handOut(cue.instrumentKey, cue.notes, lineAt)) : null;
+    let cueNotes = cue ? handed(handOut(cue.instrumentKey, cue.notes, lineAt, bpm)) : null;
     setPending(sec.id);
     if (bridge || written) {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
       // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
-      if (bridge) handed(stingerAt(bridge, lineAt));
+      if (bridge) handed(stingerAt(bridge, lineAt, bpm));
       if (written) for (const c of written.clips) {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
-        if (key) handed(handOut(key, c.notes, lineAt));
+        if (key) handed(handOut(key, c.notes, lineAt, written.bpm));
       }
       onClock(lineAt, () => {
         const st = useTimelineStore.getState();
@@ -552,7 +561,7 @@ export const GamePanel: React.FC = () => {
           if (now.isPlaying || now.playheadPosition !== sw.pausedAt) return callOff();
           jump();
           void now.play();
-        }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next.bar, tempo) - 40);
+        }, bridgeSeconds * 1000 - 40);
         // (Paused just ahead of the line: its notes, handed out already, are called off; see releaseAll)
       });
       return;
@@ -574,7 +583,7 @@ export const GamePanel: React.FC = () => {
           if (cue && cueNotes) {
             cueNotes.cancel();
             sw.notes = sw.notes.filter((n) => n !== cueNotes);
-            cueNotes = handed(handOut(cue.instrumentKey, cue.notes, lineOf(later)));
+            cueNotes = handed(handOut(cue.instrumentKey, cue.notes, lineOf(later), bpm));
           }
           jumpOn(later);
         }
