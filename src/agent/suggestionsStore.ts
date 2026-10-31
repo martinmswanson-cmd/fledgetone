@@ -190,6 +190,8 @@ export interface SuggestionsState {
   announcement: string;
   /** The time of the last message the musician has had on screen (later ones are new). */
   messagesSeenAt: number;
+  /** While an Accept is going in: its statuses on the way are told to no one (see settledChanges) */
+  settling: boolean;
 }
 
 export const useSuggestions = create<SuggestionsState>(() => ({
@@ -202,7 +204,22 @@ export const useSuggestions = create<SuggestionsState>(() => ({
   focusId: null,
   announcement: '',
   messagesSeenAt: 0,
+  settling: false,
 }));
+
+/**
+ * Follow the suggestions' statuses as they settle: `each` gets the list as last settled and the
+ * list now, never one from while an Accept was going in (a failed one then tells nothing at all).
+ */
+export function settledChanges(each: (before: readonly Suggestion[], after: readonly Suggestion[]) => void): () => void {
+  let base = useSuggestions.getState().suggestions;
+  return useSuggestions.subscribe((s) => {
+    if (s.settling || s.suggestions === base) return;
+    const before = base;
+    base = s.suggestions;
+    each(before, s.suggestions);
+  });
+}
 
 /** A suggestion's own id: random, so its new things' ids never meet another's. */
 export function newSuggestionId(): string {

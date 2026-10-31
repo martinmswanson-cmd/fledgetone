@@ -21,7 +21,7 @@ import { closeMessage, createBridgeClient, type BridgeClient, type BridgeInfo } 
 import { CONVERSATION, DEFAULT_PERMISSIONS, readUserMessage, USER_MESSAGE_STATUS, type Permissions, type UserMessageStatusParams } from './protocol';
 import { addOwn, failSending, newConnection, newUserMessageId, NO_ANSWER_REASON, outgoing, selectionContext, setDelivery, useConversation, type OwnMessage } from './conversation';
 import { RevisionCounter } from './revision';
-import { useSuggestions } from './suggestionsStore';
+import { settledChanges, useSuggestions } from './suggestionsStore';
 import { watchSong } from './songWatch';
 import { studioHandlers, viewSelection } from './handlers';
 
@@ -50,6 +50,8 @@ export function trackSong(): void {
   counter.update(songParts(useTimelineStore.getState()) as unknown as Record<string, unknown>);
   let changedTimer = 0;
   let viewTimer = 0;
+  // (what the agent last heard of the view: get_view tells it the same)
+  let lastView = JSON.stringify(viewSelection(useTimelineStore.getState()));
   const unwatch = watchSong((ctx) => {
     const before = counter.revision;
     const revision = counter.update(ctx.parts);
@@ -68,7 +70,12 @@ export function trackSong(): void {
         // (asked again now: "See what I select" may have been unticked meanwhile)
         if (!useSuggestions.getState().permissions.see) return;
         const t = useTimelineStore.getState();
-        client?.emit('view', viewSelection(t));
+        // (the same as the last one told: nothing new, e.g. a failed Accept put the clips back)
+        const view = viewSelection(t);
+        const said = JSON.stringify(view);
+        if (said === lastView) return;
+        lastView = said;
+        client?.emit('view', view);
       }, 400);
     }
   });
@@ -78,18 +85,22 @@ export function trackSong(): void {
     if (prev.permissions.see && !s.permissions.see) {
       window.clearTimeout(viewTimer);
       viewTimer = 0;
+      lastView = '';
     }
-    if (s.suggestions === prev.suggestions) return;
-    const was = new Map(prev.suggestions.map((x) => [x.id, x.status]));
+  });
+  // (as they settle: an Accept's statuses on the way, or a failed one's, aren't told)
+  const unsubSettled = settledChanges((before, after) => {
+    const was = new Map(before.map((x) => [x.id, x.status]));
     // (only this agent's own: another connection's suggestions are none of its business)
     const connection = useConversation.getState().connection;
-    for (const x of s.suggestions) if (x.connection === connection && was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
+    for (const x of after) if (x.connection === connection && was.has(x.id) && was.get(x.id) !== x.status) client?.emit('suggestion', { id: x.id, status: x.status, ...(x.status === 'out_of_date' && x.outOfDate ? { outOfDate: x.outOfDate } : {}) });
   });
   useSuggestions.setState({ revision: counter.revision });
   tracking = () => {
     unwatch();
     unsub();
     unsubS();
+    unsubSettled();
     window.clearTimeout(changedTimer);
     window.clearTimeout(viewTimer);
   };

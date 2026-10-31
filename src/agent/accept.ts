@@ -117,12 +117,18 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
   if (useAudition.getState().key === id) stopAudition();
   // (its undo step is named, so an undo or redo of exactly that step is told apart from the old values coming back)
   const step = `${id}@${Date.now()}`;
-  updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step });
-  if (!applyAsOneStep(decision.apply)) {
+  // (its statuses on the way are told to no one: only where it settles, see settledChanges)
+  useSuggestions.setState({ settling: true });
+  let went = false;
+  try {
+    updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step });
+    went = applyAsOneStep(decision.apply);
     // Nothing went in: the suggestion is as it was, and says so
-    updateSuggestion(id, { ...decision.suggestion, status: s.status, step: s.step });
-    return "This suggestion can't go into your song: nothing was changed.";
+    if (!went) updateSuggestion(id, { ...decision.suggestion, status: s.status, step: s.step });
+  } finally {
+    useSuggestions.setState({ settling: false });
   }
+  if (!went) return "This suggestion can't go into your song: nothing was changed.";
   tagLastStep(step);
   forgetAudition(id);
   return null;
