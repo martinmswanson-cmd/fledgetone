@@ -311,6 +311,8 @@ interface Voice {
   own: [number, number][];
   /** Till when it follows the instrument's bends (its end and release, Infinity when not known) */
   until: number;
+  /** When it starts sounding */
+  startAt: number;
 }
 
 /** A voice's own bend at `time` (cents): the latest of its own points at or before it, else 0 */
@@ -413,7 +415,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     source.start(at);
     // No stop at the sound's end worked out from the rate now: a bend down afterwards slows it,
     // and the note was cut before its end. Not looping, it ends by itself when the sound does.
-    const v: Voice = { source, env, semis, k, stopAt: Infinity, released: false, own: [], until };
+    const v: Voice = { source, env, semis, k, stopAt: Infinity, released: false, own: [], until, startAt: at };
     voices.add(v);
     source.onended = () => {
       voices.delete(v);
@@ -483,6 +485,16 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       const now = raw.currentTime;
       for (const v of voices) {
         if (v.stopAt <= now) continue;
+        if (v.startAt > now) {
+          // Not started yet: it never sounds (holding its level now would hold the gain's 1 before
+          // its attack, and the note would play and fade)
+          v.env.gain.cancelScheduledValues(0);
+          v.env.gain.value = 0;
+          v.source.stop(v.startAt);
+          v.stopAt = v.startAt;
+          v.released = true;
+          continue;
+        }
         v.released = false;
         release(v, now);
       }
