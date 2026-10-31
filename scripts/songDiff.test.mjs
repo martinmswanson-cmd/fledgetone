@@ -736,3 +736,110 @@ test('cautions and What changes name inserts, their settings and the master part
   assert.ok(!/none to|\bfreq\b|\blowFreq\b/.test(d), d);
   assert.match(d, /Turns on the Mono bass on .*\(frequency \d+\)/);
 });
+
+test('never fewer bars than the truth: linking or unlinking a clip moves the passes of notes played on some of them (scan r11)', async () => {
+  const a = base();
+  const id = a.tracks[0].id;
+  const quiet = (t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], output: undefined, sends: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } });
+  const riff = (cond) => [{ id: 'n1', note: 'E3', startOffset: 0, duration: '8n', velocity: 0.8 }, { id: 'n2', note: 'G3', startOffset: 0.5, duration: '8n', velocity: 0.8, ...(cond ? { cond: { n: 1, of: 2 } } : {}) }];
+  // Four copies side by side (bars 2-5, passes 0 1 2 3), and one more far on at bar 20
+  const song = (cond) => ({
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 },
+    tracks: [quiet({ ...a.tracks[0], instrumentKey: 'pluck' })],
+    clips: [2, 3, 4, 5, 20].map((bar, i) => ({ id: `a${i + 1}`, trackId: id, name: 'Riff', startBar: bar, lengthBars: 1, notes: riff(cond) })),
+  });
+  const reaches = (d, bar) => d.regions.some((r) => r.fromBar <= bar && r.toBar > bar);
+  const linked = (s, p) => ({ ...s, clips: s.clips.map((c) => (c.id === 'a2' ? { ...c, pattern: p } : c)) });
+  // Notes that play every time: a link is nothing to hear
+  const plain = diffSongs(song(false), linked(song(false), 'p1'));
+  assert.match(texts(plain)[0], /^Links the clip "Riff" to its copies\.$/);
+  assert.deepEqual(plain.regions, []);
+  // "1st of every 2": the linked clip starts a run of its own (pass 0, not 1), and the copies after
+  // it move with it, at their own bars and on to where the track stops
+  const { clipRuns } = await import('../src/store/noteChance.ts');
+  const passes = (s) => [...clipRuns(s.clips)].map(([k, r]) => `${k}:${r.index}`).sort().join(' ');
+  assert.notEqual(passes(song(true)), passes(linked(song(true), 'p1')));
+  for (const [x, y] of [[song(true), linked(song(true), 'p1')], [linked(song(true), 'p1'), song(true)]]) {
+    const d = diffSongs(x, y);
+    assert.ok(reaches(d, 3) && reaches(d, 4) && reaches(d, 5) && reaches(d, 20), `${texts(d)} ${JSON.stringify(d.regions)}`);
+    assert.ok(!reaches(d, 2), 'not the clips before it');
+  }
+  // A clip made longer changes its run too: from its start, not only past its old end
+  const longer = diffSongs(song(true), { ...song(true), clips: song(true).clips.map((c) => (c.id === 'a2' ? { ...c, lengthBars: 1.5 } : c)) });
+  assert.ok(reaches(longer, 3) && reaches(longer, 20), JSON.stringify(longer.regions));
+  // A note changed late in a clip: the clip's run changes, so its notes before the change too
+  const late = diffSongs(song(true), { ...song(true), clips: song(true).clips.map((c) => (c.id === 'a3' ? { ...c, notes: c.notes.map((n) => (n.id === 'n2' ? { ...n, velocity: 0.5 } : n)) } : c)) });
+  assert.ok(reaches(late, 4) && late.regions[0].fromBar <= 4, JSON.stringify(late.regions));
+});
+
+test('never fewer bars than the truth: a feel clip that takes its part from its track hears a rename or far-off notes that move that part (scan r11)', async () => {
+  const { feelPartOf } = await import('../src/audio/mixCheck.ts');
+  const a = base();
+  const id = a.tracks[0].id;
+  const quiet = (t) => ({ ...t, reverbSend: 0, delaySend: 0, distance: 0, automation: [], output: undefined, sends: undefined, fx: { ...t.fx, echo: { ...t.fx.echo, on: false }, reverb: { ...t.fx.reverb, on: false }, pump: { ...t.fx.pump, on: false } } });
+  const n = (k, note, at) => ({ id: `n${k}`, note, startOffset: at, duration: '16n', velocity: 0.8 });
+  const song = (role) => ({
+    ...a,
+    bpm: 120,
+    tempoPoints: [],
+    masterFx: { reverbDecay: 1, delayTime: '4n', delayFeedback: 0 },
+    tracks: [quiet({ ...a.tracks[0], name: 'Keys', instrumentKey: 'pluck' })],
+    clips: [
+      { id: 'f', trackId: id, name: 'Feel', startBar: 1, lengthBars: 4, notes: [0, 1, 2, 3, 4, 5].map((k) => n(k, 'E4', k * 0.5)), groove: { swing: 0, grid: 16, feel: { id: 'bassTight', amount: 1, ...(role ? { role } : {}) } } },
+      { id: 'far', trackId: id, name: 'End', startBar: 30, lengthBars: 1, notes: [n(9, 'E4', 0)] },
+    ],
+  });
+  const reaches = (d, bar) => d.regions.some((r) => r.fromBar <= bar && r.toBar > bar);
+  const renamed = (s, name) => ({ ...s, tracks: s.tracks.map((t) => ({ ...t, name })) });
+  assert.equal(feelPartOf(song().tracks[0], song().clips), 'music');
+  assert.equal(feelPartOf(renamed(song(), 'Bass').tracks[0], song().clips), 'bass');
+  // A name that moves the part: heard where the feel clip plays; one that doesn't, or a feel with a part of its own: nowhere
+  assert.ok(reaches(diffSongs(song(), renamed(song(), 'Bass')), 2));
+  assert.deepEqual(diffSongs(song(), renamed(song(), 'Rhodes')).regions, []);
+  assert.deepEqual(diffSongs(song('lead'), renamed(song('lead'), 'Bass')).regions, []);
+  // Low notes far off (bar 30) that pull the track's middle pitch down: the feel clip at bar 1 too
+  const low = { ...song(), clips: song().clips.map((c) => (c.id === 'far' ? { ...c, notes: Array.from({ length: 12 }, (_, k) => n(`l${k}`, 'C1', k / 16)) } : c)) };
+  assert.equal(feelPartOf(low.tracks[0], low.clips), 'bass');
+  const d = diffSongs(song(), low);
+  assert.ok(reaches(d, 1) && reaches(d, 30), JSON.stringify(d.regions));
+  // A note added late in the feel clip: chords or lead is decided by all its notes, so the whole clip
+  const chord = { ...song(), clips: song().clips.map((c) => (c.id === 'f' ? { ...c, notes: [...c.notes, n('c', 'G4', 2.5)] } : c)) };
+  assert.equal(diffSongs(song(), chord).regions[0].fromBar, 1);
+});
+
+test('What changes says settings as the studio does: a Pump\'s track by its name, on and off, the menus\' words; a master part switched on with its settings; the designed drums counted (scan r11)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const a = base();
+  const [keys, drums] = a.tracks.map((t) => t.id);
+  const run = (s, ops) => {
+    const out = applyOps(s, { opsVersion: 1, ops }, { idBase: 'sg1' });
+    assert.ok(out.ok, JSON.stringify(out));
+    return { song: out.song, words: [...texts(diffSongs(s, out.song)), ...out.warnings].join('\n') };
+  };
+  const pump = run(a, [{ op: 'set_insert', trackId: keys, insert: 'pump', settings: { on: true, trigger: 'track', source: drums } }]);
+  assert.match(pump.words, /track it follows "Drums"/);
+  assert.ok(!pump.words.includes(drums), pump.words);
+  assert.match(pump.words, /trigger kick to a track/);
+  const echo = run(run(a, [{ op: 'set_insert', trackId: keys, insert: 'echo', settings: { on: true } }]).song, [{ op: 'set_insert', trackId: keys, insert: 'echo', settings: { pingPong: false, time: '1/4d' } }]);
+  assert.match(echo.words, /ping-pong on to off/);
+  assert.match(echo.words, /time [^,]* to 1\/4 dotted/);
+  const filter = run(a, [{ op: 'set_insert', trackId: keys, insert: 'filter', settings: { on: true, type: 'highpass' } }]);
+  assert.match(filter.words, /type low-pass to high-pass/);
+  const width = run(run(a, [{ op: 'set_master', width: { on: true } }]).song, [{ op: 'set_master', width: { monoBass: false } }]);
+  assert.match(width.words, /mono bass on to off/);
+  const ott = run(a, [{ op: 'set_master', ott: { on: true, depth: 0.9 } }]);
+  assert.match(ott.words, /Turns on the master OTT \(depth 0\.5 to 0\.9\)\./);
+  const loud = run(a, [{ op: 'set_master', loud: { on: true, target: 'club' } }]);
+  assert.match(loud.words, /Turns on the master Loud \(target club \(-6 LUFS\)/);
+  const kept = run(loud.song, [{ op: 'set_master', loud: { target: 'nonsense' } }]);
+  assert.match(kept.words, /isn.t one of its choices \(set to loud \(-9 LUFS\)\)/);
+  for (const raw of [/\btrue\b/, /\bfalse\b/, /\blowpass\b/, /\bhighpass\b/, /\bkickSnare\b/, /1\/8d\b/]) for (const w of [pump, echo, filter, width, ott, loud, kept]) assert.ok(!raw.test(w.words), `${raw} in\n${w.words}`);
+  // The designed kit's sounds: a change heard where the track plays, never left out
+  const kit = { ...a, tracks: a.tracks.map((t) => (t.id === drums ? { ...t, drumDesign: { kick: { preset: 'x' } } } : t)) };
+  const dd = diffSongs(a, kit);
+  assert.match(texts(dd).join('\n'), /Changes the designed drum sounds of "Drums"\./);
+  assert.ok(dd.regions.length > 0);
+});

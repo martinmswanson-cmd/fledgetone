@@ -16,6 +16,7 @@ import { detrended, levelBetween, sumDb, type BandSpectrum } from './mixAnalysis
 import type { Clip, Track } from '../store/timelineTypes';
 import type { MasterStats } from './effects/masterAfter';
 import { busChain } from '../store/buses';
+import { padRoleOf } from '../store/grooveFeels';
 
 /** What a track does in the mix, for knowing who to point at. */
 export type TrackRole = 'drums' | 'bass' | 'vocal' | 'music';
@@ -33,6 +34,16 @@ export function trackRole(track: Pick<Track, 'instrumentKey' | 'name' | 'id'>, c
     if (midis.length && midis[Math.floor(midis.length / 2)] < 45) return 'bass';
   }
   return 'music';
+}
+
+/**
+ * What a track's clips with a measured feel and no part of their own play as (scheduler.ts
+ * feelRole): a Drum Rack by its pads' names ("rack:kick,snare,perc..."), else its trackRole (from
+ * its instrument, its name and the notes of all its clips). So a track's name, and its notes far
+ * from a feel clip, can move how that clip plays (songDiff.ts counts it where those clips sound).
+ */
+export function feelPartOf(track: Pick<Track, 'instrumentKey' | 'name' | 'id' | 'rack'>, clips: readonly Pick<Clip, 'trackId' | 'notes' | 'audio'>[] = []): string {
+  return INSTRUMENTS[track.instrumentKey]?.kind === 'rack' ? `rack:${(track.rack?.pads ?? []).map((p) => (p.soundId ? padRoleOf(p.name) : 'perc')).join(',')}` : trackRole(track, clips);
 }
 
 /** Whether a track is ducked to the kick already: a Pump on it or on a bus it plays through. */

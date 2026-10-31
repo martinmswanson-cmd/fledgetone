@@ -229,7 +229,13 @@ fewer bars than the truth. First by rules:
   it is and as suggested (a short note added under a long held one cuts it there, and taking one
   away lets the held note ring on); and a swung clip all of it (its swing is decided over the
   whole clip: its own swing, or the song's for a clip with none of its own that starts off the
-  song's 16th grid);
+  song's 16th grid), as is a clip with a groove feel that takes its part from its track (chords
+  or lead is decided by all its notes); on a track with notes that play only on some passes, a
+  clip's change (its notes, its length, linking it to its copies or unlinking it) is heard from
+  the clip's start, since its run of copies, and so its pass, can change;
+- a change that makes a track's feel clips (a groove feel with no part of its own) play as
+  another part: renaming the track ("Keys" to "Bass"), its notes anywhere (low notes far off
+  moving its middle pitch), a Drum Rack's pad names: wherever those clips play, with their tail;
 - a change of a track's sound (its level, pan, mute, instrument, synth sound, EQ, inserts, sends,
   routing, distance) or any of its automation (a lane holds its first value before its first
   point and its last after its last, so a lane is never heard only at its points; a send's,
@@ -243,7 +249,8 @@ fewer bars than the truth. First by rules:
   it (or bar 1) when it glides or the change after it glides into it (a glide speeds up or slows
   down the bars before its own); the song's tempo or time signature, the master, a solo, or
   anything else: the whole song;
-- a name, a marker or a link between clips: nothing to hear.
+- a name, a marker or a link between clips: nothing to hear (but see the passes and the feel
+  clips above).
 
 Then by sound: the studio renders the whole song as it is and as suggested (in the background,
 as soon as the suggestion arrives, never while the song plays, or when the musician presses

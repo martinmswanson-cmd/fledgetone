@@ -24,10 +24,10 @@ import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
-import { drumRoleOf, feelNote, feelOf, feelPos, melodicRoleOf, padRoleOf, type GrooveRole } from '../store/grooveFeels';
+import { drumRoleOf, feelNote, feelOf, feelPos, melodicRoleOf, type GrooveRole } from '../store/grooveFeels';
 import { isPlainMeter, type MeterMap } from './tempoMap';
 import { padOfNote } from '../store/sampleKits';
-import { trackRole } from './mixCheck';
+import { feelPartOf } from './mixCheck';
 import { pumpKitsOf } from '../store/freeze';
 import { clipCcEvents, heldCcAt, type CcEvent } from './ccHold';
 
@@ -236,10 +236,23 @@ function feelRole(clip: Clip, track: Track | undefined, clips: readonly Clip[], 
   if (!clip.groove?.feel || !track) return undefined;
   let r = memo.get(track.id);
   if (r === undefined) {
-    r = INSTRUMENTS[track.instrumentKey]?.kind === 'rack' ? `rack:${(track.rack?.pads ?? []).map((p) => (p.soundId ? padRoleOf(p.name) : 'perc')).join(',')}` : trackRole(track, clips);
+    r = feelPartOf(track, clips);
     memo.set(track.id, r);
   }
-  return r === 'drums' || r.startsWith('rack:') ? (r as FeelPart) : melodicRoleOf(r, clip.notes);
+  return r === 'drums' || r.startsWith('rack:') ? (r as FeelPart) : melodicRoleOf(r, feelNotesOf(clip, clips));
+}
+
+/**
+ * The notes a clip's chords or lead are told apart by (melodicRoleOf), each at its own place in
+ * the clip: in a render that begins a held note again (auditionMath.ts restartHeldNotes) the clip's
+ * own notes and those begun again, at the places they really begin, so the clip plays as it does in
+ * the whole song.
+ */
+function feelNotesOf(clip: Clip, clips: readonly Clip[]): ReadonlyArray<{ startOffset: number }> {
+  const own = ownClipId(clip.id);
+  if (own === clip.id && !clip.notes.some((n) => n.heldFrom !== undefined)) return clip.notes;
+  const start = clips.find((c) => c.id === own)?.startBar ?? clip.startBar;
+  return clips.filter((c) => ownClipId(c.id) === own).flatMap((c) => c.notes.map((n) => ({ startOffset: n.heldFrom !== undefined ? n.heldFrom - start : n.startOffset })));
 }
 
 /**
