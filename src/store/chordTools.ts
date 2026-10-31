@@ -3,6 +3,7 @@ import { barsToDuration, durationToBars } from './timelineTypes';
 import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
 import { chordName, degreeChord, seeded, voiceLead } from './smartTools';
+import { maxOf } from '../support/minMax';
 
 /**
  * The piano roll's chord and riff tools: chords by scale degree (I, ii, V… of the key, one click
@@ -116,10 +117,10 @@ export function arpeggiateChords(notes: readonly NoteEvent[], opts: ArpOptions, 
     const pitches = [...new Set(group.map((n) => midiOf(n.note)).filter(Number.isFinite))].sort((a, b) => a - b);
     if (pitches.length < 2) return group;
     const cycle = arpCycle(pitches, opts.style, opts.octaves);
-    const span = Math.max(...group.map((n) => durationToBars(n.duration)));
+    const span = maxOf(group.map((n) => durationToBars(n.duration)));
     const count = Math.max(1, Math.round(span / rate - EPS));
     const start = group[0].startOffset;
-    const velocity = Math.max(...group.map((n) => n.velocity));
+    const velocity = maxOf(group.map((n) => n.velocity));
     return Array.from({ length: count }, (_, i) => {
       const midi = opts.style === 'random' ? cycle[Math.floor(random() * cycle.length)] : cycle[i % cycle.length];
       return {

@@ -23,6 +23,7 @@ import godotPlayer from '../gameKit/godot/AdaptiveMusic.gd?raw';
 import unityPlayer from '../gameKit/unity/AdaptiveMusic.cs?raw';
 import godotExample from '../gameKit/godot/music_example.gd?raw';
 import unityExample from '../gameKit/unity/AdaptiveMusicExample.cs?raw';
+import { maxOf } from '../support/minMax';
 
 /**
  * The game kit: everything a game needs to play the song the way the Game preview does, in one
@@ -332,7 +333,7 @@ export async function buildGameKitParts(
           instrumentKey: cue.instrumentKey,
           variation: 0,
           notes: cue.notes.map((n) => ({ ...n, startOffset: n.startOffset + cue.leadIn })),
-          lengthBars: Math.max(0.25, cue.leadIn, Math.max(...cue.notes.map((n) => n.startOffset + cue.leadIn)) + 0.25),
+          lengthBars: Math.max(0.25, cue.leadIn, maxOf(cue.notes.map((n) => n.startOffset + cue.leadIn)) + 0.25),
         };
         const file = `transitions/${rule.kind}.wav`;
         files.push({ name: file, data: await renderStinger(sound, song, sampleRate, recordings) });

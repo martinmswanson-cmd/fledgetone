@@ -117,6 +117,17 @@ export const STUDIO_METHODS = {
   point_at: 'read',
 } as const;
 export type StudioMethod = keyof typeof STUDIO_METHODS;
+
+/** point_at's answer when it rings a control. */
+export const POINTED_AT_CONTROL = { ok: true, shown: 'control' } as const;
+/**
+ * point_at's answer about a control that isn't on screen: allowed to see the view, the agent is
+ * told so (null: answer not_found); without See, what's on screen isn't its to know, so the same
+ * answer as when the control is there.
+ */
+export function controlNotOnScreen(see: boolean): typeof POINTED_AT_CONTROL | null {
+  return see ? null : POINTED_AT_CONTROL;
+}
 /** What the musician lets an agent do: read the song (always), see what they select, suggest changes, listen to renders. */
 export type Permission = 'read' | 'see' | 'suggest' | 'listen';
 export type Permissions = Record<Permission, boolean>;

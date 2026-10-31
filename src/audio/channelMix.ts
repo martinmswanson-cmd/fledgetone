@@ -5,6 +5,7 @@
  * right) doesn't cancel to nothing and get treated as silence. And whether any channel sounds in a
  * stretch of samples. Plain arrays, so Node can unit-test it.
  */
+import { maxOf } from '../support/minMax';
 
 /** The channels added up (one channel: itself), each flipped where it runs against the loudest. */
 export function analysisMix(input: readonly Float32Array[]): Float32Array {
@@ -15,7 +16,7 @@ export function analysisMix(input: readonly Float32Array[]): Float32Array {
     for (let i = 0; i < length; i++) e += ch[i] * ch[i];
     return e;
   });
-  const loudest = input[energy.indexOf(Math.max(...energy))];
+  const loudest = input[energy.indexOf(maxOf(energy))];
   const mix = new Float32Array(length);
   for (const ch of input) {
     let dot = 0;

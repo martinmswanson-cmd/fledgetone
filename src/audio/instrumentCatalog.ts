@@ -19,6 +19,7 @@ import { evenLevels, SET_LEVELS } from './samplers/setLevels';
 import { FLATS, nb, noteName } from './soundfontSets';
 import { RETRO_INSTRUMENTS } from './instrumentCatalogRetro';
 import { own } from '../store/ownKey';
+import { maxOf } from '../support/minMax';
 
 export const INSTRUMENT_KEYS = [
   // original set
@@ -382,7 +383,7 @@ function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, 
   const gains: Record<string, number> = {};
   const loops: Record<string, [number, number]> = {};
   const sets = parts.map((p) => HOSTED_SETS[p.folder]);
-  const layers = Math.max(...sets.map((x) => x.layers));
+  const layers = maxOf(sets.map((x) => x.layers));
   parts.forEach((part, i) => {
     const set = sets[i];
     const below = parts[i + 1]?.from ?? 128;

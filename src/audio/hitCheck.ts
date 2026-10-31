@@ -13,6 +13,7 @@
  * 256 samples for the bass's tone, and the BS.1770 loudness of loudness.ts.
  */
 import { createLoudnessAnalyser, kWeightingFilters, truePeakOf } from './loudness';
+import { maxOf, minOf } from '../support/minMax';
 
 export interface HitCheckInput {
   /** One or two channels (one is read as both). */
@@ -484,7 +485,7 @@ function measureLoudness(left: Float32Array, right: Float32Array, sr: number): H
   return {
     integrated: reading.integrated,
     shortTermMean: fin.length ? fin.reduce((a, b) => a + b, 0) / fin.length : reading.shortTerm,
-    shortTermMax: fin.length ? Math.max(...fin) : reading.shortTerm,
+    shortTermMax: fin.length ? maxOf(fin) : reading.shortTerm,
     truePeak: 20 * Math.log10(truePeakOf([left, right]) + 1e-12),
     samplePeak,
     crest: samplePeak - rms,
@@ -673,12 +674,12 @@ function measurePump(mono: Float32Array, sr: number, grid: number[], beat: numbe
   if (grid.length && t.length) for (let b = grid[0]; b < grid[grid.length - 1] - beat; b += beat) rows.push(Array.from({ length: 16 }, (_, i) => interp(b + (i * beat) / 16, t, e)));
   if (!rows.length) return { depth: NaN, dip: NaN, atMs: NaN, profile: [] };
   const profile = Array.from({ length: 16 }, (_, i) => median(rows.map((r) => r[i])));
-  const top = Math.max(...profile);
+  const top = maxOf(profile);
   const rel = profile.map((v) => v - top);
-  const at = rel.indexOf(Math.min(...rel));
+  const at = rel.indexOf(minOf(rel));
   return {
     depth: rel[at],
-    dip: rel[at] - Math.max(...rel.slice(8)),
+    dip: rel[at] - maxOf(rel.slice(8)),
     atMs: Math.round((at * beat * 1000) / 16),
     profile: rel,
   };

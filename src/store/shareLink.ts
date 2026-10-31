@@ -1,4 +1,4 @@
-import { parseProject, PROJECT_FORMAT, serializeProject } from './project';
+import { MAX_CLIP_NOTES, MAX_SONG_NOTES, parseProject, PROJECT_FORMAT, serializeProject } from './project';
 import { clipHasConditions } from './noteChance';
 import type { ProjectSnapshot } from './project';
 import { defaultTrackFx } from './timelineTypes';
@@ -255,7 +255,8 @@ function pack(data: Data): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-function unpack(bytes: Uint8Array): unknown {
+/** A link's song as JSON again, and how many of its notes were left out (past MAX_CLIP_NOTES in a clip or MAX_SONG_NOTES in all, as parseProject leaves them out of a file). */
+function unpack(bytes: Uint8Array): { raw: unknown; leftOut: number } {
   const read = new Reader(bytes);
   const size = read.uint();
   const raw = JSON.parse(new TextDecoder().decode(bytes.subarray(read.at, read.at + size))) as Record<string, unknown>;
@@ -263,15 +264,28 @@ function unpack(bytes: Uint8Array): unknown {
   const pitches = Array.isArray(raw.p) ? (raw.p as string[]) : [];
   const lengths = Array.isArray(raw.l) ? (raw.l as string[]) : [];
   let id = 0;
+  let left = MAX_SONG_NOTES;
+  let leftOut = 0;
   const withNotes = (owner: WithoutNotes<{ notes: Note[] }>) => {
     const count = read.uint();
+    // The notes past the most a song opens with are read past, not made: a short link can say a
+    // clip has millions (the bytes run out first: then it's cut short)
+    const keep = Math.max(0, Math.min(count, MAX_CLIP_NOTES, left));
+    left -= keep;
     let ticks = 0;
-    const notes = Array.from({ length: count }, (): Note => {
+    const notes = Array.from({ length: keep }, (): Note => {
       ticks += read.int();
       const note = pitches[read.uint()] ?? 'C4';
       const duration = lengths[read.uint()] ?? '8n';
       return { id: `n${(id++).toString(36)}`, note, startOffset: ticks / LINK_TICKS, duration, velocity: read.uint() / 100 };
     });
+    for (let i = keep; i < count; i++) {
+      read.int();
+      read.uint();
+      read.uint();
+      read.uint();
+      leftOut++;
+    }
     for (const [i, expr] of Array.isArray(owner.x) ? owner.x : []) if (notes[i]) notes[i].expr = expr as Note['expr'];
     for (const [i, when] of Array.isArray(owner.y) ? owner.y : []) if (notes[i] && when && typeof when === 'object') Object.assign(notes[i], { chance: (when as Note).chance, cond: (when as Note).cond });
     return { ...owner, x: undefined, y: undefined, notes };
@@ -284,7 +298,7 @@ function unpack(bytes: Uint8Array): unknown {
     const track = withDefaults(t, TRACK_DEFAULTS);
     return isPlain(track) && Object.hasOwn(track, 'fx') ? { ...track, fx: withDefaults(track.fx, fx) } : track;
   });
-  return { ...raw, format: PROJECT_FORMAT, p: undefined, l: undefined, tracks, clips, stingers };
+  return { raw: { ...raw, format: PROJECT_FORMAT, p: undefined, l: undefined, tracks, clips, stingers }, leftOut };
 }
 
 /** A plugin's settings with its user table (if any) as a link carries it. */
@@ -322,7 +336,13 @@ export async function songLink(project: ProjectSnapshot, base: string): Promise<
 
 /** The project in a link's hash ("#s=..." or an older "#song=..."), or null if it has none. Throws if it's there but unreadable. */
 export async function projectFromHash(hash: string): Promise<ProjectSnapshot | null> {
-  if (hash.startsWith(SHARE_PREFIX)) return parseProject(unpack(await pipe(fromBase64Url(hash.slice(SHARE_PREFIX.length)), new DecompressionStream('deflate-raw'))));
+  if (hash.startsWith(SHARE_PREFIX)) {
+    const { raw, leftOut } = unpack(await pipe(fromBase64Url(hash.slice(SHARE_PREFIX.length)), new DecompressionStream('deflate-raw')));
+    const p = parseProject(raw);
+    if (!leftOut) return p;
+    const unread = p.unread ?? { tracks: 0, clips: 0 };
+    return { ...p, unread: { ...unread, notes: (unread.notes ?? 0) + leftOut } };
+  }
   if (!hash.startsWith(OLD_PREFIX)) return null;
   const bytes = await pipe(fromBase64Url(hash.slice(OLD_PREFIX.length)), new DecompressionStream('deflate-raw'));
   return parseProject(unpackNotes(JSON.parse(new TextDecoder().decode(bytes))));

@@ -6,6 +6,7 @@
  */
 import type { NoteEvent } from './timelineTypes';
 import { durationToBars } from './timelineTypes';
+import { maxOf, minOf } from '../support/minMax';
 
 export type CopiedNote = Omit<NoteEvent, 'id'>;
 
@@ -25,8 +26,8 @@ const tidy = (bars: number) => Math.round(bars * 1e9) / 1e9;
 /** Notes as a clipboard holds them, or null for none. */
 export function noteClip(notes: readonly NoteEvent[]): NoteClip | null {
   if (notes.length === 0) return null;
-  const from = Math.min(...notes.map((n) => n.startOffset));
-  const end = Math.max(...notes.map((n) => n.startOffset + durationToBars(n.duration)));
+  const from = minOf(notes.map((n) => n.startOffset));
+  const end = maxOf(notes.map((n) => n.startOffset + durationToBars(n.duration)));
   return {
     // (Without their ids: each paste makes new notes)
     notes: notes.map(({ id: _id, ...n }) => ({ ...n, startOffset: tidy(n.startOffset - from) })),

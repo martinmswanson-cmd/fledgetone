@@ -10,6 +10,7 @@ import { runHitCheck, useMixStudio } from '../../audio/mixStudio';
 import { HIT_STYLES, judgeHits, type HitJudgement, type HitStyleId } from '../../audio/hitTargets';
 import { useTimelineStore } from '../../store/timelineStore';
 import { audibleTracks } from '../../audio/exportWav';
+import { maxOf } from '../../support/minMax';
 
 const fmtBars = (a: number, b: number) => `bars ${Math.round(a * 100) / 100}-${Math.round((b - 1) * 100) / 100}`;
 
@@ -41,7 +42,7 @@ export const HitCheckSection: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const songEnd = useMemo(() => {
     const ids = new Set(audibleTracks(tracks).map((t) => t.id));
-    return Math.max(2, ...clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+    return maxOf(2, clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
   }, [clips, tracks]);
   const [what, setWhat] = useState<'loop' | 'song' | null>(null);
   const range = what ?? (loop.enabled ? 'loop' : 'song');

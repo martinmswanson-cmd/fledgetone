@@ -17,6 +17,7 @@ import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
 import { previewVoice, type PreviewVoice } from '../../audio/previewFade';
 import { showToast } from './toastStore';
+import { maxOf, minOf } from '../../support/minMax';
 
 /**
  * Tune a vocal (or any one-note-at-a-time recording): its pitch pulled onto the notes of a key.
@@ -239,8 +240,8 @@ const PitchGraph: React.FC<{ frames: PitchFrame[]; shift: number[]; root: number
       </div>
     );
   }
-  const lo = Math.floor(Math.min(...sung)) - 1;
-  const hi = Math.ceil(Math.max(...sung)) + 1;
+  const lo = Math.floor(minOf(sung)) - 1;
+  const hi = Math.ceil(maxOf(sung)) + 1;
   const x = (i: number) => (i / Math.max(1, frames.length - 1)) * W;
   const y = (m: number) => H - ((m - lo) / Math.max(1, hi - lo)) * H;
   const path = (values: Array<number | null>) => {

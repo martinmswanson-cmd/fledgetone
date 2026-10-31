@@ -19,7 +19,7 @@ import type { MasterStats } from '../audio/effects/masterAfter';
 import { ring } from '../search/reveal';
 import { APP_VERSION } from '../version';
 import { HandlerError, type Handler } from './bridgeProtocolClient';
-import { CONVERSATION, fromAgent, LIMITS, RateLimiter, type StudioMethod } from './protocol';
+import { CONVERSATION, controlNotOnScreen, fromAgent, LIMITS, POINTED_AT_CONTROL, RateLimiter, type StudioMethod } from './protocol';
 import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
@@ -284,12 +284,18 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
         // Rung where it is, as the search palette does, but never focused: the keyboard stays where
         // the musician left it. The agent's ring and note go next to it, so it reads as the agent's
         const found = await ring(controlSelector(name));
-        if (!found) throw new HandlerError('not_found', `No control called "${name}" is on screen.`);
+        // Without See, what's on screen isn't the agent's to know: the same answer whether the
+        // control is there or not (the musician sees the ring only when it is)
+        if (!found) {
+          const answer = controlNotOnScreen(useSuggestions.getState().permissions.see);
+          if (!answer) throw new HandlerError('not_found', `No control called "${name}" is on screen.`);
+          return { ...answer };
+        }
         // (named as the studio names it, else as the agent did)
         const label = (found.getAttribute('aria-label') || found.getAttribute('title') || found.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60) || fromAgent(name, 60);
         useSuggestions.setState({ highlight: { target: { control: label }, element: found, ...(note ? { note } : {}), until: Date.now() + 6000 } });
         announce(`Your agent points at the control “${shortText(label, 40)}”${note ? `, saying “${shortText(note)}”` : '.'}`);
-        return { ok: true, shown: 'control' };
+        return { ...POINTED_AT_CONTROL };
       }
       const what = target.track ? 'a track' : target.clip ? 'a clip' : target.marker ? 'a marker' : 'some bars';
       useSuggestions.setState({ highlight: { target, ...(note ? { note } : {}), until: Date.now() + 6000 } });

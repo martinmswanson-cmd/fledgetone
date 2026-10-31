@@ -9,6 +9,7 @@ import { secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { tempoAt } from '../../audio/tempoMap';
 import { durationToBars, type Clip, type ClipTake } from '../../store/timelineTypes';
 import { midiOf } from '../../store/noteTools';
+import { maxOf, minOf } from '../../support/minMax';
 
 /**
  * A take folder's takes, one row each, with the comp: the lit stretch of each row is what plays.
@@ -32,8 +33,8 @@ const TakeContent: React.FC<{ clip: Clip; take: ClipTake; color: string; width: 
   }
   const notes = take.notes ?? [];
   const pitches = notes.map((n) => (Number.isFinite(midiOf(n.note)) ? midiOf(n.note) : 60));
-  const lo = Math.min(...pitches, 127);
-  const hi = Math.max(...pitches, 0);
+  const lo = minOf(pitches, 127);
+  const hi = maxOf(pitches, 0);
   const span = Math.max(12, hi - lo + 1);
   return (
     <>

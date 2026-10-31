@@ -35,6 +35,7 @@ import { showToast } from './toastStore';
 import { IntensityPanel } from './IntensityPanel';
 import { useUiStore } from '../../store/uiStore';
 import { ActionSelect } from '../actionSelect';
+import { maxOf } from '../../support/minMax';
 
 /**
  * Loop variations: 2 to 4 takes of the loop region for the game to rotate through, each with its
@@ -403,7 +404,7 @@ export const GamePanel: React.FC = () => {
   const timer = useRef<number>(0);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const songEnd = Math.max(2, ...clips.map((c) => c.startBar + c.lengthBars));
+  const songEnd = maxOf(2, clips.map((c) => c.startBar + c.lengthBars));
   const sorted = [...markers].sort((a, b) => a.bar - b.bar);
   const sections = sorted
     .map((m, i) => ({ id: m.id, name: m.name, from: m.bar, to: sorted[i + 1]?.bar ?? songEnd }))

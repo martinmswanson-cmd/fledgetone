@@ -2,6 +2,7 @@ import { tempoAt, type Tempo } from '../audio/tempoMap';
 import type { Clip, ClipExpression, NoteEvent, NoteExpression } from './timelineTypes';
 import { tidyNoteLane } from './noteExpression';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
+import { maxOf } from '../support/minMax';
 
 /**
  * Recording MIDI takes: the settings, how a take gathers the notes it hears into a clip, and
@@ -236,7 +237,7 @@ export function createTake(startBar: number): Take {
         clipEnd = punch.outBar;
       } else {
         // Stopped just past a bar line, the take ends on that line rather than a bar later
-        high = Math.max(high, Math.round(bar), ...kept.map((n) => n.bar + lengthOf(n)));
+        high = maxOf(high, Math.round(bar), kept.map((n) => n.bar + lengthOf(n)));
         clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
         clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
       }
@@ -264,7 +265,7 @@ export function createTake(startBar: number): Take {
         for (const lane of Object.keys(controls) as Array<keyof ClipExpression>) {
           const inClip = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd);
           // All passes in one clip: a lane can only follow one of them, the last that moved it
-          const pass = only ?? Math.max(-1, ...inClip.map((c) => c.pass));
+          const pass = only ?? maxOf(-1, inClip.map((c) => c.pass));
           const list = inClip.filter((c) => c.pass === pass).sort((a, b) => a.bar - b.bar);
           // (A wheel left at rest throughout adds nothing; a knob's lane is kept wherever it was)
           if (lane === 'bend' || lane === 'mod' ? !list.some((c) => c.value !== 0) : !list.length) continue;

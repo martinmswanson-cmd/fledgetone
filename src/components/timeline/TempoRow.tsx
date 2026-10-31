@@ -9,6 +9,7 @@ import { barFromClientX } from './Playhead';
 import { useDrawnStretch } from './drawnStretch';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import { TEMPO_ROW } from './layout';
+import { maxOf, minOf } from '../../support/minMax';
 
 /**
  * The ruler's top row: the song's tempo and time signature, and their changes along the way.
@@ -35,8 +36,8 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
 
   // The tempo line, scaled between the slowest and fastest tempos in the song
   const all = [bpm, ...tempoPoints.map((p) => p.bpm)];
-  const lo = Math.min(...all);
-  const hi = Math.max(...all);
+  const lo = minOf(all);
+  const hi = maxOf(all);
   const changes = tempoPoints.length > 0;
   const yOf = (b: number) => (hi - lo < 0.01 ? TEMPO_ROW / 2 : TEMPO_ROW - 3 - ((b - lo) / (hi - lo)) * (TEMPO_ROW - 6));
   let line = '';

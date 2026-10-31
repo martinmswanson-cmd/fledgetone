@@ -31,6 +31,7 @@ import { feelPartOf } from './mixCheck';
 import { pumpKitsOf } from '../store/freeze';
 import { clipCcEvents, heldCcAt, type CcEvent } from './ccHold';
 import { bendTailSeconds } from './auditionMath';
+import { maxOf } from '../support/minMax';
 
 export { DRUM_NOTES } from './instruments';
 
@@ -546,8 +547,8 @@ export function createClipSchedule(
     // (One held has the bend: the key is bent with it, as the instrument bends as a whole)
     if (!ringing.length || list.some((n) => n.start < time && n.end > time + 1e-9)) return;
     const trackId = ringing[0].trackId;
-    const at = Math.max(Math.max(...ringing.map((n) => n.end)), time - BACK_BEFORE_NOTE);
-    const was = Math.max(...ringing.map((n) => n.until));
+    const at = Math.max(maxOf(ringing.map((n) => n.end)), time - BACK_BEFORE_NOTE);
+    const was = maxOf(ringing.map((n) => n.until));
     for (const n of ringing) n.until = Math.min(n.until, Math.max(n.end, at));
     const laneAt = (t: number) => laneBendAt(trackId, Math.round(transport.getTicksAtTime(t)), t);
     sendBend(trackId, instrument, laneAt(at), at);

@@ -148,7 +148,7 @@ export const RestoreSessionBanner: React.FC = () => {
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
         {lastSession.replaced ? 'The song you replaced' : 'Your last session'}, <b>{project.name}</b> ({n} {what}{n === 1 ? '' : 's'}{tail}
-        {when && `, ${when}`}), can be restored.
+        {when && `, ${when}`}), {lastSession.stopped ? "stopped the studio from showing last time it opened, so it wasn't opened again. It's kept, and " : ''}can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">
         <button

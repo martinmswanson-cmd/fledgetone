@@ -41,6 +41,7 @@ import { listenSnapshot } from '../agent/listenSnapshot';
 import { agentIdOf } from '../agent/agentText';
 import { applyOps, OPS_VERSION } from '../agent/ops';
 import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
+import { maxOf } from '../support/minMax';
 
 export type { ListenReport, ListenComparison } from '../agent/listenReport';
 
@@ -160,7 +161,7 @@ export function outsidePluginsMessage(list: ReturnType<typeof outsidePlugins>): 
 /** Where the music ends, as Export's whole song: the end of the last clip of a track that sounds (bar 1: nothing). */
 function songEnd(p: ProjectSnapshot): number {
   const ids = new Set(audibleTracks(p.tracks).map((t) => t.id));
-  return Math.max(1, ...p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  return maxOf(1, p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
 }
 
 const tempoOf = (p: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: p.bpm, points: p.tempoPoints ?? [] });

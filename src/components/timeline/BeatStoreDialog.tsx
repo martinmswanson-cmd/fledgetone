@@ -21,6 +21,7 @@ import { producerTagChannels, producerTagSound, setProducerTag } from '../../aud
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
 import { safeFileName } from '../../store/project';
 import { showToast } from './toastStore';
+import { maxOf } from '../../support/minMax';
 
 const KEYS = NOTE_NAMES.flatMap((_, root) => (['minor', 'major'] as const).map((mode) => keyOf(root, mode).name));
 
@@ -82,7 +83,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
   const set = (patch: Partial<Options>) => setOpts((o) => ({ ...o, ...patch }));
   const base = beatFileBase(title, bpm, key || null);
   const ids = new Set(audibleTracks(tracks).map((t) => t.id));
-  const songEnd = Math.max(1, ...clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  const songEnd = maxOf(1, clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
   const empty = songEnd <= 1;
   const stemCount = stemTracks({ tracks, clips, startBar: 1, endBar: songEnd }).length;
   const nothing = !opts.preview && !opts.wav && !opts.stems;

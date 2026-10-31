@@ -14,6 +14,7 @@ import { withStepLanes } from '../store/stepLanes';
 import { busOf, liveSends } from '../store/buses';
 import { INSERT_ROOM, roomSeconds } from './effects/roomIR';
 import type { Tempo } from './tempoMap';
+import { minOf } from '../support/minMax';
 
 /** Longest recorded room kept (seconds): a longer tail is faded out there */
 export const ROOM_MAX_SECONDS = 12;
@@ -75,7 +76,7 @@ export function playedTracks(tracks: Track[], clips: readonly Clip[], tempo: Tem
 /** The slowest tempo of these, BPM (an echo's repeats are furthest apart there). */
 export function slowestBpm(tempos: ReadonlyArray<Tempo>): number {
   const all = tempos.flatMap((t) => (typeof t === 'number' ? [t] : [t.bpm, ...(t.points ?? []).map((p) => p.bpm)]));
-  return Math.max(1, Math.min(...all.filter((b) => Number.isFinite(b) && b > 0)));
+  return Math.max(1, minOf(all.filter((b) => Number.isFinite(b) && b > 0)));
 }
 
 /** Whether a played track (playedTracks) has a lane for `param`. */

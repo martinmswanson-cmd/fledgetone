@@ -17,7 +17,7 @@ import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { UpdateNotice } from './components/UpdateNotice';
 import { PianoPanel } from './components/PianoPanel';
-import { reopenLastSong } from './store/reopenLastSong';
+import { reopenLastSong, useOpenedMark } from './store/reopenLastSong';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
@@ -119,6 +119,8 @@ export const App: React.FC = () => {
   // The last song opens again by itself, as in Pocket (not when a shared song link is opening
   // another one: that sets the last song aside, for the Restore banner). Once, before the first render
   React.useState(() => !/^#(s|song)=/.test(location.hash) && reopenLastSong());
+  // Once the song has shown, it may open again by itself next time (one that stops the studio showing doesn't)
+  useOpenedMark();
   // The phone app's Back closes the dialog that's open (else the app goes to the background)
   React.useEffect(() => onBack(escapeOpenDialog), []);
   // The Suggestions panel takes the right of the window (on a wide one: on a narrow one it covers it)

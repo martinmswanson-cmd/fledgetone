@@ -11,6 +11,7 @@ import { formatBarsBeats } from '../../audio/transport';
 import { AutomationMenu } from './AutomationMenu';
 import type { AutomationMenuState } from './AutomationMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
+import { maxOf, minOf } from '../../support/minMax';
 
 /** Room above the lane's top value and below its bottom one (px). */
 const PAD = 8;
@@ -201,8 +202,8 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
     const indices = new Set(pts.flatMap((p, i) => (chosen.has(p) ? [i] : [])));
     const [minBars, maxBars] = shiftRange(pts, indices);
     const values = [...indices].map((i) => pts[i].value);
-    const minValue = -Math.min(...values);
-    const maxValue = 1 - Math.max(...values);
+    const minValue = -minOf(values);
+    const maxValue = 1 - maxOf(values);
     const grab = pts[grabbed];
     const copy = e.altKey;
     let followTime = false;
@@ -272,8 +273,8 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
   const dragLine = (e: React.PointerEvent, pts: AutomationPoint[], bar: number) => {
     const after = pts.findIndex((p) => p.bar > bar);
     const indices = after === 0 ? [0] : after === -1 ? [pts.length - 1] : [after - 1, after];
-    const minValue = -Math.min(...indices.map((i) => pts[i].value));
-    const maxValue = 1 - Math.max(...indices.map((i) => pts[i].value));
+    const minValue = -minOf(indices.map((i) => pts[i].value));
+    const maxValue = 1 - maxOf(indices.map((i) => pts[i].value));
     let applied = 0;
     let committed = false;
     follow(

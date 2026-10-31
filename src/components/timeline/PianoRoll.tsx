@@ -50,6 +50,7 @@ import { ChordRiffBar } from './ChordRiffBar';
 import { penBars, rememberPen } from '../../store/penLength';
 import { duplicateAt, heldNotes, holdNotes, liveSelection, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
 import { ActionSelect } from '../actionSelect';
+import { maxOf, minOf } from '../../support/minMax';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -543,9 +544,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         const at = chord?.at ?? entryRef.current.at;
         const length = entryRef.current.length;
         // Room to grow: up to the next clip on the track, or the song's end
-        const room = Math.min(
+        const room = minOf(
           TOTAL_BARS + 1 - live.startBar,
-          ...store.clips.filter((c) => c.trackId === clip.trackId && c.id !== clip.id && c.startBar >= live.startBar + live.lengthBars - 1e-9).map((c) => c.startBar - live.startBar)
+          store.clips.filter((c) => c.trackId === clip.trackId && c.id !== clip.id && c.startBar >= live.startBar + live.lengthBars - 1e-9).map((c) => c.startBar - live.startBar)
         );
         if ((at + length) / UNITS_PER_BAR > room + 1e-9) {
           showToast(room >= TOTAL_BARS + 1 - live.startBar ? 'That would go past the end of the song.' : 'No room: the next clip on this track starts there.');
@@ -623,8 +624,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const primary = originals.get(primaryId);
     const starts = [...originals.values()].map((n) => unitsOf(n.startOffset));
     // A move keeps every dragged note inside the clip: start >= 0 and before the clip's end
-    const minShift = -Math.min(...starts);
-    const maxShift = totalUnits - Math.max(...starts);
+    const minShift = -minOf(starts);
+    const maxShift = totalUnits - maxOf(starts);
     let recorded = alreadyRecorded;
     let lastRowShift = 0;
 

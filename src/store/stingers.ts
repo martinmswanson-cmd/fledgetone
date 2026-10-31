@@ -4,6 +4,7 @@ import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { isPrototypeName } from './ownKey';
 import { NOTE_NAMES, type SongKey } from './songKey';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * Stingers: short musical cues a game plays over its music when something happens (a win, a level
@@ -105,8 +106,8 @@ export function fitNotesToRange(notes: NoteEvent[], [lo, hi]: readonly [number, 
     return m ? (Number(m[2]) + 1) * 12 + NOTE_NAMES.indexOf(m[1] as (typeof NOTE_NAMES)[number]) : NaN;
   };
   const ms = notes.map((n) => midi(n.note));
-  const min = Math.min(...ms);
-  const max = Math.max(...ms);
+  const min = minOf(ms);
+  const max = maxOf(ms);
   let shift = 0;
   while (min + shift < lo && max + shift + 12 <= hi + 12) shift += 12;
   while (max + shift > hi && min + shift - 12 >= lo - 12) shift -= 12;

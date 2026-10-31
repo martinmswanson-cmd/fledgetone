@@ -10,6 +10,7 @@
  * No audio or store here, so Node can unit-test it.
  */
 import type { Section } from './cutToLength';
+import { maxOf } from '../support/minMax';
 
 export interface KitRange {
   from: number;
@@ -59,6 +60,6 @@ export function planChannelKit(sections: readonly Section[], end: number, toSeco
   // from the end, so it starts where the music does; the start of the song if it's shorter
   const lines = sections.flatMap((s) => Array.from({ length: Math.ceil((s.to - s.from) / 4) }, (_, k) => s.from + 4 * k)).filter((b) => b < end);
   const fits = lines.filter((b) => toSeconds(end) - toSeconds(b) >= OUTRO_SECONDS * 0.8 - 1e-6);
-  const outFrom = fits.length ? Math.max(...fits) : 1;
+  const outFrom = fits.length ? maxOf(fits) : 1;
   return { main, loop, calm, intro, outro: { from: outFrom, to: end } };
 }

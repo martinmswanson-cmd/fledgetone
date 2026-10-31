@@ -7,6 +7,7 @@ import { songMeterOf } from './timelineStore';
 import { launcherActive, queuedAfter, segmentAt, slotAt, slotCopies, useLauncher } from './launcherView';
 import type { Segment } from './launcherView';
 import { getScheduledPositionBar } from '../audio/transport';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * The clip launcher: a grid of clips, a column per track and a row per scene, to play loops live
@@ -130,8 +131,8 @@ function setSlots(trackId: string, change: (slots: LauncherSlot[]) => LauncherSl
 /** One slot clip from clips of one track: everything from the first start to the last end. */
 export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip | null {
   if (!clips.length) return null;
-  const from = Math.min(...clips.map((c) => c.startBar));
-  const to = Math.max(...clips.map((c) => c.startBar + c.lengthBars));
+  const from = minOf(clips.map((c) => c.startBar));
+  const to = maxOf(clips.map((c) => c.startBar + c.lengthBars));
   const audio = clips.find((c) => c.audio);
   // An audio slot plays one sound: the first
   if (audio) return { name: name ?? audio.name, lengthBars: audio.lengthBars, notes: [], audio: audio.audio, ...(audio.wobble ? { wobble: audio.wobble } : {}) };
@@ -239,7 +240,7 @@ export function sceneFromRange(from: number, to: number, scene: number, name?: s
       if (Math.abs(a.startBar - from) > EPS) continue;
     } else {
       clip.lengthBars = to - from;
-      const first = Math.min(...parts.map((p) => p.startBar));
+      const first = minOf(parts.map((p) => p.startBar));
       if (first > from + EPS) clip.notes = clip.notes.map((n) => ({ ...n, startOffset: n.startOffset + first - from }));
     }
     slots.set(t.id, clip);

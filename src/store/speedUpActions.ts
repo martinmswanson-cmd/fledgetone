@@ -13,6 +13,7 @@ import { retimeMarkers } from './markers';
 import { isDrumKind } from '../audio/instrumentCatalog';
 import { tempoAt } from '../audio/tempoMap';
 import { DRUM_NOTES } from '../audio/instruments';
+import { maxOf, minOf } from '../support/minMax';
 
 const tl = () => useTimelineStore.getState();
 const EPS = 1e-6;
@@ -67,7 +68,7 @@ function writeRoll(clips: Clip[], from: number, start: number, drop: number): { 
     if (!hits.length && !plays) continue;
     const snares = hits.filter((n) => n.note === DRUM_NOTES.snare).length;
     const claps = hits.length - snares;
-    const cand = { trackId: t.id, note: claps > snares ? DRUM_NOTES.clap : DRUM_NOTES.snare, velocity: hits.length ? Math.max(...hits.map((n) => n.velocity)) : 0.85, count: hits.length };
+    const cand = { trackId: t.id, note: claps > snares ? DRUM_NOTES.clap : DRUM_NOTES.snare, velocity: hits.length ? maxOf(hits.map((n) => n.velocity)) : 0.85, count: hits.length };
     if (!best || cand.count > best.count) best = cand;
   }
   if (!best) return { clips, said: ' No drum track plays there, so there is no roll.' };
@@ -135,7 +136,7 @@ export function speedUpIntoDrop(o: SpeedUpOptions, extras: SpeedUpExtras): strin
 export function selectedSpan(): { from: number; to: number } | null {
   const sel = tl().clips.filter((c) => c.isSelected);
   if (!sel.length) return null;
-  return { from: Math.min(...sel.map((c) => c.startBar)), to: Math.max(...sel.map((c) => c.startBar + c.lengthBars)) };
+  return { from: minOf(sel.map((c) => c.startBar)), to: maxOf(sel.map((c) => c.startBar + c.lengthBars)) };
 }
 
 /**

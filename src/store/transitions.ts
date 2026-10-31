@@ -3,6 +3,7 @@ import { FX_NOTES, isDrumKind } from '../audio/instrumentCatalog';
 import type { NoteEvent, Track, TransitionKind, TransitionRule } from './timelineTypes';
 import { barsToDuration, uid } from './timelineTypes';
 import { nameOf } from './noteTools';
+import { minOf } from '../support/minMax';
 
 /**
  * Transitions into a game state: what plays as the music switches to it, the way adaptive game
@@ -119,7 +120,7 @@ export function bridgeTarget(notes: ReadonlyArray<{ midi: number; at: number }>,
   const pool = first.length ? first : notes.filter((n) => n.at < beat * 4 - 1e-6 && Number.isFinite(n.midi));
   if (!pool.length) return { bass: null, chord: [] };
   const midis = pool.map((n) => n.midi);
-  return { bass: Math.min(...midis), chord: [...new Set(midis)].sort((a, b) => a - b) };
+  return { bass: minOf(midis), chord: [...new Set(midis)].sort((a, b) => a - b) };
 }
 
 /** The drum kits' kick, snare and closed hat rows (C1, D1, F#1) as MIDI. */

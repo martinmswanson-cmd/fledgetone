@@ -11,6 +11,7 @@
  */
 
 import { createPeakFinder, TRUE_PEAK_PLAN, type PeakFinder, type TruePeakPlan } from './truePeakFilter';
+import { maxOf } from '../support/minMax';
 
 export interface LoudnessReading {
   /** Loudness over the last 400 ms, in LUFS (-Infinity for silence). */
@@ -446,7 +447,7 @@ export function sharedGainDb(
   targetLufs = NORMALIZE_TARGET_LUFS,
   ceilingDbtp = NORMALIZE_CEILING_DBTP
 ): { gainDb: number; limited: boolean; peakDbtp: number } {
-  const peakDbtp = Math.max(reading.truePeakMax, ...peaksDbtp.filter((p) => !Number.isNaN(p)));
+  const peakDbtp = maxOf(reading.truePeakMax, peaksDbtp.filter((p) => !Number.isNaN(p)));
   return { ...normalizeGainDb({ integrated: reading.integrated, truePeakMax: peakDbtp }, targetLufs, ceilingDbtp), peakDbtp };
 }
 

@@ -23,6 +23,7 @@
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf } from './noteTools';
 import type { Clip, PeqBand, Track } from './timelineTypes';
+import { maxOf, minOf } from '../support/minMax';
 
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 const median = (xs: number[]) => {
@@ -40,7 +41,7 @@ function lowestShift(t: Track): number {
   if (!p) return 0;
   const shifts = [p.osc1, p.osc2].filter((o) => o.on && o.level > 0).map((o) => o.octave * 12 + o.semi);
   if (p.sub > 0) shifts.push(-12);
-  return shifts.length ? Math.min(...shifts) : 0;
+  return shifts.length ? minOf(shifts) : 0;
 }
 
 /** A track's notes are a single line (a melody) when hardly any start together. */
@@ -76,7 +77,7 @@ export function makeSpace(tracks: Track[], clips: Clip[]): { tracks: Track[]; ch
       const shift = lowestShift(t);
       const midis = notes.map((n) => midiOf(n.note) + shift).filter(Number.isFinite);
       if (midis.length < 4) return null;
-      return { track: t, notes, midis, low: Math.min(...midis), high: Math.max(...midis), mid: median(midis), line: isLine(notes) };
+      return { track: t, notes, midis, low: minOf(midis), high: maxOf(midis), mid: median(midis), line: isLine(notes) };
     })
     .filter((p): p is NonNullable<typeof p> => p !== null);
   if (parts.length < 2) return { tracks, changes: [] };

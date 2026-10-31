@@ -13,7 +13,7 @@ import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
 import { initAudio, rawAudioState } from '../audio/engine';
 import { hasWork } from '../store/project';
-import { reopenLastSong, useWakeWhilePlaying, buzz, playPocket } from './pocketSession';
+import { reopenLastSong, useOpenedMark, useWakeWhilePlaying, buzz, playPocket } from './pocketSession';
 import { PocketNotice } from './PocketNotice';
 import { useListening } from '../components/useListening';
 import { SharedLinkOpener } from '../components/SharedLinkOpener';
@@ -201,6 +201,8 @@ export const PocketApp: React.FC = () => {
     if (!s.loopRegion.enabled && hasWork(currentProject())) s.toggleLoop();
     return true;
   });
+  // Once the song has shown, it may open again by itself next time (one that stops Pocket showing doesn't)
+  useOpenedMark();
   useWakeWhilePlaying();
   useAudioUnlock();
   // (Before the children's: what's open over the screen, like the opening notice, goes back first)

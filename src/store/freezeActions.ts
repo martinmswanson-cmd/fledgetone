@@ -13,6 +13,7 @@ import type { SampleRate } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { BUS_GAIN, liveMix } from '../audio/engine';
 import { captureWamStates } from '../audio/wamHost';
+import { maxOf, minOf } from '../support/minMax';
 
 /** Tracks being frozen right now, with how far along (0 to 1). */
 export const useFreezing = create<Record<string, number>>(() => ({}));
@@ -72,8 +73,8 @@ export async function renderTrackChannels(trackId: string, onProgress?: (fractio
   if (!own.length) return null;
   const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints, meter: store.meter, meterPoints: store.meterPoints };
   const fingerprint = freezeFingerprint(track, snapshot);
-  const startBar = Math.min(...own.map((c) => c.startBar));
-  const endBar = Math.max(...own.map((c) => c.startBar + c.lengthBars));
+  const startBar = minOf(own.map((c) => c.startBar));
+  const endBar = maxOf(own.map((c) => c.startBar + c.lengthBars));
   const rate = liveMix.bus.context.sampleRate;
   const sampleRate: SampleRate = (SAMPLE_RATES as readonly number[]).includes(rate) ? (rate as SampleRate) : 48000;
   const subject = trackForFreezing(track);

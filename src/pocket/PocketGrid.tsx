@@ -18,6 +18,7 @@ import { jumpStep, noteToMidi, sectionJump, type SectionJump } from './pocketGri
 import { buzz } from './pocketSession';
 import { selectTrack } from './PocketDrawer';
 import { showToast } from '../components/timeline/toastStore';
+import { maxOf, minOf } from '../support/minMax';
 
 const EPS = 1e-6;
 
@@ -101,7 +102,7 @@ const Cell = memo(function Cell({ content, len, color, drums, className, label, 
       const top = (H - rows.length * (h + 1)) / 2;
       notes.forEach((n, k) => g.fillRect((n.startOffset / len) * W, top + (rows.length - 1 - rows.indexOf(midis[k])) * (h + 1), Math.max(2, W / (len * 16) - 1), h));
     } else {
-      const lo = Math.min(...midis) - 1, hi = Math.max(...midis) + 1;
+      const lo = minOf(midis) - 1, hi = maxOf(midis) + 1;
       notes.forEach((n, k) => g.fillRect((n.startOffset / len) * W, H - ((midis[k] - lo) / (hi - lo)) * H - 1.5, Math.max(3, (W / len) * Math.min(len, durBars(n)) - 1), 3));
     }
   }, [content, len, color, drums]);

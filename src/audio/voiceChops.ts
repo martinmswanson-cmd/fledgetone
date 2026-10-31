@@ -21,6 +21,7 @@
  * Plain arrays, so Node can unit-test it; voiceChopActions.ts does the rest.
  */
 import { detectPitch, hzToMidi, nearestNote, psola, type PitchFrame } from './vocalTune';
+import { minOf } from '../support/minMax';
 
 export const MAX_CHOPS = 16;
 export const MAX_CHOP_SECONDS = 1.2;
@@ -194,7 +195,7 @@ export function layoutChops(syllables: readonly Syllable[], scale?: ChopScale | 
   }
   const unpitched = syllables.map((s, i) => ({ s, i })).filter((p) => p.s.midi === null);
   if (unpitched.length) {
-    let key = (taken.size ? Math.min(...taken.keys()) : 62) - 1;
+    let key = (taken.size ? minOf(taken.keys()) : 62) - 1;
     for (const { i } of unpitched) {
       while (taken.has(key)) key--;
       if (key < 24) break;

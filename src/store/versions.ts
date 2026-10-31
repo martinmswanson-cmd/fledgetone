@@ -14,10 +14,12 @@ import { hasWork, newSongId, packedProject, unpackProject, type ProjectSnapshot 
 import { referencedSoundIds } from './audioClips';
 import { protectSounds } from '../audio/soundLibrary';
 import { versionDue, versionsToDrop } from './versionPolicy';
+import { maxOf } from '../support/minMax';
 
 /** Why a version was kept: while editing, before another song replaced it, or before going back to a version. */
 /** Why it was kept: 'otherTab', another tab's song just before this tab's autosave wrote over it. */
-export type VersionReason = 'editing' | 'replaced' | 'restore' | 'otherTab';
+/** 'stopped': a song that stopped the app from showing, set aside (see reopenLastSong.ts). */
+export type VersionReason = 'editing' | 'replaced' | 'restore' | 'otherTab' | 'stopped';
 
 /** A kept version, as the list shows it (the song itself is stored apart, see readVersion). */
 export interface VersionInfo {
@@ -119,19 +121,24 @@ const lastKept = new Map<string, { at: number; json: string }>();
 let queue: Promise<void> = Promise.resolve();
 
 /** How long a song is, in bars: to the end of its last clip. */
-const songBars = (p: ProjectSnapshot) => Math.max(0, Math.ceil(Math.max(1, ...p.clips.map((c) => c.startBar + c.lengthBars)) - 1 - 1e-6));
+const songBars = (p: ProjectSnapshot) => Math.max(0, Math.ceil(maxOf(1, p.clips.map((c) => c.startBar + c.lengthBars)) - 1 - 1e-6));
 
 /**
  * Keep the song as a version now (unless it has no work in it, or it's just as last kept). Done
  * in the background; never throws. The song is read now, so later edits don't reach it.
  */
 export function keepVersion(p: ProjectSnapshot, why: VersionReason): void {
+  void keptVersion(p, why);
+}
+
+/** keepVersion, done when the promise settles: true if the version is stored (or was already). Never rejects. */
+export function keptVersion(p: ProjectSnapshot, why: VersionReason): Promise<boolean> {
   try {
-    if (!hasWork(p)) return;
+    if (!hasWork(p)) return Promise.resolve(false);
     const songId = p.songId || newSongId();
     const json = packedProject({ ...p, songId });
     const last = lastKept.get(songId);
-    if (last?.json === json) return;
+    if (last?.json === json) return queue.then(() => true);
     const now = Date.now();
     lastKept.set(songId, { at: now, json });
     const ids = new Set(referencedSoundIds(p));
@@ -148,9 +155,18 @@ export function keepVersion(p: ProjectSnapshot, why: VersionReason): void {
       soundIds: [...ids],
       bytes: json.length * 2,
     };
-    queue = queue.then(() => store(info, json)).then(refreshVersions, () => undefined);
+    const stored = queue.then(() => store(info, json)).then(
+      async () => {
+        await refreshVersions();
+        return true;
+      },
+      () => false
+    );
+    queue = stored.then(() => undefined);
+    return stored;
   } catch {
     // Nothing kept: autosave goes on all the same
+    return Promise.resolve(false);
   }
 }
 

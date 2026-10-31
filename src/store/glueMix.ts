@@ -22,6 +22,7 @@ import { isMixTrack } from './buses';
 import { makeSpace } from './makeSpace';
 import { midiOf } from './noteTools';
 import type { Clip, GlueChange, GlueField, GlueRecord, GlueBusStyle, Track } from './timelineTypes';
+import { maxOf } from '../support/minMax';
 
 /**
  * How hard each style glues its buses: the drum bus's and the music bus's compression and
@@ -72,7 +73,7 @@ export const GLUE_BASS_DUCK = { on: true, depth: 0.75, release: 140, trigger: 'k
  * after the last member's folder (not inside it, which would split the folder in two).
  */
 function placeBus(tracks: Track[], bus: Track, members: readonly Track[]): Track[] {
-  const lastIndex = Math.max(...members.map((t) => tracks.findIndex((x) => x.id === t.id)));
+  const lastIndex = maxOf(members.map((t) => tracks.findIndex((x) => x.id === t.id)));
   const last = tracks[lastIndex];
   const sameFolder = last.folder && members.every((t) => t.folder?.id === last.folder!.id) ? last.folder : undefined;
   const placed = sameFolder ? { ...bus, folder: sameFolder } : bus;

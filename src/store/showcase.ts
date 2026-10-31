@@ -11,6 +11,7 @@ import { durationToBars } from './timelineTypes';
 import { midiOf } from './noteTools';
 import { audibleIds } from './buses';
 import { isDrumKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../audio/instrumentCatalog';
+import { maxOf, minOf } from '../support/minMax';
 
 export interface ShowcaseNote {
   /** Seconds from the start of the video */
@@ -87,8 +88,8 @@ export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], s
     notes,
     tracks: used,
     bars,
-    low: pitched.length ? Math.min(...pitched) : 60,
-    high: pitched.length ? Math.max(...pitched) : 72,
+    low: pitched.length ? minOf(pitched) : 60,
+    high: pitched.length ? maxOf(pitched) : 72,
     drumRows: [...new Set(notes.filter((n) => n.drum).map((n) => n.midi))].sort((a, b) => a - b),
   };
 }

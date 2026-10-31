@@ -16,6 +16,7 @@ import { onTheBeat, showcaseData } from '../../store/showcase';
 import { buildChart, type RhythmDifficulty } from '../../store/rhythmChart';
 import { showToast } from '../timeline/toastStore';
 import { RHYTHM_KEYS, RhythmGame, type RhythmResult } from './rhythmGame';
+import { maxOf } from '../../support/minMax';
 
 const DIFFICULTY_KEY = 'fledgetone.rhythmDifficulty';
 const OFFSET_KEY = 'fledgetone.rhythmOffset';
@@ -62,7 +63,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
   const notes = useMemo(() => {
     const s = useTimelineStore.getState();
     const heard = new Set(audibleTracks(s.tracks).map((t) => t.id));
-    const end = Math.max(1, ...s.clips.filter((c) => heard.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+    const end = maxOf(1, s.clips.filter((c) => heard.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
     const tempo = { bpm: s.bpm, points: s.tempoPoints };
     return { end, data: showcaseData(s.tracks, s.clips, 1, end, (bar) => barToSeconds(bar, tempo)) };
   }, []);

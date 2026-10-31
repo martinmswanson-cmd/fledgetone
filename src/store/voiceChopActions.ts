@@ -18,6 +18,7 @@ import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLib
 import { encodeChannels } from '../audio/wavFile';
 import { detectPitch, type PitchFrame } from '../audio/vocalTune';
 import { chopGain, findSyllables, layoutChops, MAX_CHOPS, tuneChop, type ChopScale, type Syllable } from '../audio/voiceChops';
+import { maxOf, minOf } from '../support/minMax';
 
 const RATE = 44100;
 /** The chop instrument's envelope: a quick start, and a short release so each chop stops cleanly. */
@@ -102,7 +103,7 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
   // A clip playing each syllable where it was sung, on its key (moved with the take, if it was moved meanwhile)
   const moved = still.startBar - clip.startBar;
   const placed = keys.map((k) => syllables[k.index]);
-  const first = Math.min(...placed.map((h) => h.at));
+  const first = minOf(placed.map((h) => h.at));
   const notes = keys
     .map((k) => ({ k, syl: syllables[k.index] }))
     .sort((a, b) => a.syl.at - b.syl.at)
@@ -113,7 +114,7 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
       duration: barsToDuration(Math.max(1 / 64, syl.atEnd - syl.at)),
       velocity: 0.85,
     }));
-  const lastEnd = Math.max(...placed.map((h) => h.atEnd));
+  const lastEnd = maxOf(placed.map((h) => h.atEnd));
   const startBar = Math.max(1, first + moved);
   const made: Clip = {
     id: uid('clip'),

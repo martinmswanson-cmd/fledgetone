@@ -10,6 +10,7 @@ import { analyseMix, cancelMixRender, useMixStudio } from '../../audio/mixStudio
 import { compareSpectra, totalBands, type BandSpectrum } from '../../audio/mixAnalysis';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
 import { formatLufs } from '../../audio/loudness';
+import { maxOf } from '../../support/minMax';
 
 const W = 260;
 const H = 96;
@@ -34,7 +35,7 @@ const Overlay: React.FC<{ mix: BandSpectrum; reference: BandSpectrum; offsetDb: 
   });
   const m = smooth(totalBands(mix));
   const r = smooth(totalBands(reference).map((v) => v + offsetDb));
-  const top = Math.max(...m.filter(Number.isFinite), ...r.filter(Number.isFinite)) + 3;
+  const top = maxOf(m.filter(Number.isFinite), r.filter(Number.isFinite)) + 3;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-24 bg-black/40 rounded border border-forge-border" role="img" aria-label="Spectrum of the mix and the reference">
       {[100, 1000, 10000].map((f) => (

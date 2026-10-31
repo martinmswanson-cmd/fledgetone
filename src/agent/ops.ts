@@ -16,7 +16,7 @@
  * and all: what's heard before Accept is what Accept applies (the Human insert's drift follows the
  * ids). Plain logic: no store, no Web Audio, so it runs in Node and in the agent tools.
  */
-import { parseProject, serializeProject, type ProjectSnapshot } from '../store/project';
+import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../store/project';
 import { makeTrack } from '../store/trackFactory';
 import { syncPatterns, unlinked } from '../store/patterns';
 import { retimeAudioClips } from '../store/audioClips';
@@ -764,7 +764,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           const got = out[key] as unknown as Record<string, unknown> | undefined;
           if (!given || !got) continue;
           for (const [k, v] of Object.entries(given)) {
-            if (typeof v === 'number' && typeof got[k] === 'number' && Math.abs((got[k] as number) - v) > 1e-9) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(got[k] as number, 4)}.`);
+            // (A setting left out of the kept settings is at its default: the Loud master's crunch at 0, split off)
+            const kept = got[k] !== undefined ? got[k] : key === 'loud' ? ({ crunch: 0, split: false } as Record<string, unknown>)[k] : undefined;
+            if (typeof v === 'number' && typeof kept === 'number' && Math.abs(kept - v) > 1e-9) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(kept, 4)}.`);
             if (typeof v === 'string' && got[k] !== v) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k], k)}).`);
           }
         }
@@ -993,7 +995,10 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   } catch (err) {
     return { ok: false, errors: [{ op: -1, path: '', message: `the result isn't a song that could be saved: ${(err as Error).message}` }] };
   }
-  if (gated.unread) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${gated.unread.tracks} tracks and ${gated.unread.clips} clips a saved file couldn't keep` }] };
+  if (gated.unread) {
+    const { parts, notes } = unreadWords(gated.unread);
+    return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${[parts, notes].filter(Boolean).join(', and ')} a saved file couldn't keep` }] };
+  }
   // A saved file keeps the first of repeated ids and drops the rest quietly: nothing may be lost that way
   const lost = idTrouble(base, song);
   if (lost) return { ok: false, errors: [{ op: -1, path: '', message: `the result can't be saved as it is: ${lost}` }] };

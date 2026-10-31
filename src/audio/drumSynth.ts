@@ -14,6 +14,7 @@
  */
 import { seededRandom } from './seededNoise';
 import type { DesignRow, DrumLayer, DrumSound } from '../store/drumDesign';
+import { maxOf } from '../support/minMax';
 
 const TAU = Math.PI * 2;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -147,7 +148,7 @@ function layerSeconds(l: DrumLayer): number {
 
 /** How long a sound is (its longest layer, after its delay), seconds. */
 export function drumSeconds(s: DrumSound): number {
-  return Math.min(MAX_HIT_SECONDS, Math.max(...s.layers.map((l) => l.delay / 1000 + layerSeconds(l))));
+  return Math.min(MAX_HIT_SECONDS, maxOf(s.layers.map((l) => l.delay / 1000 + layerSeconds(l))));
 }
 
 /** Soft clipping that keeps the level of quiet parts: `drive` 0 is clean, 1 is crushed. */

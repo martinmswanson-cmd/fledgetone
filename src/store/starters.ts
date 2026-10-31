@@ -11,6 +11,7 @@ import { presetPatch } from './synthPatch';
 import { DEFAULT_MASTER_FX, durationToBars, withStableIds } from './timelineTypes';
 import type { Clip, ClipExpression, MasterFx, MasterSettings, PeqBand, Track } from './timelineTypes';
 import type { Step } from './demoSong';
+import { maxOf } from '../support/minMax';
 
 /**
  * Song starters for the New dialog: a 16-bar arrangement in each style, with its tempo, a mixed
@@ -497,7 +498,7 @@ function ownVibrato(p: ProjectSnapshot): ProjectSnapshot {
  * song may not loop seamlessly end to start; that's for its writer to shape.)
  */
 function wholeSong(p: ProjectSnapshot): ProjectSnapshot {
-  const end = Math.ceil(Math.max(2, ...p.clips.map((c) => c.startBar + c.lengthBars)) - 1e-6);
+  const end = Math.ceil(maxOf(2, p.clips.map((c) => c.startBar + c.lengthBars)) - 1e-6);
   return { ...p, loopRegion: { inBar: 1, outBar: end, enabled: true } };
 }
 

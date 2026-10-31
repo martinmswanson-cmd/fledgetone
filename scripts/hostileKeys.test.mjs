@@ -215,3 +215,25 @@ test("every starter song opens exactly as it's saved", () => {
     noPrototypeNames(opened);
   }
 });
+
+test("a list of ids follows its parts' new ids: Glue off takes away the bus it made, whatever that bus's id", async () => {
+  const { removeGlue } = await import('../src/store/glueMix.ts');
+  for (const busId of ['toString', '__proto__', 'constructor', 'b1']) {
+    const raw = {
+      format: PROJECT_FORMAT,
+      version: PROJECT_VERSION,
+      name: 'G',
+      bpm: 120,
+      tracks: [
+        { id: 'k', name: 'Keys', instrumentKey: 'piano', output: busId },
+        { id: busId, name: 'Music bus', instrumentKey: 'bus' },
+      ],
+      clips: [],
+      master: { glueMix: { buses: [busId], changes: [{ trackId: 'k', field: 'output', from: null, to: busId }] } },
+    };
+    const p = parseProject(JSON.parse(JSON.stringify(raw)));
+    assert.deepEqual(p.master.glueMix.buses, [p.tracks[1].id], busId);
+    const off = removeGlue(p.tracks, p.master.glueMix);
+    assert.deepEqual(off.map((t) => [t.id, t.output ?? null]), [['k', null]], busId);
+  }
+});

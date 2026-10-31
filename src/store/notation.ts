@@ -2,6 +2,7 @@ import type { Clip, NoteEvent } from './timelineTypes';
 import { durationToBars } from './timelineTypes';
 import { measureAt, measuresBetween, type Meter, type MeterMap } from '../audio/tempoMap';
 import type { SongKey } from './songKey';
+import { maxOf } from '../support/minMax';
 
 /**
  * A note clip as sheet music: measures of notes and rests on a staff (or a grand staff), the way
@@ -111,7 +112,7 @@ function voiceOf(notes: Placed[], total: number): Array<{ keys: number[]; start:
     const chord = notes.filter((n) => n.start === start);
     const next = i + 1 < starts.length ? starts[i + 1] : total;
     // Held until the next chord, or until its longest note ends
-    const end = Math.min(next, Math.max(...chord.map((n) => n.end)));
+    const end = Math.min(next, maxOf(chord.map((n) => n.end)));
     events.push({ keys: [...new Set(chord.map((n) => n.midi))].sort((a, b) => a - b), start, end });
     pos = end;
   });

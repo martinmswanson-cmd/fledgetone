@@ -24,6 +24,7 @@ import type { RecordingIndex, SongNotes, TrackPlan } from './songSamples';
 import { clearCopies, copyBytes, copySet, dropCopy, forgetCopiesOf, makeCopy, onCopyMade, setCopyCap, type CopySet, type CopyWish } from './pitchedCopies';
 import { stretchOutline } from './resampler';
 import { createBendTimeline } from '../bendTimeline';
+import { maxOf } from '../../support/minMax';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -861,7 +862,7 @@ function trimOnset(buffer: Tone.ToneAudioBuffer, onsetDb: number): Tone.ToneAudi
     for (const data of channels) for (let k = i; k < i + window; k++) sum += data[k] * data[k];
     levels.push(sum);
   }
-  const peak = Math.max(...levels);
+  const peak = maxOf(levels);
   const first = levels.findIndex((l) => l >= peak * 10 ** (onsetDb / 10));
   const start = Math.max(0, first * window - Math.round(sr * 0.03));
   if (start <= 0) return buffer;
