@@ -11,8 +11,9 @@ import { createBendTimeline, type BendTimeline } from './bendTimeline';
  * given to a Tone signal is checked against every one it already has (standardized-audio-context
  * keeps them in a list), so a long note's thousands of bend steps at once froze the page for
  * seconds. A stall shorter than FEED_AHEAD - FEED_EVERY isn't heard. An export gives them all at
- * once (its clock doesn't run while the song is set up). The voice pool does the same for each
- * of its voices (poly.ts).
+ * once (its clock doesn't run while the song is set up). The voice pool (poly.ts) bends all its
+ * voices with one signal fed this way, and the EDM basses give their filter sweeps the same way
+ * (edmBass.ts).
  */
 export const FEED_AHEAD = 2;
 export const FEED_EVERY = 0.25;
