@@ -11,6 +11,7 @@
  */
 import { allOrNothing, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
 import { uid, type Clip, type Track } from '../store/timelineTypes';
+import { pastCapsWords } from '../store/songCaps';
 import { songEnd, songSections } from '../store/cutToLength';
 import { createMarker, retimeMarkers } from '../store/markers';
 import { isMixTrack } from '../store/buses';
@@ -84,6 +85,31 @@ function oneStep<T>(edit: () => T): T | undefined {
     return result;
   });
   return done.done ? done.value : undefined;
+}
+
+/**
+ * As oneStep, for an edit that can fail on its own (`edit` returns what to say, or null): one undo
+ * step, all or nothing. Refused past the most a song can have, nothing is done and no undo step is
+ * pushed, so it returns what to say about that rather than leave an undo to take back the
+ * musician's own step before; failed on its own, its step is taken back here and the redo history
+ * left as it was.
+ */
+function oneStepOr(edit: () => string | null): string | null {
+  const futureBefore = tl().future;
+  const made = allOrNothing(() => {
+    tl().checkpoint();
+    const past = tl().past;
+    const error = edit();
+    useTimelineStore.setState({ past, future: [] });
+    return error;
+  }, true);
+  if (!made.done) return pastCapsWords(made.past);
+  if (made.value) {
+    // (nothing of it kept, and nothing of it left to redo: the redo history is as it was)
+    tl().undo();
+    useTimelineStore.setState({ future: futureBefore });
+  }
+  return made.value;
 }
 
 /**
@@ -238,23 +264,18 @@ export function copySection(i: number): string | null {
   const len = sec.to - sec.from;
   // A song with nothing in it yet has nothing to copy
   if (songEnd(tl().clips) <= 1 + EPS) return 'Write something in this section first, then copy it.';
-  let error: string | null = null;
-  oneStep(() => {
+  return oneStepOr(() => {
     pinSections(sections);
     // (Its clips that run on into other sections are cut at its edges first, so the copy is linked)
     cutAtEdges(sec.from, sec.to);
     const copies = copiesOf(sec.from, sec.to, len);
-    error = tl().insertBars(sec.to, len);
-    if (error) return;
+    const error = tl().insertBars(sec.to, len);
+    if (error) return error;
     addCopies(copies);
     // A copy of a named section ("Verse") is named the same; one with no marker after its place in the song
     markAt(sec.to, markerNameAt(sec.from, `Section ${i + 2}`));
+    return null;
   });
-  if (error) {
-    tl().undo();
-    return error;
-  }
-  return null;
 }
 
 /** Take section `i` out of the song: its bars go, and the rest of the song moves up. */
@@ -263,16 +284,10 @@ export function removeSection(i: number): string | null {
   const sec = sections[i];
   if (!sec) return null;
   if (sections.length < 2) return "It's the only section: there'd be no song left.";
-  let error: string | null = null;
-  oneStep(() => {
+  return oneStepOr(() => {
     pinSections(sections);
-    error = tl().removeBars(sec.from, sec.to);
+    return tl().removeBars(sec.from, sec.to);
   });
-  if (error) {
-    tl().undo();
-    return error;
-  }
-  return null;
 }
 
 /** Swap section `i` with the one before (-1) or after (+1) it. */
@@ -282,26 +297,21 @@ export function moveSection(i: number, dir: -1 | 1): string | null {
   const b = sections[dir < 0 ? i : i + 1];
   if (!a || !b) return null;
   const lenB = b.to - b.from;
-  let error: string | null = null;
-  oneStep(() => {
+  return oneStepOr(() => {
     pinSections(sections, true);
     const name = markerNameAt(b.from, `Section ${(dir < 0 ? i : i + 1) + 1}`);
     // B's bars copied to where A starts, after making room there; then B's own bars (now
     // later by its length) taken out. The copies keep B's links to sections elsewhere.
     const { copies } = copiesOf(b.from, b.to, a.from - b.from);
     for (const c of copies) if (!tl().clips.some((o) => o.pattern && o.pattern === c.pattern && (o.startBar < b.from - EPS || o.startBar >= b.to - EPS))) delete c.pattern;
-    error = tl().insertBars(a.from, lenB);
-    if (error) return;
+    const error = tl().insertBars(a.from, lenB);
+    if (error) return error;
     addCopies({ copies, linked: new Map() });
-    error = tl().removeBars(b.from + lenB, b.to + lenB);
-    if (error) return;
+    const removed = tl().removeBars(b.from + lenB, b.to + lenB);
+    if (removed) return removed;
     markAt(a.from, name);
+    return null;
   });
-  if (error) {
-    tl().undo();
-    return error;
-  }
-  return null;
 }
 
 /** Make section `i`'s clips its own: edits to it no longer change the sections it was copied from or to. */
