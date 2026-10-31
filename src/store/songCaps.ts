@@ -15,7 +15,7 @@ export const MAX_SONG_NOTES = 200_000;
 export const MAX_LANE_POINTS = 50_000;
 export const MAX_SONG_POINTS = 500_000;
 
-/** The most of each of these in a song (takes: in one clip). */
+/** The most of each of these in a song (takes, and comp switches between them: in one clip). */
 export const SONG_CAPS = {
   tracks: 256,
   clips: 10_000,
@@ -23,6 +23,7 @@ export const SONG_CAPS = {
   tempoPoints: 4_000,
   meterPoints: 400,
   takes: 256,
+  comps: 4_096,
   stingers: 200,
   sounds: 4_096,
   transitions: 4_096,
@@ -41,6 +42,7 @@ const WORDS: Record<CapKind, [one: string, many: string, cap: () => string]> = {
   tempoPoints: ['tempo change', 'tempo changes', () => `${n(SONG_CAPS.tempoPoints)} tempo changes`],
   meterPoints: ['time signature change', 'time signature changes', () => `${n(SONG_CAPS.meterPoints)} time signature changes`],
   takes: ['take', 'takes', () => `${n(SONG_CAPS.takes)} takes in a clip`],
+  comps: ['switch between takes', 'switches between takes', () => `${n(SONG_CAPS.comps)} switches between takes in a clip`],
   stingers: ['stinger', 'stingers', () => `${n(SONG_CAPS.stingers)} stingers`],
   sounds: ['sound', 'sounds', () => `${n(SONG_CAPS.sounds)} sounds`],
   transitions: ['transition rule', 'transition rules', () => `${n(SONG_CAPS.transitions)} transition rules`],
@@ -79,7 +81,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 
 /**
  * Cut a file's lists to the caps (in the file's own objects, before they're read), the first ones
- * kept: tracks, clips, markers, tempo and time signature changes, stingers, sounds, takes, game
+ * kept: tracks, clips, markers, tempo and time signature changes, stingers, sounds, takes and the
+ * switches between them, game
  * transition rules and intensity curves, then notes and lane points. Returns how many of each were
  * left out. (A track left out takes its clips with it: those aren't counted again.)
  */
@@ -110,7 +113,10 @@ export function capSong(raw: Record<string, unknown> & { tracks: unknown[]; clip
   cutKeys(raw, 'transitions', SONG_CAPS.transitions, 'transitions');
   cutKeys(raw.intensity, 'curves', SONG_CAPS.curves, 'curves');
   const clips = clipsOf(raw);
-  for (const c of clips) cut(c, 'takes', SONG_CAPS.takes, 'takes');
+  for (const c of clips) {
+    cut(c, 'takes', SONG_CAPS.takes, 'takes');
+    cut(c, 'comp', SONG_CAPS.comps, 'comps');
+  }
   add('notes', capNotes(raw, clips));
   add('points', capPoints(raw, clips));
   return over;
@@ -177,6 +183,7 @@ function capPoints(raw: { tracks: unknown[] }, clips: Array<Record<string, unkno
 interface SizedClip {
   notes: readonly unknown[];
   takes?: ReadonlyArray<{ notes?: readonly unknown[]; expression?: object }>;
+  comp?: readonly unknown[];
   expression?: object;
 }
 interface SizedSong {
@@ -198,6 +205,8 @@ interface Part {
   lanePoints: number;
   /** The most takes in one clip */
   takes: number;
+  /** The most switches between takes in one clip */
+  comps: number;
 }
 
 /** Measured once for each list as the store holds it: an edit measures only the lists it changed. */
@@ -206,7 +215,7 @@ const parts = new WeakMap<object, Part>();
 function partOf(list: readonly object[], measure: (part: Part, item: never) => void): Part {
   const known = parts.get(list);
   if (known) return known;
-  const part: Part = { notes: 0, clipNotes: 0, points: 0, lanePoints: 0, takes: 0 };
+  const part: Part = { notes: 0, clipNotes: 0, points: 0, lanePoints: 0, takes: 0, comps: 0 };
   for (const item of list) measure(part, item as never);
   parts.set(list, part);
   return part;
@@ -232,6 +241,7 @@ const clip = (part: Part, c: SizedClip | undefined) => {
   expression(part, c.expression);
   if (!c.takes) return;
   if (c.takes.length > part.takes) part.takes = c.takes.length;
+  if ((c.comp?.length ?? 0) > part.comps) part.comps = c.comp!.length;
   for (const t of c.takes) {
     noteList(part, t?.notes);
     expression(part, t?.expression);
@@ -255,7 +265,8 @@ function pastBy(song: SizedSong, kind: CapKind): number {
     case 'points':
       return over(most('lanePoints'), MAX_LANE_POINTS) + over(sum('points'), MAX_SONG_POINTS);
     case 'takes':
-      return over(most('takes'), SONG_CAPS.takes);
+    case 'comps':
+      return over(most(kind), SONG_CAPS[kind]);
     case 'tracks':
     case 'clips':
     case 'markers':
@@ -268,7 +279,7 @@ function pastBy(song: SizedSong, kind: CapKind): number {
   }
 }
 
-const EDIT_KINDS: CapKind[] = ['tracks', 'clips', 'markers', 'tempoPoints', 'meterPoints', 'takes', 'stingers', 'notes', 'points'];
+const EDIT_KINDS: CapKind[] = ['tracks', 'clips', 'markers', 'tempoPoints', 'meterPoints', 'takes', 'comps', 'stingers', 'notes', 'points'];
 
 /**
  * The caps an edit from `before` to `after` would go past, or an empty list. Only going further

@@ -5,7 +5,7 @@ import { normalizeStepLanes } from './stepLanes';
 import { normalizeNoteExpression } from './noteExpression';
 import { normalizeChance, normalizeCond } from './noteChance';
 import { compSegments, normalizeTakes } from './takes';
-import { REVERB_SEND_MAX, RING_MAX, TOTAL_BARS, isAutomationParam, readNoteDuration } from './timelineTypes';
+import { REVERB_SEND_MAX, RING_MAX, TOTAL_BARS, isAutomationParam, durationToBars, readNoteDuration } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
@@ -449,16 +449,18 @@ function parseNote(v: unknown): NoteEvent {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.note) || isPrototypeName(v.note) || !isNum(v.startOffset) || !isStr(v.duration)) {
     throw new Error('a note is malformed');
   }
+  const duration = readNoteDuration(v.duration);
   return {
     id: v.id,
     note: v.note,
     // No further from its clip's start than the whole timeline (a note can sit before its trimmed clip's start)
     startOffset: Math.max(-TOTAL_BARS, Math.min(TOTAL_BARS, v.startOffset)),
     // A length the app can't read plays as a 16th rather than breaking playback; none is longer than the whole timeline
-    duration: readNoteDuration(v.duration),
+    duration,
     velocity: isNum(v.velocity) ? Math.max(0, Math.min(1, v.velocity)) : 0.8,
     ...(() => {
-      const expr = normalizeNoteExpression(v.expr);
+      // (its curves end with it: points past its end play nothing, see cutNoteLane)
+      const expr = normalizeNoteExpression(v.expr, durationToBars(duration));
       return expr ? { expr } : {};
     })(),
     // Optional: notes that play only some of the time (see noteChance.ts)

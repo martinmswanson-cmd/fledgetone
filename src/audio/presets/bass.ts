@@ -2,7 +2,8 @@ import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 import type { GlideRef } from '../instruments';
-import { bendSignal, legatoGlide, letGoMono, playMono } from './synths';
+import { legatoGlide, letGoMono, playMono } from './synths';
+import { createBendFeed } from '../bendFeed';
 
 /**
  * Funk Slap Bass (Monophonic)
@@ -44,10 +45,13 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
   // Monophonic: overlapping bass clips could land two notes on one instant
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide);
+  // (Its bends given to its detune as they come due: see bendFeed.ts)
+  const bends = createBendFeed(synth.context, synth.detune);
 
   return {
     synth,
     dispose: () => {
+      bends.dispose();
       synth.dispose();
       distortion.dispose();
     },
@@ -61,7 +65,7 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
     // A key held on a MIDI keyboard: sounds until released
     attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
     release: (time: number) => synth.triggerRelease(time),
-    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bendSignal(synth.detune, cents, time, cut),
+    bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bends.bend(cents, time, cut),
     /** Stop, Pause: let go now, and the notes handed out for later never come */
     releaseAll: () => letGoMono(synth, glideFor),
   };

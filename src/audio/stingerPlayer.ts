@@ -194,7 +194,9 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     const byStart = new Map<number, NoteEvent[]>();
     for (const n of notes) {
       const at = from + n.startOffset * secondsPerBar;
-      byStart.set(at, [...(byStart.get(at) ?? []), n]);
+      const group = byStart.get(at);
+      if (group) group.push(n);
+      else byStart.set(at, [n]);
     }
     const groups = [...byStart].sort((a, b) => a[0] - b[0]);
     const firstAt = groups.length ? groups[0][0] : Infinity;
@@ -257,7 +259,11 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
   const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
   const secondsPerBar = 240 / bpm;
   const byStart = new Map<number, typeof notes>();
-  for (const n of notes) byStart.set(n.startOffset, [...(byStart.get(n.startOffset) ?? []), n]);
+  for (const n of notes) {
+    const group = byStart.get(n.startOffset);
+    if (group) group.push(n);
+    else byStart.set(n.startOffset, [n]);
+  }
   for (const [at, group] of byStart)
     p.inst.play(
       group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),

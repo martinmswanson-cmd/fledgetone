@@ -31,15 +31,31 @@ export function tidyNoteLane(points: readonly ExprPoint[], lane: NoteLane, lengt
   return sorted.filter((p, i) => i === sorted.length - 1 || sorted[i + 1].at - p.at > 1e-6).slice(0, 256);
 }
 
-export function normalizeNoteExpression(raw: unknown): NoteExpression | undefined {
+/**
+ * Tidy points (see tidyNoteLane) ending at the note's end (`length` bars): the curve plays as it
+ * did over the note, the points past its end replaced by one at its end, where the curve was.
+ */
+export function cutNoteLane(points: readonly ExprPoint[], lane: NoteLane, length: number): ExprPoint[] {
+  if (!(length >= 0) || !points.length || points[points.length - 1].at <= length) return [...points];
+  const kept = points.filter((p) => p.at <= length);
+  if (!kept.length || kept[kept.length - 1].at < length - 1e-6) kept.push({ at: length, value: noteValueAt(points, length, lane) });
+  return kept;
+}
+
+/** A note's expression as a file gives it: tidy, and ending at the note's end (`length` bars). */
+export function normalizeNoteExpression(raw: unknown, length = Infinity): NoteExpression | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const out: NoteExpression = {};
   for (const { lane } of NOTE_LANES) {
     const v = (raw as Record<string, unknown>)[lane];
     if (!Array.isArray(v)) continue;
-    const pts = tidyNoteLane(
-      v.filter((p): p is ExprPoint => typeof p === 'object' && p !== null && typeof p.at === 'number' && typeof p.value === 'number'),
-      lane
+    const pts = cutNoteLane(
+      tidyNoteLane(
+        v.filter((p): p is ExprPoint => typeof p === 'object' && p !== null && typeof p.at === 'number' && typeof p.value === 'number'),
+        lane
+      ),
+      lane,
+      length
     );
     if (pts.length) out[lane] = pts;
   }

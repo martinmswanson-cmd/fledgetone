@@ -13,6 +13,7 @@
  * moment later.
  */
 import { runDspJob, type DspJob, type DspResult } from './dspJobs';
+import { browserError } from './exportFailure';
 import DspWorker from './dspWorker.ts?worker&inline';
 
 /** A job dropped because nothing wanted its result any more. */
@@ -123,11 +124,11 @@ export async function runDspFull(job: DspJob, channels: readonly Float32Array[],
         worker.removeEventListener('message', onMessage);
         worker.removeEventListener('error', onError);
       };
-      const onMessage = (e: MessageEvent<DspResult & { id: number; error?: string }>) => {
+      const onMessage = (e: MessageEvent<DspResult & { id: number; error?: string; browser?: boolean }>) => {
         if (e.data.id !== id) return;
         done();
         if (e.data.channels) resolve(e.data);
-        else reject(new Error(e.data.error ?? 'The sound edit failed'));
+        else reject(e.data.browser ? browserError(e.data.error ?? '') : new Error(e.data.error ?? 'The sound edit failed'));
       };
       const onError = (e: ErrorEvent) => {
         // (A Worker that can't load its script: this and later jobs run here instead)

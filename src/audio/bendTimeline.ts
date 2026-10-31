@@ -13,8 +13,8 @@ export interface BendTimeline {
   set: (cents: number, time: number, cut?: boolean) => void;
   /** The bend in force at `time` (cents; 0 before any). */
   at: (time: number) => number;
-  /** The bends sent for after `time` (and before `until`), in time order. */
-  after: (time: number, until?: number) => ReadonlyArray<readonly [time: number, cents: number]>;
+  /** The bends sent for after `time` (and before `until`, or `through` it: at it too), in time order. */
+  after: (time: number, until?: number, through?: boolean) => ReadonlyArray<readonly [time: number, cents: number]>;
   /** Whether it has ever been sent a bend off centre (until then a note's pitch is untouched). */
   moved: () => boolean;
 }
@@ -55,7 +55,7 @@ export function createBendTimeline(now: () => number): BendTimeline {
       const i = lastAt(time);
       return i < 0 ? 0 : points[i][1];
     },
-    after: (time, until) => points.slice(lastAt(time) + 1, until === undefined ? undefined : Math.max(lastAt(time) + 1, firstAfter(until, true))),
+    after: (time, until, through) => points.slice(lastAt(time) + 1, until === undefined ? undefined : Math.max(lastAt(time) + 1, firstAfter(until, !through))),
     moved: () => moved,
   };
 }

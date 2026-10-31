@@ -6,6 +6,7 @@
  * with ?worker&inline), so the one-file build needs no extra file.
  */
 import { runDspJob, type DspJob } from './dspJobs';
+import { isBrowserError } from './exportFailure';
 
 const scope = self as unknown as Worker;
 
@@ -15,6 +16,7 @@ scope.onmessage = (e: MessageEvent<{ id: number; job: DspJob; channels: Float32A
     const out = runDspJob(e.data.job, e.data.channels, e.data.sampleRate);
     scope.postMessage({ id, ...out }, out.channels.map((ch) => ch.buffer));
   } catch (err) {
-    scope.postMessage({ id, error: err instanceof Error ? err.message : String(err) });
+    // (its words the browser's, unless it's the app's own: see exportFailure.ts)
+    scope.postMessage({ id, error: err instanceof Error ? err.message : String(err), browser: isBrowserError(err) });
   }
 };
