@@ -13,14 +13,18 @@ import { startPwa } from './pwa/pwa'
 import { wantsPocket } from './pocket/pocketMode'
 import { startNativeApp } from './native/nativeApp'
 import { startAppLifecycle } from './native/appLifecycle'
+import { StudioGuard } from './components/StudioGuard'
 
 const Root = wantsPocket() ? lazy(() => import('./pocket/PocketApp')) : lazy(() => import('./App.tsx'))
 
+// (StudioGuard: if drawing the app goes wrong, a plain recovery screen rather than a blank page)
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Suspense fallback={null}>
-      <Root />
-    </Suspense>
+    <StudioGuard>
+      <Suspense fallback={null}>
+        <Root />
+      </Suspense>
+    </StudioGuard>
   </StrictMode>,
 )
 

@@ -11,6 +11,7 @@ import { specOf, CURVE_STEP, isLinearMap, lanePieceFrom, laneValueAt, sampleStre
 import { clockMargin, type AutomationTarget } from './effects/paramWriter';
 import type { TrackStrip } from './effects/trackStrip';
 import { ticksToBar } from './transport';
+import { maxOf } from '../support/minMax';
 
 type Transport = ReturnType<typeof Tone.getTransport>;
 
@@ -209,7 +210,7 @@ export function createAutomationSchedule(
       const value = laneValueAt(lane.points, barAt(run, Math.max(time, raw.currentTime)))!;
       fresh.forEach((tg) => tg.writer.jump(tg.native(value), 0));
     }
-    lane.until = Math.max(...lane.targets.map((tg) => tg.writer.cut(time)));
+    lane.until = maxOf(lane.targets.map((tg) => tg.writer.cut(time)));
     plan(lane, context.currentTime + LEAD);
   };
 

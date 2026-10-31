@@ -18,6 +18,7 @@ import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_MASTER_FX } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { showToast } from './toastStore';
+import { maxOf } from '../../support/minMax';
 
 /**
  * Hand a file to the device's share sheet (phones, Windows, macOS Safari) where the browser can,
@@ -95,7 +96,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       await captureWamStates();
       const p = currentProject();
       const ids = new Set(audibleTracks(p.tracks).map((t) => t.id));
-      const end = Math.max(2, ...p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+      const end = maxOf(2, p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
       const audio = await renderArrangement({ tracks: p.tracks, clips: p.clips, bpm: p.bpm, tempoPoints: p.tempoPoints, meter: songMeterOf(s), swing: p.swing, masterFx: p.masterFx ?? DEFAULT_MASTER_FX, master: p.master, startBar: 1, endBar: end, ending: 'ringOut', sampleRate: 44100, peakCeilingDbtp: exportCeilingDbtp('mp3'), markers: p.markers, intensity: { value: s.intensity, curves: s.intensityCurves } });
       const mp3 = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });
       const file = new File([mp3], `${safeFileName(p.name)}.mp3`, { type: 'audio/mpeg' });

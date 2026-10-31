@@ -15,6 +15,11 @@ export function own<T>(table: Readonly<Record<string, T>> | null | undefined, ke
 
 /** The fields of a song that hold an id, looked up in tables by it. */
 const ID_FIELDS = new Set(['id', 'trackId', 'clipId', 'soundId', 'stingerId', 'to', 'from', 'output', 'source', 'pattern', 'room', 'tunedFrom', 'reversedFrom', 'shiftedFrom']);
+/**
+ * The fields of a song that hold a list of ids (the buses Glue made: master.glueMix.buses). The
+ * only ones in a song today: a new list of ids needs its field here, or its ids wouldn't follow a renamed part.
+ */
+const ID_LIST_FIELDS = new Set(['buses']);
 /** Tables by a name the musician typed (intensity curves by stem group): kept as typed, and read with `own`. */
 const BY_NAME = new Set(['curves']);
 
@@ -24,7 +29,7 @@ const safeId = (id: string): string => (isPrototypeName(id) ? `${id}_` : id);
 /**
  * A song's raw data (parsed JSON, changed in place) with no id a lookup could mistake: an id that
  * is a prototype name ("toString", "__proto__") becomes another (`toString_`) everywhere it's used:
- * in id fields, as the key of a table by id (costume swaps, state options), in "from>to" transition
+ * in id fields and lists of ids, as the key of a table by id (costume swaps, state options), in "from>to" transition
  * keys and in "send:<id>" settings. Names the musician typed stay as they are (BY_NAME), and so
  * does a plugin's own state. The app never makes such ids, so its own songs come back unchanged.
  */
@@ -40,6 +45,8 @@ export function withSafeIds(raw: unknown, depth = 0, byName = false): void {
     if (typeof v === 'string') {
       const id = ID_FIELDS.has(key) ? safeId(v) : key === 'param' && v.startsWith('send:') ? `send:${safeId(v.slice(5))}` : v;
       if (id !== v) o[key] = v = id;
+    } else if (Array.isArray(v) && ID_LIST_FIELDS.has(key)) {
+      o[key] = v = v.map((x: unknown) => (typeof x === 'string' ? safeId(x) : x));
     }
     const renamed = byName ? key : key.includes('>') ? key.split('>').map(safeId).join('>') : safeId(key);
     if (renamed !== key) {

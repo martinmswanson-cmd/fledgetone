@@ -25,6 +25,7 @@
 import { durationToBars, type Clip, type Track } from '../store/timelineTypes';
 import { audibleIds, busChain, isMixTrack, liveSends } from '../store/buses';
 import { INSTRUMENTS, type InstrumentKind } from './instrumentCatalog';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * The inserts that act on their input linearly: a bus or return with only these on can be copied
@@ -163,10 +164,10 @@ export function renderParts(
       lightest.tracks.push(...group.tracks);
       lightest.cost += group.cost;
     }
-    return { parts, time: fixed + Math.max(...parts.map((p) => p.cost)) };
+    return { parts, time: fixed + maxOf(parts.map((p) => p.cost)) };
   };
   const packings = Array.from({ length: Math.min(maxParts, groups.size) - 1 }, (_, i) => pack(i + 2));
-  const fastest = Math.min(...packings.map((p) => p.time));
+  const fastest = minOf(packings.map((p) => p.time));
   const { parts, time } = packings.find((p) => p.time <= fastest * 1.05)!;
   if ((fixed + total) / time < WORTHWHILE) return [players];
   // In song order within each part, so a part builds its tracks in the order one render would

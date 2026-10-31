@@ -16,6 +16,7 @@
  */
 import { loopChunk } from '../wavCues';
 import { bodyRing, ModalBody, polyBlep, recordingFor, stereoSpace, SFX_MATERIALS, type SfxMaterial } from './sfxModern';
+import { maxOf } from '../../support/minMax';
 
 export const SFX_WAVES = ['square', 'saw', 'triangle', 'sine', 'noise', 'pink', 'brown', 'fm', 'metal', 'crackle', 'rec'] as const;
 export type SfxWave = (typeof SFX_WAVES)[number];
@@ -880,7 +881,7 @@ const recRate = (l: SfxLayer) => clamp(l.freq / 440, 0.25, 4);
 /** How long the dry sound lasts, seconds (a loop: its length). */
 export function dryLength(s: SfxSound): number {
   if (s.loop) return s.loopLength;
-  return Math.max(0.005, ...s.layers.filter((l) => l.on).map((l) => layerEnd(l, !!s.modern, s.pitch)));
+  return maxOf(0.005, s.layers.filter((l) => l.on).map((l) => layerEnd(l, !!s.modern, s.pitch)));
 }
 
 /** How much the echo and reverb add after the dry sound, seconds. */

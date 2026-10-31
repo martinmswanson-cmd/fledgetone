@@ -57,6 +57,7 @@ import type { Clip, DrumHit, Marker, MasterFx, MasterSettings, Track } from '../
 import { normalizeMasterSettings, pumpFollowsDrums } from '../store/timelineTypes';
 import { countedRender } from './renderBusy';
 import { isNativeApp, nativeShareFile } from '../native/nativeApp';
+import { minOf } from '../support/minMax';
 
 /** Sample rates the export offers (88.2 and 96 kHz for WAV only: MP3 stops at 48 kHz). */
 export const SAMPLE_RATES = [44100, 48000, 88200, 96000] as const;
@@ -929,7 +930,7 @@ async function sideBySideHelps(): Promise<boolean> {
     const two = [await time(2)];
     one.push(await time(1));
     two.push(await time(2));
-    return Math.min(...two) < 1.7 * Math.min(...one);
+    return minOf(two) < 1.7 * minOf(one);
   })().catch(() => false);
   const helps = await sideBySide;
   if (!helps && sideBySideLooks < 3) sideBySide = undefined;
@@ -1213,7 +1214,7 @@ async function renderGraphHeld(
   // A download that hangs gives up by itself (recordingStore.ts), and anything else that holds an
   // instrument up (its kept copies, decoding) gives up after SAMPLE_WAIT_MS, naming the instrument
   // (each note's longest hold at the song's slowest tempo: how much of a recording its copies need)
-  const slowestBar = 240 / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+  const slowestBar = 240 / minOf(opts.bpm, (opts.tempoPoints ?? []).map((p) => p.bpm));
   for (const [key, loading] of songSampleLoads(tracks, clips, sampleRate, true, slowestBar)) {
     const name = INSTRUMENTS[key].name;
     try {
@@ -1412,7 +1413,7 @@ async function renderGraphHeld(
     // pitch now, read at a rate of exactly 1, not stretched by the browser as they sound (see
     // pitchedCopies.ts): every instrument makes ready what its track's notes play
     // (each note's longest hold at the song's slowest tempo, so a copy is only as long as its notes need)
-    const barSeconds = 240 / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+    const barSeconds = 240 / minOf(opts.bpm, (opts.tempoPoints ?? []).map((p) => p.bpm));
     await Promise.all(tracks.map((t) => instruments.get(t.id)?.prepare?.(trackPlan(t, clips, barSeconds))));
     signal?.throwIfAborted();
     if (opts.reverbImpulse?.sampleRate === sampleRate) busFx.useImpulse(opts.reverbImpulse);
@@ -1464,7 +1465,7 @@ async function renderGraphHeld(
     // play into it. A seamless loop, or an intro leading into one, runs on as long as notes play
     // early: a note pushed early off the loop's first tick sounds at the end of the pass before
     // it, as it does live, so the last pass (or the intro) ends with it too
-    const early = (schedule.earliest() * 15) / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+    const early = (schedule.earliest() * 15) / minOf(opts.bpm, (opts.tempoPoints ?? []).map((p) => p.bpm));
     transport.stop(plan.stopAt + (ending === 'seamless' || opts.noEndFade ? early : 0));
 
     return {

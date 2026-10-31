@@ -37,6 +37,7 @@ import { feelPartOf } from '../audio/mixCheck';
 import { stableJson } from './fingerprint';
 import { insertLabel, settingWord, valueWord } from './settingWords';
 import { nm, plainNames } from './names';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * Where a change is heard: 'here' (its own bars, fromBar to toBar, and, for a change on a track,
@@ -251,7 +252,7 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
     c.text = plainNames(c.text);
   }
   const located = changes.filter((c) => c.fromBar !== undefined && c.toBar !== undefined && c.hear !== 'silent');
-  const range = located.length ? { fromBar: Math.min(...located.map((c) => c.fromBar!)), toBar: Math.max(...located.map((c) => c.toBar!)) } : null;
+  const range = located.length ? { fromBar: minOf(located.map((c) => c.fromBar!)), toBar: maxOf(located.map((c) => c.toBar!)) } : null;
   const where = hearing(before, after);
   let sure = true;
   for (const c of changes) {
@@ -398,7 +399,7 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
   const tailOf = trackTails(songs);
   /** Bar `to` and past it by `seconds`, in the slower of the two versions. */
   const past = (to: number, seconds: number): number => {
-    const until = Math.max(...tempos.map((t) => secondsToBar(barToSeconds(to, t) + seconds, t)));
+    const until = maxOf(tempos.map((t) => secondsToBar(barToSeconds(to, t) + seconds, t)));
     return Number.isFinite(until) ? Math.max(to, until) : to;
   };
   /** Where a clip of `track` sounds: from its start to past its end by its tail. */
@@ -466,7 +467,7 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     return [...out];
   };
   // (in bars, as duck.ts reckons them: by each version's tempo, the longer of the two)
-  const duckBars = (seconds: number) => Math.max(...songs.map((s) => (seconds * s.bpm) / 240));
+  const duckBars = (seconds: number) => maxOf(songs.map((s) => (seconds * s.bpm) / 240));
   const dipRange = (r: BarRange, id: string): BarRange => ({
     fromBar: Math.max(1, r.fromBar - duckBars(DUCK_LOOKAHEAD + DUCK_BRIDGE)),
     toBar: past(r.toBar + duckBars(DUCK_BRIDGE + DUCK_RELEASE), tailOf(id).seconds),
@@ -554,10 +555,10 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     const swing = songs.some((s) => s.clips.some((c) => c.id === clipId && swingReadsClip(c, s.swing ?? 0)));
     const feel = songs.some((s) => s.clips.some((c) => c.id === clipId && feelByTrack(c) && feelPart(s, c.trackId) === 'melodic'));
     if (!swing && !feel) return null;
-    return { fromBar: Math.min(...versions.map((c) => c.startBar)), toBar: Math.max(...versions.map(clipSoundEnd)) };
+    return { fromBar: minOf(versions.map((c) => c.startBar)), toBar: maxOf(versions.map(clipSoundEnd)) };
   };
   const allSure = songs.every((s) => s.tracks.every((t) => tailOf(t.id).sure));
-  const end = Math.max(2, ...[...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
+  const end = maxOf(2, [...ranges.values()].flat().map((r) => Math.ceil(r.toBar - 1e-9)));
   const song: BarRange = { fromBar: 1, toBar: end };
   const rule = (c: SongChange): { heard: BarRange[]; sure: boolean } => {
     // (what isn't known to sit somewhere is heard everywhere)
@@ -584,7 +585,7 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
       const memories = c.clipId ? tracks.map((id) => ({ id, memory: memoryOf(id) })).filter((x) => !!x.memory) : [];
       // (notes played on some passes only: a change of the clip can change its run of copies, and
       // so the pass of all its notes, from its start: noteChance.ts clipRuns)
-      const passStart = memories.some((x) => x.memory!.kinds.includes('passes')) ? Math.min(...songs.flatMap((s) => s.clips.filter((k) => k.id === c.clipId).map((k) => k.startBar))) : Infinity;
+      const passStart = memories.some((x) => x.memory!.kinds.includes('passes')) ? minOf(songs.flatMap((s) => s.clips.filter((k) => k.id === c.clipId).map((k) => k.startBar))) : Infinity;
       const from = Math.min(c.fromBar, swing?.fromBar ?? Infinity, passStart);
       let to = Math.max(c.toBar, swing?.toBar ?? -Infinity);
       const onward: BarRange[] = [];
@@ -595,8 +596,8 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
         // (passes decide which notes play: what ducks to them moves on too)
         if (memory!.kinds.includes('passes')) notesMove = true;
       }
-      const duckTo = notesMove ? Math.max(to, ...onward.map((r) => r.toBar)) : to;
-      const here: BarRange = { fromBar: from, toBar: tracks.length ? Math.max(...tracks.map((id) => past(to, tailOf(id).seconds)), ...ducked.map((id) => past(duckTo, duckTail(id)))) : to };
+      const duckTo = notesMove ? maxOf(to, onward.map((r) => r.toBar)) : to;
+      const here: BarRange = { fromBar: from, toBar: tracks.length ? maxOf(tracks.map((id) => past(to, tailOf(id).seconds)), ducked.map((id) => past(duckTo, duckTail(id)))) : to };
       return {
         heard: joinRanges([here, ...onward, ...dipped.map((d) => dipRange({ fromBar: from, toBar: duckTo }, d))]),
         sure: [...tracks, ...ducked, ...dipped].every((id) => tailOf(id).sure) && memories.every((x) => x.memory!.sure),
@@ -628,7 +629,7 @@ export function auditionRange(range: BarRange | null, song: Pick<ProjectSnapshot
   if (range) return fit(range.fromBar - 1, range.toBar);
   const clips = song.clips.filter((c) => tracks.includes(c.trackId));
   if (clips.length) {
-    const start = Math.min(...clips.map((c) => c.startBar));
+    const start = minOf(clips.map((c) => c.startBar));
     return fit(start, start + 8);
   }
   const end = song.clips.reduce((e, c) => Math.max(e, clipSoundEnd(c)), 1);
@@ -737,7 +738,7 @@ function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   };
   const span = (lanes: AutomationLane[]) => {
     const all = lanes.flatMap((l) => l.points.map((p) => p.bar));
-    return all.length ? { fromBar: Math.min(...all), toBar: Math.max(...all) + 1 } : {};
+    return all.length ? { fromBar: minOf(all), toBar: maxOf(all) + 1 } : {};
   };
   const before = a.automation ?? [];
   const after = b.automation ?? [];
@@ -755,7 +756,7 @@ function changedSpan(a: AutomationLane, b: AutomationLane): Partial<BarRange> {
   const inA = new Set(a.points.map(key));
   const inB = new Set(b.points.map(key));
   const bars = [...a.points.filter((p) => !inB.has(key(p))), ...b.points.filter((p) => !inA.has(key(p)))].map((p) => p.bar);
-  return bars.length ? { fromBar: Math.min(...bars), toBar: Math.max(...bars) + 1 } : {};
+  return bars.length ? { fromBar: minOf(bars), toBar: maxOf(bars) + 1 } : {};
 }
 
 /** Whether a clip has lanes of its own (controllers: bend, mod, sustain, CCs; step lanes): what they set holds on past the clip, into the track's later clips. */
@@ -788,11 +789,11 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     const changed = b.notes.filter((x) => before.has(x.id) && !same(before.get(x.id), x));
     const touched = [...added, ...removed, ...changed, ...changed.map((x) => before.get(x.id)!)];
     const parts = [added.length && `adds ${plural(added.length, 'note')}`, changed.length && `changes ${plural(changed.length, 'note')}`, removed.length && `removes ${plural(removed.length, 'note')}`].filter(Boolean);
-    const from = b.startBar + Math.max(0, Math.min(...touched.map((x) => x.startOffset)));
+    const from = b.startBar + Math.max(0, minOf(touched.map((x) => x.startOffset)));
     // (to where the last of them stops: a note runs its whole length, past the clip's end too, and
     // the sustain pedal holds it on; one hidden by a trim doesn't play, so its own length is enough)
-    const heldEnd = (x: NoteEvent) => Math.max(Math.min(b.lengthBars, noteEnd(x)), ...[a, b].flatMap((c) => soundingNotes({ ...c, notes: [x] }).map((h) => x.startOffset + h.bars)));
-    const to = b.startBar + Math.max(...touched.map(heldEnd));
+    const heldEnd = (x: NoteEvent) => maxOf(Math.min(b.lengthBars, noteEnd(x)), [a, b].flatMap((c) => soundingNotes({ ...c, notes: [x] }).map((h) => x.startOffset + h.bars)));
+    const to = b.startBar + maxOf(touched.map(heldEnd));
     const where = to > from ? ` in ${bars(from, to)}` : '';
     // (heard in their bars and as they ring out after: the release and the track's effects, see hearing)
     add({ text: `In ${n} on ${trackName(b.trackId)}: ${parts.join(', ')}${where}.`, ...at, fromBar: from, toBar: Math.max(to, from + 1 / 16) });

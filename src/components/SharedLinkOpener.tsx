@@ -4,7 +4,7 @@
  */
 import { useEffect } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
-import { hasWork } from '../store/project';
+import { hasWork, unreadWords } from '../store/project';
 import { isShareHash, projectFromHash } from '../store/shareLink';
 import { showToast } from './timeline/toastStore';
 
@@ -28,7 +28,10 @@ export function SharedLinkOpener(): null {
           return;
         }
         useTimelineStore.getState().loadProject(project);
-        showToast(`Opened "${project.name}" from a shared link`);
+        // (What of it couldn't be read is said plainly: a link that says more than a song holds)
+        const { parts, notes } = project.unread ? unreadWords(project.unread) : { parts: '', notes: '' };
+        const without = [parts && `${parts} this version can't read`, notes].filter(Boolean).join(', and without ');
+        showToast(`Opened "${project.name}" from a shared link${without ? `, without ${without}` : ''}`);
       } catch {
         showToast("Couldn't open the shared song: the link may have been cut short");
       }

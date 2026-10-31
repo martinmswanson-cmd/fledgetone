@@ -656,3 +656,13 @@ test('a lead of signs, however long, never hides the app\'s name at the start of
   for (let i = 0; i < 20; i++) posesAsApp('━'.repeat(4000) + 'x');
   assert.ok(Date.now() - t < 2000, `${Date.now() - t} ms`);
 });
+
+test("point_at a control not on screen: without See, the same answer as when it's there", () => {
+  const { POINTED_AT_CONTROL, controlNotOnScreen, STUDIO_METHODS } = P;
+  // (point_at needs only Read: what it answers mustn't tell the agent what's on screen)
+  assert.equal(STUDIO_METHODS.point_at, 'read');
+  assert.deepEqual(controlNotOnScreen(false), POINTED_AT_CONTROL);
+  assert.deepEqual(POINTED_AT_CONTROL, { ok: true, shown: 'control' });
+  // Allowed to see the view, the agent is told it isn't there (handlers.ts answers not_found)
+  assert.equal(controlNotOnScreen(true), null);
+});

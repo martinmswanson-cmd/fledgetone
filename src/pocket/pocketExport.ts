@@ -18,6 +18,7 @@ import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
 import { safeFileName } from '../store/project';
+import { maxOf } from '../support/minMax';
 
 /** Render the song to an MP3 (`onProgress` 0 to 1 while rendering). Null when the song has nothing in it. */
 /** The target Pocket's MP3 aims at unless another is picked: the Loud master's, else Streaming. */
@@ -32,7 +33,7 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     // The render swaps the global audio context while it sets up, so live playback halts first
     s.pause();
     const audible = new Set(audibleTracks(s.tracks).map((t) => t.id));
-    const songEnd = Math.max(1, ...s.clips.filter((c) => audible.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+    const songEnd = maxOf(1, s.clips.filter((c) => audible.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
     if (songEnd <= 1) return null;
     const ceilingDbtp = exportCeilingDbtp('mp3');
     const masterFx = {

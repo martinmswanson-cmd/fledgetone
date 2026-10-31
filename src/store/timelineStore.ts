@@ -91,7 +91,7 @@ import { detectKey, keyOf } from './songKey';
 import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { keepVersion, keepVersionWhileEditing } from './versions';
-import { autosaveRemovedBy, autosaveWrittenBy, hasWork, newSongId, songFromAnotherTab, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
+import { autosaveRemovedBy, autosaveWrittenBy, hasWork, markOpening, newSongId, songFromAnotherTab, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
@@ -151,6 +151,7 @@ import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoint
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
 import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
+import { maxOf, minOf } from '../support/minMax';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -980,8 +981,8 @@ function copyClip(clip: Clip, offset: number): Clip {
 function selectionBlock(clips: Clip[]): { selected: Clip[]; start: number; span: number } | null {
   const selected = clips.filter((c) => c.isSelected);
   if (selected.length === 0) return null;
-  const start = Math.min(...selected.map((c) => c.startBar));
-  const end = Math.max(...selected.map((c) => c.startBar + c.lengthBars));
+  const start = minOf(selected.map((c) => c.startBar));
+  const end = maxOf(selected.map((c) => c.startBar + c.lengthBars));
   return end - start >= MIN_CLIP_BARS - EPS ? { selected, start, span: end - start } : null;
 }
 
@@ -1219,7 +1220,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       let folder: Clip = same ?? {
         id: uid('clip'),
         trackId,
-        name: `Take ${Math.max(0, ...s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`,
+        name: `Take ${maxOf(0, s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`,
         startBar: takeClip.startBar,
         lengthBars: takeClip.lengthBars,
         notes: q(played[0].notes),
@@ -1247,7 +1248,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const clip: Clip = {
       id: uid('clip'),
       trackId,
-      name: `Take ${Math.max(0, ...taken) + 1}`,
+      name: `Take ${maxOf(0, taken) + 1}`,
       startBar: takeClip.startBar,
       lengthBars: takeClip.lengthBars,
       notes: played[0].notes,
@@ -2021,7 +2022,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A bus the tracks already shared, the new one plays into
       const shared = members.every((t) => t.output && t.output === members[0].output) ? members[0].output : undefined;
       if (shared) bus.output = shared;
-      const lastIndex = Math.max(...members.map((t) => s.tracks.indexOf(t)));
+      const lastIndex = maxOf(members.map((t) => s.tracks.indexOf(t)));
       const last = s.tracks[lastIndex];
       // Into the members' folder if they share one; else after the last member's folder, not inside it
       const sameFolder = last.folder && members.every((t) => t.folder?.id === last.folder!.id) ? last.folder : undefined;
@@ -2483,7 +2484,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const end = c.startBar + c.lengthBars;
         // An audio clip's left edge can go back no further than the start of its sound
         // (a take folder's: no earlier than the start of the sound of whichever take starts latest in it)
-        const earliest = c.audio ? Math.max(1, ...[c.audio, ...(c.takes ?? []).map((t) => t.audio)].map((a) => (a ? audioTrimStartLimitAt({ ...c, audio: a }, tempo) : 1))) : 1;
+        const earliest = c.audio ? maxOf(1, [c.audio, ...(c.takes ?? []).map((t) => t.audio)].map((a) => (a ? audioTrimStartLimitAt({ ...c, audio: a }, tempo) : 1))) : 1;
         const start = Math.max(earliest, Math.min(end - 0.0625, newStartBar));
         const delta = start - c.startBar;
         // Notes keep their absolute song position; offsets shift so trimmed notes become hidden
@@ -3024,7 +3025,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const { clips, tracks, bpm } = get();
       const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
-      const origin = Math.min(...selected.map((c) => c.startBar));
+      const origin = minOf(selected.map((c) => c.startBar));
       const fromOneTrack = selected.every((c) => c.trackId === selected[0].trackId);
       set({
         clipboard: selected.map((c) => ({ ...c, startBar: c.startBar - origin, isSelected: false })),
@@ -3068,7 +3069,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (pasted.length === 0) return;
 
       // Select the pasted clips and park the playhead after them so repeated pastes chain end-to-end
-      const end = Math.max(...pasted.map((c) => c.startBar + c.lengthBars));
+      const end = maxOf(pasted.map((c) => c.startBar + c.lengthBars));
       set((s) => ({
         clips: [...s.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...pasted],
         ...pushPast(s),
@@ -3212,10 +3213,14 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
       const loadedClips = shareLinkedContent(p.clips);
       unsynced.add(loadedClips);
+      const songId = p.songId || newSongId();
+      // Noted as opening until the studio has shown it (App/Pocket useOpenedMark): a song that
+      // stops the studio showing doesn't open again by itself at the next startup
+      markOpening(songId);
 
       set({
         projectName: p.name,
-        songId: p.songId || newSongId(),
+        songId,
         bpm: p.bpm,
         tempoPoints: p.tempoPoints ?? [],
         meter: p.meter ?? FOUR_FOUR,

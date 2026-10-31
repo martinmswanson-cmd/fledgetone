@@ -1,5 +1,5 @@
 import { currentProject, onProjectReplaced, songGeneration, useTimelineStore } from '../../store/timelineStore';
-import { parseProject, safeFileName, serializeProject } from '../../store/project';
+import { parseProject, safeFileName, serializeProject, unreadWords } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
 import { saveBlobFile } from '../../audio/exportWav';
@@ -168,9 +168,9 @@ export async function openProjectFromFile(file: File, handle: FileHandle | null 
     // Parts of the file this version couldn't read are left out: Save mustn't write over the file
     // without them, so it asks for a new one
     if (project.unread) {
-      const { tracks, clips } = project.unread;
-      const what = [tracks ? `${tracks} track${tracks === 1 ? '' : 's'}` : '', clips ? `${clips} clip${clips === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
-      return `Opened ${file.name} without ${what} this version of Fledgetone can't read (the file may be from a newer version). Save will ask for a new file, so the original stays as it is.`;
+      const { parts, notes } = unreadWords(project.unread);
+      const what = [parts && `${parts} this version of Fledgetone can't read (the file may be from a newer version)`, notes].filter(Boolean).join(', and without ');
+      return `Opened ${file.name} without ${what}. Save will ask for a new file, so the original stays as it is.`;
     }
     // (After loading: loading another song forgets the file it saved to)
     if (handle) useProjectFile.setState({ handle });

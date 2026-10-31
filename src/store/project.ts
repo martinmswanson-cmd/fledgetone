@@ -44,6 +44,12 @@ const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];
 const PREVIOUS_SESSION_KEY = 'bos-beat-box.autosave.previous';
 /** An autosave that couldn't be read at startup, kept as it was rather than overwritten */
 const UNREADABLE_KEY = 'bos-beat-box.autosave.unreadable';
+/**
+ * The id of the song being opened, until the studio (or Pocket) has shown it: still there at the
+ * next startup, it means that song stopped the app from showing, so it isn't opened again by
+ * itself (see markOpening, setAsidePreviousSession).
+ */
+const OPENING_KEY = 'fledgetone.opening';
 
 export interface ProjectData {
   format: typeof PROJECT_FORMAT;
@@ -153,7 +159,53 @@ export interface ProjectSnapshot {
    * Set by parseProject only: how many tracks and clips of the file couldn't be read and were
    * left out (from a newer version of the app, or damaged). Absent when everything was read.
    */
-  unread?: { tracks: number; clips: number };
+  unread?: { tracks: number; clips: number; notes?: number };
+}
+
+/**
+ * The most notes a song opens with: in one clip (one take, one launcher slot, one stinger), and in
+ * the whole song. Far above any real song (the busiest starter has 480 in a clip, 738 in all), so
+ * only a damaged or crafted file or link meets them; notes past them are left out, and the song
+ * says so (unread.notes), rather than a few hundred thousand notes stopping the studio.
+ */
+export const MAX_CLIP_NOTES = 20_000;
+export const MAX_SONG_NOTES = 200_000;
+
+/**
+ * Cut a file's note lists to MAX_CLIP_NOTES each and MAX_SONG_NOTES in all (in the file's own
+ * objects, before they're read), the first ones kept. Returns how many were left out.
+ */
+function capNotes(raw: { tracks: unknown[]; clips: unknown[]; stingers?: unknown }): number {
+  let left = MAX_SONG_NOTES;
+  let dropped = 0;
+  const cap = (owner: unknown) => {
+    if (!isObj(owner) || !Array.isArray(owner.notes)) return;
+    const notes: unknown[] = owner.notes;
+    const keep = Math.max(0, Math.min(MAX_CLIP_NOTES, left));
+    if (notes.length > keep) {
+      dropped += notes.length - keep;
+      owner.notes = notes.slice(0, keep);
+    }
+    left -= Math.min(notes.length, keep);
+  };
+  const withTakes = (clip: unknown) => {
+    cap(clip);
+    if (isObj(clip) && Array.isArray(clip.takes)) clip.takes.forEach(cap);
+  };
+  raw.clips.forEach(withTakes);
+  for (const t of raw.tracks) if (isObj(t) && Array.isArray(t.slots)) for (const slot of t.slots) if (isObj(slot)) withTakes(slot.clip);
+  if (Array.isArray(raw.stingers)) raw.stingers.forEach(cap);
+  return dropped;
+}
+
+/** What a song left out when it opened (see ProjectSnapshot.unread), in words: "2 tracks and 1 clip", "180,000 notes". */
+export function unreadWords(unread: NonNullable<ProjectSnapshot['unread']>): { parts: string; notes: string } {
+  const { tracks, clips, notes = 0 } = unread;
+  const n = (count: number, what: string) => `${count.toLocaleString('en-US')} ${what}${count === 1 ? '' : 's'}`;
+  return {
+    parts: [tracks ? n(tracks, 'track') : '', clips ? n(clips, 'clip') : ''].filter(Boolean).join(' and '),
+    notes: notes ? `${n(notes, 'note')} over the most a song opens with (${MAX_CLIP_NOTES.toLocaleString('en-US')} in a clip, ${MAX_SONG_NOTES.toLocaleString('en-US')} in all)` : '',
+  };
 }
 
 
@@ -516,6 +568,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
   // (The file's own objects are changed: it was parsed for this)
   if (raw.modWheel !== 'dynamics') modWheelWasVibrato([raw.clips, raw.tracks, raw.launcher]);
+  // At most so many notes (the rest left out, and counted): before anything walks them
+  const unreadNotes = capNotes(raw as { tracks: unknown[]; clips: unknown[]; stingers?: unknown });
   // No id a table lookup could mistake for one of every object's own names (ownKey.ts)
   withSafeIds(raw);
 
@@ -595,7 +649,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
           },
         }
       : {}),
-    ...(unreadTracks || unreadClips ? { unread: { tracks: unreadTracks, clips: unreadClips } } : {}),
+    ...(unreadTracks || unreadClips || unreadNotes ? { unread: { tracks: unreadTracks, clips: unreadClips, ...(unreadNotes ? { notes: unreadNotes } : {}) } } : {}),
   };
 }
 
@@ -682,6 +736,59 @@ export function packedProject(p: ProjectSnapshot): string {
 /** A project packedProject wrote, read back (validated like any file). Throws if it can't be read. */
 export function unpackProject(json: string): ProjectSnapshot {
   return parseProject(unpackStored(JSON.parse(json)));
+}
+
+/** The song (its id) that was opening when the app last stopped showing, as found at startup; null if none. */
+const stoppedAtStart: string | null = readStored(OPENING_KEY);
+
+/** Note that the song `songId` is opening (cleared by markOpened once it has shown). */
+export function markOpening(songId: string): void {
+  try {
+    localStorage.setItem(OPENING_KEY, songId);
+  } catch {
+    // Storage blocked: nothing reopens by itself then either
+  }
+}
+
+/**
+ * The song `songId` has shown: it may open again by itself at the next startup. (A note for
+ * another song stays: one that stopped the app showing and wasn't opened again keeps its note
+ * while an empty song shows in its place.)
+ */
+export function markOpened(songId: string): void {
+  try {
+    if (localStorage.getItem(OPENING_KEY) === songId) localStorage.removeItem(OPENING_KEY);
+  } catch {
+    // Storage blocked
+  }
+}
+
+/**
+ * The song open stopped the app showing (the recovery screen's "set it aside"): it goes where the
+ * Restore banner offers it, marked so it never opens again by itself, and the autosave is cleared
+ * so the app starts fresh. If it can't be stored there (no room), the autosave keeps it and the
+ * opening note stays, so the next startup still doesn't open it. Returns whether it was set aside.
+ */
+export function setAsideStoppedSong(p: ProjectSnapshot): boolean {
+  const now = Date.now();
+  try {
+    localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt: now, keptAt: now, stopped: true, project: packForStorage(serializeProject(p)) }));
+  } catch {
+    markOpening(p.songId ?? '');
+    return false;
+  }
+  try {
+    // (An autosave of another song, the one a link replaced before it was autosaved over, stays: that one opens next time)
+    for (const k of [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS]) {
+      const json = localStorage.getItem(k);
+      const raw: unknown = json ? JSON.parse(json) : null;
+      if (json !== null && (!isObj(raw) || !p.songId || raw.songId === p.songId)) localStorage.removeItem(k);
+    }
+    localStorage.removeItem(OPENING_KEY);
+  } catch {
+    // Storage blocked meanwhile: the set-aside copy is marked all the same
+  }
+  return true;
 }
 
 /** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */
@@ -796,6 +903,10 @@ export interface SavedSession {
   keptAt: number | null;
   /** Set aside this time round, by New, Open or a link replacing it (not found at startup) */
   replaced?: boolean;
+  /** It stopped the app from showing when it last opened: offered, never opened again by itself */
+  stopped?: boolean;
+  /** Found stopped at this startup (not at an earlier one): kept as a version once, as it's set aside */
+  stoppedNow?: boolean;
 }
 
 function timeOf(raw: unknown, field: string): number | null {
@@ -844,13 +955,20 @@ function setAsidePreviousSession(): SavedSession | null {
         const savedAt = timeOf(raw, 'savedAt');
         // An autosave from an older version doesn't say when it was saved, only that it was before
         // the first startup that set it aside: keep that time through later reloads
-        const earlier = savedAt === null ? readPreviousSlot() : null;
-        const keptAt = (earlier?.savedAt === null ? earlier.keptAt : null) ?? Date.now();
-        fromAutosave = { project, savedAt, keptAt };
+        const earlier = readPreviousSlot();
+        const keptAt = (savedAt === null && earlier?.savedAt === null ? earlier.keptAt : null) ?? Date.now();
+        // The song was opening when the app last stopped showing (or it did at an earlier startup
+        // and is still the same autosave): it's offered, not opened again by itself
+        const stoppedNow = stoppedAtStart !== null && (!stoppedAtStart || !project.songId || stoppedAtStart === project.songId);
+        const stopped = stoppedNow || (!!earlier?.stopped && savedAt !== null && earlier.savedAt === savedAt && isObj(earlier.project) && earlier.project.songId === project.songId);
+        fromAutosave = { project, savedAt, keptAt, ...(stopped ? { stopped } : {}), ...(stoppedNow ? { stoppedNow } : {}) };
         // If the copy doesn't fit, the autosave is its only stored copy: autosave leaves it be
         previousOnlyInAutosave = true;
-        localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt, keptAt, project: raw }));
+        localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt, keptAt, ...(stopped ? { stopped } : {}), project: raw }));
         previousOnlyInAutosave = false;
+        // Set aside where the banner offers it: the autosave goes, so a later startup doesn't take
+        // it for a session to open again
+        if (stopped) [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].forEach((k) => localStorage.removeItem(k));
       }
     }
   } catch {
@@ -863,7 +981,7 @@ function setAsidePreviousSession(): SavedSession | null {
   if (!slot) return null;
   try {
     const project = parseProject(unpackStored(slot.project));
-    return hasWork(project) ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt } : null;
+    return hasWork(project) ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt, ...(slot.stopped ? { stopped: true } : {}) } : null;
   } catch {
     return null;
   }
@@ -888,11 +1006,11 @@ export function setAsideSession(p: ProjectSnapshot): SavedSession {
 }
 
 /** The set-aside session as stored (its project not yet validated), or null. */
-function readPreviousSlot(): { project: unknown; savedAt: number | null; keptAt: number | null } | null {
+function readPreviousSlot(): { project: unknown; savedAt: number | null; keptAt: number | null; stopped: boolean } | null {
   try {
     const json = localStorage.getItem(PREVIOUS_SESSION_KEY);
     const raw: unknown = json ? JSON.parse(json) : null;
-    return isObj(raw) ? { project: raw.project, savedAt: timeOf(raw, 'savedAt'), keptAt: timeOf(raw, 'keptAt') } : null;
+    return isObj(raw) ? { project: raw.project, savedAt: timeOf(raw, 'savedAt'), keptAt: timeOf(raw, 'keptAt'), stopped: raw.stopped === true } : null;
   } catch {
     return null;
   }

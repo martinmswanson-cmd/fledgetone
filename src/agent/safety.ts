@@ -15,6 +15,7 @@ import { normalizeMasterSettings } from '../store/timelineTypes';
 import { busChain, isMixTrack } from '../store/buses';
 import { specOf } from '../audio/automation';
 import { nm, plainNames } from './names';
+import { maxOf } from '../support/minMax';
 
 /** A track raised by more than this many dB gets a warning. */
 export const TRACK_JUMP_DB = 6;
@@ -38,7 +39,7 @@ const onValue = (t: Track | undefined, insert: string, field: string): number =>
 const bandLift = (t: Track | undefined, insert: 'peq' | 'mbc'): number => {
   const f = fxOf(t)[insert] as { on?: boolean; bands?: Array<{ on?: boolean; gain?: number; bypass?: boolean }> } | undefined;
   if (!f?.on || !Array.isArray(f.bands)) return 0;
-  return Math.max(0, ...f.bands.filter((b) => b.on !== false && !b.bypass).map((b) => b.gain ?? 0));
+  return maxOf(0, f.bands.filter((b) => b.on !== false && !b.bypass).map((b) => b.gain ?? 0));
 };
 
 /** The settings whose automation can make a track much louder or harsher, with how much is too much. */
@@ -91,7 +92,7 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
     if (ownJump > TRACK_JUMP_DB + 1e-9) out.push(`${n} goes up by ${r1(ownJump)} dB. Turn your speakers down before you listen.`);
     if (was?.isMuted && !t.isMuted) {
       const others = audible.filter((x) => x.id !== t.id).map((x) => pathDb(x, after.tracks));
-      const quiet = others.length > 0 && pathDb(t, after.tracks) <= Math.max(...others) - QUIET_UNDER_MIX_DB;
+      const quiet = others.length > 0 && pathDb(t, after.tracks) <= maxOf(others) - QUIET_UNDER_MIX_DB;
       if (quiet) notes?.push(`This unmutes ${n}, quietly under the rest of the mix (at ${r1(t.volume)} dB).`);
       else out.push(`This unmutes ${n} (at ${r1(t.volume)} dB): it will be heard again.`);
     }
@@ -130,10 +131,10 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
       const oldLane = was?.automation?.find((l) => l.param === lane.param);
       if (oldLane && JSON.stringify(oldLane) === JSON.stringify(lane)) continue;
       const spec = specOf(lane.param as AutomationParam, t, after.tracks);
-      const top = spec.toReal(Math.max(...lane.points.map((p) => p.value)));
+      const top = spec.toReal(maxOf(lane.points.map((p) => p.value)));
       // Measured from the lane's own highest point when it had one (it was what played), else from
       // the setting as it was before the suggestion (a new track: as it starts)
-      const base = oldLane?.points.length ? spec.toReal(Math.max(...oldLane.points.map((p) => p.value))) : spec.trackValue(was ?? t);
+      const base = oldLane?.points.length ? spec.toReal(maxOf(oldLane.points.map((p) => p.value))) : spec.trackValue(was ?? t);
       if (limit.kind === 'db' && top - base > TRACK_JUMP_DB + 1e-9) out.push(`On ${n}, the ${limit.label} automation goes up to ${r1(top - base)} dB over what it was.`);
       if (limit.kind === 'drive' && top - base > DRIVE_JUMP + 1e-9) out.push(`On ${n}, the ${limit.label} automation pushes it to ${pct(top)}.`);
       if (limit.kind === 'feedback' && top >= FEEDBACK_HIGH - 1e-9) out.push(`On ${n}, the ${limit.label} automation feeds it back at up to ${pct(top)}.`);
@@ -143,7 +144,7 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
   if (louder.length) {
     const names = louder.slice(0, 3).map(([name]) => nm(name));
     const who = louder.length > 3 ? `${names.join(', ')} and ${louder.length - 3} more` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
-    out.push(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(Math.max(...louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`);
+    out.push(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(maxOf(louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`);
   }
   if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`);
   const push = (m: typeof a) => (m.loud?.on ? m.loud.push : 0);

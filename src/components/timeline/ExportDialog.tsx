@@ -50,6 +50,7 @@ import { formatBarCount, formatBarRange, frameRateLabel } from '../../store/time
 import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
 import { useSoundLibrary } from '../../audio/soundLibrary';
+import { maxOf } from '../../support/minMax';
 
 /** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
 type Range = 'song' | 'loop' | 'game';
@@ -330,7 +331,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const update = (patch: Partial<ExportSettings>) => setSettings((s) => ({ ...s, ...patch }));
 
   const audibleIds = new Set(audibleTracks(tracks).map((t) => t.id));
-  const songEnd = Math.max(1, ...clips.filter((c) => audibleIds.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  const songEnd = maxOf(1, clips.filter((c) => audibleIds.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
   const songBars = songEnd - 1;
   const loopBars = loop.outBar - loop.inBar;
 

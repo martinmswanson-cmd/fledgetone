@@ -1,4 +1,5 @@
 import { formatFrameTimecode, isDropFrame, labelCountToFrame, nominalFps, secondsToFrames } from '../audio/timecode';
+import { maxOf } from '../support/minMax';
 
 /**
  * Markers for video editing software: the song's markers as files Premiere Pro (FCP 7 XML),
@@ -93,7 +94,7 @@ function fcpTime(seconds: number, fps: number): string {
 export function finalCutXml(markers: readonly EditorMarker[], o: EditorMarkerOptions, lengthSeconds: number): string {
   const n = nominalFps(o.fps);
   const frameDuration = n !== o.fps ? `1001/${n * 1000}s` : `1/${n}s`;
-  const length = fcpTime(Math.max(lengthSeconds, ...markers.map((m) => m.seconds + 1)), o.fps);
+  const length = fcpTime(maxOf(lengthSeconds, markers.map((m) => m.seconds + 1)), o.fps);
   const start = o.startHour ? fcpTime(3600, o.fps) : '0s';
   const body = markers.map((m) => `              <marker start="${fcpTime(m.seconds, o.fps)}" duration="${frameDuration}" value="${xml(m.name)}"/>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>

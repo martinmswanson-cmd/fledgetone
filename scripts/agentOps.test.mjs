@@ -446,3 +446,14 @@ test('cautions on the musician\'s card in plain words: no op names or counts, a 
   const resized = mustApply(base(), [{ op: 'resize_clip', clipId: BASS_CLIP, lengthBars: 1 }]);
   assert.match(resized.diff.changes.map((c) => c.text).join(' '), /1 bar long \(was \d+ bars\)/);
 });
+
+test('set_master warns whenever a number given is not what was kept: a Loud crunch at or under 0 too', () => {
+  for (const [crunch, warned] of [[-0.5, 'The master Loud crunch -0.5 is out of range: set to 0.'], [1.5, 'The master Loud crunch 1.5 is out of range: set to 1.'], [0, null], [0.5, null]]) {
+    const out = run(base(), [{ op: 'set_master', loud: { crunch } }]);
+    assert.ok(out.ok, JSON.stringify(out.errors));
+    assert.deepEqual(out.warnings.filter((w) => /crunch/.test(w)), warned ? [warned] : [], String(crunch));
+  }
+  // A setting the kept settings always hold, out of range, as before
+  const ott = run(base(), [{ op: 'set_master', ott: { depth: 3 } }]);
+  assert.deepEqual(ott.warnings.filter((w) => /depth/i.test(w)).length, 1, JSON.stringify(ott.warnings));
+});

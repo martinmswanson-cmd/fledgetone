@@ -8,6 +8,7 @@
  */
 import { LANES, type ChartNote } from '../../store/rhythmChart';
 import { PREVIEW_FADE_SECONDS, previewVoice, type PreviewVoice } from '../../audio/previewFade';
+import { maxOf } from '../../support/minMax';
 
 export type Judgement = 'perfect' | 'great' | 'good' | 'miss';
 
@@ -132,7 +133,7 @@ export class RhythmGame {
     const voice = previewVoice(src, this.filter);
     src.start(this.t0);
     this.source = voice;
-    this.end = Math.max(this.o.buffer.duration, ...this.notes.map((n) => n.end ?? n.time)) + 0.5;
+    this.end = maxOf(this.o.buffer.duration, this.notes.map((n) => n.end ?? n.time)) + 0.5;
     cancelAnimationFrame(this.raf);
     const tick = () => {
       this.update();

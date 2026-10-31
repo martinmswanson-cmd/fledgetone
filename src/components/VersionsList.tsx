@@ -19,6 +19,7 @@ const WHY: Record<VersionInfo['why'], string> = {
   replaced: 'before another song opened',
   restore: 'before going back to a version',
   otherTab: 'from another tab',
+  stopped: 'set aside: it stopped the app showing',
 };
 
 const summary = (v: VersionInfo) =>

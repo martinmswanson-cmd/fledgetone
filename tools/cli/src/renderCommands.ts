@@ -17,6 +17,7 @@ import { readJson, readSong, sameFile, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions } from './browserRender';
 import { printErr, printOut, safeText } from './print';
 import { barRange, loudnessText, suggestionIdBase, UsageError, type Flags } from './commands';
+import { maxOf } from '../../../src/support/minMax';
 
 const say = printOut;
 const r1 = (v: number | null) => (v === null ? '-' : (Math.round(v * 10) / 10).toFixed(1));
@@ -39,7 +40,7 @@ export function audioFormatOf(path: string): 'wav' | 'mp3' | null {
 /** Where the music ends: the end of the last clip on a track that sounds (bar 1: nothing). */
 export function songEndBar(song: Pick<ProjectSnapshot, 'tracks' | 'clips'>): number {
   const ids = audibleIds(song.tracks);
-  return Math.max(1, ...song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  return maxOf(1, song.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
 }
 
 /** Seconds from bar `from` to bar `to` of a song. */

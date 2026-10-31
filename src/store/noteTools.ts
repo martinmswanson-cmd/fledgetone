@@ -1,5 +1,6 @@
 import type { NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * The piano roll's composing helpers, on plain note lists: scales (which rows are in key, and
@@ -180,7 +181,7 @@ export function arpeggiate(notes: NoteEvent[], rateBars: number, pattern: ArpPat
     const pitches = [...group].sort((a, b) => midiOf(a.note) - midiOf(b.note));
     const cycle =
       pattern === 'down' ? [...pitches].reverse() : pattern === 'upDown' ? [...pitches, ...pitches.slice(1, -1).reverse()] : pitches;
-    const span = Math.max(...group.map(lengthOf));
+    const span = maxOf(group.map(lengthOf));
     const count = Math.max(1, Math.round(span / rateBars));
     const start = group[0].startOffset;
     return Array.from({ length: count }, (_, i) => {
@@ -379,7 +380,7 @@ export function accelRoll(notes: NoteEvent[], newId: () => string, shape: Partia
 export function retrograde(notes: readonly NoteEvent[], bars: number): NoteEvent[] {
   if (!notes.length) return [];
   const spans = notes.map((n) => ({ n, end: n.startOffset + durationToBars(n.duration) }));
-  const first = Math.min(...notes.map((n) => n.startOffset));
-  const last = Math.min(bars, Math.max(...spans.map((x) => x.end)));
+  const first = minOf(notes.map((n) => n.startOffset));
+  const last = Math.min(bars, maxOf(spans.map((x) => x.end)));
   return spans.map(({ n, end }) => ({ ...n, startOffset: Math.max(0, first + last - end) }));
 }

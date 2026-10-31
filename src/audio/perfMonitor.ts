@@ -14,6 +14,7 @@ import { hasRecordings } from './samplers/samplerManager';
 import { isMixTrack } from '../store/buses';
 import { liveContext, restoreLookAhead, widenLookAhead } from './liveContext';
 import { capFrameRate } from '../components/frameTicker';
+import { maxOf } from '../support/minMax';
 
 /**
  * Notices when playback can't keep up, and frees memory on request.
@@ -186,7 +187,7 @@ export function startPerfMonitor(): void {
     const s = usePerfStore.getState();
     // Lagging as soon as it struggles; calm again after 8 quiet seconds
     const lagging = struggling || (s.lagging && now - calmSince < 8000);
-    const worst = Math.round(Math.max(0, ...hitchTimes.map((h) => h.ms)));
+    const worst = Math.round(maxOf(0, hitchTimes.map((h) => h.ms)));
     if (lagging !== s.lagging) capFrameRate(lagging ? CALM_FPS : null);
     // Lag again after the look-ahead was already widened: this computer needs the bigger buffer
     // too, which only a restart can give, so the next start uses Stable playback. Not when the

@@ -5,6 +5,7 @@ import { audibleIds } from '../store/buses';
 import { sustainNotes } from '../store/expression';
 import { HELD_CLIP, keepContentKey } from '../store/noteChance';
 import { INSTRUMENTS } from './instrumentCatalog';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * The notes of a clip that sound, each with how long it sounds (bars), as the scheduler plays
@@ -51,7 +52,7 @@ export function clipSoundEnd(c: Pick<Clip, 'startBar' | 'lengthBars'> & Partial<
 /** Where the music ends: the last clip of a track that sounds, or a note of one running on past it (clipSoundEnd; at least bar 2). */
 export function musicEnd(song: { tracks: Track[]; clips: ReadonlyArray<Pick<Clip, 'trackId' | 'startBar' | 'lengthBars'> & Partial<Pick<Clip, 'notes' | 'expression'>>> }): number {
   const ids = audibleIds(song.tracks);
-  return Math.max(2, ...song.clips.filter((c) => ids.has(c.trackId)).map(clipSoundEnd));
+  return maxOf(2, song.clips.filter((c) => ids.has(c.trackId)).map(clipSoundEnd));
 }
 
 /** The longest run-in rendered before a range: bars, and seconds. */
@@ -125,7 +126,7 @@ const TICKS_PER_BAR = 768;
  * `fromBar` itself if neither has a run-in.
  */
 export function sharedRunIn(songs: ReadonlyArray<Parameters<typeof preRollStart>[0]>, fromBar: number): number {
-  const start = Math.min(fromBar, ...songs.map((s) => preRollStart(s, fromBar)));
+  const start = minOf(fromBar, songs.map((s) => preRollStart(s, fromBar)));
   if (start >= fromBar) return fromBar;
   return Math.max(1, Math.floor((start - 1) * TICKS_PER_BAR + 1e-6) / TICKS_PER_BAR + 1);
 }
@@ -182,7 +183,7 @@ export function restartHeldNotes(clips: readonly Clip[], at: number, fromBar: nu
     const { pattern: _p, expression: _e, stepLanes: _s, takes: _t, comp: _c, ...rest } = c;
     return [
       { ...c, notes: kept(c.notes.filter((n) => !again.has(n))) },
-      { ...rest, id: `${c.id}${HELD_CLIP}`, startBar: at, lengthBars: Math.max(1 / 16, ...held.map((n) => durationToBars(n.duration))), notes: held } as Clip,
+      { ...rest, id: `${c.id}${HELD_CLIP}`, startBar: at, lengthBars: maxOf(1 / 16, held.map((n) => durationToBars(n.duration))), notes: held } as Clip,
     ];
   });
   return changed ? out : (clips as Clip[]);
@@ -243,7 +244,7 @@ export function stretchOf(channels: readonly Float32Array<ArrayBuffer>[], trim: 
  * With one stretch it's loopChannels. `starts`: where each stretch begins in the result, frames.
  */
 export function joinStretches(parts: readonly RenderedStretch[], fade: number): { channels: Float32Array<ArrayBuffer>[]; starts: number[] } {
-  const count = Math.max(0, ...parts.map((p) => p.channels.length));
+  const count = maxOf(0, parts.map((p) => p.channels.length));
   const starts: number[] = [];
   let length = 0;
   for (const p of parts) {

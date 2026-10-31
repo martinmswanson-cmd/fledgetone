@@ -8,6 +8,7 @@
 import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, type Clip, type NoteEvent } from './timelineTypes';
 import { sliceKey } from '../audio/slicing';
 import { seededRandom } from '../audio/mangle';
+import { maxOf, minOf } from '../support/minMax';
 
 /** What to resample. */
 export type ResampleSource =
@@ -34,7 +35,7 @@ export function resampleSpan(source: ResampleSource, clips: readonly Clip[]): { 
   if (source.kind === 'clips') {
     const picked = clips.filter((c) => source.clipIds.includes(c.id));
     if (!picked.length) return null;
-    return { from: Math.min(...picked.map((c) => c.startBar)), to: Math.max(...picked.map((c) => c.startBar + c.lengthBars)), clips: picked };
+    return { from: minOf(picked.map((c) => c.startBar)), to: maxOf(picked.map((c) => c.startBar + c.lengthBars)), clips: picked };
   }
   if (!(source.to - source.from > 1 / 64)) return null;
   const inRange = clips.filter((c) => c.startBar < source.to - EPS && c.startBar + c.lengthBars > source.from + EPS && (!source.trackIds || source.trackIds.includes(c.trackId)));

@@ -26,6 +26,7 @@ import { SampleBadge } from './SampleInfo';
 import { isWarped } from '../../store/warp';
 import { padOfNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
+import { maxOf, minOf } from '../../support/minMax';
 
 /** Every clip's crossfades, worked out once per change of the clips (the playhead moving doesn't count). */
 let xfadeCache: { clips: Clip[]; tempo: Tempo; map: ReturnType<typeof crossfades> } | null = null;
@@ -84,8 +85,8 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
     // (A note name that can't be read sits mid-range rather than breaking the drawing)
     const midiAt = (note: string) => (Number.isFinite(midiOf(note)) ? midiOf(note) : 60);
     const midis = visible.map((n) => midiAt(n.note));
-    const lo = Math.min(...midis);
-    const hi = Math.max(...midis);
+    const lo = minOf(midis);
+    const hi = maxOf(midis);
     rows = Math.max(hi - lo + 1, 6);
     const pad = Math.floor((rows - (hi - lo + 1)) / 2);
     rowOf = (note) => hi + pad - midiAt(note);
@@ -256,8 +257,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     const dragged = mode === 'move' ? useTimelineStore.getState().clips.filter((c) => c.isSelected || c.id === clip.id) : [clip];
     const origStarts = new Map(dragged.map((c) => [c.id, c.startBar]));
     const origRows = new Map(dragged.map((c) => [c.id, rowOf.get(c.trackId) ?? -1]));
-    const blockStart = Math.min(...dragged.map((c) => c.startBar));
-    const blockEnd = Math.max(...dragged.map((c) => c.startBar + c.lengthBars));
+    const blockStart = minOf(dragged.map((c) => c.startBar));
+    const blockEnd = maxOf(dragged.map((c) => c.startBar + c.lengthBars));
     // Row offsets at which every dragged clip lands on a track whose instrument can play it
     // (0, staying put, always qualifies). Other offsets keep the clips on their own tracks.
     const rowOffsets = new Set([0]);
@@ -465,8 +466,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       const moved = snapBar(clip.startBar + dir * step, s.snapGrid, s);
       const delta = Math.abs(moved - clip.startBar) > 1e-9 ? moved - clip.startBar : dir * step;
       const moving = clip.isSelected ? s.clips.filter((c) => c.isSelected) : [clip];
-      const from = Math.min(...moving.map((c) => c.startBar));
-      const to = Math.max(...moving.map((c) => c.startBar + c.lengthBars));
+      const from = minOf(moving.map((c) => c.startBar));
+      const to = maxOf(moving.map((c) => c.startBar + c.lengthBars));
       const shift = Math.max(1 - from, Math.min(TOTAL_BARS + 1 - to, delta));
       if (Math.abs(shift) > 1e-9) {
         s.checkpoint();

@@ -10,6 +10,7 @@
 import { findTempos } from '../store/tempoFinder';
 import { loopTempos } from '../store/audioClips';
 import { KK_PROFILES, keyOf, rankKeys, type KeyProfiles, type SongKey } from '../store/songKey';
+import { maxOf } from '../support/minMax';
 
 /** The rate analysis works at: plenty for onsets and for the pitches that say the key. */
 export const ANALYSIS_RATE = 22050;
@@ -372,7 +373,7 @@ export function chromaOf(x: Float32Array, sampleRate: number, options: KeyOption
     const w = p.weight * Math.max(0, 1 - 2.5 * off);
     chroma[((Math.round(m) % 12) + 12) % 12] += w;
   }
-  const top = Math.max(...chroma);
+  const top = maxOf(chroma);
   return { chroma: top > 0 ? chroma.map((v) => v / top) : chroma, cents };
 }
 

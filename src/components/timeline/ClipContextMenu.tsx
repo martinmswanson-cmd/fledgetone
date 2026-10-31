@@ -24,6 +24,7 @@ import { showToast } from './toastStore';
 import { patternSize } from '../../store/patterns';
 import { speedUpIntoDrop } from '../../store/speedUpActions';
 import { SPEED_UP_DEFAULTS } from '../../store/speedUp';
+import { maxOf, minOf } from '../../support/minMax';
 
 export interface ContextMenuState {
   x: number;
@@ -349,8 +350,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(() => {
           const picked = menuClip?.isSelected ? s.clips.filter((c) => c.isSelected) : menuClip ? [menuClip] : [];
           if (!picked.length) return [];
-          const from = Math.min(...picked.map((c) => c.startBar));
-          const to = Math.max(...picked.map((c) => c.startBar + c.lengthBars));
+          const from = minOf(picked.map((c) => c.startBar));
+          const to = maxOf(picked.map((c) => c.startBar + c.lengthBars));
           const quick = (amount: number, roll: boolean) => () => {
             onClose();
             showToast(speedUpIntoDrop({ ...SPEED_UP_DEFAULTS, from, to, amount, curve: roll ? 'build' : 'steady' }, { roll }));
@@ -404,7 +405,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           icon: <ArrowRightToLine className="w-3.5 h-3.5" />,
           onClick: run(s.fillSelectionToLoopOut),
           // Greyed out when Out isn't after the selection: there'd be no room for a copy
-          disabled: !s.clips.some((c) => c.isSelected) || Math.max(...s.clips.filter((c) => c.isSelected).map((c) => c.startBar + c.lengthBars)) >= loopOut - 1e-6,
+          disabled: !s.clips.some((c) => c.isSelected) || maxOf(s.clips.filter((c) => c.isSelected).map((c) => c.startBar + c.lengthBars)) >= loopOut - 1e-6,
         },
         {
           key: 'launcher',

@@ -21,6 +21,7 @@ import { CONVERSATION, hasVisibleText, readContext, type UserMessage, type UserM
 import { agentIds } from './agentText';
 import { barWords } from './songDiff';
 import type { MeterMap } from '../audio/tempoMap';
+import { maxOf, minOf } from '../support/minMax';
 
 export type Delivery = 'sending' | 'sent' | 'seen' | 'not_sent';
 
@@ -137,8 +138,8 @@ export function selectionContext(s: {
   clips: readonly { id: string; isSelected: boolean; startBar: number; lengthBars: number }[];
 }): UserMessageContext | undefined {
   const picked = s.clips.filter((c) => c.isSelected);
-  const from = picked.length ? Math.min(...picked.map((c) => c.startBar)) : 0;
-  const to = picked.length ? Math.max(...picked.map((c) => c.startBar + c.lengthBars)) : 0;
+  const from = picked.length ? minOf(picked.map((c) => c.startBar)) : 0;
+  const to = picked.length ? maxOf(picked.map((c) => c.startBar + c.lengthBars)) : 0;
   const trackIds = agentIds(s.tracks.map((t) => t.id));
   const clipIds = agentIds(s.clips.map((c) => c.id));
   return readContext({

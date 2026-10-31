@@ -487,7 +487,7 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
           <History className="w-6 h-6 text-cyan-300 shrink-0" />
           <span className="min-w-0">
             <span className="block font-semibold truncate">Carry on with {session.project.name}</span>
-            <span className="block text-xs text-forge-muted">Your last song, as you left it</span>
+            <span className="block text-xs text-forge-muted">{session.stopped ? "Your last song: it stopped the app from showing last time, so it wasn't opened again" : 'Your last song, as you left it'}</span>
           </span>
         </button>
       )}

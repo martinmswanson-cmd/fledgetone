@@ -3,6 +3,7 @@ import { barsToDuration, durationToBars } from './timelineTypes';
 import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
 import { NOTE_NAMES } from './songKey';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * Writing helpers that make parts from a few choices: chord progressions in the song's key (with
@@ -328,7 +329,7 @@ export function harmonize(melody: readonly MelodyNote[], key: SongKey, lengthBar
       back[i][j] = arg;
     });
   }
-  let j = score[steps - 1].indexOf(Math.max(...score[steps - 1]));
+  let j = score[steps - 1].indexOf(maxOf(score[steps - 1]));
   const path: number[] = [j];
   for (let i = steps - 1; i > 0; i--) {
     j = back[i][j];
@@ -368,13 +369,13 @@ const TRIADS: ReadonlyArray<readonly number[]> = [
 /** A chord's root from its notes: the pitch class that makes the notes the best-known chord shape (else the lowest note). */
 export function chordRoot(midis: readonly number[]): number {
   const pcs = [...new Set(midis.map(pc))];
-  let best = pc(Math.min(...midis));
+  let best = pc(minOf(midis));
   let bestScore = -1;
   for (const r of pcs) {
     const iv = new Set(pcs.map((p) => pc(p - r)));
     for (const shape of TRIADS) {
       const hit = shape.filter((x) => iv.has(x)).length;
-      const score = hit === shape.length ? hit * 2 - (iv.size - hit) * 0.5 + (r === pc(Math.min(...midis)) ? 0.25 : 0) : -1;
+      const score = hit === shape.length ? hit * 2 - (iv.size - hit) * 0.5 + (r === pc(minOf(midis)) ? 0.25 : 0) : -1;
       if (score > bestScore) {
         bestScore = score;
         best = r;

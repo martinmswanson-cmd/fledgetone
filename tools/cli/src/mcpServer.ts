@@ -437,7 +437,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     'point_at',
     {
       title: 'Point at something',
-      description: 'Highlight something in the studio for the musician: a track, a clip, a range of bars, a marker, or a control (by its name in the studio). One a second.',
+      description: 'Highlight something in the studio for the musician: a track, a clip, a range of bars, a marker, or a control (by its name in the studio). One a second. A control is shown only if it is on screen; unless the musician allowed seeing their view, the answer is the same whether it was there or not.',
       inputSchema: {
         target: z
           .object({ track: z.string().optional(), clip: z.string().optional(), bars: z.object({ fromBar: z.number(), toBar: z.number() }).optional(), marker: z.string().optional(), control: z.string().optional() })

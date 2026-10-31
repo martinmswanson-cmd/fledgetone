@@ -1,5 +1,6 @@
 import type { Clip, Marker } from './timelineTypes';
 import { FOUR_FOUR, measureAt, measureStart, type MeterMap } from '../audio/tempoMap';
+import { maxOf } from '../support/minMax';
 
 /**
  * Cut to length: make a 15, 30 or 60-second version of a song (an ad, a trailer, a social clip) by
@@ -72,7 +73,7 @@ export function songSections(clips: readonly Clip[], markers: readonly Marker[],
     }
     return n / (s.to - s.from);
   });
-  const top = Math.max(1e-9, ...busy);
+  const top = maxOf(1e-9, busy);
   return sections.map((s, i) => ({
     ...s,
     weight: busy[i] / top + (MAIN.test(s.name) ? 0.6 : 0) - (LIGHT.test(s.name) ? 0.3 : 0),

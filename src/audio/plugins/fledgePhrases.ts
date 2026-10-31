@@ -7,6 +7,7 @@
  * moderate (chords lower, as their notes add up). Pure: the notes and when (fledgePreview.ts
  * plays them, fledgeTour.ts renders the ▶ before adding).
  */
+import { maxOf, minOf } from '../../support/minMax';
 
 /** The phrases' tempo (beats per minute): fixed, whatever the song's. */
 export const PHRASE_BPM = 120;
@@ -79,7 +80,7 @@ export function presetPhrase(preset: string | undefined): PhraseNote[] {
 }
 
 /** When a phrase's last note ends (seconds), before the sound's own release. */
-export const phraseLength = (notes: readonly PhraseNote[]): number => Math.max(0, ...notes.map((n) => n.at + n.length));
+export const phraseLength = (notes: readonly PhraseNote[]): number => maxOf(0, notes.map((n) => n.at + n.length));
 
 /** How long to let a phrase ring on after its last note ends (seconds), for its release. */
 export const PHRASE_TAIL = 0.8;
@@ -96,14 +97,14 @@ export const TOUR_STEP = 2.25;
  */
 export function loudnessDb(channels: readonly Float32Array[], sampleRate: number): number {
   const block = Math.max(1, Math.round(sampleRate / 10));
-  const length = Math.min(...channels.map((c) => c.length));
+  const length = minOf(channels.map((c) => c.length));
   const powers: number[] = [];
   for (let s = 0; s + block <= length; s += block) {
     let sum = 0;
     for (const ch of channels) for (let i = s; i < s + block; i++) sum += ch[i] * ch[i];
     powers.push(sum / (block * channels.length));
   }
-  const loudest = Math.max(0, ...powers);
+  const loudest = maxOf(0, powers);
   if (!(loudest > 0)) return -Infinity;
   const kept = powers.filter((p) => p >= loudest * 1e-4);
   return 10 * Math.log10(kept.reduce((a, b) => a + b, 0) / kept.length);

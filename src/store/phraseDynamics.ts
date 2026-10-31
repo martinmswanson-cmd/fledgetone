@@ -9,6 +9,7 @@
 import { durationToBars } from './timelineTypes';
 import { midiOf } from './noteTools';
 import type { NoteEvent } from './timelineTypes';
+import { maxOf, minOf } from '../support/minMax';
 
 /** A rest this long (bars) or longer ends a phrase */
 const PHRASE_GAP = 1 / 8;
@@ -43,9 +44,9 @@ export function shapeDynamics(notes: NoteEvent[]): NoteEvent[] {
   const velocity = new Map<string, number>();
   for (const groups of phrases) {
     if (groups.length < 2) continue;
-    const top = groups.map((g) => Math.max(...g.map((n) => midiOf(n.note))));
-    const lo = Math.min(...top);
-    const hi = Math.max(...top);
+    const top = groups.map((g) => maxOf(g.map((n) => midiOf(n.note))));
+    const lo = minOf(top);
+    const hi = maxOf(top);
     // The peak: the highest note's place in the phrase (the first, if it repeats)
     const peakAt = top.indexOf(hi) / (groups.length - 1);
     const peak = Math.min(0.85, Math.max(0.3, peakAt));

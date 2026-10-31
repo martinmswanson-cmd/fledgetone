@@ -23,6 +23,7 @@ import { barToSeconds, formatMeter, FOUR_FOUR, type TempoMap } from '../audio/te
 import { INSERT_NAMES, insertDefaults } from './ops';
 import { stableJson } from './fingerprint';
 import { agentIdOf, agentLine, byAgentId, cleanForAgent } from './agentText';
+import { maxOf, minOf } from '../support/minMax';
 
 export const AGENT_SONG_SCHEMA = 'fledgetone.agent-song/1';
 /** The most an AgentSong may weigh as JSON. */
@@ -171,8 +172,8 @@ function noteRange(c: Clip, t: Track | undefined): string | undefined {
   }
   const midis = c.notes.map((n) => midiOf(n.note)).filter(Number.isFinite);
   if (!midis.length) return undefined;
-  const lo = Math.min(...midis);
-  const hi = Math.max(...midis);
+  const lo = minOf(midis);
+  const hi = maxOf(midis);
   return lo === hi ? nameOf(lo) : `${nameOf(lo)}-${nameOf(hi)}`;
 }
 

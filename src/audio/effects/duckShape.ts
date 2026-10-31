@@ -14,6 +14,7 @@
  * and the live Pump and the export's (lightFx.ts, the same node in both) schedule the very same
  * values.
  */
+import { maxOf } from '../../support/minMax';
 
 export const PUMP_SHAPES = ['smooth', 'hard', 'tick', 'swell', 'hole', 'drawn'] as const;
 export type PumpShape = (typeof PUMP_SHAPES)[number];
@@ -146,7 +147,7 @@ export function planShapedDuck(
   };
   const times = new Set<number>([at, ...timed.map(([t]) => t)]);
   const later = beforeTimes.filter((t) => t > at);
-  const end = Math.max(ownEnd, ...later);
+  const end = maxOf(ownEnd, later);
   if (later.length) {
     for (const t of later) times.add(t);
     // Where the two cross, finer steps follow the lower of them closely

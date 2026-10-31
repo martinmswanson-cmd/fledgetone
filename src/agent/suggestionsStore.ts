@@ -26,6 +26,7 @@ import { partsChanged, type Parts } from './revision';
 import { joinRanges, namesManyBars, rangesWords, wordMeter, type BarRange } from './songDiff';
 import type { MeterMap } from '../audio/tempoMap';
 import type { BridgeInfo } from './bridgeProtocolClient';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * Where a suggestion is: waiting (for the musician); changed (the song changed elsewhere since:
@@ -238,7 +239,7 @@ export const sameSong = (s: Pick<Suggestion, 'epoch' | 'parts' | 'ext'>, ctx: So
 
 /** The seconds bars [from, to) take, in the slowest of `songs` (a tempo change plays them at another length in each). */
 export function rangeSeconds(r: BarRange, songs: ReadonlyArray<Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>>): number {
-  return Math.max(0, ...songs.map((s) => {
+  return maxOf(0, songs.map((s) => {
     const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
     return barToSeconds(r.toBar, tempo) - barToSeconds(r.fromBar, tempo);
   }));
@@ -425,7 +426,7 @@ const wholeMeasures = (r: BarRange, meter: MeterMap): BarRange => {
 };
 
 /** The stretches as one range, first bar to last (for what only needs to know where they lie). */
-export const spanOf = (list: readonly BarRange[]): BarRange => ({ fromBar: Math.min(...list.map((r) => r.fromBar)), toBar: Math.max(...list.map((r) => r.toBar)) });
+export const spanOf = (list: readonly BarRange[]): BarRange => ({ fromBar: minOf(list.map((r) => r.fromBar)), toBar: maxOf(list.map((r) => r.toBar)) });
 
 /** Why a suggestion isn't found by sound (Suggestion.foundWhy). */
 export type NotFoundWhy = 'too_long' | 'made_too_long' | 'failed';
@@ -456,9 +457,9 @@ const tempoOf = (s: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: s.b
  * version and of every region the rules found, by MEASURE_TAIL_SECONDS (in the slower of the two).
  */
 export function measureEnd(before: ProjectSnapshot, s: Pick<Suggestion, 'song' | 'ruleRegions' | 'sure'>): number {
-  const end = Math.max(musicEnd(before), musicEnd(s.song), ...s.ruleRegions.map((r) => r.toBar));
+  const end = maxOf(musicEnd(before), musicEnd(s.song), s.ruleRegions.map((r) => r.toBar));
   const tail = s.sure === false ? MEASURE_UNSURE_TAIL_SECONDS : MEASURE_TAIL_SECONDS;
-  const past = Math.max(...[before, s.song].map((x) => secondsToBar(barToSeconds(end, tempoOf(x)) + tail, tempoOf(x))));
+  const past = maxOf([before, s.song].map((x) => secondsToBar(barToSeconds(end, tempoOf(x)) + tail, tempoOf(x))));
   return Math.max(end + 1, Math.ceil(past - 1e-9));
 }
 

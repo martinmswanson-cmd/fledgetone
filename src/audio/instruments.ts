@@ -45,6 +45,7 @@ import { createSubLayer } from './subLayer';
 import { isPitched } from '../store/keyChange';
 import type { TrackPlan } from './samplers/songSamples';
 import { DRUM_NOTES } from '../store/drumNotes';
+import { maxOf } from '../support/minMax';
 
 /** Drum note map (GM-style), kept in store/drumNotes.ts so Node can read it. */
 export { DRUM_NOTES };
@@ -222,7 +223,7 @@ export function safely(trigger: () => void): void {
   }
 }
 
-const loudest = (notes: PlayableNote[]) => Math.max(...notes.map((n) => n.velocity));
+const loudest = (notes: PlayableNote[]) => maxOf(notes.map((n) => n.velocity));
 const loudestNote = (notes: PlayableNote[]) => notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
 
 interface DrumHits {

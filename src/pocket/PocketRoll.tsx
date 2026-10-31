@@ -28,6 +28,7 @@ import { PocketSteps, POCKET_LANE_H } from './PocketSteps';
 import { bendSupport, slideOf, withDive, withSlide } from '../store/slides';
 import { showToast } from '../components/timeline/toastStore';
 import { scrollBehavior } from '../components/reducedMotion';
+import { maxOf, minOf } from '../support/minMax';
 
 const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
@@ -63,7 +64,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   }, [track.instrumentKey, songKey, saved, slices]);
   const rowOf = (midi: number) => rows.indexOf(midi);
   // Where it opens: among the part's notes (the row nearest their middle), else the key's home note
-  const middle = saved.length ? (Math.min(...saved.map((n) => n.midi)) + Math.max(...saved.map((n) => n.midi))) / 2 : null;
+  const middle = saved.length ? (minOf(saved.map((n) => n.midi)) + maxOf(saved.map((n) => n.midi))) / 2 : null;
   const home =
     middle !== null
       ? rows.reduce((best, m) => (Math.abs(m - middle) < Math.abs(best - middle) ? m : best), rows[0])

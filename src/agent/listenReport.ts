@@ -10,6 +10,7 @@
  */
 import type { MasterStats } from '../audio/effects/masterAfter';
 import type { Finding } from '../audio/mixCheck';
+import { maxOf } from '../support/minMax';
 
 /** A number rounded to a tenth of a dB, or null for none (silence: -Infinity). */
 export const tenth = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
@@ -179,7 +180,7 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
   const range = (r: { fromBar: number; toBar: number }) => (r.toBar - r.fromBar <= 1 ? `Bar ${r.fromBar}` : `Bars ${r.fromBar} to ${r.toBar - 1}`);
   if (!changedBars) summary.push('It sounds the same: the two renders are the same in every bar.');
   else {
-    const loudest = Math.max(...changed.map((b) => b.differenceDb ?? -Infinity));
+    const loudest = maxOf(changed.map((b) => b.differenceDb ?? -Infinity));
     const others = bars.length - changed.length;
     summary.push(
       `${range(changedBars)} ${changedBars.toBar - changedBars.fromBar <= 1 ? 'sounds' : 'sound'} different${Number.isFinite(loudest) ? ` (what changed is up to ${loudest.toFixed(1)} dBFS)` : ''}${changed.length < changedBars.toBar - changedBars.fromBar ? ', not every bar between' : ''}${others ? '; the other bars sound the same' : ''}.`

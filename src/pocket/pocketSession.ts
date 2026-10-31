@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { isNativeApp, nativeKeepAwake, nativeTap } from '../native/nativeApp';
 
-export { reopenLastSong } from '../store/reopenLastSong';
+export { reopenLastSong, useOpenedMark } from '../store/reopenLastSong';
 
 type WakeLock = { release: () => Promise<void> };
 
