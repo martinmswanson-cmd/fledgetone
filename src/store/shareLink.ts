@@ -138,14 +138,17 @@ const TRACK_DEFAULTS = { isMuted: false, isSoloed: false, isArmed: false, pan: 0
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
+/** `out[k] = v` as a plain key, whatever `k` is (a "__proto__" key from a link stays data, never the object's prototype). */
+const put = (out: Record<string, unknown>, k: string, v: unknown) => Object.defineProperty(out, k, { value: v, enumerable: true, writable: true, configurable: true });
+
 /** `value` less whatever matches `fallback` (key by key, all the way down); undefined if all of it does. */
 function lessDefaults(value: unknown, fallback: unknown): unknown {
   if (same(value, fallback)) return undefined;
   if (!isPlain(value) || !isPlain(fallback)) return value;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value)) {
-    const left = k in fallback ? lessDefaults(v, fallback[k]) : v;
-    if (left !== undefined) out[k] = left;
+    const left = Object.hasOwn(fallback, k) ? lessDefaults(v, fallback[k]) : v;
+    if (left !== undefined) put(out, k, left);
   }
   return out;
 }
@@ -155,7 +158,7 @@ function withDefaults(value: unknown, fallback: unknown): unknown {
   if (value === undefined) return fallback;
   if (!isPlain(value) || !isPlain(fallback)) return value;
   const out: Record<string, unknown> = { ...fallback };
-  for (const [k, v] of Object.entries(value)) out[k] = k in fallback ? withDefaults(v, fallback[k]) : v;
+  for (const [k, v] of Object.entries(value)) put(out, k, Object.hasOwn(fallback, k) ? withDefaults(v, fallback[k]) : v);
   return out;
 }
 
@@ -278,8 +281,8 @@ function unpack(bytes: Uint8Array): unknown {
   const stingers = list(raw.stingers).map(withNotes);
   const fx = defaultTrackFx();
   const tracks = (Array.isArray(raw.tracks) ? raw.tracks : []).map((t) => {
-    const track = withDefaults(t, TRACK_DEFAULTS) as Record<string, unknown>;
-    return 'fx' in track ? { ...track, fx: withDefaults(track.fx, fx) } : track;
+    const track = withDefaults(t, TRACK_DEFAULTS);
+    return isPlain(track) && Object.hasOwn(track, 'fx') ? { ...track, fx: withDefaults(track.fx, fx) } : track;
   });
   return { ...raw, format: PROJECT_FORMAT, p: undefined, l: undefined, tracks, clips, stingers };
 }

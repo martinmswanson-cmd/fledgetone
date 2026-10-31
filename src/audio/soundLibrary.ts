@@ -292,7 +292,7 @@ export function provideMemorySound(id: string, buffer: AudioBuffer): void {
 export function dropMemorySound(id: string): void {
   memorySounds.delete(id);
   useSoundLibrary.setState((s) => {
-    if (!(id in s.status)) return s;
+    if (!Object.hasOwn(s.status, id)) return s;
     const status = { ...s.status };
     delete status[id];
     return { status };

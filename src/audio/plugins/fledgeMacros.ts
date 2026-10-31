@@ -8,6 +8,7 @@
  * scripts/fledgeMacros.test.mjs checks them against the engine.
  */
 import { choiceIndex, FLEDGE_DESTS, FLEDGE_SYNC, lfoControls, MACRO_SOURCE, SLOT_NUMBERS, slotControls, type FledgeControl } from './fledgeLayout';
+import { own } from '../../store/ownKey';
 
 /** Fledge Synth's address on a track (builtinHost.ts). */
 export const FLEDGE_URL = 'builtin:fledge/Fledge Synth';
@@ -116,7 +117,7 @@ export function macroTargets(val: ValueOf, k: number): string[] {
  * is only used while the macro still moves something: rerouted to nothing, it's a plain macro.)
  */
 export function macroLabel(preset: string | undefined, k: number, targets: string[]): string {
-  const named = preset ? FLEDGE_MACRO_NAMES[preset]?.[k - 1] : undefined;
+  const named = preset ? own(FLEDGE_MACRO_NAMES, preset)?.[k - 1] : undefined;
   if (named && targets.length) return named;
   return targets.length ? targets.join(', ') : `Macro ${k}`;
 }

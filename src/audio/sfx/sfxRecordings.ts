@@ -7,6 +7,7 @@
  */
 import { setSfxRecordings, type SfxRecordingData } from './sfxModern';
 import { SFX_RECORDING_SETS } from './sfxRecordingSets';
+import { own } from '../../store/ownKey';
 import type { SfxSound } from './sfxSynth';
 
 const BASE = 'fledgetone-sfx/';
@@ -20,7 +21,7 @@ let decoder: OfflineAudioContext | null = null;
 
 setSfxRecordings(
   (group, take) => loaded.get(`${group}/${take}`),
-  (group) => SFX_RECORDING_SETS[group]?.takes ?? 0
+  (group) => own(SFX_RECORDING_SETS, group)?.takes ?? 0
 );
 
 async function fetchFirst(urls: string[]): Promise<ArrayBuffer> {
@@ -57,7 +58,7 @@ async function loadTake(group: string, take: number): Promise<void> {
 
 /** Load every take of a recording group (once; later calls wait for the same load). */
 export function loadSfxRecording(group: string): Promise<void> {
-  const set = SFX_RECORDING_SETS[group];
+  const set = own(SFX_RECORDING_SETS, group);
   if (!set) return Promise.resolve();
   let p = loading.get(group);
   if (!p) {
@@ -76,7 +77,7 @@ export function recordingsOf(s: SfxSound): string[] {
 
 /** Whether a sound's recordings are all here (it renders as it will in the end) */
 export function sfxRecordingsReady(s: SfxSound): boolean {
-  return recordingsOf(s).every((g) => Array.from({ length: SFX_RECORDING_SETS[g]?.takes ?? 0 }, (_, t) => loaded.has(`${g}/${t}`)).every(Boolean));
+  return recordingsOf(s).every((g) => Array.from({ length: own(SFX_RECORDING_SETS, g)?.takes ?? 0 }, (_, t) => loaded.has(`${g}/${t}`)).every(Boolean));
 }
 
 /** Load the recordings the sounds need. A recording that can't load leaves its layer silent. */

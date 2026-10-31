@@ -16,7 +16,7 @@ function readAll(): Partial<Record<KeptSlot, { id: string; name: string }>> {
     const out: Partial<Record<KeptSlot, { id: string; name: string }>> = {};
     for (const [slot, v] of Object.entries(raw as Record<string, unknown>)) {
       const e = v as { id?: unknown; name?: unknown };
-      if (typeof e?.id === 'string' && typeof e.name === 'string') out[slot as KeptSlot] = { id: e.id, name: e.name };
+      if ((slot === 'reference' || slot === 'producerTag') && typeof e?.id === 'string' && typeof e.name === 'string') out[slot] = { id: e.id, name: e.name };
     }
     return out;
   } catch {

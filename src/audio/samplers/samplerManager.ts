@@ -1152,7 +1152,7 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     trim.gain.value = Tone.dbToGain(-6);
     return chain([tight, sustain, pre, drive, inStep(1), thump, scoop, presence, cab, trim]);
   }
-  if (shape && shape in AMPS) {
+  if (shape && Object.hasOwn(AMPS, shape)) {
     const amp = AMPS[shape as AmpModel];
     const nodes: AudioNode[] = [biquad('highpass', amp.tight, 0.7)];
     if (amp.squeeze) {

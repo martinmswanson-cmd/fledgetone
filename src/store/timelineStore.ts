@@ -2718,7 +2718,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         true
       );
       // A new group starts from its default curve, kept with the project so it can be shaped
-      if (name && !get().intensityCurves[name]) set((s) => ({ intensityCurves: { ...s.intensityCurves, [name]: defaultCurve(name) } }));
+      if (name && !Object.hasOwn(get().intensityCurves, name)) set((s) => ({ intensityCurves: { ...s.intensityCurves, [name]: defaultCurve(name) } }));
     },
     transitions: {},
     setTransitionRule: (from, to, rule) =>

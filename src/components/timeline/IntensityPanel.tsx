@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { own } from '../../store/ownKey';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from '../../audio/instrumentCatalog';
 import { curveLevel, defaultCurve, groupsInUse, STEM_GROUP_PRESETS, type IntensityCurve } from '../../store/intensity';
 
@@ -163,7 +164,7 @@ export const IntensityPanel: React.FC = () => {
         ))}
       </div>
       {groups.map((g) => (
-        <CurveEditor key={g} group={g} curve={curves[g] ?? defaultCurve(g)} color={colorOf(g)} intensity={intensity} />
+        <CurveEditor key={g} group={g} curve={own(curves, g) ?? defaultCurve(g)} color={colorOf(g)} intensity={intensity} />
       ))}
       {groups.length > 0 && <p className="text-[10px] text-forge-muted">Curves: how loud each group plays (up) at each intensity (across). Drag a point, click to add one, double-click to remove.</p>}
     </div>

@@ -2,6 +2,7 @@ import { FOUR_FOUR, gridTimes, meterAt, secondsBetween, tempoAt, type Meter, typ
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
 import type { RenderRecordings } from './samplers/samplerManager';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
+import { own } from '../store/ownKey';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
 import { createZip, type ZipEntry } from './zip';
@@ -376,7 +377,7 @@ export async function buildGameKitParts(
     // Each group's recommended level (0 to 1) at each intensity (0 to 1); Main always plays at 1
     intensity: {
       default: song.intensity,
-      groups: stemGroups.map((g) => ({ name: g.name, curve: g.name === MAIN_STEM && !groupNames.includes(MAIN_STEM) ? [[0, 1], [1, 1]] : (song.intensityCurves[g.name] ?? defaultCurve(g.name)) })),
+      groups: stemGroups.map((g) => ({ name: g.name, curve: g.name === MAIN_STEM && !groupNames.includes(MAIN_STEM) ? [[0, 1], [1, 1]] : (own(song.intensityCurves, g.name) ?? defaultCurve(g.name)) })),
     },
     ...(song.gameParams?.length ? { parameters: song.gameParams.map(manifestParam) } : {}),
     states,

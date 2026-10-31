@@ -205,7 +205,7 @@ export function list(args: string[], flags: Flags): number {
     inserts: () => listInserts(query),
     master: () => listMaster(),
   };
-  if (!what || !lists[what]) throw new UsageError(`list what? ${Object.keys(lists).join(', ')}`);
+  if (!what || !Object.hasOwn(lists, what)) throw new UsageError(`list what? ${Object.keys(lists).join(', ')}`);
   const items = lists[what]();
   if (flags.json) {
     json(items);

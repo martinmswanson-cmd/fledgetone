@@ -92,7 +92,7 @@ function readLibrary(): Made[] {
   return (Array.isArray(raw) ? raw : []).flatMap((x) => {
     const o = x as { name?: unknown; sound?: unknown; kind?: unknown };
     const sound = parseSfx(o?.sound);
-    return sound && typeof o.name === 'string' ? [{ name: o.name.slice(0, 60), sound, ...(typeof o.kind === 'string' && o.kind in SFX_LABELS ? { kind: o.kind as SfxCategory } : {}) }] : [];
+    return sound && typeof o.name === 'string' ? [{ name: o.name.slice(0, 60), sound, ...(typeof o.kind === 'string' && Object.hasOwn(SFX_LABELS, o.kind) ? { kind: o.kind as SfxCategory } : {}) }] : [];
   });
 }
 
@@ -288,7 +288,7 @@ function readRecipes(text: string): Made[] {
   return list.flatMap((x) => {
     const o = x as { name?: unknown; sound?: unknown; kind?: unknown };
     const sound = parseSfx(o?.sound ?? o);
-    return sound ? [{ name: typeof o?.name === 'string' ? o.name.slice(0, 60) : 'Imported sound', sound, ...(typeof o?.kind === 'string' && o.kind in SFX_LABELS ? { kind: o.kind as SfxCategory } : {}) }] : [];
+    return sound ? [{ name: typeof o?.name === 'string' ? o.name.slice(0, 60) : 'Imported sound', sound, ...(typeof o?.kind === 'string' && Object.hasOwn(SFX_LABELS, o.kind) ? { kind: o.kind as SfxCategory } : {}) }] : [];
   });
 }
 

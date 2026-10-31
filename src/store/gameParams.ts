@@ -131,7 +131,8 @@ export interface ParamMix {
 
 /** Everything the parameters ask for together, each at its value. */
 export function paramMix(params: ReadonlyArray<Pick<GameParam, 'targets'> & { value: number }>): ParamMix {
-  const mix: ParamMix = { intensity: null, filter: OPEN_FILTER, reverb: 0, volume: 1, layers: {} };
+  // (layers by group name, a name the musician typed: a table with no keys of its own, so any name is just a name)
+  const mix: ParamMix = { intensity: null, filter: OPEN_FILTER, reverb: 0, volume: 1, layers: Object.create(null) as Record<string, number> };
   for (const p of params) {
     for (const t of p.targets) {
       const v = targetValue(t, p.value);

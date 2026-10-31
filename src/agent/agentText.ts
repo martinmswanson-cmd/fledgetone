@@ -136,7 +136,8 @@ function clean(v: unknown, depth: number): unknown {
     return typeof toJSON === 'function' ? clean(toJSON.call(v), depth + 1) : null;
   }
   const out: Record<string, unknown> = {};
-  for (const [k, x] of Object.entries(v)) out[agentText(k)] = clean(x, depth + 1);
+  // (each key as a plain key: a "__proto__" from the song stays data, never the copy's prototype)
+  for (const [k, x] of Object.entries(v)) Object.defineProperty(out, agentText(k), { value: clean(x, depth + 1), enumerable: true, writable: true, configurable: true });
   return out;
 }
 

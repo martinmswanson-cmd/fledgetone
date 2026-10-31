@@ -13,6 +13,7 @@ import { currentInstrumentKey, INSTRUMENTS, isAudioKind } from '../audio/instrum
 import { parseEmbeddedSounds, referencedSoundIds } from './audioClips';
 import { isMixTrack } from './buses';
 import { parseTrack } from './project';
+import { withSafeIds } from './ownKey';
 import type { EmbeddedSound, Track, WamPlugin } from './timelineTypes';
 import { uid } from './timelineTypes';
 
@@ -87,7 +88,10 @@ export function parseSound(raw: unknown): MySound | null {
   const { id, name, settings } = raw as Record<string, unknown>;
   if (typeof id !== 'string' || typeof name !== 'string' || !name.trim()) return null;
   try {
-    const track = parseTrack({ ...(settings as object), id: 'sound', name });
+    if (typeof settings !== 'object' || settings === null) return null;
+    // (no id inside a lookup could mistake for one of every object's own names, as a project's)
+    withSafeIds(settings);
+    const track = parseTrack({ ...settings, id: 'sound', name });
     // Instruments only: a bus, a return or an Audio track has no sound of its own to keep
     if (isMixTrack(track) || isAudioKind(track.instrumentKey)) return null;
     if (track.instrumentKey === 'plugin' && !track.plugin) return null;
@@ -144,6 +148,8 @@ export interface MySoundsFile {
 export function parseMySoundsFile(raw: unknown): Omit<MySoundsFile, 'format' | 'version'> {
   const v = raw as Partial<MySoundsFile> | null;
   if (typeof v !== 'object' || v === null || v.format !== MY_SOUNDS_FORMAT) throw new Error('it is not a My sounds file');
+  // (the sounds and the recordings they play renamed alike, so they still find each other)
+  withSafeIds(v);
   return {
     favourites: Array.isArray(v.favourites) ? [...new Set(v.favourites.map(currentInstrumentKey).filter((k): k is InstrumentKey => typeof k === 'string' && Object.hasOwn(INSTRUMENTS, k)))] : [],
     sounds: Array.isArray(v.sounds) ? v.sounds.map(parseSound).filter((x): x is MySound => !!x) : [],

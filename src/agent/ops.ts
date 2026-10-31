@@ -277,9 +277,9 @@ export function checkOpsShape(doc: unknown): OpError[] {
     const at = `ops[${i}]`;
     if (!isObj(raw)) return fail(i, at, 'expected an object with an "op" field');
     const name = raw.op;
-    if (typeof name !== 'string' || !(name in OP_SPECS)) return fail(i, `${at}.op`, `unknown op ${quoted(name)}: the ops are ${OP_NAMES.join(', ')}`);
+    if (typeof name !== 'string' || !Object.hasOwn(OP_SPECS, name)) return fail(i, `${at}.op`, `unknown op ${quoted(name)}: the ops are ${OP_NAMES.join(', ')}`);
     const spec = OP_SPECS[name as OpName];
-    for (const key of Object.keys(raw)) if (key !== 'op' && !(key in spec)) fail(i, `${at}.${givenKey(key)}`, `${name} has no field ${quoted(key)} (it has ${Object.keys(spec).join(', ')})`);
+    for (const key of Object.keys(raw)) if (key !== 'op' && !Object.hasOwn(spec, key)) fail(i, `${at}.${givenKey(key)}`, `${name} has no field ${quoted(key)} (it has ${Object.keys(spec).join(', ')})`);
     for (const [key, [type, required]] of Object.entries(spec)) {
       const v = raw[key];
       const path = `${at}.${key}`;

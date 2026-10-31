@@ -151,7 +151,7 @@ export function touchedHashes(song: ProjectSnapshot, ops: readonly Op[]): Record
   const out: Record<string, string> = {};
   for (const op of ops) {
     for (const key of keysOf(op)) {
-      if (key in out) continue;
+      if (Object.hasOwn(out, key)) continue;
       const part = partOf(song, key);
       if (part !== undefined) out[key] = fingerprint(part);
     }
