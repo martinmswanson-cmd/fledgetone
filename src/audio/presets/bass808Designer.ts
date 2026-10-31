@@ -81,7 +81,15 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
   let settings = initial ?? defaultBass808();
   let current: Voice808 | null = null;
   /** The pitch bend (cents) by time: a note starts at the one in force then and follows the ones sent for later (see bendTimeline.ts) */
-  const bends = createBendTimeline();
+  const bends = createBendTimeline(() => raw.currentTime);
+
+  /**
+   * The bends sent for later on `v`, from `from` (its own time, ahead by its lead) while it sounds:
+   * a long note's vibrato, sent whole when it starts, is thousands of points.
+   */
+  const follow = (v: Voice808, from: number) => {
+    for (const [t, cents] of bends.after(from + v.lead, v.stopAt + v.lead)) v.osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t - v.lead), 0.006);
+  };
 
   const playNote = (n: PlayableNote, time: number): Voice808 | undefined => {
     const s = settings;
@@ -107,8 +115,11 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
       g.setTargetAtTime(0, until, releaseConstant);
       // Its old stop (and the silence there) moves to the new end
       v.amp.gain.cancelScheduledValues(at);
+      const followed = v.stopAt;
       voices.extend(v, Math.min(until + RELEASE * 1.5, Math.max(at, v.start) + v.settings.decay * 1.05 + 0.01));
       v.end = end;
+      // (It rings on longer: the bends sent for then too)
+      follow(v, followed - 1e-9);
       return v;
     }
 
@@ -121,7 +132,6 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     if (current && current.stopAt > from) voices.release(current, from, 0.015);
 
     const osc = createOsc(raw, 'sine', s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq, from, bends.at(start));
-    for (const [t, cents] of bends.after(start)) osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t - lead), 0.006);
     if (s.punch > 0) osc.frequency.exponentialRampToValueAtTime(freq, from + s.punchTime);
     const env = raw.createGain();
     const peak = PEAK * (0.35 + 0.65 * n.velocity);
@@ -163,6 +173,7 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     // Silent (60 dB down) once it has died away or been let go, whichever is first
     const stopAt = Math.min(until + RELEASE * 1.5, from + ATTACK + s.decay * 1.05 + 0.01);
     const voice: Voice808 = { start: from, stopAt, sources: [osc], nodes, amp, env, osc, end, lead, settings: s };
+    follow(voice, from);
     voices.add(voice);
     current = voice;
     return voice;

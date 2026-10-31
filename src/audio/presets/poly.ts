@@ -65,16 +65,54 @@ export interface VoicePool {
 export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVoice, maxVoices: number, output: Tone.InputNode): VoicePool {
   const out = new Tone.Gain(1).connect(output);
   /** Each voice, its note's start and end, its velocity, and when its note was let go (Infinity while held) */
-  let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number }[] = [];
-  /** The pitch bend in cents, by time: a voice taken starts at the bend then, and follows the ones sent for later. */
-  const bends = createBendTimeline();
-  const follow = (voice: PoolVoice, time: number) => {
-    for (const [t, cents] of bends.after(time)) voice.detune.setTargetAtTime(cents, t, 0.005);
+  let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number; fedTo: number }[] = [];
+  /**
+   * The pitch bend in cents, by time: a voice taken starts at the bend then, and follows the ones
+   * sent for later while its note sounds (to its end and release: a long note's vibrato, sent
+   * whole when it starts, is thousands of points, and every short note under it would otherwise
+   * be given every one of them).
+   */
+  const bends = createBendTimeline(() => out.context.currentTime);
+  type Slot = (typeof voices)[number];
+  /**
+   * Live, a voice is given the bends at most FEED_AHEAD seconds ahead, and the rest as the clock
+   * gets to them (every FEED_EVERY): each bend given to a Tone voice is checked against every one
+   * it already has (standardized-audio-context keeps them in a list), so a long note's thousands
+   * at once froze the page for seconds. A stall shorter than FEED_AHEAD - FEED_EVERY isn't heard.
+   * An export gives them all at once (its clock doesn't run while the song is set up).
+   */
+  const FEED_AHEAD = 2;
+  const FEED_EVERY = 0.25;
+  const offline = out.context.isOffline;
+  /** Give `v` the bends sent for after the ones it has, while it sounds and up to FEED_AHEAD from now. */
+  const feed = (v: Slot) => {
+    const to = Math.min(v.end, offline ? Infinity : out.context.currentTime + FEED_AHEAD);
+    if (!(to > v.fedTo)) return;
+    for (const [t, cents] of bends.after(v.fedTo, to === Infinity ? undefined : to + 1e-9)) v.voice.detune.setTargetAtTime(cents, t, 0.005);
+    v.fedTo = to;
+  };
+  /** A note started on `v` at `time`: the bends sent for after then (see feed). */
+  const follow = (v: Slot, time: number) => {
+    v.fedTo = time;
+    feed(v);
+  };
+  /**
+   * A voice taken at `time` starts from the bend then (bend() only moves the sounding ones). One
+   * taken from a sounding note first drops the bends it was given for that note.
+   */
+  const takeUp = (v: Slot, time: number, how: 'free' | 'new' | 'stolen') => {
+    const cents = bends.at(time);
+    if (how === 'stolen') {
+      if (!bends.moved()) return;
+      v.voice.detune.cancelScheduledValues(time);
+    } else if (how === 'new' && !cents) return;
+    v.voice.detune.setTargetAtTime(cents, time, 0.001);
   };
 
-  const pick = (time: number) => {
-    let free: (typeof voices)[number] | undefined;
-    const busy: typeof voices = [];
+  /** A voice for a note at `time`, and how it was found. */
+  const pick = (time: number): { slot: Slot; how: 'free' | 'new' | 'stolen' } | undefined => {
+    let free: Slot | undefined;
+    const busy: Slot[] = [];
     for (const v of voices) {
       if (v.end <= time) {
         // Reuse the most recently freed voice, so spare ones go idle long enough to be disposed
@@ -84,25 +122,18 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
         busy.push(v);
       }
     }
-    if (free) {
-      // An idle voice takes up the bend now (bend() only moves the sounding ones)
-      free.voice.detune.setTargetAtTime(bends.at(time), time, 0.001);
-      follow(free.voice, time);
-      return free;
-    }
+    if (free) return { slot: free, how: 'free' };
     if (voices.length < maxVoices) {
-      const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
+      const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity, fedTo: -Infinity };
       v.voice.connect(out);
-      const cents = bends.at(time);
-      if (cents) v.voice.detune.setTargetAtTime(cents, time, 0.001);
-      follow(v.voice, time);
       voices.push(v);
-      return v;
+      return { slot: v, how: 'new' };
     }
     // About how loud each is now: its velocity, falling through its release (40 dB over it)
-    const level = (v: (typeof voices)[number]) => (time > v.releasedAt ? v.velocity * Math.exp((-(time - v.releasedAt) * Math.log(100)) / Math.max(1e-3, v.end - v.releasedAt)) : v.velocity);
+    const level = (v: Slot) => (time > v.releasedAt ? v.velocity * Math.exp((-(time - v.releasedAt) * Math.log(100)) / Math.max(1e-3, v.end - v.releasedAt)) : v.velocity);
     // (none only if one chord has more notes than there are voices)
-    return busy[chooseNoteToSteal(busy.map((v) => ({ start: v.start, level: level(v), held: !(time >= v.releasedAt) })), time)];
+    const slot = busy[chooseNoteToSteal(busy.map((v) => ({ start: v.start, level: level(v), held: !(time >= v.releasedAt) })), time)];
+    return slot && { slot, how: 'stolen' };
   };
 
   const disposeIdleVoices = () => {
@@ -116,21 +147,30 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
   // Live only: an export can schedule the whole song before rendering any of it, so there a
   // voice that's "idle" on the scheduling clock may not have been heard yet
   const gcInterval = out.context.isOffline ? -1 : out.context.setInterval(disposeIdleVoices, 1);
+  const feedInterval = offline
+    ? -1
+    : out.context.setInterval(() => {
+        const now = out.context.currentTime;
+        for (const v of voices) if (v.end > now) feed(v);
+      }, FEED_EVERY);
 
   return {
     trigger: (notes, duration, time, velocity = 1) => {
       const t = notLate(out.context, time);
       const length = out.toSeconds(duration);
       for (const note of notes) {
-        const v = pick(t);
-        if (!v) return;
+        const picked = pick(t);
+        if (!picked) return;
+        const v = picked.slot;
         try {
+          takeUp(v, t, picked.how);
           v.voice.triggerAttackRelease(note, length, t, velocity);
           v.start = t;
           v.end = t + length + v.voice.toSeconds(v.voice.envelope.release);
           v.velocity = velocity;
           v.releasedAt = t + length;
           v.serial++;
+          follow(v, t);
         } catch (err) {
           console.warn('Skipped a note:', err);
         }
@@ -138,14 +178,17 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
     },
     attack: (note, time, velocity) => {
       const t = notLate(out.context, time);
-      const v = pick(t);
-      if (!v) return { release: () => {} };
+      const picked = pick(t);
+      if (!picked) return { release: () => {} };
+      const v = picked.slot;
+      takeUp(v, t, picked.how);
       v.voice.triggerAttack(note, t, velocity);
       v.start = t;
       v.end = Infinity;
       v.velocity = velocity ?? 1;
       v.releasedAt = Infinity;
       const serial = ++v.serial;
+      follow(v, t);
       return {
         release: (at) => {
           if (v.serial !== serial || v.end !== Infinity) return;
@@ -153,6 +196,8 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
           v.voice.triggerRelease(releaseAt);
           v.end = releaseAt + v.voice.toSeconds(v.voice.envelope.release);
           v.releasedAt = releaseAt;
+          // (Held, it followed every bend sent for later: none past its tail)
+          v.voice.detune.cancelScheduledValues(v.end);
         },
       };
     },
@@ -161,8 +206,9 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
       bends.set(cents, t, cut);
       // (The bends set for later on every voice go: the ones each voice was given since it was taken)
       if (cut) for (const v of voices) v.voice.detune.cancelScheduledValues(t);
-      // Sounding voices glide over a few ms (a bend wheel moves in small steps); idle ones pick it up when taken
-      for (const v of voices) if (v.end > t) v.voice.detune.setTargetAtTime(cents, t, 0.005);
+      // Sounding voices glide over a few ms (a bend wheel moves in small steps); idle ones pick it up
+      // when taken, and one given the bends only to sooner gets it when it's fed (see feed)
+      for (const v of voices) if (v.end > t && t <= v.fedTo) v.voice.detune.setTargetAtTime(cents, t, 0.005);
     },
     releaseAll: () => {
       const now = out.now();
@@ -175,6 +221,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
     },
     dispose: () => {
       out.context.clearInterval(gcInterval);
+      out.context.clearInterval(feedInterval);
       voices.forEach((v) => v.voice.dispose());
       out.dispose();
     },

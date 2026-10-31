@@ -202,8 +202,10 @@ asked, and built-in effects that fade by themselves). The ones met most often he
   note, clip and track ranges, duck.ts proxy spans, and an export's ring-out (`exportWav.ts
   heldPast`/`ringOutFor`: only past RING_OUT_MARGIN, so songs whose notes run on less than that,
   all the starters, keep their exact length; the export dialog's ring-out wording reads the same
-  `ringOutPlan`, and a seamless loop's warm-up passes `loopTailSeconds` count it too, capped at
-  two minutes). The clip restartHeldNotes makes is `<id>~held` (`HELD_CLIP`): it keeps its clip's
+  `ringOutPlan`). In a loop (live, or a seamless render) a note ends where the loop goes round
+  at the latest (`createClipSchedule`'s `loopTicksOf`, the duration cut to `<ticks>i` in `fire`),
+  so it doesn't pile up under its next copy; a seamless warm-up (`loopTailSeconds`) needs only
+  its release and the tails. The clip restartHeldNotes makes is `<id>~held` (`HELD_CLIP`): it keeps its clip's
   groove, and the scheduler seeds its notes and counts its passes by its own clip
   (`ownClipId` in noteChance.ts), so chance, Human drift and feel accents match. Use clipSoundEnd, not `startBar + lengthBars`, for
   where a clip stops sounding. A change of a proxy track (duck.ts) is heard wherever every other
@@ -549,9 +551,22 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   (`src/audio/bendTimeline.ts`: poly.ts, designer.ts, edmBass.ts, bass808Designer.ts,
   sampleKits.ts' Multi, samplerManager.ts; the Tone synths' detune and the plugins' timed MIDI
   already were): a note starts at the bend in force when it starts and follows the ones sent for
-  later. `bend(cents, time, live, cut)`: `cut` drops the bends sent for `time` and after first
+  later, while it sounds (`after(time, until)` to the voice's end and release: a long note's
+  vibrato is thousands of points, and every short note under it was given them all). The
+  timeline keeps 30 s behind the audio clock (`createBendTimeline(now)`), not behind the latest
+  point sent. poly.ts feeds a live Tone voice the bends only FEED_AHEAD (2 s) ahead, the rest on
+  a 0.25 s interval: standardized-audio-context checks each new event against every one the param
+  has, so thousands at once froze the page (an export gets them all at once). samplerManager.ts
+  follows a song note's bends to its end (`followedTo`) and its release's at `releaseAt`
+  (`followOn`), and `bend` prunes by the clock, not the bend's time. Overlapping bent notes: the
+  latest-begun sounding one has the bend (`noteBendAt`); `playExpressive` sends its value again
+  at an earlier note's points and end inside it, and at its own end the earlier one's, not centre.
+  Fledge Synth's wide Bend range is kept by time (`wideFrom` in wamPlugin.ts): each bend is coded
+  on the range at its own time, and widening sends the bends already sent for after it again.
+  `bend(cents, time, live, cut)`: `cut` drops the bends sent for `time` and after first
   (`cancelScheduledValues`, `dropBendsAfter` in builtinHost.ts and the worklet's `dropBends`; a
-  plugin without it has each later bend followed by the held one). A jump (seek, loop wrap:
+  plugin without it has each later bend followed by the held one, and a bend sent since for
+  before one of those is sent again there: `overrides`). A jump (seek, loop wrap:
   `jumpAway`) cuts and holds the note's bend until the instrument's next note or a clip bend lane
   (`endHolding`, sent with `cut`) or the note's end (the song's bend there, sent at the jump);
   Tone says "stop" then "start" at one time on a seek, so `bentNotes` is only cleared on a real
@@ -561,9 +576,15 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   ready) keeps a sounding note's bend. The live wheel on built-ins and samplers is kept by
   `liveInstrument` in liveTracks.ts (the plugin does it itself): a song bend of centre sends the
   wheel's instead, and a centre sent ahead (a bent note's end) gets the wheel sent again there
-  when it moves. An MPE note's own bend on such an instrument is sent `live` and ends with the
-  note (`endMpeBend` in liveInput.ts: back to another bent MPE note's, else the master wheel).
-  Check with scripts/audio-check/live-controllers.cjs.
+  when it moves. An MPE note's own bend on such an instrument is sent `live` and stays through
+  the note's release and the pedal's hold (`endMpeBend` in liveInput.ts, `holdBendTillNextNote`
+  in liveTracks.ts): the instrument goes back (to another bent MPE note's, else the master wheel)
+  just before its next note starts, a key's or the song's (`watchBendBack` wraps play/noteOn/
+  noteVoice), or once the tail has ended (a recorded instrument's release + 0.5 s, else 8 s);
+  any other bend but the song's centre takes over, and `releaseAllLiveVoices` forgets it.
+  Check with scripts/audio-check/live-controllers.cjs and scripts/audio-check/bends.cjs (each case
+  a bug found before: overlapping bent notes, long curves, Fledge wide bends, a piano under a clip
+  bend, a note longer than a seamless loop, the cost of a long vibrato under chords live).
   The export dialog memoises its frames and ring-out (`useMemo`), and `withControllerLanes`
   without a memo reuses each track's lanes for the same track object (`lastLanes`), so the
   tails, the render's plan and the dialog don't merge long recorded lanes again each time.

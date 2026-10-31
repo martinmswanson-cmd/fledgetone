@@ -315,7 +315,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   const buffers = new Map<string, AudioBuffer>();
   const voices = new Set<Voice>();
   /** The pitch bend (cents) by time: a note starts at the one in force then and follows the ones sent for later (see bendTimeline.ts) */
-  const bends = createBendTimeline();
+  const bends = createBendTimeline(() => raw.currentTime);
   let disposed = false;
   const copies = copySetFor(raw);
   /** Whether its copies keep its sounds' rate (twice the context's): a render's track whose notes bend (see prepare) */
@@ -343,12 +343,13 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     return Math.abs(r - 1) < 1e-12 ? 1 : r;
   };
 
+  const releaseSeconds = () => Math.max(0.005, multi?.release ?? 0.3);
   /** Let a voice go: its release from `time`. */
   const release = (v: Voice, time: number) => {
     if (v.released) return;
     v.released = true;
     const at = Math.max(time, raw.currentTime);
-    const r = Math.max(0.005, multi?.release ?? 0.3);
+    const r = releaseSeconds();
     // Hold the level the attack has reached (cancelScheduledValues would drop an unfinished
     // attack ramp and fall back to 0, silencing a note shorter than its attack)
     const g = v.env.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
@@ -361,7 +362,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   };
 
   /** Start a note at `time`; returns its voice (or null when nothing plays it). */
-  const start = (note: string, velocity: number, time: number): Voice | null => {
+  const start = (note: string, velocity: number, time: number, until = Infinity): Voice | null => {
     const midi = midiOf(note);
     if (!multi || !Number.isFinite(midi)) return null;
     const zone = zoneFor(multi.zones, midi, velocity);
@@ -380,7 +381,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     // `at` the block it starts in played at 1, up to 128 frames at the wrong speed)
     source.playbackRate.value = rateFor({ k }, semis, cents);
     source.playbackRate.setValueAtTime(rateFor({ k }, semis, cents), at);
-    for (const [t, c] of bends.after(at)) source.playbackRate.setTargetAtTime(rateFor({ k }, semis, c), t, 0.005);
+    // (While it sounds: a long note's vibrato, sent whole when it starts, is thousands of points)
+    for (const [t, c] of bends.after(at, until)) source.playbackRate.setTargetAtTime(rateFor({ k }, semis, c), t, 0.005);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity));
     const attack = Math.max(0.001, multi.attack);
@@ -404,9 +406,10 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   return {
     play: (notes: PlayableNote[], time: number) => {
       for (const n of notes) {
-        const v = start(n.note, n.velocity, time);
         // (In the render's own context: an export's tempo, not the live one)
-        if (v) release(v, time + out.toSeconds(n.duration));
+        const end = time + out.toSeconds(n.duration);
+        const v = start(n.note, n.velocity, time, Math.max(end, raw.currentTime) + releaseSeconds() + 0.05);
+        if (v) release(v, end);
       }
     },
     noteOn: (note: PlayableNote, time: number): NoteOff => {
@@ -438,7 +441,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       const at = Math.max(time, raw.currentTime);
       if (cut) for (const v of voices) v.source.playbackRate.cancelScheduledValues(at);
       bends.set(cents, at, cut);
-      for (const v of voices) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis, cents), at, 0.005);
+      for (const v of voices) if (v.stopAt > at) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis, cents), at, 0.005);
     },
     releaseAll: () => {
       // Every voice still to end goes now, those already given their end too (a note played from

@@ -13,16 +13,20 @@ export interface BendTimeline {
   set: (cents: number, time: number, cut?: boolean) => void;
   /** The bend in force at `time` (cents; 0 before any). */
   at: (time: number) => number;
-  /** The bends sent for after `time`, in time order. */
-  after: (time: number) => ReadonlyArray<readonly [time: number, cents: number]>;
+  /** The bends sent for after `time` (and before `until`), in time order. */
+  after: (time: number, until?: number) => ReadonlyArray<readonly [time: number, cents: number]>;
   /** Whether it has ever been sent a bend off centre (until then a note's pitch is untouched). */
   moved: () => boolean;
 }
 
-/** Seconds of bends kept behind the latest one sent (the one in force then is always kept). */
+/**
+ * Seconds of bends kept behind the audio clock (`now`; the one in force then is always kept). By
+ * the clock, not the latest bend sent: a long note's curve is sent whole when it starts, and its
+ * end, far ahead, mustn't drop the bends a note starting before it still needs.
+ */
 const KEEP_SECONDS = 30;
 
-export function createBendTimeline(): BendTimeline {
+export function createBendTimeline(now: () => number): BendTimeline {
   const points: Array<[number, number]> = [];
   let moved = false;
   /** The index of the last point at or before `time` (-1: none). */
@@ -44,14 +48,14 @@ export function createBendTimeline(): BendTimeline {
       if (cut) points.splice(firstAfter(time, true));
       // (After any sent for the same time: the later sent wins, as before)
       points.splice(lastAt(time) + 1, 0, [time, cents]);
-      const old = lastAt(time - KEEP_SECONDS);
+      const old = lastAt(now() - KEEP_SECONDS);
       if (old > 0) points.splice(0, old);
     },
     at: (time) => {
       const i = lastAt(time);
       return i < 0 ? 0 : points[i][1];
     },
-    after: (time) => points.slice(lastAt(time) + 1),
+    after: (time, until) => points.slice(lastAt(time) + 1, until === undefined ? undefined : Math.max(lastAt(time) + 1, firstAfter(until, true))),
     moved: () => moved,
   };
 }

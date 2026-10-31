@@ -1782,6 +1782,8 @@ function samplerVoice(
     pair?: { src: AudioBufferSourceNode; base: number; soft: GainNode; loud: GainNode; low: number; from: number; mainFrom: number; looping: boolean; mainLooping: boolean };
     /** Its vibrato's pull on the level (InstrumentDef.vibrato), let go with the note */
     wobble?: GainNode;
+    /** The bends sent for later it has been given, up to this time (its note's end, then its release's: see follow) */
+    followedTo?: number;
   }
   /** Every source a note plays (two under the mod wheel's dynamics). */
   const sourcesOf = (s: Sounding) => (s.pair ? [s.src, s.pair.src] : [s.src]);
@@ -1794,7 +1796,7 @@ function samplerVoice(
    * The pitch bend by time (cents): a note starts at the one in force then and follows the ones
    * sent for later (see bendTimeline.ts); `bendNow`, as a rate, for the note being started.
    */
-  const bends = createBendTimeline();
+  const bends = createBendTimeline(() => raw.currentTime);
   const ratioAt = (time: number) => 2 ** (bends.at(time) / 1200);
   let bendNow = 1;
   const prune = (time: number) => {
@@ -1821,9 +1823,21 @@ function samplerVoice(
       }
     }
   };
-  /** The bends sent for after `from`, on a note just started (see bendTimeline.ts) */
+  /**
+   * The bends sent for after `from`, on a note just started (see bendTimeline.ts), while it sounds:
+   * to its end, and its release's once it's let go (a long note's vibrato, sent whole when it
+   * starts, is thousands of points, and every short note under it would otherwise be given them all).
+   */
   const follow = (s: Sounding, from: number) => {
-    for (const [t, cents] of bends.after(from)) bendSound(s, 2 ** (cents / 1200), t);
+    const to = Math.min(s.until, s.followedTo ?? Infinity);
+    for (const [t, cents] of bends.after(from, to === Infinity ? undefined : to + 1e-9)) bendSound(s, 2 ** (cents / 1200), t);
+  };
+  /** `s` now sounds until `until` (let go): the bends sent for its release too. */
+  const followOn = (s: Sounding, until: number) => {
+    const done = s.followedTo ?? Infinity;
+    if (done >= until) return;
+    s.followedTo = until;
+    for (const [t, cents] of bends.after(done, until === Infinity ? undefined : until + 1e-9)) bendSound(s, 2 ** (cents / 1200), t);
   };
 
   /** Fade `s` out quickly from `at` (its place taken by a newer note), and stop it. */
@@ -2011,6 +2025,8 @@ function samplerVoice(
     }
     makeRoom(note, when);
     sounding.push(s);
+    // (A song's note, its end known: the bends to that; let go, its release's, see releaseAt)
+    if (hold > 0 && hold < Infinity) s.followedTo = hold;
     follow(s, when);
     return s;
   };
@@ -2158,6 +2174,7 @@ function samplerVoice(
       for (const x of sourcesOf(s)) x.stop(stop);
       s.until = stop;
     }
+    followOn(s, s.until);
   };
 
   return {
@@ -2219,11 +2236,14 @@ function samplerVoice(
     },
     bend: (cents, time, _live, cut) => {
       const next = 2 ** (cents / 1200);
-      prune(time);
+      // (By the clock, not the bend's time: one sent ahead, a long note's vibrato, mustn't drop the
+      // notes that end before it from the bends sent for nearer times after it)
+      prune(raw.currentTime);
       if (cut) for (const s of sounding) for (const src of sourcesOf(s)) src.playbackRate.cancelScheduledValues(time);
       else if (Math.abs(next - ratioAt(time)) < 1e-6) return;
       bends.set(cents, time, cut);
-      for (const s of sounding) bendSound(s, next, time);
+      // (Each note it reaches: one followed only to its end gets it once it's let go, see followOn)
+      for (const s of sounding) if (s.until > time && time <= (s.followedTo ?? Infinity)) bendSound(s, next, time);
     },
     dynamics: (value, time) => {
       dyn = value === null ? null : Math.max(0, Math.min(1, value));

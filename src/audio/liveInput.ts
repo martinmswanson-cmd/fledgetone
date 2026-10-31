@@ -1,11 +1,12 @@
 import { liveMix } from './engine';
-import { getLiveInstrument } from './liveTracks';
+import { getLiveInstrument, holdBendTillNextNote, holdsBend } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
 import type { NoteOff, TrackInstrument, VoiceControl } from './instruments';
-import { DROP_ROWS, isDropKind, isDrumKind, isMixKind, isRackKind, isSlicerKind } from './instrumentCatalog';
+import { DROP_ROWS, INSTRUMENTS, isDropKind, isDrumKind, isMixKind, isRackKind, isSlicerKind } from './instrumentCatalog';
 import { noteRepeatOff, noteRepeatOn, noteRepeatPressure, stopNoteRepeats } from './noteRepeat';
 import { liveTransport } from './liveContext';
 import { heardTime, outputLatencySeconds } from './latency';
+import { releaseSeconds } from './auditionMath';
 import { decodeMidi, midiNoteLabel, midiNoteName, MPE_BEND_RANGE_CENTS, PIANO_OCTAVE_KEYS, PITCH_BEND_RANGE_CENTS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
 import { recordMidi, setPedalSource } from './recorder';
@@ -67,19 +68,42 @@ const holding = new Map<number, string>();
  * its own, see TrackInstrument.noteVoice). Channel 1 (0 here) is the keyboard's master channel:
  * its bend moves every note.
  */
-const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null; bent?: { instrument: TrackInstrument; cents: number } }>();
+const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null; bent?: { instrument: TrackInstrument; cents: number; tail: number } }>();
 /** The bend of the wheel that bends every note (the keyboard's, or MPE's master channel), in cents. */
 let masterWheel = 0;
 /**
- * An MPE note bent on an instrument that bends as a whole has ended: its bend ends with it. The
- * instrument goes back to another such note's bend if one still sounds, else to the master wheel.
+ * How long a note of `track` rings on once let go, for its bend to stay with it (seconds): a
+ * recorded instrument's release as the track sets it; a synth's or a plugin's isn't known here, so
+ * long enough for the longest (going back later is never heard: the next note goes back first).
+ */
+const UNKNOWN_TAIL_SECONDS = 8;
+function tailSeconds(track: Track | undefined): number {
+  return track && INSTRUMENTS[track.instrumentKey]?.samples ? releaseSeconds(track) + 0.5 : UNKNOWN_TAIL_SECONDS;
+}
+/** Instruments holding a let-go MPE note's bend while the pedal holds the note: its tail, from when the pedal comes up. */
+const pedalTails = new Map<TrackInstrument, number>();
+/**
+ * An MPE note bent on an instrument that bends as a whole has been let go: its bend stays with it
+ * through its release (and while the pedal holds it), so its tail doesn't jump back. The
+ * instrument goes back (to another such note's bend if one still sounds, else to the master
+ * wheel) just before its next note starts, or once the tail has ended (see holdBendTillNextNote).
  */
 function endMpeBend(channel: number): void {
   const bent = mpeNotes.get(channel)?.bent;
   mpeNotes.delete(channel);
   if (!bent) return;
-  const other = [...mpeNotes.values()].reverse().find((m) => m.bent?.instrument === bent.instrument);
-  safely(() => bent.instrument.bend?.(other?.bent?.cents ?? masterWheel, liveNow(), true));
+  const { instrument } = bent;
+  pedalTails.delete(instrument);
+  if (pedal) pedalTails.set(instrument, bent.tail);
+  holdBendTillNextNote(instrument, bendBack(instrument), pedal ? undefined : bent.tail);
+}
+/** Where `instrument` goes back to once a let-go note's bend ends. */
+function bendBack(instrument: TrackInstrument): (time: number) => void {
+  return (time) => {
+    pedalTails.delete(instrument);
+    const other = [...mpeNotes.values()].reverse().find((m) => m.bent?.instrument === instrument);
+    instrument.bend?.(other?.bent?.cents ?? masterWheel, time, true);
+  };
 }
 /** Let go while the sustain pedal was down: ended when it comes up. */
 const sustained = new Map<number, NoteOff>();
@@ -224,6 +248,9 @@ export function playMidi(message: MidiMessage, heard: number): void {
           safely(() => off(now));
         }
         sustained.clear();
+        // A let-go MPE note's bend held with it: its tail from now
+        for (const [instrument, tail] of pedalTails) if (holdsBend(instrument)) holdBendTillNextNote(instrument, bendBack(instrument), tail);
+        pedalTails.clear();
       }
       break;
     case 'pitchBend': {
@@ -233,9 +260,9 @@ export function playMidi(message: MidiMessage, heard: number): void {
         const cents = (message.cents / PITCH_BEND_RANGE_CENTS) * MPE_BEND_RANGE_CENTS;
         if (own.voice) safely(() => own.voice!.bend(cents, now));
         else if (instrument?.bend) {
-          // (Sent as played, so the song's bend at rest leaves it; it ends with the note, see endMpeBend)
+          // (Sent as played, so the song's bend at rest leaves it; it ends with the note's tail, see endMpeBend)
           safely(() => instrument.bend!(cents, now, true));
-          own.bent = { instrument, cents };
+          own.bent = { instrument, cents, tail: tailSeconds(track) };
         }
         recorded = { kind: 'noteExpr', note: own.note, lane: 'bend', value: cents / 100 };
         break;
@@ -281,10 +308,10 @@ export function releaseLiveNotes(): void {
   held.clear();
   sustained.clear();
   holding.clear();
-  // (Stop and Pause centre the wheels too, see releaseAllLiveVoices)
+  // (Stop and Pause centre the wheels too, and forget a let-go note's bend: see releaseAllLiveVoices)
   masterWheel = 0;
-  for (const channel of [...mpeNotes.keys()]) endMpeBend(channel);
   pedal = false;
+  for (const channel of [...mpeNotes.keys()]) endMpeBend(channel);
 }
 
 /** What the activity readout shows for a message. */

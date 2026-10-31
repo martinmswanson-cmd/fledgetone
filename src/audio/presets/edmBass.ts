@@ -105,12 +105,12 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
   let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string; freq: number } | null = null;
   /** The pitch bend (cents) the voice plays at, by time: a note's own slide or dive, a bend lane (see bendTimeline.ts) */
-  const bends = createBendTimeline();
+  const bends = createBendTimeline(() => raw.currentTime);
   const bentBy = (freq: number, cents: number) => (cents ? freq * 2 ** (cents / 1200) : freq);
   const bent = (freq: number, time: number) => bentBy(freq, bends.at(time));
   /** The bends sent for after `from` on a voice playing `freq` until `until` */
   const follow = (source: BassSource, freq: number, from: number, until: number) => {
-    for (const [t, cents] of bends.after(from)) if (t < until) source.glide(bentBy(freq, cents), t, 0.004);
+    for (const [t, cents] of bends.after(from, until)) source.glide(bentBy(freq, cents), t, 0.004);
   };
 
   /**
