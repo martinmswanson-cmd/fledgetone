@@ -58,6 +58,7 @@ import { checkSafetyMarked } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
 import { byAgentId, givenKey, givenText as quoted, plainToken } from './agentText';
+import { insertLabel, masterPartLabel, settingWord } from './settingWords';
 import { nm, plainNames } from './names';
 
 
@@ -607,9 +608,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
         for (const [k, v] of Object.entries(settings)) {
-          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${nm(track.name)} ${insert} ${k} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
+          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
           // (what the agent wrote is never echoed: it could read as the app's own words)
-          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insert} ${k}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
+          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k])}).`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -763,8 +764,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           const got = out[key] as unknown as Record<string, unknown> | undefined;
           if (!given || !got) continue;
           for (const [k, v] of Object.entries(given)) {
-            if (typeof v === 'number' && typeof got[k] === 'number' && Math.abs((got[k] as number) - v) > 1e-9) warn(`The master ${key} ${k} ${v} is out of range: set to ${round(got[k] as number, 4)}.`);
-            if (typeof v === 'string' && got[k] !== v) warn(`The master ${key} ${k}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k])}).`);
+            if (typeof v === 'number' && typeof got[k] === 'number' && Math.abs((got[k] as number) - v) > 1e-9) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(got[k] as number, 4)}.`);
+            if (typeof v === 'string' && got[k] !== v) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k])}).`);
           }
         }
         w.master = out;

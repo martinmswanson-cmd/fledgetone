@@ -23,7 +23,7 @@ import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from '
 import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
-import { joinRanges, rangesWords, wordMeter, type BarRange } from './songDiff';
+import { joinRanges, namesManyBars, rangesWords, wordMeter, type BarRange } from './songDiff';
 import type { MeterMap } from '../audio/tempoMap';
 import type { BridgeInfo } from './bridgeProtocolClient';
 
@@ -402,7 +402,9 @@ export function hearingPlan(
     if (bars + all.bars <= LIMITS.listenMaxBars && seconds + all.seconds <= LIMITS.listenMaxSeconds + 1e-9) pieces.forEach(take);
     else focusLeftOut = true;
   }
-  return { plays: joinPlays(plays), unheard: unheard.length ? unheard : null, limit, focusLeftOut };
+  // (what the focus plays of the bars left out is heard after all: the card never says bars it plays weren't)
+  const left = unheard.flatMap((u) => without(u, plays));
+  return { plays: joinPlays(plays), unheard: left.length ? left : null, limit, focusLeftOut };
 }
 
 /** The stretches as one range, first bar to last (for what only needs to know where they lie). */
@@ -552,7 +554,8 @@ export function checkSuggestion(s: Suggestion, now: ProjectSnapshot, ctx: SongCo
   if (s.status === 'out_of_date') return recheck(s, now, ctx);
   if (!isOpen(s)) return s;
   if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
-  if (sameSong(s, ctx)) return s;
+  // (the song as it was made again, say after an unrelated edit was undone: as it was, not stale)
+  if (sameSong(s, ctx)) return s.stale ? { ...s, status: s.version > 1 ? 'changed' : 'waiting', stale: false, armed: null } : s;
   const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
   if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed, outOfDateAt: ctx.parts, armed: null };
   return s.status === 'changed' && s.stale && !s.armed ? s : { ...s, status: 'changed', stale: true, armed: null };
@@ -651,8 +654,6 @@ export function heardRegions(s: Pick<Suggestion, 'regions' | 'unheard'>): BarRan
   return s.regions.flatMap((r) => without(r, s.unheard!));
 }
 
-/** How many bars ranges hold. */
-const barCount = (list: readonly BarRange[]): number => list.reduce((n, r) => n + Math.max(1, Math.ceil(r.toBar) - Math.floor(r.fromBar)), 0);
 
 /** The limit a before-and-after keeps to, in words: "it plays at most 90 seconds" (in a song not in 4/4, `meter`, the bars as quarter notes: a bar there isn't a measure). */
 export const limitWords = (limit: HearingLimit | null | undefined, meter: MeterMap | null = null): string =>
@@ -662,7 +663,7 @@ export const limitWords = (limit: HearingLimit | null | undefined, meter: MeterM
 
 /** "bars 72-80 weren’t heard (a before-and-after plays at most 90 seconds)." */
 export const unheardWords = (unheard: readonly BarRange[], limit: HearingLimit | null | undefined, meter: MeterMap | null = null): string =>
-  `${rangesWords(unheard, meter)} ${barCount(unheard) > 1 ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit, meter)}).`;
+  `${rangesWords(unheard, meter)} ${namesManyBars(unheard, meter) ? 'weren’t' : 'wasn’t'} heard (${limitWords(limit, meter)}).`;
 
 /** Heard, but not checked by sound, and its tail not known (uncheckedTail): for the card and Accept. */
 export const UNCHECKED_WORDS = 'The studio couldn’t check this by sound, and some of it may ring on past what you heard.';
