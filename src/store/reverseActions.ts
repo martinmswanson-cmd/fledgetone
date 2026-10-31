@@ -1,4 +1,5 @@
-import { masterFxOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, masterFxOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import { isMixTrack } from './buses';
 import { defaultMasterSettings, defaultTrackFx, uid } from './timelineTypes';
 import type { Clip, Track } from './timelineTypes';
@@ -76,7 +77,6 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
 
   // One undo step: the forward music out of the stretch, the reversed audio in
   const now = useTimelineStore.getState();
-  now.checkpoint();
   const sourceTrack = only ? now.tracks.find((t) => t.id === only.trackId) : undefined;
   const track: Track = {
     id: uid('track'),
@@ -107,33 +107,38 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
     isSelected: true,
     audio: { soundId: back.id, reversedFrom: fwd.id, offset: 0, gain: back.gainDb, fadeIn: 0, fadeOut: 0 },
   };
-  useTimelineStore.setState((st) => {
-    const taken = new Set(source.map((c) => c.id));
-    const mix = new Set(st.tracks.filter(isMixTrack).map((t) => t.id));
-    const clips: Clip[] = [];
-    for (const c of st.clips) {
-      if (!taken.has(c.id) || mix.has(c.trackId)) {
-        clips.push(c.isSelected ? { ...c, isSelected: false } : c);
-        continue;
+  // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
+  const done = allOrNothing(() => {
+    useTimelineStore.getState().checkpoint();
+    useTimelineStore.setState((st) => {
+      const taken = new Set(source.map((c) => c.id));
+      const mix = new Set(st.tracks.filter(isMixTrack).map((t) => t.id));
+      const clips: Clip[] = [];
+      for (const c of st.clips) {
+        if (!taken.has(c.id) || mix.has(c.trackId)) {
+          clips.push(c.isSelected ? { ...c, isSelected: false } : c);
+          continue;
+        }
+        if (only) continue;
+        // Keep what lies outside the stretch: split at its edges
+        let rest: Clip | null = c;
+        let before: Clip | null = null;
+        if (rest.startBar < from - EPS) {
+          const halves = splitClipAt(rest, from, tempo);
+          if (halves) [before, rest] = halves;
+        }
+        let after: Clip | null = null;
+        if (rest && rest.startBar + rest.lengthBars > to + EPS) {
+          const halves = splitClipAt(rest, to, tempo);
+          if (halves) after = halves[1];
+        }
+        for (const piece of [before, after]) if (piece) clips.push({ ...piece, isSelected: false });
       }
-      if (only) continue;
-      // Keep what lies outside the stretch: split at its edges
-      let rest: Clip | null = c;
-      let before: Clip | null = null;
-      if (rest.startBar < from - EPS) {
-        const halves = splitClipAt(rest, from, tempo);
-        if (halves) [before, rest] = halves;
-      }
-      let after: Clip | null = null;
-      if (rest && rest.startBar + rest.lengthBars > to + EPS) {
-        const halves = splitClipAt(rest, to, tempo);
-        if (halves) after = halves[1];
-      }
-      for (const piece of [before, after]) if (piece) clips.push({ ...piece, isSelected: false });
-    }
-    const at = sourceTrack ? st.tracks.findIndex((t) => t.id === sourceTrack.id) + 1 : st.tracks.length;
-    return { tracks: [...st.tracks.slice(0, at), track, ...st.tracks.slice(at)], clips: [...clips, reversed] };
-  });
+      const at = sourceTrack ? st.tracks.findIndex((t) => t.id === sourceTrack.id) + 1 : st.tracks.length;
+      return { tracks: [...st.tracks.slice(0, at), track, ...st.tracks.slice(at)], clips: [...clips, reversed] };
+    });
+  }, true);
+  if (!done.done) return pastCapsWords(done.past);
   return only
     ? `"${only.name}" now plays backwards, as audio on a new track under it. Undo brings the notes back.`
     : `Bars ${Math.round(from * 100) / 100} to ${Math.round(to * 100) / 100} now play backwards, as audio on a new track. Undo brings the music back.`;

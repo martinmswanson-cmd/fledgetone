@@ -6,7 +6,7 @@
  * track and section, and the key.
  */
 import { useMemo } from 'react';
-import { useTimelineStore } from '../store/timelineStore';
+import { allOrNothing, useTimelineStore } from '../store/timelineStore';
 import type { Clip, NoteEvent, Track } from '../store/timelineTypes';
 import { detectKey, keyOf, type SongKey } from '../store/songKey';
 import { cellClip, clipsIn, gridTracks, pocketSections, type PocketSection } from './pocketSections';
@@ -69,12 +69,16 @@ export function sectionNotes(clips: readonly Clip[], trackId: string, sec: Pick<
  * Run `edit` as one undo step at most: the steps its store actions push (making the cell's clip,
  * then changing it) fold into the first, the song as it was before.
  */
-export function inOneStep<T>(edit: () => T): T {
-  const before = useTimelineStore.getState().past;
-  const result = edit();
-  const past = foldSteps(before, useTimelineStore.getState().past);
-  if (past) useTimelineStore.setState({ past });
-  return result;
+export function inOneStep<T>(edit: () => T): T | undefined {
+  // (all or nothing: past the most a song can have, nothing is done and a toast says so)
+  const done = allOrNothing(() => {
+    const before = useTimelineStore.getState().past;
+    const result = edit();
+    const past = foldSteps(before, useTimelineStore.getState().past);
+    if (past) useTimelineStore.setState({ past });
+    return result;
+  });
+  return done.done ? done.value : undefined;
 }
 
 /**

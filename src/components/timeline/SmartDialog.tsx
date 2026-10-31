@@ -226,7 +226,8 @@ const AccompanyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clip
     lastAccomp = { style, instrument };
     const id = accompanyChords(clipId, style, instrument ?? undefined, accompSeed++);
     if (id) showToast(`${def.name} on a new track under "${clip?.name ?? 'the chords'}"`);
-    else showToast('This clip has no chords to accompany.');
+    // (false: past the caps, already said)
+    else if (id !== false) showToast('This clip has no chords to accompany.');
     onClose();
   };
   const options = [def.instrument, ...ACCOMP_INSTRUMENTS.filter((k) => k !== def.instrument)];

@@ -85,7 +85,8 @@ export const LauncherPanel: React.FC = () => {
           className={btn}
           onClick={() => {
             const r = writeSessionToArrangement();
-            showToast(r ? `Wrote what you played into the arrangement, bars ${Math.round(r.from)} to ${Math.round(r.to * 4) / 4}` : 'Launch some clips first: what you play is what gets written');
+            // (false: past the caps, already said)
+            if (r !== false) showToast(r ? `Wrote what you played into the arrangement, bars ${Math.round(r.from)} to ${Math.round(r.to * 4) / 4}` : 'Launch some clips first: what you play is what gets written');
           }}
           disabled={!active && !last}
           title="Write what you played in the launcher (from the first launch to where you stopped) into the arrangement"
@@ -98,7 +99,7 @@ export const LauncherPanel: React.FC = () => {
           className={btn}
           onClick={() => {
             const n = scenesFromSections();
-            showToast(n ? `Made ${n} scene${n === 1 ? '' : 's'} from the song's sections` : 'The song has no clips to make scenes from');
+            if (n !== null) showToast(n ? `Made ${n} scene${n === 1 ? '' : 's'} from the song's sections` : 'The song has no clips to make scenes from');
           }}
           title="Each section of the song (between its markers, else every 4 or 8 bars) becomes a scene, replacing what's in those rows"
         >
@@ -110,7 +111,7 @@ export const LauncherPanel: React.FC = () => {
           disabled={!anySelected}
           onClick={() => {
             const n = sendSelectionToLauncher();
-            showToast(n ? `Put the selected clips in ${n} slot${n === 1 ? '' : 's'}` : 'Select clips on the timeline first');
+            if (n !== null) showToast(n ? `Put the selected clips in ${n} slot${n === 1 ? '' : 's'}` : 'Select clips on the timeline first');
           }}
           title="The selected clips go into the launcher: each track's into its first empty slot"
         >
@@ -193,7 +194,7 @@ export const LauncherPanel: React.FC = () => {
                       },
                       onDrop: (e: React.DragEvent) => {
                         e.preventDefault();
-                        if (drag && !moveSlot(drag.trackId, drag.scene, t.id, scene, e.altKey)) showToast("That clip can't go there: audio clips go on Audio tracks, notes on instruments");
+                        if (drag && moveSlot(drag.trackId, drag.scene, t.id, scene, e.altKey) === false) showToast("That clip can't go there: audio clips go on Audio tracks, notes on instruments");
                         setDrag(null);
                       },
                     };

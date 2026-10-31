@@ -2,7 +2,8 @@ import { grooveFeelById } from './grooveFeels';
 import { withFeel } from './drumGroove';
 import { mathPattern, MATH_PATTERNS, type MathPatternId } from './mathPatterns';
 import { create } from 'zustand';
-import { useTimelineStore } from './timelineStore';
+import { allOrNothing, editStep, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
@@ -15,7 +16,11 @@ import { INSTRUMENTS, isDropKind, isDrumKind } from '../audio/instrumentCatalog'
 import { midiOf, nameOf } from './noteTools';
 import { melodyVariation, MELODY_VARIATIONS, surprisePair, type MelodyVariation, type VariationPlace } from './melodyVariations';
 
-/** The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one undo step. */
+/**
+ * The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one
+ * undo step, all or nothing: one that would go past the most a song can have does nothing at all
+ * (no undo step, the redo history kept) and says so (see allOrNothing).
+ */
 
 const tl = () => useTimelineStore.getState();
 /** Whether a track plays the Drop pad: its notes are moves on the whole mix, so no generated notes go on it. */
@@ -31,7 +36,7 @@ export function songKey(): SongKey {
   return detectKey(s.clips, s.tracks) ?? keyOf(0, 'major');
 }
 
-/** A new note clip on a track, selected (one undo step). Returns its id. */
+/** A new note clip on a track, selected (one undo step). Returns its id (null: none, see above). */
 export function placeClip(trackId: string, atBar: number, lengthBars: number, notes: NoteEvent[], name: string): string | null {
   const s = tl();
   if (!s.tracks.some((t) => t.id === trackId)) return null;
@@ -44,28 +49,37 @@ export function placeClip(trackId: string, atBar: number, lengthBars: number, no
     notes,
     isSelected: true,
   };
-  s.checkpoint();
-  useTimelineStore.setState((st) => ({ clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
-  return clip.id;
+  return editStep(() => {
+    useTimelineStore.setState((st) => ({ clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
+    return clip.id;
+  }, null);
 }
 
-/** A new track right under `afterId`, holding `clip` (one undo step with it). Returns the track's id. */
-function trackWithClip(afterId: string, instrument: InstrumentKey, name: string, clip: Omit<Clip, 'id' | 'trackId' | 'isSelected'>): string {
-  const s = tl();
-  s.checkpoint();
-  const id = s.addTrack(instrument, name);
-  useTimelineStore.setState((st) => {
-    const made = st.tracks.find((t) => t.id === id)!;
-    const others = st.tracks.filter((t) => t.id !== id);
-    const at = others.findIndex((t) => t.id === afterId) + 1;
-    return {
-      tracks: at > 0 ? [...others.slice(0, at), made, ...others.slice(at)] : st.tracks,
-      clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), { ...clip, id: uid('clip'), trackId: id, isSelected: true }],
-      // (addTrack and this are one step)
-      past: st.past.slice(0, -1),
-    };
+/**
+ * A new track right under `afterId`, holding `clip` (one undo step with it). Returns the track's
+ * id; false if it would go past the caps (nothing done, a toast says so).
+ */
+function trackWithClip(afterId: string, instrument: InstrumentKey, name: string, clip: Omit<Clip, 'id' | 'trackId' | 'isSelected'>): string | false {
+  const done = allOrNothing(() => {
+    const s = tl();
+    s.checkpoint();
+    const id = s.addTrack(instrument, name);
+    // (no room for a track: nothing more, and allOrNothing puts the checkpoint back)
+    if (!tl().tracks.some((t) => t.id === id)) return id;
+    useTimelineStore.setState((st) => {
+      const made = st.tracks.find((t) => t.id === id)!;
+      const others = st.tracks.filter((t) => t.id !== id);
+      const at = others.findIndex((t) => t.id === afterId) + 1;
+      return {
+        tracks: at > 0 ? [...others.slice(0, at), made, ...others.slice(at)] : st.tracks,
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), { ...clip, id: uid('clip'), trackId: id, isSelected: true }],
+        // (addTrack and this are one step)
+        past: st.past.slice(0, -1),
+      };
+    });
+    return id;
   });
-  return id;
+  return done.done ? done.value : false;
 }
 
 /** A chord progression clip on a track. */
@@ -96,23 +110,27 @@ export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, b
   const notes = drummer(style, bars, intensity, fillEvery, seed, newId, meter);
   const length = bars * (meter.num / meter.den);
   const songMeter = meterAt(atBar, { base: s.meter, points: s.meterPoints });
-  const id = placeClip(trackId, atBar, length, notes, `Drummer ${bars} bars`);
-  if (!id) return null;
-  const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
-  if (groove) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove } : c)) }));
-  // A measured feel in place of the style's swing (the same undo step)
-  const feel = feelId && grooveFeelById(feelId) ? withFeel(groove, { id: feelId, amount: 1 }) : null;
-  if (feel) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove: feel } : c)) }));
-  if (setMeter && (songMeter.num !== meter.num || songMeter.den !== meter.den)) {
-    // (placeClip made the undo step: the time signature changes join it)
-    const past = tl().past;
-    const after = meterAt(atBar + length, { base: s.meter, points: s.meterPoints });
-    if (atBar <= 1 + 1e-6) tl().setMeter(meter);
-    else tl().addMeterChange(atBar, meter);
-    if (atBar + length <= TOTAL_BARS) tl().addMeterChange(atBar + length, atBar <= 1 + 1e-6 ? songMeter : after);
-    useTimelineStore.setState({ past });
-  }
-  return id;
+  // (the clip and the time signature changes all or nothing)
+  const made = allOrNothing(() => {
+    const id = placeClip(trackId, atBar, length, notes, `Drummer ${bars} bars`);
+    if (!id) return null;
+    const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
+    if (groove) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove } : c)) }));
+    // A measured feel in place of the style's swing (the same undo step)
+    const feel = feelId && grooveFeelById(feelId) ? withFeel(groove, { id: feelId, amount: 1 }) : null;
+    if (feel) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove: feel } : c)) }));
+    if (setMeter && (songMeter.num !== meter.num || songMeter.den !== meter.den)) {
+      // (placeClip made the undo step: the time signature changes join it)
+      const past = tl().past;
+      const after = meterAt(atBar + length, { base: s.meter, points: s.meterPoints });
+      if (atBar <= 1 + 1e-6) tl().setMeter(meter);
+      else tl().addMeterChange(atBar, meter);
+      if (atBar + length <= TOTAL_BARS) tl().addMeterChange(atBar + length, atBar <= 1 + 1e-6 ? songMeter : after);
+      useTimelineStore.setState({ past });
+    }
+    return id;
+  });
+  return made.done ? made.value : null;
 }
 
 /** A fill at the end of the bar under `songBar` in a drum clip (one undo step). */
@@ -125,9 +143,10 @@ export function fillClipBar(clipId: string, songBar: number, kind: FillKind): bo
   const m = measureAt(songBar, { base: s.meter, points: s.meterPoints });
   const barStart = Math.max(0, m.start - clip.startBar);
   if (barStart >= clip.lengthBars - 1e-6) return false;
-  s.checkpoint();
-  s.setClipNotes(clipId, fillBar(clip.notes, barStart, kind, clip.lengthBars, newId, true, Math.min(m.length, clip.lengthBars - barStart)));
-  return true;
+  return editStep(() => {
+    s.setClipNotes(clipId, fillBar(clip.notes, barStart, kind, clip.lengthBars, newId, true, Math.min(m.length, clip.lengthBars - barStart)));
+    return true;
+  }, false);
 }
 
 /**
@@ -140,16 +159,18 @@ export function rollClipDrums(clipId: string, row?: string): boolean {
   const track = clip && s.tracks.find((t) => t.id === clip.trackId);
   if (!clip || clip.audio || !track || !isDrumKind(track.instrumentKey)) return false;
   const meter = meterAt(clip.startBar, { base: s.meter, points: s.meterPoints });
-  s.checkpoint();
-  s.setClipNotes(clipId, rollDrums(clip.notes, { lengthBars: clip.lengthBars, seed: (Math.random() * 2 ** 32) >>> 0, newId, meter, ...(row ? { row } : {}) }));
-  return true;
+  return editStep(() => {
+    s.setClipNotes(clipId, rollDrums(clip.notes, { lengthBars: clip.lengthBars, seed: (Math.random() * 2 ** 32) >>> 0, newId, meter, ...(row ? { row } : {}) }));
+    return true;
+  }, false);
 }
 
 /**
  * Chords for a melody clip, on a new keys track under it, over the same bars: a chord a bar (half
- * a bar for a clip of two bars or less). Returns the chord names, or null if the clip has no notes.
+ * a bar for a clip of two bars or less). Returns the chord names, or null if the clip has no notes
+ * (false: it would go past the caps, nothing done, a toast says so).
  */
-export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'keys'): string[] | null {
+export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'keys'): string[] | null | false {
   const s = tl();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip || clip.audio) return null;
@@ -159,12 +180,15 @@ export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'key
   const { chords } = harmonize(melody, songKey(), clip.lengthBars, chordBars);
   const notes = chordNotesFor(chords, chordBars, 'sustain', newId).filter((n) => n.startOffset < clip.lengthBars - 1e-6);
   const names = chords.map(chordName);
-  trackWithClip(clip.trackId, instrument, 'Chords', { name: names.join(' '), startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+  if (trackWithClip(clip.trackId, instrument, 'Chords', { name: names.join(' '), startBar: clip.startBar, lengthBars: clip.lengthBars, notes }) === false) return false;
   return names;
 }
 
-/** A bass line under a chord clip, on a new bass track under it. Returns the new track's id, or null if the clip has no notes. */
-export function bassForChords(clipId: string, style: BassStyle = 'eighths', instrument: InstrumentKey = 'bass'): string | null {
+/**
+ * A bass line under a chord clip, on a new bass track under it. Returns the new track's id, or null
+ * if the clip has no notes (false: it would go past the caps, nothing done, a toast says so).
+ */
+export function bassForChords(clipId: string, style: BassStyle = 'eighths', instrument: InstrumentKey = 'bass'): string | null | false {
   const s = tl();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip || clip.audio || !clip.notes.length) return null;
@@ -199,9 +223,9 @@ export function fitToInstrument(notes: NoteEvent[], instrument: InstrumentKey): 
 /**
  * An accompaniment for a chord clip (see ACCOMP_STYLES) on a new track under it, over the same
  * bars, in the song's time signature there. Returns the new track's id, or null if the clip has
- * no chords.
+ * no chords (false: it would go past the caps, nothing done, a toast says so).
  */
-export function accompanyChords(clipId: string, style: AccompStyle, instrument?: InstrumentKey, seed = 1): string | null {
+export function accompanyChords(clipId: string, style: AccompStyle, instrument?: InstrumentKey, seed = 1): string | null | false {
   const s = tl();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip || clip.audio || !clip.notes.length) return null;
@@ -231,22 +255,36 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   if (!notes.length) return null;
   const what = kind === 'surprise' ? surprisePair(seed) : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase();
   const name = `${clip.name} (${kind === 'surprise' ? 'variation' : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase()})`;
+  // (past the caps: nothing done, and what's said is why)
+  const once = (edit: () => void): string | null => {
+    const made = allOrNothing(edit, true);
+    return made.done ? null : pastCapsWords(made.past);
+  };
   if (place === 'replace') {
-    s.checkpoint();
-    s.setClipNotes(clipId, notes);
-    return `The clip is now ${what}`;
+    return (
+      once(() => {
+        s.checkpoint();
+        s.setClipNotes(clipId, notes);
+      }) ?? `The clip is now ${what}`
+    );
   }
   if (place === 'track') {
-    trackWithClip(track.id, track.instrumentKey, `${track.name} ${kind === 'harmony' ? 'harmony' : 'variation'}`, { name, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
-    return `${what[0].toUpperCase()}${what.slice(1)} on a new track under "${track.name}"`;
+    return (
+      once(() => {
+        trackWithClip(track.id, track.instrumentKey, `${track.name} ${kind === 'harmony' ? 'harmony' : 'variation'}`, { name, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+      }) ?? `${what[0].toUpperCase()}${what.slice(1)} on a new track under "${track.name}"`
+    );
   }
   // After it: the first spot on its track where the variation fits
   const others = s.clips.filter((c) => c.trackId === track.id && c.id !== clip.id).sort((a, b) => a.startBar - b.startBar);
   let at = clip.startBar + clip.lengthBars;
   for (const c of others) if (c.startBar < at + clip.lengthBars - 1e-6 && c.startBar + c.lengthBars > at + 1e-6) at = c.startBar + c.lengthBars;
   if (at + clip.lengthBars > TOTAL_BARS + 1 + 1e-6) return 'No room after this clip on its track: try a new track';
-  placeClip(track.id, at, clip.lengthBars, notes, name);
-  return `${what[0].toUpperCase()}${what.slice(1)} at bar ${Math.round(at * 100) / 100}`;
+  return (
+    once(() => {
+      placeClip(track.id, at, clip.lengthBars, notes, name);
+    }) ?? `${what[0].toUpperCase()}${what.slice(1)} at bar ${Math.round(at * 100) / 100}`
+  );
 }
 
 /** A Math patterns clip (mathPatterns.ts) on a pitched track, in `key`, `bars` long. */

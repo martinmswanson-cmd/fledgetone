@@ -4,7 +4,8 @@
  * undo step that writes ordinary tempo points (and notes), so live playback, every export, the
  * metronome, recording and the grid follow it. The maths is in speedUp.ts; this file applies it.
  */
-import { songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { audioCuts, CUT_LEAD, barBeat, beatBars, describeBeats, rollNotes, speedUpPoints, type SpeedUpOptions } from './speedUp';
@@ -102,29 +103,33 @@ export function speedUpIntoDrop(o: SpeedUpOptions, extras: SpeedUpExtras): strin
   if (typeof plan === 'string') return plan;
   const newTempo = songTempo({ bpm: s.bpm, tempoPoints: plan.points });
   let said = '';
-  s.checkpoint();
-  const past = tl().past;
-  // Audio clips that follow the tempo: a piece per beat (or less) over the speed-up, and one from the drop
-  // (a moment before each beat, so a hit on the beat keeps its attack; right on it where the tempo
-  // jumps there, as at the snap back, or the piece would play on at the tempo before the jump)
-  const cuts = audioCuts(plan.start, plan.drop, newTempo, beatBars(plan.start, meter)).map((bar) =>
-    Math.abs(tempoAt(bar - CUT_LEAD, newTempo) / tempoAt(bar, newTempo) - 1) < 0.01 ? bar - CUT_LEAD : bar
-  );
-  const audio = cutAudio(s.clips, cuts);
-  let clips = audio.clips;
-  if (audio.pieces) said += ` Audio clips that follow the tempo are cut on the beats there (${audio.pieces} cut${audio.pieces === 1 ? '' : 's'}) so they keep time.`;
-  if (extras.roll) {
-    const r = writeRoll(clips, o.from, plan.start, plan.drop);
-    clips = r.clips;
-    said += r.said;
-  }
-  useTimelineStore.setState((st) => ({
-    tempoPoints: plan.points,
-    clips: retimeAudioClips(clips, songTempo(st), newTempo),
-    markers: retimeMarkers(st.markers, newTempo),
-  }));
-  // One undo step, whatever the edits above recorded
-  useTimelineStore.setState({ past, future: [] });
+  // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
+  const done = allOrNothing(() => {
+    s.checkpoint();
+    const past = tl().past;
+    // Audio clips that follow the tempo: a piece per beat (or less) over the speed-up, and one from the drop
+    // (a moment before each beat, so a hit on the beat keeps its attack; right on it where the tempo
+    // jumps there, as at the snap back, or the piece would play on at the tempo before the jump)
+    const cuts = audioCuts(plan.start, plan.drop, newTempo, beatBars(plan.start, meter)).map((bar) =>
+      Math.abs(tempoAt(bar - CUT_LEAD, newTempo) / tempoAt(bar, newTempo) - 1) < 0.01 ? bar - CUT_LEAD : bar
+    );
+    const audio = cutAudio(s.clips, cuts);
+    let clips = audio.clips;
+    if (audio.pieces) said += ` Audio clips that follow the tempo are cut on the beats there (${audio.pieces} cut${audio.pieces === 1 ? '' : 's'}) so they keep time.`;
+    if (extras.roll) {
+      const r = writeRoll(clips, o.from, plan.start, plan.drop);
+      clips = r.clips;
+      said += r.said;
+    }
+    useTimelineStore.setState((st) => ({
+      tempoPoints: plan.points,
+      clips: retimeAudioClips(clips, songTempo(st), newTempo),
+      markers: retimeMarkers(st.markers, newTempo),
+    }));
+    // One undo step, whatever the edits above recorded
+    useTimelineStore.setState({ past, future: [] });
+  }, true);
+  if (!done.done) return pastCapsWords(done.past);
   const what = `${describeBeats(plan.beats, plan.start, meter)} from ${barBeat(plan.start, meter)}`;
   const top = `${Math.round(plan.fromBpm * 10) / 10} → ${Math.round(plan.toBpm * 10) / 10} BPM${plan.capped ? ' (held at 240, the fastest)' : ''}`;
   const after = o.snapBack ? `, back to ${Math.round(plan.afterBpm * 10) / 10} on the drop` : ', and it stays there';

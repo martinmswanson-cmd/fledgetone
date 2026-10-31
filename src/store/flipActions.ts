@@ -5,7 +5,7 @@
  * sampleAnalysis.ts and pitchShift.ts.
  */
 import { withClipHeld } from './clipJobs';
-import { songTempo, useTimelineStore } from './timelineStore';
+import { allOrNothing, editStep, songTempo, useTimelineStore } from './timelineStore';
 import type { Clip, NoteEvent, SoundMeta } from './timelineTypes';
 import { barsToDuration, uid } from './timelineTypes';
 import { chopEnd, chopsToRack, flipPattern, flipSeed, bassCutFilter } from './sampleFlip';
@@ -60,39 +60,45 @@ export function chopToRack(req: ChopRequest): string | null {
   const sourceTrack = source ? s.tracks.find((t) => t.id === source.trackId) : undefined;
   if (!req.cuts.length) return null;
   const rack = chopsToRack({ id: req.soundId, name: req.name }, req.cuts, req.end, { fade: req.fade, choke: req.choke });
-  // One undo step: adding the track is it, the rest goes in with it
-  const trackId = s.addTrack('drumRack', `${req.name} chops`.slice(0, 40));
-  const after = useTimelineStore.getState();
-  after.setTrackRack(trackId, rack, false);
-  if (req.bassCut) after.setTrackFx(trackId, 'filter', bassCutFilter(true), false);
-  const startBar = source?.startBar ?? Math.max(1, Math.floor(after.playheadPosition));
-  const bpm = tempoAt(startBar, songTempo(after));
-  const notes = req.flip ? flipPattern(req.cuts.length, flipSeed(req.soundId, 0)) : inOrder(req.cuts, req.end, bpm);
-  const tempo = songTempo(after);
-  const lengthBars = req.flip
-    ? FLIP_BARS
-    : Math.max(1 / 16, Math.ceil((secondsToBar(barToSeconds(startBar, tempo) + (req.end - req.cuts[0]), tempo) - startBar) * 16) / 16);
-  const clip: Clip = {
-    id: uid('clip'),
-    trackId,
-    name: req.flip ? `${req.name} flip` : `${req.name} chops`,
-    startBar,
-    lengthBars,
-    notes: notes.map((n) => ({ ...n, id: uid('note') })),
-    isSelected: true,
-  };
-  if (req.flip) ideas.set(clip.id, 0);
-  useTimelineStore.setState((st) => {
-    const track = st.tracks.find((t) => t.id === trackId)!;
-    const rest = st.tracks.filter((t) => t.id !== trackId);
-    const at = sourceTrack ? rest.findIndex((t) => t.id === sourceTrack.id) + 1 : rest.length;
-    const placed = sourceTrack?.folder ? { ...track, folder: sourceTrack.folder } : track;
-    return {
-      tracks: [...rest.slice(0, at), placed, ...rest.slice(at)],
-      clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
+  // (all or nothing: past the most a song can have, nothing is done and a toast says so)
+  const done = allOrNothing(() => {
+    // One undo step: adding the track is it, the rest goes in with it
+    const trackId = s.addTrack('drumRack', `${req.name} chops`.slice(0, 40));
+    // (no room for a track: nothing more, see allOrNothing)
+    if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null;
+    const after = useTimelineStore.getState();
+    after.setTrackRack(trackId, rack, false);
+    if (req.bassCut) after.setTrackFx(trackId, 'filter', bassCutFilter(true), false);
+    const startBar = source?.startBar ?? Math.max(1, Math.floor(after.playheadPosition));
+    const bpm = tempoAt(startBar, songTempo(after));
+    const notes = req.flip ? flipPattern(req.cuts.length, flipSeed(req.soundId, 0)) : inOrder(req.cuts, req.end, bpm);
+    const tempo = songTempo(after);
+    const lengthBars = req.flip
+      ? FLIP_BARS
+      : Math.max(1 / 16, Math.ceil((secondsToBar(barToSeconds(startBar, tempo) + (req.end - req.cuts[0]), tempo) - startBar) * 16) / 16);
+    const clip: Clip = {
+      id: uid('clip'),
+      trackId,
+      name: req.flip ? `${req.name} flip` : `${req.name} chops`,
+      startBar,
+      lengthBars,
+      notes: notes.map((n) => ({ ...n, id: uid('note') })),
+      isSelected: true,
     };
+    if (req.flip) ideas.set(clip.id, 0);
+    useTimelineStore.setState((st) => {
+      const track = st.tracks.find((t) => t.id === trackId)!;
+      const rest = st.tracks.filter((t) => t.id !== trackId);
+      const at = sourceTrack ? rest.findIndex((t) => t.id === sourceTrack.id) + 1 : rest.length;
+      const placed = sourceTrack?.folder ? { ...track, folder: sourceTrack.folder } : track;
+      return {
+        tracks: [...rest.slice(0, at), placed, ...rest.slice(at)],
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
+      };
+    });
+    return trackId;
   });
-  return trackId;
+  return done.done ? done.value : null;
 }
 
 /** The chops a Drum Rack track's clip plays: how many pads in a row from pad 1 hold a chop, and their sound. */
@@ -113,9 +119,10 @@ export function newFlipIdea(clipId: string): boolean {
   const idea = (ideas.get(clipId) ?? 0) + 1;
   ideas.set(clipId, idea);
   const bars = Math.max(1, Math.round(clip.lengthBars));
-  s.checkpoint();
-  s.setClipNotes(clipId, flipPattern(chops.count, flipSeed(chops.soundId, idea), bars).map((n) => ({ ...n, id: uid('note') })));
-  return true;
+  return editStep(() => {
+    s.setClipNotes(clipId, flipPattern(chops.count, flipSeed(chops.soundId, idea), bars).map((n) => ({ ...n, id: uid('note') })));
+    return true;
+  }, false);
 }
 
 /** Turn a track's bass cut on or off (its Filter insert as a steep high-pass). */

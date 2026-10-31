@@ -225,21 +225,23 @@ const lane = (part: Part, list: unknown) => {
 const expression = (part: Part, e: object | undefined) => {
   if (e) for (const v of Object.values(e)) lane(part, v);
 };
-const clip = (part: Part, c: SizedClip) => {
+// (Each guarded against a missing entry: a list half made by a refused change still measures)
+const clip = (part: Part, c: SizedClip | undefined) => {
+  if (!c) return;
   noteList(part, c.notes);
   expression(part, c.expression);
   if (!c.takes) return;
   if (c.takes.length > part.takes) part.takes = c.takes.length;
   for (const t of c.takes) {
-    noteList(part, t.notes);
-    expression(part, t.expression);
+    noteList(part, t?.notes);
+    expression(part, t?.expression);
   }
 };
-const track = (part: Part, t: SizedSong['tracks'][number]) => {
-  t.slots?.forEach((s) => clip(part, s.clip));
-  t.automation?.forEach((l) => lane(part, l.points));
+const track = (part: Part, t: SizedSong['tracks'][number] | undefined) => {
+  t?.slots?.forEach((s) => clip(part, s?.clip));
+  t?.automation?.forEach((l) => lane(part, l?.points));
 };
-const stinger = (part: Part, s: { notes: readonly unknown[] }) => noteList(part, s.notes);
+const stinger = (part: Part, s: { notes: readonly unknown[] } | undefined) => noteList(part, s?.notes);
 
 /** How far past its cap a song is of one kind (0: not past it). */
 function pastBy(song: SizedSong, kind: CapKind): number {

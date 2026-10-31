@@ -9,7 +9,7 @@
  * editing an A changes every A until one is made its own. Each action is one undo step, and the
  * song opens on a computer as an ordinary arrangement with a marker at each section.
  */
-import { songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
+import { allOrNothing, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
 import { uid, type Clip, type Track } from '../store/timelineTypes';
 import { songEnd, songSections } from '../store/cutToLength';
 import { createMarker, retimeMarkers } from '../store/markers';
@@ -71,13 +71,19 @@ export function pocketSections(s = tl()): PocketSection[] {
 export const clipsIn = (clips: readonly Clip[], trackId: string, from: number, to: number): Clip[] =>
   clips.filter((c) => c.trackId === trackId && c.startBar < to - EPS && c.startBar + c.lengthBars > from + EPS).sort((a, b) => a.startBar - b.startBar);
 
-/** Run `edit` as one undo step (one snapshot before it; store actions inside fold into it). */
-function oneStep<T>(edit: () => T): T {
-  tl().checkpoint();
-  const past = tl().past;
-  const result = edit();
-  useTimelineStore.setState({ past, future: [] });
-  return result;
+/**
+ * Run `edit` as one undo step (one snapshot before it; store actions inside fold into it). All or
+ * nothing: past the most a song can have, nothing is done (undefined) and a toast says so.
+ */
+function oneStep<T>(edit: () => T): T | undefined {
+  const done = allOrNothing(() => {
+    tl().checkpoint();
+    const past = tl().past;
+    const result = edit();
+    useTimelineStore.setState({ past, future: [] });
+    return result;
+  });
+  return done.done ? done.value : undefined;
 }
 
 /**
@@ -153,12 +159,12 @@ export function cellClip(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
     return null;
   }
   const { expression: _e, stepLanes: _l, groove: _g, wobble: _w, takes: _t, comp: _c, ...frame } = unlinked(first);
-  return oneStep(() => {
+  return (oneStep(() => {
     const merged: Clip = { ...(one ? first : frame), ...content, id: one ? first.id : uid('clip'), startBar: sec.from, lengthBars: len, isSelected: false };
     const gone = new Set(inside.map((c) => c.id));
     useTimelineStore.setState((st) => ({ clips: [...st.clips.filter((c) => !gone.has(c.id)), ...keep, merged] }));
     return merged.id;
-  });
+  }) ?? null);
 }
 
 /**

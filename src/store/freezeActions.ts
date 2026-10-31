@@ -3,7 +3,7 @@
  * (see freeze.ts for how the live engine plays it), with progress.
  */
 import { create } from 'zustand';
-import { masterFxOf, songGeneration, useTimelineStore } from './timelineStore';
+import { allOrNothing, masterFxOf, songGeneration, useTimelineStore } from './timelineStore';
 import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
@@ -177,7 +177,7 @@ export async function freezeTrack(trackId: string): Promise<FreezeResult> {
  * Bounce in place (one undo step): the track's sound, instrument, inserts and EQ included, as one
  * audio clip on a new Audio track just under it, which takes over its volume, pan, sends, output
  * distance and their automation. The original is muted and kept, to go back to. Returns the new
- * track's id.
+ * track's id (null: not made; one that would go past the most a song can have isn't, a toast says so).
  */
 export async function bounceTrack(trackId: string): Promise<string | null> {
   const r = await renderTrackSound(trackId, 'bounce');
@@ -185,46 +185,51 @@ export async function bounceTrack(trackId: string): Promise<string | null> {
   const s = useTimelineStore.getState();
   const source = s.tracks.find((t) => t.id === trackId);
   if (!source) return null;
-  s.checkpoint();
-  const id = s.addTrack('audio', `${source.name} (bounce)`);
-  const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
-  const lengthBars = secondsToBar(barToSeconds(r.startBar, tempo) + r.seconds, tempo) - r.startBar;
-  useTimelineStore.setState((st) => {
-    const made = st.tracks.find((t) => t.id === id)!;
-    const bounced: Track = {
-      ...made,
-      volume: source.volume,
-      pan: source.pan,
-      reverbSend: source.reverbSend,
-      delaySend: source.delaySend,
-      ...(source.distance ? { distance: source.distance } : {}),
-      ...(source.sends ? { sends: source.sends } : {}),
-      ...(source.output ? { output: source.output } : {}),
-      ...(source.folder ? { folder: source.folder } : {}),
-      automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
-    };
-    const others = st.tracks.filter((t) => t.id !== id).map((t) => (t.id === trackId ? { ...t, isMuted: true } : t));
-    const at = others.findIndex((t) => t.id === trackId) + 1;
-    return {
-      tracks: [...others.slice(0, at), bounced, ...others.slice(at)],
-      clips: [
-        ...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)),
-        {
-          id: `clip-bounce-${id}`,
-          trackId: id,
-          name: `${source.name} (bounce)`,
-          startBar: r.startBar,
-          lengthBars,
-          notes: [],
-          isSelected: true,
-          audio: { soundId: r.soundId, offset: 0, gain: r.gainDb, fadeIn: 0, fadeOut: 0 },
-        },
-      ],
-      // (addTrack and this are one step: drop the step addTrack pushed)
-      past: st.past.slice(0, -1),
-    };
+  const done = allOrNothing(() => {
+    s.checkpoint();
+    const id = s.addTrack('audio', `${source.name} (bounce)`);
+    // (no room for a track: nothing more, and allOrNothing puts the checkpoint back)
+    if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
+    const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
+    const lengthBars = secondsToBar(barToSeconds(r.startBar, tempo) + r.seconds, tempo) - r.startBar;
+    useTimelineStore.setState((st) => {
+      const made = st.tracks.find((t) => t.id === id)!;
+      const bounced: Track = {
+        ...made,
+        volume: source.volume,
+        pan: source.pan,
+        reverbSend: source.reverbSend,
+        delaySend: source.delaySend,
+        ...(source.distance ? { distance: source.distance } : {}),
+        ...(source.sends ? { sends: source.sends } : {}),
+        ...(source.output ? { output: source.output } : {}),
+        ...(source.folder ? { folder: source.folder } : {}),
+        automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
+      };
+      const others = st.tracks.filter((t) => t.id !== id).map((t) => (t.id === trackId ? { ...t, isMuted: true } : t));
+      const at = others.findIndex((t) => t.id === trackId) + 1;
+      return {
+        tracks: [...others.slice(0, at), bounced, ...others.slice(at)],
+        clips: [
+          ...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)),
+          {
+            id: `clip-bounce-${id}`,
+            trackId: id,
+            name: `${source.name} (bounce)`,
+            startBar: r.startBar,
+            lengthBars,
+            notes: [],
+            isSelected: true,
+            audio: { soundId: r.soundId, offset: 0, gain: r.gainDb, fadeIn: 0, fadeOut: 0 },
+          },
+        ],
+        // (addTrack and this are one step: drop the step addTrack pushed)
+        past: st.past.slice(0, -1),
+      };
+    });
+    return id;
   });
-  return id;
+  return done.done ? done.value : null;
 }
 
 /** Play the track live again (one undo step). The frozen sound stays in the library until freed. */

@@ -214,6 +214,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               icon: <Music4 className="w-3.5 h-3.5" />,
               onClick: run(() => {
                 const names = chordsForMelody(menu.clipId!);
+                // (false: past the caps, already said)
+                if (names === false) return;
                 if (!names) return 'This clip has no notes to write chords for.';
                 showToast(`Chords on a new track: ${names.join(' ')}`);
               }),
@@ -232,7 +234,10 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               shortcut: 'new track',
               icon: <Music4 className="w-3.5 h-3.5" />,
               onClick: run(() => {
-                if (!bassForChords(menu.clipId!)) return 'This clip has no notes to write a bass line under.';
+                const made = bassForChords(menu.clipId!);
+                // (false: past the caps, already said)
+                if (made === false) return;
+                if (!made) return 'This clip has no notes to write a bass line under.';
                 showToast('A bass line on a new track, on the roots of these chords');
               }),
             },

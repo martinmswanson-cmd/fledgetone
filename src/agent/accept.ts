@@ -7,7 +7,7 @@
  * of instruments the suggestion chose. Only a real click or key press accepts: a click made by a
  * script (an event that isn't trusted) does nothing.
  */
-import { currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
+import { allOrNothing, currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
 import type { ProjectSnapshot } from '../store/project';
 import type { Track } from '../store/timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
@@ -24,7 +24,8 @@ const MOMENT = ['isArmed', 'frozen', 'freezing', 'midiMap'] as const;
 /**
  * Put `song`'s edited parts into the store as one undo step. All or nothing: false (and the song
  * and its undo history exactly as they were) if it can't go in, checked first (an instrument this
- * version doesn't have), and undone if putting it in fails part way.
+ * version doesn't have), and undone if putting it in fails part way or would go past the most a
+ * song can have (songCaps.ts: the store refuses that change, see allOrNothing).
  */
 export function applyAsOneStep(song: ProjectSnapshot): boolean {
   if (!song.tracks.every((t) => isInstrumentKey(t.instrumentKey))) return false;
@@ -54,7 +55,12 @@ export function applyAsOneStep(song: ProjectSnapshot): boolean {
   });
   const was = { tracks: tl.tracks, clips: tl.clips, markers: tl.markers, bpm: tl.bpm, tempoPoints: tl.tempoPoints, master: tl.master, selectedTrackId: tl.selectedTrackId, past: tl.past, future: tl.future };
   try {
-    put(song, tracks, clips, tl.selectedTrackId);
+    // (quiet: Accept says itself that nothing was changed)
+    const done = allOrNothing(() => put(song, tracks, clips, tl.selectedTrackId), true);
+    if (!done.done) {
+      mixFollows();
+      return false;
+    }
   } catch {
     // Back as it was, undo history and the live mix included (nothing of it stays half in)
     try {

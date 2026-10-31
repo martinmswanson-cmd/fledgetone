@@ -52,7 +52,8 @@ export const placedMessage = (what: string, p: PadPlaced): string =>
  * Put `sound` on the pad `target` says (a new Drum Rack track for none), one undo step.
  * `newName`: the new track's name.
  */
-function placeOnPad(target: PadTarget, sound: PadSound, newName: string): PadPlaced {
+/** (False: no room for a new track, nothing done, a toast says so.) */
+function placeOnPad(target: PadTarget, sound: PadSound, newName: string): PadPlaced | false {
   const s = useTimelineStore.getState();
   if (target.trackId) {
     const track = s.tracks.find((t) => t.id === target.trackId)!;
@@ -61,6 +62,7 @@ function placeOnPad(target: PadTarget, sound: PadSound, newName: string): PadPla
   }
   // (addTrack is the undo step; the rack and sends go in with it)
   const id = s.addTrack('drumRack', newName);
+  if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return false;
   useTimelineStore.getState().setTrackRack(id, fillPad(undefined, 0, sound), false);
   // A bounce already has its reverb and echo in it: the new track sends none
   useTimelineStore.setState((st) => ({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, reverbSend: 0, delaySend: 0 } : t)) }));
@@ -127,7 +129,8 @@ export async function bounceRangeToPad(req: BounceRequest): Promise<PadPlaced | 
     const meta = await importSoundFile(encodeChannels(stored, sampleRate, KEPT_RENDER_BITS), `${req.name}.wav`, MAX_BOUNCE_BYTES);
     if (songGeneration() !== song) return null; // another song opened while it rendered
     const target = choosePadTarget(useTimelineStore.getState().tracks, req.target);
-    return placeOnPad(target, { soundId: meta.id, name: req.name, gainDb: level.gainDb }, BOUNCE_TRACK_NAME);
+    // (no room for a new track: a toast said so)
+    return placeOnPad(target, { soundId: meta.id, name: req.name, gainDb: level.gainDb }, BOUNCE_TRACK_NAME) || null;
   } finally {
     usePadBounce.setState({ fraction: null, label: '' });
   }
@@ -146,9 +149,10 @@ function clipPad(clipId: string): PadSound | null {
 /**
  * Put a recording (an audio clip, such as a vocal take) on a pad: the stretch of its sound the
  * clip plays, at its clip gain. One undo step. `newName`: a new Drum Rack track's name, when one is
- * needed. Null when the clip has no sound (or it isn't loaded).
+ * needed. Null when the clip has no sound (or it isn't loaded); false when there's no room for a
+ * new track (nothing done, a toast says so).
  */
-export function clipToPad(clipId: string, target?: { trackId?: string | null; pad?: number }, newName = BOUNCE_TRACK_NAME): PadPlaced | null {
+export function clipToPad(clipId: string, target?: { trackId?: string | null; pad?: number }, newName = BOUNCE_TRACK_NAME): PadPlaced | null | false {
   const sound = clipPad(clipId);
   if (!sound) return null;
   return placeOnPad(choosePadTarget(useTimelineStore.getState().tracks, target), sound, newName);
@@ -157,9 +161,10 @@ export function clipToPad(clipId: string, target?: { trackId?: string | null; pa
 /**
  * Chop a recording at its hits (up to `count`) onto the pads of a new Drum Rack track, chop 1 on
  * pad 1, one cutting off another; no clip is written (play them from the pads). One undo step.
- * Returns the new track's id and how many chops, or null when the clip has no sound.
+ * Returns the new track's id and how many chops, or null when the clip has no sound (false: no
+ * room for a new track, nothing done, a toast says so).
  */
-export async function chopClipToPads(clipId: string, count = 8): Promise<{ trackId: string; chops: number } | null> {
+export async function chopClipToPads(clipId: string, count = 8): Promise<{ trackId: string; chops: number } | null | false> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   const part = clipPad(clipId);
@@ -177,6 +182,8 @@ export async function chopClipToPads(clipId: string, count = 8): Promise<{ track
   const pads = rack.pads.map((p) => (p.soundId ? { ...p, gain: Math.round(part.gainDb * 100) / 100 } : p));
   const st = useTimelineStore.getState();
   const id = st.addTrack('drumRack', `${clip.name} chops`.slice(0, 40));
+  // (no room for a track: nothing done, a toast says so)
+  if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return false;
   useTimelineStore.getState().setTrackRack(id, { pads }, false);
   return { trackId: id, chops: cuts.length };
 }

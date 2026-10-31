@@ -6,7 +6,8 @@
  * original take is left as it is. Pocket and the studio both use this.
  */
 import { withClipHeld } from './clipJobs';
-import { songTempo, useTimelineStore } from './timelineStore';
+import { allOrNothing, songTempo, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import { barsToDuration, uid, type Clip, type MultiZone } from './timelineTypes';
 import { midiName } from './sampleKits';
 import { detectKey } from './songKey';
@@ -96,46 +97,54 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
   const still = now.clips.find((c) => c.id === clipId);
   const sourceTrack = still ? now.tracks.find((t) => t.id === still.trackId) : undefined;
   if (!still || !sourceTrack) return { error: 'The take was removed while it was being chopped.' };
-  // One undo step: adding the track is it, the rest goes in with it
-  const trackId = now.addTrack('multiSampler', `${clip.name} chops`.slice(0, 40));
-  const after = useTimelineStore.getState();
-  after.setTrackMulti(trackId, { zones, attack: CHOP_ATTACK, release: CHOP_RELEASE }, false);
-  // A clip playing each syllable where it was sung, on its key (moved with the take, if it was moved meanwhile)
-  const moved = still.startBar - clip.startBar;
-  const placed = keys.map((k) => syllables[k.index]);
-  const first = minOf(placed.map((h) => h.at));
-  const notes = keys
-    .map((k) => ({ k, syl: syllables[k.index] }))
-    .sort((a, b) => a.syl.at - b.syl.at)
-    .map(({ k, syl }) => ({
-      id: uid('note'),
-      note: midiName(k.root),
-      startOffset: syl.at - first,
-      duration: barsToDuration(Math.max(1 / 64, syl.atEnd - syl.at)),
-      velocity: 0.85,
-    }));
-  const lastEnd = maxOf(placed.map((h) => h.atEnd));
-  const startBar = Math.max(1, first + moved);
-  const made: Clip = {
-    id: uid('clip'),
-    trackId,
-    name: `${clip.name} chops`,
-    startBar,
-    lengthBars: Math.max(1 / 16, Math.ceil((lastEnd - first) * 16) / 16),
-    notes,
-    isSelected: true,
-  };
-  useTimelineStore.setState((st) => {
-    const track = st.tracks.find((t) => t.id === trackId)!;
-    const rest = st.tracks.filter((t) => t.id !== trackId);
-    const at = rest.findIndex((t) => t.id === sourceTrack.id) + 1;
-    const placed = sourceTrack.folder ? { ...track, folder: sourceTrack.folder } : track;
-    return {
-      tracks: [...rest.slice(0, at), placed, ...rest.slice(at)],
-      clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), made],
-      selectedTrackId: trackId,
+  // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
+  const done = allOrNothing(() => {
+    // One undo step: adding the track is it, the rest goes in with it
+    const trackId = now.addTrack('multiSampler', `${clip.name} chops`.slice(0, 40));
+    // (no room for a track: nothing more, see allOrNothing)
+    if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return trackId;
+    const after = useTimelineStore.getState();
+    after.setTrackMulti(trackId, { zones, attack: CHOP_ATTACK, release: CHOP_RELEASE }, false);
+    // A clip playing each syllable where it was sung, on its key (moved with the take, if it was moved meanwhile)
+    const moved = still.startBar - clip.startBar;
+    const placed = keys.map((k) => syllables[k.index]);
+    const first = minOf(placed.map((h) => h.at));
+    const notes = keys
+      .map((k) => ({ k, syl: syllables[k.index] }))
+      .sort((a, b) => a.syl.at - b.syl.at)
+      .map(({ k, syl }) => ({
+        id: uid('note'),
+        note: midiName(k.root),
+        startOffset: syl.at - first,
+        duration: barsToDuration(Math.max(1 / 64, syl.atEnd - syl.at)),
+        velocity: 0.85,
+      }));
+    const lastEnd = maxOf(placed.map((h) => h.atEnd));
+    const startBar = Math.max(1, first + moved);
+    const made: Clip = {
+      id: uid('clip'),
+      trackId,
+      name: `${clip.name} chops`,
+      startBar,
+      lengthBars: Math.max(1 / 16, Math.ceil((lastEnd - first) * 16) / 16),
+      notes,
+      isSelected: true,
     };
-  });
+    useTimelineStore.setState((st) => {
+      const track = st.tracks.find((t) => t.id === trackId)!;
+      const rest = st.tracks.filter((t) => t.id !== trackId);
+      const at = rest.findIndex((t) => t.id === sourceTrack.id) + 1;
+      const placed = sourceTrack.folder ? { ...track, folder: sourceTrack.folder } : track;
+      return {
+        tracks: [...rest.slice(0, at), placed, ...rest.slice(at)],
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), made],
+        selectedTrackId: trackId,
+      };
+    });
+    return trackId;
+  }, true);
+  if (!done.done) return { error: pastCapsWords(done.past) };
+  const trackId = done.value;
   const lo = midiName(zones[0].root);
   const hi = midiName(zones[zones.length - 1].root);
   return {

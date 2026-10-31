@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { editStep, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, ExprPoint, NoteEvent } from '../../store/timelineTypes';
 import { durationToBars } from '../../store/timelineTypes';
 import { ccLabel, ccLane, EXPR_LANES, exprSpec, exprValueAt, laneCc, lanesOf, type ExprLane } from '../../store/expression';
@@ -142,8 +142,12 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
     // A curve: a new point, then dragged as long as the button's held
     const point = { at: atOf(x, e.shiftKey), value: round(valueOf(y)) };
     const next = [...points.filter((p) => Math.abs(p.at - point.at) > 1e-9), point].sort((a, b) => a.at - b.at);
-    store().checkpoint();
-    write(next, false);
+    // (all or nothing: a point past the most a song can have isn't added, a toast says so)
+    const added = editStep(() => {
+      write(next, false);
+      return true;
+    }, false);
+    if (!added) return;
     dragPoint(e, next.indexOf(point), next, true);
   };
 

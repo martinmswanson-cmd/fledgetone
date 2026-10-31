@@ -7,7 +7,8 @@
  * resample.ts; the studio's Resample dialog and Pocket's section sheet use these.
  */
 import { create } from 'zustand';
-import { masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
+import { allOrNothing, masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
+import { pastCapsWords } from './songCaps';
 import type { Clip, SlicerSettings, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { audibleTracks, channelsOf, encodeChannels, KEPT_RENDER_BITS, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
@@ -146,6 +147,8 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
       if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
       const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`, () => !elsewhere());
       if (elsewhere()) return ELSEWHERE;
+      // (no room for a track: nothing was added)
+      if (id && !useTimelineStore.getState().tracks.some((t) => t.id === id)) return { message: pastCapsWords(['tracks']) };
       mute();
       return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
     }
@@ -154,23 +157,30 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     if (elsewhere()) return ELSEWHERE;
 
     if (req.target === 'audio') {
-      const st = useTimelineStore.getState();
-      const id = st.addTrack('audio', `${short} print`);
-      // (What the clip gain can't take down, the track's fader does: never louder than it was)
-      const { gain, volume } = printLevel(playDb);
-      printed(id, { volume });
-      const clip: Clip = {
-        id: uid('clip'),
-        trackId: id,
-        name: `${short} print`,
-        startBar: from,
-        lengthBars,
-        notes: [],
-        isSelected: true,
-        audio: { soundId: meta.id, offset: 0, gain, fadeIn: 0, fadeOut: 0 },
-      };
-      useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
-      mute();
+      // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
+      const done = allOrNothing(() => {
+        const st = useTimelineStore.getState();
+        const id = st.addTrack('audio', `${short} print`);
+        if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
+        // (What the clip gain can't take down, the track's fader does: never louder than it was)
+        const { gain, volume } = printLevel(playDb);
+        printed(id, { volume });
+        const clip: Clip = {
+          id: uid('clip'),
+          trackId: id,
+          name: `${short} print`,
+          startBar: from,
+          lengthBars,
+          notes: [],
+          isSelected: true,
+          audio: { soundId: meta.id, offset: 0, gain, fadeIn: 0, fadeOut: 0 },
+        };
+        useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
+        mute();
+        return id;
+      }, true);
+      if (!done.done) return { message: pastCapsWords(done.past) };
+      const id = done.value;
       return { message: `Printed to audio on a new track, ${short} print: chop, reverse or mangle it in its editor (double-click the clip).`, trackId: id };
     }
 
@@ -186,21 +196,28 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     const bars = Math.max(1 / 16, to - from);
     const notes =
       pattern === 'order' ? sliceNotes(slicer.slices, slicer.start, slicer.end, bpm) : slicePattern(pattern, slicer.slices.length, bars, bars, hashOf(meta.id));
-    const st = useTimelineStore.getState();
-    const id = st.addTrack('slicer', `${short} chops`);
-    useTimelineStore.getState().setTrackSlicer(id, slicer, false);
-    printed(id, { volume: Math.max(-60, Math.min(6, Math.round(playDb * 10) / 10)) });
-    const clip: Clip = {
-      id: uid('clip'),
-      trackId: id,
-      name: pattern === 'order' ? `${short} chops` : `${short} ${pattern}`,
-      startBar: from,
-      lengthBars: bars,
-      notes: notes.map((n) => ({ ...n, id: uid('note') })),
-      isSelected: true,
-    };
-    useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
-    mute();
+    // (all or nothing, as above)
+    const done = allOrNothing(() => {
+      const st = useTimelineStore.getState();
+      const id = st.addTrack('slicer', `${short} chops`);
+      if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
+      useTimelineStore.getState().setTrackSlicer(id, slicer, false);
+      printed(id, { volume: Math.max(-60, Math.min(6, Math.round(playDb * 10) / 10)) });
+      const clip: Clip = {
+        id: uid('clip'),
+        trackId: id,
+        name: pattern === 'order' ? `${short} chops` : `${short} ${pattern}`,
+        startBar: from,
+        lengthBars: bars,
+        notes: notes.map((n) => ({ ...n, id: uid('note') })),
+        isSelected: true,
+      };
+      useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
+      mute();
+      return id;
+    }, true);
+    if (!done.done) return { message: pastCapsWords(done.past) };
+    const id = done.value;
     return { message: `${slicer.slices.length} slices on a new Slicer track (C3 up)${pattern === 'order' ? ', played in order' : `, in a ${pattern} pattern`}. Draw notes on its rows to rearrange them.`, trackId: id };
   } finally {
     useResampling.setState({ fraction: null });
