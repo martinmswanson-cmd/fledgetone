@@ -71,6 +71,18 @@ export function releaseSeconds(track: Pick<Track, 'instrumentKey' | 'ring'> | un
 }
 
 /**
+ * How long a let-go note of `track` with its own bend keeps that bend, on an instrument that bends
+ * as a whole (seconds): a recorded instrument's release as the track sets it (and a little more); a
+ * synth's or a plugin's isn't known, so long enough for the longest (going back later is never
+ * heard: its next note goes back first). Live (an MPE note let go, liveInput.ts) and in the song
+ * (scheduler.ts) alike.
+ */
+export const UNKNOWN_BEND_TAIL_SECONDS = 8;
+export function bendTailSeconds(track: Pick<Track, 'instrumentKey' | 'ring'> | undefined): number {
+  return track && INSTRUMENTS[track.instrumentKey]?.samples ? releaseSeconds(track) + 0.5 : UNKNOWN_BEND_TAIL_SECONDS;
+}
+
+/**
  * Where to start rendering to hear bars from `fromBar` as they sound in the song: the start of the
  * earliest note still sounding at `fromBar` (a held pad, a long bass note, or one that ended just
  * before it and is still ringing out: its release, see releaseSeconds), at most PRE_ROLL_MAX_BARS

@@ -595,9 +595,27 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   just before its next note starts, a key's or the song's (`watchBendBack` wraps play/noteOn/
   noteVoice), or once the tail has ended (a recorded instrument's release + 0.5 s, else 8 s);
   any other bend but the song's centre takes over, and `releaseAllLiveVoices` forgets it.
+  A song note's own bend rings on with its release (`BentNote.until`: end + `bendTailSeconds`,
+  shared with liveInput's MPE rule): nothing is sent at its end (unless an earlier bent note is
+  still held: that one's), the song's bend is sent ahead at end + tail (`backAt`), and the
+  instrument's next note sends it 1 ms before itself with `cut` (`backBefore`). It rings on only
+  where no other note on the instrument sounds on past its end (`soundsTo`, and a note begun under
+  it that does sends the song's bend at its end again): a held chord or a mono synth's legato note
+  would be bent with it. `noteInForce` is
+  the latest-begun held one, else the last to end of those ringing. A clip's bend/vibrato event is
+  skipped while a held note's own bend is off rest (`REST_CENTS`), and while one rings on unless
+  the clip's is off rest (it then takes over); `songBendAt` (hold points, jumps) is the note's
+  where off rest, else the clip's. A live note started late after a stall bases its curve on
+  when it really starts (`playExpressive`, live transport only). The loop cut (`left` in `fire`)
+  is in seconds by the tempo map (`transport.bpm.getDurationOfTicks`), as ticks at the start
+  tempo. samplerManager's `releaseAll` leaves notes already let go (or stolen) to fade on (released
+  again they restarted from the held level), and release sounds follow the bend
+  (`releaseSounds`); the Drum Rack's Stop cut holds the level it has reached.
   Check with scripts/audio-check/live-controllers.cjs and scripts/audio-check/bends.cjs (each case
   a bug found before: overlapping bent notes, long curves, Fledge wide bends, a piano under a clip
-  bend, a note longer than a seamless loop, the cost of a long vibrato under chords live).
+  bend, a note longer than a seamless loop, the cost of a long vibrato under chords live, a slide
+  under a resting bend or vibrato lane, a bent note's release, release sounds under a bend, a loop
+  cut across a tempo change, Stop during a recorded release, a slide after a stall).
   The export dialog memoises its frames and ring-out (`useMemo`), and `withControllerLanes`
   without a memo reuses each track's lanes for the same track object (`lastLanes`), so the
   tails, the render's plan and the dialog don't merge long recorded lanes again each time.
