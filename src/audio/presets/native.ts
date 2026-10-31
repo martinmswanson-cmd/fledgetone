@@ -125,6 +125,17 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       }
     },
     /**
+     * Call off the voices still to come at `now` (Stop on a drum kit): they never start. Sounding
+     * ones ring out as they would have.
+     */
+    callOffComing(now: number): void {
+      for (const v of voices) {
+        if (v.start < now || v.stopAt <= now) continue;
+        v.stopAt = v.start;
+        v.sources.forEach((s) => s.stop(v.stopAt));
+      }
+    },
+    /**
      * Let one voice go at `at` (a key released on a MIDI keyboard) with a release of `seconds`,
      * the way its own end would have: it holds the level it has reached and falls from there.
      */

@@ -113,7 +113,8 @@ export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | u
 
   return {
     play,
-    releaseAll: () => voices.releaseAll(bus.now()),
+    // (On the audio clock as it is: bus.now() adds the look-ahead, and a slice handed out sooner would still play)
+    releaseAll: () => voices.releaseAll(raw.currentTime),
     ready: Promise.resolve(),
     prepare: async (plan: TrackPlan) => {
       const s = settings;

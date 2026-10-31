@@ -11,6 +11,7 @@ import { createVoicePool } from './poly';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
 import type { GlideRef } from '../instruments';
+import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -90,13 +91,21 @@ export function createWavetable(output: Tone.InputNode) {
  */
 export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideRef | undefined, own = 0) {
   let soundingUntil = -Infinity;
-  return (start: number, end: number): number | null => {
+  const glideFor = (start: number, end: number): number | null => {
     const joined = joinsNote(start, soundingUntil) ? soundingUntil : null;
     soundingUntil = end;
     const seconds = glide?.seconds;
     synth.portamento = seconds === undefined ? own : joined !== null ? seconds : own;
     return joined;
   };
+  // Stop and Pause: nothing sounds on to join (a note called off isn't joined when it's played again)
+  return Object.assign(glideFor, { letGo: () => void (soundingUntil = -Infinity) });
+}
+
+/** Stop or Pause a Tone mono synth now (see letGoToneSynth), its legato forgotten. */
+export function letGoMono(synth: Tone.MonoSynth, glideFor: { letGo: () => void }): void {
+  glideFor.letGo();
+  letGoToneSynth(synth, synth.context.currentTime);
 }
 
 /** How quickly a joined note's envelopes settle on its own sustain level, seconds (a time constant). */
@@ -106,9 +115,6 @@ const JOIN_SETTLE = 0.02;
  * release scheduled there, so the hold takes the release away rather than landing on it.
  */
 const JOIN_HOLD = 0.0005;
-
-/** An envelope's level signal (Tone keeps it to itself). */
-const envelopeSignal = (env: Tone.Envelope) => (env as unknown as { _sig: Tone.Signal<'normalRange'> })._sig;
 
 /**
  * Play a note on a Tone mono synth. One that joins the last note (`joinedEnd`: that note's end, see
@@ -153,7 +159,7 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
     ...heldNote(synth, safeTime),
-    releaseAll: () => synth.triggerRelease(),
+    releaseAll: () => letGoMono(synth, glideFor),
     dispose: () => synth.dispose(),
   };
 }
@@ -229,7 +235,7 @@ export function create808(output: Tone.InputNode, modern = false) {
     bend: held.bend,
     releaseAll: () => {
       soundingUntil = -Infinity;
-      synth.triggerRelease();
+      letGoToneSynth(synth, synth.context.currentTime);
     },
     dispose: () => {
       synth.dispose();
@@ -261,7 +267,7 @@ export function createLead(output: Tone.InputNode, glide?: GlideRef) {
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
     ...heldNote(synth, safeTime),
-    releaseAll: () => synth.triggerRelease(),
+    releaseAll: () => letGoMono(synth, glideFor),
     dispose: () => {
       synth.dispose();
       wide.dispose();
@@ -302,24 +308,38 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   const snareTime = monotonicTime(snareNoise.context);
   const hatTime = monotonicTime(hat.context);
   const bellTime = monotonicTime(bellLow.context);
+  // The hits handed out for later, which Stop calls off
+  const coming = createComingHits(() => kick.context.currentTime);
 
   return {
-    kick: (time: number, velocity: number, ratio = 1) => kick.triggerAttackRelease(27.5 * ratio, '8n', kickTime(time), velocity),
+    kick: (time: number, velocity: number, ratio = 1) => {
+      const t = kickTime(time);
+      coming.add(kick, t);
+      kick.triggerAttackRelease(27.5 * ratio, '8n', t, velocity);
+    },
     snare: (time: number, velocity: number, ratio = 1) => {
       const t = snareTime(time);
+      coming.add(snareNoise, t);
+      coming.add(snareTone, t);
       snareNoise.triggerAttackRelease('16n', t, velocity);
       snareTone.triggerAttackRelease(185 * ratio, '32n', t, velocity * 0.8);
     },
     hat: (open: boolean, time: number, velocity: number) => {
+      const t = hatTime(time);
+      coming.add(hat, t);
       hat.envelope.decay = open ? 0.32 : 0.04;
       hat.envelope.release = open ? 0.25 : 0.03;
-      hat.triggerAttackRelease(open ? '8n' : '32n', hatTime(time), velocity);
+      hat.triggerAttackRelease(open ? '8n' : '32n', t, velocity);
     },
     cowbell: (time: number, velocity: number, ratio = 1) => {
       const t = bellTime(time);
+      coming.add(bellLow, t);
+      coming.add(bellHigh, t);
       bellLow.triggerAttackRelease(540 * ratio, '16n', t, velocity);
       bellHigh.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
+    /** Stop: the hits still to come never sound (the ones ringing ring out) */
+    releaseAll: () => coming.callOff(kick.context.currentTime),
     dispose: () => {
       [kick, snareTone, snareFilter, snareNoise, hatFilter, hat, bellFilter, bellLow, bellHigh].forEach((n) => n.dispose());
     },
