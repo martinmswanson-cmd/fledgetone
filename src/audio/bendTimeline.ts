@@ -46,8 +46,10 @@ export function createBendTimeline(now: () => number): BendTimeline {
     set: (cents, time, cut) => {
       if (cents !== 0) moved = true;
       if (cut) points.splice(firstAfter(time, true));
-      // (After any sent for the same time: the later sent wins, as before)
-      points.splice(lastAt(time) + 1, 0, [time, cents]);
+      // (After any sent for the same time: the later sent wins, as before. Mostly the latest:
+      // the bends are given as they come due, see bendWindow.ts)
+      if (!points.length || points[points.length - 1][0] <= time) points.push([time, cents]);
+      else points.splice(lastAt(time) + 1, 0, [time, cents]);
       const old = lastAt(now() - KEEP_SECONDS);
       if (old > 0) points.splice(0, old);
     },
