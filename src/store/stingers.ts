@@ -1,7 +1,7 @@
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { currentInstrumentKey } from '../audio/instrumentCatalog';
 import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
-import { uid } from './timelineTypes';
+import { readNoteDuration, uid } from './timelineTypes';
 import { isPrototypeName } from './ownKey';
 import { NOTE_NAMES, type SongKey } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
@@ -140,8 +140,8 @@ export function parseStingers(raw: unknown, isInstrument: (key: unknown) => key 
         (n): n is NoteEvent =>
           typeof n === 'object' && n !== null && typeof n.id === 'string' && typeof n.note === 'string' && !isPrototypeName(n.note) && typeof n.startOffset === 'number' && typeof n.duration === 'string' && typeof n.velocity === 'number'
       )
-      // In the stinger and no louder than a note can be (as the app makes them)
-      .map((n) => ({ ...n, startOffset: Math.max(0, Math.min(lengthBars, n.startOffset)), velocity: Math.max(0, Math.min(1, n.velocity)) }));
+      // In the stinger, a length the app can read and no longer than the timeline, and no louder than a note can be (as the app makes them)
+      .map((n) => ({ ...n, startOffset: Math.max(0, Math.min(lengthBars, n.startOffset)), duration: readNoteDuration(n.duration), velocity: Math.max(0, Math.min(1, n.velocity)) }));
     out.push({
       id: s.id,
       name: s.name.slice(0, 80),

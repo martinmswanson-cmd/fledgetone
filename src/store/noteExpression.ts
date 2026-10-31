@@ -1,4 +1,5 @@
 import type { ExprPoint, NoteExpression } from './timelineTypes';
+import { TOTAL_BARS } from './timelineTypes';
 import { exprValueAt } from './expression';
 
 /**
@@ -51,16 +52,24 @@ export const isExpressive = (expr: NoteExpression | undefined): boolean =>
 
 /**
  * The note's expression as steps to play: every `step` bars over its `length` (bars), its bend in
- * cents and its pressure, only where either changes. The first is at 0.
+ * cents and its pressure, only where either changes. The first is at 0. Past both curves' last
+ * points nothing changes, so the steps stop there (a note many bars long costs no more than its
+ * curves), and no note is stepped past the whole timeline (TOTAL_BARS).
  */
 export function noteSteps(expr: NoteExpression, length: number, step = 1 / 64): Array<{ at: number; cents: number; pressure: number }> {
   const out: Array<{ at: number; cents: number; pressure: number }> = [];
-  for (let at = 0; at < length - 1e-9; at += step) {
+  const end = Math.min(TOTAL_BARS, length);
+  let still = 0;
+  for (const p of expr.bend ?? []) still = Math.max(still, p.at);
+  for (const p of expr.pressure ?? []) still = Math.max(still, p.at);
+  for (let at = 0; at < end - 1e-9; at += step) {
     const cents = noteValueAt(expr.bend, at, 'bend') * 100;
     const pressure = noteValueAt(expr.pressure, at, 'pressure');
     const last = out[out.length - 1];
-    if (last && Math.abs(last.cents - cents) < 0.5 && Math.abs(last.pressure - pressure) < 0.005) continue;
-    out.push({ at, cents, pressure });
+    const changed = !last || Math.abs(last.cents - cents) >= 0.5 || Math.abs(last.pressure - pressure) >= 0.005;
+    if (changed) out.push({ at, cents, pressure });
+    // (from here on every step has these values)
+    if (at >= still) break;
   }
   return out;
 }
