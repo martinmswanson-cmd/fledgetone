@@ -12,7 +12,7 @@
 import React from 'react';
 import { MessagesSquare, X } from 'lucide-react';
 import { agentOpeners, useUiStore } from '../../store/uiStore';
-import { announce, shortText, unreadCount, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, settledChanges, shortText, unreadCount, useSuggestions, type Suggestion } from '../../agent/suggestionsStore';
 import { disconnectAgent } from '../../agent/bridgeClient';
 import { watchSong } from '../../agent/songWatch';
 import { SuggestionCard } from './SuggestionCard';
@@ -124,9 +124,8 @@ export const SuggestionsPanel: React.FC = () => {
   // Statuses that change (out of date, for another song, undone...) are said together
   React.useEffect(
     () =>
-      useSuggestions.subscribe((s, prev) => {
-        if (s.suggestions === prev.suggestions) return;
-        const news = statusNews(prev.suggestions, s.suggestions);
+      settledChanges((before, after) => {
+        const news = statusNews(before, after);
         if (news) announce(news);
       }),
     []
