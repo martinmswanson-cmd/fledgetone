@@ -6,34 +6,65 @@ import { hasRecordings, loadSamplesForNotes, type RenderRecordings } from './sam
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
 import { fitNotesToRange } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
-import { defaultTrackFx } from '../store/timelineTypes';
+import { defaultTrackFx, durationToBars } from '../store/timelineTypes';
+import { maxOf, minOf } from '../support/minMax';
 
 /**
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
  * game would, and rendered to WAV files for the export.
  */
 
-/** One instrument per kind of sound, shared by every stinger that uses it (kept until the page closes). */
-const players = new Map<InstrumentKey, TrackInstrument>();
+/**
+ * The instruments stingers, cues and bridges play on, a few per kind of sound (kept until the
+ * page closes). Each is lent to one hand-out at a time while that one's notes may still sound, so
+ * calling a switch off (which lets go of everything its instrument plays, see handOut) never cuts
+ * a sound from an earlier switch still ringing out (an Impact's tail): a later one plays on
+ * another of them.
+ */
+interface Player {
+  inst: TrackInstrument;
+  /** Audio time until which what it was given may still sound (its notes' ends and a tail) */
+  busyUntil: number;
+}
+const players = new Map<InstrumentKey, Player[]>();
+/** How many instruments of one kind at most (past that, the one free soonest is shared) */
+const PLAYERS_PER_KIND = 3;
+/** Seconds a note is allowed to ring on after its end (its instrument's release, an Impact's tail) */
+const RING_ON = 6;
 
-function player(key: InstrumentKey): TrackInstrument {
-  let inst = players.get(key);
-  if (!inst) {
-    inst = createInstrument(key, liveMix.auditionInput);
-    players.set(key, inst);
+/** An instrument of `key` free from `from` (audio time) on, made if none is. */
+function player(key: InstrumentKey, from: number): Player {
+  let list = players.get(key);
+  if (!list) {
+    list = [];
+    players.set(key, list);
   }
-  return inst;
+  let free = list.find((p) => p.busyUntil <= from);
+  if (!free && list.length < PLAYERS_PER_KIND) {
+    free = { inst: createInstrument(key, liveMix.auditionInput), busyUntil: 0 };
+    list.push(free);
+  }
+  free ??= list.reduce((a, b) => (b.busyUntil < a.busyUntil ? b : a));
+  return free;
 }
 
 export type StingerTiming = 'bar' | 'beat' | 'now';
 
 /**
- * Play notes on a shared instrument from `start` (audio time), their offsets in bars; notes that
- * would start in the past are left out. For the Game preview's transitions.
+ * A note's length at `bpm` from `lateBy` seconds into it, as the live instruments take it: they
+ * read a length at the live transport's tempo, which is the song's tempo where it plays now, not
+ * the one a stinger or bridge is played at (the export's). Ticks at the live tempo, so its seconds
+ * are the export's. Unchanged when the tempos are the same and it isn't late.
  */
-export async function playNotesAt(key: InstrumentKey, notes: readonly NoteEvent[], start: number): Promise<void> {
-  await handOut(key, notes, start).done;
+function lengthAt(duration: string, bpm: number, lateBy = 0): string {
+  const live = liveTransport.bpm.value;
+  if (lateBy <= 0 && Math.abs(live - bpm) < 1e-6) return duration;
+  const seconds = Math.max(0.01, (durationToBars(duration) * 240) / bpm - lateBy);
+  return `${Math.max(1, Math.round((seconds * live * liveTransport.PPQ) / 60))}i`;
 }
+
+/** Seconds of a note at `bpm` (for how long its instrument may sound) */
+const secondsOf = (n: Pick<NoteEvent, 'duration'>, bpm: number) => (durationToBars(n.duration) * 240) / bpm;
 
 /** Notes handed out by handOut: called off with `cancel` (see there). */
 export interface HandedNotes {
@@ -45,19 +76,28 @@ export interface HandedNotes {
 
 /** How far ahead of its start a note goes to the instrument (in seconds). */
 const HAND_OUT_AHEAD = 0.2;
+/**
+ * How late a note may still be handed out (seconds after its time; the page's timer came late):
+ * at once, cut short by as much, so it ends where it should. Later than that it is left out.
+ */
+const lateAllowance = () => Math.max(0.1, liveContext.lookAhead);
 
 /**
- * Play notes on a shared instrument from `start` (audio time), their offsets in bars, the way
- * playNotesAt does, but each note goes to the instrument only a moment before it starts, so a
- * switch called off before then (Stop, Pause, another press) never plays it. If some were handed
- * out already, the instrument lets go (its releaseAll): the ones not started never start, and
- * what it has sounding (a riser leading in) fades with its own release. A switch is called off
- * only before its line, so a stinger or bridge that has started is never called off: it plays out.
+ * Play notes from `start` (audio time), their offsets in bars at `bpm` (the tempo the export
+ * renders them at, whatever the song's tempo where it plays now), each note going to the
+ * instrument only a moment before it starts, so a switch called off before then (Stop, Pause,
+ * another press) never plays it. If some were handed out already, its instrument lets go (its
+ * releaseAll): the ones not started never start, and what it has sounding (a riser leading in)
+ * fades with its own release; the instrument is this hand-out's own while it may sound (see
+ * player), so nothing else is cut. Once its first note has started, every other note is handed
+ * out at once: a stinger or bridge that has started is never called off, and plays out whatever
+ * the page does meanwhile (a stall). A note whose time has gone by a little (a late timer) is
+ * played at once, part-way: from then to its end; later than lateAllowance it is left out.
  */
-export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: number, late: 'drop' | 'wait' = 'drop'): HandedNotes {
+export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: number, bpm: number, late: 'drop' | 'wait' = 'drop'): HandedNotes {
   let cancelled = false;
   let timer = 0;
-  let inst: TrackInstrument | null = null;
+  let own: Player | null = null;
   let handed = false;
   let finish = () => {};
   let fail: (e: unknown) => void = () => {};
@@ -69,41 +109,55 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     if (cancelled) return;
     cancelled = true;
     clearTimeout(timer);
-    if (inst && handed) inst.releaseAll();
+    if (own && handed) own.inst.releaseAll();
     finish();
   };
+  const secondsPerBar = 240 / bpm;
+  const firstOffset = notes.length ? minOf(notes.map((n) => n.startOffset)) : 0;
+  const lastEnd = notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0;
   void (async () => {
+    let p: Player;
     try {
       if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
-      const p = player(key);
-      await p.ready;
       if (cancelled) return;
-      inst = p;
+      p = player(key, liveContext.currentTime);
+      // (lent from now: a switch handed out meanwhile takes another)
+      p.busyUntil = Math.max(p.busyUntil, start + lastEnd + RING_ON + 1);
+      await p.inst.ready;
+      if (cancelled) return;
+      own = p;
     } catch (e) {
       fail(e);
       return;
     }
     // ('wait': ready too late for `start`, it all comes a moment later rather than without its first notes)
-    const from = late === 'wait' ? Math.max(start, liveContext.currentTime + 0.05) : start;
-    const secondsPerBar = 240 / liveTransport.bpm.value;
+    const from = late === 'wait' ? Math.max(start, liveContext.currentTime + 0.05 - firstOffset * secondsPerBar) : start;
+    p.busyUntil = Math.max(p.busyUntil, from + lastEnd + RING_ON);
     const byStart = new Map<number, NoteEvent[]>();
     for (const n of notes) {
       const at = from + n.startOffset * secondsPerBar;
       byStart.set(at, [...(byStart.get(at) ?? []), n]);
     }
     const groups = [...byStart].sort((a, b) => a[0] - b[0]);
+    const firstAt = groups.length ? groups[0][0] : Infinity;
     let i = 0;
     const pump = () => {
-      if (cancelled || !inst) return;
+      if (cancelled) return;
       const now = liveContext.currentTime;
-      for (; i < groups.length && groups[i][0] <= now + HAND_OUT_AHEAD; i++) {
+      // (started: the rest all at once, see above)
+      const started = handed && now >= firstAt;
+      for (; i < groups.length && (started || groups[i][0] <= now + HAND_OUT_AHEAD); i++) {
         const [at, group] = groups[i];
-        if (at < now) continue;
-        inst.play(group, at);
+        const lateBy = now - at;
+        if (lateBy > 0 && lateBy > lateAllowance()) continue;
+        const playing = group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm, Math.max(0, lateBy)) }));
+        p.inst.play(playing, Math.max(at, now));
         handed = true;
       }
-      if (i < groups.length) timer = window.setTimeout(pump, Math.max(5, (groups[i][0] - HAND_OUT_AHEAD - now) * 1000));
-      else finish();
+      if (i >= groups.length) return finish();
+      // (next: the next note's hand-out, or its first note's start, after which the rest go at once)
+      const next = handed && now < firstAt ? Math.min(firstAt, groups[i][0] - HAND_OUT_AHEAD) : groups[i][0] - HAND_OUT_AHEAD;
+      timer = window.setTimeout(pump, Math.max(5, (next - now) * 1000));
     };
     pump();
   })();
@@ -111,12 +165,12 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
 }
 
 /**
- * `stinger` on `at` (audio time), for a switch that may still be called off before it starts
- * (see handOut); once it has started it plays out. Late (its instrument still loading), it all
- * starts a moment later, as fireStinger does.
+ * `stinger` on `at` (audio time) at `bpm` (the song's own tempo, as the export renders it), for a
+ * switch that may still be called off before it starts (see handOut); once it has started it
+ * plays out. Late (its instrument still loading), it all starts a moment later, as fireStinger does.
  */
-export function stingerAt(stinger: Stinger, at: number): HandedNotes {
-  return handOut(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range), at, 'wait');
+export function stingerAt(stinger: Stinger, at: number, bpm: number): HandedNotes {
+  return handOut(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range), at, bpm, 'wait');
 }
 
 /** The audio time of the next bar or beat line while the song plays (or `null` when stopped). */
@@ -126,23 +180,32 @@ export function nextLineTime(unit: 'bar' | 'beat'): number | null {
 }
 
 /**
- * Play `stinger` over whatever is playing: on the next bar or beat while the song plays, or at
- * once. Resolves with the audio time it starts at.
+ * Play `stinger` over whatever is playing at `bpm` (the song's own tempo, as the export renders
+ * it): on the next bar or beat while the song plays, or at once. Resolves with the audio time it
+ * starts at.
  */
-export async function fireStinger(stinger: Stinger, timing: StingerTiming, atTime?: number): Promise<number> {
+export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: number, atTime?: number): Promise<number> {
   await initAudio();
-  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
-  const inst = player(stinger.instrumentKey);
-  await inst.ready;
+  const notes = fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range);
+  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, notes);
+  const p = player(stinger.instrumentKey, liveContext.currentTime);
+  // (lent while it gets ready: a switch handed out meanwhile takes another)
+  const before = p.busyUntil;
+  p.busyUntil = Math.max(before, liveContext.currentTime + 30);
+  await p.inst.ready;
   const now = liveContext.currentTime + 0.05;
   const playing = liveTransport.state === 'started';
   // (`atTime`: a context time worked out by the caller, e.g. a transition's line)
   const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
-  const secondsPerBar = 240 / liveTransport.bpm.value;
-  const notes = fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range);
+  const secondsPerBar = 240 / bpm;
   const byStart = new Map<number, typeof notes>();
   for (const n of notes) byStart.set(n.startOffset, [...(byStart.get(n.startOffset) ?? []), n]);
-  for (const [at, group] of byStart) inst.play(group, start + at * secondsPerBar);
+  for (const [at, group] of byStart)
+    p.inst.play(
+      group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
+      start + at * secondsPerBar
+    );
+  p.busyUntil = Math.max(before, start + (notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0) + RING_ON);
   return start;
 }
 

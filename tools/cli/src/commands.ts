@@ -7,7 +7,8 @@
  */
 import { existsSync } from 'node:fs';
 import { createStarter, isStarterId, STARTERS } from '../../../src/store/starters';
-import { parseProject, serializeProject, unreadWords } from '../../../src/store/project';
+import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../../../src/store/project';
+import { SONG_CAPS } from '../../../src/store/songCaps';
 import { projectFromHash, songLink } from '../../../src/store/shareLink';
 import { toAgentSong, agentNotes, type AgentSong } from '../../../src/agent/agentSong';
 import { diffSongs, rangesWords } from '../../../src/agent/songDiff';
@@ -19,7 +20,7 @@ import { createLoudnessAnalyser, shortTermWindowFull } from '../../../src/audio/
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../../../src/audio/mixAnalysis';
 import { readJson, readSong, readWav, sameFile, writeSong } from './files';
 import { APP_VERSION } from './meta';
-import { printOut } from './print';
+import { printErr, printOut } from './print';
 
 export type Flags = Record<string, string | string[] | boolean | undefined>;
 type Out = (text: string) => void;
@@ -79,8 +80,26 @@ export function songText(s: AgentSong): string {
   return lines.join('\n');
 }
 
+/** How many things were past the caps when a file was read (see unreadWords). */
+const overCount = (unread: NonNullable<ProjectSnapshot['unread']>) => (unread.notes ?? 0) + Object.values(unread.over ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+
+/** What reading the file left out, in one line ('' when nothing was): for render, listen and info. */
+export function leftOutLine(song: Pick<ProjectSnapshot, 'unread'>): string {
+  if (!song.unread) return '';
+  const { parts, over } = unreadWords(song.unread);
+  const bits = [parts && `${parts} this version can't read`, over].filter(Boolean);
+  return bits.length ? `Left out on reading the file: ${bits.join('; ')}. The rest is used as it is.` : '';
+}
+
+/** Say (on stderr, so --json output stays as it is) what reading the file left out, if anything. */
+export function sayLeftOut(song: Pick<ProjectSnapshot, 'unread'>): void {
+  const line = leftOutLine(song);
+  if (line) printErr(line);
+}
+
 export function info(args: string[], flags: Flags): number {
   const song = readSong(need(args[0], 'the song file'));
+  sayLeftOut(song);
   const agent = toAgentSong(song, { appVersion: APP_VERSION });
   if (flags.json) json(agent);
   else say(songText(agent));
@@ -92,12 +111,18 @@ export function info(args: string[], flags: Flags): number {
  * or repaired, each with where. Empty: the file opens exactly as it is.
  */
 export function checkProblems(raw: unknown): { problems: string[]; fixed: ReturnType<typeof parseProject> } {
+  // The tracks past the most a song opens with, and each clip's track, as the file has them
+  // (reading it cuts its lists and may rename ids in place): their clips go with them, said once
+  const fileTracks = (raw as { tracks?: unknown }).tracks;
+  const fileClips = (raw as { clips?: unknown }).clips;
+  const cappedTracks = new Set(Array.isArray(fileTracks) ? fileTracks.slice(SONG_CAPS.tracks).map((t) => (t as { id?: unknown } | null)?.id) : []);
+  const trackOfClip = new Map<unknown, unknown>(Array.isArray(fileClips) ? fileClips.map((c) => [c, (c as { trackId?: unknown } | null)?.trackId]) : []);
   const fixed = parseProject(raw);
   const problems: string[] = [];
   if (fixed.unread) {
     const { parts, over } = unreadWords(fixed.unread);
     if (parts) problems.push(`${parts} can't be read and ${fixed.unread.tracks + fixed.unread.clips === 1 ? 'is' : 'are'} left out when it opens.`);
-    if (over) problems.push(`It has ${over}: those are left out when it opens.`);
+    if (over) problems.push(`It has ${over}: ${overCount(fixed.unread) === 1 ? 'that is' : 'those are'} left out when it opens.`);
   }
   const file = raw as { tracks?: unknown[]; clips?: unknown[] };
   const saved = serializeProject(fixed);
@@ -121,7 +146,8 @@ export function checkProblems(raw: unknown): { problems: string[]; fixed: Return
     seen.add(`c:${c.id}`);
     const now = clips.get(c.id);
     if (!now) {
-      if (!fixed.tracks.some((t) => t.id === c.trackId)) problems.push(`Clip "${c.name}" belongs to no track: it's left out.`);
+      // (a clip of a track past the caps: said with the tracks above)
+      if (!fixed.tracks.some((t) => t.id === c.trackId) && !cappedTracks.has(trackOfClip.get(c) ?? c.trackId)) problems.push(`Clip "${c.name}" belongs to no track: it's left out.`);
       continue;
     }
     if (stableJson(now) !== stableJson(c)) {

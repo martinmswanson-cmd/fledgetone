@@ -3,7 +3,7 @@ import type { DrumRack, MultiSample, RackPad } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
 import { chopSpan, padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
-import { alwaysStereo } from '../nativeNodes';
+import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { copySetFor, decodePitchedSound } from '../samplers/samplerManager';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 import type { TrackPlan } from '../samplers/songSamples';
@@ -92,8 +92,13 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
   const out = new Tone.Gain(1).connect(output);
   // Two channels from here on, whatever mix of one- and two-channel sounds it plays (see alwaysStereo)
   alwaysStereo(out);
-  const raw = out.context.rawContext as unknown as Raw;
-  const into = out.input as unknown as AudioNode;
+  // The pads are built on the browser's own context (live, not through Tone's wrapper), as in the
+  // export: the wrapper's stereo panner takes a one-channel sound as two (its channelCountMode
+  // can't be 'clamped-max'), so a mono pad played 3 dB louder live than in the export, which
+  // pans it as one channel. Live, the output is kept in the wrapper's graph (see keepActive).
+  const raw: Raw = nativeContextOf(out.context);
+  const into = nativeInputOf(out);
+  const letGo = raw === (out.context.rawContext as unknown) ? () => {} : keepActive(out);
   let rack = initial;
   const chains = new Map<number, PadChain>();
   /** Each pad's sound as it plays (reversed if the pad is), by pad */
@@ -312,6 +317,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
       copies.dispose();
       for (const c of chains.values()) [c.input, c.shaper, c.highpass, c.lowpass, c.pan, c.level].forEach((n) => n.disconnect());
       chains.clear();
+      letGo();
       out.dispose();
     },
   };

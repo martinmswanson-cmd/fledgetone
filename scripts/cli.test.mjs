@@ -77,6 +77,28 @@ test('check: a saved song opens as it is; a damaged one says what the app change
   assert.match(bad.stderr, /isn't JSON/);
 });
 
+test('check, info: a track past the most a song opens with is said once (not each of its clips), in the singular; info says what was left out on stderr', { skip }, async () => {
+  const raw = JSON.parse(readFileSync(SONG, 'utf8'));
+  const t0 = raw.tracks[0];
+  const c0 = raw.clips.find((c) => c.trackId === t0.id);
+  // 256 tracks and one more, which has two clips
+  for (let i = raw.tracks.length; i < 257; i++) raw.tracks.push({ ...t0, id: `extra-${i}`, name: `Extra ${i}` });
+  for (const k of [1, 2]) raw.clips.push({ ...c0, id: `last-${k}`, name: `last ${k}`, trackId: 'extra-256' });
+  const capped = join(tmp, 'capped.fledgetone.json');
+  writeFileSync(capped, JSON.stringify(raw));
+  const r = await cli('check', capped);
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /It has 1 track over the most a song opens with \(256 tracks\): that is left out when it opens\./);
+  assert.doesNotMatch(r.stdout, /belongs to no track/);
+  assert.match(r.stdout, /1 thing the app changes/);
+  const info = await cli('info', capped, '--json');
+  assert.equal(info.code, 0, info.stderr);
+  JSON.parse(info.stdout);
+  assert.equal(info.stderr.trim(), 'Left out on reading the file: 1 track over the most a song opens with (256 tracks). The rest is used as it is.');
+  // A file read in full says nothing
+  assert.equal((await cli('info', SONG)).stderr, '');
+});
+
 test('diff: what changed, in plain words', { skip }, async () => {
   const r = await cli('diff', SONG, EDITED);
   assert.equal(r.code, 0, r.stderr);
