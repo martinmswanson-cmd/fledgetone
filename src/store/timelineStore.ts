@@ -78,6 +78,8 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
+import { editPastCaps, pastCapsWords, type CapKind } from './songCaps';
+import { showToast } from '../components/timeline/toastStore';
 import { livePlayhead, setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
 import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFromPreset, TARGET_SPECS, type GameParam, type ParamPreset, type ParamTarget, type ParamTargetKind } from './gameParams';
@@ -1111,6 +1113,11 @@ function changesHistory(s: TimelineState, next: Partial<TimelineState>): boolean
   return (Object.keys(before) as Array<keyof HistoryEntry>).some((k) => (k === 'masterFx' ? JSON.stringify(before[k]) !== JSON.stringify(after[k]) : before[k] !== after[k]));
 }
 
+/** Say that an edit wasn't made because it would go past the caps (after the change in hand: a toast is a change of its own). */
+function tellPastCaps(kinds: CapKind[]): void {
+  queueMicrotask(() => showToast(pastCapsWords(kinds)));
+}
+
 /** A whole new song's clips (loadProject): not an edit of the clips before, so nothing to sync with them (their ids may even repeat). */
 const unsynced = new WeakSet<Clip[]>();
 type SetState = (partial: TimelineState | Partial<TimelineState> | ((s: TimelineState) => TimelineState | Partial<TimelineState>), replace?: boolean) => void;
@@ -1119,6 +1126,16 @@ function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: 
     const set: SetState = (partial, replace) =>
       rawSet((s) => {
         let next = typeof partial === 'function' ? partial(s) : partial;
+        // An edit that would go past the most a song opens with isn't made (it couldn't be kept:
+        // the autosave and a saved file would open without what's past it). A new song (loadProject)
+        // was measured as it was read
+        if (next !== s && (next.clips || next.tracks || next.markers || next.tempoPoints || next.meterPoints || next.stingers) && !(next.clips && unsynced.has(next.clips))) {
+          const past = editPastCaps(s, { ...s, ...next });
+          if (past.length) {
+            tellPastCaps(past);
+            return s;
+          }
+        }
         // A beginEdit() becomes an undo step with the first change that follows it
         if (pendingCheckpoint) {
           if ('past' in next) pendingCheckpoint = null;

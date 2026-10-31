@@ -29,8 +29,8 @@ export function SharedLinkOpener(): null {
         }
         useTimelineStore.getState().loadProject(project);
         // (What of it couldn't be read is said plainly: a link that says more than a song holds)
-        const { parts, notes } = project.unread ? unreadWords(project.unread) : { parts: '', notes: '' };
-        const without = [parts && `${parts} this version can't read`, notes].filter(Boolean).join(', and without ');
+        const { parts, over } = project.unread ? unreadWords(project.unread) : { parts: '', over: '' };
+        const without = [parts && `${parts} this version can't read`, over].filter(Boolean).join(', and without ');
         showToast(`Opened "${project.name}" from a shared link${without ? `, without ${without}` : ''}`);
       } catch {
         showToast("Couldn't open the shared song: the link may have been cut short");

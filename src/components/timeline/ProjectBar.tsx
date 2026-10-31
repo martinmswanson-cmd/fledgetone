@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Download, Gamepad2, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useOtherTab, useTimelineStore } from '../../store/timelineStore';
+import { sayWhatWasLeftOut } from '../../store/reopenLastSong';
 import { useUiStore } from '../../store/uiStore';
 import { useTourStore } from '../../tour/tourStore';
 import { autosaveUnreadable, clearPreviousSession, hasWork as songHasWork } from '../../store/project';
@@ -148,7 +149,7 @@ export const RestoreSessionBanner: React.FC = () => {
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
         {lastSession.replaced ? 'The song you replaced' : 'Your last session'}, <b>{project.name}</b> ({n} {what}{n === 1 ? '' : 's'}{tail}
-        {when && `, ${when}`}), {lastSession.stopped ? "stopped the studio from showing last time it opened, so it wasn't opened again. It's kept, and " : ''}can be restored.
+        {when && `, ${when}`}), {lastSession.stopped ? "froze or stopped the studio last time it opened, so it wasn't opened again. It's kept, and " : ''}can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">
         <button
@@ -158,6 +159,7 @@ export const RestoreSessionBanner: React.FC = () => {
             // (Loading sets the current song aside in its place, so Restore can be undone the same way)
             close(false);
             useTimelineStore.getState().loadProject(project);
+            sayWhatWasLeftOut(project);
           }}
           title="Replace the current timeline with your last session"
         >

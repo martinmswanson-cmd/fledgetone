@@ -7,7 +7,7 @@
  */
 import { existsSync } from 'node:fs';
 import { createStarter, isStarterId, STARTERS } from '../../../src/store/starters';
-import { parseProject, serializeProject } from '../../../src/store/project';
+import { parseProject, serializeProject, unreadWords } from '../../../src/store/project';
 import { projectFromHash, songLink } from '../../../src/store/shareLink';
 import { toAgentSong, agentNotes, type AgentSong } from '../../../src/agent/agentSong';
 import { diffSongs, rangesWords } from '../../../src/agent/songDiff';
@@ -94,7 +94,11 @@ export function info(args: string[], flags: Flags): number {
 export function checkProblems(raw: unknown): { problems: string[]; fixed: ReturnType<typeof parseProject> } {
   const fixed = parseProject(raw);
   const problems: string[] = [];
-  if (fixed.unread) problems.push(`${fixed.unread.tracks} tracks and ${fixed.unread.clips} clips can't be read and are left out when it opens.`);
+  if (fixed.unread) {
+    const { parts, over } = unreadWords(fixed.unread);
+    if (parts) problems.push(`${parts} can't be read and ${fixed.unread.tracks + fixed.unread.clips === 1 ? 'is' : 'are'} left out when it opens.`);
+    if (over) problems.push(`It has ${over}: those are left out when it opens.`);
+  }
   const file = raw as { tracks?: unknown[]; clips?: unknown[] };
   const saved = serializeProject(fixed);
   const byId = <T extends { id: string }>(list: T[]) => new Map(list.map((x) => [x.id, x]));

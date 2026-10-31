@@ -28,6 +28,7 @@ import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
+import { capSong, overWords, type OverCaps } from './songCaps';
 
 /**
  * Project file format (.fledgetone.json) and browser autosave.
@@ -44,6 +45,12 @@ const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];
 const PREVIOUS_SESSION_KEY = 'bos-beat-box.autosave.previous';
 /** An autosave that couldn't be read at startup, kept as it was rather than overwritten */
 const UNREADABLE_KEY = 'bos-beat-box.autosave.unreadable';
+/**
+ * A full copy of the last session when it opened without some of it (past the most a song opens
+ * with, see songCaps.ts): kept apart, so the autosave of what opened doesn't write over the only
+ * copy with all of it.
+ */
+const LEFT_OUT_KEY = 'bos-beat-box.autosave.leftout';
 /**
  * The id of the song being opened, until the studio (or Pocket) has shown it: still there at the
  * next startup, it means that song stopped the app from showing, so it isn't opened again by
@@ -159,55 +166,31 @@ export interface ProjectSnapshot {
    * Set by parseProject only: how many tracks and clips of the file couldn't be read and were
    * left out (from a newer version of the app, or damaged). Absent when everything was read.
    */
-  unread?: { tracks: number; clips: number; notes?: number };
+  unread?: {
+    tracks: number;
+    clips: number;
+    /** Notes past the most a song opens with (songCaps.ts) */
+    notes?: number;
+    /** Of everything else, how many were past the most a song opens with (songCaps.ts) */
+    over?: Omit<OverCaps, 'notes'>;
+  };
 }
 
-/**
- * The most notes a song opens with: in one clip (one take, one launcher slot, one stinger), and in
- * the whole song. Far above any real song (the busiest starter has 480 in a clip, 738 in all), so
- * only a damaged or crafted file or link meets them; notes past them are left out, and the song
- * says so (unread.notes), rather than a few hundred thousand notes stopping the studio.
- */
-export const MAX_CLIP_NOTES = 20_000;
-export const MAX_SONG_NOTES = 200_000;
+export { MAX_CLIP_NOTES, MAX_SONG_NOTES } from './songCaps';
 
 /**
- * Cut a file's note lists to MAX_CLIP_NOTES each and MAX_SONG_NOTES in all (in the file's own
- * objects, before they're read), the first ones kept. Returns how many were left out.
+ * What a song left out when it opened (see ProjectSnapshot.unread), in words: `parts` the tracks
+ * and clips this version can't read ("2 tracks and 1 clip"), `over` what was past the most a song
+ * opens with ("180,000 notes over the most a song opens with (20,000 in a clip, 200,000 in all)").
  */
-function capNotes(raw: { tracks: unknown[]; clips: unknown[]; stingers?: unknown }): number {
-  let left = MAX_SONG_NOTES;
-  let dropped = 0;
-  const cap = (owner: unknown) => {
-    if (!isObj(owner) || !Array.isArray(owner.notes)) return;
-    const notes: unknown[] = owner.notes;
-    const keep = Math.max(0, Math.min(MAX_CLIP_NOTES, left));
-    if (notes.length > keep) {
-      dropped += notes.length - keep;
-      owner.notes = notes.slice(0, keep);
-    }
-    left -= Math.min(notes.length, keep);
-  };
-  const withTakes = (clip: unknown) => {
-    cap(clip);
-    if (isObj(clip) && Array.isArray(clip.takes)) clip.takes.forEach(cap);
-  };
-  raw.clips.forEach(withTakes);
-  for (const t of raw.tracks) if (isObj(t) && Array.isArray(t.slots)) for (const slot of t.slots) if (isObj(slot)) withTakes(slot.clip);
-  if (Array.isArray(raw.stingers)) raw.stingers.forEach(cap);
-  return dropped;
-}
-
-/** What a song left out when it opened (see ProjectSnapshot.unread), in words: "2 tracks and 1 clip", "180,000 notes". */
-export function unreadWords(unread: NonNullable<ProjectSnapshot['unread']>): { parts: string; notes: string } {
-  const { tracks, clips, notes = 0 } = unread;
+export function unreadWords(unread: NonNullable<ProjectSnapshot['unread']>): { parts: string; over: string } {
+  const { tracks, clips, notes = 0, over = {} } = unread;
   const n = (count: number, what: string) => `${count.toLocaleString('en-US')} ${what}${count === 1 ? '' : 's'}`;
   return {
     parts: [tracks ? n(tracks, 'track') : '', clips ? n(clips, 'clip') : ''].filter(Boolean).join(' and '),
-    notes: notes ? `${n(notes, 'note')} over the most a song opens with (${MAX_CLIP_NOTES.toLocaleString('en-US')} in a clip, ${MAX_SONG_NOTES.toLocaleString('en-US')} in all)` : '',
+    over: overWords({ ...over, ...(notes ? { notes } : {}) }),
   };
 }
-
 
 /** The master settings as a file has them: the Level only when it isn't 0 dB (files keep opening in older versions the same). */
 function masterForFile({ level, ...rest }: MasterSettings): Omit<MasterSettings, 'level'> & { level?: number } {
@@ -557,6 +540,12 @@ function modWheelWasVibrato(raw: unknown, depth = 0): void {
   for (const [k, v] of Object.entries(o)) if (k !== 'expression' && k !== 'notes' && typeof v === 'object') modWheelWasVibrato(v, depth + 1);
 }
 
+/** The first item with each id, in order (one pass: a song with tens of thousands of clips opens as fast as a small one). */
+function firstOfEachId<T extends { id: string }>(items: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((x) => !seen.has(x.id) && !!seen.add(x.id));
+}
+
 /** Validate untrusted JSON (a file or autosave) into a snapshot. Throws with a readable reason. */
 export function parseProject(raw: unknown): ProjectSnapshot {
   if (!isObj(raw) || !(raw.format === PROJECT_FORMAT || LEGACY_FORMATS.includes(raw.format as string))) {
@@ -568,8 +557,9 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
   // (The file's own objects are changed: it was parsed for this)
   if (raw.modWheel !== 'dynamics') modWheelWasVibrato([raw.clips, raw.tracks, raw.launcher]);
-  // At most so many notes (the rest left out, and counted): before anything walks them
-  const unreadNotes = capNotes(raw as { tracks: unknown[]; clips: unknown[]; stingers?: unknown });
+  // At most so many tracks, clips, notes... (the rest left out, and counted): before anything walks them
+  const { notes: unreadNotes = 0, ...over } = capSong(raw as Record<string, unknown> & { tracks: unknown[]; clips: unknown[] });
+  const anyOver = Object.keys(over).length > 0;
   // No id a table lookup could mistake for one of every object's own names (ownKey.ts)
   withSafeIds(raw);
 
@@ -588,7 +578,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   if (raw.tracks.length && !parsedTracks.length) parseTrack(raw.tracks[0]); // nothing readable: say why
   // A route loop (a return playing into a bus that sends back to it) would feed back louder and
   // louder: the send that closes it is dropped (buses.ts breakLoops; the same tracks when there's none)
-  const tracks = breakLoops(parsedTracks.filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i));
+  const tracks = breakLoops(firstOfEachId(parsedTracks));
   const parsedClips = tolerant(raw.clips, parseClip);
   // (A track's clips go with it, and clips whose track was deleted long ago are dropped quietly: neither counts here)
   const unreadTracks = raw.tracks.length - parsedTracks.length;
@@ -617,7 +607,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     tracks,
     // A clip whose track is gone can't play or be seen. Older versions could save these (undo
     // after deleting a track), so skip them rather than refuse the whole file.
-    clips: parsedClips.filter((c, i, all) => trackIds.has(c.trackId) && all.findIndex((o) => o.id === c.id) === i),
+    clips: firstOfEachId(parsedClips).filter((c) => trackIds.has(c.trackId)),
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
@@ -649,7 +639,9 @@ export function parseProject(raw: unknown): ProjectSnapshot {
           },
         }
       : {}),
-    ...(unreadTracks || unreadClips || unreadNotes ? { unread: { tracks: unreadTracks, clips: unreadClips, ...(unreadNotes ? { notes: unreadNotes } : {}) } } : {}),
+    ...(unreadTracks || unreadClips || unreadNotes || anyOver
+      ? { unread: { tracks: unreadTracks, clips: unreadClips, ...(unreadNotes ? { notes: unreadNotes } : {}), ...(anyOver ? { over } : {}) } }
+      : {}),
   };
 }
 
@@ -741,8 +733,24 @@ export function unpackProject(json: string): ProjectSnapshot {
 /** The song (its id) that was opening when the app last stopped showing, as found at startup; null if none. */
 const stoppedAtStart: string | null = readStored(OPENING_KEY);
 
+/**
+ * How long a song may take from starting to open until it has shown (markOpened) and still open
+ * again by itself at the next startup. One that took longer froze the app for a while, or nearly
+ * stopped it showing: it's offered at the next startup instead, as one that stopped it is.
+ */
+export const SLOW_OPEN_MS = 8000;
+
+/** When the song noted as opening started to open (Date.now()), and which one. */
+let opening: { songId: string; since: number } | null = null;
+/** The last session found at startup, and how long reading it took (it was read before it started opening). */
+let readAtStart: { songId: string; ms: number } | null = null;
+
 /** Note that the song `songId` is opening (cleared by markOpened once it has shown). */
-export function markOpening(songId: string): void {
+export function markOpening(songId: string, now = Date.now()): void {
+  // (The last session read at startup started opening when it was read)
+  const read = readAtStart?.songId === songId ? readAtStart.ms : 0;
+  readAtStart = null;
+  opening = { songId, since: now - read };
   try {
     localStorage.setItem(OPENING_KEY, songId);
   } catch {
@@ -751,15 +759,20 @@ export function markOpening(songId: string): void {
 }
 
 /**
- * The song `songId` has shown: it may open again by itself at the next startup. (A note for
+ * The song `songId` has shown: it may open again by itself at the next startup, unless it took
+ * longer than SLOW_OPEN_MS to get there (then it stays noted, and is offered instead). (A note for
  * another song stays: one that stopped the app showing and wasn't opened again keeps its note
- * while an empty song shows in its place.)
+ * while an empty song shows in its place.) Returns whether the note was cleared.
  */
-export function markOpened(songId: string): void {
+export function markOpened(songId: string, now = Date.now()): boolean {
+  if (opening?.songId === songId && now - opening.since > SLOW_OPEN_MS) return false;
   try {
-    if (localStorage.getItem(OPENING_KEY) === songId) localStorage.removeItem(OPENING_KEY);
+    if (localStorage.getItem(OPENING_KEY) !== songId) return false;
+    localStorage.removeItem(OPENING_KEY);
+    return true;
   } catch {
     // Storage blocked
+    return false;
   }
 }
 
@@ -789,6 +802,29 @@ export function setAsideStoppedSong(p: ProjectSnapshot): boolean {
     // Storage blocked meanwhile: the set-aside copy is marked all the same
   }
   return true;
+}
+
+/**
+ * What the last session found at startup opened without (past the most a song opens with), in
+ * words, or null: its full copy is kept apart (LEFT_OUT_KEY), or, without room for that, it stays
+ * where it was and isn't written over (the autosave isn't written, a set-aside session stays set aside).
+ */
+export let sessionLeftOut: { words: string; keptApart: boolean } | null = null;
+/** The full copy of a set-aside session that opened without some of it couldn't be kept apart: the slot keeps it. */
+let previousOnlyCopy = false;
+
+/** Keep `json`, a stored song that opened without some of it, apart. Returns whether it's kept. */
+function keepLeftOutCopy(json: string, unread: NonNullable<ProjectSnapshot['unread']>): boolean {
+  const { parts, over } = unreadWords(unread);
+  const words = [parts && `${parts} this version can't read`, over].filter(Boolean).join(', and without ');
+  try {
+    if (localStorage.getItem(LEFT_OUT_KEY) !== json) localStorage.setItem(LEFT_OUT_KEY, json);
+    sessionLeftOut = { words, keptApart: true };
+    return true;
+  } catch {
+    sessionLeftOut = { words, keptApart: false };
+    return false;
+  }
 }
 
 /** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */
@@ -937,9 +973,11 @@ function setAsidePreviousSession(): SavedSession | null {
     if (json) {
       let raw: unknown;
       let project: ProjectSnapshot;
+      const started = Date.now();
       try {
         raw = JSON.parse(json);
         project = parseProject(unpackStored(raw));
+        if (project.songId) readAtStart = { songId: project.songId, ms: Date.now() - started };
       } catch {
         // Damaged, or from a newer version: keep it as it is, rather than let the first edit overwrite it
         autosaveUnreadable = true;
@@ -951,6 +989,9 @@ function setAsidePreviousSession(): SavedSession | null {
         }
         throw new Error('unreadable autosave');
       }
+      // Opened without some of it (past the most a song opens with, or parts this version can't
+      // read): its full copy is kept apart, or else the autosave is, as for an unreadable one
+      if (project.unread && !keepLeftOutCopy(json, project.unread)) unreadableOnlyCopy = true;
       if (hasWork(project)) {
         const savedAt = timeOf(raw, 'savedAt');
         // An autosave from an older version doesn't say when it was saved, only that it was before
@@ -981,6 +1022,7 @@ function setAsidePreviousSession(): SavedSession | null {
   if (!slot) return null;
   try {
     const project = parseProject(unpackStored(slot.project));
+    if (project.unread && !keepLeftOutCopy(JSON.stringify(slot.project), project.unread)) previousOnlyCopy = true;
     return hasWork(project) ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt, ...(slot.stopped ? { stopped: true } : {}) } : null;
   } catch {
     return null;
@@ -1025,6 +1067,8 @@ function readPreviousSlot(): { project: unknown; savedAt: number | null; keptAt:
 export function clearPreviousSession(dismissed: boolean): void {
   offeringPrevious = false;
   previousOnlyInAutosave = false;
+  // (Its only full copy: kept, and offered again at the next startup)
+  if (previousOnlyCopy) return;
   try {
     localStorage.removeItem(PREVIOUS_SESSION_KEY);
     if (dismissed && !wroteAutosave) [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].forEach((k) => localStorage.removeItem(k));

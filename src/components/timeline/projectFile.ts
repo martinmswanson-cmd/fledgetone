@@ -168,8 +168,8 @@ export async function openProjectFromFile(file: File, handle: FileHandle | null 
     // Parts of the file this version couldn't read are left out: Save mustn't write over the file
     // without them, so it asks for a new one
     if (project.unread) {
-      const { parts, notes } = unreadWords(project.unread);
-      const what = [parts && `${parts} this version of Fledgetone can't read (the file may be from a newer version)`, notes].filter(Boolean).join(', and without ');
+      const { parts, over } = unreadWords(project.unread);
+      const what = [parts && `${parts} this version of Fledgetone can't read (the file may be from a newer version)`, over].filter(Boolean).join(', and without ');
       return `Opened ${file.name} without ${what}. Save will ask for a new file, so the original stays as it is.`;
     }
     // (After loading: loading another song forgets the file it saved to)

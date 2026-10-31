@@ -143,6 +143,13 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const same = (a: unknown, b: unknown) => a === b || stableJson(a) === stableJson(b);
 const noteEnd = (n: NoteEvent) => n.startOffset + durationToBars(n.duration);
 
+/** Items by id, the first of each (as a list's find would give): one look-up each, however long the song. */
+function byId<T extends { id: string }>(items: readonly T[]): Map<string, T> {
+  const out = new Map<string, T>();
+  for (const x of items) if (!out.has(x.id)) out.set(x.id, x);
+  return out;
+}
+
 /** The changes from `before` to `after` (their bars named in words as `before`'s ruler numbers them: see wordMeter). */
 export function diffSongs(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   const was = sentenceMeter;
@@ -181,12 +188,14 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   const bPoints = before.tempoPoints ?? [];
   const aPoints = after.tempoPoints ?? [];
   const tempoFrom = tempoChangeStart(bPoints, aPoints);
+  const bPointIds = byId(bPoints);
+  const aPointIds = byId(aPoints);
   for (const p of aPoints) {
-    const old = bPoints.find((o) => o.id === p.id);
+    const old = bPointIds.get(p.id);
     if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at ${barAt(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
     else if (!same(old, p)) add({ text: `Changes the tempo change at ${barAt(old.bar)} to ${r1(p.bpm)} BPM at ${barAt(p.bar)}.`, fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bPoints) if (!aPoints.some((o) => o.id === p.id)) add({ text: `Removes the tempo change at ${barAt(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
+  for (const p of bPoints) if (!aPointIds.has(p.id)) add({ text: `Removes the tempo change at ${barAt(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
   tempoChanged ||= !same(bPoints, aPoints);
 
   // ---------- Time signature ----------
@@ -194,12 +203,14 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   if (meter(before.meter) !== meter(after.meter)) add({ text: `Changes the time signature from ${meter(before.meter)} to ${meter(after.meter)}.`, hear: 'song' });
   const bMeters = before.meterPoints ?? [];
   const aMeters = after.meterPoints ?? [];
+  const bMeterIds = byId(bMeters);
+  const aMeterIds = byId(aMeters);
   for (const p of aMeters) {
-    const old = bMeters.find((o) => o.id === p.id);
+    const old = bMeterIds.get(p.id);
     if (!old) add({ text: `Adds a change of time signature to ${meter(p)} at ${barAt(p.bar)}.`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
     else if (!same(old, p)) add({ text: `Changes the time signature change at ${barAt(old.bar)} to ${meter(p)} at ${barAt(p.bar)}.`, fromBar: Math.min(old.bar, p.bar), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
-  for (const p of bMeters) if (!aMeters.some((o) => o.id === p.id)) add({ text: `Removes the change of time signature at ${barAt(p.bar)} (${meter(p)}).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
+  for (const p of bMeters) if (!aMeterIds.has(p.id)) add({ text: `Removes the change of time signature at ${barAt(p.bar)} (${meter(p)}).`, fromBar: p.bar, toBar: p.bar + 1, hear: 'from' });
 
   // ---------- Master ----------
   const masterBefore = changes.length;
@@ -207,35 +218,42 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   const masterChanged = changes.length > masterBefore;
 
   // ---------- Tracks ----------
+  const tracksBefore = byId(before.tracks);
+  const tracksAfter = byId(after.tracks);
   for (const t of after.tracks) {
-    const old = before.tracks.find((o) => o.id === t.id);
+    const old = tracksBefore.get(t.id);
     if (!old) {
       add({ text: `Adds a track: ${nm(t.name)} (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id, hear: 'track' });
       continue;
     }
     if (old !== t && !same(old, t)) diffTrack(old, t, after.tracks, add, trackName);
   }
-  for (const t of before.tracks) if (!after.tracks.some((o) => o.id === t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id, hear: 'track' });
+  for (const t of before.tracks) if (!tracksAfter.has(t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id, hear: 'track' });
 
   // ---------- Clips ----------
+  const clipsBefore = byId(before.clips);
+  const clipsAfter = byId(after.clips);
+  const patternsBefore = new Set(before.clips.map((o) => o.pattern));
   for (const c of after.clips) {
-    const old = before.clips.find((o) => o.id === c.id);
+    const old = clipsBefore.get(c.id);
     if (!old) {
-      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && before.clips.some((o) => o.pattern === c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
+      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && patternsBefore.has(c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
       continue;
     }
     if (old !== c) diffClip(old, c, trackName, add, playsPasses);
   }
   for (const c of before.clips) {
-    if (!after.clips.some((o) => o.id === c.id) && after.tracks.some((t) => t.id === c.trackId))
+    if (!clipsAfter.has(c.id) && tracksAfter.has(c.trackId))
       add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
   }
 
   // ---------- Markers ----------
   const bm = before.markers ?? [];
   const am = after.markers ?? [];
+  const markersBefore = byId(bm);
+  const markersAfter = byId(am);
   for (const m of am) {
-    const old = bm.find((o) => o.id === m.id);
+    const old = markersBefore.get(m.id);
     if (!old) add({ text: `Adds the marker ${nm(m.name)} at ${barAt(m.bar)}.`, markerId: m.id, fromBar: m.bar, toBar: m.bar + 1, hear: 'silent' });
     else {
       if (old.name !== m.name) add({ text: `Renames the marker ${nm(old.name)} to ${nm(m.name)}.`, markerId: m.id, hear: 'silent' });
@@ -244,7 +262,7 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
       if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker ${nm(m.name)} from ${barAt(old.bar)} to ${barAt(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
     }
   }
-  for (const m of bm) if (!am.some((o) => o.id === m.id)) add({ text: `Removes the marker ${nm(m.name)} (${barAt(m.bar)}).`, markerId: m.id, hear: 'silent' });
+  for (const m of bm) if (!markersAfter.has(m.id)) add({ text: `Removes the marker ${nm(m.name)} (${barAt(m.bar)}).`, markerId: m.id, hear: 'silent' });
 
   // ---------- Where ----------
   for (const c of changes) {

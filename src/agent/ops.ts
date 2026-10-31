@@ -996,8 +996,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
     return { ok: false, errors: [{ op: -1, path: '', message: `the result isn't a song that could be saved: ${(err as Error).message}` }] };
   }
   if (gated.unread) {
-    const { parts, notes } = unreadWords(gated.unread);
-    return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${[parts, notes].filter(Boolean).join(', and ')} a saved file couldn't keep` }] };
+    const { parts, over } = unreadWords(gated.unread);
+    return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${[parts, over].filter(Boolean).join(', and ')} a saved file couldn't keep` }] };
   }
   // A saved file keeps the first of repeated ids and drops the rest quietly: nothing may be lost that way
   const lost = idTrouble(base, song);
