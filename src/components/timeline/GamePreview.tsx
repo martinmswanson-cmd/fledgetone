@@ -449,12 +449,17 @@ export const GamePanel: React.FC = () => {
       next = Math.min(playingNow.to, playingNow.from + Math.ceil((at - playingNow.from) / phrase - 1e-6) * phrase);
     } else if (playingNow && when === 'end') next = playingNow.to;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
-    const ms = secondsBetween(at, next, songTempo(s)) * 1000;
     // The line on the clock the song plays by: `at` is what's heard now, which was played there an
     // output latency ago (or is still to start). The cue, stinger and bridge start on it and the
     // song stops on it (by the time heard, they'd come that much late, and the song's note on the
     // line would sound before it stopped)
-    const lineAt = heard.at + ms / 1000;
+    const lineOf = (bar: number) => heard.at + secondsBetween(at, bar, songTempo(s));
+    // A line too close to reach goes to the next one: a jump lands a look-ahead after it's made
+    // (see seekTransport), and the stinger and bridge need a moment to be handed out
+    const step = playingNow && when === 'phrase' ? (rule.phraseBars ?? 4) * unit : playingNow && when === 'end' ? Math.max(unit, playingNow.to - playingNow.from) : unit;
+    const earliest = liveContext.currentTime + (bridge || written ? 0 : liveContext.lookAhead) + 0.02;
+    for (let i = 0; i < 64 && lineOf(next) < earliest; i++) next += step;
+    const lineAt = lineOf(next);
     /**
      * Run `then` when the audio clock is just short of `time`: looked at again as it nears, as the
      * audio clock can run a little slower than the page's timers (a few ms a second)
@@ -494,7 +499,20 @@ export const GamePanel: React.FC = () => {
     // Make the jump land on the line: the loop wraps there if the line is the loop's end
     // (a crossfade can't be heard on one timeline: it cuts here; the audition pads play it).
     // A move while playing lands a look-ahead after it's made (see seekTransport)
-    onClock(lineAt - liveContext.lookAhead, jump);
+    // (a page timer that came late, or a look-ahead grown meanwhile, would land it between
+    // lines: then it waits for the next line it can still reach)
+    const jumpOn = (bar: number) =>
+      onClock(lineOf(bar) - liveContext.lookAhead, () => {
+        // (where a jump now would land: the look-ahead may have changed since this was set)
+        const lands = () => liveContext.currentTime + liveContext.lookAhead;
+        let later = bar;
+        for (let k = 0; k < 64 && lands() > lineOf(later) + 0.005; k++) later += step;
+        if (later !== bar) jumpOn(later);
+        // (a little early: looked at again a moment later)
+        else if (lands() < lineOf(bar) - 0.004) timer.current = window.setTimeout(() => jumpOn(bar), 2);
+        else jump();
+      });
+    jumpOn(next);
   };
 
   const current = sections.find((sec) => Math.abs(sec.from - loop.inBar) < 1e-6 && Math.abs(sec.to - loop.outBar) < 1e-6 && loop.enabled);
