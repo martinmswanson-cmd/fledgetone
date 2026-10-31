@@ -230,6 +230,8 @@ interface DrumHits {
   snare: (time: number, velocity: number, ratio?: number) => void;
   hat: (open: boolean, time: number, velocity: number, ratio?: number) => void;
   cowbell: (time: number, velocity: number, ratio?: number) => void;
+  /** Stop: the hits handed out for later never sound */
+  releaseAll: () => void;
 }
 
 /** Play one row of a kit at `time` (`ratio`: detune as a frequency ratio, 1 = none). */
@@ -305,7 +307,10 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
   return {
     play,
     noteOn: oneShot(play),
-    releaseAll: () => {},
+    releaseAll: () => {
+      kit.releaseAll();
+      extras.releaseAll();
+    },
     ready: Promise.resolve(),
     dispose: () => {
       kit.dispose();
@@ -361,7 +366,10 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
   return {
     play,
     noteOn: oneShot(play),
-    releaseAll: kit.releaseAll,
+    releaseAll: () => {
+      kit.releaseAll();
+      extras.releaseAll();
+    },
     ready: kit.ready,
     // Every pitch the hits play at other than the recordings' own (the open hat's, a hit's starting bend)
     prepare: (plan) => {
@@ -720,8 +728,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
       return { ...kit, setDrumDesign: undefined };
     }
     case 'bass': {
-      const bass = createBassVoice(output, options.glideRef);
-      return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });
+      return mono(createBassVoice(output, options.glideRef));
     }
     case 'subBass':
       return mono(createSubBass(output, options.glideRef));

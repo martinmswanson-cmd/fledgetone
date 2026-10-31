@@ -101,6 +101,8 @@ export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_
       amp.connect(input);
       add(t, 0.5, [a, b], [a, b, bp, amp], amp);
     },
+    /** Stop: the hits still to come never sound (the ones ringing ring out) */
+    releaseAll: () => voices.callOffComing(raw.currentTime),
     dispose: () => {
       voices.stopAll();
       bus.dispose();

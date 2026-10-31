@@ -212,6 +212,8 @@ export function createChipDrums(output: Tone.InputNode, seed = 0) {
     snare,
     hat,
     cowbell,
+    /** Stop: the hits still to come never sound (the ones ringing ring out) */
+    releaseAll: () => voices.callOffComing(raw.currentTime),
     dispose: () => {
       voices.stopAll();
       bus.dispose();

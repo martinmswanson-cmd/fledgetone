@@ -27,6 +27,12 @@ const VOLUME_RAMP = 0.02;
 let output: Tone.Gain | null = null;
 let volume = 0.6;
 let repeat: number | null = null;
+/**
+ * The metronome's clicks handed out for later (the Transport's look-ahead), by their beat's time:
+ * Stop and Pause silence the ones for beats after the press (see setMetronomeOn).
+ */
+let coming: Array<{ beat: number; silence: () => void }> = [];
+let watching = false;
 
 /** The click bus, made on first use in the live context (never the export's). */
 function out(): Tone.Gain {
@@ -62,7 +68,13 @@ function click(beat: number, accent: boolean): () => void {
   };
   osc.start(time);
   osc.stop(time + CLICK_SECONDS + 0.01);
-  return () => osc.stop(raw.currentTime);
+  return () => osc.stop(Math.max(time, raw.currentTime));
+}
+
+/** Stop or Pause at `time`: the clicks for beats from then on never sound (one already ringing rings out). */
+function silenceComing(time: number): void {
+  for (const c of coming) if (c.beat >= time - 1e-4) c.silence();
+  coming = [];
 }
 
 /** The click's loudness, 0 to 1. */
@@ -84,6 +96,11 @@ export function setMetronomeOn(on: boolean): void {
     repeat = null;
     return;
   }
+  if (!watching) {
+    watching = true;
+    transport.on('stop', silenceComing);
+    transport.on('pause', silenceComing);
+  }
   // Tone can hand the Transport the same tick twice on a clock boundary: one click per time
   let lastTime = -Infinity;
   repeat = transport.scheduleRepeat((time) => {
@@ -95,7 +112,9 @@ export function setMetronomeOn(on: boolean): void {
     const m = measureAt(bar, getSongMeter());
     const beats = (bar - m.start) * m.meter.den;
     if (Math.abs(beats - Math.round(beats)) > 1e-3) return;
-    click(time, Math.round(beats) === 0);
+    const now = transport.context.currentTime;
+    coming = coming.filter((c) => c.beat > now);
+    coming.push({ beat: time, silence: click(time, Math.round(beats) === 0) });
   }, '16n', 0);
 }
 

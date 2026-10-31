@@ -153,11 +153,21 @@ let pendingStart: number | null = null;
  * Until a start or a move is heard, that's where it's going.
  */
 export function getAudiblePositionBar(): number {
+  return getAudibleMoment().bar;
+}
+
+/**
+ * The position heard now (as getAudiblePositionBar), and `at`, the time on the audio clock the
+ * music plays by (the Transport's) that it was played at: a moment `seconds` later in the song
+ * comes at `at + seconds` on that clock (what's scheduled there is heard on time).
+ */
+export function getAudibleMoment(): { bar: number; at: number } {
   const now = liveContext.immediate();
-  if (heading && now < heading.at) return heading.bar;
+  if (heading && now < heading.at) return { bar: heading.bar, at: heading.at };
   heading = null;
   // What leaves the speakers now was rendered the output latency ago (larger with Stable playback)
-  return ticksToBar(liveTransport.getTicksAtTime(Math.max(0, now - outputLatency())));
+  const at = Math.max(0, now - outputLatency());
+  return { bar: ticksToBar(liveTransport.getTicksAtTime(at)), at };
 }
 
 /**

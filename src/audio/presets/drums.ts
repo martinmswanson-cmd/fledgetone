@@ -3,6 +3,7 @@ import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
+import { createComingHits } from './toneStop';
 
 /**
  * Groove Drum Kit (Synthesized Analog Drums)
@@ -91,6 +92,8 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
   const snareTime = monotonicTime(snareNoise.context);
   const hatTime = monotonicTime(hat.context);
   const cowbellTime = monotonicTime(cowbell.context);
+  // The hits handed out for later, which Stop calls off
+  const coming = createComingHits(() => kick.context.currentTime);
 
   return {
     dispose: () => {
@@ -98,22 +101,32 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
     },
     // (`ratio`: a hair of detune, so repeated hits aren't identical; see playDrums)
     kick: (time?: Tone.Unit.Time, velocity: number = 0.95, ratio = 1) => {
-      kick.triggerAttackRelease(32.703 * ratio, '8n', kickTime(time), velocity);
+      const t = kickTime(time);
+      coming.add(kick, t);
+      kick.triggerAttackRelease(32.703 * ratio, '8n', t, velocity);
     },
     snare: (time?: Tone.Unit.Time, velocity: number = 0.85, ratio = 1) => {
       const t = snareTime(time);
+      coming.add(snareNoise, t);
+      coming.add(snareSnap, t);
       snareNoise.triggerAttackRelease('16n', t, velocity);
       snareSnap.triggerAttackRelease(200 * ratio, '16n', t, velocity * 0.9);
     },
     /** open: longer 0.28s decay; otherwise 0.05s tight closed hat */
     hat: (open: boolean = false, time?: Tone.Unit.Time, velocity: number = 0.75, ratio = 1) => {
+      const t = hatTime(time);
+      coming.add(hat, t);
       hat.envelope.decay = open ? 0.28 : 0.05;
       hat.envelope.release = open ? 0.28 : 0.05;
-      hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', hatTime(time), velocity);
+      hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', t, velocity);
     },
     cowbell: (time?: Tone.Unit.Time, velocity: number = 0.8, ratio = 1) => {
-      cowbell.triggerAttackRelease(800 * ratio, '16n', cowbellTime(time), velocity);
+      const t = cowbellTime(time);
+      coming.add(cowbell, t);
+      cowbell.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
+    /** Stop: the hits still to come never sound (the ones ringing ring out) */
+    releaseAll: () => coming.callOff(kick.context.currentTime),
   };
 }
 

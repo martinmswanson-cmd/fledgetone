@@ -1773,6 +1773,10 @@ function samplerVoice(
     looping?: boolean;
     /** Fading out for a newer note (see steal) */
     stolen?: boolean;
+    /** ...from this time */
+    stolenAt?: number;
+    /** Its rise from silence at `start` (its attack, fade in or bowed swell), seconds */
+    rise?: number;
     /** The (first) recording it plays, for its release sound's level */
     buffer: AudioBuffer;
     /**
@@ -1843,6 +1847,7 @@ function samplerVoice(
   /** Fade `s` out quickly from `at` (its place taken by a newer note), and stop it. */
   const steal = (s: Sounding, at: number) => {
     s.stolen = true;
+    s.stolenAt = at;
     const g = s.gain.gain;
     g.cancelScheduledValues(at);
     g.setTargetAtTime(0, at, STEAL_TC);
@@ -2014,6 +2019,7 @@ function samplerVoice(
       const one = play(main, gain, [gain]);
       s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendNow, releasedAt: Infinity, looping: one.end === Infinity, buffer: main.buffer };
     }
+    s.rise = rise;
     if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
     // The same string picked again as it was let go: no damping sound (see comingReleases)
     // (only one not yet begun, so nothing already sounding is cut off)
@@ -2109,7 +2115,7 @@ function samplerVoice(
    */
   const comingReleases: Array<{ note: string; at: number; src: AudioBufferSourceNode }> = [];
   /** Release sounds still sounding (see releaseSound): they follow the bend as the notes do. */
-  const releaseSounds = new Set<{ src: AudioBufferSourceNode; rate: number }>();
+  const releaseSounds = new Set<{ src: AudioBufferSourceNode; rate: number; begin: number }>();
   /**
    * The sound of `s`'s key being let go at `at` (a harpsichord's jack, a piano's damper), if the
    * instrument has them and the note is still ringing: as loud against the note as they were
@@ -2132,7 +2138,7 @@ function samplerVoice(
     const begin = Math.max(at, raw.currentTime);
     // At the bend in force, following the bends to come while it sounds (as the note did)
     src.playbackRate.value = sound.rate * ratioAt(begin);
-    const ringing = { src, rate: sound.rate };
+    const ringing = { src, rate: sound.rate, begin };
     // (Well past its end at the lowest bend: it's let go when it ends)
     for (const [t, cents] of bends.after(begin, begin + (sound.buffer.duration / sound.rate) * 4)) src.playbackRate.setTargetAtTime(sound.rate * 2 ** (cents / 1200), t, 0.005);
     releaseSounds.add(ringing);
@@ -2158,17 +2164,27 @@ function samplerVoice(
     return s.level * (BREATH_FLOOR + (1 - BREATH_FLOOR) * Math.exp(-(at - s.start - breath) / BREATH_TC));
   };
 
-  /** Release `s` at `time`: its level falls away over the release, then it stops (`sound`: with its release sound). */
-  const releaseAt = (s: Sounding, time: number, sound = true) => {
-    const at = Math.max(time, s.start + options.attack);
+  /**
+   * Release `s` at `time`: its level falls away over the release, then it stops (`sound`: with its
+   * release sound). A note's own end waits for its attack to finish; `now` (Stop, Pause) lets it go
+   * at `time` itself, from the level it has reached, mid-attack or mid-swell, and in place of a
+   * quick fade a newer note had it set to make later.
+   */
+  const releaseAt = (s: Sounding, time: number, sound = true, now = false) => {
+    const at = now ? time : Math.max(time, s.start + options.attack);
     if (sound) releaseSound(s, at);
     s.releasedAt = at;
     const { tc, tail, hold } = releaseNow(s);
     s.releaseTc = tc;
     const g = s.gain.gain;
-    const from = levelAt(s, at);
-    g.cancelScheduledValues(at);
-    g.setValueAtTime(from, at);
+    // (Rising still: its swell's level by then)
+    const rising = now && s.rise && at < s.start + s.rise ? Math.max(0, (at - s.start) / s.rise) : 1;
+    const from = levelAt(s, at) * rising;
+    if (now && typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(at);
+    else {
+      g.cancelScheduledValues(at);
+      g.setValueAtTime(from, at);
+    }
     // (rung on untouched for `hold`, then the fall)
     const fall = at + hold;
     s.fallsAt = fall;
@@ -2179,9 +2195,11 @@ function samplerVoice(
     g.setValueAtTime(from * Math.exp((-(tail - hold) * 0.9) / tc), late);
     g.linearRampToValueAtTime(0, at + tail);
     const stop = at + tail + 0.01;
-    if (stop < s.until) {
+    // (Let go now, a stop set sooner, for a fade a newer note was to make, goes: a later stop replaces it)
+    if (stop < s.until || now) {
       for (const x of sourcesOf(s)) x.stop(stop);
       s.until = stop;
+      if (now) s.stolen = false;
     }
     followOn(s, s.until);
   };
@@ -2283,9 +2301,21 @@ function samplerVoice(
       // (Stopped: the wheel's dynamics wait for the next clip or wheel to set them)
       dyn = null;
       const now = raw.currentTime;
-      // (One already let go, or fading under a newer note, falls on as it was: released again it
-      // would start its release from the level it was held at, a jump back up)
-      for (const s of sounding) if (s.until > now && s.releasedAt > now && !s.stolen) releaseAt(s, now, false);
+      for (const s of sounding) {
+        if (s.until <= now) continue;
+        // Handed out ahead of its time (the look-ahead) and not begun: it never starts
+        if (s.start >= now) {
+          for (const x of sourcesOf(s)) x.stop(s.start);
+          s.until = s.releasedAt = s.start;
+          continue;
+        }
+        // (One already let go, or fading under a newer note, falls on as it was: released again it
+        // would start its release from the level it was held at, a jump back up. One to fade
+        // only under a note still to come, which now never does, is let go here.)
+        if (s.releasedAt > now && (!s.stolen || s.stolenAt! > now)) releaseAt(s, now, false, true);
+      }
+      // The release sounds of notes let go later (their own ends, still to come) never sound
+      for (const r of releaseSounds) if (r.begin >= now) r.src.stop(r.begin);
     },
     ready,
     prepare: async (plan) => {

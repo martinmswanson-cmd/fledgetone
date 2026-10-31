@@ -7,6 +7,7 @@ import * as Tone from 'tone';
 import { notLate } from './monotonic';
 import { createBendTimeline } from '../bendTimeline';
 import { chooseNoteToSteal } from '../samplers/noteStealing';
+import { letGoToneSynth, type ToneVoice } from './toneStop';
 
 /** Seconds a pool voice may sit silent before it's disposed. */
 const IDLE_SECONDS = 3;
@@ -16,7 +17,9 @@ export interface PoolVoice {
   triggerAttackRelease: (note: Tone.Unit.Frequency, duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => unknown;
   triggerAttack: (note: Tone.Unit.Frequency, time?: Tone.Unit.Time, velocity?: number) => unknown;
   triggerRelease: (time?: Tone.Unit.Time) => unknown;
-  envelope: { release: Tone.Unit.Time };
+  envelope: ToneVoice['envelope'];
+  modulationEnvelope?: ToneVoice['envelope'];
+  frequency?: ToneVoice['frequency'];
   /** Its pitch offset in cents (a MIDI pitch bend moves it). */
   detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown; cancelScheduledValues: (time: Tone.Unit.Time) => unknown };
   connect: (destination: Tone.InputNode) => unknown;
@@ -211,11 +214,14 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
       for (const v of voices) if (v.end > t && t <= v.fedTo) v.voice.detune.setTargetAtTime(cents, t, 0.005);
     },
     releaseAll: () => {
-      const now = out.now();
+      // On the audio clock as it is now (out.now() adds the look-ahead: notes handed out for
+      // sooner than that would still sound)
+      const now = out.context.currentTime;
       for (const v of voices) {
         if (v.end <= now) continue;
-        v.voice.triggerRelease(now);
-        v.end = Math.min(v.end, now + v.voice.toSeconds(v.voice.envelope.release));
+        // What it's sounding falls away from where it is; a note that hasn't started never does
+        letGoToneSynth(v.voice, now);
+        v.end = v.start >= now ? now : Math.min(v.end, now + v.voice.toSeconds(v.voice.envelope.release));
         v.releasedAt = Math.min(v.releasedAt, now);
       }
     },

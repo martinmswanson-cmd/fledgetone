@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { captureWamStates } from '../../audio/wamHost';
-import { getAudiblePositionBar } from '../../audio/transport';
+import { getAudibleMoment } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
@@ -437,7 +437,8 @@ export const GamePanel: React.FC = () => {
       return;
     }
     // On the next bar or beat line of the song, or a later one if the transition needs more room
-    const at = getAudiblePositionBar();
+    const heard = getAudibleMoment();
+    const at = heard.bar;
     // The song's own measure and beat lines (a 3/4 measure is 3/4 of a whole note)
     const measure = measureAt(at, songMeterOf(s));
     const unit = when === 'beat' ? measure.length / measure.meter.num : measure.length;
@@ -449,17 +450,31 @@ export const GamePanel: React.FC = () => {
     } else if (playingNow && when === 'end') next = playingNow.to;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
     const ms = secondsBetween(at, next, songTempo(s)) * 1000;
-    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + ms / 1000);
+    // The line on the clock the song plays by: `at` is what's heard now, which was played there an
+    // output latency ago (or is still to start). The cue, stinger and bridge start on it and the
+    // song stops on it (by the time heard, they'd come that much late, and the song's note on the
+    // line would sound before it stopped)
+    const lineAt = heard.at + ms / 1000;
+    /**
+     * Run `then` when the audio clock is just short of `time`: looked at again as it nears, as the
+     * audio clock can run a little slower than the page's timers (a few ms a second)
+     */
+    const onClock = (time: number, then: () => void) => {
+      const left = (time - liveContext.currentTime) * 1000;
+      if (left <= 15) then();
+      else timer.current = window.setTimeout(() => onClock(time, then), left - 10);
+    };
+    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, lineAt);
     setPending(sec.id);
     if (bridge || written) {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
       // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
-      if (bridge) void fireStinger(bridge, 'now', liveContext.currentTime + ms / 1000);
+      if (bridge) void fireStinger(bridge, 'now', lineAt);
       if (written) for (const c of written.clips) {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
-        if (key) void playNotesAt(key, c.notes, liveContext.currentTime + ms / 1000);
+        if (key) void playNotesAt(key, c.notes, lineAt);
       }
-      timer.current = window.setTimeout(() => {
+      onClock(lineAt, () => {
         const st = useTimelineStore.getState();
         // Stopped by then: the bridge plays out, and the song stays stopped
         if (!st.isPlaying) return;
@@ -472,12 +487,14 @@ export const GamePanel: React.FC = () => {
           jump();
           void now.play();
         }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
-      }, Math.max(0, ms - 15));
+        // (Paused just ahead of the line: its notes, handed out already, are called off; see releaseAll)
+      });
       return;
     }
     // Make the jump land on the line: the loop wraps there if the line is the loop's end
-    // (a crossfade can't be heard on one timeline: it cuts here; the audition pads play it)
-    timer.current = window.setTimeout(jump, Math.max(0, ms - 15));
+    // (a crossfade can't be heard on one timeline: it cuts here; the audition pads play it).
+    // A move while playing lands a look-ahead after it's made (see seekTransport)
+    onClock(lineAt - liveContext.lookAhead, jump);
   };
 
   const current = sections.find((sec) => Math.abs(sec.from - loop.inBar) < 1e-6 && Math.abs(sec.to - loop.outBar) < 1e-6 && loop.enabled);
