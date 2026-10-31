@@ -34,7 +34,8 @@ function allowed(p: { see: boolean; suggest: boolean; listen: boolean }): string
 function statusNews(before: readonly Suggestion[], after: readonly Suggestion[]): string {
   const was = new Map(before.map((s) => [s.id, s.status]));
   return after
-    .filter((s) => was.has(s.id) && was.get(s.id) !== s.status && s.status !== 'accepted' && s.status !== 'dismissed')
+    // (an Accept or Dismiss pressed is said by the card itself; a redo putting one back isn't pressed)
+    .filter((s) => was.has(s.id) && was.get(s.id) !== s.status && !(s.status === 'accepted' && was.get(s.id) !== 'undone') && s.status !== 'dismissed')
     .map((s) => `“${shortText(s.title, 60)}”: ${STATUS_WORDS[s.status]}.`)
     .join(' ');
 }

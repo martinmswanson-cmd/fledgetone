@@ -537,7 +537,14 @@ async function until(check, ms, what) {
     const afterDouble = { status: (await sgOf(seventh.id)).status, text: (await accept7.textContent()).trim() };
     // The agent can't point at (or scroll) anything in the panel
     const scrollBefore = await A(() => document.querySelector('[data-agent-panel] .overflow-y-auto').scrollTop);
-    const pointed = await call('point_at', { target: { control: 'Suggestion from your agent' } }).then(() => 'found', (e) => (/No control/.test(e.message) ? 'not found' : e.message));
+    // (without See the answer is the same either way: what shows it never reached the panel is
+    // that nothing was pointed at)
+    const pointedAt = () => A(() => window.__fledgetoneAgent.sg.useSuggestions.getState().highlight?.until ?? null);
+    const pointedBefore = await pointedAt();
+    const pointed = await call('point_at', { target: { control: 'Suggestion from your agent' } }).then(
+      async () => ((await pointedAt()) !== pointedBefore ? 'found' : 'not found'),
+      (e) => (/No control/.test(e.message) ? 'not found' : e.message)
+    );
     const scrollAfter = await A(() => document.querySelector('[data-agent-panel] .overflow-y-auto').scrollTop);
     await page.waitForTimeout(800);
     await wheelInto(accept7);

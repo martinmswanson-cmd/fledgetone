@@ -81,11 +81,12 @@ export function trackSong(): void {
   });
   // Every answer to a suggestion (accepted, dismissed, out of date, undone...) goes to the agent
   const unsubS = useSuggestions.subscribe((s, prev) => {
-    // Unticked "See what I select": a view on its way doesn't go
+    // Unticked "See what I select": a view on its way doesn't go. Ticked or unticked, the next
+    // view is told whatever it is (what the agent last heard of may be from before See was off)
+    if (prev.permissions.see !== s.permissions.see) lastView = '';
     if (prev.permissions.see && !s.permissions.see) {
       window.clearTimeout(viewTimer);
       viewTimer = 0;
-      lastView = '';
     }
   });
   // (as they settle: an Accept's statuses on the way, or a failed one's, aren't told)

@@ -21,6 +21,10 @@ export class StudioGuard extends React.Component<{ children: React.ReactNode }, 
   componentDidCatch(): void {
     // (The song open stays noted as opening: the next startup offers it rather than opening it)
     void import('../store/reopenLastSong').then((m) => m.noteStopped(), () => undefined);
+    // An agent connected can't go on reading and suggesting to a studio no one can see
+    void import('../store/uiStore')
+      .then((ui) => (ui.useUiStore.getState().agentStatus.state !== 'off' ? import('../agent/bridgeClient').then((b) => b.disconnectAgent('The studio stopped showing.')) : undefined))
+      .catch(() => undefined);
   }
 
   private setAside = async () => {
