@@ -881,9 +881,9 @@ export function createClipSchedule(
       }
       soundsTo.set(instrument, to);
     }
-    const plain = notes.filter((n) => !isExpressive(n.expr));
+    const plain = notes.filter((n) => !isExpressive(n.expr, durationToBars(n.duration)));
     if (plain.length) instrument.play(plain, time);
-    for (const n of notes) if (isExpressive(n.expr)) playExpressive(trackId, instrument, n, time);
+    for (const n of notes) if (isExpressive(n.expr, durationToBars(n.duration))) playExpressive(trackId, instrument, n, time);
   };
 
   const playGroup = (instrument: TrackInstrument, group: NoteGroup, time: number) => {
