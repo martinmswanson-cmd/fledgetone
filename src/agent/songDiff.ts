@@ -38,6 +38,7 @@ import { stableJson } from './fingerprint';
 import { insertLabel, settingWord, valueWord } from './settingWords';
 import { nm, plainNames } from './names';
 import { maxOf, minOf } from '../support/minMax';
+import { fitNoteCurves, fitNotesCurves } from '../store/noteExpression';
 
 /**
  * Where a change is heard: 'here' (its own bars, fromBar to toBar, and, for a change on a track,
@@ -799,12 +800,14 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
   if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
     add({ text: `Makes the clip ${n} ${lengthWords(b.lengthBars)} long (was ${lengthWords(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
   if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
-  if (a.notes !== b.notes && !same(a.notes, b.notes)) {
+  // (notes as they play: their curves cut to their lengths, see noteExpression.ts fitNoteCurves,
+  // so a curve cut at a note's end, as a saved file keeps it, is no change)
+  if (a.notes !== b.notes && !same(fitNotesCurves(a.notes), fitNotesCurves(b.notes))) {
     const before = new Map(a.notes.map((x) => [x.id, x]));
     const after = new Map(b.notes.map((x) => [x.id, x]));
     const added = b.notes.filter((x) => !before.has(x.id));
     const removed = a.notes.filter((x) => !after.has(x.id));
-    const changed = b.notes.filter((x) => before.has(x.id) && !same(before.get(x.id), x));
+    const changed = b.notes.filter((x) => before.has(x.id) && !same(fitNoteCurves(before.get(x.id)!), fitNoteCurves(x)));
     const touched = [...added, ...removed, ...changed, ...changed.map((x) => before.get(x.id)!)];
     const parts = [added.length && `adds ${plural(added.length, 'note')}`, changed.length && `changes ${plural(changed.length, 'note')}`, removed.length && `removes ${plural(removed.length, 'note')}`].filter(Boolean);
     const from = b.startBar + Math.max(0, minOf(touched.map((x) => x.startOffset)));
