@@ -32,15 +32,91 @@ export type StingerTiming = 'bar' | 'beat' | 'now';
  * would start in the past are left out. For the Game preview's transitions.
  */
 export async function playNotesAt(key: InstrumentKey, notes: readonly NoteEvent[], start: number): Promise<void> {
-  if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
-  const inst = player(key);
-  await inst.ready;
-  const now = liveContext.currentTime;
-  const secondsPerBar = 240 / liveTransport.bpm.value;
-  for (const n of notes) {
-    const at = start + n.startOffset * secondsPerBar;
-    if (at >= now) inst.play([n], at);
-  }
+  await handOut(key, notes, start).done;
+}
+
+/** Notes handed out by handOut: called off with `cancel` (see there). */
+export interface HandedNotes {
+  /** Call off the notes not handed out yet, and let go of the ones that were (see handOut). */
+  cancel: () => void;
+  /** Resolves once every note is handed out (or called off). */
+  done: Promise<void>;
+}
+
+/** How far ahead of its start a note goes to the instrument (in seconds). */
+const HAND_OUT_AHEAD = 0.2;
+
+/**
+ * Play notes on a shared instrument from `start` (audio time), their offsets in bars, the way
+ * playNotesAt does, but each note goes to the instrument only a moment before it starts, so a
+ * switch called off before then (Stop, Pause, another press) never plays it. If some were handed
+ * out already, the instrument lets go (its releaseAll): the ones not started never start, and
+ * what it has sounding (a riser leading in) fades with its own release. A switch is called off
+ * only before its line, so a stinger or bridge that has started is never called off: it plays out.
+ */
+export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: number, late: 'drop' | 'wait' = 'drop'): HandedNotes {
+  let cancelled = false;
+  let timer = 0;
+  let inst: TrackInstrument | null = null;
+  let handed = false;
+  let finish = () => {};
+  let fail: (e: unknown) => void = () => {};
+  const done = new Promise<void>((resolve, reject) => {
+    finish = resolve;
+    fail = reject;
+  });
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    clearTimeout(timer);
+    if (inst && handed) inst.releaseAll();
+    finish();
+  };
+  void (async () => {
+    try {
+      if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
+      const p = player(key);
+      await p.ready;
+      if (cancelled) return;
+      inst = p;
+    } catch (e) {
+      fail(e);
+      return;
+    }
+    // ('wait': ready too late for `start`, it all comes a moment later rather than without its first notes)
+    const from = late === 'wait' ? Math.max(start, liveContext.currentTime + 0.05) : start;
+    const secondsPerBar = 240 / liveTransport.bpm.value;
+    const byStart = new Map<number, NoteEvent[]>();
+    for (const n of notes) {
+      const at = from + n.startOffset * secondsPerBar;
+      byStart.set(at, [...(byStart.get(at) ?? []), n]);
+    }
+    const groups = [...byStart].sort((a, b) => a[0] - b[0]);
+    let i = 0;
+    const pump = () => {
+      if (cancelled || !inst) return;
+      const now = liveContext.currentTime;
+      for (; i < groups.length && groups[i][0] <= now + HAND_OUT_AHEAD; i++) {
+        const [at, group] = groups[i];
+        if (at < now) continue;
+        inst.play(group, at);
+        handed = true;
+      }
+      if (i < groups.length) timer = window.setTimeout(pump, Math.max(5, (groups[i][0] - HAND_OUT_AHEAD - now) * 1000));
+      else finish();
+    };
+    pump();
+  })();
+  return { cancel, done };
+}
+
+/**
+ * `stinger` on `at` (audio time), for a switch that may still be called off before it starts
+ * (see handOut); once it has started it plays out. Late (its instrument still loading), it all
+ * starts a moment later, as fireStinger does.
+ */
+export function stingerAt(stinger: Stinger, at: number): HandedNotes {
+  return handOut(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range), at, 'wait');
 }
 
 /** The audio time of the next bar or beat line while the song plays (or `null` when stopped). */
