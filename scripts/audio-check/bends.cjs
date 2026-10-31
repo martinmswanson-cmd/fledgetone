@@ -35,7 +35,9 @@
 //   (it took the song note's bend).
 // - A Multi Sampler note with its own bend under a clip's bend lane, in the file and live: its
 //   own bend adds to the lane's, as an MPE note's does to its master channel's (it played the
-//   lane's alone), held, sliding up, and with the lane moving while it sounds.
+//   lane's alone), held, sliding up, and with the lane moving while it sounds; and sliding while
+//   the lane moves, in the file and live alike (the slide, sent whole when the note started, put
+//   the lane back where it had been at the start).
 //
 //   npx vite --port 5200                 (in another terminal)
 //   node scripts/audio-check/bends.cjs
@@ -482,6 +484,25 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
     const f = got.filter(([t, , db]) => t > 0.4 && t < 1.6 && db > -65).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
     const med = f.length ? f[f.length >> 1] : 0;
     report(Math.abs(med / bent('A4', 3) - 1) < 0.01, `Multi Sampler, its own bend held +2 under a lane of +1, live: ${med.toFixed(1)} Hz, want ${bent('A4', 3).toFixed(1)} Hz`);
+  }
+  // The Multi Sampler's A4 held 2 bars sliding up to +2 over its first 3 seconds, under a lane at 0 that goes up to +2 at bar 2 (2 s):
+  // the two added throughout, in the file and live
+  {
+    const s = multiSong([{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 2, expression: { bend: [{ at: 0, value: 0 }, { at: 1, value: 0 }, { at: 1.0625, value: 2 }, { at: 2, value: 2 }] }, notes: [n('a', 'A4', 0, '2m', 0.9, [{ at: 0, value: 0 }, { at: 1.5, value: 2 }])] }]);
+    const want = (t) => bent('A4', Math.min(2, (2 * t) / 3) + 2);
+    const off = (pairs) => pairs.reduce((w, [t, f]) => {
+      const c = 1200 * Math.log2(f / want(t));
+      return Math.abs(c) > Math.abs(w) ? c : w;
+    }, 0);
+    const f = await render(s, { toBar: 3, track: { t0: 2.3, t1: 3.8, band: [480, 620] } });
+    const file = off(f.map((hzAt, i) => [2.3 + i * 0.005, hzAt]));
+    report(Math.abs(file) < 10, `Multi Sampler, sliding under a lane that moves while it sounds, in the file: off by up to ${file.toFixed(0)} cents`);
+    const pg = await page();
+    const got = await pg.evaluate(KEY, { text: JSON.stringify(s), keyAt: 4.3, keyFor: 0.1, midi: 36, seconds: 4.6, band: [480, 620] });
+    await pg.close();
+    const heard = got.filter(([t, , db]) => t > 2.25 && t < 3.7 && db > -65).map(([t, hzAt]) => [t + 0.04, hzAt]);
+    const live = heard.length > 10 ? off(heard) : Infinity;
+    report(Math.abs(live) < 10, `Multi Sampler, sliding under a lane that moves while it sounds, live: off by up to ${live.toFixed(0)} cents`);
   }
   await browser.close();
   process.exit(failed ? 1 : 0);

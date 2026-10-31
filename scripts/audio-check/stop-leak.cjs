@@ -11,14 +11,16 @@
 //    below -120 dBFS, and no note may be handed out after the press.
 // 2. One note (on a kit, a hit on every row) at bar 2 of a silent song, on each instrument family:
 //    synthesized kits, keys and pads from a pool of voices, mono synths, recorded instruments, the
-//    retro soundfont ones, the Slicer. Stop and Pause are pressed a little before it, once it was
-//    handed out: nothing may sound after the press (-90 dBFS). After a Pause, Play must hand the
-//    note out once and it must sound about as loud as when played through (within 4.5 dB, the
-//    RMS level over 0.7 s around it: the Space Clav's chorus alone moves it by up to 4 dB from one
-//    play to the next; twice at once would be 6 dB louder, none silent. Either way the note handed
-//    out before the press would have been heard during the pause). Some again with the Stable look-ahead.
-// It exits with 1 when any check fails. APP_URL overrides http://localhost:5200/. Needs Playwright
-// with Chromium.
+//    retro soundfont ones, the Slicer, Sampler, Multi Sampler and Drum Rack (pads choked, faded in,
+//    decaying, tuned). Stop and Pause are pressed a little before it, once it was handed out:
+//    nothing may sound after the press (-90 dBFS). After a Pause, Play must hand the note out once
+//    and it must sound about as loud as when played through (within 4.5 dB, the RMS level over
+//    0.7 s around it: the Space Clav's chorus alone moves it by up to 4 dB from one play to the
+//    next; twice at once would be 6 dB louder, none silent. Either way the note handed out before
+//    the press would have been heard during the pause). Some again with the Stable look-ahead.
+// Each page plays the song and stops once first, as a musician's first Play does (the live context
+// runs only from the app's own Play). It exits with 1 when any check fails. APP_URL overrides
+// http://localhost:5200/. Needs Playwright with Chromium.
 let playwright;
 try { playwright = require('playwright'); } catch { playwright = require('/opt/node22/lib/node_modules/playwright'); }
 
@@ -39,7 +41,12 @@ const RUN = async ({ text, before, how }) => {
   const s = store.useTimelineStore;
   s.getState().loadProject(P.parseProject(JSON.parse(text)));
   await sleep(5000);
-  await T.start();
+  // (A Play and Stop first, as a musician's first Play: the live context only runs from the
+  // app's own Play, and the track's instrument is made on it)
+  await s.getState().togglePlay();
+  for (let w = 0; w < 100 && !LT.scheduledInstrument('t1'); w++) await sleep(100);
+  s.getState().stop();
+  await sleep(500);
   const raw = T.getContext().rawContext;
   const inst = LT.scheduledInstrument('t1');
   let first = null;
@@ -91,10 +98,11 @@ const FAMILIES = [
   'synthDesigner', 'chipLead', 'supersaw',
   'realCello', 'realGrandPiano', 'piano', // recorded
   'rhodes', 'electricGuitar', 'warmPad', // retro soundfonts
-  'slicer',
+  'slicer', 'sampler', 'multiSampler', 'drumRack', // played from a sound (the Drum Rack: choked, faded, decaying and tuned pads)
+  'designedKit', 'technoKit',
 ];
 const STABLE = ['drums', 'keys', 'bass', 'realCello', 'slicer'];
-const KITS = new Set(['drums', 'drumMachine', 'chipDrums', 'studioKit']);
+const KITS = new Set(['drums', 'drumMachine', 'chipDrums', 'studioKit', 'designedKit', 'technoKit']);
 const LOW = new Set(['bass', 'subBass', 'bass808', 'realCello']);
 
 const oneNote = (key) => {
@@ -102,6 +110,12 @@ const oneNote = (key) => {
   let clipNotes = KITS.has(key)
     ? ['C1', 'D1', 'F#1', 'A#1', 'D#2'].map((note, i) => ({ id: `n${i}`, note, startOffset: 1, duration: '4n', velocity: 0.9 }))
     : [{ id: 'a', note: LOW.has(key) ? 'C2' : 'C4', startOffset: 1, duration: '2m', velocity: 0.9 }];
+  if (key === 'drumRack') {
+    track.rack = { pads: [...Array(16)].map((_, i) => ({ name: `p${i}`, ...(i < 4 ? { soundId: 'stop-leak-sound' } : {}), gain: 0, pan: 0, pitch: i === 3 ? 5 : 0, decay: i === 2 ? 0.3 : 0, lowpass: 20000, highpass: 20, drive: 0, choke: i < 2 ? 1 : 0, ...(i === 1 ? { fade: 0.01 } : {}) })) };
+    clipNotes = ['C2', 'C#2', 'D2', 'D#2'].map((note, i) => ({ id: `n${i}`, note, startOffset: 1, duration: '4n', velocity: 0.9 }));
+  }
+  if (key === 'multiSampler') track.multi = { zones: [{ soundId: 'stop-leak-sound', name: 'Tone', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0.005, release: 0.3 };
+  if (key === 'sampler') track.sample = { name: 'Tone', soundId: 'stop-leak-sound', root: 'C4' };
   if (key === 'slicer') {
     track.slicer = { soundId: 'stop-leak-sound', name: 'Tone', start: 0, end: 4, slices: [0, 1, 2, 3], mode: 'equal', count: 4, sensitivity: 0.5, pitch: false, focus: 0 };
     clipNotes = [{ id: 'a', note: 'C3', startOffset: 1, duration: '2m', velocity: 0.9 }];
@@ -120,7 +134,7 @@ const RUN_ONE = async ({ text, cases }) => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const raw = NN.nativeContextOf(LC.liveContext);
   const sr = raw.sampleRate;
-  // 4 s of a steady tone, for the Slicer
+  // 4 s of a steady tone, for the Slicer, Sampler, Multi Sampler and Drum Rack
   const tone = new AudioBuffer({ numberOfChannels: 1, length: 4 * sr, sampleRate: sr });
   const d = tone.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * 220 * i) / sr) + 0.2 * Math.sin((2 * Math.PI * 660 * i) / sr);
@@ -129,6 +143,12 @@ const RUN_ONE = async ({ text, cases }) => {
   s.getState().loadProject(P.parseProject(JSON.parse(text)));
   await LC.liveContext.resume?.();
   await sleep(1500);
+  // (A Play and Stop first, as a musician's first Play: the live context only runs from the
+  // app's own Play, and the track's instrument is made on it)
+  await s.getState().togglePlay();
+  for (let w = 0; w < 100 && !LT.scheduledInstrument('t1'); w++) await sleep(100);
+  s.getState().stop();
+  await sleep(500);
   const loading = LT.scheduledInstrument('t1');
   if (loading) await Promise.race([loading.ready, sleep(30000)]);
   await sleep(2500);
