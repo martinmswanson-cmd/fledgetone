@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { proxySpans, duckPoints, DUCK_LOOKAHEAD, DUCK_RELEASE } = await import('../src/store/duck.ts');
+const { proxySpans, duckPoints, duckExempt, DUCK_LOOKAHEAD, DUCK_RELEASE } = await import('../src/store/duck.ts');
 
 const track = (id, extra = {}) => ({ id, name: id, instrumentKey: 'keys', isMuted: false, ...extra });
 const note = (startOffset, duration) => ({ id: 'n' + startOffset, note: 'C4', startOffset, duration, velocity: 0.8 });
@@ -58,4 +58,36 @@ test('a proxy bounced in place keeps ducking while its bounce is heard', () => {
   const vo = track('vo', { duckProxy: { depth: 10 }, isMuted: true });
   assert.deepEqual(duckPoints([vo, track('b', { bounceOf: 'vo' })], clips, 120), duckPoints([{ ...vo, isMuted: false }], clips, 120));
   assert.equal(duckPoints([vo, track('b', { bounceOf: 'vo', isMuted: true })], clips, 120), null);
+});
+
+test("a proxy's bounce isn't ducked under itself: the proxies and their bounces are left out, other bounces aren't", () => {
+  const tracks = [track('vo', { duckProxy: { depth: 22 }, isMuted: true }), track('b', { bounceOf: 'vo', instrumentKey: 'audio' }), track('pad'), track('pb', { bounceOf: 'pad', instrumentKey: 'audio' })];
+  assert.deepEqual([...duckExempt(tracks)].sort(), ['b', 'vo']);
+  // (Muted or not, the bounce stays a proxy's bounce)
+  assert.deepEqual([...duckExempt(tracks.map((t) => (t.id === 'b' ? { ...t, isMuted: true } : t)))].sort(), ['b', 'vo']);
+  assert.deepEqual([...duckExempt([track('pad'), track('pb', { bounceOf: 'pad' })])], []);
+});
+
+test('the engine plays the duck curve on every track but the proxies and their bounces, also in a render of some tracks', async () => {
+  const { createAutomationSchedule } = await import('../src/audio/automationSchedule.ts');
+  const { createParamWriter } = await import('../src/audio/effects/paramWriter.ts');
+  const { liveTransport } = await import('../src/audio/liveContext.ts');
+  if (!liveTransport.PPQ) liveTransport.PPQ = 192;
+  const raw = { currentTime: 0 };
+  const context = { rawContext: raw, get currentTime() { return raw.currentTime; }, now: () => raw.currentTime, on: () => {}, off: () => {} };
+  const transport = { context, loop: false, bpm: { getValueAtTime: () => 120 }, getTicksAtTime: () => 0, on: () => {}, off: () => {} };
+  const noParam = { setValueAtTime: () => noParam, linearRampToValueAtTime: () => noParam, cancelScheduledValues: () => noParam };
+  const ducked = (tracks, exempt) => {
+    const got = new Set();
+    const stripOf = (id) => ({ automationVersion: () => 0, automationTargets: () => null, duckTarget: () => (got.add(id), { writer: createParamWriter(noParam, { raw, now: context.now, initial: 1 }), map: (v) => v }) });
+    const schedule = createAutomationSchedule(transport, stripOf, { tempo: () => 120 });
+    const vo = tracks.find((t) => t.id === 'vo');
+    schedule.update(tracks, duckPoints(vo ? tracks : [track('vo', { duckProxy: { depth: 22 }, isMuted: true }), ...tracks], [clip('vo', 2, [note(0, '4n')])], 120), exempt);
+    schedule.dispose();
+    return [...got].sort();
+  };
+  const all = [track('vo', { duckProxy: { depth: 22 }, isMuted: true }), track('b', { bounceOf: 'vo' }), track('pad')];
+  assert.deepEqual(ducked(all), ['pad']);
+  // An export renders the tracks that sound (not the muted proxy), told what's exempt from the whole song
+  assert.deepEqual(ducked(all.slice(1), duckExempt(all)), ['pad']);
 });

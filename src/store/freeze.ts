@@ -14,6 +14,8 @@ import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, type Meter, type M
  * The live engine never knows: liveView() hands it each frozen track as an Audio track with one
  * audio clip of the frozen sound, inserts off and EQ flat (they're in the sound). Volume, pan,
  * distance and the sends, and their automation, stay live, so a frozen track can still be mixed.
+ * So does its dip under a proxy track (duck.ts): the render leaves it out (as a bounce's does), so
+ * it isn't in the sound and played again on top, and moving the proxy's notes leaves the freeze current.
  *
  * Anything else that went into the render (notes, instrument, inserts, EQ and their automation,
  * tempo, swing, and the kicks a kick-triggered Pump follows; a synthesized kit's sounds, as its

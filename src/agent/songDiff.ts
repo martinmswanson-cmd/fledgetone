@@ -30,7 +30,7 @@ import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, typ
 import { clipSoundEnd, RELEASE_ALLOWANCE_SECONDS, releaseSeconds, soundingNotes } from '../audio/auditionMath';
 import { chainTail, feedsMasterDelay, feedsMasterReverb, lanesKnown, masterDelaySeconds, masterReverbSeconds, ownInsertTail, playedTracks, slowestBpm } from '../audio/effectTails';
 import { liveSends } from '../store/buses';
-import { DUCK_BRIDGE, DUCK_LOOKAHEAD, DUCK_RELEASE } from '../store/duck';
+import { DUCK_BRIDGE, DUCK_LOOKAHEAD, DUCK_RELEASE, duckExempt } from '../store/duck';
 import { carriesState, swingReadsClip, type NoteMemory } from '../audio/noteMemory';
 import { clipHasConditions } from '../store/noteChance';
 import { feelPartOf } from '../audio/mixCheck';
@@ -482,11 +482,14 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
    * (their sends, bus and returns: their tail).
    */
   const proxyDucked = (id: string): string[] => {
-    // (A bounce of a proxy ducks as it did while it's heard: see store/duck.ts)
-    const isProxy = (s: (typeof songs)[number], t: Track) => !!t.duckProxy || (!!t.bounceOf && !!s.tracks.find((o) => o.id === t.bounceOf)?.duckProxy);
-    if (!songs.some((s) => s.tracks.some((t) => t.id === id && isProxy(s, t)))) return [];
+    // (A bounce of a proxy ducks the others as it did while it's heard, and isn't ducked itself:
+    // the proxies and their bounces, duckExempt in store/duck.ts, as the engine has it)
+    const exempt = songs.map((s) => duckExempt(s.tracks));
+    if (!exempt.some((e) => e.has(id))) return [];
     const out = new Set<string>();
-    for (const s of songs) for (const t of s.tracks) if (t.id !== id && !t.duckProxy) out.add(t.id);
+    songs.forEach((s, i) => {
+      for (const t of s.tracks) if (t.id !== id && !exempt[i].has(t.id)) out.add(t.id);
+    });
     return [...out];
   };
   // (in bars, as duck.ts reckons them: by each version's tempo, the longer of the two)

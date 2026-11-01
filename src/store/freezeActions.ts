@@ -56,7 +56,7 @@ export interface TrackRender {
 }
 
 /**
- * Render a track's instrument, inserts and EQ (not its volume, pan or sends) from its first clip
+ * Render a track's instrument, inserts and EQ (not its volume, pan, sends or dip under a proxy) from its first clip
  * to the end of its tail, as the song is now (an edit made while it renders leaves the result
  * out of date: see freeze.ts). Doesn't stop playback: live playback waits out the moment a render
  * holds the global audio context. Null when the track has no clips, plays recordings already, or

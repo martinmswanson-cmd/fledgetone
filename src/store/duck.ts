@@ -22,6 +22,16 @@ function heardProxies(tracks: readonly Track[]): Track[] {
   return tracks.filter((t) => t.duckProxy && (!t.isMuted || bounced.has(t.id)));
 }
 
+/**
+ * The tracks that don't duck: the proxies, and each bounce of one (a Bounce in place of the
+ * dialogue plays it, so it doesn't dip under itself; its muted original's notes still say where
+ * the others dip: heardProxies). Live and in exports alike.
+ */
+export function duckExempt(tracks: readonly Track[]): Set<string> {
+  const proxies = new Set(tracks.flatMap((t) => (t.duckProxy ? [t.id] : [])));
+  return new Set(tracks.flatMap((t) => (proxies.has(t.id) || (t.bounceOf && proxies.has(t.bounceOf)) ? [t.id] : [])));
+}
+
 /** Where the proxy tracks sound, in bars: each note (its whole length, as the scheduler plays it), and each audio clip, merged. */
 export function proxySpans(tracks: readonly Track[], clips: readonly Clip[], bpm: number): Array<{ from: number; to: number }> {
   const proxies = new Set(heardProxies(tracks).map((t) => t.id));
