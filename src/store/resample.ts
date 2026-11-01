@@ -5,7 +5,8 @@
  * shuffle). No audio or store in it, so Node can unit-test it; the actions are in
  * resampleActions.ts.
  */
-import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, type Clip, type NoteEvent } from './timelineTypes';
+import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, formatBarRange, type Clip, type NoteEvent } from './timelineTypes';
+import { isPlainMeter, type MeterMap } from '../audio/tempoMap';
 import { sliceKey } from '../audio/slicing';
 import { seededRandom } from '../audio/mangle';
 import { maxOf, minOf } from '../support/minMax';
@@ -53,8 +54,8 @@ export function printLevel(playDb: number): { gain: number; volume: number } {
   return { gain, volume: Math.abs(rest) > 0.01 ? Math.max(-60, Math.min(6, Math.round(rest * 10) / 10)) : 0 };
 }
 
-/** The name a resample's sound goes by. */
-export function resampleName(source: ResampleSource, clips: readonly Clip[], trackNames: ReadonlyMap<string, string>): string {
+/** The name a resample's sound goes by: in a song not in 4/4 (`meter`), its bars are the measures the ruler numbers. */
+export function resampleName(source: ResampleSource, clips: readonly Clip[], trackNames: ReadonlyMap<string, string>, meter?: MeterMap): string {
   const round = (b: number) => Math.round(b * 100) / 100;
   if (source.kind === 'clips') {
     const picked = clips.filter((c) => source.clipIds.includes(c.id));
@@ -62,6 +63,7 @@ export function resampleName(source: ResampleSource, clips: readonly Clip[], tra
   }
   const only = source.trackIds?.length === 1 ? trackNames.get(source.trackIds[0]) : undefined;
   // (Named by the bars it covers, as the song sheets count them: bars 1–4 ends where bar 5 starts)
+  if (meter && !isPlainMeter(meter)) return `${only ?? 'Mix'} ${formatBarRange(source.from, source.to, meter)} (resampled)`;
   const from = round(source.from);
   const to = round(source.to);
   const last = Number.isInteger(to) && Number.isInteger(from) ? to - 1 : to;

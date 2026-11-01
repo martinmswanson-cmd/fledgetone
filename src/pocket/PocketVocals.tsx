@@ -11,7 +11,8 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Grid2x2, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
-import { allOrNothing, useTimelineStore } from '../store/timelineStore';
+import { allOrNothing, useSongMeter, useTimelineStore } from '../store/timelineStore';
+import { formatBarPosition } from '../store/timelineTypes';
 import { isAudioKind } from '../audio/instrumentCatalog';
 import { holdTake, startMic, type MicSession } from '../audio/micRecorder';
 import { transportStartsAt, getAudiblePositionBar } from '../audio/transport';
@@ -51,6 +52,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
+  const songMeter = useSongMeter();
   // (Chop onto keys tunes into the key Pocket's pads and keys play in)
   const songKey = useSongKey();
   const vocalTracks = tracks.filter((t) => isAudioKind(t.instrumentKey));
@@ -183,7 +185,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
         )}
         {session && <SlowOutputNotice inputLabel={session.inputLabel} />}
         <p className="text-[11px] text-forge-muted mt-2">
-          {loop.enabled ? `Records the loop once (bars ${loop.inBar} to ${loop.outBar}), then stops.` : 'Records from the playhead until you tap Stop.'} Wear headphones, or the
+          {loop.enabled ? `Records the loop once (bars ${formatBarPosition(loop.inBar, songMeter)} to ${formatBarPosition(loop.outBar, songMeter)}), then stops.` : 'Records from the playhead until you tap Stop.'} Wear headphones, or the
           microphone records the song too.
         </p>
       </Card>

@@ -1,11 +1,11 @@
-import { allOrNothing, masterFxOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, masterFxOf, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import { isMixTrack } from './buses';
-import { defaultMasterSettings, defaultTrackFx, uid } from './timelineTypes';
+import { defaultMasterSettings, defaultTrackFx, formatBarPosition, uid } from './timelineTypes';
 import type { Clip, Track } from './timelineTypes';
 import { audibleTracks, encodeChannels, renderArrangement } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
-import { barToSeconds, secondsToBar } from '../audio/tempoMap';
+import { barToSeconds, isPlainMeter, secondsToBar } from '../audio/tempoMap';
 
 /**
  * Play a block of music backwards, as a tape turned round: everything sounding from one bar to
@@ -42,6 +42,9 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   const s = useTimelineStore.getState();
   if (to - from < 1 / 16) return 'Set the loop In and Out around the music to reverse (I and O).';
   const only = clipId ? s.clips.find((c) => c.id === clipId) : undefined;
+  // A position in words, as the ruler numbers it (by measure, not in 4/4)
+  const meter = songMeterOf(s);
+  const pos = (bar: number) => (isPlainMeter(meter) ? String(Math.round(bar * 100) / 100) : formatBarPosition(bar, meter));
   if (clipId && (!only || only.audio)) return 'Only a clip of notes can be reversed this way (an audio clip has its own Reverse, in its editor).';
   const inRange = (c: Clip) => c.startBar < to - EPS && c.startBar + c.lengthBars > from + EPS;
   // Only what's heard: a muted track's clips stay where they are, as they aren't in the render
@@ -68,7 +71,7 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   });
   const forward = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c).slice());
   if (!forward.some((ch) => ch.some((v) => Math.abs(v) > SILENT))) return 'That stretch is silent: nothing to reverse.';
-  const label = only ? only.name : `bars ${Math.round(from * 100) / 100}–${Math.round(to * 100) / 100}`;
+  const label = only ? only.name : `bars ${pos(from)}–${pos(to)}`;
   const fwd = await store(forward, `${label} (forwards).wav`);
   const back = await store(
     forward.map((ch) => ch.slice().reverse()),
@@ -141,5 +144,5 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   if (!done.done) return pastCapsWords(done.past);
   return only
     ? `"${only.name}" now plays backwards, as audio on a new track under it. Undo brings the notes back.`
-    : `Bars ${Math.round(from * 100) / 100} to ${Math.round(to * 100) / 100} now play backwards, as audio on a new track. Undo brings the music back.`;
+    : `Bars ${pos(from)} to ${pos(to)} now play backwards, as audio on a new track. Undo brings the music back.`;
 }

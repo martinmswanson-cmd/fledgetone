@@ -9,7 +9,7 @@ import { meterAt, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
-import { formatBarCount, formatBarRange } from '../../store/timelineTypes';
+import { formatBarPosition, formatBarRange, formatBarSpan } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
 import { openArrange } from './arrangeDialogStore';
 import { suggestBlock } from '../../store/speedUpActions';
@@ -42,6 +42,8 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
   useKeepOnScreen(ref, menu.x, menu.y);
 
   const s = useTimelineStore.getState();
+  // Bars named and counted as the ruler numbers them (by measure, not in 4/4)
+  const meter = songMeterOf(s);
   // Live, in case I / O move the loop while the menu is open
   const inBar = useTimelineStore((st) => st.loopRegion.inBar);
   const outBar = useTimelineStore((st) => st.loopRegion.outBar);
@@ -122,7 +124,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       key: 'drop',
       divider: true,
       label: 'Build-up & drop here',
-      shortcut: `bar ${Math.round(menu.bar)}`,
+      shortcut: `bar ${formatBarPosition(Math.round(menu.bar), meter)}`,
       icon: <Zap className="w-3.5 h-3.5" />,
       onClick: run(() => s.addBuildAndDrop(menu.bar)),
     },
@@ -139,7 +141,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
     {
       key: 'speed-up',
       label: 'Speed up into here…',
-      shortcut: speedBlock.source === 'loop' ? 'the loop' : speedBlock.source === 'clips' ? 'selected clips' : formatBarRange(speedBlock.from, speedBlock.to),
+      shortcut: speedBlock.source === 'loop' ? 'the loop' : speedBlock.source === 'clips' ? 'selected clips' : formatBarRange(speedBlock.from, speedBlock.to, meter),
       icon: <ChevronsRight className="w-3.5 h-3.5" />,
       onClick: () => {
         onClose();
@@ -164,7 +166,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
     {
       key: 'delete',
       label: 'Delete bars In → Out',
-      shortcut: `${formatBarCount(outBar - inBar)} bar${outBar - inBar === 1 ? '' : 's'}`,
+      shortcut: formatBarSpan(inBar, outBar, meter),
       icon: <ArrowLeftToLine className="w-3.5 h-3.5" />,
       onClick: run(() => s.removeBars(inBar, outBar)),
       divider: true,

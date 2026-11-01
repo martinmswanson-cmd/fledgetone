@@ -5,7 +5,7 @@
  */
 import type { ClipFeel } from './grooveFeels';
 import type { DrumDesign } from './drumDesign';
-import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
+import { barToSeconds, isPlainMeter, measureAt, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import type { RoomStyle } from '../audio/effects/roomIR';
@@ -1432,14 +1432,65 @@ export function formatBarCount(bars: number): string {
   return String(Number(bars.toFixed(3)));
 }
 
+/** The meter map to number bars by, or null when it's plain 4/4 throughout (a bar is then a measure). */
+const measuredBy = (meter: MeterMap | null | undefined): MeterMap | null => (meter && !isPlainMeter(meter) ? meter : null);
+
+/** True when `bar` is where a measure starts. */
+const onMeasureStart = (bar: number, meter: MeterMap) => Math.abs(bar - measureAt(bar, meter).start) < 1e-6;
+
+/**
+ * A position for display, numbered as the ruler numbers it: in plain 4/4 (or with no `meter`) the
+ * bar as it is ("5", "4.5"); in other time signatures the measure, and the beat in the meter there
+ * when it isn't on the measure's start ("3", "3.2", "3.2.50" for half way through beat 2).
+ */
+export function formatBarPosition(bar: number, meter?: MeterMap | null): string {
+  const map = measuredBy(meter);
+  if (!map) return formatBarCount(bar);
+  const m = toMeasureBeat(bar, map);
+  if (m.beat === 1 && m.hundredths === 0) return String(m.measure);
+  return `${m.measure}.${m.beat}${m.hundredths ? `.${String(m.hundredths).padStart(2, '0')}` : ''}`;
+}
+
 /**
  * The bars a stretch from `from` to `to` covers, for display, counted as the song sheet counts
  * them: 1 to 17 is "bars 1–16" (it ends where bar 17 starts), 3 to 4 is "bar 3". A stretch that
- * starts or ends inside a bar is named by its edges as they are ("bars 1–4.5").
+ * starts or ends inside a bar is named by its edges as they are ("bars 1–4.5"). With the song's
+ * `meter`, not in 4/4, the bars are its measures as the ruler numbers them (formatBarPosition).
  */
-export function formatBarRange(from: number, to: number): string {
+export function formatBarRange(from: number, to: number, meter?: MeterMap | null): string {
+  const map = measuredBy(meter);
+  if (map) {
+    if (onMeasureStart(from, map) && onMeasureStart(to, map)) {
+      const a = measureAt(from, map).measure;
+      const last = measureAt(to, map).measure - 1;
+      return last <= a ? `bar ${a}` : `bars ${a}–${last}`;
+    }
+    return to <= from ? `bar ${formatBarPosition(from, map)}` : `bars ${formatBarPosition(from, map)}–${formatBarPosition(to, map)}`;
+  }
   const last = Number.isInteger(from) && Number.isInteger(to) ? to - 1 : to;
   return last <= from ? `bar ${formatBarCount(from)}` : `bars ${formatBarCount(from)}–${formatBarCount(last)}`;
+}
+
+/**
+ * How many bars long the stretch from `from` to `to` is, for display: in plain 4/4 (or with no
+ * `meter`) `to - from`; in other time signatures counted in the song's measures as the ruler shows
+ * them, a measure partly covered counting for the part (in 3/4, bar 2.5 to 4 is 2 measures).
+ */
+export function barSpan(from: number, to: number, meter?: MeterMap | null): number {
+  const map = measuredBy(meter);
+  if (!map) return to - from;
+  const at = (bar: number) => {
+    const m = measureAt(bar, map);
+    return m.measure + (bar - m.start) / m.length;
+  };
+  return at(to) - at(from);
+}
+
+/** A stretch's length for display: "4 bars", "1 bar", "1.5 bars", counted as barSpan counts it. */
+export function formatBarSpan(from: number, to: number, meter?: MeterMap | null): string {
+  const n = barSpan(from, to, meter);
+  const one = measuredBy(meter) ? Number(n.toFixed(3)) === 1 : n === 1;
+  return `${formatBarCount(n)} ${one ? 'bar' : 'bars'}`;
 }
 
 /** A tempo for display: up to 2 decimals, trailing zeros dropped ("115.2", "122"). */

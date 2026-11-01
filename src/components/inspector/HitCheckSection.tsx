@@ -8,11 +8,15 @@ import React, { useMemo, useState } from 'react';
 import { Gauge, Loader2 } from 'lucide-react';
 import { runHitCheck, useMixStudio } from '../../audio/mixStudio';
 import { HIT_STYLES, judgeHits, type HitJudgement, type HitStyleId } from '../../audio/hitTargets';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { formatBarRange } from '../../store/timelineTypes';
+import { isPlainMeter, type MeterMap } from '../../audio/tempoMap';
 import { audibleTracks } from '../../audio/exportWav';
 import { maxOf } from '../../support/minMax';
 
-const fmtBars = (a: number, b: number) => `bars ${Math.round(a * 100) / 100}-${Math.round((b - 1) * 100) / 100}`;
+/** Bars `a` to `b` (not included): by measure, as the ruler numbers them, in a song not in 4/4. */
+const fmtBars = (a: number, b: number, meter: MeterMap) =>
+  isPlainMeter(meter) ? `bars ${Math.round(a * 100) / 100}-${Math.round((b - 1) * 100) / 100}` : formatBarRange(a, b, meter).replace('–', '-');
 
 /** A meter: the scale, the target's stretch of it in green, the value as a mark. */
 const Meter: React.FC<{ j: HitJudgement }> = ({ j }) => {
@@ -38,6 +42,7 @@ export const HitCheckSection: React.FC = () => {
   const styleId = useMixStudio((s) => s.hitStyle);
   const busy = useMixStudio((s) => s.busy);
   const loop = useTimelineStore((s) => s.loopRegion);
+  const meter = useSongMeter();
   const clips = useTimelineStore((s) => s.clips);
   const tracks = useTimelineStore((s) => s.tracks);
   const songEnd = useMemo(() => {
@@ -83,7 +88,7 @@ export const HitCheckSection: React.FC = () => {
           onChange={(e) => setWhat(e.target.value as 'loop' | 'song')}
           className="min-w-0 h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px]"
         >
-          <option value="loop">The loop ({fmtBars(loop.inBar, loop.outBar)})</option>
+          <option value="loop">The loop ({fmtBars(loop.inBar, loop.outBar, meter)})</option>
           <option value="song">The song (up to 64 bars)</option>
         </select>
       </div>
@@ -100,7 +105,7 @@ export const HitCheckSection: React.FC = () => {
       {hit && !measuring && (
         <div className="flex flex-col gap-2" data-testid="hit-check-results">
           <p className={`text-[10px] ${off ? 'text-amber-100' : 'text-emerald-300'}`}>
-            {fmtBars(hit.bars[0], hit.bars[1])}:{' '}
+            {fmtBars(hit.bars[0], hit.bars[1], meter)}:{' '}
             {off
               ? `${off} thing${off === 1 ? '' : 's'} away from ${HIT_STYLES.find((s) => s.id === styleId)?.name.toLowerCase()}.`
               : `everything in range for ${HIT_STYLES.find((s) => s.id === styleId)?.name.toLowerCase()}.`}

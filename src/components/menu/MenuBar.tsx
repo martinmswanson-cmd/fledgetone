@@ -4,7 +4,7 @@ import { isBus } from '../../store/buses';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type BuiltinEntry } from '../../store/builtinPlugins';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { noteEditActions, usePianoPanel } from '../../store/pianoPanel';
 import { heldNotes } from '../../store/noteClipboard';
 import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store/uiStore';
@@ -19,7 +19,7 @@ import { openResample } from '../timeline/resampleDialogStore';
 import { bounceName, isRackTrack } from '../../store/bounceToPad';
 import { bounceRangeToPad, placedMessage } from '../../store/bounceToPadActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
-import { formatBarRange } from '../../store/timelineTypes';
+import { formatBarPosition, formatBarRange } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { APP_VERSION } from '../../version';
@@ -187,6 +187,8 @@ const MENUS: MenuDef[] = [
     items: () => {
       const s = tl();
       const at = Math.max(1, Math.round(s.playheadPosition));
+      // Where `at` is, as the ruler numbers it (by measure, not in 4/4)
+      const atBar = (bar: number) => formatBarPosition(bar, songMeterOf(s));
       return [
         { label: 'Add marker at the playhead', shortcut: 'M', run: () => say(s.addMarker()) },
         { label: 'Add hit point (locked to time)', shortcut: 'Shift+M', run: () => say(s.addHit()) },
@@ -198,17 +200,17 @@ const MENUS: MenuDef[] = [
           run: () => say(s.breatheTempo(4, 0.08) ?? 'The tempo now eases into each phrase end, and slows into the last. Undo takes it out.'),
         },
         { label: 'Breathe: every 8-bar phrase, deeper', run: () => say(s.breatheTempo(8, 0.14) ?? 'The tempo now eases into each 8-bar phrase end. Undo takes it out.') },
-        { label: `Insert 1 bar at bar ${at}`, run: () => say(s.insertBars(at, 1)), divider: true },
-        { label: `Insert 4 bars at bar ${at}`, run: () => say(s.insertBars(at, 4)) },
+        { label: `Insert 1 bar at bar ${atBar(at)}`, run: () => say(s.insertBars(at, 1)), divider: true },
+        { label: `Insert 4 bars at bar ${atBar(at)}`, run: () => say(s.insertBars(at, 4)) },
         { label: 'Delete bars In → Out', run: () => say(s.removeBars(s.loopRegion.inBar, s.loopRegion.outBar)) },
-        { label: `Build-up & drop at bar ${Math.max(2, at)}`, run: () => say(s.addBuildAndDrop(Math.max(2, at))), divider: true },
+        { label: `Build-up & drop at bar ${atBar(Math.max(2, at))}`, run: () => say(s.addBuildAndDrop(Math.max(2, at))), divider: true },
         { label: 'Arrange a beat: drops, beat switch, song form, tag…', run: () => openArrange('drops', Math.max(2, at)) },
         { label: 'Dark melody…', run: () => openArrange('melody', at) },
-        { label: `Key change up a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, 1)) },
-        { label: `Key change up a whole step from bar ${at}`, run: () => say(s.keyChangeFrom(at, 2)) },
-        { label: `Key change down a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, -1)) },
+        { label: `Key change up a semitone from bar ${atBar(at)}`, run: () => say(s.keyChangeFrom(at, 1)) },
+        { label: `Key change up a whole step from bar ${atBar(at)}`, run: () => say(s.keyChangeFrom(at, 2)) },
+        { label: `Key change down a semitone from bar ${atBar(at)}`, run: () => say(s.keyChangeFrom(at, -1)) },
         {
-          label: `Play ${formatBarRange(s.loopRegion.inBar, s.loopRegion.outBar)} backwards (In → Out)`,
+          label: `Play ${formatBarRange(s.loopRegion.inBar, s.loopRegion.outBar, songMeterOf(s))} backwards (In → Out)`,
           run: () => {
             showToast('Reversing…');
             void reverseBlock(s.loopRegion.inBar, s.loopRegion.outBar).then(showToast, (err) => showToast(`Couldn't reverse it: ${err instanceof Error ? err.message : String(err)}`));
@@ -240,11 +242,11 @@ const MENUS: MenuDef[] = [
           return bounceTrack(t.id).then((id) => (id ? `Bounced ${t.name} to audio: the original is muted, under it` : undefined));
         } },
         {
-          label: `Bounce ${formatBarRange(tl().loopRegion.inBar, tl().loopRegion.outBar)} (In → Out) to a Drum Rack pad`,
+          label: `Bounce ${formatBarRange(tl().loopRegion.inBar, tl().loopRegion.outBar, songMeterOf(tl()))} (In → Out) to a Drum Rack pad`,
           title: 'Everything playing there, as one sound, on the first empty pad of the selected Drum Rack (or of any, or a new Bounces track)',
           run: () => {
             const { inBar, outBar } = tl().loopRegion;
-            const name = bounceName(inBar, outBar);
+            const name = bounceName(inBar, outBar, undefined, undefined, songMeterOf(tl()));
             showToast(`Bouncing ${name}…`);
             return bounceRangeToPad({ from: inBar, to: outBar, name, target: t && isRackTrack(t) ? { trackId: t.id } : undefined }).then(
               (placed) => (placed ? placedMessage(`"${name}"`, placed) : undefined),

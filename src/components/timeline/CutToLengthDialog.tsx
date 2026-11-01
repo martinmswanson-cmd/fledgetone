@@ -6,9 +6,9 @@ import React, { useMemo, useState } from 'react';
 import { Scissors } from 'lucide-react';
 import { Modal } from './Modal';
 import { useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
-import { secondsBetween } from '../../audio/tempoMap';
+import { isPlainMeter, secondsBetween } from '../../audio/tempoMap';
 import { exactTempo, MAX_TEMPO_NUDGE, planCut, songSections } from '../../store/cutToLength';
-import { formatBpm } from '../../store/timelineTypes';
+import { formatBarSpan, formatBpm } from '../../store/timelineTypes';
 import { parseTimecode } from '../../audio/transport';
 
 /** The lengths ads, trailers and social clips come in. */
@@ -71,7 +71,7 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
             <p>
               Make a shorter or longer version of the song, for an ad, a trailer or a social clip. Whole sections (between your markers
               {markers.some((m) => m.anchor === 'bar') ? '' : ', or 8-bar phrases without any'}) are dropped or repeated, and it ends on the song's
-              own ending. The song is now {clock(secondsBetween(1, 1 + songBars, tempo))} ({songBars} bars).
+              own ending. The song is now {clock(secondsBetween(1, 1 + songBars, tempo))} ({isPlainMeter(meter) ? `${songBars} bars` : formatBarSpan(1, 1 + songBars, meter)}).
             </p>
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Length">
               {LENGTHS.map((n) => (
@@ -115,7 +115,7 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
                   ))}
                 </div>
                 <p>
-                  {plan.bars} bars: <span className="font-mono text-forge-text">{clock(length)}</span> at {formatBpm(useBpm)} BPM
+                  {isPlainMeter(meter) ? `${plan.bars} bars` : formatBarSpan(1, 1 + plan.bars, meter)}: <span className="font-mono text-forge-text">{clock(length)}</span> at {formatBpm(useBpm)} BPM
                   {Math.abs(length - target) > 0.01 && ` (${length > target ? '+' : '-'}${Math.abs(length - target).toFixed(2)} s from ${clock(target)})`}.
                   {sections.length - new Set(plan.order).size > 0 && ` Leaves out ${sections.length - new Set(plan.order).size} section${sections.length - new Set(plan.order).size === 1 ? '' : 's'}.`}
                 </p>

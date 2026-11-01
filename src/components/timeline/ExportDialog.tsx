@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { countedRender } from '../../audio/renderBusy';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
-import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { safeFileName } from '../../store/project';
 import {
   audibleTracks,
@@ -46,7 +46,7 @@ import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
-import { formatBarCount, formatBarRange, frameRateLabel } from '../../store/timelineTypes';
+import { formatBarCount, formatBarRange, formatBarSpan, frameRateLabel } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
 import { useSoundLibrary } from '../../audio/soundLibrary';
@@ -302,6 +302,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const loop = useTimelineStore((s) => s.loopRegion);
+  // Bars are named and counted by measure, as the ruler numbers them
+  const meter = useSongMeter();
   const projectName = useTimelineStore((s) => s.projectName);
   const reverbDecay = useTimelineStore((s) => s.masterReverbDecay);
   const delayTime = useTimelineStore((s) => s.masterDelayTime);
@@ -334,7 +336,6 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const audibleIds = new Set(audibleTracks(tracks).map((t) => t.id));
   const songEnd = maxOf(1, clips.filter((c) => audibleIds.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
   const songBars = songEnd - 1;
-  const loopBars = loop.outBar - loop.inBar;
 
   // The choices in effect: an empty song can't be exported, only the loop region can be a seamless
   // loop, and an intro + loop needs an intro (the loop starting after bar 1)
@@ -685,12 +686,12 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     );
   }
 
-  const loopRange = formatBarRange(loop.inBar, loop.outBar);
+  const loopRange = formatBarRange(loop.inBar, loop.outBar, meter);
   const rangeDetail = game
-    ? `For games: an intro (${formatBarRange(1, loop.inBar)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (${loopRange}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
+    ? `For games: an intro (${formatBarRange(1, loop.inBar, meter)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (${loopRange}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
     : range === 'song'
-      ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} ${songBars === 1 ? 'bar' : 'bars'}, ${lengthLabel(1, 1 + songBars, tempo)}.`
-      : `${loopRange.charAt(0).toUpperCase()}${loopRange.slice(1)}: ${formatBarCount(loopBars)} ${loopBars === 1 ? 'bar' : 'bars'}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
+      ? `Bar 1 to the end of the last clip: ${formatBarSpan(1, songEnd, meter)}, ${lengthLabel(1, 1 + songBars, tempo)}.`
+      : `${loopRange.charAt(0).toUpperCase()}${loopRange.slice(1)}: ${formatBarSpan(loop.inBar, loop.outBar, meter)}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
       ? `Plays the range once, then lets ${ringOut.notesPlayOn ? 'notes still sounding at its end play on to their own ends, and their ' : ''}release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(Math.ceil(ringOut.seconds * 10) / 10)} s after the range.`

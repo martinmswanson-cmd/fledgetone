@@ -4,7 +4,7 @@
  */
 import React, { useState } from 'react';
 import { Disc3, Drum, FolderOpen, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, MultiSample, RackPad, Track } from '../../store/timelineTypes';
 import { formatBarRange, RACK_PADS } from '../../store/timelineTypes';
 import { defaultMulti, defaultRack, mapZones, midiName, padNote, RACK_CHOKE_GROUPS, RACK_DECAY_MAX, RACK_FADE_MAX, RACK_GAIN_MAX, RACK_GAIN_MIN, rootFromName } from '../../store/sampleKits';
@@ -55,6 +55,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
   const bounce = usePadBounce((b) => b.fraction);
   const loopIn = useTimelineStore((st) => st.loopRegion.inBar);
   const loopOut = useTimelineStore((st) => st.loopRegion.outBar);
+  const meter = useSongMeter();
   const s = useTimelineStore.getState();
   const setRack = (next: DrumRack, record = true) => s.setTrackRack(track.id, next, record);
   const setPad = (i: number, patch: Partial<RackPad>, record = false) => setRack({ pads: rack.pads.map((p, j) => (j === i ? { ...p, ...patch } : p)) }, record);
@@ -87,10 +88,10 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
   };
   /** The loop range bounced (everything playing) onto the selected pad. */
   const fromLoop = () => {
-    const name = bounceName(loopIn, loopOut);
+    const name = bounceName(loopIn, loopOut, undefined, undefined, meter);
     void bounceRangeToPad({ from: loopIn, to: loopOut, name, target: { trackId: track.id, pad: selected } }).then(
       (placed) => placed && showToast(placedMessage(`"${name}"`, placed)),
-      (err) => showToast(`Couldn't bounce ${formatBarRange(loopIn, loopOut)}: ${err instanceof Error ? err.message : String(err)}`)
+      (err) => showToast(`Couldn't bounce ${formatBarRange(loopIn, loopOut, meter)}: ${err instanceof Error ? err.message : String(err)}`)
     );
   };
   const audition = async (i: number) => {
@@ -167,7 +168,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
             className={small}
             disabled={bounce !== null || !(loopOut > loopIn)}
             onClick={fromLoop}
-            title={`Fill this pad from the loop range: ${formatBarRange(loopIn, loopOut)} as they sound now (every track playing), bounced to one sound. Undo takes it off.`}
+            title={`Fill this pad from the loop range: ${formatBarRange(loopIn, loopOut, meter)} as they sound now (every track playing), bounced to one sound. Undo takes it off.`}
           >
             <Disc3 className="w-3 h-3 inline mr-1" />
             {bounce !== null ? `${Math.round(bounce * 100)}%` : 'From loop'}

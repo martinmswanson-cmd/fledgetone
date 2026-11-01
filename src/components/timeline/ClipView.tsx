@@ -6,12 +6,12 @@ import { midiOf } from '../../store/noteTools';
 import React, { useMemo, useState } from 'react';
 import { Link2 } from 'lucide-react';
 import { patternLabelOf } from '../../store/patterns';
-import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';
-import { tempoAt } from '../../audio/tempoMap';
+import { TOTAL_BARS, useTimelineStore, songTempo, useSongMeter } from '../../store/timelineStore';
+import { isPlainMeter, tempoAt } from '../../audio/tempoMap';
 import { formatBarsBeats } from '../../audio/transport';
 import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
-import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
+import { DEFAULT_WOBBLE, durationToBars, formatBarCount, formatBarPosition, formatBarSpan, minClipLength, snapBar } from '../../store/timelineTypes';
 import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { canMoveClipBetween, DROP_ROWS, FX_ROWS, INSTRUMENTS, isDrumKind, isDropKind, isRackKind, isFxKind } from '../../audio/instrumentCatalog';
@@ -146,6 +146,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
+  // (Its title numbers bars as the ruler does: by measure, not in 4/4)
+  const meter = useSongMeter();
   // Its pattern's badge, when other clips play the same pattern
   const patternLabel = useTimelineStore((s) => patternLabelOf(s.clips, clip.pattern));
   // Only audio clips follow the tempo here (their width in bars already changed with it)
@@ -520,7 +522,11 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         if (!clip.isSelected) useTimelineStore.getState().selectClip(clip.id, false);
         onOpenMenu({ x: e.clientX, y: e.clientY, bar: razorBarAt(e.clientX, e.shiftKey), trackId: clip.trackId, clipId: clip.id });
       }}
-      title={`${clip.name} — bar ${clip.startBar.toFixed(2)}, ${formatBarCount(clip.lengthBars)} bars • ${
+      title={`${clip.name} — ${
+        isPlainMeter(meter)
+          ? `bar ${clip.startBar.toFixed(2)}, ${formatBarCount(clip.lengthBars)} bars`
+          : `bar ${formatBarPosition(clip.startBar, meter)}, ${formatBarSpan(clip.startBar, clip.startBar + clip.lengthBars, meter)}`
+      } • ${
         audio ? `${clipSeconds.toFixed(2)} s of ${INSTRUMENTS[track.instrumentKey].name.toLowerCase()} • double-click for gain and fades, drag the top corners for the fades` : 'double-click to edit notes'
       }`}
     >

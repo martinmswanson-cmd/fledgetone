@@ -7,7 +7,7 @@
  * resample.ts; the studio's Resample dialog and Pocket's section sheet use these.
  */
 import { create } from 'zustand';
-import { allOrNothing, masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
+import { allOrNothing, masterFxOf, songGeneration, songMeterOf, songTempo, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, SlicerSettings, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
@@ -123,7 +123,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     const scale = STORED_PEAK / peak;
     const stored = channels.map((ch) => ch.map((v) => v * scale));
     const names = new Map(s.tracks.map((t) => [t.id, t.name]));
-    const name = resampleName(req.source, s.clips, names);
+    const name = resampleName(req.source, s.clips, names, songMeterOf(s));
     // (Checked after each wait: a song opened meanwhile gets nothing)
     const elsewhere = () => songGeneration() !== song;
     const ELSEWHERE: ResampleResult = { message: 'Another song was opened while it rendered: nothing was added.' };

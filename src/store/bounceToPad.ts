@@ -6,7 +6,8 @@
  * store in it, so Node can unit-test it; the actions are in bounceToPadActions.ts.
  */
 import type { Clip, DrumRack, RackPad, Track } from './timelineTypes';
-import { RACK_PADS } from './timelineTypes';
+import { formatBarRange, RACK_PADS } from './timelineTypes';
+import { isPlainMeter, type MeterMap } from '../audio/tempoMap';
 import { defaultRack, emptyPad, RACK_FADE_MAX, RACK_GAIN_MAX, RACK_GAIN_MIN } from './sampleKits';
 import { audioSourceSeconds } from './audioClips';
 
@@ -119,9 +120,13 @@ export function padFromClip(clip: Pick<Clip, 'name' | 'lengthBars' | 'audio'>, s
   };
 }
 
-/** A bounce's name: the section's (or the bars'), and the track's when only one was bounced. */
-export function bounceName(from: number, to: number, section?: string, trackName?: string): string {
-  const bars = to - from <= 1 + 1e-9 ? `bar ${fmtBar(from)}` : `bars ${fmtBar(from)}–${fmtBar(to - 1)}`;
+/**
+ * A bounce's name: the section's (or the bars'), and the track's when only one was bounced. In a
+ * song not in 4/4 (`meter`) the bars are its measures, as the ruler numbers them.
+ */
+export function bounceName(from: number, to: number, section?: string, trackName?: string, meter?: MeterMap): string {
+  const bars =
+    meter && !isPlainMeter(meter) ? formatBarRange(from, to, meter) : to - from <= 1 + 1e-9 ? `bar ${fmtBar(from)}` : `bars ${fmtBar(from)}–${fmtBar(to - 1)}`;
   const what = section ?? (trackName ? bars : bars.charAt(0).toUpperCase() + bars.slice(1));
   return (trackName ? `${trackName} ${what}` : what).slice(0, 40);
 }

@@ -5,7 +5,7 @@
 import React, { useRef, useState } from 'react';
 import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines, Disc3 } from 'lucide-react';
 import { busTargets, isBus, isMixTrack, loopingBuses, sendTargets } from '../../store/buses';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { TRACK_COLORS } from '../../store/timelineTypes';
 import { foldersOf } from '../../store/folders';
@@ -185,7 +185,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
       onClick: run(() => {
         // This track alone, as it sounds in the mix, onto the first empty Drum Rack pad (or a new Bounces track)
         const { inBar, outBar } = useTimelineStore.getState().loopRegion;
-        const name = bounceName(inBar, outBar, undefined, track.name);
+        const name = bounceName(inBar, outBar, undefined, track.name, songMeterOf(useTimelineStore.getState()));
         showToast(`Bouncing ${name}…`);
         bounceRangeToPad({ from: inBar, to: outBar, trackId: track.id, name }).then(
           (placed) => placed && showToast(placedMessage(`"${name}"`, placed)),
