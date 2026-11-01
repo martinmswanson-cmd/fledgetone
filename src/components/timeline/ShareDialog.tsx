@@ -14,6 +14,7 @@ import { APP_LINK_BASE, isNativeApp } from '../../native/nativeApp';
 import { embedSounds } from '../../audio/soundLibrary';
 import { audibleTracks, channelsOf, downloadBlob, renderArrangement } from '../../audio/exportWav';
 import { encodeAudio } from '../../audio/encoders';
+import { exportFailureWords } from '../../audio/exportFailure';
 import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_MASTER_FX } from '../../store/timelineTypes';
 import { Modal } from './Modal';
@@ -103,7 +104,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const how = await shareOrDownload(file, p.name);
       if (how !== 'cancelled') showToast(how === 'shared' ? `Shared ${file.name}` : `Downloaded ${file.name}: send it however you like`);
     } catch (err) {
-      showToast(`Couldn't make the MP3: ${err instanceof Error ? err.message : String(err)}`);
+      showToast(`Couldn't make the MP3: ${exportFailureWords(err)}`);
     } finally {
       setBusy('');
     }

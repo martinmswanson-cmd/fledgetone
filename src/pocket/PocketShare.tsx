@@ -15,6 +15,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { versionLabel } from '../version';
 import { chooseInterface } from './pocketMode';
 import { renderSongMp3 } from './pocketExport';
+import { exportFailureWords } from '../audio/exportFailure';
 import { Card, pill } from './pocketUi';
 import { APP_LINK_BASE, isNativeApp, nativeShareLink } from '../native/nativeApp';
 
@@ -57,7 +58,7 @@ export const PocketShare: React.FC = () => {
         showToast(`Saved ${out.name} (${out.lufs.toFixed(1)} LUFS)`);
       }
     } catch (err) {
-      showToast(`Couldn't make the MP3: ${err instanceof Error ? err.message : String(err)}`);
+      showToast(`Couldn't make the MP3: ${exportFailureWords(err)}`);
     } finally {
       setBusy(null);
     }
