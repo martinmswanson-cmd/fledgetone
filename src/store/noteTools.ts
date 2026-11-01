@@ -139,12 +139,17 @@ function groupsByStart(notes: NoteEvent[]): NoteEvent[][] {
 
 const clampStart = (bars: number, clipBars: number) => Math.max(0, Math.min(clipBars - EPS, bars));
 
-/** Move starts (and, with `ends`, lengths) to the grid; `strength` 1 = all the way. */
-export function quantize(notes: NoteEvent[], gridBars: number, clipStartBars: number, strength = 1, ends = false): NoteEvent[] {
+/**
+ * Move starts (and, with `ends`, lengths) to the grid; `strength` 1 = all the way. A note that
+ * would land on or past the clip's end (`clipBars`), where it wouldn't play, goes to the grid line before it.
+ */
+export function quantize(notes: NoteEvent[], gridBars: number, clipStartBars: number, strength = 1, ends = false, clipBars = Infinity): NoteEvent[] {
   // The grid is the song's, so measure from bar 1 (the clip may start mid-bar)
   const snap = (x: number) => Math.round((x + clipStartBars) / gridBars) * gridBars - clipStartBars;
+  const lastLine = Math.ceil((clipBars + clipStartBars) / gridBars - 1 - 1e-9) * gridBars - clipStartBars;
   return notes.map((n) => {
-    const start = n.startOffset + (snap(n.startOffset) - n.startOffset) * strength;
+    let start = n.startOffset + (snap(n.startOffset) - n.startOffset) * strength;
+    if (start > clipBars - EPS) start = n.startOffset + (lastLine - n.startOffset) * strength;
     const len = ends ? Math.max(gridBars, Math.round(lengthOf(n) / gridBars) * gridBars) : lengthOf(n);
     return { ...n, startOffset: Math.max(0, start), duration: ends ? barsToDuration(len) : n.duration };
   });

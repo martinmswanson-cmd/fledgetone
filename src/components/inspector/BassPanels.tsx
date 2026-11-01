@@ -30,8 +30,8 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const st = useTimelineStore.getState;
 
 /** A slider over a range best felt in ratios (Hz, seconds): 0..1 on a log scale. */
-export function LogSlider(props: { label: string; value: number; lo: number; hi: number; format: (v: number) => string; onChange: (v: number) => void; reset: number; accent: string; disabled?: boolean }) {
-  const { label, value, lo, hi, format, onChange, reset, accent, disabled = false } = props;
+export function LogSlider(props: { label: string; value: number; lo: number; hi: number; format: (v: number) => string; onChange: (v: number) => void; reset: number; accent: string; disabled?: boolean; locked?: boolean }) {
+  const { label, value, lo, hi, format, onChange, reset, accent, disabled = false, locked } = props;
   return (
     <FxSlider
       label={label}
@@ -44,6 +44,7 @@ export function LogSlider(props: { label: string; value: number; lo: number; hi:
       reset={toLog(reset, lo, hi)}
       accent={accent}
       disabled={disabled}
+      locked={locked}
     />
   );
 }
@@ -96,15 +97,15 @@ export const Bass808Panel: React.FC<{ track: Track }> = ({ track }) => {
           ))}
         </ActionSelect>
       </div>
-      <FxSlider label="Drive" value={s.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} reset={d.drive} accent={accent} disabled={off} />
+      <FxSlider label="Drive" value={s.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} reset={d.drive} accent={accent} disabled={off} locked={off} />
       <CharacterPick value={s.character} onChange={(character) => set({ character }, true)} disabled={off || s.drive === 0} />
-      <LogSlider label="Tone" value={s.tone} lo={BASS808_TONE_MIN} hi={BASS808_TONE_MAX} format={hz} onChange={(tone) => set({ tone })} reset={d.tone} accent={accent} disabled={off || s.drive === 0} />
-      <FxSlider label="Top layer" value={s.top} min={0} max={1} step={0.01} format={pct} onChange={(top) => set({ top })} reset={d.top} accent={accent} disabled={off} />
-      <FxSlider label="Punch" value={s.punch} min={0} max={36} step={1} format={(v) => `${Math.round(v)} st`} onChange={(punch) => set({ punch })} reset={d.punch} accent={accent} disabled={off} />
-      <LogSlider label="Punch time" value={s.punchTime} lo={0.005} hi={0.3} format={secs} onChange={(punchTime) => set({ punchTime })} reset={d.punchTime} accent={accent} disabled={off || s.punch === 0} />
-      <LogSlider label="Glide" value={s.glide} lo={0.01} hi={0.6} format={secs} onChange={(glide) => set({ glide })} reset={d.glide} accent={accent} disabled={off} />
-      <LogSlider label="Decay" value={s.decay} lo={0.1} hi={8} format={secs} onChange={(decay) => set({ decay })} reset={d.decay} accent={accent} disabled={off} />
-      <FxSlider label="Level" value={s.level} min={-12} max={6} step={0.5} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`} onChange={(level) => set({ level })} reset={d.level} accent={accent} disabled={off} />
+      <LogSlider label="Tone" value={s.tone} lo={BASS808_TONE_MIN} hi={BASS808_TONE_MAX} format={hz} onChange={(tone) => set({ tone })} reset={d.tone} accent={accent} disabled={off || s.drive === 0} locked={off} />
+      <FxSlider label="Top layer" value={s.top} min={0} max={1} step={0.01} format={pct} onChange={(top) => set({ top })} reset={d.top} accent={accent} disabled={off} locked={off} />
+      <FxSlider label="Punch" value={s.punch} min={0} max={36} step={1} format={(v) => `${Math.round(v)} st`} onChange={(punch) => set({ punch })} reset={d.punch} accent={accent} disabled={off} locked={off} />
+      <LogSlider label="Punch time" value={s.punchTime} lo={0.005} hi={0.3} format={secs} onChange={(punchTime) => set({ punchTime })} reset={d.punchTime} accent={accent} disabled={off || s.punch === 0} locked={off} />
+      <LogSlider label="Glide" value={s.glide} lo={0.01} hi={0.6} format={secs} onChange={(glide) => set({ glide })} reset={d.glide} accent={accent} disabled={off} locked={off} />
+      <LogSlider label="Decay" value={s.decay} lo={0.1} hi={8} format={secs} onChange={(decay) => set({ decay })} reset={d.decay} accent={accent} disabled={off} locked={off} />
+      <FxSlider label="Level" value={s.level} min={-12} max={6} step={0.5} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`} onChange={(level) => set({ level })} reset={d.level} accent={accent} disabled={off} locked={off} />
       <div className={`flex flex-wrap items-center gap-2 text-[10px] font-mono ${off ? 'opacity-45' : ''}`}>
         <label className="flex items-center gap-1.5 cursor-pointer" title="Every note plays as the nearest note of the key (the notes in the clip don't change)">
           <input
@@ -189,7 +190,7 @@ export const GlidePanel: React.FC<{ track: Track }> = ({ track }) => {
       <p className={`text-[10px] text-forge-muted leading-snug ${on ? '' : 'opacity-70'}`}>
         {on ? 'Notes that overlap or touch slide into each other; leave a gap to hit a note again.' : "Off: the instrument's own slide."}
       </p>
-      <LogSlider label="Time" value={Math.max(0.005, track.glide ?? 0.08)} lo={0.005} hi={GLIDE_MAX} format={secs} onChange={(glide) => st().setTrackBass(track.id, { glide }, false)} reset={0.08} accent={accent} disabled={!on} />
+      <LogSlider label="Time" value={Math.max(0.005, track.glide ?? 0.08)} lo={0.005} hi={GLIDE_MAX} format={secs} onChange={(glide) => st().setTrackBass(track.id, { glide }, false)} reset={0.08} accent={accent} disabled={!on} locked={!on} />
     </InsertPanel>
   );
 };
@@ -217,8 +218,8 @@ export const SubLayerPanel: React.FC<{ track: Track }> = ({ track }) => {
           <option value="fundamental">On the note (reinforce)</option>
         </select>
       </label>
-      <FxSlider label="Level" value={s.level} min={0} max={1} step={0.01} format={pct} onChange={(level) => set({ level })} reset={defaultSubLayer().level} accent={accent} disabled={!on} />
-      <FxSlider label="Decay" value={s.decay} min={0} max={8} step={0.05} format={(v) => (v === 0 ? 'Hold' : secs(v))} onChange={(decay) => set({ decay })} reset={0} accent={accent} disabled={!on} />
+      <FxSlider label="Level" value={s.level} min={0} max={1} step={0.01} format={pct} onChange={(level) => set({ level })} reset={defaultSubLayer().level} accent={accent} disabled={!on} locked={!on} />
+      <FxSlider label="Decay" value={s.decay} min={0} max={8} step={0.05} format={(v) => (v === 0 ? 'Hold' : secs(v))} onChange={(decay) => set({ decay })} reset={0} accent={accent} disabled={!on} locked={!on} />
     </InsertPanel>
   );
 };

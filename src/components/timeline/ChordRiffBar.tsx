@@ -99,7 +99,8 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
     // (Read now, not subscribed to: the playhead moves every frame while the song plays)
     const playhead = useTimelineStore.getState().playheadPosition;
     const inClip = playhead >= clip.startBar - 1e-6 && playhead < clip.startBar + clip.lengthBars - 1e-6;
-    const at = inClip ? Math.round((playhead - clip.startBar) / gridBars) * gridBars : 0;
+    // (On the grid line at or before it, within the clip: one rounded up to the clip's end wouldn't play)
+    const at = inClip ? Math.min(Math.round((playhead - clip.startBar) / gridBars), Math.ceil(clip.lengthBars / gridBars - 1 - 1e-9)) * gridBars : 0;
     const length = Math.max(gridBars, Math.min(noteBars, clip.lengthBars - at));
     const { notes: added, voiced } = stampDegree(key, degree, { seventh: sevenths, at, lengthBars: length, prev: last.current?.clipId === clip.id ? last.current.voiced : null, center, velocity }, () => uid('note'));
     last.current = { clipId: clip.id, voiced };

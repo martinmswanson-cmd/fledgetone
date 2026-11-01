@@ -55,6 +55,8 @@ interface Voice808 extends NativeVoice {
   settings: Bass808Settings;
   /** Its pitch: the punch's drop, then the last slide */
   glide: PitchGlide;
+  /** The held key it's playing now (a slide hands it on): only that key lets it go */
+  heldBy?: object;
 }
 
 const curves = new Map<string, Float32Array<ArrayBuffer>>();
@@ -186,7 +188,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
       // One note at a time: the loudest of a chord
       const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
       try {
-        playNote(n, time);
+        const v = playNote(n, time);
+        if (v) v.heldBy = undefined;
       } catch (err) {
         console.warn('Skipped a note:', err);
       }
@@ -194,8 +197,10 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     /** A key held on a MIDI keyboard: it sounds until let go (or has died away). */
     hold: (note: PlayableNote, time: number) => {
       const voice = playNote({ ...note, duration: HELD_NOTE }, time);
+      const key = {};
+      if (voice) voice.heldBy = key;
       return (at: number) => {
-        if (!voice || current !== voice) return;
+        if (!voice || current !== voice || voice.heldBy !== key) return;
         const t = Math.max(raw.currentTime, notLate(bus.context, at) - voice.lead);
         voices.release(voice, t, RELEASE);
         voice.end = t;

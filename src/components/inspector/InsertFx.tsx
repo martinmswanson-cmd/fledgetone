@@ -51,9 +51,11 @@ interface SliderProps {
   disabled: boolean;
   /** Set while an automation lane drives this setting: an AUTO badge, and the slider follows the lane and can't be moved. */
   automated?: React.ReactNode;
+  /** Can't be moved (not just dimmed): for a panel whose Off has no settings, where a move would switch it on */
+  locked?: boolean;
 }
 
-export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated }) => (
+export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated, locked }) => (
   <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} title={automated ? AUTOMATED_TIP : undefined}>
     <span className="w-16 text-forge-muted uppercase">{label}</span>
     <UndoableRange
@@ -63,7 +65,7 @@ export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, 
       value={value}
       onValue={onChange}
       resetValue={reset}
-      disabled={!!automated}
+      disabled={!!automated || !!locked}
       className="flex-1 min-w-0 cursor-pointer disabled:cursor-default h-1.5"
       style={{ accentColor: automated ? '#f59e0b' : accent }}
       aria-label={label}

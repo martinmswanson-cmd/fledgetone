@@ -30,6 +30,16 @@ export function exportFailureWords(err: unknown): string {
   return !(err instanceof Error) || isBrowserError(err) || !err.message.trim() ? BROWSER_FAILED : err.message;
 }
 
+/** The same for Share's MP3, which has no range, rate or format to change: what can be done there. */
+export const SHARE_BROWSER_FAILED =
+  "the browser couldn't make this file. It may be too long for the memory the browser has: try a shorter song, or Export in the studio as a WAV.";
+
+/** The words for a failed Share MP3 (after "Couldn't make the MP3: "). */
+export function shareFailureWords(err: unknown): string {
+  const words = exportFailureWords(err);
+  return words === BROWSER_FAILED ? SHARE_BROWSER_FAILED : words;
+}
+
 /** `err`'s words to go on from the app's own sentence: its message if it's the app's, else the browser wording (capitalised). */
 export function causeWords(err: unknown): string {
   const words = exportFailureWords(err);

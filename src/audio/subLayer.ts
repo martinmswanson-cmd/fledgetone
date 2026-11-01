@@ -33,6 +33,8 @@ interface SubVoice extends NativeVoice {
   end: number;
   /** Its pitch: the last slide */
   glide: PitchGlide;
+  /** The held key it's playing now (a slide hands it on): only that key lets it go */
+  heldBy?: object;
 }
 
 export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undefined) {
@@ -99,7 +101,8 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     play: (notes: PlayableNote[], time: number, glide = DEFAULT_GLIDE) => {
       if (!settings || !notes.length) return;
       try {
-        playNote(lowest(notes), time, glide);
+        const v = playNote(lowest(notes), time, glide);
+        if (v) v.heldBy = undefined;
       } catch (err) {
         console.warn('Skipped a sub note:', err);
       }
@@ -107,8 +110,10 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     /** A held key: its sub, and what lets it go. */
     hold: (note: PlayableNote, time: number, glide = DEFAULT_GLIDE) => {
       const voice = settings ? playNote({ ...note, duration: HELD_NOTE }, time, glide) : undefined;
+      const key = {};
+      if (voice) voice.heldBy = key;
       return (at: number) => {
-        if (!voice || !voices || current !== voice || !nb) return;
+        if (!voice || !voices || current !== voice || voice.heldBy !== key || !nb) return;
         const t = notLate(nb.bus.context, at);
         voices.release(voice, t, RELEASE);
         voice.end = t;

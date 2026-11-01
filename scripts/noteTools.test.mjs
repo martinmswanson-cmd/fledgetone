@@ -57,6 +57,11 @@ test('quantize moves starts to the song grid, with strength', () => {
   // A clip starting mid-bar: its grid is the song's
   const offset = T.quantize([N('c', 'C4', 0.03)], 1 / 4, 0.1);
   near(offset[0].startOffset, 0.15);
+  // A note that would round onto the clip's end (where it wouldn't play) goes to the line before
+  const end = T.quantize([N('d', 'C4', 4 - 1 / 32)], 1 / 8, 0, 1, false, 4);
+  near(end[0].startOffset, 4 - 1 / 8);
+  const endOff = T.quantize([N('e', 'C4', 1.99)], 1 / 4, 0.1, 1, false, 2);
+  assert.ok(endOff[0].startOffset < 2 && endOff[0].startOffset >= 1.99 - 0.25, String(endOff[0].startOffset));
 });
 
 test('strum spreads a chord low to high and keeps its end', () => {

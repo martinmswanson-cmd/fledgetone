@@ -770,8 +770,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const out = (() => {
       if (typeof tool === 'function') return tool(target, newId);
       switch (tool) {
-        case 'quantize': return quantize(target, grid, clip.startBar - 1);
-        case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true);
+        case 'quantize': return quantize(target, grid, clip.startBar - 1, 1, false, bars);
+        case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true, bars);
         case 'humanize': return humanize(target, bars);
         case 'strumDown': return strum(target, bars, 1 / 96, true);
         case 'strumUp': return strum(target, bars, 1 / 96, false);

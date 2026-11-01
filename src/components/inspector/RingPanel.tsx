@@ -27,7 +27,7 @@ export const RingPanel: React.FC<{ track: Track }> = ({ track }) => {
       <p className={`text-[10px] text-forge-muted leading-snug ${on ? '' : 'opacity-70'}`}>
         {on ? 'Notes ring on after they end, dying away over this long (as far as the recording rings).' : "Off: notes stop as the instrument's own do when let go."}
       </p>
-      <LogSlider label="Ring" value={track.ring ?? RING_DEFAULT} lo={0.3} hi={RING_MAX} format={secs} onChange={(ring) => st().setTrackFeel(track.id, { ring }, false)} reset={RING_DEFAULT} accent={accent} disabled={!on} />
+      <LogSlider label="Ring" value={track.ring ?? RING_DEFAULT} lo={0.3} hi={RING_MAX} format={secs} onChange={(ring) => st().setTrackFeel(track.id, { ring }, false)} reset={RING_DEFAULT} accent={accent} disabled={!on} locked={!on} />
       {breathes && (
         <label data-search="breathe" className="flex items-center gap-2 text-[11px] text-forge-text cursor-pointer" title="A player runs out of breath on a long note, so it fades a little after about 6 to 9 seconds. Off: held notes hold at full level, as a drone.">
           <input type="checkbox" className="accent-teal-400" checked={track.breathe !== false} onChange={(e) => st().setTrackFeel(track.id, { breathe: e.target.checked ? undefined : false })} />
