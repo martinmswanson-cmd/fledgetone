@@ -117,10 +117,12 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   // its end; Stop, Pause and Free memory drop every bend to come and centre; a move of the playhead
   // (Tone's "stop" then "start" at one time) keeps the notes sounding on
   assert.doesNotMatch(sched, /scheduleRepeat/);
-  // (live, sent to the bend window that gives them as they come due: see bendWindow.ts)
-  assert.match(sched, /if \(live\) windowFor\(trackId, instrument\)\.steps\(curve, time, end\);\s+else for \(const \[t, cents\] of curve\.pts\) again\(cents, t\);/);
+  // (live, sent to the bend window that gives them as they come due: see bendWindow.ts; an export's
+  // too once a bent note begins over an earlier one still sounding, see windowedExport)
+  assert.match(sched, /const windowed = \(instrument: TrackInstrument\) => live \|\| windowedExport\.has\(instrument\);/);
+  assert.match(sched, /if \(win\) windowFor\(trackId, instrument\)\.steps\(curve, time, end\);\s+else for \(const \[t, cents\] of curve\.pts\) again\(cents, t\);/);
   // (an export sends a note's bends as before, but where it sounds over an earlier bent note)
-  assert.match(sched, /const again = \(cents: number, t: number\) => \(live \|\| !under \|\| t <= time \? sendBend\(trackId, instrument, cents, t\) : sendAgain\(trackId, instrument, cents, t\)\);/);
+  assert.match(sched, /const again = \(cents: number, t: number\) => \(win \|\| !under \|\| t <= time \? sendBend\(trackId, instrument, cents, t\) : sendAgain\(trackId, instrument, cents, t\)\);/);
   assert.match(sched, /if \(reset !== undefined\) sendBend\(trackId, instrument, laneBendAt\(trackId, tick, time\), reset, true\);/);
   assert.match(sched, /if \(stoppedAt !== null && stoppedAt !== time\) forgetNotes\(\);/);
   assert.match(sched, /onVoicesLetGo\(\(\) => liveSchedule\?\.letGo\(\)\)/);

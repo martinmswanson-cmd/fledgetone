@@ -46,6 +46,9 @@
 //   lane's alone), held, sliding up, and with the lane moving while it sounds; and sliding while
 //   the lane moves, in the file and live alike (the slide, sent whole when the note started, put
 //   the lane back where it had been at the start).
+// - 10,000 short bent notes one after another, played live on a lead: no hold-up of more than a few tenths of a second (over a
+//   second). 50 and 400 long sliding notes begun a 64th apart over each other, in a file, on a lead and on keys: a few seconds,
+//   no hold-up of a second (minutes, the page held up for 10 seconds at a time).
 //
 //   npx vite --port 5200                 (in another terminal)
 //   node scripts/audio-check/bends.cjs
@@ -216,6 +219,23 @@ const PLAY = async ({ text, seconds }) => {
   await sleep(300);
   po.disconnect();
   return Math.max(0, ...tasks);
+};
+
+// Render `text` to bar `toBar` and return how long it took and the longest main-thread task meanwhile (ms)
+const COST = async ({ text, toBar }) => {
+  const P = await import('/src/store/project.ts');
+  const X = await import('/src/audio/exportWav.ts');
+  const T = await import('/src/store/timelineTypes.ts');
+  const p = P.parseProject(JSON.parse(text));
+  const tasks = [];
+  const po = new PerformanceObserver((l) => l.getEntries().forEach((e) => tasks.push(e.duration)));
+  po.observe({ type: 'longtask' });
+  const t0 = performance.now();
+  await X.renderArrangement({ tracks: p.tracks, clips: p.clips, bpm: p.bpm, tempoPoints: p.tempoPoints, swing: p.swing, startBar: 1, endBar: toBar, masterFx: p.masterFx ?? T.DEFAULT_MASTER_FX, ending: 'cut', sampleRate: 44100, markers: [] });
+  const ms = Math.round(performance.now() - t0);
+  await new Promise((r) => setTimeout(r, 200));
+  po.disconnect();
+  return { ms, longest: Math.round(Math.max(0, ...tasks)) };
 };
 
 // Play `text` live from bar 1, Stop `stopAfter` seconds in, and return the output's level every 10 ms (dB) from `from` seconds after the first sound to 1.5 s later
@@ -655,6 +675,26 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
       await pg.close();
       report(ms < most, `lead, ${what}, played live: longest hold-up ${Math.round(ms)} ms`);
     }
+  }
+  // The cost, live: 10,000 short bent notes one after another (625 a second, none over another) on a lead: no more than a few
+  // tenths of a second (every one kept looked through for every bent note, and every note's bend sent again over checked against
+  // every one sent after it: over a second, more for more notes)
+  {
+    const notes = [...Array(10000)].map((_, i) => n(`d${i}`, ['C4', 'E4', 'G4', 'B4'][i % 4], (i * 8) / 10000, `${((8 / 10000) * 0.9).toFixed(6)}m`, 0.02, [{ at: 0, value: -2 }, { at: (8 / 10000) * 0.9, value: 2 }]));
+    const pg = await page();
+    const ms = await pg.evaluate(PLAY, { text: JSON.stringify(song('lead', [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 8, notes }])), seconds: 6 });
+    await pg.close();
+    report(ms < 700, `lead, 10,000 short bent notes one after another, played live: longest hold-up ${Math.round(ms)} ms`);
+  }
+  // The cost, in a file: 50 (and 400) notes 8 bars long, each begun a 64th after the last and sliding all the way, on a lead and
+  // on keys: a few seconds, the page never held up for long (each note's bend was sent again at every step of every earlier one
+  // it sounds over: minutes, the page held up for 10 seconds at a time)
+  for (const [key, count] of [['lead', 50], ['lead', 400], ['keys', 400]]) {
+    const notes = [...Array(count)].map((_, i) => n(`l${i}`, ['C4', 'E4', 'G4', 'B4'][i % 4], i / 64, '8m', 0.02, [{ at: 0, value: -2 }, { at: 8, value: 2 }]));
+    const pg = await page();
+    const got = await pg.evaluate(COST, { text: JSON.stringify(song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 8, notes }])), toBar: 2 });
+    await pg.close();
+    report(got.ms < 30000 && got.longest < 1000, `${key}, ${count} long sliding notes begun one after another over each other, in a file: ${(got.ms / 1000).toFixed(1)} s, longest hold-up ${got.longest} ms`);
   }
   await browser.close();
   process.exit(failed ? 1 : 0);

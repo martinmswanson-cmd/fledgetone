@@ -515,6 +515,52 @@ test('a stall shorter than a couple of seconds is not heard: the bends are given
   for (let t = 2.1; t < 3.8; t += 0.0071) assert.equal(fed.at(t), eager.at(t), `at ${t}`);
 });
 
+test("an export's bends sent one by one, then taken over by a window where a note begins over an earlier one: as sent all at once", () => {
+  // (an export's clock runs ahead of what it renders: nothing is played until the render gets there)
+  const clock = { currentTime: 0 };
+  const fed = createBendTimeline(() => -1e9);
+  const eager = createBendTimeline(() => -1e9);
+  /** The bend sent last for each time (the scheduler's exportSent) */
+  const sent = new Map();
+  const send = (c, t, cut) => {
+    eager.set(c, t, cut);
+    fed.set(c, t, cut);
+    if (cut) for (const k of [...sent.keys()]) if (k >= t) sent.delete(k);
+    sent.set(t, c);
+  };
+  // Two notes one after the other, each sent whole at its start, the second's song's bend after its release ahead
+  const a = noteCurve(0.1, 2, 0.004, (i) => 120 * Math.sin(i / 2));
+  for (const [t, c] of a.whole.pts) send(c, t);
+  send(0, 2.1);
+  const b = noteCurve(2.2, 6, 0.004, (i) => -90 * Math.cos(i / 3));
+  for (const [t, c] of b.whole.pts) send(c, t);
+  send(0, 8.2);
+  send(30, 9);
+  // A third begun at 3.1 over the second, the clock there: a window takes over from it
+  clock.currentTime = 3.05;
+  const w = createBendWindow(clock, (cents, time, cut) => fed.set(cents, time, cut), true);
+  const at = [...sent].sort((x, y) => x[0] - y[0]);
+  let first = at.length;
+  while (first > 0 && at[first - 1][0] >= 3.1) first--;
+  w.seed([{ curve: a.whole, start: 0.1, end: 2.1 }, { curve: b.whole, start: 2.2, end: 8.2, back: 9 }], at.slice(first - 1), 3.1);
+  const c = noteCurve(3.1, 3, 0.004, (i) => 200 * Math.sin(i / 5));
+  for (const [t, v] of c.whole.pts) eager.set(v, t);
+  for (const [t] of b.whole.pts) if (t > 3.1 && t < 6.1) eager.set(curveAt(c.whole, t), t);
+  eager.set(curveAt(b.whole, 6.1), 6.1);
+  w.batch(3.1, () => {
+    w.steps(c.whole, 3.1, 6.1);
+    w.over(c.whole, 3.1, 6.1, -Infinity);
+    w.send(curveAt(b.whole, 6.1), 6.1);
+  }, true);
+  for (let now = 3.25; now <= 12; now = Math.round((now + FEED_EVERY) * 1e6) / 1e6) {
+    clock.currentTime = now;
+    w.feed();
+  }
+  for (let t = 0; t <= 12; t += 0.0037) assert.equal(fed.at(t), eager.at(t), `at ${t}`);
+  // (given in time order from the note's start on: the instrument's bends there dropped once)
+  assert.equal(fed.after(9).length, 0);
+});
+
 test("a sounding note's later steps, given as they come due, say when they were sent", () => {
   const clock = { currentTime: 0 };
   const sentAt = [];
