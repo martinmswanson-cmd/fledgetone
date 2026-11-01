@@ -264,8 +264,11 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
         if (centres.length > 64) centres = centres.filter((t) => t > out.context.currentTime);
         centres.push(time);
       }
-      if (cut) cutBends(liveBend ?? cents, time);
-      sendBend(liveBend ?? cents, time);
+      // (Off centre, the song's own value: a sounding note's later steps keep their pitch while
+      // the wheel is held, the wheel coming back at the song's next centre)
+      const v = centred ? (liveBend ?? cents) : cents;
+      if (cut) cutBends(v, time);
+      sendBend(v, time);
     },
     releaseAll: () => {
       if (!inst) return;
