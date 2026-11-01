@@ -3,6 +3,7 @@ import { createParamWriter, type AutomationTarget, type ParamWriter } from './pa
 import { paramSetter as smoothParamSetter, smoothSet, SMOOTH_TC } from './smoothParam';
 import { PEQ_MAX_BANDS, type PeqBand } from '../../store/timelineTypes';
 import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
+import { keepOn } from '../keepOn';
 import { planShapedDuck, verticesGain, type DuckPoint, type ShapedDuck } from './duckShape';
 
 /**
@@ -262,6 +263,8 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   // Like Tone's stereo effects, a mono source is spread to both channels
   input.channelCount = 2;
   input.channelCountMode = 'explicit';
+  // In an export its delay lines (and the sweep driving them) run on between notes (see keepOn.ts)
+  const letGo = keepOn(input.input as unknown as AudioNode);
   const output = new Tone.Gain(1);
   // Made at their starting levels: set later, they'd change only a look-ahead (0.1 s) on, and a
   // chorus switched on while playing silenced the track until then
@@ -364,6 +367,7 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
       split.disconnect();
       merge.disconnect();
       shelf.disconnect();
+      letGo();
       [input, output, dry, wet].forEach((n) => n.dispose());
     },
   };
@@ -741,6 +745,8 @@ export function createLightLofi(settings: { crush: number; tone: number; wow: nu
   const wet = raw.createGain();
   const into = input.input as unknown as AudioNode;
   const out = output.input as unknown as AudioNode;
+  // In an export its delay line (and the wobble driving it) runs on between notes (see keepOn.ts)
+  const letGo = keepOn(into);
   into.connect(dry);
   dry.connect(out);
   into.connect(delay);
@@ -773,6 +779,7 @@ export function createLightLofi(settings: { crush: number; tone: number; wow: nu
     dispose: () => {
       lfo.stop();
       [dry, delay, lfo, swing, shaper, tone, wet].forEach((n) => n.disconnect());
+      letGo();
       input.dispose();
       output.dispose();
     },

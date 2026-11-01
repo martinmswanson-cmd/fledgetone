@@ -25,6 +25,7 @@ import { clearCopies, copyBytes, copySet, dropCopy, forgetCopiesOf, makeCopy, on
 import { stretchOutline } from './resampler';
 import { createBendTimeline } from '../bendTimeline';
 import { maxOf } from '../../support/minMax';
+import { keepOn } from '../keepOn';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -1120,8 +1121,10 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const nasal = biquad('peaking', 1200, 1.6, 5);
     const edge = biquad('peaking', 3000, 2, 2);
     const dark = biquad('lowpass', 6500, 0.7);
+    // In an export the vibrato runs on between notes (see keepOn.ts)
+    const letGo = keepOn(delay);
     const built = chain([delay, thin, nasal, edge, dark]);
-    built.nodes.push({ dispose: () => { lfo.stop(); lfo.disconnect(); depth.disconnect(); } });
+    built.nodes.push({ dispose: () => { lfo.stop(); lfo.disconnect(); depth.disconnect(); letGo(); } });
     return {
       ...built,
       onNote: (time) => {

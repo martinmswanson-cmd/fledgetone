@@ -4,6 +4,7 @@ import { ECHO_BEATS, REVERB_DECAY_MAX } from '../../store/timelineTypes';
 import { writeTime } from './lightFx';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 import { INSERT_ROOM, insertRoomChannels, ROOM_STYLES } from './roomIR';
+import { keepOn } from '../keepOn';
 
 /**
  * The Delay and Reverb inserts: a track's own echoes and room, as against the shared master
@@ -146,6 +147,8 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   tone.type = 'lowpass';
   tone.Q.value = 0.5;
   const wet = raw.createGain();
+  // In an export the tail is never switched off part way between notes (see keepOn.ts)
+  const letGo = keepOn(into);
   into.connect(dry);
   dry.connect(out);
   into.connect(pre);
@@ -175,6 +178,7 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
     set,
     dispose: () => {
       [dry, pre, convolver, tone, wet].forEach((n) => n.disconnect());
+      letGo();
       input.dispose();
       output.dispose();
     },
