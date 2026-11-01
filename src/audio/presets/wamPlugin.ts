@@ -118,9 +118,13 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
    * sent again at `at`, so the old one's override doesn't hold the bend from the cut over it.
    */
   let overrides: Array<{ at: number; from: number }> = [];
+  /** Told each bend as the plugin plays it (on its range, so clamped), with `cut` when the ones after are dropped: see TrackInstrument.onBendHeard */
+  let heard: ((cents: number, time: number, cut?: boolean) => void) | undefined;
+  const playedCents = (cents: number, time: number) => ((bendValue(cents, time) - 8192) / 8192) * (time >= wideFrom ? WIDE_BEND_CENTS : BEND_RANGE_CENTS);
   const midiBend = (cents: number, time: number) => {
     const v = bendValue(cents, time);
     sendMidi(inst!, [0xe0, v & 0x7f, v >> 7], time);
+    heard?.(playedCents(cents, time), time);
   };
   const sendBend = (cents: number, time: number) => {
     if (!inst) return;
@@ -224,6 +228,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
     : Promise.resolve();
 
   return {
+    onBendHeard: (fn: (cents: number, time: number, cut?: boolean) => void) => void (heard = fn),
     play: (notes: PlayableNote[], time: number) => {
       for (const note of notes) {
         const n = noteNumber(note.note);
@@ -246,6 +251,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       if (live) {
         liveBend = centred ? undefined : cents;
         liveAt = bendStamp();
+        if (cut) heard?.(playedCents(cents, time), time, true);
         if (cut) cutBends(cents, time);
         sendBend(cents, time);
         if (resetAt > time) sendBend(cents, resetAt);
@@ -267,6 +273,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       // (Off centre, the song's own value: a sounding note's later steps keep their pitch while
       // the wheel is held, the wheel coming back at the song's next centre)
       const v = centred ? (liveBend ?? cents) : cents;
+      if (cut) heard?.(playedCents(v, time), time, true);
       if (cut) cutBends(v, time);
       sendBend(v, time);
     },

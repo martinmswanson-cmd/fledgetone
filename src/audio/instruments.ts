@@ -137,6 +137,11 @@ export interface TrackInstrument {
   setSlicer?: (settings: SlicerSettings | undefined) => void;
   /** The Synth Designer's: its patch as it changes (from the next note), without a rebuild. */
   setSynth?: (patch: SynthPatch | undefined) => void;
+  /**
+   * A plugin's: be told each pitch bend as it plays it (clamped to its range, the wheel kept where
+   * the player holds it), so a layer under it (the Sub enhancer) follows what's heard, not what was sent.
+   */
+  onBendHeard?: (fn: (cents: number, time: number, cut?: boolean) => void) => void;
   /** The 808's: its designer settings as they change (undefined: the original 808), without a rebuild. */
   setBass808?: (settings: Bass808Settings | undefined) => void;
   /** A monophonic synth's legato glide time as it changes (undefined: its own), without a rebuild. */
@@ -597,6 +602,9 @@ function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
   };
 }
 
+/** The instruments that play one note at a time (the loudest of a chord), whatever their settings */
+const MONO_KEYS = new Set<InstrumentKey>(['bass', 'subBass', 'lead', 'bass808', 'wobbleBass', 'growlBass', 'reeseBass']);
+
 /**
  * The heavy bass tools a track's instrument may carry: a legato glide it reads at each note (see
  * GlideRef), and for a pitched instrument the Sub enhancer, a sine under its notes (subLayer.ts),
@@ -617,6 +625,10 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   let bass808 = options.bass808;
   // (Each instrument's own: a Glide or 808 settings left from another instrument play no part)
   const glide = () => (key === 'bass808' ? bass808?.glide : glideRef.seconds);
+  inst.onBendHeard?.((cents, time, cut) => sub.bend(cents, time, cut));
+  // A one-note-at-a-time instrument plays a chord's loudest note: the sub goes under that one
+  let synth = options.synth;
+  const monoNow = () => MONO_KEYS.has(key) || (key === 'synthDesigner' && !!synth?.mono);
   // The notes as the instrument plays them: the 808 Designer snaps them into its key
   const tuned = (n: PlayableNote): PlayableNote => {
     if (key !== 'bass808' || !bass808?.tuneToKey) return n;
@@ -625,7 +637,8 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   };
   return {
     ...withGlide,
-    ...(inst.bend
+    // (A plugin says what it plays; any other bends as it's sent)
+    ...(inst.bend && !inst.onBendHeard
       ? {
           bend: (cents: number, time: number, live?: boolean, cut?: boolean, sent?: number) => {
             inst.bend!(cents, time, live, cut, sent);
@@ -641,9 +654,17 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
           },
         }
       : {}),
+    ...(inst.setSynth
+      ? {
+          setSynth: (patch: SynthPatch | undefined) => {
+            synth = patch;
+            inst.setSynth!(patch);
+          },
+        }
+      : {}),
     play: (notes, time) => {
       inst.play(notes, time);
-      sub.play(notes.map(tuned), time, glide());
+      sub.play((monoNow() && notes.length > 1 ? [loudestNote(notes)] : notes).map(tuned), time, glide());
     },
     ...(inst.noteOn
       ? {
