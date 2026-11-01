@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Clip, LauncherSlot, SlotClip, Track } from './timelineTypes';
 import { TOTAL_BARS } from './timelineTypes';
+import { measureAt, measureStart, type MeterMap } from '../audio/tempoMap';
 
 /**
  * The clip launcher (see launcher.ts) as the live engine hears it. While it's in use, each track
@@ -23,7 +24,7 @@ export interface LauncherRuntime {
   last: { segments: Record<string, Segment[]>; start: number; end: number } | null;
   /** Where the current session started (the first launch's bar) */
   start: number | null;
-  /** Launches land on a multiple of this many bars (1: the next bar line) */
+  /** Launches land on a multiple of this many measures (1: the next bar line; under 1, a part of a measure in 4/4 quarters: 0.25 a beat) */
   quantize: number;
 }
 
@@ -43,6 +44,21 @@ export function segmentAt(segments: readonly Segment[] | undefined, bar: number)
 
 /** The segments still to come after `bar` (launches waiting for their bar line). */
 export const queuedAfter = (segments: readonly Segment[] | undefined, bar: number) => (segments ?? []).filter((s) => s.from > bar + EPS);
+
+/**
+ * Where a launch from `pos` lands, in the song's time signatures: the next measure start that is a
+ * multiple of `quantize` measures from the first. Under a measure, the next point a whole number of
+ * `quantize * 4` beats into its measure (or the next measure's start, if that comes first).
+ */
+export function launchPoint(pos: number, quantize: number, meter: MeterMap): number {
+  const m = measureAt(Math.max(1, pos), meter);
+  if (quantize < 1) {
+    const step = (quantize * 4) / m.meter.den;
+    return Math.min(m.start + Math.ceil((pos - m.start) / step - EPS) * step, m.start + m.length);
+  }
+  const n = m.start >= pos - EPS ? m.measure : m.measure + 1;
+  return measureStart(1 + Math.ceil((n - 1) / quantize - EPS) * quantize, meter);
+}
 
 /** Copies of a slot's clip end to end on `trackId` from `from` up to `to` (the last one cut short). */
 export function slotCopies(trackId: string, slot: SlotClip, from: number, to: number, key: string): Clip[] {

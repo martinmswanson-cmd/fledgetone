@@ -4,9 +4,10 @@ import { TOTAL_BARS, uid } from './timelineTypes';
 import { isMixTrack } from './buses';
 import { songSections } from './cutToLength';
 import { songMeterOf } from './timelineStore';
-import { launcherActive, queuedAfter, segmentAt, slotAt, slotCopies, useLauncher } from './launcherView';
+import { launcherActive, launchPoint, queuedAfter, segmentAt, slotAt, slotCopies, useLauncher } from './launcherView';
 import type { Segment } from './launcherView';
 import { getScheduledPositionBar } from '../audio/transport';
+import { measureAt } from '../audio/tempoMap';
 import { maxOf, minOf } from '../support/minMax';
 
 /**
@@ -35,13 +36,13 @@ export function sceneCount(tracks: readonly Track[]): number {
   return Math.min(MAX_SCENES, Math.max(MIN_SCENES, last + 2));
 }
 
-/** The bar the next launch lands on: the next multiple of the quantize while playing (with a little room to schedule), else the playhead's bar. */
+/** Where the next launch lands: the next launch point while playing (with a little room to schedule, see launchPoint), else the start of the playhead's measure. */
 export function nextLaunchBar(): number {
   const s = tl();
   const q = useLauncher.getState().quantize;
-  if (!s.isPlaying) return Math.max(1, Math.floor(s.playheadPosition + EPS));
-  const pos = getScheduledPositionBar();
-  return Math.min(TOTAL_BARS, 1 + Math.ceil((pos - 1 + 0.01) / q - EPS) * q);
+  const meter = songMeterOf(s);
+  if (!s.isPlaying) return Math.max(1, measureAt(Math.max(1, s.playheadPosition), meter).start);
+  return Math.min(TOTAL_BARS, launchPoint(getScheduledPositionBar() + 0.01, q, meter));
 }
 
 /** Put `seg` on each of `trackIds` (replacing whatever was waiting there), then start playing if stopped. */
@@ -322,8 +323,9 @@ export function writeSessionToArrangement(): { from: number; to: number } | null
   const session = live ? { segments: L.segments, start: L.start!, end: Math.max(L.start!, getScheduledPositionBar()) } : L.last;
   if (!session || session.end <= session.start + EPS) return null;
   const { segments, start } = session;
-  // To the end of the bar it stopped in
-  const end = Math.min(TOTAL_BARS + 1, Math.ceil(session.end - EPS));
+  // To the end of the measure it stopped in
+  const last = measureAt(session.end - EPS, songMeterOf(s));
+  const end = Math.min(TOTAL_BARS + 1, last.start + last.length);
   const tempo = songTempo(s);
   const add: Clip[] = [];
   const cut = new Map<string, Array<[number, number]>>();

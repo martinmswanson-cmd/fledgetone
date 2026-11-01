@@ -41,7 +41,7 @@ function useHeardBar(): number {
 
 const QUANTIZE: ReadonlyArray<{ value: number; label: string }> = [
   { value: 0.25, label: '1 beat' },
-  { value: 0.5, label: '1/2 bar' },
+  { value: 0.5, label: '2 beats' },
   { value: 1, label: '1 bar' },
   { value: 2, label: '2 bars' },
   { value: 4, label: '4 bars' },
