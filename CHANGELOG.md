@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The agent is told rightly what a listen gives**: the agent's description of listening said it gives the loudness bar by bar, but only a listen to a song file does; a listen in the studio gives the whole stretch's numbers. It now says so, so an agent doesn't look for numbers that aren't there.
 - **A failed MP3 says why in plain words**: when the MP3 from Share (in the studio or on a phone) couldn't be made, for example a song too long for the memory the browser has, the message showed the browser's own code words. It now says what the Export dialog says: what went wrong and what to try.
 - **The pitch wheel on a plugin instrument leaves a song note's own slide alone**: moving the wheel while a song note slid on Fledge Synth (or another plugin instrument) made the rest of that slide play at the wheel's pitch, even after the wheel was back in the middle. The slide now keeps its own pitch, and the wheel comes back where the song rests, as on the built-in instruments.
 - **Notes keep sounding after the page holds up**: when the page was busy for a moment while playing, the studio starts scheduling further ahead, and sounds already set to stop then stopped about a third of a second early. The 808 Bass could go silent until its next fresh note, and a Brass note could cut off at its end instead of fading out. Every sound now stops exactly when it should, as in the exported file.
