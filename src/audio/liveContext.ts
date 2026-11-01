@@ -29,18 +29,34 @@ export const liveDestination = liveContext.destination;
 const baseLookAhead = (): number => (PLAYBACK_MODE === 'stable' ? 0.25 : 0.1);
 const WIDE_LOOKAHEAD = 0.4;
 
+/**
+ * Change the look-ahead without moving what's already been set to happen. Tone keeps its own
+ * timers (a sound's stop, a chord note handed over later) in look-ahead terms: due when the audio
+ * clock plus the look-ahead reaches them. Left as they are, widening the look-ahead would make
+ * each fire that much early: a sound let go 0.3 s too soon, which a note played straight after
+ * can't take back, and stays silent. Moving them by the same amount keeps each on its time.
+ */
+function setLookAhead(next: number): void {
+  const context = liveContext;
+  const shift = next - context.lookAhead;
+  const timeouts = (context as unknown as { _timeouts?: { forEach(fn: (event: { time: number }) => void): void } })._timeouts;
+  // Every timer moves by the same amount, so their order stays as it was
+  timeouts?.forEach((event) => {
+    event.time += shift;
+  });
+  context.lookAhead = next;
+}
+
 /** Schedule further ahead (while playing). False if it already is. */
 export function widenLookAhead(): boolean {
-  const context = liveContext;
-  if (context.lookAhead >= WIDE_LOOKAHEAD - 1e-6) return false;
-  context.lookAhead = WIDE_LOOKAHEAD;
+  if (liveContext.lookAhead >= WIDE_LOOKAHEAD - 1e-6) return false;
+  setLookAhead(WIDE_LOOKAHEAD);
   return true;
 }
 
 /** Back to the start-up look-ahead (at Stop). */
 export function restoreLookAhead(): void {
-  const context = liveContext;
-  if (Math.abs(context.lookAhead - baseLookAhead()) > 1e-6) context.lookAhead = baseLookAhead();
+  if (Math.abs(liveContext.lookAhead - baseLookAhead()) > 1e-6) setLookAhead(baseLookAhead());
 }
 
 /** Scheduling further ahead than at start-up right now. */
