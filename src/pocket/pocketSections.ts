@@ -179,7 +179,7 @@ export function cellClip(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
   const first = mids[0];
   const one = mids.length === 1 && Math.abs(first.startBar - sec.from) < EPS;
   // Each piece's notes and lanes, where they play in the section (or why they can't be one clip)
-  const content = one ? { notes: first.notes.filter((n) => n.startOffset < first.lengthBars - EPS) } : mergePieces(mids, sec.from, () => uid('note'));
+  const content = one ? { notes: first.notes.filter((n) => n.startOffset >= -EPS && n.startOffset < first.lengthBars - EPS) } : mergePieces(mids, sec.from, () => uid('note'));
   if (typeof content === 'string') {
     showToast(content);
     return null;

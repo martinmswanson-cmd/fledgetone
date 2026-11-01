@@ -64,6 +64,12 @@ test('quantize moves starts to the song grid, with strength', () => {
   assert.ok(endOff[0].startOffset < 2 && endOff[0].startOffset >= 1.99 - 0.25, String(endOff[0].startOffset));
 });
 
+test('quantize leaves notes trimmed out of the clip where they are, silent', () => {
+  const q = T.quantize([N('a', 'C4', -0.3), N('b', 'C4', 2.2), N('c', 'C4', 0.07)], 1 / 4, 0, 1, true, 2);
+  assert.deepEqual(q.slice(0, 2), [N('a', 'C4', -0.3), N('b', 'C4', 2.2)]);
+  near(q[2].startOffset, 0);
+});
+
 test('strum spreads a chord low to high and keeps its end', () => {
   const chord = [N('a', 'G4', 0, '2n'), N('b', 'C4', 0, '2n'), N('c', 'E4', 0, '2n')];
   const s = T.strum(chord, 4, 1 / 96);

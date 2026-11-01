@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Piano roll tools leave notes hidden by a trim alone**: with nothing selected, a tool like Quantize, Humanize or Transpose also moved the notes you had trimmed out of view, and Quantize could pull them back into the clip, where they started playing. Tools now change only the notes you can see.
+- **Sending clips to the launcher or merging a phone cell keeps hidden notes silent**: notes trimmed off the front of a clip came back in the new clip, moved to where they could be heard. They're now left out, as notes past a clip's end already were.
 - **The Sub enhancer goes under the note a one-note instrument plays**: under a chord on the Bass, Lead, Wobble, Growl and Reese Bass, the 808s and a one-note designed synth, which play the chord's loudest note, the sub played under its lowest, a twelfth or more below instead of an octave. It now goes under the note you hear.
 - **The Sub enhancer under a plugin follows the bend the plugin plays**: a plugin plays a bend only as far as its own range (two semitones on most), but the sub followed the bend as written, so a bend of a fifth left the sub a fifth off; and the wheel held on a plugin left its sub behind. The sub now follows the plugin's own pitch.
 - **The Sub enhancer under a Multi Sampler follows each note's own bend**: a bend drawn on a Multi Sampler note moved the sample but left the sub where the note started, out of tune under it. The sub now bends with the note.

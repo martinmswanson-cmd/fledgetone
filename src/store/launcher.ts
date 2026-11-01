@@ -138,7 +138,7 @@ export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip |
   const audio = clips.find((c) => c.audio);
   // An audio slot plays one sound: the first
   if (audio) return { name: name ?? audio.name, lengthBars: audio.lengthBars, notes: [], audio: audio.audio, ...(audio.wobble ? { wobble: audio.wobble } : {}) };
-  const notes = clips.flatMap((c) => c.notes.filter((n) => n.startOffset < c.lengthBars - EPS).map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset + c.startBar - from })));
+  const notes = clips.flatMap((c) => c.notes.filter((n) => n.startOffset >= -EPS && n.startOffset < c.lengthBars - EPS).map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset + c.startBar - from })));
   const one = clips.length === 1 ? clips[0] : null;
   return {
     name: name ?? clips[0].name,
