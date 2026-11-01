@@ -288,29 +288,39 @@ export function createTake(startBar: number): Take {
 }
 
 /**
- * Snap a take's notes to `grid` on the song's grid (the clip starts on a whole bar, so the clip's
- * grid is the song's). Lengths stay as played. Two notes of the same pitch landing on one line
- * become one (the louder, then the longer: a double strike would play as a flam). A note snapped
- * onto the clip's end would be hidden there (a clip plays the notes inside it), so the clip grows
- * a bar to keep it.
+ * Snap a take's notes to `grid` on the song's grid (measured from bar 1, so a clip that starts off
+ * a line, like a punch-in, snaps the same lines). A note never moves before the clip's start: it
+ * goes to the first line at or after it. Lengths stay as played. Two notes of the same pitch landing
+ * on one line become one (the louder, then the longer: a double strike would play as a flam). A
+ * note snapped onto the clip's end would be hidden there (a clip plays the notes inside it), so a
+ * clip on a whole bar grows a bar to keep it; one that can't grow (`grow` false, or starting off a
+ * bar line) keeps it on the last line before its end.
  */
-export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid): Clip {
+export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true): Clip {
   if (grid === 'off') return clip;
   const step = QUANTIZE_TICKS[grid];
-  const clipTicks = Math.round((clip.startBar - 1) * TICKS_PER_BAR);
+  const clipTicks = (clip.startBar - 1) * TICKS_PER_BAR;
+  const endTicks = clipTicks + clip.lengthBars * TICKS_PER_BAR;
+  const canGrow = grow && Math.abs(clip.startBar - Math.round(clip.startBar)) < EPS;
+  // The lines a note can go to: from the first at or after the start to the last before the end
+  const first = Math.ceil(clipTicks / step - EPS) * step;
+  const last = Math.ceil(endTicks / step - 1 - EPS) * step;
   const snapped = new Map<string, { note: NoteEvent; tick: number }>();
   for (const note of clip.notes) {
-    const tick = Math.round((clipTicks + note.startOffset * TICKS_PER_BAR) / step) * step;
+    const played = clipTicks + note.startOffset * TICKS_PER_BAR;
+    let tick = Math.max(first, Math.round(played / step) * step);
+    // (a clip too short to hold a line: the note stays as played)
+    if (!canGrow) tick = first > last ? played : Math.min(last, tick);
     const key = `${note.note}|${tick}`;
     const other = snapped.get(key);
     if (!other || louder(note, other.note)) snapped.set(key, { note, tick });
   }
   const notes = [...snapped.values()]
     .sort((a, b) => a.tick - b.tick)
-    .map(({ note, tick }) => ({ ...note, startOffset: (tick - clipTicks) / TICKS_PER_BAR }));
-  const last = notes.length ? notes[notes.length - 1].startOffset : 0;
+    .map(({ note, tick }) => ({ ...note, startOffset: Math.max(0, (tick - clipTicks) / TICKS_PER_BAR) }));
+  const lastStart = notes.length ? notes[notes.length - 1].startOffset : 0;
   // The shortest whole number of bars that holds the last note
-  const lengthBars = last >= clip.lengthBars - EPS ? Math.min(TOTAL_BARS + 1 - clip.startBar, Math.floor(last + EPS) + 1) : clip.lengthBars;
+  const lengthBars = canGrow && lastStart >= clip.lengthBars - EPS ? Math.min(TOTAL_BARS + 1 - clip.startBar, Math.floor(lastStart + EPS) + 1) : clip.lengthBars;
   return { ...clip, notes, lengthBars: Math.max(clip.lengthBars, lengthBars) };
 }
 

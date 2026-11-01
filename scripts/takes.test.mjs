@@ -154,6 +154,32 @@ test('review fixes: piano roll edits survive a comp change', () => {
   assert.equal(t.keepNoteEdits(c), c);
 });
 
+test('a folder with its end trimmed back keeps every take as recorded', () => {
+  // Comped A | B | A, then the end trimmed to bar 2: the notes past it are hidden, not edits
+  const c = t.applyComp({ ...folder(), comp: [{ at: 0, take: 0 }, { at: 1, take: 1 }, { at: 3, take: 0 }] }, () => 'n');
+  const trimmed = { ...c, lengthBars: 2 };
+  assert.equal(t.keepNoteEdits(trimmed), trimmed);
+  const ids = (clip, i) => clip.takes[i].notes.map((n) => n.startOffset).sort();
+  // A real edit inside the span goes back to its take; nothing past the end moves
+  const edited = { ...trimmed, notes: trimmed.notes.map((n) => (n.startOffset < 2 ? { ...n, velocity: 0.5 } : n)) };
+  const kept = t.keepNoteEdits(edited);
+  assert.deepEqual(ids(kept, 0), [0, 1, 2, 3]);
+  assert.deepEqual(ids(kept, 1), [0.5, 1.5, 2.5, 3.5]);
+  assert.deepEqual(kept.takes[0].notes.map((n) => n.velocity), [0.8, 0.8, 0.8, 0.5]);
+  assert.deepEqual(kept.takes[1].notes.map((n) => n.velocity), [0.8, 0.8, 0.8, 0.5]);
+  // Comped again while trimmed (take 2 over bar 1), then the end dragged back out: the gained bars
+  // play the comp's notes, so nothing reads as deleted and take 2 over the whole clip plays all four
+  const comped = t.applyComp({ ...trimmed, comp: t.setCompRange(trimmed, 0, 1, 1) }, () => 'n');
+  const out = { ...comped, notes: t.notesForLength(comped, 4, () => 'g'), lengthBars: 4 };
+  assert.deepEqual(out.notes.map((n) => n.startOffset), [0.5, 1.5, 2.5, 3.5]);
+  assert.equal(t.keepNoteEdits(out), out);
+  const whole = t.applyComp({ ...out, comp: t.setCompRange(out, 0, 4, 1) }, () => 'n');
+  assert.deepEqual(whole.notes.map((n) => n.startOffset), [0.5, 1.5, 2.5, 3.5]);
+  assert.deepEqual(ids(whole, 0), [0, 1, 2, 3]);
+  // Trimmed (not drawn out), the notes stay as they are
+  assert.equal(t.notesForLength(c, 2, () => 'g'), c.notes);
+});
+
 test('review fixes: recorded passes', () => {
   const loop = { inBar: 5, outBar: 7 };
   // Takes on, one pass and a 50 ms tail: the tail isn't a take
