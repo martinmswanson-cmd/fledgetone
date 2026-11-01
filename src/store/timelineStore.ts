@@ -103,7 +103,7 @@ import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { makeTrack } from './trackFactory';
 import { designedKitStart } from './synthKits';
-import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
+import { REVERB_SEND_MAX, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
@@ -998,6 +998,8 @@ const MAX_FILL_CLIPS = 2000;
 const countOf = (n: number) => n.toLocaleString('en-US');
 
 const pluralBars = (n: number) => `${formatBarCount(n)} bar${n === 1 ? '' : 's'}`;
+/** A position in words' numbers, as the ruler numbers it (by measure in a song not in 4/4). */
+const barLabel = (s: { meter: Meter; meterPoints: MeterPoint[] }, bar: number) => formatBarPosition(bar, songMeterOf(s));
 
 export interface AutosaveStatus {
   ok: boolean;
@@ -2514,7 +2516,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         });
         at += lengthBars;
       }
-      if (!clips.length) return `No room for a clip at bar ${formatBarCount(at)}: the timeline ends at bar ${TOTAL_BARS + 1}.`;
+      if (!clips.length) return `No room for a clip at bar ${barLabel(get(), at)}: the timeline ends at bar ${barLabel(get(), TOTAL_BARS + 1)}.`;
       set((st) => ({
         ...(existing ? {} : { tracks: [...st.tracks, track], selectedTrackId: track.id }),
         clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...clips],
@@ -2781,7 +2783,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (!block) return null;
       const linkable = block.selected.filter(canLink);
       if (!linkable.length) return 'Audio clips and take folders play their own recordings: only note clips can be linked.';
-      if (block.start + 2 * block.span > TOTAL_BARS + 1 + EPS) return `No room for a copy before the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      if (block.start + 2 * block.span > TOTAL_BARS + 1 + EPS) return `No room for a copy before the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       // The originals join a pattern (their own, or a new one), and the copies share it and its notes
       const patternOf = new Map(linkable.map((c) => [c.id, c.pattern ?? uid('pattern')]));
       const copies = block.selected.map((c) => (patternOf.has(c.id) ? { ...c, id: uid('clip'), startBar: c.startBar + block.span, isSelected: true, pattern: patternOf.get(c.id)! } : copyClip(c, block.span)));
@@ -2805,7 +2807,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // Whole copies of the block that fit before the end of the timeline
       const room = Math.floor((TOTAL_BARS + 1 - block.start - block.span) / block.span + EPS);
       if (room < count) {
-        const end = `the end of the timeline (bar ${TOTAL_BARS + 1})`;
+        const end = `the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)})`;
         return room <= 0 ? `No room for a copy before ${end}.` : `Only ${room} ${room === 1 ? 'copy fits' : 'copies fit'} before ${end}.`;
       }
       const copies = Array.from({ length: count }, (_, i) => block.selected.map((c) => copyClip(c, (i + 1) * block.span))).flat();
@@ -2824,7 +2826,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // Copies that start before Out (the last one may be cut short), counted before making any
       const passes = Math.max(0, Math.ceil((out - EPS - block.start) / block.span) - 1);
       if (passes * block.selected.length > MAX_FILL_CLIPS) {
-        return `Filling to bar ${formatBarCount(out)} would make ${countOf(passes * block.selected.length)} clips; Fill makes at most ${countOf(MAX_FILL_CLIPS)} at a time. Move Out earlier, or fill with longer clips.`;
+        return `Filling to bar ${barLabel(get(), out)} would make ${countOf(passes * block.selected.length)} clips; Fill makes at most ${countOf(MAX_FILL_CLIPS)} at a time. Move Out earlier, or fill with longer clips.`;
       }
       const copies: Clip[] = [];
       for (let k = 1; k <= passes; k++) {
@@ -2836,7 +2838,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         }
       }
       if (copies.length === 0) {
-        return `Nothing fits between the selection and the loop's Out (bar ${formatBarCount(out)}). Move Out later first.`;
+        return `Nothing fits between the selection and the loop's Out (bar ${barLabel(get(), out)}). Move Out later first.`;
       }
       set((st) => ({
         clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
@@ -2862,11 +2864,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         }
       }
       if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
-        return `Can't insert ${pluralBars(bars)}: clips would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+        return `Can't insert ${pluralBars(bars)}: clips would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       }
       const pushedMarker = markerPushedPastEnd(s.markers, at, bars);
       if (pushedMarker) {
-        return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+        return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       }
       applyRipple(
         clips,
@@ -2882,7 +2884,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const drop = Math.round(dropBar);
       const bars = Math.min(BUILD_BARS, drop - 1);
       if (bars < 1) return 'Pick a later bar: the build-up needs at least one bar before the drop.';
-      if (drop + HIT_BARS > TOTAL_BARS + 1) return `Too close to the end of the timeline (bar ${TOTAL_BARS + 1}) for the drop hit.`;
+      if (drop + HIT_BARS > TOTAL_BARS + 1) return `Too close to the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}) for the drop hit.`;
       const from = drop - bars;
       const isFree = (t: Track, a: number, b: number) =>
         !s.clips.some((c) => c.trackId === t.id && c.startBar < b - EPS && c.startBar + c.lengthBars > a + EPS);
@@ -3053,7 +3055,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const stinger = s.stingers.find((x) => x.id === id);
       if (!stinger) return null;
       const at = clampBar(bar);
-      if (at + stinger.lengthBars > TOTAL_BARS + 1 + EPS) return `Too close to the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      if (at + stinger.lengthBars > TOTAL_BARS + 1 + EPS) return `Too close to the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       const track = makeTrack(stinger.instrumentKey, s.tracks, stinger.name);
       const clip: Clip = {
         id: uid('clip'),
@@ -3116,7 +3118,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         placed.push({ from: sec.from, to: sec.to, at: cursor, name: sec.name });
         cursor += sec.to - sec.from;
       }
-      if (cursor > TOTAL_BARS + 1) return `That would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      if (cursor > TOTAL_BARS + 1) return `That would run past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       // Automation follows its section: the value at each edge, and the points in between
       const tracks = s.tracks.map((t) => {
         if (!t.automation?.length) return t;

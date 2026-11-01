@@ -9,7 +9,7 @@
 import React, { useMemo, useState } from 'react';
 import { AudioWaveform } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { formatBarRange } from '../../store/timelineTypes';
 import { resample, useResampling } from '../../store/resampleActions';
 import type { ResampleSource, ResampleTarget, SliceChoice, SlicePattern, WavetableRole } from '../../store/resample';
@@ -43,6 +43,7 @@ const ResampleForm: React.FC<{ startFrom: From; startTarget: ResampleTarget }> =
   const clips = useTimelineStore((s) => s.clips);
   const selected = useMemo(() => clips.filter((c) => c.isSelected), [clips]);
   const loop = useTimelineStore((s) => s.loopRegion);
+  const meter = useSongMeter();
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === s.selectedTrackId));
   const busy = useResampling((r) => r.fraction);
   const [from, setFrom] = useState<From>(startFrom === 'clips' && !selected.length ? 'mix' : startFrom);
@@ -68,7 +69,7 @@ const ResampleForm: React.FC<{ startFrom: From; startTarget: ResampleTarget }> =
           ? { kind: 'range', from: loop.inBar, to: loop.outBar, trackIds: [track.id] }
           : null
         : { kind: 'range', from: loop.inBar, to: loop.outBar };
-  const range = formatBarRange(loop.inBar, loop.outBar);
+  const range = formatBarRange(loop.inBar, loop.outBar, meter);
 
   const go = async () => {
     if (!source) return;

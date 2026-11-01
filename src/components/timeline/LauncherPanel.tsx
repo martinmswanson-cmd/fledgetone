@@ -5,7 +5,9 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Square, Undo2, LayoutList, Send, ListPlus, X } from 'lucide-react';
 import { useLivePlayhead } from '../../store/playheadClock';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
+import { formatBarPosition } from '../../store/timelineTypes';
+import { isPlainMeter, type MeterMap } from '../../audio/tempoMap';
 import { isMixTrack } from '../../store/buses';
 import { useLauncher, launcherActive, slotAt } from '../../store/launcherView';
 import {
@@ -25,6 +27,10 @@ import {
 } from '../../store/launcher';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { showToast } from './toastStore';
+
+/** Where a stretch written to the arrangement runs, numbered as the ruler numbers the bars ("1 to 9"; by measure in a song not in 4/4). */
+const writtenSpan = (from: number, to: number, meter: MeterMap) =>
+  isPlainMeter(meter) ? `${Math.round(from)} to ${Math.round(to * 4) / 4}` : `${formatBarPosition(from, meter)} to ${formatBarPosition(to, meter)}`;
 
 /** Where the music is, about 20 times a second while it plays (the playhead's bar while stopped). */
 function useHeardBar(): number {
@@ -86,7 +92,7 @@ export const LauncherPanel: React.FC = () => {
           onClick={() => {
             const r = writeSessionToArrangement();
             // (false: past the caps, already said)
-            if (r !== false) showToast(r ? `Wrote what you played into the arrangement, bars ${Math.round(r.from)} to ${Math.round(r.to * 4) / 4}` : 'Launch some clips first: what you play is what gets written');
+            if (r !== false) showToast(r ? `Wrote what you played into the arrangement, bars ${writtenSpan(r.from, r.to, songMeterOf(useTimelineStore.getState()))}` : 'Launch some clips first: what you play is what gets written');
           }}
           disabled={!active && !last}
           title="Write what you played in the launcher (from the first launch to where you stopped) into the arrangement"

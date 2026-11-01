@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Bar numbers match the ruler in songs not in 4/4**: in 3/4, 6/8 and other time signatures, the Export dialog, the launcher's Write to arrangement message, bounce and resample names, menus and other messages counted bars of four beats, so a loop over bars 3–4 of a waltz read "bars 2.5–4: 1.5 bars". They now name and count bars by measure, as the ruler does ("bars 3–4: 2 bars"), and a spot inside a bar reads as bar.beat. Songs in 4/4 read as before.
 - **A song's name can't run anything in the FMOD and Wwise import scripts**: the name of a song opened from a file or a link was written as it is into the comments of the import scripts the package tells you to run, so a name made to do it could break out of the comment and run as part of the script. The scripts now show the name with only letters, numbers and plain punctuation.
 - **A punched-in take stays inside the punch**: with Quantize on and the punch-in on a bar line, a note played just before the punch-out could be moved past it, growing the take over what came after. It now stays on the last line before the punch-out.
 - **A note recorded in the song's very last moment is kept**: with Quantize on, a note played in the last step of the song's last bar was moved onto the clip's end, where it never played. It now goes to the line before.

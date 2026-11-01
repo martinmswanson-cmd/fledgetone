@@ -8,10 +8,10 @@ import { reverseBlock } from '../../store/reverseActions';
 import { openResample } from './resampleDialogStore';
 import { doubleClip } from '../../store/vocalActions';
 import { chopVoiceToKeys } from '../../store/voiceChopActions';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarPosition } from '../../store/timelineTypes';
 import { canMoveClipBetween, isAudioKind, isDropKind, isDrumKind } from '../../audio/instrumentCatalog';
 import { isMixTrack } from '../../store/buses';
 import { bassForChords, chordsForMelody, fillClipBar, rollClipDrums, useSmartDialog } from '../../store/smartActions';
@@ -141,6 +141,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   const ref = useRef<HTMLDivElement>(null);
   const hasClipboard = useTimelineStore((s) => s.clipboard.length > 0);
   const loopOut = useTimelineStore((s) => s.loopRegion.outBar);
+  const meter = useSongMeter();
   const [notice, setNotice] = useState<string | null>(null);
   const [repeating, setRepeating] = useState(false);
   useMenuDismiss(ref, onClose);
@@ -406,7 +407,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         {
           key: 'fill',
           label: 'Fill to loop Out',
-          shortcut: `bar ${formatBarCount(loopOut)}`,
+          shortcut: `bar ${formatBarPosition(loopOut, meter)}`,
           icon: <ArrowRightToLine className="w-3.5 h-3.5" />,
           onClick: run(s.fillSelectionToLoopOut),
           // Greyed out when Out isn't after the selection: there'd be no room for a copy

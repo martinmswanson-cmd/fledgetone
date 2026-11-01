@@ -5,14 +5,14 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Loader2, Package } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { buildChannelKit, channelKitPieces } from '../../audio/channelKit';
 import { downloadBlob } from '../../audio/exportWav';
 import { LOUDNESS_TARGETS } from '../../audio/loudnessTarget';
 import { countedRender } from '../../audio/renderBusy';
 import { barToSeconds } from '../../audio/tempoMap';
 import { safeFileName } from '../../store/project';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarPosition } from '../../store/timelineTypes';
 import { gameKitSong } from './gameKitSong';
 import { showToast } from './toastStore';
 
@@ -44,6 +44,8 @@ export const ChannelKitDialog: React.FC<{ onClose: () => void }> = ({ onClose })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const pieces = useMemo(() => channelKitPieces(gameKitSong()), [clips, tracks, markers, bpm, tempoPoints]);
   const tempo = { bpm, points: tempoPoints };
+  // Bars numbered as the ruler numbers them (by measure, not in 4/4)
+  const meter = useSongMeter();
   const seconds = (from: number, to: number) => Math.round(barToSeconds(to, tempo) - barToSeconds(from, tempo));
   const fileName = `${safeFileName(projectName || 'Untitled')} channel kit.zip`;
 
@@ -104,7 +106,7 @@ export const ChannelKitDialog: React.FC<{ onClose: () => void }> = ({ onClose })
               <span className="text-forge-text font-mono text-[11px]">{p.file}</span>
               <span className="text-forge-muted">
                 {p.what}
-                {p.range ? ` (bars ${formatBarCount(p.range.from)} to ${formatBarCount(p.range.to)}, ${seconds(p.range.from, p.range.to)} s)` : ''}.
+                {p.range ? ` (bars ${formatBarPosition(p.range.from, meter)} to ${formatBarPosition(p.range.to, meter)}, ${seconds(p.range.from, p.range.to)} s)` : ''}.
               </span>
             </li>
           ))}

@@ -8,7 +8,7 @@ import { GameParamsPanel } from './GameParams';
 import { measureAt, secondsBetween } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
-import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, masterFxOf, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { captureWamStates } from '../../audio/wamHost';
 import { getAudibleMoment, transportStartsAt } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
@@ -31,7 +31,7 @@ import type { PluginFamily } from '../../audio/plugins/pluginTypes';
 import { GplNoticeDialog } from './GplNoticeDialog';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarPosition } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
 import { IntensityPanel } from './IntensityPanel';
 import { useUiStore } from '../../store/uiStore';
@@ -44,6 +44,7 @@ import { maxOf } from '../../support/minMax';
  */
 const LoopVariations: React.FC = () => {
   const loop = useTimelineStore((s) => s.loopRegion);
+  const meter = useSongMeter();
   const [count, setCount] = useState(3);
   const [humanize, setHumanize] = useState(true);
   const [progress, setProgress] = useState<number | null>(null);
@@ -81,7 +82,7 @@ const LoopVariations: React.FC = () => {
     <div className="flex flex-col gap-1.5">
       <div className="text-[10px] font-mono text-forge-muted uppercase">Loop variations</div>
       <p className="text-forge-muted">
-        Takes of the loop (bars {formatBarCount(loop.inBar)} to {formatBarCount(loop.outBar)}) for the game to rotate through, so it doesn't repeat exactly:{' '}
+        Takes of the loop (bars {formatBarPosition(loop.inBar, meter)} to {formatBarPosition(loop.outBar, meter)}) for the game to rotate through, so it doesn't repeat exactly:{' '}
         {VARIATION_NAMES.slice(0, count).map((n, k) => `${n}: ${VARIATION_BLURBS[k]}`).join('; ')}.
       </p>
       <div className="flex items-center gap-2">
@@ -408,6 +409,7 @@ interface Switching {
 
 export const GamePanel: React.FC = () => {
   const markers = useTimelineStore((s) => s.markers);
+  const meter = useSongMeter();
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
@@ -644,7 +646,7 @@ export const GamePanel: React.FC = () => {
                   className={`h-9 rounded-md border px-2 text-left truncate font-semibold transition ${
                     pending === sec.id ? 'border-amber-400 bg-amber-500/20 text-amber-100 animate-pulse' : current?.id === sec.id ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100' : 'border-forge-border text-forge-text hover:border-emerald-400/60'
                   }`}
-                  title={`Bars ${sec.from} to ${sec.to}: play and loop here`}
+                  title={`Bars ${formatBarPosition(sec.from, meter)} to ${formatBarPosition(sec.to, meter)}: play and loop here`}
                 >
                   {sec.name}
                 </button>

@@ -10,7 +10,9 @@ import { GROOVE_FEELS } from '../store/grooveFeels';
 import { drummerGroove } from '../store/drumGroove';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
-import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
+import { retryAutosave, useLastSession, useSongMeter, useTimelineStore } from '../store/timelineStore';
+import { formatBarRange } from '../store/timelineTypes';
+import { isPlainMeter } from '../audio/tempoMap';
 import { notAutosavedWords } from '../store/autosaveWords';
 import { sayWhatWasLeftOut } from '../store/reopenLastSong';
 import { clearPreviousSession } from '../store/project';
@@ -260,6 +262,7 @@ const AddSheet: React.FC = () => {
 const SectionSheet: React.FC = () => {
   const i = usePocket((p) => p.sheetSection);
   const clips = useTimelineStore((s) => s.clips);
+  const meter = useSongMeter();
   const sections = pocketSections();
   const sec = sections[i];
   if (!sec) return null;
@@ -275,7 +278,7 @@ const SectionSheet: React.FC = () => {
     if (done) showToast(done);
   };
   return (
-    <Sheet title={`${sec.letter}: ${sec.name}, bars ${sec.from}–${sec.to - 1}`} onClose={close}>
+    <Sheet title={`${sec.letter}: ${sec.name}, ${isPlainMeter(meter) ? `bars ${sec.from}–${sec.to - 1}` : formatBarRange(sec.from, sec.to, meter)}`} onClose={close}>
       <SheetItem title="Play it twice" detail="A copy right after it, linked: change either and both change." onClick={() => run(() => copySection(i), () => i + 1)} />
       {linked && <SheetItem title="Make it its own" detail={`Changes to it stop changing the other ${sec.letter}s.`} onClick={() => run(() => unlinkSection(i), () => i, 'Its own now: change it without changing the others')} />}
       {i > 0 && <SheetItem title="Move earlier" detail="Swap it with the section before." onClick={() => run(() => moveSection(i, -1), () => i - 1)} />}
