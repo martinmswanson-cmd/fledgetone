@@ -28,7 +28,7 @@ export function mergePieces(pieces: readonly Clip[], from: number, newId: (() =>
   if (pieces.some((p) => p.takes?.length)) return `This part has recorded takes in it: ${ASK}.`;
   if (pieces.some((p) => JSON.stringify(p.groove) !== JSON.stringify(first.groove) || p.wobble !== first.wobble)) return `This part's clips have different feels: ${ASK}.`;
   const off = (p: Clip) => p.startBar - from;
-  const notes = pieces.flatMap((p) => p.notes.filter((n) => n.startOffset < p.lengthBars - EPS).map((n) => ({ ...n, id: newId ? newId() : n.id, startOffset: n.startOffset + off(p) })));
+  const notes = pieces.flatMap((p) => p.notes.filter((n) => n.startOffset >= -EPS && n.startOffset < p.lengthBars - EPS).map((n) => ({ ...n, id: newId ? newId() : n.id, startOffset: n.startOffset + off(p) })));
 
   // Controller lanes: each piece's points where it plays, held to its value at its start and end
   // (and at rest over a piece without that lane), so a glide never runs across into the next one

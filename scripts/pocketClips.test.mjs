@@ -28,6 +28,12 @@ test("a piece's notes and step lanes move to where it plays in the section", () 
   assert.deepEqual(out.stepLanes[0].steps, [{ at: 1, value: 0.9 }, { at: 1.5, value: 0.1 }]);
 });
 
+test('notes trimmed out of a piece stay out of the merged clip', () => {
+  const hidden = (start) => ({ id: `h${start}`, note: 'C3', startOffset: start, duration: '16n', velocity: 0.8 });
+  const out = mergePieces([clip(1, 1), clip(2, 1, { notes: [hidden(-0.5), hidden(0.25), hidden(1.5)] })], 1, null);
+  assert.deepEqual(out.notes.map((n) => n.startOffset), [0, 1.25]);
+});
+
 test("pieces one after another keep each one's lane steps (one lane per setting)", () => {
   const out = mergePieces([clip(2, 1, { stepLanes: lane([{ at: 0, value: 0.9 }]) }), clip(3, 1, { stepLanes: lane([{ at: 0, value: 0.3 }]) })], 1, null);
   assert.equal(out.stepLanes.length, 1);

@@ -746,13 +746,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   };
 
   /**
-   * Run a tool over the selected notes (all of the clip's, with none selected): one undo step. A
-   * function is a tool of its own (the roll painter's roll), given the notes and a new-id maker.
+   * Run a tool over the selected notes (all of the clip's shown ones, with none selected): one undo
+   * step. A function is a tool of its own (the roll painter's roll), given the notes and a new-id maker.
    */
   const applyTool = (tool: ToolId | ((target: NoteEvent[], newId: () => string) => NoteEvent[])) => {
     const store = useTimelineStore.getState();
     const notes = currentNotes();
-    const target = selected.size ? notes.filter((n) => selected.has(n.id)) : notes;
+    // Notes trimmed out of the clip stay where they are, silent, so a trim can be undone by dragging back
+    const target = selected.size
+      ? notes.filter((n) => selected.has(n.id))
+      : notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6);
     if (!target.length) return;
     if (typeof tool === 'string' && SWELL_SHAPES.some((s) => s.id === tool)) {
       // A swell is drawn in the mod wheel lane (dynamics), not made of notes: one undo step
