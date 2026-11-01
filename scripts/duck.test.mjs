@@ -52,3 +52,10 @@ test('a muted proxy ducks nothing; close dips join', () => {
   // 3-3.25 then 3.45-3.7: 0.4 s apart (not bridged), but the release (0.4 s) and look-ahead (0.12 s) overlap
   assert.equal(pts.filter((p) => p.value === 1).length, 2);
 });
+
+test('a proxy bounced in place keeps ducking while its bounce is heard', () => {
+  const clips = [clip('vo', 3, [note(0, '4n')])];
+  const vo = track('vo', { duckProxy: { depth: 10 }, isMuted: true });
+  assert.deepEqual(duckPoints([vo, track('b', { bounceOf: 'vo' })], clips, 120), duckPoints([{ ...vo, isMuted: false }], clips, 120));
+  assert.equal(duckPoints([vo, track('b', { bounceOf: 'vo', isMuted: true })], clips, 120), null);
+});

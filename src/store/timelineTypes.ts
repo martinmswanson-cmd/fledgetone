@@ -727,6 +727,8 @@ export interface Track {
   stemGroup?: string;
   /** A dialogue / SFX proxy: every other track dips by `depth` dB wherever it sounds (see duck.ts) */
   duckProxy?: { depth: number };
+  /** A Bounce in place: the id of the track it was rendered from, whose kicks and proxy ducking still count while this one is heard (see freeze.ts bounceStandIns) */
+  bounceOf?: string;
   /** The folder it's in (see folders.ts): every member carries the folder's settings; members sit together */
   folder?: TrackFolder;
   /** The bus track it plays into (see buses.ts); absent: straight to the master */

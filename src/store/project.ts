@@ -416,6 +416,8 @@ export function parseTrack(raw: unknown): Track {
     ...(v.breathe === false ? { breathe: false as const } : {}),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
+    // Optional: the track a bounce was rendered from
+    ...(isStr(v.bounceOf) && v.bounceOf ? { bounceOf: v.bounceOf } : {}),
   };
 }
 
