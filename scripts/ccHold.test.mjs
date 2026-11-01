@@ -118,7 +118,9 @@ test('Stop resets a plugin\'s controllers (Reset All Controllers), and the sched
   // (Tone's "stop" then "start" at one time) keeps the notes sounding on
   assert.doesNotMatch(sched, /scheduleRepeat/);
   // (live, sent to the bend window that gives them as they come due: see bendWindow.ts)
-  assert.match(sched, /if \(live\) windowFor\(trackId, instrument\)\.steps\(curve\);\s+else for \(const \[t, cents\] of curve\.pts\) sendBend\(trackId, instrument, cents, t\);/);
+  assert.match(sched, /if \(live\) windowFor\(trackId, instrument\)\.steps\(curve, time, end\);\s+else for \(const \[t, cents\] of curve\.pts\) again\(cents, t\);/);
+  // (an export sends a note's bends as before, but where it sounds over an earlier bent note)
+  assert.match(sched, /const again = \(cents: number, t: number\) => \(live \|\| !under \|\| t <= time \? sendBend\(trackId, instrument, cents, t\) : sendAgain\(trackId, instrument, cents, t\)\);/);
   assert.match(sched, /if \(reset !== undefined\) sendBend\(trackId, instrument, laneBendAt\(trackId, tick, time\), reset, true\);/);
   assert.match(sched, /if \(stoppedAt !== null && stoppedAt !== time\) forgetNotes\(\);/);
   assert.match(sched, /onVoicesLetGo\(\(\) => liveSchedule\?\.letGo\(\)\)/);

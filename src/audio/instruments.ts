@@ -94,9 +94,10 @@ export interface TrackInstrument {
    * `live`: the wheel on the player's keyboard (a plugin keeps it where the song's bend is at rest).
    * Bends may be sent well ahead of their time (a note's whole slide when it starts), and a note
    * starts at the bend in force when it starts (see bendTimeline.ts). `cut`: the bends sent for
-   * `time` and after are dropped first (a jump, Stop).
+   * `time` and after are dropped first (a jump, Stop). `sent`: when the song sent it, where it's
+   * given later (see bendStamp in bendWindow.ts: a note's later steps given as they come due).
    */
-  bend?: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
+  bend?: (cents: number, time: number, live?: boolean, cut?: boolean, sent?: number) => void;
   /**
    * The mod wheel as dynamics (0 soft to 1 loud) from `time`, for instruments recorded at several
    * loudnesses (InstrumentDef.dynamics): played instead of the wheel's vibrato. null: no wheel.
