@@ -293,6 +293,20 @@ export function measureStart(n: number, map: MeterMap): number {
   return sec.bar + (n - sec.measure) * measureBars(sec.meter);
 }
 
+/**
+ * The position `n` measures after `bar` (any amount, fractions too: half a measure is half of
+ * that measure), keeping where in its measure `bar` is: one "bar" of a clip or a chord in 3/4 is
+ * three beats. In plain 4/4 this is `bar + n`.
+ */
+export function addMeasures(bar: number, n: number, map: MeterMap): number {
+  if (isFourFour(map) || bar < 1) return bar + n;
+  const m = measureAt(bar, map);
+  const at = m.measure + (bar - m.start) / m.length + n;
+  const k = Math.floor(at + EPS);
+  const start = measureStart(k, map);
+  return start + Math.max(0, at - k) * measureBars(meterAt(start, map));
+}
+
 /** Every measure that starts in [from, to): its position, number and meter. */
 export function measuresBetween(from: number, to: number, map: MeterMap): Array<{ bar: number; measure: number; meter: Meter }> {
   const out: Array<{ bar: number; measure: number; meter: Meter }> = [];
