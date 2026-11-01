@@ -612,9 +612,19 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   };
   if (!isPitched(key)) return withGlide;
   const sub = createSubLayer(output, options.subLayer);
-  const glide = () => glideRef.seconds ?? options.bass808?.glide;
+  // The 808 Designer's settings as they are now (they change without a rebuild): its Glide is the sub's too
+  let bass808 = options.bass808;
+  const glide = () => glideRef.seconds ?? bass808?.glide;
   return {
     ...withGlide,
+    ...(inst.setBass808
+      ? {
+          setBass808: (settings: Bass808Settings | undefined) => {
+            bass808 = settings;
+            inst.setBass808!(settings);
+          },
+        }
+      : {}),
     play: (notes, time) => {
       inst.play(notes, time);
       sub.play(notes, time, glide());

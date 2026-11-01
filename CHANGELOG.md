@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The Sub enhancer slides with the 808 Designer's Glide as you set it**: changing the 808 Designer's Glide (or turning it on or off, or picking a preset like Long slide) while the song was open left the Sub enhancer under it sliding at the old Glide until you reloaded, though the exported file used the new one. It now follows the change at once, so what you hear is what the file has.
 - **The 808 Designer's slide and the Sub enhancer's slide glide when they should**: when a note started over a sounding one, the exported file crept up (or down) to the new pitch over the whole earlier note, and playing the song jumped to part way there just before the new note. Neither made the short slide set by Glide. Both now hold the first note's pitch and glide to the new one in the Glide time, in the song and the file alike.
 - **The agent is told rightly what a listen gives**: the agent's description of listening said it gives the loudness bar by bar, but only a listen to a song file does; a listen in the studio gives the whole stretch's numbers. It now says so, so an agent doesn't look for numbers that aren't there.
 - **A failed MP3 says why in plain words**: when the MP3 from Share (in the studio or on a phone) couldn't be made, for example a song too long for the memory the browser has, the message showed the browser's own code words. It now says what the Export dialog says: what went wrong and what to try.
