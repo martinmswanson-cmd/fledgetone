@@ -462,7 +462,9 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
   const pumped = (id: string): string[] => {
     const out = new Set<string>();
     for (const s of songs) {
-      const src = s.tracks.find((t) => t.id === id);
+      const own = s.tracks.find((t) => t.id === id);
+      // (A bounce stands in for the track it was made from: its kicks count while it's heard)
+      const src = own?.bounceOf ? (s.tracks.find((t) => t.id === own.bounceOf) ?? own) : own;
       for (const t of s.tracks) {
         const pump = t.fx?.pump;
         if (t.id === id || !pump?.on) continue;
@@ -480,7 +482,9 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
    * (their sends, bus and returns: their tail).
    */
   const proxyDucked = (id: string): string[] => {
-    if (!songs.some((s) => s.tracks.some((t) => t.id === id && t.duckProxy))) return [];
+    // (A bounce of a proxy ducks as it did while it's heard: see store/duck.ts)
+    const isProxy = (s: (typeof songs)[number], t: Track) => !!t.duckProxy || (!!t.bounceOf && !!s.tracks.find((o) => o.id === t.bounceOf)?.duckProxy);
+    if (!songs.some((s) => s.tracks.some((t) => t.id === id && isProxy(s, t)))) return [];
     const out = new Set<string>();
     for (const s of songs) for (const t of s.tracks) if (t.id !== id && !t.duckProxy) out.add(t.id);
     return [...out];

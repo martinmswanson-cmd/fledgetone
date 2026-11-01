@@ -41,9 +41,9 @@ import { trackSeed } from './seededNoise';
 import type { Bass808Settings } from '../store/bass808';
 import { tuneNote } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
+import { GLIDE_KEYS, takesSubLayer } from '../store/bassTools';
 import { createBass808Designer } from './presets/bass808Designer';
 import { createSubLayer } from './subLayer';
-import { isPitched } from '../store/keyChange';
 import type { TrackPlan } from './samplers/songSamples';
 import { DRUM_NOTES } from '../store/drumNotes';
 import { maxOf } from '../support/minMax';
@@ -619,12 +619,13 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
     setGlide: (seconds) => void (glideRef.seconds = seconds),
     setFeel: (ring, breathe) => Object.assign(feel, { ring, breathe }),
   };
-  if (!isPitched(key)) return withGlide;
+  if (!takesSubLayer(key)) return withGlide;
   const sub = createSubLayer(output, options.subLayer);
   // The 808 Designer's settings as they are now (they change without a rebuild): its Glide is the sub's too
   let bass808 = options.bass808;
   // (Each instrument's own: a Glide or 808 settings left from another instrument play no part)
-  const glide = () => (key === 'bass808' ? bass808?.glide : glideRef.seconds);
+  const glide = () =>
+    key === 'bass808' ? bass808?.glide : key === 'synthDesigner' ? (synth?.mono ? synth.glide : undefined) : GLIDE_KEYS.has(key) ? glideRef.seconds : undefined;
   inst.onBendHeard?.((cents, time, cut) => sub.bend(cents, time, cut));
   // A one-note-at-a-time instrument plays a chord's loudest note: the sub goes under that one
   let synth = options.synth;

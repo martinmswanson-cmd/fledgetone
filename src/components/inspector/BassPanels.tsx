@@ -12,13 +12,11 @@ import { FxSlider, InsertPanel } from './InsertFx';
 import type { Bass808Settings } from '../../store/bass808';
 import { BASS808_PRESETS, BASS808_TONE_MAX, BASS808_TONE_MIN, bass808Preset, defaultBass808 } from '../../store/bass808';
 import type { BassDriveFx, SubLayer } from '../../store/bassTools';
-import { BASS_DRIVE_CROSSOVER_MAX, BASS_DRIVE_CROSSOVER_MIN, BASS_DRIVE_TONE_MAX, BASS_DRIVE_TONE_MIN, defaultBassDrive, defaultSubLayer, GLIDE_KEYS, GLIDE_MAX } from '../../store/bassTools';
+import { BASS_DRIVE_CROSSOVER_MAX, BASS_DRIVE_CROSSOVER_MIN, BASS_DRIVE_TONE_MAX, BASS_DRIVE_TONE_MIN, defaultBassDrive, defaultSubLayer, GLIDE_KEYS, GLIDE_MAX, takesSubLayer } from '../../store/bassTools';
 import { DRIVE_CHARACTER_LABELS, DRIVE_CHARACTERS, type DriveCharacter } from '../../audio/driveCurves';
 import { ROOT_NAMES, SCALES, type ScaleId } from '../../store/noteTools';
 import { detectKey } from '../../store/songKey';
 import { findKickClash, KICK_DUCK } from '../../store/kickClash';
-import { INSTRUMENTS } from '../../audio/instrumentCatalog';
-import { isPitched } from '../../store/keyChange';
 import { ActionSelect } from '../actionSelect';
 
 const select = 'h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text focus:outline-none focus:border-red-500';
@@ -195,15 +193,9 @@ export const GlidePanel: React.FC<{ track: Track }> = ({ track }) => {
   );
 };
 
-/** Pitched tracks that get the Sub enhancer: basses, and the instruments a bass is often made on. */
-const takesSubLayer = (track: Track): boolean => {
-  const key = track.instrumentKey;
-  return isPitched(key) && (INSTRUMENTS[key].category === 'Bass' || ['synthDesigner', 'sampler', 'multiSampler', 'plugin'].includes(key));
-};
-
 /** The Sub enhancer: a clean sine under the notes, mono. */
 export const SubLayerPanel: React.FC<{ track: Track }> = ({ track }) => {
-  if (!takesSubLayer(track)) return null;
+  if (!takesSubLayer(track.instrumentKey)) return null;
   const accent = '#38bdf8';
   const on = !!track.subLayer;
   const s = track.subLayer ?? defaultSubLayer();

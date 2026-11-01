@@ -243,6 +243,8 @@ const NEEDS_FILES = new Set(['custom', 'slicer', 'audio', 'plugin', 'rack', 'mul
 export const opInstrumentAllowed = (key: InstrumentKey): boolean => !NEEDS_FILES.has(INSTRUMENTS[key].kind);
 
 const EPS = 1e-9;
+/** Whether `n` plays: not hidden by a trim of its clip (a whole-clip edit leaves those alone, as the studio's tools do) */
+const heard = (clip: Clip, n: NoteEvent) => n.startOffset >= -EPS && n.startOffset < clip.lengthBars - EPS;
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -442,12 +444,12 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
             ids.add(note.id);
           });
           keep = (n) => !ids.has(n.id);
-        } else if (op.all) keep = () => false;
+        } else if (op.all) keep = (n) => !heard(clip, n);
         else {
           if (!isNum(op.fromBar) || !isNum(op.toBar) || op.toBar <= op.fromBar) throw new OpFail(`${at}.toBar`, 'give both fromBar and toBar, toBar after fromBar (song bars, toBar not included)');
           const from = op.fromBar - clip.startBar;
           const to = op.toBar - clip.startBar;
-          keep = (n) => n.startOffset < from - EPS || n.startOffset >= to - EPS;
+          keep = (n) => !heard(clip, n) || n.startOffset < from - EPS || n.startOffset >= to - EPS;
         }
         const notes = clip.notes.filter(keep);
         if (notes.length === clip.notes.length) warn(`Removing notes found none to remove in ${nm(clip.name)}.`);
@@ -464,7 +466,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
         let held = 0;
         const notes = clip.notes.map((n) => {
-          if (ids && !ids.has(n.id)) return n;
+          if (ids ? !ids.has(n.id) : !heard(clip, n)) return n;
           const m = midiOf(n.note) + op.semitones;
           if (!Number.isFinite(m) || m < lo || m > hi) {
             held++;

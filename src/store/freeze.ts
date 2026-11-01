@@ -43,6 +43,8 @@ export function bounceStandIns(tracks: readonly Track[], heard: ReadonlySet<stri
  * The source is muted, and the bounce says where it came from (bounceOf).
  */
 export function bounceInPlace(tracks: readonly Track[], source: Track, made: Track): Track[] {
+  // (None at all left out, as a saved song has it)
+  const lanes = (source.automation ?? []).filter((l) => isLiveParam(l.param));
   const bounced: Track = {
     ...made,
     volume: source.volume,
@@ -53,7 +55,7 @@ export function bounceInPlace(tracks: readonly Track[], source: Track, made: Tra
     ...(source.sends ? { sends: source.sends } : {}),
     ...(source.output ? { output: source.output } : {}),
     ...(source.folder ? { folder: source.folder } : {}),
-    automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
+    automation: lanes.length ? lanes : undefined,
     isSoloed: source.isSoloed,
     bounceOf: source.id,
   };

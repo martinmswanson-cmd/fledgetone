@@ -9,6 +9,8 @@ import type { DriveCharacter } from '../audio/driveCurves';
 import { DRIVE_CHARACTERS } from '../audio/driveCurves';
 import { normalizeBass808 } from './bass808';
 import type { Bass808Settings } from './bass808';
+import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { isPitched } from './keyChange';
 
 /** The Sub enhancer: a sine under every note, an octave down or on the note itself, mono. */
 export interface SubLayer {
@@ -57,6 +59,11 @@ export function defaultSubLayer(): SubLayer {
  * Synth Designer its own in its patch.
  */
 export const GLIDE_KEYS: ReadonlySet<string> = new Set(['bass', 'subBass', 'lead', 'wobbleBass', 'growlBass', 'reeseBass']);
+
+/** Instruments that take the Sub enhancer: basses, and the pitched ones a bass is often made on (others play none, even with one left from another instrument). */
+export function takesSubLayer(key: string): boolean {
+  return key in INSTRUMENTS && isPitched(key as keyof typeof INSTRUMENTS) && (INSTRUMENTS[key as keyof typeof INSTRUMENTS].category === 'Bass' || ['synthDesigner', 'sampler', 'multiSampler', 'plugin'].includes(key));
+}
 
 /** The sub's frequency for a note of `noteHz`. */
 export function subFrequency(noteHz: number, mode: SubLayer['mode']): number {

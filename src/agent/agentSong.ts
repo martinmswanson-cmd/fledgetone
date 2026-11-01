@@ -162,8 +162,13 @@ function presetOf(patch: SynthPatch): { synthPreset?: string } {
   return hit ? { synthPreset: hit.name } : {};
 }
 
+/** A clip's notes that play: those a trim hides left out */
+const playingNotes = (c: Clip) => c.notes.filter((n) => n.startOffset >= -1e-9 && n.startOffset < c.lengthBars - 1e-9);
+
 /** "C2-G3" for pitched notes, the drum rows ("kick, snare, closedHat") for a kit. */
-function noteRange(c: Clip, t: Track | undefined): string | undefined {
+function noteRange(clip: Clip, t: Track | undefined): string | undefined {
+  // (The notes that play: not those hidden by a trim)
+  const c = { ...clip, notes: playingNotes(clip) };
   if (!c.notes.length) return undefined;
   const kind = t ? INSTRUMENTS[t.instrumentKey]?.kind : undefined;
   if (kind === 'drums' || kind === 'fx' || kind === 'drop' || kind === 'rack') {
@@ -210,7 +215,7 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
         startBar: r(c.startBar),
         lengthBars: r(c.lengthBars),
         kind: c.audio ? 'audio' : c.takes?.length ? 'takes' : 'notes',
-        notes: c.notes.length,
+        notes: playingNotes(c).length,
         ...(range ? { range } : {}),
         ...(c.pattern ? { linkedTo: c.pattern } : {}),
       };
