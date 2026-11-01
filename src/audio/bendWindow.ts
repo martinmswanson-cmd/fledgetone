@@ -1,6 +1,7 @@
 /**
  * The song's bends on an instrument that bends as a whole, given to it as they come due while
- * playing (the scheduler's, live; an export sends each as it always did). See createBendWindow.
+ * playing (the scheduler's, live; an export's once a bent note begins over an earlier one, see
+ * BendWindow.seed). See createBendWindow.
  */
 import { FEED_AHEAD, FEED_EVERY } from './bendFeed';
 import type { NoteStepper } from '../store/noteExpression';
@@ -173,6 +174,14 @@ export interface BendWindow {
   feed: () => void;
   /** Whether it still has bends for now or later. */
   alive: () => boolean;
+  /**
+   * Take over, from `from`, an export's bends sent to the instrument one by one so far: `notes`,
+   * the notes with their own bend sent so far (each curve begun at `start`, sounding to `end`,
+   * with the song's bend after its release sent for `back`), and `sent`, the bend sent last for
+   * each time (in time order). The instrument's bends for `from` and after are dropped and given
+   * again from here, the later notes' bends taking over from these as if sent after them.
+   */
+  seed: (notes: ReadonlyArray<{ curve: BendCurve; start: number; end: number; back?: number }>, sent: ReadonlyArray<readonly [time: number, cents: number]>, from: number) => void;
 }
 
 /**
@@ -191,6 +200,8 @@ export const FEED_LEAST = 0.15;
  */
 export const GIVE_RATE = 8000;
 export const GIVE_BURST = 8000;
+/** Seconds between two looks for what's long gone (see createBendWindow's prune) */
+const PRUNE_EVERY = FEED_EVERY / 5;
 
 /** How many may be given now (see GIVE_RATE), by `clock`: `take` counts those given. */
 export function createAllowance(clock: { readonly currentTime: number }) {
@@ -219,7 +230,7 @@ export function createAllowance(clock: { readonly currentTime: number }) {
  * The instrument has the same bend at every time as when every one was sent to it at once.
  * `give` is told when each was sent (see bendStamp).
  */
-export function createBendWindow(clock: { readonly currentTime: number }, give: (cents: number, time: number, cut: boolean, sent: number) => void): BendWindow {
+export function createBendWindow(clock: { readonly currentTime: number }, give: (cents: number, time: number, cut: boolean, sent: number) => void, offline = false): BendWindow {
   let order = 0;
   /** The bends up to here have been given */
   let fedTo = -Infinity;
@@ -228,8 +239,14 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
   /** By time, one a time (the one sent last for it, see addPoint) */
   let points: Point[] = [];
   let streams: Stream[] = [];
+  /** Whether streams are in the order their notes begin, and the longest of their notes (seconds, as sent) */
+  let streamsInOrder = true;
+  let longest = 0;
   /** In the order sent */
   let layers: Layer[] = [];
+  /** Those of them sent over a note's steps (see over), in the order sent; and whether they begin in that order too */
+  let overs: Layer[] = [];
+  let oversInOrder = true;
   /** By time */
   let backs: Back[] = [];
   /** Each note's own steps, and where its song's bend after its release is now */
@@ -245,8 +262,15 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
   let givenInBatch = false;
   let lastGiven: [number, number] = [NaN, NaN];
   const allowance = createAllowance(clock);
+  /**
+   * How many may be given now (see GIVE_RATE). An export's as many as there are: its clock runs
+   * ahead of what it renders, and every bend must be given before the render gets to it.
+   */
+  const mayGive = () => (offline ? Infinity : allowance.left());
   /** How far ahead the instrument has its bends at least (see FEED_LEAST): FEED_START while as many may be given as a song's own take */
-  const least = () => clock.currentTime + (allowance.left() >= GIVE_RATE * FEED_START ? FEED_START : FEED_LEAST);
+  const least = () => clock.currentTime + (mayGive() >= GIVE_RATE * FEED_START ? FEED_START : FEED_LEAST);
+  /** Where the audio has played to (an export's: nothing until the render gets there, see mayGive) */
+  const played = () => (offline ? -Infinity : clock.currentTime);
 
   /** The first point at or after `time` (`after`: after it) */
   const pointFrom = (time: number, after: boolean) => {
@@ -294,12 +318,26 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
   };
   const backDue = (b: Back, l: Layer): Due => ({ time: b.time, order: l.order, value: () => l.value(b.time), cut: false, again: true, sent: l.sent });
   /**
-   * What has the step of `s` at `t` in force: the latest of `cands` sent after it that takes it
-   * over, else its own (null) unless it was dropped (undefined).
+   * What has the step of `s` at `t` in force: the latest of the layers sent after it that takes it
+   * over (only those over a note's steps can: see overs), else its own (null) unless it was
+   * dropped (undefined).
    */
-  const holder = (s: Stream, t: number, cands: Layer[]): Layer | null | undefined => {
-    for (let j = cands.length - 1; j >= 0; j--) {
-      const l = cands[j];
+  const holder = (s: Stream, t: number): Layer | null | undefined => {
+    // (Where they're in the order they begin: from the last begun before `t`, the later ones
+    // can't take it over; thousands of short notes over each other each looked through them all)
+    let j = overs.length - 1;
+    if (oversInOrder) {
+      let lo = 0;
+      let hi = overs.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (overs[mid].from < t) lo = mid + 1;
+        else hi = mid;
+      }
+      j = lo - 1;
+    }
+    for (; j >= 0; j--) {
+      const l = overs[j];
       if (l.order <= s.order) break;
       if (t > l.from && t < l.to && t < l.dropFrom && l.not !== s.curve && s.start <= l.from && s.end > l.from) return l;
     }
@@ -310,13 +348,42 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     return l ? { time: t, order: l.order, value: () => l.value(t), cut: false, again: true, sent: l.sent } : { time: t, order: s.order, value: () => cents, cut: false, again: false, sent: s.sent };
   };
 
+  /** The first of streams (in the order they begin) begun after `time` (`at`: at or after it). */
+  const streamFrom = (time: number, at: boolean) => {
+    let lo = 0;
+    let hi = streams.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (at ? streams[mid].start < time : streams[mid].start <= time) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  /**
+   * The streams that may have steps from `lo` to `hi` (begun by `hi`, and not longer ago than the
+   * longest is long): where they're in the order they begin, only those, else all of them
+   * (thousands of short notes over each other each looked through every one kept).
+   */
+  const streamsFor = (lo: number, hi: number): Stream[] => {
+    if (!streamsInOrder) return streams;
+    const first = lo === -Infinity ? 0 : streamFrom(lo - longest, true);
+    const end = streamFrom(hi, false);
+    return first === 0 && end === streams.length ? streams : streams.slice(first, end);
+  };
+  /** Add `st` to streams, its steps up to `last` at the latest. */
+  const addStream = (st: Stream, last = st.end) => {
+    if (streams.length && st.start < streams[streams.length - 1].start) streamsInOrder = false;
+    longest = Math.max(longest, last - st.start);
+    streams.push(st);
+  };
+
   /** The bend in force for each time some bend was sent for, from `lo` (itself too unless `loOpen`) to `hi`, in time order. */
   const inForce = (lo: number, loOpen: boolean, hi: number): Due[] => {
     // (By time, the one sent last: each made into a Due only once it's known to be in force)
     const best = new Map<number, { order: number; cut: boolean; p?: Point; s?: Stream; bk?: Back; l?: Layer | null; i: number }>();
     for (let i = pointFrom(lo, loOpen); i < points.length && points[i].time <= hi; i++) best.set(points[i].time, { order: points[i].order, cut: points[i].cut, p: points[i], i });
     const cands = layers;
-    for (const s of streams) {
+    for (const s of streamsFor(lo, hi)) {
       // (its steps are all from its start to its end)
       if (s.start > hi || s.end < lo) continue;
       const last = s.curve.last();
@@ -328,7 +395,7 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
       s.curve.reach(hi);
       for (; i < pts.length && pts[i][0] <= hi; i++) {
         const t = pts[i][0];
-        const l = holder(s, t, cands);
+        const l = holder(s, t);
         if (l === undefined) continue;
         const ord = l ? l.order : s.order;
         const had = best.get(t);
@@ -359,13 +426,13 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     const at = pointFrom(time, true);
     if (at < points.length) first = points[at].time;
     const cands = layers;
-    for (const s of streams) {
+    for (const s of streamsFor(time, Math.min(fedTo, first))) {
       if (s.start > Math.min(fedTo, first) || s.end <= time) continue;
       const pts = s.curve.pts;
       let i = lastStepAt(s.curve, time) + 1;
       s.curve.reach(Math.min(fedTo, first));
       for (; i < pts.length && pts[i][0] <= Math.min(fedTo, first); i++) {
-        if (holder(s, pts[i][0], cands) === undefined) continue;
+        if (holder(s, pts[i][0]) === undefined) continue;
         first = pts[i][0];
         break;
       }
@@ -383,13 +450,13 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     let last = -Infinity;
     const at = pointFrom(time, false) - 1;
     if (at >= 0) last = points[at].time;
-    for (const s of streams) {
+    for (const s of streamsFor(-Infinity, time)) {
       if (s.start >= time) continue;
       const pts = s.curve.pts;
       let i = lastStepAt(s.curve, time);
       if (i >= 0 && pts[i][0] >= time) i--;
       for (; i >= 0 && pts[i][0] > last; i--) {
-        if (holder(s, pts[i][0], layers) === undefined) continue;
+        if (holder(s, pts[i][0]) === undefined) continue;
         last = pts[i][0];
         break;
       }
@@ -409,12 +476,24 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     for (const l of layers) l.dropFrom = Math.min(l.dropFrom, time);
   };
 
-  /** Forget what's long gone. */
+  /** When the last prune was (by the clock) */
+  let prunedAt = -Infinity;
+  /**
+   * Forget what's long gone: at most every PRUNE_EVERY (fed after every bent note, thousands of
+   * short ones a second each looked through everything kept).
+   */
   const prune = () => {
-    const before = clock.currentTime - 1;
+    const now = clock.currentTime;
+    if (now < prunedAt + PRUNE_EVERY) return;
+    prunedAt = now;
+    const before = now - 1;
     const old = pointFrom(before, false);
     if (old) points = points.slice(old);
     layers = layers.filter((l) => Math.min(Math.max(l.to, l.backTo), l.dropFrom) >= before);
+    overs = overs.filter((l) => Math.min(Math.max(l.to, l.backTo), l.dropFrom) >= before);
+    if (!overs.length) oversInOrder = true;
+    // (Sent in order: the last is the latest)
+    const latest = layers.length ? layers[layers.length - 1].order : -Infinity;
     const gone = backFrom(before, false);
     if (gone) {
       for (let i = 0; i < gone; i++) if (backOf.get(backs[i].curve) === backs[i]) backOf.delete(backs[i].curve);
@@ -422,24 +501,31 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     }
     streams = streams.filter((s) => {
       // (Dropped: still where a later note's bend is sent again)
-      const keep = !(s.end < before || (s.curve.last() ?? Infinity) < before) && (s.dropFrom >= before || layers.some((l) => l.order > s.order));
+      const keep = !(s.end < before || (s.curve.last() ?? Infinity) < before) && (s.dropFrom >= before || latest > s.order);
       if (!keep) streamOf.delete(s.curve);
       return keep;
     });
+    if (!streams.length) {
+      streamsInOrder = true;
+      longest = 0;
+    }
   };
 
-  /** Give `due` in time order, the ones sent again that change nothing left out; `cut` with the first. */
+  /**
+   * Give `due` in time order, the ones sent again that change nothing left out (live: an export's
+   * are all given, as when each was sent to the instrument one by one); `cut` with the first.
+   */
   const giveAll = (due: Due[], cut = false) => {
     let n = 0;
     for (const d of due) {
       const v = d.value();
-      if (d.again && v === tail && !cut) continue;
+      if (d.again && v === tail && !cut && !offline) continue;
       give(v, d.time, cut || d.cut, d.sent);
       cut = false;
       tail = v;
       n++;
     }
-    allowance.take(n);
+    if (!offline) allowance.take(n);
   };
 
   /**
@@ -471,7 +557,7 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     const now = clock.currentTime;
     const to = now + FEED_AHEAD;
     if (!(to > fedTo)) return;
-    const { due, to: upTo } = gather(fedTo, fedTo !== -Infinity, to, allowance.left(), least());
+    const { due, to: upTo } = gather(fedTo, fedTo !== -Infinity, to, mayGive(), least());
     if (!(upTo > fedTo)) return;
     fedTo = upTo;
     giveAll(due);
@@ -510,7 +596,7 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     steps: (curve, start, end) => {
       order++;
       const st: Stream = { order, curve, start, end, dropFrom: Infinity, sent: bendStamp() };
-      streams.push(st);
+      addStream(st);
       streamOf.set(curve, st);
       orderOf.set(curve, order);
     },
@@ -518,7 +604,10 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
       if (!(to > from) && !(backTo > from)) return;
       order++;
       layersSent++;
-      layers.push({ order, value: (t) => curveAt(over, t), not: over, from, to, backLo: from, backTo, dropFrom: Infinity, sent: bendStamp() });
+      const l: Layer = { order, value: (t) => curveAt(over, t), not: over, from, to, backLo: from, backTo, dropFrom: Infinity, sent: bendStamp() };
+      layers.push(l);
+      if (overs.length && from < overs[overs.length - 1].from) oversInOrder = false;
+      overs.push(l);
     },
     overBacks: (value, begun, lo, hi, not) => {
       if (!(hi > lo)) return;
@@ -581,15 +670,16 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
         batching = false;
       }
       // (Begun late, the page held up: what's played already is played)
-      const lo = Math.max(batchFrom, clock.currentTime);
+      const lo = Math.max(batchFrom, played());
       if (lo > fedTo) return;
-      if (batchAgain || layersSent !== sentBefore || !was || lo !== from || givenInBatch) {
+      // (An export's, where none of it begins over an earlier note: only what changes, as when sent one by one)
+      if (batchAgain || (!offline && layersSent !== sentBefore) || !was || lo !== from || givenInBatch) {
         // Earlier notes' steps it sounds over are each sent again over: rather than give each of
         // those again where the instrument has them, everything from here again (what it has from
         // here dropped first), as far as it had them (see GIVE_RATE: many notes begun at once
         // under each other don't each give a couple of seconds' worth again)
         const head = inForce(lo, false, lo)[0] ?? lastBefore(lo);
-        const { due, to } = gather(lo, true, fedTo, allowance.left(), Math.min(fedTo, least()));
+        const { due, to } = gather(lo, true, fedTo, mayGive(), Math.min(fedTo, least()));
         if (head) {
           giveAll([{ ...head, time: lo, again: false }, ...due], true);
           fedTo = Math.max(lo, to);
@@ -603,6 +693,17 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
         }
       }
       const now = inForce(lo, false, fedTo);
+      if (offline) {
+        // (An export's has every one given, see giveAll: each now in force that isn't the one it has for that very time)
+        const had = new Map<number, number>();
+        for (const d of was ?? []) had.set(d.time, d.value());
+        for (const d of now) {
+          const v = d.value();
+          if (had.get(d.time) !== v) give(v, d.time, false, d.sent);
+        }
+        if (now.length) tail = now[now.length - 1].value();
+        return;
+      }
       // What changes where the instrument has been given its bends: each one now in force that
       // isn't what it has there (not every one sent was given, see giveAll: where one given here
       // is followed by one that may not have been, what the instrument has there isn't known)
@@ -631,6 +732,29 @@ export function createBendWindow(clock: { readonly currentTime: number }, give: 
     alive: () => {
       prune();
       return points.length > 0 || streams.length > 0 || layers.length > 0 || backs.length > 0;
+    },
+    seed: (notes, sent, from) => {
+      // Their steps: only where a later note's bend is sent again over them (see Layer); the
+      // instrument's bend at each time otherwise the one sent last for it (the points, after them)
+      for (const n of notes) {
+        order++;
+        const st: Stream = { order, curve: n.curve, start: n.start, end: n.end, dropFrom: from, sent: bendStamp() };
+        // (its end may have come sooner than its steps', see endAt)
+        addStream(st, Math.max(n.end, n.curve.last() ?? Infinity));
+        streamOf.set(n.curve, st);
+        orderOf.set(n.curve, order);
+        if (n.back === undefined) continue;
+        const b: Back = { time: n.back, curve: n.curve, start: n.start, end: n.end, order, valid: Infinity };
+        backOf.set(n.curve, b);
+        const at = backFrom(n.back, true);
+        if (at === backs.length) backs.push(b);
+        else backs.splice(at, 0, b);
+      }
+      for (const [time, cents] of sent) addPoint({ time, order: ++order, value: cents, cut: false, sent: bendStamp() });
+      fedTo = from;
+      // (None before it: centre, as an instrument has before any bend)
+      const head = inForce(from, false, from)[0] ?? lastBefore(from) ?? { time: from, order, value: () => 0, cut: false, again: false, sent: stamps };
+      giveAll([{ ...head, time: from, again: false }], true);
     },
   };
 }
