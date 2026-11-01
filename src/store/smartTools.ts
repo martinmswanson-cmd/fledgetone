@@ -4,6 +4,8 @@ import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
 import { NOTE_NAMES } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
+import { addMeasures } from '../audio/tempoMap';
+import type { MeterMap } from '../audio/tempoMap';
 
 /**
  * Writing helpers that make parts from a few choices: chord progressions in the song's key (with
@@ -224,27 +226,43 @@ const note = (newId: () => string, midi: number, at: number, bars: number, veloc
   velocity: Math.round(velocity * 100) / 100,
 });
 
-/** A chord sequence (pitch classes, root first) as notes, `chordBars` each, voiced smoothly, in a style. */
-export function chordNotesFor(chords: readonly number[][], chordBars: number, style: ChordStyle, newId: () => string): NoteEvent[] {
+/**
+ * A chord sequence (pitch classes, root first) as notes, `chordBars` each, voiced smoothly, in a
+ * style. With `spans`, chord i plays from spans[i].start for spans[i].length (bars from the clip's
+ * start): a measure each in a song not in 4/4.
+ */
+export function chordNotesFor(chords: readonly number[][], chordBars: number, style: ChordStyle, newId: () => string, spans?: ReadonlyArray<{ start: number; length: number }>): NoteEvent[] {
   const out: NoteEvent[] = [];
   let prev: number[] | null = null;
   chords.forEach((pcs, i) => {
     const voiced = voiceLead(pcs, prev);
     prev = voiced;
-    const start = i * chordBars;
+    const start = spans?.[i]?.start ?? i * chordBars;
+    const length = spans?.[i]?.length ?? chordBars;
     if (style === 'sustain') {
-      for (const m of voiced) out.push(note(newId, m, start, chordBars, 0.7));
+      for (const m of voiced) out.push(note(newId, m, start, length, 0.7));
     } else if (style === 'pulse') {
-      for (let t = 0; t < chordBars - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.22, t % 1 === 0 ? 0.78 : 0.62));
+      for (let t = 0; t < length - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.22, t % 1 === 0 ? 0.78 : 0.62));
     } else if (style === 'offbeat') {
-      for (let t = 0.125; t < chordBars - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.1, 0.72));
+      for (let t = 0.125; t < length - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.1, 0.72));
     } else {
       const up = [...voiced, voiced[0] + 12];
       let k = 0;
-      for (let t = 0; t < chordBars - EPS; t += 1 / 16, k++) out.push(note(newId, up[k % up.length], start + t, 1 / 16, k % 4 === 0 ? 0.75 : 0.6));
+      for (let t = 0; t < length - EPS; t += 1 / 16, k++) out.push(note(newId, up[k % up.length], start + t, 1 / 16, k % 4 === 0 ? 0.75 : 0.6));
     }
   });
   return out;
+}
+
+/**
+ * Where each of `count` chords plays when a chord lasts `chordBars` measures from `atBar` (bars
+ * from the clip's start), and the clip's whole length: in 3/4 a "1 bar" chord is three beats. In
+ * 4/4 these are i × chordBars, chordBars each.
+ */
+export function chordSpans(atBar: number, count: number, chordBars: number, map: MeterMap): { spans: Array<{ start: number; length: number }>; length: number } {
+  const at = (i: number) => addMeasures(atBar, i * chordBars, map) - atBar;
+  const spans = Array.from({ length: count }, (_, i) => ({ start: at(i), length: at(i + 1) - at(i) }));
+  return { spans, length: at(count) };
 }
 
 /** A progression's chords in `key`, as pitch classes (root first). */

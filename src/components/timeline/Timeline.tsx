@@ -8,7 +8,8 @@ import { startSoundUpgrade } from '../../store/soundUpgrade';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
 import { livePlayhead, onPlayhead } from '../../store/playheadClock';
-import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { measureAt, measureStart } from '../../audio/tempoMap';
 import { hasWork } from '../../store/project';
 import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
@@ -409,15 +410,19 @@ export const Timeline: React.FC = () => {
       } else if (key === 'o') {
         s.setLoopOut(livePlayhead());
       } else if (key === 'l' && e.shiftKey) {
-        // Video-editor style shuttle: Shift+L a bar forward (L is the loop), J back, K play / pause
+        // Video-editor style shuttle: Shift+L a bar forward (L is the loop), J back, K play / pause.
+        // Bars as the ruler counts them: three beats each in 3/4
         e.preventDefault();
-        s.seek(Math.floor(s.playheadPosition + 1e-6) + 1, true);
+        const meter = songMeterOf(s);
+        s.seek(measureStart(measureAt(s.playheadPosition + 1e-6, meter).measure + 1, meter), true);
       } else if (key === 'l') {
         s.toggleLoop();
       } else if (key === 'j') {
         e.preventDefault();
-        const bar = Math.ceil(s.playheadPosition - 1e-6) - 1;
-        s.seek(Math.max(1, e.shiftKey ? bar - 3 : bar), true);
+        // Back to the start of this bar (the one before, from its start); Shift+J four bars back
+        const meter = songMeterOf(s);
+        const bar = measureAt(s.playheadPosition - 1e-6, meter);
+        s.seek(Math.max(1, e.shiftKey ? measureStart(bar.measure - 3, meter) : bar.start), true);
       } else if (key === 'k') {
         e.preventDefault();
         if (!e.repeat) void s.togglePlay();

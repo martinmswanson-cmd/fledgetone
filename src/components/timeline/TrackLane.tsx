@@ -6,7 +6,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { isPlainMeter } from '../../audio/tempoMap';
+import { addMeasures, isPlainMeter } from '../../audio/tempoMap';
 import type { Track } from '../../store/timelineTypes';
 import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
@@ -96,9 +96,9 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
           void pickAudioFiles().then((files) => dropAudioFiles(track.id, bar, files));
           return;
         }
-        // New one-bar clip starting on the beat that was double-clicked
+        // New one-bar clip starting on the beat that was double-clicked (a bar as the ruler counts it)
         const s = useTimelineStore.getState();
-        const id = s.createEmptyClip(track.id, bar, 1);
+        const id = s.createEmptyClip(track.id, bar, addMeasures(bar, 1, songMeterOf(s)) - bar);
         if (id) s.openEditor(id);
       }}
       onDragOver={(e) => {

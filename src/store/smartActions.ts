@@ -2,14 +2,14 @@ import { grooveFeelById } from './grooveFeels';
 import { withFeel } from './drumGroove';
 import { mathPattern, MATH_PATTERNS, type MathPatternId } from './mathPatterns';
 import { create } from 'zustand';
-import { allOrNothing, editStep, useTimelineStore } from './timelineStore';
+import { allOrNothing, editStep, songMeterOf, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
-import { measureAt, meterAt } from '../audio/tempoMap';
+import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, chordSpans, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
+import { addMeasures, measureAt, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
 import { INSTRUMENTS, isDropKind, isDrumKind } from '../audio/instrumentCatalog';
@@ -85,11 +85,13 @@ function trackWithClip(afterId: string, instrument: InstrumentKey, name: string,
 /** A chord progression clip on a track. */
 export function makeChordClip(trackId: string, atBar: number, chords: number[][], chordBars: number, style: ChordStyle): string | null {
   if (onDropPad(trackId)) return null;
-  const notes = chordNotesFor(chords, chordBars, style, newId);
+  // A chord lasts chordBars measures as the ruler counts them (three beats a bar in 3/4)
+  const { spans, length } = chordSpans(atBar, chords.length, chordBars, songMeterOf(tl()));
+  const notes = chordNotesFor(chords, chordBars, style, newId, spans);
   // Named after one pass of the progression
   const names = chords.map(chordName);
   const period = names.findIndex((_, p) => p > 0 && names.length % p === 0 && names.every((n, i) => n === names[i % p]));
-  return placeClip(trackId, atBar, chords.length * chordBars, notes, names.slice(0, period > 0 ? period : names.length).join(' '));
+  return placeClip(trackId, atBar, length, notes, names.slice(0, period > 0 ? period : names.length).join(' '));
 }
 
 /** A drum part clip on a drum track. */
@@ -290,6 +292,8 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
 /** A Math patterns clip (mathPatterns.ts) on a pitched track, in `key`, `bars` long. */
 export function makeMathClip(trackId: string, atBar: number, pattern: MathPatternId, key: SongKey, bars: number): string | null {
   if (onDropPad(trackId)) return null;
-  const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, bars, newId);
-  return placeClip(trackId, atBar, bars, notes, MATH_PATTERNS.find((m) => m.id === pattern)?.name ?? 'Math pattern');
+  // `bars` measures as the ruler counts them (three beats a bar in 3/4)
+  const length = addMeasures(atBar, bars, songMeterOf(tl())) - atBar;
+  const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, length, newId);
+  return placeClip(trackId, atBar, length, notes, MATH_PATTERNS.find((m) => m.id === pattern)?.name ?? 'Math pattern');
 }
