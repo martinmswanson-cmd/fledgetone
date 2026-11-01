@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The 808 Designer's slide and the Sub enhancer's slide glide when they should**: when a note started over a sounding one, the exported file crept up (or down) to the new pitch over the whole earlier note, and playing the song jumped to part way there just before the new note. Neither made the short slide set by Glide. Both now hold the first note's pitch and glide to the new one in the Glide time, in the song and the file alike.
 - **The agent is told rightly what a listen gives**: the agent's description of listening said it gives the loudness bar by bar, but only a listen to a song file does; a listen in the studio gives the whole stretch's numbers. It now says so, so an agent doesn't look for numbers that aren't there.
 - **A failed MP3 says why in plain words**: when the MP3 from Share (in the studio or on a phone) couldn't be made, for example a song too long for the memory the browser has, the message showed the browser's own code words. It now says what the Export dialog says: what went wrong and what to try.
 - **The pitch wheel on a plugin instrument leaves a song note's own slide alone**: moving the wheel while a song note slid on Fledge Synth (or another plugin instrument) made the rest of that slide play at the wheel's pitch, even after the wheel was back in the middle. The slide now keeps its own pitch, and the wheel comes back where the song rests, as on the built-in instruments.

@@ -1,8 +1,8 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createOsc, createVoiceSet, noteFrequency } from './native';
-import type { NativeVoice } from './native';
+import { createBus, createFilter, createOsc, createVoiceSet, noteFrequency, slidePitch } from './native';
+import type { NativeVoice, PitchGlide } from './native';
 import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
 import type { Bass808Settings } from '../../store/bass808';
@@ -53,6 +53,8 @@ interface Voice808 extends NativeVoice {
   /** Seconds its sound runs early to make up for the shaper's delay */
   lead: number;
   settings: Bass808Settings;
+  /** Its pitch: the punch's drop, then the last slide */
+  glide: PitchGlide;
 }
 
 const curves = new Map<string, Float32Array<ArrayBuffer>>();
@@ -106,9 +108,7 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     if (v && v.end > start + 0.001 && v.stopAt > start) {
       const at = Math.max(raw.currentTime, start - v.lead);
       const until = end - v.lead;
-      const f = v.osc.frequency;
-      f.cancelAndHoldAtTime(at);
-      f.exponentialRampToValueAtTime(freq, at + v.settings.glide);
+      v.glide = slidePitch(v.osc.frequency, v.glide, at, freq, v.settings.glide);
       const g = v.env.gain;
       g.cancelAndHoldAtTime(at);
       g.setTargetAtTime(0, at, decayConstant(v.settings.decay));
@@ -172,7 +172,9 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     amp.connect(input);
     // Silent (60 dB down) once it has died away or been let go, whichever is first
     const stopAt = Math.min(until + RELEASE * 1.5, from + ATTACK + s.decay * 1.05 + 0.01);
-    const voice: Voice808 = { start: from, stopAt, sources: [osc], nodes, amp, env, osc, end, lead, settings: s };
+    const top = s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq;
+    const glide: PitchGlide = { t0: from, f0: top, t1: s.punch > 0 ? from + s.punchTime : from, f1: freq };
+    const voice: Voice808 = { start: from, stopAt, sources: [osc], nodes, amp, env, osc, end, lead, settings: s, glide };
     follow(voice, from);
     voices.add(voice);
     current = voice;

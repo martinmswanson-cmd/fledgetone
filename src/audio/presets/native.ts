@@ -241,6 +241,29 @@ export function createOsc(raw: BaseAudioContext, type: OscillatorType | Periodic
   return osc;
 }
 
+/** A pitch going from `f0` at `t0` to `f1` at `t1` along an exponential ramp (held before and after). */
+export interface PitchGlide { t0: number; f0: number; t1: number; f1: number }
+
+/** The pitch `g` is at by `at`. */
+export function glidePitch(g: PitchGlide, at: number): number {
+  if (at <= g.t0 || g.t1 <= g.t0) return at <= g.t0 ? g.f0 : g.f1;
+  if (at >= g.t1) return g.f1;
+  return g.f0 * (g.f1 / g.f0) ** ((at - g.t0) / (g.t1 - g.t0));
+}
+
+/**
+ * Slides `freq` from where it is at `at` to `to` over `seconds`, and returns the new glide. The
+ * slide's start is set as well as held: holding alone adds nothing when no ramp is still to come,
+ * so the ramp would run from the note's start instead, creeping over the whole earlier note.
+ */
+export function slidePitch(freq: AudioParam, g: PitchGlide, at: number, to: number, seconds: number): PitchGlide {
+  const from = glidePitch(g, at);
+  freq.cancelAndHoldAtTime(at);
+  freq.setValueAtTime(from, at);
+  freq.exponentialRampToValueAtTime(to, at + seconds);
+  return { t0: at, f0: from, t1: at + seconds, f1: to };
+}
+
 /**
  * Partials in the generated waves (the browser band-limits them per note): every harmonic up to
  * 20 kHz from C2 up. Lower bass notes lose only their top harmonics, which their filters remove anyway.

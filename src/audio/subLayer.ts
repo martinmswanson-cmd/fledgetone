@@ -1,8 +1,8 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from './instruments';
 import { notLate } from './presets/monotonic';
-import { createBus, createOsc, createVoiceSet, noteFrequency } from './presets/native';
-import type { NativeBus, NativeVoice } from './presets/native';
+import { createBus, createOsc, createVoiceSet, noteFrequency, slidePitch } from './presets/native';
+import type { NativeBus, NativeVoice, PitchGlide } from './presets/native';
 import { HELD_NOTE } from './presets/edmSynths';
 import type { SubLayer } from '../store/bassTools';
 import { subFrequency } from '../store/bassTools';
@@ -31,6 +31,8 @@ const lowest = (notes: PlayableNote[]) => notes.reduce((a, b) => (noteFrequency(
 interface SubVoice extends NativeVoice {
   osc: OscillatorNode;
   end: number;
+  /** Its pitch: the last slide */
+  glide: PitchGlide;
 }
 
 export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undefined) {
@@ -68,8 +70,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     const v = current;
     if (v && v.end > start + 0.001 && v.stopAt > start) {
       // Legato: slide on, at this note's level
-      v.osc.frequency.cancelAndHoldAtTime(start);
-      v.osc.frequency.exponentialRampToValueAtTime(freq, start + Math.max(0.005, glide));
+      v.glide = slidePitch(v.osc.frequency, v.glide, start, freq, Math.max(0.005, glide));
       const g = v.amp.gain;
       g.cancelAndHoldAtTime(start);
       g.setTargetAtTime(s.decay > 0 ? 0 : peak, start, s.decay > 0 ? s.decay / Math.log(1000) : 0.01);
@@ -88,7 +89,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     osc.connect(amp);
     amp.connect(input);
     const stopAt = s.decay > 0 ? Math.min(end + RELEASE * 1.5, start + ATTACK + s.decay * 1.05) : end + RELEASE * 1.5;
-    const voice: SubVoice = { start, stopAt, sources: [osc], nodes: [osc, amp], amp, osc, end };
+    const voice: SubVoice = { start, stopAt, sources: [osc], nodes: [osc, amp], amp, osc, end, glide: { t0: start, f0: freq, t1: start, f1: freq } };
     set.add(voice);
     current = voice;
     return voice;
