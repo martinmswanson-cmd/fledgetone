@@ -1056,7 +1056,10 @@ export function createClipSchedule(
     bentNotes.set(instrument, list);
   };
   /** Play notes at `time`, the expressive ones each on its own. */
-  const playNotes = (trackId: string, instrument: TrackInstrument, notes: PlayableNote[], time: number) => {
+  const playNotes = (trackId: string, instrument: TrackInstrument, all: PlayableNote[], time: number) => {
+    // A one-note instrument plays the loudest of them, its own bend with it (handed out one by one,
+    // the plain notes then each with its own bend, it would play the last, sliding there from the others)
+    const notes = all.length > 1 && instrument.oneNote?.() ? [all.reduce((a, b) => (b.velocity > a.velocity ? b : a))] : all;
     const expressive = notes.filter((n) => isExpressive(n.expr, durationToBars(n.duration)));
     const play = () => {
       if (instrument.bend) {

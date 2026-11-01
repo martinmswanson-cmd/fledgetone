@@ -109,3 +109,44 @@ test("Fledge Synth in Legato mode glides through the Legato tool's overlapping n
     assert.ok(worst > 0.5, `${preset}: touching notes start again (${worst.toFixed(2)} dB from the joined ones)`);
   }
 });
+
+test("the Sub enhancer's slide follows the instrument's curve: an exponential ramp there in its time, or an approach", () => {
+  const ramp = { seconds: 0.1, curve: 'ramp' };
+  assert.equal(L.slidePitchAt(50, 100, 1, ramp, 0.9), 50); // (before it)
+  assert.ok(Math.abs(L.slidePitchAt(50, 100, 1, ramp, 1.05) - 50 * Math.SQRT2) < 1e-9); // halfway in pitch at half the time
+  assert.equal(L.slidePitchAt(50, 100, 1, ramp, 1.1), 100);
+  assert.equal(L.slidePitchAt(50, 100, 1, null, 1), 100); // no slide: straight there
+  assert.equal(L.slidePitchAt(50, 100, 1, { seconds: 0, curve: 'ramp' }, 1), 100);
+  // An EDM bass's glide (setTargetAtTime, a third of its time as the constant): 95% of the way by its time
+  const target = { seconds: 0.06, curve: 'target' };
+  assert.equal(L.slideConstant(0.06), 0.02);
+  assert.equal(L.slideConstant(0), 0.001);
+  assert.ok(Math.abs(L.slidePitchAt(50, 100, 1, target, 1.06) - (100 - 50 * Math.exp(-3))) < 1e-9);
+});
+
+test('under a chord the sub is under the lowest note held, moving on to the next lowest when that one ends', () => {
+  // C2 and G2 together, the C2 let go first: under C2, then G2
+  assert.deepEqual(L.lowestHeld([{ start: 0, end: 1, freq: 65.4 }, { start: 0, end: 2, freq: 98 }]), [
+    { index: 0, from: 0, to: 1 },
+    { index: 1, from: 1, to: 2 },
+  ]);
+  // Given the other way round (the order a chord's notes come in plays no part)
+  assert.deepEqual(L.lowestHeld([{ start: 0, end: 2, freq: 98 }, { start: 0, end: 1, freq: 65.4 }]), [
+    { index: 1, from: 0, to: 1 },
+    { index: 0, from: 1, to: 2 },
+  ]);
+  // A higher note begun over a lower one doesn't take it; a lower one does, and gives it back
+  assert.deepEqual(L.lowestHeld([{ start: 0, end: 4, freq: 65.4 }, { start: 1, end: 2, freq: 98 }, { start: 2, end: 3, freq: 41.2 }]), [
+    { index: 0, from: 0, to: 2 },
+    { index: 2, from: 2, to: 3 },
+    { index: 0, from: 3, to: 4 },
+  ]);
+  // Still held (not let go yet): on and on; the same pitch twice, the one given first
+  assert.deepEqual(L.lowestHeld([{ start: 0, end: Infinity, freq: 65.4 }, { start: 0, end: Infinity, freq: 65.4 }]), [{ index: 0, from: 0, to: Infinity }]);
+  // A gap: nothing under it
+  assert.deepEqual(L.lowestHeld([{ start: 0, end: 1, freq: 65.4 }, { start: 2, end: 3, freq: 98 }]), [
+    { index: 0, from: 0, to: 1 },
+    { index: 1, from: 2, to: 3 },
+  ]);
+  assert.deepEqual(L.lowestHeld([]), []);
+});

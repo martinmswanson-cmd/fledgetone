@@ -41,9 +41,10 @@ import { trackSeed } from './seededNoise';
 import type { Bass808Settings } from '../store/bass808';
 import { tuneNote } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
-import { GLIDE_KEYS, takesSubLayer } from '../store/bassTools';
+import { takesSubLayer } from '../store/bassTools';
 import { createBass808Designer } from './presets/bass808Designer';
 import { createSubLayer } from './subLayer';
+import type { NoteSlide } from './legato';
 import type { TrackPlan } from './samplers/songSamples';
 import { DRUM_NOTES } from '../store/drumNotes';
 import { maxOf } from '../support/minMax';
@@ -146,6 +147,13 @@ export interface TrackInstrument {
   setBass808?: (settings: Bass808Settings | undefined) => void;
   /** A monophonic synth's legato glide time as it changes (undefined: its own), without a rebuild. */
   setGlide?: (seconds: number | undefined) => void;
+  /**
+   * A one-note instrument's: how the note it began last got to its pitch, read just after it's
+   * played (see NoteSlide; null: it began on it), so a layer under it (the Sub enhancer) slides as it does.
+   */
+  slide?: () => NoteSlide | null;
+  /** Whether it plays one note at a time now, the loudest of those begun together (see MONO_KEYS). */
+  oneNote?: () => boolean;
   /** A pitched instrument's Sub enhancer as it changes (undefined: off), without a rebuild. */
   setSubLayer?: (sub: SubLayer | undefined) => void;
   /** A recorded instrument's ring and breath (Track.ring, Track.breathe) as they change, from the next note, without a rebuild. */
@@ -400,6 +408,8 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
 interface MonoVoice {
   trigger: (note: string, d: string, t: number, v: number) => void;
   attack: (note: string, t: number, v: number) => void;
+  /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+  slide: () => NoteSlide | null;
   release: (t: number) => void;
   bend: (cents: number, t: number, live?: boolean, cut?: boolean) => void;
   releaseAll: () => void;
@@ -425,6 +435,7 @@ function mono(voice: MonoVoice): TrackInstrument {
       };
     },
     bend: voice.bend,
+    slide: voice.slide,
     releaseAll: () => {
       held = null;
       voice.releaseAll();
@@ -454,6 +465,7 @@ function create808Instrument(output: Tone.InputNode, options: InstrumentOptions)
     play: (notes, time) => (useDesigned ? getDesigned().play(notes, time) : getLegacy().play(notes, time)),
     noteOn: (n, time) => (useDesigned ? getDesigned().hold(n, time) : getLegacy().noteOn!(n, time)),
     bend: (cents, time, live, cut) => (useDesigned ? getDesigned().bend(cents, time, live, cut) : getLegacy().bend?.(cents, time, live, cut)),
+    slide: () => (useDesigned ? getDesigned().slide() : (getLegacy().slide?.() ?? null)),
     setBass808: (settings) => {
       if (!!settings !== useDesigned) {
         useDesigned = !!settings;
@@ -614,22 +626,26 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   const glideRef: GlideRef = { seconds: options.glide };
   const feel: PlayFeel = { ring: options.ring, breathe: options.breathe };
   const inst = buildGained(key, output, { ...options, glideRef, feel });
+  // A one-note-at-a-time instrument plays a chord's loudest note: the sub goes under that one
+  // (The Synth Designer's patch as it is now: it changes without a rebuild)
+  let synth = options.synth;
+  const monoNow = () => MONO_KEYS.has(key) || (key === 'synthDesigner' && !!synth?.mono);
   const withGlide: TrackInstrument = {
     ...inst,
     setGlide: (seconds) => void (glideRef.seconds = seconds),
     setFeel: (ring, breathe) => Object.assign(feel, { ring, breathe }),
+    oneNote: monoNow,
   };
   if (!takesSubLayer(key)) return withGlide;
   const sub = createSubLayer(output, options.subLayer);
-  // The 808 Designer's settings as they are now (they change without a rebuild): its Glide is the sub's too
+  // The 808 Designer's settings as they are now (they change without a rebuild)
   let bass808 = options.bass808;
-  // (Each instrument's own: a Glide or 808 settings left from another instrument play no part)
-  const glide = () =>
-    key === 'bass808' ? bass808?.glide : key === 'synthDesigner' ? (synth?.mono ? synth.glide : undefined) : GLIDE_KEYS.has(key) ? glideRef.seconds : undefined;
   inst.onBendHeard?.((cents, time, cut) => sub.bend(cents, time, cut));
-  // A one-note-at-a-time instrument plays a chord's loudest note: the sub goes under that one
-  let synth = options.synth;
-  const monoNow = () => MONO_KEYS.has(key) || (key === 'synthDesigner' && !!synth?.mono);
+  // How the sub gets to each note: under a one-note instrument as it slid there (it says); under
+  // a chord-playing one, the lowest held, never sliding (it doesn't); a plugin's (which may do
+  // either, and doesn't say) slides when notes overlap
+  const lowestHeld = () => key !== 'plugin' && !monoNow();
+  const slid = () => (inst.slide ? inst.slide() : undefined);
   // The notes as the instrument plays them: the 808 Designer snaps them into its key
   const tuned = (n: PlayableNote): PlayableNote => {
     if (key !== 'bass808' || !bass808?.tuneToKey) return n;
@@ -665,13 +681,14 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
       : {}),
     play: (notes, time) => {
       inst.play(notes, time);
-      sub.play((monoNow() && notes.length > 1 ? [loudestNote(notes)] : notes).map(tuned), time, glide());
+      if (lowestHeld()) sub.playLowest(notes.map(tuned), time);
+      else sub.play((monoNow() && notes.length > 1 ? [loudestNote(notes)] : notes).map(tuned), time, slid());
     },
     ...(inst.noteOn
       ? {
           noteOn: (n: PlayableNote, time: number) => {
             const letGo = inst.noteOn!(n, time);
-            const subGo = sub.hold(tuned(n), time, glide());
+            const subGo = lowestHeld() ? sub.holdLowest(tuned(n), time) : sub.hold(tuned(n), time, slid());
             return (at: number) => {
               letGo(at);
               subGo.off(at);
@@ -684,8 +701,9 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
           noteVoice: (n: PlayableNote, time: number) => {
             const voice = inst.noteVoice!(n, time);
             if (!voice) return voice;
-            // Held with the note, and let go with it (not a fixed length)
-            const subGo = sub.hold(tuned(n), time, glide());
+            // Held with the note, and let go with it (not a fixed length); under a chord's lowest
+            // note held (its own bend passed on only from that one)
+            const subGo = lowestHeld() ? sub.holdLowest(tuned(n), time) : sub.hold(tuned(n), time, slid());
             return {
               ...voice,
               // (Its own bend reaches its sub too, which stays under it)
@@ -831,6 +849,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
           return (at) => bass.release(n.note, at);
         },
         bend: bass.bend,
+        slide: bass.slide,
         releaseAll: bass.releaseAll,
         ready: Promise.resolve(),
         dispose: bass.dispose,
@@ -838,7 +857,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     }
     case 'synthDesigner': {
       const synth = createDesignedSynth(output, options.synth, options.seed);
-      return { play: synth.play, noteOn: synth.hold, bend: synth.bend, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
+      return { play: synth.play, noteOn: synth.hold, bend: synth.bend, slide: synth.slide, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
     }
     case 'chipDrums':
       return synthKit(createChipDrums(output, options.seed), output, false, options.seed);

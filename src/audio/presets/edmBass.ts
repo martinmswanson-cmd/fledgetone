@@ -2,7 +2,8 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
 import { monotonicTime, notLate } from './monotonic';
-import { joinsNote } from '../legato';
+import { joinsNote, slideConstant } from '../legato';
+import type { NoteSlide } from '../legato';
 import { createBendTimeline } from '../bendTimeline';
 import { FEED_AHEAD, FEED_EVERY, feedFollower, followsNow } from '../bendFeed';
 import {
@@ -150,6 +151,8 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
   const releaseTc = releaseConstant(patch.release);
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
   let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; sweeps: SweepFeed[]; end: number; note: string; freq: number; fedTo: number } | null = null;
+  /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+  let slid: NoteSlide | null = null;
   /** The pitch bend (cents) the voice plays at, by time: a note's own slide or dive, a bend lane (see bendTimeline.ts) */
   const bends = createBendTimeline(() => raw.currentTime);
   const bentBy = (freq: number, cents: number) => (cents ? freq * 2 ** (cents / 1200) : freq);
@@ -305,13 +308,14 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       const stopAt = end + releaseTail(patch.release);
 
       const v = current;
-      if (v && joinsNote(start, v.end)) {
+      slid = v && joinsNote(start, v.end) ? { seconds: glide?.seconds ?? patch.glide, curve: 'target' } : null;
+      if (v && slid) {
         // Legato (the note starts before the last one ends, or right where it ends): slide the
         // playing voice to the new pitch, or stay on it (a tie). The envelope carries on (towards
         // this note's level) instead of starting again, and the release moves to this note's end.
         // (The old note's bends to come go: the new one's from here)
         if (bends.moved()) v.source.cancel(start);
-        v.source.glide(bent(note.freq, start), start, glide?.seconds ?? patch.glide);
+        v.source.glide(bent(note.freq, start), start, slid.seconds);
         // (on to this note's end, at its pitch)
         v.freq = note.freq;
         follow(v, start, stopAt);
@@ -370,6 +374,8 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       current = { voice, source, gate: first.gate, tone: first.tone, sweeps: first.sweeps, end, note: n.note, freq: note.freq, fedTo: start };
       follow(current, start, stopAt);
     },
+    /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+    slide: () => slid,
     /** Bend the sounding voice (and the notes after it) `cents` from their pitch, from `time`, gliding a few ms. */
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => {
       if (!Number.isFinite(cents)) return;
@@ -416,7 +422,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
 /** Oscillators gliding together; `ratios` are each one's frequency relative to the note's. */
 function glider(params: Array<[AudioParam, number]>): Pick<BassSource, 'glide' | 'cancel'> {
   return {
-    glide: (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, Math.max(0.003, seconds) / 3)),
+    glide: (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, slideConstant(seconds))),
     cancel: (at) => params.forEach(([param]) => param.cancelScheduledValues(at)),
   };
 }
