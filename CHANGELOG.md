@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The clip launcher launches on the bar line in songs not in 4/4**: in 3/4, 6/8 or a song that changes time signature, a launched clip could start part-way through a bar, and Write to arrangement wrote it there. Launches now wait for the next bar line, counting bars as the song does.
 - **The Sub enhancer goes under the note a one-note instrument plays**: under a chord on the Bass, Lead, Wobble, Growl and Reese Bass, the 808s and a one-note designed synth, which play the chord's loudest note, the sub played under its lowest, a twelfth or more below instead of an octave. It now goes under the note you hear.
 - **The Sub enhancer under a plugin follows the bend the plugin plays**: a plugin plays a bend only as far as its own range (two semitones on most), but the sub followed the bend as written, so a bend of a fifth left the sub a fifth off; and the wheel held on a plugin left its sub behind. The sub now follows the plugin's own pitch.
 - **The Sub enhancer under a Multi Sampler follows each note's own bend**: a bend drawn on a Multi Sampler note moved the sample but left the sub where the note started, out of tune under it. The sub now bends with the note.

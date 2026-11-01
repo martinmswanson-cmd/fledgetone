@@ -15,7 +15,7 @@ register(
   }
 }`)
 );
-const { launcherClips, slotCopies, arrangementWindow, segmentAt, queuedAfter } = await import('../src/store/launcherView.ts');
+const { launcherClips, slotCopies, arrangementWindow, segmentAt, queuedAfter, launchPoint } = await import('../src/store/launcherView.ts');
 
 const note = (startOffset, n = 'C3') => ({ id: `n${startOffset}`, note: n, startOffset, duration: '16n', velocity: 0.8 });
 // The notes a clip plays (those past its end don't)
@@ -66,4 +66,31 @@ test('stop and back to arrangement segments', () => {
   assert.equal(segmentAt(segs, 5).kind, 'stop');
   assert.equal(segmentAt(segs, 1.5), null);
   assert.deepEqual(queuedAfter(segs, 3).map((s) => s.from), [4, 9]);
+});
+
+test('launches land on measure starts in the song\'s time signatures', () => {
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  // 4/4 as before: the next bar line, or multiple of the quantize from bar 1
+  assert.equal(launchPoint(1.665, 1, four), 2);
+  assert.equal(launchPoint(2, 1, four), 2);
+  assert.equal(launchPoint(2.01, 2, four), 3);
+  assert.equal(launchPoint(3.01, 4, four), 5);
+  assert.equal(launchPoint(2.3, 0.25, four), 2.5);
+  assert.equal(launchPoint(2.6, 0.5, four), 3);
+  // 3/4: a measure is three quarters of a 4/4 bar
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  assert.equal(launchPoint(1.665, 1, three), 1.75);
+  assert.equal(launchPoint(1.76, 2, three), 2.5); // measure 3
+  assert.equal(launchPoint(1.8, 0.25, three), 2);
+  assert.equal(launchPoint(2.3, 0.5, three), 2.5); // the next measure comes before two more beats
+  // 6/8, its beats eighths
+  const six = { base: { num: 6, den: 8 }, points: [] };
+  assert.equal(launchPoint(1.8, 1, six), 2.5);
+  assert.equal(launchPoint(1.01, 0.25, six), 1.125);
+  // 4/4 then 3/4 from measure 3: measures at 1, 2, 3, 3.75, 4.5, 5.25
+  const change = { base: { num: 4, den: 4 }, points: [{ id: 'm', bar: 3, num: 3, den: 4 }] };
+  assert.equal(launchPoint(3.1, 1, change), 3.75);
+  assert.equal(launchPoint(3.8, 1, change), 4.5);
+  assert.equal(launchPoint(2.5, 2, change), 3); // measure 3
+  assert.equal(launchPoint(3.1, 2, change), 4.5); // measure 5
 });
