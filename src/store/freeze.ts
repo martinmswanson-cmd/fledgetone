@@ -31,6 +31,37 @@ export function pumpKitsOf(tracks: readonly LiveTrackView[]): Map<string, Track[
   return new Map(tracks.map((t) => [t.id, t.frozenFrom ?? t.instrumentKey] as const).filter(([, key]) => isDrumKind(key)));
 }
 
+/** The tracks heard through their Bounce in place: the source of each bounce in `heard`, muted but standing behind it, so its kicks still drive Pumps (as a frozen track's do) and its proxy ducking still counts. */
+export function bounceStandIns(tracks: readonly Track[], heard: ReadonlySet<string>): Set<string> {
+  return new Set(tracks.flatMap((t) => (t.bounceOf && heard.has(t.id) ? [t.bounceOf] : [])));
+}
+
+/**
+ * The tracks after a Bounce in place of `source` onto `made` (a new Audio track, not yet among
+ * `tracks`), which goes just under it and takes over its volume, pan, sends, output, distance,
+ * folder, their automation and its solo (soloed, the muted source would leave the song silent).
+ * The source is muted, and the bounce says where it came from (bounceOf).
+ */
+export function bounceInPlace(tracks: readonly Track[], source: Track, made: Track): Track[] {
+  const bounced: Track = {
+    ...made,
+    volume: source.volume,
+    pan: source.pan,
+    reverbSend: source.reverbSend,
+    delaySend: source.delaySend,
+    ...(source.distance ? { distance: source.distance } : {}),
+    ...(source.sends ? { sends: source.sends } : {}),
+    ...(source.output ? { output: source.output } : {}),
+    ...(source.folder ? { folder: source.folder } : {}),
+    automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
+    isSoloed: source.isSoloed,
+    bounceOf: source.id,
+  };
+  const others = tracks.map((t) => (t.id === source.id ? { ...t, isMuted: true, isSoloed: false } : t));
+  const at = others.findIndex((t) => t.id === source.id) + 1;
+  return [...others.slice(0, at), bounced, ...others.slice(at)];
+}
+
 /** Settings that stay live on a frozen track (not rendered into it). */
 export const LIVE_PARAMS: ReadonlySet<AutomationParam> = new Set(['volume', 'pan', 'reverbSend', 'delaySend']);
 /** A lane that stays live on a frozen track: those settings, and its sends to returns. */
@@ -127,9 +158,12 @@ function computeFingerprint(track: Track, all: Arrangement): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && pumpFollowsDrums(track.fx.pump.trigger);
   // A kick-triggered Pump ducks on the kicks of the drum tracks that sound (as live playback
-  // does), so those are part of the sound too: muting or soloing them changes it
+  // does), so those are part of the sound too: muting or soloing them changes it. One bounced in
+  // place is muted, but counts while its bounce sounds
   const anySolo = all.tracks.some((t) => t.isSoloed);
-  const kickers = new Set(all.tracks.filter((t) => isDrumKind(t.instrumentKey) && !t.isMuted && (!anySolo || t.isSoloed)).map((t) => t.id));
+  const sounds = new Set(all.tracks.filter((t) => !t.isMuted && (!anySolo || t.isSoloed)).map((t) => t.id));
+  const bounced = bounceStandIns(all.tracks, sounds);
+  const kickers = new Set(all.tracks.filter((t) => isDrumKind(t.instrumentKey) && (sounds.has(t.id) || bounced.has(t.id))).map((t) => t.id));
   const kickClips = followsKick ? all.clips.filter((c) => kickers.has(c.trackId)) : [];
   // (Only the rows that really are a kick, snare or clap: pumpHitOf)
   const kitOf = new Map(all.tracks.map((t) => [t.id, t.instrumentKey]));

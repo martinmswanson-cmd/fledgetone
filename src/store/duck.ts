@@ -16,9 +16,15 @@ export const DUCK_RELEASE = 0.4;
 /** Gaps shorter than this (seconds) don't let the music back up */
 export const DUCK_BRIDGE = 0.35;
 
+/** The proxies that count: not muted, or muted behind a bounce of theirs that isn't (see freeze.ts bounceStandIns). */
+function heardProxies(tracks: readonly Track[]): Track[] {
+  const bounced = new Set(tracks.flatMap((t) => (t.bounceOf && !t.isMuted ? [t.bounceOf] : [])));
+  return tracks.filter((t) => t.duckProxy && (!t.isMuted || bounced.has(t.id)));
+}
+
 /** Where the proxy tracks sound, in bars: each note (its whole length, as the scheduler plays it), and each audio clip, merged. */
 export function proxySpans(tracks: readonly Track[], clips: readonly Clip[], bpm: number): Array<{ from: number; to: number }> {
-  const proxies = new Set(tracks.filter((t) => t.duckProxy && !t.isMuted).map((t) => t.id));
+  const proxies = new Set(heardProxies(tracks).map((t) => t.id));
   if (!proxies.size) return [];
   const spans: Array<{ from: number; to: number }> = [];
   for (const c of clips) {
@@ -47,7 +53,7 @@ export function proxySpans(tracks: readonly Track[], clips: readonly Clip[], bpm
 }
 
 /** The deepest dip any proxy asks for, in dB (0 with none). */
-export const duckDepth = (tracks: readonly Track[]) => tracks.reduce((d, t) => (t.duckProxy && !t.isMuted ? Math.max(d, t.duckProxy.depth) : d), 0);
+export const duckDepth = (tracks: readonly Track[]) => heardProxies(tracks).reduce((d, t) => Math.max(d, t.duckProxy!.depth), 0);
 
 /** The gain curve the other tracks play (null: nothing to duck under). */
 export function duckPoints(tracks: readonly Track[], clips: readonly Clip[], bpm: number): AutomationPoint[] | null {

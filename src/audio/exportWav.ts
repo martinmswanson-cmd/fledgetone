@@ -8,6 +8,7 @@
  */
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
+import { bounceStandIns } from '../store/freeze';
 import { chainTail, feedsMasterDelay, feedsMasterReverb, ownInsertTail, playedTracks, slowestBpm } from './effectTails';
 import { secondsBetween, tempoAt, type MeterMap, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
@@ -1439,8 +1440,11 @@ async function renderGraphHeld(
     applyTempoAt(transport, tempo, startBar, plan.startAt);
     scheduleTempo(transport, tempo, transport.loop ? startBar : null);
     // Pumps that follow the kick hear every kick of the drum kits that sound, including ones this
-    // render leaves out (a stem): those tracks' notes are scheduled, but play no instrument
+    // render leaves out (a stem): those tracks' notes are scheduled, but play no instrument. A kit
+    // bounced in place is muted, but its kicks count while its bounce sounds
     const kickTracks = audibleTracks(opts.tracks).filter((t) => isDrumKind(t.instrumentKey));
+    const kickBounced = bounceStandIns(opts.tracks, heard);
+    kickTracks.push(...opts.tracks.filter((t) => kickBounced.has(t.id) && isDrumKind(t.instrumentKey)));
     const kickIds = new Set(kickTracks.map((t) => t.id));
     const pumpOnKick = (trackId: string, time: number, hit: DrumHit) => {
       if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, hit));

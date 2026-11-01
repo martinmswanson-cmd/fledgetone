@@ -15,7 +15,7 @@ register(
   }
 }`)
 );
-const { freezeFingerprint, freezeIsCurrent, liveView, trackForFreezing, frozenClipId } = await import('../src/store/freeze.ts');
+const { bounceInPlace, bounceStandIns, freezeFingerprint, freezeIsCurrent, liveView, trackForFreezing, frozenClipId } = await import('../src/store/freeze.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 
 const track = (id, key, extra = {}) => ({ id, name: id, color: '#888', instrumentKey: key, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0.2, delaySend: 0, ...extra });
@@ -212,4 +212,30 @@ test('the meter is part of a freeze only for clips with a measured feel, outside
   // A feel in another meter: the meter places its notes
   assert.notEqual(fp(synth, { ...withFeel, ...sixEight }), fp(synth, withFeel));
   assert.notEqual(fp(synth, { ...withFeel, meter: { num: 4, den: 4 }, meterPoints: [{ id: 'm', bar: 2, num: 3, den: 4 }] }), fp(synth, withFeel));
+});
+
+test('a bounce in place goes under its source and takes over its mix and its solo; the source is muted and unsoloed', () => {
+  const lead = { ...synth, isSoloed: true, volume: -4, automation: [{ param: 'volume', points: [{ bar: 1, value: 0.5 }] }, { param: 'filter', points: [{ bar: 1, value: 0.2 }] }] };
+  const made = track('b', 'audio');
+  const after = bounceInPlace([lead, drums], lead, made);
+  assert.deepEqual(after.map((t) => [t.id, t.isMuted, t.isSoloed]), [['lead', true, false], ['b', false, true], ['drums', false, false]]);
+  assert.equal(after[1].bounceOf, 'lead');
+  assert.equal(after[1].volume, -4);
+  assert.deepEqual(after[1].automation.map((l) => l.param), ['volume']);
+  // Not soloed: nothing is soloed after either
+  assert.ok(bounceInPlace([synth, drums], synth, made).every((t) => !t.isSoloed));
+});
+
+test("a drum track bounced in place still counts for the Pumps while its bounce is heard", () => {
+  const made = track('b', 'audio');
+  const tracks = bounceInPlace([synth, drums], drums, made);
+  assert.deepEqual([...bounceStandIns(tracks, new Set(['lead', 'b']))], ['drums']);
+  assert.deepEqual([...bounceStandIns(tracks, new Set(['lead']))], []);
+  // A kick-pumped track keeps its freeze across the bounce, and loses it once the bounce is muted
+  const pumped = { ...synth, fx: { ...synth.fx, pump: { ...synth.fx.pump, on: true, trigger: 'kick' } } };
+  const all = { ...base(), tracks: [pumped, drums] };
+  const bounced = { ...all, tracks: bounceInPlace(all.tracks, drums, made) };
+  assert.equal(fp(pumped, bounced), fp(pumped, all));
+  const silent = { ...bounced, tracks: bounced.tracks.map((t) => (t.id === 'b' ? { ...t, isMuted: true } : t)) };
+  assert.notEqual(fp(pumped, silent), fp(pumped, all));
 });

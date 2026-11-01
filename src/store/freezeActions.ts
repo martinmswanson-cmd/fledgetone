@@ -4,8 +4,7 @@
  */
 import { create } from 'zustand';
 import { allOrNothing, masterFxOf, songGeneration, useTimelineStore } from './timelineStore';
-import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
-import type { Track } from './timelineTypes';
+import { bounceInPlace, freezeFingerprint, trackForFreezing } from './freeze';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
 import { isAudioKind, isDropKind } from '../audio/instrumentCatalog';
 import { encodeChannels, KEPT_RENDER_BITS, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
@@ -176,7 +175,8 @@ export async function freezeTrack(trackId: string): Promise<FreezeResult> {
 /**
  * Bounce in place (one undo step): the track's sound, instrument, inserts and EQ included, as one
  * audio clip on a new Audio track just under it, which takes over its volume, pan, sends, output
- * distance and their automation. The original is muted and kept, to go back to. Returns the new
+ * distance and their automation, and its solo. The original is muted and kept, to go back to; its
+ * kicks and proxy ducking still count while the bounce is heard (bounceOf). Returns the new
  * track's id (null: not made; one that would go past the most a song can have isn't, a toast says so).
  */
 export async function bounceTrack(trackId: string): Promise<string | null> {
@@ -194,22 +194,8 @@ export async function bounceTrack(trackId: string): Promise<string | null> {
     const lengthBars = secondsToBar(barToSeconds(r.startBar, tempo) + r.seconds, tempo) - r.startBar;
     useTimelineStore.setState((st) => {
       const made = st.tracks.find((t) => t.id === id)!;
-      const bounced: Track = {
-        ...made,
-        volume: source.volume,
-        pan: source.pan,
-        reverbSend: source.reverbSend,
-        delaySend: source.delaySend,
-        ...(source.distance ? { distance: source.distance } : {}),
-        ...(source.sends ? { sends: source.sends } : {}),
-        ...(source.output ? { output: source.output } : {}),
-        ...(source.folder ? { folder: source.folder } : {}),
-        automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
-      };
-      const others = st.tracks.filter((t) => t.id !== id).map((t) => (t.id === trackId ? { ...t, isMuted: true } : t));
-      const at = others.findIndex((t) => t.id === trackId) + 1;
       return {
-        tracks: [...others.slice(0, at), bounced, ...others.slice(at)],
+        tracks: bounceInPlace(st.tracks.filter((t) => t.id !== id), source, made),
         clips: [
           ...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)),
           {

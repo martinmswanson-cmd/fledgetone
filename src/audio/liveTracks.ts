@@ -14,7 +14,7 @@ import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
 import type { AutomationPoint, DrumHit, Track, WamPlugin } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
-import type { LiveTrackView } from '../store/freeze';
+import { bounceStandIns, type LiveTrackView } from '../store/freeze';
 import { isSamplerKey, loadQuick, loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
@@ -59,6 +59,8 @@ export function setLiveStripTempo(bpm: number): void {
 }
 
 const live = new Map<string, LiveTrack>();
+/** Tracks muted behind a bounce that's heard (at the last sync): their kicks still count. */
+let bouncedHeard = new Set<string>();
 
 /** Every beat / every 8th for the Pumps that follow those (on the live Transport, made on first sync). */
 let pumpClock: PumpClock | null = null;
@@ -206,6 +208,7 @@ export function syncLiveTracks(tracks: Track[]): void {
 
   const lit = soloLit(tracks);
   const heard = audibleIds(tracks);
+  bouncedHeard = bounceStandIns(tracks, heard);
   for (const track of tracks) {
     let lt = live.get(track.id);
     if (!lt) {
@@ -320,13 +323,14 @@ export function retimeAutomation(): void {
 
 /**
  * A kick drum note (or a snare / clap, `hit` 'snare') at `time` on `trackId` (from the scheduler):
- * every Pump that follows it ducks, if that track is a drum kit that sounds (not muted, not silenced by another's solo).
+ * every Pump that follows it ducks, if that track is a drum kit that sounds (not muted, not silenced by another's solo),
+ * or one bounced in place whose bounce sounds.
  */
 export function pumpOnKick(trackId: string, time: number, hit: DrumHit = 'kick'): void {
   const lt = live.get(trackId);
   // A frozen drum track plays as audio, but its kicks still count
   const kind = (lt?.applied as LiveTrackView | null)?.frozenFrom ?? lt?.instrumentKey;
-  if (!lt?.audible || !kind || !isDrumKind(kind)) return;
+  if (!lt || !(lt.audible || bouncedHeard.has(trackId)) || !kind || !isDrumKind(kind)) return;
   for (const { strip } of live.values()) strip.pump(time, hit);
 }
 
