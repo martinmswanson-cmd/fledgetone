@@ -107,6 +107,20 @@ export function notesForLength(clip: Clip, lengthBars: number, makeId: () => str
   return [...clip.notes.filter((n) => n.startOffset < clip.lengthBars - EPS), ...gained.map((n) => ({ ...n, id: makeId() }))];
 }
 
+/**
+ * A MIDI folder's notes with its left edge moved `delta` bars later (earlier if negative): every
+ * note keeps its place in the song, and drawn back out, the stretch it gains plays the comp's notes
+ * there (its first take's, which the takes keep while hidden), not the notes it hid when trimmed.
+ * A mic folder, or not a folder: its notes moved, as they are.
+ */
+export function notesForStart(clip: Clip, delta: number, makeId: () => string): NoteEvent[] {
+  const notes = clip.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta }));
+  if (clip.audio || !clip.takes?.length || delta >= -EPS) return notes;
+  const gained = (n: { startOffset: number }) => n.startOffset >= -EPS && n.startOffset < -delta - EPS;
+  const comp = compNotes({ ...clip, ...trimTakes(clip, delta, 0), lengthBars: clip.lengthBars - delta }).filter(gained);
+  return [...notes.filter((n) => !gained(n)), ...comp.map((n) => ({ ...n, id: makeId() }))];
+}
+
 /** The comp with take `take` playing from `from` to `to` (bars into the clip), the rest as it was. */
 export function setCompRange(clip: Pick<Clip, 'takes' | 'comp' | 'lengthBars'>, from: number, to: number, take: number): CompSegment[] {
   const a = Math.max(0, Math.min(from, to));

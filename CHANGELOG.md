@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Trimming a take folder's start no longer changes its takes**: after the start of a folder of played takes was dragged in and then back out, the bars it got back played notes the folder no longer said it played, and the next change to which take plays where wrote them into the wrong take. The bars it gets back now play the take they belong to, and every take stays as you played it.
 - **A song's name can't run anything in the FMOD and Wwise import scripts**: the name of a song opened from a file or a link was written as it is into the comments of the import scripts the package tells you to run, so a name made to do it could break out of the comment and run as part of the script. The scripts now show the name with only letters, numbers and plain punctuation.
 - **A punched-in take stays inside the punch**: with Quantize on and the punch-in on a bar line, a note played just before the punch-out could be moved past it, growing the take over what came after. It now stays on the last line before the punch-out.
 - **A note recorded in the song's very last moment is kept**: with Quantize on, a note played in the last step of the song's last bar was moved onto the clip's end, where it never played. It now goes to the line before.
