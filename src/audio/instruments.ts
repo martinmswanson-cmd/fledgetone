@@ -39,6 +39,7 @@ import type { DrumDesign } from '../store/drumDesign';
 import { SYNTH_KIT_DESIGNS } from '../store/synthKits';
 import { trackSeed } from './seededNoise';
 import type { Bass808Settings } from '../store/bass808';
+import { tuneNote } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
 import { createBass808Designer } from './presets/bass808Designer';
 import { createSubLayer } from './subLayer';
@@ -615,8 +616,22 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   // The 808 Designer's settings as they are now (they change without a rebuild): its Glide is the sub's too
   let bass808 = options.bass808;
   const glide = () => glideRef.seconds ?? bass808?.glide;
+  // The notes as the instrument plays them: the 808 Designer snaps them into its key
+  const tuned = (n: PlayableNote): PlayableNote => {
+    if (key !== 'bass808' || !bass808?.tuneToKey) return n;
+    const note = tuneNote(n.note, bass808);
+    return note === n.note ? n : { ...n, note };
+  };
   return {
     ...withGlide,
+    ...(inst.bend
+      ? {
+          bend: (cents: number, time: number, live?: boolean, cut?: boolean, sent?: number) => {
+            inst.bend!(cents, time, live, cut, sent);
+            sub.bend(cents, time, cut);
+          },
+        }
+      : {}),
     ...(inst.setBass808
       ? {
           setBass808: (settings: Bass808Settings | undefined) => {
@@ -627,13 +642,13 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
       : {}),
     play: (notes, time) => {
       inst.play(notes, time);
-      sub.play(notes, time, glide());
+      sub.play(notes.map(tuned), time, glide());
     },
     ...(inst.noteOn
       ? {
           noteOn: (n: PlayableNote, time: number) => {
             const letGo = inst.noteOn!(n, time);
-            const subGo = sub.hold(n, time, glide());
+            const subGo = sub.hold(tuned(n), time, glide());
             return (at: number) => {
               letGo(at);
               subGo(at);
@@ -647,7 +662,7 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
             const voice = inst.noteVoice!(n, time);
             if (!voice) return voice;
             // Held with the note, and let go with it (not a fixed length)
-            const subGo = sub.hold(n, time, glide());
+            const subGo = sub.hold(tuned(n), time, glide());
             return {
               ...voice,
               off: (at: number) => {

@@ -6,6 +6,7 @@ import type { NativeBus, NativeVoice, PitchGlide } from './presets/native';
 import { HELD_NOTE } from './presets/edmSynths';
 import type { SubLayer } from '../store/bassTools';
 import { subFrequency } from '../store/bassTools';
+import { createBendTimeline } from './bendTimeline';
 
 /**
  * The Sub enhancer (Track.subLayer): a clean sine played under a track's own notes, an octave down
@@ -55,6 +56,12 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     return { ...nb, voices: voices! };
   };
   if (initial) ready();
+  /** The instrument's pitch bend (cents) by time, which the sub follows to stay under its notes (see bendTimeline.ts) */
+  const bends = createBendTimeline(() => nb?.raw.currentTime ?? 0);
+  /** The bends sent for later on `v`, from `from` while it sounds. */
+  const follow = (v: SubVoice, raw: BaseAudioContext, from: number) => {
+    for (const [t, cents] of bends.after(from, v.stopAt)) v.osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t), 0.006);
+  };
 
   const playNote = (n: PlayableNote, time: number, glide: number): SubVoice | undefined => {
     const s = settings;
@@ -77,12 +84,15 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
       g.cancelAndHoldAtTime(start);
       g.setTargetAtTime(s.decay > 0 ? 0 : peak, start, s.decay > 0 ? s.decay / Math.log(1000) : 0.01);
       g.setTargetAtTime(0, end, releaseTc);
+      const followed = v.stopAt;
       set.extend(v, end + RELEASE * 1.5);
       v.end = end;
+      // (It rings on longer: the bends sent for then too)
+      follow(v, raw, followed - 1e-9);
       return v;
     }
     if (current && current.stopAt > start) set.release(current, start, 0.015);
-    const osc = createOsc(raw, 'sine', freq, start);
+    const osc = createOsc(raw, 'sine', freq, start, bends.at(start));
     const amp = raw.createGain();
     amp.gain.setValueAtTime(0, start);
     amp.gain.linearRampToValueAtTime(peak, start + ATTACK);
@@ -92,6 +102,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     amp.connect(input);
     const stopAt = s.decay > 0 ? Math.min(end + RELEASE * 1.5, start + ATTACK + s.decay * 1.05) : end + RELEASE * 1.5;
     const voice: SubVoice = { start, stopAt, sources: [osc], nodes: [osc, amp], amp, osc, end, glide: { t0: start, f0: freq, t1: start, f1: freq } };
+    follow(voice, raw, start);
     set.add(voice);
     current = voice;
     return voice;
@@ -118,6 +129,15 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
         voices.release(voice, t, RELEASE);
         voice.end = t;
       };
+    },
+    /** The instrument's pitch bend (cents) from `time`, as the instrument has it. `cut`: the bends sent for then and after are dropped first. */
+    bend: (cents: number, time: number, cut?: boolean) => {
+      const t = nb ? notLate(nb.bus.context, time) : time;
+      const now = nb?.raw.currentTime ?? 0;
+      if (cut) current?.osc.detune.cancelScheduledValues(Math.max(now, t));
+      else if (Math.abs(cents - bends.at(t)) < 0.01) return;
+      bends.set(cents, t, cut);
+      if (current && current.stopAt > t) current.osc.detune.setTargetAtTime(cents, Math.max(now, t), 0.006);
     },
     /** Its settings as they change (from the next note); undefined switches it off and lets its nodes go. */
     set: (next: SubLayer | undefined) => {

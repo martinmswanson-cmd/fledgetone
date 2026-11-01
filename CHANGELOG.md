@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The Sub enhancer stays in tune with its track**: on an 808 Designer set to tune to the key, the sub played the note as written while the 808 played it snapped into the key, so the two could sit a ninth apart. And under a pitch bend (a slide drawn on a note, or the wheel) the sub stayed where the note started while the instrument moved. The sub now plays the notes as the instrument does and follows its bends, in the song and the file alike; exports of such songs change to match.
 - **Fast legato on the 808 Designer and the Sub enhancer no longer goes silent**: playing a key while the one before it was still held, then letting the first go, cut the sound though the second key was still down. The held key now sounds until you let it go, as on the original 808.
 - **An Off 808 designer, Sub enhancer, Glide or Ring panel stays off**: its dimmed sliders could still be dragged (or moved with the arrow keys), and that quietly switched the panel on and changed the sound. They can't be moved until you switch the panel on.
 - **Quantize keeps a note inside its clip**: a note near a clip's end could be moved onto the very end, where it never played (a chord stamped with the playhead just before the end did the same). It now goes to the grid line before the end.
