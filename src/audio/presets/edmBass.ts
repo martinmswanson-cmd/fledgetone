@@ -174,30 +174,49 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
     if (s.i >= s.points - 1 || s.at >= s.until) return false;
     // How many points glide from the value held to the sweep's
     let blend = 0;
-    if (!offline && s.i > 0 && s.at < raw.currentTime + LIVE_MARGIN) {
-      // The page stalled past where the pieces got to (the param held the last value there):
-      // the sweep carries on from now, where it is by now (still on the beat), gliding there
-      // from the value held
+    const catchUp = () => {
+      // The clock is past where the pieces got to (the page stalled, or a live key or a late note
+      // starts as good as now, where the browser would move a piece's start on and the next would
+      // overlap it): the sweep carries on from a moment from now, where it is by then (still on
+      // the beat), gliding there from the value held
       const from = raw.currentTime + LIVE_MARGIN;
+      if (s.i === 0) for (const param of s.params) param.setValueAtTime(s.last, raw.currentTime);
       s.shift += from - s.at;
       s.at = from;
       blend = Math.ceil(STALL_GLIDE / s.dt);
-    }
+    };
+    if (!offline && s.at < raw.currentTime + LIVE_MARGIN) catchUp();
     const n = Math.min(s.points - 1 - s.i, Math.ceil((Math.min(to, s.until) - s.at) / s.dt));
     if (!(n > 0)) return true;
-    const curve = new Float32Array(n + 1);
-    curve[0] = s.last;
-    for (let k = 1; k <= n; k++) {
-      const v = s.value(s.shift + (s.i + k) * s.dt);
-      curve[k] = k < blend ? s.last + ((v - s.last) * k) / blend : v;
-    }
-    const duration = n * s.dt;
-    for (const param of s.params) {
-      try {
-        param.setValueCurveAtTime(curve, s.at, duration);
-      } catch {
-        // (A curve the browser won't take is skipped: the filter holds where it is)
+    const make = () => {
+      const curve = new Float32Array(n + 1);
+      curve[0] = s.last;
+      for (let k = 1; k <= n; k++) {
+        const v = s.value(s.shift + (s.i + k) * s.dt);
+        curve[k] = k < blend ? s.last + ((v - s.last) * k) / blend : v;
       }
+      return curve;
+    };
+    let curve = make();
+    const duration = n * s.dt;
+    const give = () => {
+      let refused = false;
+      for (const param of s.params) {
+        try {
+          param.setValueCurveAtTime(curve, s.at, duration);
+        } catch {
+          refused = true;
+        }
+      }
+      return refused;
+    };
+    // (Refused live, the browser having moved the last piece's start on: once more from a moment
+    // from now; refused again, or in an export, skipped and the filter holds where it is)
+    if (give() && !offline) {
+      for (const param of s.params) param.cancelAndHoldAtTime?.(raw.currentTime);
+      catchUp();
+      curve = make();
+      give();
     }
     // Where this piece ends, as the browser works it out, so the next starts exactly there
     s.at += duration;
