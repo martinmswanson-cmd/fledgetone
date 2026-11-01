@@ -22,6 +22,7 @@ import { audibleIds, busChain, busOf, liveSends, soloLit } from '../store/buses'
 import { compensateTracks } from './delayCompensation';
 import { compressorLatencyNow, measureCompressorLatency } from './compressorLatency';
 import { setMixDelay } from './latency';
+import { bendStamp } from './bendWindow';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -461,30 +462,46 @@ export function onClipBusRebuilt(listener: (trackId: string) => void): void {
   busRebuilt.add(listener);
 }
 
+const gone = new Set<(inst: TrackInstrument) => void>();
+/** Told when a track's live instrument is let go of (its track deleted, or given another instrument): nothing more is to go to it. */
+export function onInstrumentGone(listener: (inst: TrackInstrument) => void): void {
+  gone.add(listener);
+}
+
 /**
  * A track's live instrument. The player's wheel (a bend sent `live`) stays where it's held while
  * the song's bend is at rest: a song's bend of centre (where playback starts, the loop goes round,
- * a bent note ends) sends the wheel's instead, and a bend of the song's own takes the wheel over,
- * as a plugin does it itself (wamPlugin.ts).
+ * a bent note ends) sends the wheel's instead, and a bend of the song's own sent after the wheel
+ * moved takes the wheel over (not a sounding note's later steps, given as they come due: the
+ * wheel is back once that note ends), as a plugin does it itself (wamPlugin.ts).
  */
 function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInstrument {
   const inst = createInstrument(...args);
+  const dispose = inst.dispose;
+  inst.dispose = () => {
+    gone.forEach((l) => safely(() => l(inst)));
+    dispose.call(inst);
+  };
   if (!inst.bend) return inst;
   watchBendBack(inst);
   const bend = inst.bend!;
   if (args[0] === 'plugin') return inst;
   let wheel: number | undefined;
+  /** When the wheel moved last (see bendStamp) */
+  let wheelAt = -Infinity;
   /**
    * The song's centres sent ahead of their time (a bent note's end, sent with the note): a wheel
    * moved before one comes is sent again there, so the song at rest leaves it where it's held.
    */
   let centres: number[] = [];
   const now = () => liveMix.bus.context.currentTime;
-  inst.bend = (cents, time, live, cut) => {
+  inst.bend = (cents, time, live, cut, sent) => {
     if (cut) centres = centres.filter((t) => t < time);
-    if (live) wheel = cents === 0 ? undefined : cents;
-    else if (cents !== 0) {
-      wheel = undefined;
+    if (live) {
+      wheel = cents === 0 ? undefined : cents;
+      wheelAt = bendStamp();
+    } else if (cents !== 0) {
+      if (sent === undefined || sent > wheelAt) wheel = undefined;
       centres = centres.filter((t) => t < time);
     } else if (time > now()) {
       if (centres.length > 64) centres = centres.filter((t) => t > now());
@@ -576,9 +593,9 @@ function watchBendBack(inst: TrackInstrument): void {
       return noteVoice(note, time);
     };
   // Any bend but the song's back at rest (a jump's too: it leaves a live bend where it is) takes over
-  inst.bend = (cents, time, live, cut) => {
+  inst.bend = (cents, time, live, cut, sent) => {
     if (live || cents !== 0) forgetBendBack(inst);
-    bend!(cents, time, live, cut);
+    bend!(cents, time, live, cut, sent);
   };
 }
 

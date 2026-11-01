@@ -238,7 +238,7 @@ test("an export that fails preparing a sound says the browser's trouble plainly,
 
 // --- The song's bends given as they come due (src/audio/bendWindow.ts) ---
 
-const { FEED_START, createBendWindow, curveAt, fixedCurve, nextFeedTo, steppedCurve } = await import('../src/audio/bendWindow.ts');
+const { FEED_START, GIVE_BURST, GIVE_RATE, bendStamp, createBendWindow, curveAt, fixedCurve, steppedCurve } = await import('../src/audio/bendWindow.ts');
 const { noteStepper } = await import('../src/store/noteExpression.ts');
 
 test("a note's steps worked out as they're asked for are the same as all at once", () => {
@@ -299,31 +299,45 @@ const runBoth = (ops, endTime) => {
     fed.set(cents, time, cut);
   });
   const value = (v) => (typeof v === 'function' ? v() : v);
+  // (each sent at its time, ahead of what it sends: the clock there)
+  ops = ops.map((op, i) => [op, i]).sort((a, b) => a[0][0] - b[0][0] || a[1] - b[1]).map(([op]) => op);
   let opAt = 0;
   for (let now = 0; now <= endTime; now = Math.round((now + FEED_EVERY) * 1e6) / 1e6) {
-    clock.currentTime = now;
-    w.feed();
-    // (given ahead by the timer, at least FEED_START...)
-    for (let t = now; t <= now + FEED_START; t += 0.0311) assert.equal(fed.at(t), eager.at(t), `at ${t}, now ${now}`);
-    for (; opAt < ops.length && ops[opAt][0] <= now; opAt++) {
+    for (; opAt < ops.length && ops[opAt][0] < now; opAt++) {
+      clock.currentTime = Math.max(clock.currentTime, ops[opAt][0]);
       const op = ops[opAt][1];
       if (op.kind === 'send') {
         eager.set(value(op.value), op.time, op.cut);
         w.send(op.value, op.time, op.cut);
-      } else if (op.kind === 'note') {
+      } else if (op.kind === 'unback') op.run(w);
+      else if (op.kind === 'note') {
         // A note's steps, its bend sent again over the earlier ones' steps it sounds over, its end
         for (const [t, c] of op.curve.pts) eager.set(c, t);
         for (const u of op.under) for (const [t] of u.pts) if (t > op.start && t < op.end) eager.set(curveAt(op.curve, t), t);
         for (const p of op.points) eager.set(value(p.value), p.time);
+        // (and over the song's bend the earlier ones sent for after their release, then its own there)
+        if (op.until !== undefined) {
+          for (const b of op.backs) if (b.time > op.start && b.time < op.until) eager.set(curveAt(op.curve, b.time), b.time);
+          eager.set(op.lane, op.until);
+        }
         w.batch(op.start, () => {
-          w.steps(op.lazy);
-          for (const u of op.underLazy) w.over(op.lazy, u, op.start, op.end);
+          w.steps(op.lazy, op.start, op.end);
+          if (op.underLazy.length || op.until !== undefined) w.over(op.lazy, op.start, op.underLazy.length ? op.end : -Infinity, op.until);
           for (const p of op.points) w.send(p.value, p.time);
+          if (op.until !== undefined) {
+            w.send(op.lane, op.until);
+            w.back(op.lazy, op.start, op.end, op.until);
+          }
         }, op.underLazy.length > 0);
       }
       // ...and the same with bends sent meanwhile: what plays is as sent all at once
-      for (let t = now; t <= now + FEED_START; t += 0.0137) assert.equal(fed.at(t), eager.at(t), `at ${t}, now ${now}`);
+      const at = clock.currentTime;
+      for (let t = at; t <= at + FEED_START; t += 0.0137) assert.equal(fed.at(t), eager.at(t), `at ${t}, now ${at}`);
     }
+    clock.currentTime = now;
+    w.feed();
+    // (given ahead by the timer, at least FEED_START...)
+    for (let t = now; t <= now + FEED_START; t += 0.0311) assert.equal(fed.at(t), eager.at(t), `at ${t}, now ${now}`);
   }
   return { eager, fed, given, most, cuts };
 };
@@ -374,6 +388,44 @@ test('bends given as they come due play as when every one was sent at once: note
   }
 });
 
+test("a note's bend sent again where the earlier ones' song's bend after their release was sent: as sent all at once", () => {
+  let seed = 11;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let round = 0; round < 6; round++) {
+    const ops = [];
+    const notes = [];
+    let at = 0.05;
+    for (let k = 0; k < 16; k++) {
+      at += rand() * 1.2;
+      const start = Math.round(at * 1000) / 1000;
+      const seconds = 0.2 + rand() * 3;
+      const amp = (rand() - 0.5) * 300;
+      const { whole, lazy } = noteCurve(start, seconds, 0.01, (i) => amp * Math.cos(i / 4 + k));
+      const end = start + seconds;
+      const until = end + rand() * 4;
+      const under = notes.filter((n) => n.end > start);
+      const points = [];
+      for (const n of under) if (n.end < end) points.push({ time: n.end, value: () => curveAt(lazy, n.end) });
+      const backs = notes.filter((n) => n.back).map((n) => ({ time: n.until }));
+      ops.push([Math.max(0, start - 0.1), { kind: 'note', start, end, curve: whole, lazy, under: under.map((n) => n.whole), underLazy: under.map((n) => n.lazy), points, until, backs, lane: Math.round(rand() * 40) }]);
+      // (one let go of later, now and then: its song's bend after its release no longer where it was)
+      const note = { end, until, whole, lazy, back: true };
+      notes.push(note);
+      if (rand() < 0.2 && notes.length > 1) {
+        const n = notes[Math.floor(rand() * (notes.length - 1))];
+        if (n.back) {
+          n.back = false;
+          ops.push([Math.max(0, start - 0.09), { kind: 'unback', curve: n.lazy }]);
+        }
+      }
+    }
+    for (const [, op] of ops) if (op.kind === 'unback') op.run = (w) => w.back(op.curve, 0, 0, undefined);
+    const last = notes.reduce((m, n) => Math.max(m, n.until), 0) + 2;
+    const { eager, fed } = runBoth(ops, last);
+    for (let t = 0; t <= last; t += 0.0071) assert.equal(fed.at(t), eager.at(t), `round ${round} at ${t}`);
+  }
+});
+
 test('long dense bent notes begun one after another under each other: the same, for much less given', () => {
   const ops = [];
   const notes = [];
@@ -392,38 +444,97 @@ test('long dense bent notes begun one after another under each other: the same, 
   assert.ok(given < (24 / 0.004) * 3, `${given} given`);
 });
 
-test('twenty long bent notes over each other: what is given at a time is what plays meanwhile', () => {
-  const clock = { currentTime: 0 };
-  let given = 0;
-  const w = createBendWindow(clock, () => given++);
+test('long bent notes over each other: what is given at a time is what plays meanwhile', () => {
   const zig = Array.from({ length: 256 }, (_, i) => ({ at: i === 255 ? 400 : (i * 400) / 256, value: i % 2 ? 2 : -2 }));
-  const curves = [];
-  const t0 = performance.now();
-  for (let k = 0; k < 20; k++) {
-    // 400 bars at 240 bpm, a step every 4 ms
-    const c = steppedCurve(noteStepper({ bend: zig }, 400, 0.004), 0.1, 1);
+  // Twenty begun together (each a step every 4 ms), and a thousand sliding a tone each way: one chord, sent as one
+  const slide = [{ at: 0, value: -2 }, { at: 400, value: 2 }];
+  for (const [count, bend] of [[20, zig], [1000, slide]]) {
+    const clock = { currentTime: 0 };
+    let given = 0;
+    let ahead = 0;
+    const w = createBendWindow(clock, (cents, time) => {
+      given++;
+      ahead = Math.max(ahead, time - clock.currentTime);
+    });
+    const curves = [];
+    const t0 = performance.now();
     w.batch(0.1, () => {
-      w.steps(c);
-      for (const u of curves) w.over(c, u, 0.1, 400.1);
-      w.send(0, 400.1);
-    }, curves.length > 0);
-    curves.push(c);
+      for (let k = 0; k < count; k++) {
+        // 400 bars at 240 bpm
+        const c = steppedCurve(noteStepper({ bend }, 400, 0.004), 0.1, 1);
+        w.steps(c, 0.1, 400.1);
+        if (k) w.over(c, 0.1, 400.1);
+        w.send(0, 400.1);
+        curves.push(c);
+      }
+    }, true);
+    const took = performance.now() - t0;
+    assert.ok(took < 300, `${count}: ${Math.round(took)} ms to start them`);
+    assert.ok(given <= FEED_AHEAD / 0.004 + 4, `${count}: ${given} given at once`);
+    // Each time round, to a couple of seconds ahead, as many as may be given (the steps all at the same times: a few)
+    for (let now = FEED_EVERY; now < 5; now += FEED_EVERY) {
+      clock.currentTime = now;
+      const before = given;
+      const t1 = performance.now();
+      w.feed();
+      assert.ok(performance.now() - t1 < 300, `${count}: ${Math.round(performance.now() - t1)} ms at ${now}`);
+      assert.ok(given - before <= GIVE_BURST + FEED_START / 0.004 + 4, `${count}: ${given - before} given at ${now}`);
+    }
+    assert.ok(ahead > FEED_AHEAD - (bend === zig ? FEED_EVERY : 1.1), `${count}: given ${ahead} s ahead`);
+    // Each curve worked out only as far as it's played
+    assert.ok(curves.every((c) => c.pts.length < 2000));
   }
-  const took = performance.now() - t0;
-  assert.ok(took < 150, `${Math.round(took)} ms to start them`);
-  // (the first note's couple of seconds; each later one's from its start, half a second's worth)
-  assert.ok(given <= FEED_AHEAD / 0.004 + 2 + 19 * ((2 * FEED_EVERY - 0.1) / 0.004 + 2), `${given} given at once`);
-  // Getting to a couple of seconds ahead a little at a time, then a quarter second's worth each time round
-  for (let now = FEED_EVERY; now < 5; now += FEED_EVERY) {
+});
+
+test('a stall shorter than a couple of seconds is not heard: the bends are given that far ahead, a later note over an earlier one too', () => {
+  const clock = { currentTime: 0 };
+  const fed = createBendTimeline(() => -1e9);
+  const eager = createBendTimeline(() => -1e9);
+  const w = createBendWindow(clock, (cents, time, cut) => fed.set(cents, time, cut));
+  const a = noteCurve(0.1, 8, 0.004, (i) => 150 * Math.sin(i / 2));
+  const b = noteCurve(2.1, 4, 0.004, (i) => -100 * Math.cos(i / 3));
+  for (const [t, c] of a.whole.pts) eager.set(c, t);
+  eager.set(0, 8.1);
+  for (const [t, c] of b.whole.pts) eager.set(c, t);
+  for (const [t] of a.whole.pts) if (t > 2.1 && t < 6.1) eager.set(curveAt(b.whole, t), t);
+  eager.set(curveAt(b.whole, 6.1), 6.1);
+  w.batch(0.1, () => {
+    w.steps(a.lazy, 0.1, 8.1);
+    w.send(0, 8.1);
+  });
+  for (let now = 0; now <= 2; now = Math.round((now + FEED_EVERY) * 1e6) / 1e6) {
     clock.currentTime = now;
-    const before = given;
     w.feed();
-    assert.ok(given - before <= (now < FEED_AHEAD ? FEED_EVERY + FEED_START : FEED_EVERY) / 0.004 + 2, `${given - before} given at ${now}`);
   }
-  assert.equal(nextFeedTo(4.5 + FEED_AHEAD, 4.75), 4.75 + FEED_AHEAD);
-  assert.equal(nextFeedTo(-Infinity, 1), 1 + FEED_START);
-  // Each curve worked out only as far as it's played
-  assert.ok(curves.every((c) => c.pts.length < 2000));
+  // The later one begun at 2.1 (sent a little ahead), then nothing given for 1.7 s
+  w.batch(2.1, () => {
+    w.steps(b.lazy, 2.1, 6.1);
+    w.over(b.lazy, 2.1, 6.1);
+    w.send(() => curveAt(b.lazy, 6.1), 6.1);
+  }, true);
+  for (let t = 2.1; t < 3.8; t += 0.0071) assert.equal(fed.at(t), eager.at(t), `at ${t}`);
+});
+
+test("a sounding note's later steps, given as they come due, say when they were sent", () => {
+  const clock = { currentTime: 0 };
+  const sentAt = [];
+  const w = createBendWindow(clock, (cents, time, cut, sent) => sentAt.push([time, sent]));
+  const { lazy } = noteCurve(0.1, 10, 0.004, (i) => 100 * Math.sin(i));
+  const before = bendStamp();
+  w.batch(0.1, () => w.steps(lazy, 0.1, 10.1));
+  // (the player's wheel moved meanwhile)
+  const wheel = bendStamp();
+  for (let now = 0; now < 9; now += FEED_EVERY) {
+    clock.currentTime = now;
+    w.feed();
+  }
+  const late = sentAt.filter(([t]) => t > 3);
+  assert.ok(late.length > 100, `${late.length}`);
+  assert.ok(late.every(([, sent]) => sent > before), 'sent after before');
+  assert.ok(late.every(([, sent]) => sent > before && sent < wheel));
+  // One sent after the wheel moved says so
+  w.send(50, 9.5);
+  assert.ok(sentAt.find(([t]) => t === 9.5)[1] > wheel);
 });
 
 test('the bends a window has for later go with a cut, and it forgets what has played', () => {
@@ -431,7 +542,7 @@ test('the bends a window has for later go with a cut, and it forgets what has pl
   const fed = createBendTimeline(() => -1e9);
   const w = createBendWindow(clock, (cents, time, cut) => fed.set(cents, time, cut));
   const { lazy } = noteCurve(0.1, 20, 0.01, (i) => 100 + i);
-  w.batch(0.1, () => w.steps(lazy));
+  w.batch(0.1, () => w.steps(lazy, 0.1, 20.1));
   w.send(0, 20.1);
   // A jump at 1.5: what it had for after goes, also further ahead than it's given yet
   w.send(-50, 1.5, true);

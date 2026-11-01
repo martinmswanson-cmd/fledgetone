@@ -35,6 +35,12 @@
 //   the clip: its tail after the clip's end sounds as a plain note's (the lane's bend held on).
 // - A key played live (the on-screen piano) while a song note's bent tail rings: it plays in tune
 //   (it took the song note's bend).
+// - The player's wheel moved while a song note slides, live: the notes after that one play at the wheel (the slide's later
+//   steps, given as they came due, let go of it). A track deleted or given another instrument while a long bent note plays:
+//   nothing more goes to the old instrument (it was fed the note's bends until it would have ended), the new one plays the song's.
+// - Two bent notes over each other with the page held up for 1.5 s just after the later one begins: its slide plays on through
+//   it (the bends reached the instrument only half a second ahead). A chord of 300 long sliding notes, and 5,000 short bent
+//   notes over each other, played live on a lead: no hold-up of more than a few tenths of a second (seconds, then most of a minute).
 // - A Multi Sampler note with its own bend under a clip's bend lane, in the file and live: its
 //   own bend adds to the lane's, as an MPE note's does to its master channel's (it played the
 //   lane's alone), held, sliding up, and with the lane moving while it sounds; and sliding while
@@ -294,6 +300,69 @@ const STALL = async ({ text, stall, stallAt, seconds }) => {
   return out;
 };
 
+// Play `text` live from bar 1 and `act` `actAt` seconds in: move the wheel to +200 cents ('wheel'), delete the track ('delete'),
+// or give it the instrument `to` ('swap'); return its pitch every 50 ms from the first sound (as STALL) and how many bends went to
+// its first instrument after
+const ACT = async ({ text, act, actAt, to, seconds }) => {
+  const store = await import('/src/store/timelineStore.ts');
+  const P = await import('/src/store/project.ts');
+  const LT = await import('/src/audio/liveTracks.ts');
+  const engine = await (await fetch('/src/audio/engine.ts')).text();
+  const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const s = store.useTimelineStore;
+  s.getState().loadProject(P.parseProject(JSON.parse(text)));
+  await sleep(3000);
+  await T.start();
+  const rec = new T.Recorder();
+  T.getDestination().connect(rec);
+  s.getState().seek(1);
+  await sleep(300);
+  const inst = LT.scheduledInstrument('t1');
+  let after = false;
+  let calls = 0;
+  const bend = inst.bend;
+  inst.bend = (...a) => {
+    if (after) calls++;
+    return bend(...a);
+  };
+  rec.start();
+  await s.getState().togglePlay();
+  await sleep(actAt * 1000);
+  after = true;
+  if (act === 'wheel') inst.bend(200, T.getContext().rawContext.currentTime, true);
+  if (act === 'delete') s.getState().deleteTrack('t1');
+  if (act === 'swap') s.getState().setTrackInstrument('t1', to);
+  await sleep((seconds - actAt) * 1000);
+  if (s.getState().isPlaying) s.getState().stop();
+  // (not counting the wheel, nor Stop's centring)
+  const sent = calls - (act === 'wheel' ? 1 : 0);
+  await sleep(500);
+  const b = await new AudioContext().decodeAudioData(await (await rec.stop()).arrayBuffer());
+  const x = b.getChannelData(0);
+  const sr = b.sampleRate;
+  const pitch = (a) => {
+    let best = -Infinity;
+    let at = 0;
+    for (let L = Math.floor(sr / 450); L <= Math.ceil(sr / 180); L++) {
+      let c = 0;
+      for (let i = 0; i + L < a.length; i++) c += a[i] * a[i + L];
+      if (c > best) {
+        best = c;
+        at = L;
+      }
+    }
+    return sr / at;
+  };
+  const onset = Math.max(0, x.findIndex((v) => Math.abs(v) > 0.003));
+  const out = [];
+  for (let t = 0.1; t < seconds - 0.2; t += 0.05) {
+    const i = onset + Math.round(t * sr);
+    out.push([t, pitch(x.subarray(i, i + Math.round(0.04 * sr)))]);
+  }
+  return { pitches: out, sent };
+};
+
 // Play `text` live from bar 1, press the on-screen key `midi` `keyAt` seconds in for `keyFor` seconds, and return the strongest frequency in
 // `band` and the level every 0.1 s (80 ms windows) from the first sound, for `seconds`
 const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
@@ -531,6 +600,61 @@ const KEY = async ({ text, keyAt, keyFor, midi, seconds, band }) => {
     const heard = got.filter(([t, , db]) => t > 2.25 && t < 3.7 && db > -65).map(([t, hzAt]) => [t + 0.04, hzAt]);
     const live = heard.length > 10 ? off(heard) : Infinity;
     report(Math.abs(live) < 10, `Multi Sampler, sliding under a lane that moves while it sounds, live: off by up to ${live.toFixed(0)} cents`);
+  }
+  // A C4 sliding up a tone over two bars (4 s), a plain C4 at bar 3.5: the wheel moved to +200 cents 2 s in, while the slide
+  // goes on, is where the plain C4 plays (the slide's later steps, given as they came due, let go of the wheel)
+  for (const key of ['lead', 'synthDesigner', 'wavetable', 'keys', 'realGrandPiano', 'plugin']) {
+    const pg = await page();
+    const s = song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 5, notes: [n('a', 'C4', 0, '2m', 0.8, [{ at: 0, value: 0 }, { at: 2, value: 2 }]), n('b', 'C4', 2.5, '2n', 0.8)] }]);
+    const got = await pg.evaluate(ACT, { text: JSON.stringify(s), act: 'wheel', actAt: 2, seconds: 6.6 });
+    await pg.close();
+    const f = got.pitches.filter(([t]) => t > 5.2 && t < 5.8).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
+    const med = f.length ? f[f.length >> 1] : 0;
+    report(Math.abs(med / bent('C4', 2) - 1) < 0.01, `${key === 'plugin' ? 'Fledge Synth' : key}, the wheel moved during a note's slide: a plain note after it at ${med.toFixed(1)} Hz, want ${bent('C4', 2).toFixed(1)} Hz`);
+  }
+  // A long bent note playing, its track deleted or given another instrument 1.5 s in: no bend goes to the old one after (it was fed
+  // for as long as the note would have sounded); the new one plays the clip's bend (+1) from the next note
+  for (const [act, to] of [['delete'], ['swap', 'synthDesigner']]) {
+    const pg = await page();
+    const s = song('lead', [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 8, expression: { bend: [{ at: 0, value: 1 }, { at: 8, value: 1 }] }, notes: [n('a', 'C4', 0, '8m', 0.8, [{ at: 0, value: 0 }, { at: 8, value: 2 }]), n('b', 'C4', 1.5, '2n', 0.8)] }]);
+    const got = await pg.evaluate(ACT, { text: JSON.stringify(s), act, actAt: 1.5, to, seconds: 4.4 });
+    await pg.close();
+    if (act === 'delete') report(got.sent === 0, `lead, its track deleted while a long bent note plays: ${got.sent} bends to its instrument after`);
+    else {
+      const f = got.pitches.filter(([t]) => t > 3.2 && t < 3.8).map(([, hzAt]) => hzAt).sort((p, q) => p - q);
+      const med = f.length ? f[f.length >> 1] : 0;
+      report(got.sent === 0 && Math.abs(med / bent('C4', 1) - 1) < 0.01, `lead given another instrument while a long bent note plays: ${got.sent} bends to the old one after; the new one's next note at ${med.toFixed(1)} Hz, want ${bent('C4', 1).toFixed(1)} Hz`);
+    }
+  }
+  // A C4 sliding up a tone over 3 bars, an E4 from bar 2 sliding down a tone over a bar, the page held up for 1.5 s 0.3 s after
+  // the E4 begins: the E4's slide plays on through it, as in the file (the bends reached the instrument only half a second ahead);
+  // within 15 cents (20 on the designer: its pitch read here steps by about 10)
+  for (const key of ['lead', 'bass808', 'synthDesigner']) {
+    const pg = await page();
+    const s = song(key, [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 3, notes: [n('a', 'C4', 0, '3m', 0.6, [{ at: 0, value: 0 }, { at: 3, value: 2 }]), n('b', 'E4', 1, '1m', 0.8, [{ at: 0, value: 0 }, { at: 1, value: -2 }])] }], { inBar: 1, outBar: 9, enabled: false });
+    const got = await pg.evaluate(STALL, { text: JSON.stringify(s), stall: 1500, stallAt: 2300, seconds: 4.2 });
+    await pg.close();
+    let worst = 0;
+    for (const [t, f] of got) {
+      if (t < 2.4 || t > 3.85) continue;
+      const c = 1200 * Math.log2(f / bent('E4', -(t - 2)));
+      if (Math.abs(c) > Math.abs(worst)) worst = c;
+    }
+    report(Math.abs(worst) < (key === 'synthDesigner' ? 20 : 15), `${key}, two bent notes over each other, the page held up for 1.5 s after the later one begins: off its slide by up to ${worst.toFixed(0)} cents`);
+  }
+  // The cost, live: a chord of 300 notes 400 bars long, each sliding two tones, and 5,000 short bent notes over each other (ten
+  // at a time, a 256th apart) on a lead: no more than a few tenths of a second (each later note's bend sent again over every
+  // earlier one's steps, and over the song's bend each had sent for after its release: seconds to minutes)
+  {
+    const slideAll = [{ at: 0, value: -2 }, { at: 400, value: 2 }];
+    const chord = [...Array(300)].map((_, i) => n(`l${i}`, ['C4', 'E4', 'G4', 'B4'][i % 4], 0, '400m', 0.02, slideAll));
+    const dense = [...Array(5000)].map((_, i) => n(`d${i}`, ['C4', 'E4', 'G4', 'B4'][i % 4], (i % 2048) / 256, '64n', 0.02, [{ at: 0, value: -2 }, { at: 1 / 64, value: 2 }]));
+    for (const [what, notes, most] of [['a chord of 300 long sliding notes', chord, 400], ['5,000 short bent notes over each other', dense, 300]]) {
+      const pg = await page();
+      const ms = await pg.evaluate(PLAY, { text: JSON.stringify(song('lead', [{ id: 'c1', trackId: 't1', name: 'A', startBar: 1, lengthBars: 8, notes }])), seconds: 6 });
+      await pg.close();
+      report(ms < most, `lead, ${what}, played live: longest hold-up ${Math.round(ms)} ms`);
+    }
   }
   await browser.close();
   process.exit(failed ? 1 : 0);

@@ -27,6 +27,7 @@ import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
 import { isBuiltinUrl } from '../plugins/builtinHost';
 import { NAMED_PARAM, paramNamesOf } from '../plugins/paramNames';
 import { resetsFresh } from '../ccHold';
+import { bendStamp } from '../bendWindow';
 
 /**
  * A Plugin track's instrument (a WAM loaded from its URL) and the WAM effects on a track. Both
@@ -96,6 +97,8 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
    * over. (The song's bend at a hold point is the scheduler's to send: see ClipSchedule.hold.) In cents.
    */
   let liveBend: number | undefined;
+  /** When the wheel moved last (see bendStamp) */
+  let liveAt = -Infinity;
   /** The song's centres sent ahead of their time (a bent note's end): a wheel moved before one comes is sent again there */
   let centres: number[] = [];
   /**
@@ -234,7 +237,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       on(n, note.velocity, time);
       return (at: number) => off(n, at);
     },
-    bend: (cents: number, time: number, live?: boolean, cut?: boolean) => {
+    bend: (cents: number, time: number, live?: boolean, cut?: boolean, sent?: number) => {
       if (!inst) return;
       if (Math.abs(cents) > BEND_RANGE_CENTS + 0.5 && time < wideFrom && plugin && isBuiltinUrl(plugin.url) && paramNamesOf(plugin.url)?.includes(BEND_RANGE_PARAM)) widen(time);
       // (Centred as MIDI has it: its middle value)
@@ -242,6 +245,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       if (cut) centres = centres.filter((t) => t < time);
       if (live) {
         liveBend = centred ? undefined : cents;
+        liveAt = bendStamp();
         if (cut) cutBends(cents, time);
         sendBend(cents, time);
         if (resetAt > time) sendBend(cents, resetAt);
@@ -251,9 +255,10 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
         for (const t of centres) sendBend(cents, t);
         return;
       }
-      // The song's bend takes the wheel over; back at rest, the wheel is where the player has it
+      // The song's bend takes the wheel over (one sent since it moved: not a sounding note's later
+      // steps, given as they come due); back at rest, the wheel is where the player has it
       if (!centred) {
-        liveBend = undefined;
+        if (sent === undefined || sent > liveAt) liveBend = undefined;
         centres = centres.filter((t) => t < time);
       } else if (time > out.context.currentTime) {
         if (centres.length > 64) centres = centres.filter((t) => t > out.context.currentTime);
