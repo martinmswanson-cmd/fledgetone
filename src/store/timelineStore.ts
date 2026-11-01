@@ -107,7 +107,7 @@ import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
-import { liveView } from './freeze';
+import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
   audioLengthLimitAt,
@@ -2327,6 +2327,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     deleteTrack: (id) => {
       // A take being recorded onto it lands first (its own undo step), so Ctrl+Z brings both back
       if (get().take?.trackId === id) endTake();
+      // A muted track a heard bounce stands in for still drives Pumps with its kicks and ducks the
+      // others as a proxy: deleting it stops that, so say what (after the toast a caller shows)
+      const before = get();
+      const gone = before.tracks.find((t) => t.id === id);
+      const loss = gone && bounceDeleteLoss(before.tracks, before.clips, id);
+      if (gone && loss) queueMicrotask(() => showToast(bounceDeleteWords(gone.name, loss)));
       set((s) => {
         if (!s.tracks.some((t) => t.id === id)) return s;
         // Tracks that played into it (a bus) play to the master again
