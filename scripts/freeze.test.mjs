@@ -267,3 +267,21 @@ test('deleting a muted source behind a heard bounce says what of its sound stops
   assert.equal(bounceDeleteWords('Voice', duck), 'Deleted Voice: the dip it gave the other tracks through its bounce stops too. Undo to bring it back.');
   assert.equal(bounceDeleteWords('Drums', { pumped: [pad, synth], ducks: true }), 'Deleted Drums: the pumping it gave Pad and lead, and the dip it gave the other tracks through its bounce stop too. Undo to bring it back.');
 });
+
+test("a proxy bounced in place doesn't duck under itself, and a ducked track's freeze leaves the dip live", async () => {
+  const { duckExempt, duckPoints } = await import('../src/store/duck.ts');
+  const vo = track('vo', 'keys', { duckProxy: { depth: 22 } });
+  const all = { ...base(), tracks: [synth, vo, drums], clips: [...base().clips, clip('v', 'vo', 3, [['C4', 0], ['D4', 1]])] };
+  const bounced = bounceInPlace(all.tracks, vo, track('b', 'audio'));
+  // The muted original's notes still say where the others dip, as before the bounce; the bounce isn't dipped
+  assert.deepEqual(duckPoints(bounced, all.clips, all.bpm), duckPoints(all.tracks, all.clips, all.bpm));
+  assert.deepEqual([...duckExempt(bounced)].sort(), ['b', 'vo']);
+  // Moving the dialogue moves the dip, which stays live: the lead's freeze stays current
+  const moved = { ...all, clips: all.clips.map((c) => (c.id === 'v' ? { ...c, startBar: 5 } : c)) };
+  assert.equal(fp(synth, moved), fp(synth, all));
+  // Frozen, the lead still plays as a track that ducks (not a proxy): the engine dips its frozen sound
+  const frozen = { ...synth, frozen: { soundId: 's', startBar: 3, seconds: 2, gainDb: 0, fingerprint: fp(synth, all) } };
+  const view = liveView({ ...all, tracks: [frozen, vo, drums] }, never);
+  assert.equal(view.tracks[0].instrumentKey, 'audio');
+  assert.ok(!duckExempt(view.tracks).has('lead'));
+});

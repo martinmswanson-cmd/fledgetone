@@ -4,6 +4,7 @@
  * clicks. Live and in exports, one schedule per Transport.
  */
 import { isMixTrack } from '../store/buses';
+import { duckExempt } from '../store/duck';
 import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
@@ -45,9 +46,11 @@ type Transport = ReturnType<typeof Tone.getTransport>;
 export interface AutomationSchedule {
   /**
    * Bring the lanes in line with the tracks (after their strips have applied them). Cheap when no
-   * lane changed. `duck` is the gain curve every track but the proxies plays (see duck.ts), or null.
+   * lane changed. `duck` is the gain curve every track but the proxies plays (see duck.ts), or null;
+   * `exempt`, the tracks that don't play it (default: duckExempt of `tracks`, which a render of
+   * some tracks only passes from the whole song, as a bounce's muted proxy may not be among them).
    */
-  update: (tracks: Track[], duck?: AutomationPoint[] | null) => void;
+  update: (tracks: Track[], duck?: AutomationPoint[] | null, exempt?: ReadonlySet<string>) => void;
   /** Stopped at `bar`: every lane holds its value there. */
   hold: (bar: number) => void;
   /** The tempo or loop changed while playing: work out where the Transport is and carry on from there. */
@@ -307,7 +310,7 @@ export function createAutomationSchedule(
   };
 
   return {
-    update: (tracks, duck = null) => {
+    update: (tracks, duck = null, exempt) => {
       const seen = new Set<string>();
       for (const track of tracks) {
         if (!track.automation?.length) continue;
@@ -339,9 +342,10 @@ export function createAutomationSchedule(
       }
       // Ducking: one gain curve on every track except the proxies, written like a lane
       if (duck?.length) {
+        const proxies = exempt ?? duckExempt(tracks);
         for (const track of tracks) {
-          // (Not a bus either: the tracks playing into it dip already)
-          if (track.duckProxy || isMixTrack(track)) continue;
+          // (Not a proxy or a bounce of one, and not a bus either: the tracks playing into it dip already)
+          if (proxies.has(track.id) || isMixTrack(track)) continue;
           const strip = stripFor(track.id);
           if (!strip) continue;
           const key = `${track.id}|duck`;

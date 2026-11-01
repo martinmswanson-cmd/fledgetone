@@ -52,7 +52,7 @@ import { markerCues } from './wavCues';
 import { ditherSeedOf, encodeChannels } from './wavFile';
 import { withTimeout } from './waitFor';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
-import { duckPoints } from '../store/duck';
+import { duckExempt, duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
 import type { Clip, DrumHit, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings, pumpFollowsDrums } from '../store/timelineTypes';
@@ -142,6 +142,11 @@ export interface RenderOptions {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
+  /**
+   * Leave out the ducking under the proxy tracks (see duck.ts): a freeze or a bounce, whose sound
+   * still dips live and in exports as the track it was made from does, so the dip isn't in it twice.
+   */
+  noDuck?: boolean;
   /**
    * Keep a ring-out render whole, not cut where its tails die away: the caller turns it up or down
    * to a loudness target first, then cuts it (cutRingOut), so the tails end under -70 dBFS in the
@@ -782,7 +787,7 @@ function endRingOut<T extends Float32Array>(channels: T[], sampleRate: number, o
  */
 export async function renderForFreeze(opts: RenderOptions, track: Track, onProgress?: (fraction: number) => void): Promise<{ channels: Float32Array[]; sampleRate: number }> {
   // (played by the app, as live playback plays its recordings: see RenderRecordings)
-  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT, recordings: opts.recordings ?? 'playback' }, [track], onProgress);
+  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, noDuck: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT, recordings: opts.recordings ?? 'playback' }, [track], onProgress);
   return { channels, sampleRate };
 }
 
@@ -1471,8 +1476,9 @@ async function renderGraphHeld(
     // begins, and follow the lanes from when the Transport starts
     const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0, tempo: () => tempo });
     automation.hold(startBar);
-    // Every track but the proxies ducks under the dialogue / SFX proxies (see duck.ts)
-    automation.update(tracks, duckPoints(opts.tracks, opts.clips, bpm));
+    // Every track but the proxies (and their bounces) ducks under the dialogue / SFX proxies (see
+    // duck.ts); not in a freeze or a bounce, which play it afterwards as any other track does
+    automation.update(tracks, opts.noDuck ? null : duckPoints(opts.tracks, opts.clips, bpm), duckExempt(opts.tracks));
     transport.start(plan.startAt, `${barToTicks(startBar)}i`);
     // Stop at endBar (after the last pass of a seamless loop): the render runs on for the
     // tail, and notes after endBar (the rest of the song, past a loop region's Out) must not
