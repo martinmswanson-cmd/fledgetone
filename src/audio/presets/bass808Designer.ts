@@ -8,6 +8,7 @@ import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves'
 import type { Bass808Settings } from '../../store/bass808';
 import { defaultBass808, tuneNote } from '../../store/bass808';
 import { createBendTimeline } from '../bendTimeline';
+import type { NoteSlide } from '../legato';
 
 /**
  * The designed 808 (an 808 Bass track with Track.bass808 set; see bass808.ts): a sine with a
@@ -84,6 +85,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
   const voices = createVoiceSet(raw);
   let settings = initial ?? defaultBass808();
   let current: Voice808 | null = null;
+  /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+  let slid: NoteSlide | null = null;
   /** The pitch bend (cents) by time: a note starts at the one in force then and follows the ones sent for later (see bendTimeline.ts) */
   const bends = createBendTimeline(() => raw.currentTime);
 
@@ -107,7 +110,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     // A note starting before the sounding one ends doesn't hit again: the sounding one slides to
     // its pitch and carries on, dying away as it was, to this note's end (the "808 slide")
     const v = current;
-    if (v && v.end > start + 0.001 && v.stopAt > start) {
+    slid = v && v.end > start + 0.001 && v.stopAt > start ? { seconds: v.settings.glide, curve: 'ramp' } : null;
+    if (v && slid) {
       const at = Math.max(raw.currentTime, start - v.lead);
       const until = end - v.lead;
       v.glide = slidePitch(v.osc.frequency, v.glide, at, freq, v.settings.glide);
@@ -184,6 +188,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
   };
 
   return {
+    /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+    slide: () => slid,
     play: (notes: PlayableNote[], time: number) => {
       // One note at a time: the loudest of a chord
       const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));

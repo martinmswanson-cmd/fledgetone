@@ -10,6 +10,7 @@ import { HELD_NOTE } from './edmSynths';
 import type { Envelope, LfoSync, OscWave, SynthPatch } from '../../store/synthPatch';
 import { defaultSynthPatch } from '../../store/synthPatch';
 import { createBendTimeline } from '../bendTimeline';
+import type { NoteSlide } from '../legato';
 import { FEED_EVERY, feedFollower, followsNow } from '../bendFeed';
 
 /** Harmonics (amplitude by number, from 1) of the table waves (see OscWave). */
@@ -123,6 +124,8 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   const voices = createVoiceSet(raw, 0.3);
   let patch = initial ?? defaultSynthPatch();
   let last: { voice: DesignerVoice; freq: number } | null = null;
+  /** In mono, how the note it began last got to its pitch (see TrackInstrument.slide): from the last note's, by its glide */
+  let slid: NoteSlide | null = null;
   // Pitch bend (cents): the bend lane, vibrato and each note's own bend (scoops, slides) move every
   // sounding voice's oscillators; a voice starting later starts at the bend in force then, and
   // follows the ones sent for after it (see bendTimeline.ts)
@@ -172,6 +175,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
       voices.release(last.voice, from, 0.015);
       if (p.glide > 0) glideFrom = last.freq;
     }
+    slid = glideFrom !== null ? { seconds: p.glide, curve: 'ramp', from: glideFrom } : null;
 
     const sources: AudioScheduledSourceNode[] = [];
     const nodes: AudioNode[] = [];
@@ -332,6 +336,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   };
 
   return {
+    slide: () => slid,
     play: (notes: PlayableNote[], time: number) => {
       const start = notLate(bus.context, time);
       if (patch.mono) {

@@ -6,6 +6,7 @@
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
 import { joinsNote } from '../legato';
+import type { NoteSlide } from '../legato';
 import { createWideOutput } from './widen';
 import { createVoicePool } from './poly';
 import { keepOn } from '../keepOn';
@@ -33,7 +34,12 @@ interface HeldSynth {
 function heldNote(synth: HeldSynth & { context: Tone.BaseContext }, safeTime: (time?: Tone.Unit.Time) => number) {
   const feed = createBendFeed(synth.context, synth.detune);
   return {
-    attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
+    /** (Returns when it starts) */
+    attack: (note: string, time: number, velocity: number) => {
+      const at = safeTime(time);
+      synth.triggerAttack(note, at, velocity);
+      return at;
+    },
     release: (time: number) => synth.triggerRelease(time),
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => feed.bend(cents, time, cut),
     /** Its bends stop being fed (with the synth's dispose) */
@@ -106,6 +112,16 @@ export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideR
   return Object.assign(glideFor, { letGo: () => void (soundingUntil = -Infinity) });
 }
 
+/**
+ * How a Tone mono synth took the note it set at `at` to its pitch: its portamento, from where its
+ * pitch was, when it's above 0 and the synth still sounds then (Tone's Monophonic.setNote), else
+ * straight there. Read just after the note is played.
+ */
+export function toneSlide(synth: Tone.MonoSynth, at: number): NoteSlide | null {
+  const seconds = synth.toSeconds(synth.portamento);
+  return seconds > 0 && synth.getLevelAtTime(at) > 0.05 ? { seconds, curve: 'ramp' } : null;
+}
+
 /** Stop or Pause a Tone mono synth now (see letGoToneSynth), its legato forgotten. */
 export function letGoMono(synth: Tone.MonoSynth, glideFor: { letGo: () => void }): void {
   glideFor.letGo();
@@ -158,12 +174,16 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide, 0);
   const held = heldNote(synth, safeTime);
+  let slid: NoteSlide | null = null;
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
+      slid = toneSlide(synth, start);
     },
     ...held,
+    attack: (note: string, time: number, velocity: number) => (slid = toneSlide(synth, held.attack(note, time, velocity))),
+    slide: () => slid,
     releaseAll: () => letGoMono(synth, glideFor),
     dispose: () => {
       held.stopBends();
@@ -213,6 +233,7 @@ export function create808(output: Tone.InputNode, modern = false) {
   const held = heldNote(synth, safeTime);
   /** When the sounding scheduled note ends, so a note starting before then slides instead. */
   let soundingUntil = -Infinity;
+  let slid: NoteSlide | null = null;
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
@@ -220,7 +241,8 @@ export function create808(output: Tone.InputNode, modern = false) {
       const freq = Tone.Frequency(note).toFrequency();
       if (!Number.isFinite(length) || !(freq > 0)) return;
       const end = start + Math.max(0.005, length);
-      if (soundingUntil > start + 0.001) {
+      slid = soundingUntil > start + 0.001 ? { seconds: SLIDE_808, curve: 'ramp' } : null;
+      if (slid) {
         const f = synth.oscillator.frequency;
         f.cancelAndHoldAtTime(start);
         f.exponentialRampToValueAtTime(freq, start + SLIDE_808);
@@ -237,8 +259,10 @@ export function create808(output: Tone.InputNode, modern = false) {
     },
     attack: (note: string, time: number, velocity: number) => {
       soundingUntil = -Infinity;
+      slid = null;
       held.attack(note, time, velocity);
     },
+    slide: () => slid,
     release: held.release,
     bend: held.bend,
     releaseAll: () => {
@@ -271,12 +295,16 @@ export function createLead(output: Tone.InputNode, glide?: GlideRef) {
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide, 0.035);
   const held = heldNote(synth, safeTime);
+  let slid: NoteSlide | null = null;
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
       playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
+      slid = toneSlide(synth, start);
     },
     ...held,
+    attack: (note: string, time: number, velocity: number) => (slid = toneSlide(synth, held.attack(note, time, velocity))),
+    slide: () => slid,
     releaseAll: () => letGoMono(synth, glideFor),
     dispose: () => {
       held.stopBends();

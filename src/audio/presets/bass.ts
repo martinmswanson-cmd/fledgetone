@@ -2,7 +2,8 @@ import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 import type { GlideRef } from '../instruments';
-import { legatoGlide, letGoMono, playMono } from './synths';
+import { legatoGlide, letGoMono, playMono, toneSlide } from './synths';
+import type { NoteSlide } from '../legato';
 import { createBendFeed } from '../bendFeed';
 
 /**
@@ -47,6 +48,7 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
   const glideFor = legatoGlide(synth, glide);
   // (Its bends given to its detune as they come due: see bendFeed.ts)
   const bends = createBendFeed(synth.context, synth.detune);
+  let slid: NoteSlide | null = null;
 
   return {
     synth,
@@ -61,9 +63,16 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
       // one slides from it without a new pluck
       const joined = glideFor(start, start + synth.toSeconds(duration));
       playMono(synth, note, duration, start, velocity, glide?.seconds !== undefined ? joined : null);
+      slid = toneSlide(synth, start);
     },
     // A key held on a MIDI keyboard: sounds until released
-    attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
+    attack: (note: string, time: number, velocity: number) => {
+      const start = safeTime(time);
+      synth.triggerAttack(note, start, velocity);
+      slid = toneSlide(synth, start);
+    },
+    /** How the note it began last got to its pitch (see TrackInstrument.slide) */
+    slide: () => slid,
     release: (time: number) => synth.triggerRelease(time),
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => bends.bend(cents, time, cut),
     /** Stop, Pause: let go now, and the notes handed out for later never come */

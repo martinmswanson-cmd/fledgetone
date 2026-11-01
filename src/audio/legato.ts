@@ -69,3 +69,63 @@ export function isBendAfter(ev: TimedEvent, time: number): boolean {
   const b = ev.type === 'wam-midi' ? (ev.data as { bytes?: number[] } | undefined)?.bytes : undefined;
   return !!b && (b[0] & 0xf0) === 0xe0 && ev.time >= time;
 }
+
+/**
+ * How a one-note instrument took the note it began last to its pitch (see TrackInstrument.slide),
+ * so a layer under it (the Sub enhancer) slides as it does: from the pitch it was at, or from
+ * `from` (Hz: the last note's), over `seconds`, along an exponential ramp that gets there then
+ * ('ramp': Web Audio's exponentialRampToValueAtTime, Tone's portamento) or an approach with a time
+ * constant of slideConstant(seconds) ('target': setTargetAtTime). null where it began on it.
+ */
+export interface NoteSlide {
+  seconds: number;
+  curve: 'ramp' | 'target';
+  from?: number;
+}
+
+/** The time constant a 'target' slide of `seconds` approaches its pitch with. */
+export function slideConstant(seconds: number): number {
+  return Math.max(0.003, seconds) / 3;
+}
+
+/** The pitch (Hz) a slide from `f0` to `f1` begun at `t0` (none: a jump there) is at by `at`. */
+export function slidePitchAt(f0: number, f1: number, t0: number, slide: NoteSlide | null, at: number): number {
+  if (at < t0) return f0;
+  if (!slide) return f1;
+  if (slide.curve === 'target') return f1 + (f0 - f1) * Math.exp(-(at - t0) / slideConstant(slide.seconds));
+  if (slide.seconds <= 0 || at >= t0 + slide.seconds) return f1;
+  return f0 * (f1 / f0) ** ((at - t0) / slide.seconds);
+}
+
+/** A note held from `start` until `end` (Infinity: not let go yet) at `freq` (see lowestHeld). */
+export interface HeldSpan {
+  start: number;
+  end: number;
+  freq: number;
+}
+
+/**
+ * Which of `spans` is the lowest sounding, through time: the stretches [from, to) each is (by its
+ * index), in time order, for a layer that follows one note of a chord (the Sub enhancer under an
+ * instrument that plays many notes at once). Two at the same pitch: the one given first.
+ */
+export function lowestHeld(spans: readonly HeldSpan[]): Array<{ index: number; from: number; to: number }> {
+  const times = [...new Set(spans.flatMap((s) => (s.end > s.start ? [s.start, s.end] : [])))].filter(Number.isFinite).sort((a, b) => a - b);
+  const out: Array<{ index: number; from: number; to: number }> = [];
+  for (let i = 0; i < times.length; i++) {
+    const t = times[i];
+    let index = -1;
+    spans.forEach((s, k) => {
+      if (s.start <= t && t < s.end && (index < 0 || s.freq < spans[index].freq)) index = k;
+    });
+    const to = i + 1 < times.length ? times[i + 1] : Infinity;
+    if (index < 0) continue;
+    const last = out[out.length - 1];
+    if (last && last.index === index && last.to === t) last.to = to;
+    else out.push({ index, from: t, to });
+  }
+  // (The last stretch runs to its note's end: Infinity until it's let go)
+  const last = out[out.length - 1];
+  if (last) last.to = Math.min(last.to, spans[last.index].end);
+  return out;
+}
