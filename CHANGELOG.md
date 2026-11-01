@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A song's name can't run anything in the FMOD and Wwise import scripts**: the name of a song opened from a file or a link was written as it is into the comments of the import scripts the package tells you to run, so a name made to do it could break out of the comment and run as part of the script. The scripts now show the name with only letters, numbers and plain punctuation.
+- **A punched-in take stays inside the punch**: with Quantize on and the punch-in on a bar line, a note played just before the punch-out could be moved past it, growing the take over what came after. It now stays on the last line before the punch-out.
 - **A note recorded in the song's very last moment is kept**: with Quantize on, a note played in the last step of the song's last bar was moved onto the clip's end, where it never played. It now goes to the line before.
 - **A Sub enhancer or Glide left from another instrument stays silent**: after changing a track to an instrument with no Sub enhancer or Glide (Keys, Supersaw, Analog Lead, Space Clav...), a Sub or Glide set on the instrument before still played, loud and with no panel to turn it off. They now play only on the instruments that show them, and a one-note designed synth's sub slides with the synth's own glide.
 - **The agent leaves notes hidden by a trim alone**: asked to move or remove all the notes of a clip trimmed shorter, the agent also changed the notes past the trim that don't play, and counted them in what it saw. It now works on the notes you hear, as the piano roll's tools do.

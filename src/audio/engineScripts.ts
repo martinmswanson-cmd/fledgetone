@@ -31,7 +31,14 @@ function tracksOf(m: AudioManifest): Array<{ name: string; fileOf: (state: Audio
   return groups.map((name) => ({ name, fileOf: (s) => s.stems.find((x) => x.group === name)?.file ?? s.file }));
 }
 
-const js = (v: unknown) => JSON.stringify(v);
+// (Line and paragraph separators escaped too: an older script engine ends a line at them)
+const js = (v: unknown) => JSON.stringify(v).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+/**
+ * A name as it can stand in a script's comment or docstring: letters, digits, spaces and plain
+ * punctuation only. A song's name comes from its file or a link, and a line break or quote in it
+ * would end the comment, making what follows run as code when the musician runs the script.
+ */
+const said = (name: string) => name.replace(/[^\p{L}\p{N} _.,'()&+-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Song';
 const levelDb = (level: number) => (level <= 0.0001 ? -80 : Math.max(-80, 20 * Math.log10(level)));
 
 /** The FMOD Studio script (ES5, for Studio's script engine). */
@@ -40,16 +47,16 @@ export function fmodScript(m: AudioManifest): string {
   const tracks = tracksOf(m).map((t) => ({ name: t.name, sounds: m.states.map((s, i) => ({ file: t.fileOf(s), start: layout[i].start, length: layout[i].length })) }));
   const curves = m.intensity.groups.map((g) => ({ name: g.name, points: g.curve.map(([x, y]) => [x, +levelDb(y).toFixed(2)]) }));
   const data = { name: m.name, bpm: m.bpm, layout, tracks, curves, stingers: m.stingers.map((s) => ({ name: s.name, file: s.file })), transitions: m.transitions };
-  return `// ${m.name}: FMOD Studio import script, made by Fledgetone.
+  return `// ${said(m.name)}: FMOD Studio import script, made by Fledgetone.
 //
 // 1. Copy this file into your FMOD Studio project's Scripts folder (next to the .fspro), or your
 //    user Scripts folder, and choose Scripts > Reload in FMOD Studio.
-// 2. Choose Scripts > Fledgetone > Import "${m.name}" and give it the full path of this package's
+// 2. Choose Scripts > Fledgetone > Import "${said(m.name)}" and give it the full path of this package's
 //    Audio folder when asked (or set AUDIO_FOLDER below first).
-// It builds the event Music/${m.name} and an event per stinger, and reports what it did in the console.
+// It builds the event Music/${said(m.name)} and an event per stinger, and reports what it did in the console.
 // See README.md for what to finish by hand.
 
-var AUDIO_FOLDER = ''; // e.g. 'C:/Games/MyGame/Music/${m.name} FMOD-Wwise/Audio'
+var AUDIO_FOLDER = ''; // e.g. 'C:/Games/MyGame/Music/${said(m.name)} FMOD-Wwise/Audio'
 var DATA = ${js(data)};
 
 function bbLog(text) {
@@ -202,16 +209,16 @@ export function wwiseScript(m: AudioManifest): string {
     layout: stateLayout(m),
   };
   return `#!/usr/bin/env python3
-"""${m.name}: Wwise import script, made by Fledgetone.
+"""${said(m.name)}: Wwise import script, made by Fledgetone.
 
 1. Open your Wwise project, and turn on the Wwise Authoring API
    (Project > User Preferences > Enable Wwise Authoring API).
 2. pip install waapi-client
 3. python ${'import_'}${m.name.replace(/[^A-Za-z0-9]+/g, '_')}.py   (from this folder, while Wwise is open)
 
-It builds, in the Interactive Music Hierarchy: a Music Switch Container "${m.name}", in it a
+It builds, in the Interactive Music Hierarchy: a Music Switch Container "${said(m.name)}", in it a
 Music Playlist Container per state holding a Music Segment with a Music Track per stem group;
-a State Group "${m.name} State" with a state per section; an Intensity game parameter
+a State Group "${said(m.name)} State" with a state per section; an Intensity game parameter
 (0 to 100); and the stingers as Sound SFX. It prints each step, OK or SKIP.
 See README.md for what to finish by hand.
 """

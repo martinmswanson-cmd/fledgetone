@@ -1467,7 +1467,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     }));
     tell();
     if (grid === 'off') return;
-    const quantized = quantizeTakeClip(clip, grid);
+    // (A punched take stays inside the punch: no growing past its out point)
+    const quantized = quantizeTakeClip(clip, grid, !punch);
     set((st) => ({ clips: st.clips.map((c) => (c.id === clip.id ? quantized : c)), ...pushPast(st) }));
   };
 

@@ -96,3 +96,21 @@ test('the README lists the states, transitions and curves', () => {
 function require_(file) {
   return execFileSync('cat', [file]).toString();
 }
+
+test("a song's name can't put code into the scripts", () => {
+  const hostile = { ...manifest, name: 'Night """\nprint("RAN")\n"""\n//x alert(1)*/' };
+  const py = wwiseScript(hostile);
+  // Only the docstring and code of its own at the top: nothing the name brought
+  assert.ok(!/^print\("RAN"\)/m.test(py), 'no line of the name runs in Python');
+  const dir = mkdtempSync(join(tmpdir(), 'wwise-'));
+  const file = join(dir, 'import.py');
+  writeFileSync(file, py);
+  execFileSync('python3', ['-m', 'py_compile', file]);
+  const js = fmodScript(hostile);
+  assert.ok(!/^print\("RAN"\)|^alert\(1\)/m.test(js), 'no line of the name runs in the FMOD script');
+  assert.ok(!js.includes(' '), 'no line separator left in the script');
+  new Function('studio', 'console', js)({ menu: { addMenuItem: () => {} } }, { log: () => {} });
+  // Its data still carries the name as it is
+  const literal = py.match(/DATA = json\.loads\((".*")\)/)[1];
+  assert.equal(JSON.parse(JSON.parse(literal)).name, hostile.name);
+});
