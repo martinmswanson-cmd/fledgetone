@@ -361,8 +361,8 @@ export interface TrackTail {
 /** How long a note of `track` rings on as its instrument plays it (see TrackTail). */
 function noteTail(track: Track): TrackTail {
   const samples = INSTRUMENTS[track.instrumentKey]?.samples;
-  const known = (track.ring !== undefined && !!samples) || typeof samples?.release === 'number' || !!track.synth || !!track.bass808;
-  const seconds = Math.max(releaseSeconds(track), track.synth?.amp?.release ?? 0, track.bass808?.decay ?? 0, samples?.releases?.decay ?? 0);
+  const known = (track.ring !== undefined && !!samples) || typeof samples?.release === 'number' || !!track.synth || (track.instrumentKey === 'bass808' && !!track.bass808);
+  const seconds = Math.max(releaseSeconds(track), track.synth?.amp?.release ?? 0, (track.instrumentKey === 'bass808' ? track.bass808?.decay ?? 0 : 0), samples?.releases?.decay ?? 0);
   return { seconds, sure: known && !track.plugin };
 }
 

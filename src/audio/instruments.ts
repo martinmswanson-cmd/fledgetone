@@ -615,7 +615,8 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   const sub = createSubLayer(output, options.subLayer);
   // The 808 Designer's settings as they are now (they change without a rebuild): its Glide is the sub's too
   let bass808 = options.bass808;
-  const glide = () => glideRef.seconds ?? bass808?.glide;
+  // (Each instrument's own: a Glide or 808 settings left from another instrument play no part)
+  const glide = () => (key === 'bass808' ? bass808?.glide : glideRef.seconds);
   // The notes as the instrument plays them: the 808 Designer snaps them into its key
   const tuned = (n: PlayableNote): PlayableNote => {
     if (key !== 'bass808' || !bass808?.tuneToKey) return n;
@@ -651,7 +652,7 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
             const subGo = sub.hold(tuned(n), time, glide());
             return (at: number) => {
               letGo(at);
-              subGo(at);
+              subGo.off(at);
             };
           },
         }
@@ -665,9 +666,14 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
             const subGo = sub.hold(tuned(n), time, glide());
             return {
               ...voice,
+              // (Its own bend reaches its sub too, which stays under it)
+              bend: (cents: number, at: number) => {
+                voice.bend(cents, at);
+                subGo.bend(cents, at);
+              },
               off: (at: number) => {
                 voice.off(at);
-                subGo(at);
+                subGo.off(at);
               },
             };
           },

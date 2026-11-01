@@ -36,6 +36,8 @@ interface SubVoice extends NativeVoice {
   glide: PitchGlide;
   /** The held key it's playing now (a slide hands it on): only that key lets it go */
   heldBy?: object;
+  /** That key's own bend (cents), added to the instrument's: made at its first own bend */
+  own?: ConstantSourceNode;
 }
 
 export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undefined) {
@@ -57,7 +59,9 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
   };
   if (initial) ready();
   /** The instrument's pitch bend (cents) by time, which the sub follows to stay under its notes (see bendTimeline.ts) */
-  const bends = createBendTimeline(() => nb?.raw.currentTime ?? 0);
+  // (On the instrument's context's clock, kept while the sub is off too, so the old bends are let go)
+  const clock = Tone.getContext().rawContext;
+  const bends = createBendTimeline(() => clock.currentTime);
   /** The bends sent for later on `v`, from `from` while it sounds. */
   const follow = (v: SubVoice, raw: BaseAudioContext, from: number) => {
     for (const [t, cents] of bends.after(from, v.stopAt)) v.osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t), 0.006);
@@ -79,6 +83,8 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     const v = current;
     if (v && v.end > start + 0.001 && v.stopAt > start) {
       // Legato: slide on, at this note's level
+      // (The last key's own bend is its own: this note starts from the instrument's)
+      v.own?.offset.setTargetAtTime(0, start, 0.006);
       v.glide = slidePitch(v.osc.frequency, v.glide, start, freq, Math.max(0.005, glide));
       const g = v.amp.gain;
       g.cancelAndHoldAtTime(start);
@@ -118,16 +124,39 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
         console.warn('Skipped a sub note:', err);
       }
     },
-    /** A held key: its sub, and what lets it go. */
+    /**
+     * A held key: its sub, what lets it go (`off`), and its own bend in cents from a time (`bend`:
+     * a note whose bend is its own, added to the instrument's). Both act only while the sub is that key's.
+     */
     hold: (note: PlayableNote, time: number, glide = DEFAULT_GLIDE) => {
       const voice = settings ? playNote({ ...note, duration: HELD_NOTE }, time, glide) : undefined;
       const key = {};
       if (voice) voice.heldBy = key;
-      return (at: number) => {
-        if (!voice || !voices || current !== voice || voice.heldBy !== key || !nb) return;
-        const t = notLate(nb.bus.context, at);
-        voices.release(voice, t, RELEASE);
-        voice.end = t;
+      const ours = () => !!voice && !!voices && !!nb && current === voice && voice.heldBy === key;
+      return {
+        off: (at: number) => {
+          if (!ours() || !nb) return;
+          const t = notLate(nb.bus.context, at);
+          voices!.release(voice!, t, RELEASE);
+          voice!.end = t;
+        },
+        bend: (cents: number, at: number) => {
+          if (!ours() || !nb) return;
+          const v = voice!;
+          const t = Math.max(nb.raw.currentTime, notLate(nb.bus.context, at));
+          if (!v.own) {
+            if (cents === 0) return;
+            const own = nb.raw.createConstantSource();
+            own.offset.value = 0;
+            own.connect(v.osc.detune);
+            own.start(Math.max(nb.raw.currentTime, v.start));
+            own.stop(v.stopAt);
+            v.own = own;
+            v.sources.push(own);
+            v.nodes.push(own);
+          }
+          v.own.offset.setTargetAtTime(cents, t, 0.006);
+        },
       };
     },
     /** The instrument's pitch bend (cents) from `time`, as the instrument has it. `cut`: the bends sent for then and after are dropped first. */
