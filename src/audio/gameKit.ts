@@ -458,6 +458,13 @@ offset_bottom = 624.0
 `;
 }
 
+/**
+ * A name as a string in the README's code, for the musician to paste (JavaScript, GDScript and C#
+ * read it alike): quoted and escaped, so a name with a quote or a line break in it (from a song
+ * file or a link) can't end the string and run as code. Line and paragraph separators escaped too.
+ */
+const lit = (name: string) => JSON.stringify(name).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
 /** What a game can call, with this song's own names in the examples. */
 function callNames(m: AudioManifest) {
   const states = m.states.map((s) => s.name);
@@ -468,18 +475,18 @@ function callNames(m: AudioManifest) {
 function costumeLine(m: AudioManifest, lang: 'js' | 'gd' | 'cs'): string {
   const c = m.states[0]?.costumes?.[0]?.name;
   if (!c) return '';
-  if (lang === 'gd') return `\nMusic.set_costume("${c}")       # the same music another way ("" to go back)`;
-  if (lang === 'cs') return `\nmusic.SetCostume("${c}");       // the same music another way (null to go back)`;
-  return `\n    music.setCostume('${c}');       // the same music another way (null to go back)`;
+  if (lang === 'gd') return `\nMusic.set_costume(${lit(c)})       # the same music another way ("" to go back)`;
+  if (lang === 'cs') return `\nmusic.SetCostume(${lit(c)});       // the same music another way (null to go back)`;
+  return `\n    music.setCostume(${lit(c)});       // the same music another way (null to go back)`;
 }
 
 /** The README line that sets a parameter, in each engine's words (none when the song has none). */
 function paramLine(m: AudioManifest, lang: 'js' | 'gd' | 'cs'): string {
   const p = m.parameters?.[0]?.name;
   if (!p) return '';
-  if (lang === 'gd') return `\nMusic.set_parameter("${p}", 0.7)  # 0 to 1: moves what it was set up to move`;
-  if (lang === 'cs') return `\nmusic.SetParameter("${p}", 0.7f); // 0 to 1: moves what it was set up to move`;
-  return `\n    music.setParameter('${p}', 0.7); // 0 to 1: moves what it was set up to move`;
+  if (lang === 'gd') return `\nMusic.set_parameter(${lit(p)}, 0.7)  # 0 to 1: moves what it was set up to move`;
+  if (lang === 'cs') return `\nmusic.SetParameter(${lit(p)}, 0.7f); // 0 to 1: moves what it was set up to move`;
+  return `\n    music.setParameter(${lit(p)}, 0.7); // 0 to 1: moves what it was set up to move`;
 }
 
 const TARGET_WORDS: Record<string, string> = { intensity: 'intensity', filter: 'filter', reverb: 'reverb', volume: 'volume', layer: 'layer' };
@@ -520,15 +527,15 @@ ${inventory(m)}
 
 \`\`\`gdscript
 Music.load_song("res://bos_music/${slug}/")
-Music.play("${c.first}")
+Music.play(${lit(c.first)})
 \`\`\`
 
 3. Then anywhere in your game:
 
 \`\`\`gdscript
-Music.set_state("${c.second}")         # switches on the beat, the way the song's transitions say
+Music.set_state(${lit(c.second)})         # switches on the beat, the way the song's transitions say
 Music.set_intensity(0.7)              # 0 to 1: the layers fade in and out
-Music.set_effect("underwater")        # or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'gd')}${paramLine(m, 'gd')}${c.sting ? `\nMusic.stinger("${c.sting}")         # plays over the music on the next beat` : ''}${c.sfx ? `\nMusic.play_sfx("${c.sfx}")          # a different variation each time` : ''}${c.loop ? `\nvar hum = Music.play_sfx("${c.loop}") # loops until hum.stop()` : ''}
+Music.set_effect("underwater")        # or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'gd')}${paramLine(m, 'gd')}${c.sting ? `\nMusic.stinger(${lit(c.sting)})         # plays over the music on the next beat` : ''}${c.sfx ? `\nMusic.play_sfx(${lit(c.sfx)})          # a different variation each time` : ''}${c.loop ? `\nvar hum = Music.play_sfx(${lit(c.loop)}) # loops until hum.stop()` : ''}
 Music.stop()
 \`\`\`
 
@@ -557,10 +564,10 @@ Put the **Adaptive Music** component on a GameObject (its **Resources Folder** i
 
 \`\`\`csharp
 var music = FindObjectOfType<AdaptiveMusic>();
-music.Play("${c.first}");
-music.SetState("${c.second}");         // switches on the beat, the way the song's transitions say
+music.Play(${lit(c.first)});
+music.SetState(${lit(c.second)});         // switches on the beat, the way the song's transitions say
 music.SetIntensity(0.7f);             // 0 to 1: the layers fade in and out
-music.SetEffect("underwater");        // or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'cs')}${paramLine(m, 'cs')}${c.sting ? `\nmusic.Stinger("${c.sting}");         // plays over the music on the next beat` : ''}${c.sfx ? `\nmusic.PlaySfx("${c.sfx}");          // a different variation each time` : ''}${c.loop ? `\nmusic.PlaySfx("${c.loop}");          // loops until music.StopSfx("${c.loop}")` : ''}
+music.SetEffect("underwater");        // or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'cs')}${paramLine(m, 'cs')}${c.sting ? `\nmusic.Stinger(${lit(c.sting)});         // plays over the music on the next beat` : ''}${c.sfx ? `\nmusic.PlaySfx(${lit(c.sfx)});          // a different variation each time` : ''}${c.loop ? `\nmusic.PlaySfx(${lit(c.loop)});          // loops until music.StopSfx(${lit(c.loop)})` : ''}
 music.Stop();
 \`\`\`
 
@@ -610,18 +617,18 @@ Web (players/web/adaptive-music.js)
     import { AdaptiveMusic } from './adaptive-music.js';
     const music = new AdaptiveMusic();
     await music.load('path/to/this/folder/');
-    music.play('${first}');            // after the player clicks or presses a key
-    music.setState('${second}');
+    music.play(${lit(first)});            // after the player clicks or presses a key
+    music.setState(${lit(second)});
     music.setIntensity(0.7);
-    music.setEffect('underwater');     // or 'muffled', 'lowHealth', 'dream', 'none'${costumeLine(m, 'js')}${paramLine(m, 'js')}${sting ? `\n    music.stinger('${sting}');` : ''}${m.sfx?.length ? `\n    music.playSfx('${m.sfx[0].name}');      // sound effects: a different variation each time` : ''}
+    music.setEffect('underwater');     // or 'muffled', 'lowHealth', 'dream', 'none'${costumeLine(m, 'js')}${paramLine(m, 'js')}${sting ? `\n    music.stinger(${lit(sting)});` : ''}${m.sfx?.length ? `\n    music.playSfx(${lit(m.sfx[0].name)});      // sound effects: a different variation each time` : ''}
 
 Godot 4 (players/godot/AdaptiveMusic.gd)
     Copy this folder to res://music/, add the script as an autoload called Music, call
-    Music.load_song("res://music/") once, then Music.play("${first}"), Music.set_state("${second}"), Music.set_intensity(0.7)${sting ? `, Music.stinger("${sting}")` : ''}${m.sfx?.length ? `, Music.play_sfx("${m.sfx[0].name}")` : ''}.
+    Music.load_song("res://music/") once, then Music.play(${lit(first)}), Music.set_state(${lit(second)}), Music.set_intensity(0.7)${sting ? `, Music.stinger(${lit(sting)})` : ''}${m.sfx?.length ? `, Music.play_sfx(${lit(m.sfx[0].name)})` : ''}.
 
 Unity (players/unity/AdaptiveMusic.cs)
     Copy this folder to Assets/Resources/Music/, add the AdaptiveMusic component, then
-    music.Play("${first}"), music.SetState("${second}"), music.SetIntensity(0.7f)${sting ? `, music.Stinger("${sting}")` : ''}${m.sfx?.length ? `, music.PlaySfx("${m.sfx[0].name}")` : ''}.
+    music.Play(${lit(first)}), music.SetState(${lit(second)}), music.SetIntensity(0.7f)${sting ? `, music.Stinger(${lit(sting)})` : ''}${m.sfx?.length ? `, music.PlaySfx(${lit(m.sfx[0].name)})` : ''}.
     Changes are scheduled on the audio clock (PlayScheduled), so they land on the beat exactly.
 
 Other engines and middleware (FMOD, Wwise...): the loops are exact, so set each as a looping

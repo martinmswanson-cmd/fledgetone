@@ -51,6 +51,12 @@ test('CSV with quoting', () => {
   assert.equal(csv, 'Name,Timecode,Seconds\r\n"A, ""B""",00:00:02:00,2.000\r\n');
 });
 
+test("CSV: a name a spreadsheet would run as a formula shows as typed", () => {
+  const csv = editorMarkerFile('csv', [{ name: '=HYPERLINK("x")', seconds: 0 }, { name: "+cmd|' /C calc'!A0", seconds: 1 }, { name: '-2', seconds: 2 }], o, 10);
+  const rows = csv.split('\r\n').slice(1, 4);
+  assert.deepEqual(rows.map((r) => r.split(',')[0]), ['"\'=HYPERLINK(""x"")"', "'+cmd|' /C calc'!A0", "'-2"]);
+});
+
 test('1 hour start in drop-frame is 107892 frames', () => {
   const x = editorMarkerFile('premiere', [], { ...o, fps: 29.97, dropFrame: true, startHour: 1 }, 5);
   assert.match(x, /<string>01:00:00;00<\/string>\s*<frame>107892<\/frame>/);

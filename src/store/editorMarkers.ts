@@ -122,7 +122,11 @@ ${body}
 
 /** Name, timecode and seconds, one marker a row. */
 export function markersCsv(markers: readonly EditorMarker[], o: EditorMarkerOptions): string {
-  const cell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  // (A name a spreadsheet would read as a formula, starting = + - @ or a tab, gets a ' in front: it shows as typed)
+  const cell = (raw: string) => {
+    const s = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   return ['Name,Timecode,Seconds', ...markers.map((m) => `${cell(m.name)},${timecodeAt(m.seconds, o)},${m.seconds.toFixed(3)}`)].join('\r\n') + '\r\n';
 }
 

@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A song's names can't run anything from the game kit's instructions**: the examples in the game kit's README (for Godot, Unity and the web) wrote the song's own state, stinger, costume and parameter names into code you copy as they are, so a name made to do it could end its quotes and run as part of your game's code. The names are now written as proper quoted text.
+- **A markers spreadsheet shows names as typed**: a marker named with = + - or @ at the start was read as a formula when the markers' spreadsheet file was opened. It now shows as written.
 - **A bounced dialogue track no longer ducks under itself**: after Bounce in place of a track the others duck under (a game's dialogue or sound effects), the bounce dipped along with the music wherever it spoke, about 22 dB down. It now plays at the level the track had before the bounce, and the music still dips under it as before, live and in exports.
 - **Freezing or bouncing a ducked track no longer ducks it twice**: a track that dips under the dialogue was rendered with the dip in it, and then dipped again as it played, so a frozen pad went 24 dB quieter than it should under the dialogue (and the export, which plays it unfrozen, didn't), and a bounce was too quiet live and in exports. Freezes and bounces are now made without the dip, which is added as they play, so they sound exactly like the track before; moving the dialogue no longer needs a freeze made again.
 
