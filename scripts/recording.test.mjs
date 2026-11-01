@@ -325,3 +325,12 @@ test('takes: a note played just before the wrap is heard stays in its pass', () 
   const clip = take.finish(3, at(3.5), BPM, { passes: true });
   assert.deepEqual(clip.takes.map((t) => t.notes.map((n) => n.note)), [['C4'], ['D4']]);
 });
+
+test("a note quantized at the song's very end stays on the last line, inside the clip", () => {
+  // The clip can't grow past the song's end: the note goes to the line before it, not onto its end
+  const atEnd = clipOf([['C4', 0.99]], 400, 1);
+  const q = quantizeTakeClip(atEnd, '1/16');
+  assert.equal(q.lengthBars, 1);
+  assert.ok(q.notes[0].startOffset < q.lengthBars, String(q.notes[0].startOffset));
+  near(q.notes[0].startOffset, 1 - 1 / 16);
+});

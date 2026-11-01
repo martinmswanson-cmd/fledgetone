@@ -76,6 +76,7 @@ test('ids and table keys that are such names open as plain ids, still joined up,
         { id: name, name: 'Keys', instrumentKey: 'piano', stemGroup: name, output: 'bus', sends: [{ to: 'ret', level: 0.5 }], automation: [{ param: `send:ret`, points: [{ bar: 1, value: 0.5 }] }], sample: { soundId: name }, folder: { id: name, name: 'F' } },
         { id: 'bus', name: 'Bus', instrumentKey: 'bus' },
         { id: 'ret', name: 'Return', instrumentKey: 'return', fx: { pump: { on: true, source: name } } },
+        { id: 'bnc', name: 'Keys (bounce)', instrumentKey: 'audio', bounceOf: name },
       ],
       clips: [{ id: name, trackId: name, startBar: 1, lengthBars: 1, pattern: name, notes: [...notes, { id: name, note: name, startOffset: 0, duration: '8n', velocity: 0.5 }], audio: undefined }],
       markers: [{ id: name, name: 'Calm', bar: 1 }],
@@ -92,6 +93,7 @@ test('ids and table keys that are such names open as plain ids, still joined up,
     assert.equal(p.clips[0].id, `${name}_`);
     assert.deepEqual(p.clips[0].notes.map((n) => n.note), ['C3'], 'the note named so is left out');
     assert.equal(p.tracks[2].fx.pump.source, keys.id, 'the Pump still ducks to it');
+    assert.equal(p.tracks.find((t) => t.id === 'bnc')?.bounceOf, keys.id, 'the bounce is still of it');
     assert.equal(keys.sample.soundId, `${name}_`);
     assert.equal(p.markers[0].id, `${name}_`);
     assert.deepEqual(Object.keys(p.stateOptions), [`${name}_`]);

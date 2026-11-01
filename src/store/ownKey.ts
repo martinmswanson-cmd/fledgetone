@@ -14,7 +14,7 @@ export function own<T>(table: Readonly<Record<string, T>> | null | undefined, ke
 }
 
 /** The fields of a song that hold an id, looked up in tables by it. */
-const ID_FIELDS = new Set(['id', 'trackId', 'clipId', 'soundId', 'stingerId', 'to', 'from', 'output', 'source', 'pattern', 'room', 'tunedFrom', 'reversedFrom', 'shiftedFrom']);
+const ID_FIELDS = new Set(['id', 'trackId', 'clipId', 'soundId', 'stingerId', 'to', 'from', 'output', 'source', 'pattern', 'room', 'tunedFrom', 'reversedFrom', 'shiftedFrom', 'bounceOf']);
 /**
  * The fields of a song that hold a list of ids (the buses Glue made: master.glueMix.buses). The
  * only ones in a song today: a new list of ids needs its field here, or its ids wouldn't follow a renamed part.

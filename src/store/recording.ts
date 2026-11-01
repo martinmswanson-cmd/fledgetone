@@ -305,12 +305,15 @@ export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true): C
   // The lines a note can go to: from the first at or after the start to the last before the end
   const first = Math.ceil(clipTicks / step - EPS) * step;
   const last = Math.ceil(endTicks / step - 1 - EPS) * step;
+  const songLast = Math.ceil((TOTAL_BARS * TICKS_PER_BAR) / step - 1 - EPS) * step;
   const snapped = new Map<string, { note: NoteEvent; tick: number }>();
   for (const note of clip.notes) {
     const played = clipTicks + note.startOffset * TICKS_PER_BAR;
     let tick = Math.max(first, Math.round(played / step) * step);
     // (a clip too short to hold a line: the note stays as played)
     if (!canGrow) tick = first > last ? played : Math.min(last, tick);
+    // (one that can grow still stops at the song's end: kept on the last line before it)
+    else tick = Math.min(tick, Math.max(first, songLast));
     const key = `${note.note}|${tick}`;
     const other = snapped.get(key);
     if (!other || louder(note, other.note)) snapped.set(key, { note, tick });

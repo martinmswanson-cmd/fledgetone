@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A note recorded in the song's very last moment is kept**: with Quantize on, a note played in the last step of the song's last bar was moved onto the clip's end, where it never played. It now goes to the line before.
 - **A Sub enhancer or Glide left from another instrument stays silent**: after changing a track to an instrument with no Sub enhancer or Glide (Keys, Supersaw, Analog Lead, Space Clav...), a Sub or Glide set on the instrument before still played, loud and with no panel to turn it off. They now play only on the instruments that show them, and a one-note designed synth's sub slides with the synth's own glide.
 - **The agent leaves notes hidden by a trim alone**: asked to move or remove all the notes of a clip trimmed shorter, the agent also changed the notes past the trim that don't play, and counted them in what it saw. It now works on the notes you hear, as the piano roll's tools do.
 - **No false caution on a bounced track's suggestions**: every suggestion touching a bounced track said something in it had been brought into range, though nothing had. And a suggestion muting a bounce of drums or of a game's dialogue now has the bars where the ducking changes heard, as it does for the track it came from.
