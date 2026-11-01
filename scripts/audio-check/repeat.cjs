@@ -3,6 +3,7 @@
 //   npx vite --port 5200                 (in another terminal; restart it after editing src/)
 //   node scripts/audio-check/repeat.cjs                         (every case below)
 //   KEYS=synth node scripts/audio-check/repeat.cjs              (every generated instrument)
+//   KEYS=none LONG=all FX=none STARTERS=none node scripts/audio-check/repeat.cjs   (every instrument, long)
 //   KEYS=drums,reeseBass FX=none STARTERS=none node scripts/audio-check/repeat.cjs
 //   STARTERS=trap,drill THREADS=1 KEYS=none FX=none node scripts/audio-check/repeat.cjs
 //
@@ -13,8 +14,15 @@
 // - KEYS: instruments, each playing a short phrase alone (chords, legato, a range of
 //   velocities; every drum of the kit for a kit). "synth", "drums", "sampled" and "all" stand for
 //   those kinds in the instrument catalog; "none" for no instruments. Default: synth,drums.
+// - LONG: instruments again, each playing a half note (a kit: one drum) every LONG_EVERY bars
+//   (default 1) for LONG_BARS bars (default 40: about 80 seconds at 122 BPM), so its voices stop
+//   and start again many times well past a minute (a chorus's sweep once stood still between
+//   notes for a different time in each export, from about 45 seconds in). LONG_EVERY=3 leaves
+//   room for a long release (Wavetable's) to end between notes. Same names as KEYS; default: the
+//   KEYS ones.
 // - FX: inserts, each switched on alone on a reference instrument (FX_KEY, default reeseBass;
-//   the Pump on a kick-led pair). Default: every insert; "none" for none.
+//   the Pump on a kick-led pair). Default: every insert; "none" for none. LONG_FX: inserts (or
+//   "all") the same way under LONG's notes. Default: none.
 // - STARTERS: starter songs, their first STARTER_BARS bars (default 8). Default:
 //   lofi,latin,celtic,plaza,eastern; "none" for none.
 // THREADS sets how many parts a mix may render in at once (1: in one piece; default: the
@@ -70,6 +78,14 @@ const RENDER = async ({ c, runs, threads }) => {
     }
     return out;
   };
+  // A half note (a kit: each drum in turn) every c.every bars, the voice stopping and starting again in each gap
+  const gaps = (key, bars) => {
+    const drums = Object.values(DRUM_NOTES);
+    const at = Array.from({ length: Math.ceil(bars / c.every) }, (_, i) => i * c.every);
+    if (isDrumKind(key)) return at.map((b, i) => note(drums[i % drums.length], b, '4n', 0.8));
+    const [lo, hi] = INSTRUMENTS[key].range;
+    return at.map((b) => note(Math.round((lo + hi) / 2), b, '2n', 0.8));
+  };
   const clip = (id, trackId, notes, lengthBars = 4) => ({ id, trackId, name: id, startBar: 1, lengthBars, notes, isSelected: false });
   const ON = {
     distortion: { on: true, amount: 0.5 }, compressor: { on: true, threshold: -24, ratio: 4, makeup: 3 }, chorus: { on: true, rate: 1.5, depth: 0.6, mix: 0.5 },
@@ -89,13 +105,15 @@ const RENDER = async ({ c, runs, threads }) => {
   } else if (c.kind === 'insert') {
     const t = track('t', c.key, { fx: { ...T.defaultTrackFx(), [c.fx]: ON[c.fx] } });
     const tracks = [t];
-    const clips = [clip('c', 't', isDrumKind(c.key) ? beat() : phrase(c.key))];
+    const clips = [clip('c', 't', c.bars ? gaps(c.key, c.bars) : isDrumKind(c.key) ? beat() : phrase(c.key), c.bars || 4)];
     // The Pump follows a kit's kick
     if (c.fx === 'pump') {
       tracks.push(track('k', 'drums'));
       clips.push(clip('ck', 'k', beat()));
     }
-    song = { tracks, clips, bpm: 120, swing: 0, startBar: 1, endBar: 5, masterFx: T.DEFAULT_MASTER_FX, master: T.defaultMasterSettings() };
+    song = { tracks, clips, bpm: c.bars ? 122 : 120, swing: 0, startBar: 1, endBar: 1 + (c.bars || 4), masterFx: T.DEFAULT_MASTER_FX, master: T.defaultMasterSettings() };
+  } else if (c.kind === 'long') {
+    song = { tracks: [track('t', c.key)], clips: [clip('c', 't', gaps(c.key, c.bars), c.bars)], bpm: 122, swing: 0, startBar: 1, endBar: 1 + c.bars, masterFx: T.DEFAULT_MASTER_FX, master: T.defaultMasterSettings() };
   } else {
     song = { tracks: [track('t', c.key)], clips: [clip('c', 't', isDrumKind(c.key) ? beat() : phrase(c.key))], bpm: 120, swing: 0.2, startBar: 1, endBar: 5, masterFx: T.DEFAULT_MASTER_FX, master: T.defaultMasterSettings() };
   }
@@ -131,6 +149,8 @@ const RENDER = async ({ c, runs, threads }) => {
 };
 
 const PAGES = Math.max(1, Number(process.env.PAGES || 2));
+/** LONG's notes: how many bars, and every how many bars a note starts */
+const LONG = { bars: Number(process.env.LONG_BARS || 40), every: Math.max(1, Number(process.env.LONG_EVERY || 1)) };
 
 (async () => {
   const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -158,11 +178,14 @@ const PAGES = Math.max(1, Number(process.env.PAGES || 2));
     const { INSTRUMENTS, INSTRUMENT_KEYS } = await import('/src/audio/instrumentCatalog.ts');
     return INSTRUMENT_KEYS.map((k) => ({ key: k, kind: INSTRUMENTS[k].kind }));
   });
-  const keys = list(process.env.KEYS, ['synth', 'drums']).flatMap((k) => (['synth', 'drums', 'sampled'].includes(k) ? catalog.filter((i) => i.kind === k).map((i) => i.key) : k === 'all' ? catalog.filter((i) => ['synth', 'drums', 'sampled'].includes(i.kind)).map((i) => i.key) : [k]));
+  const expand = (names) => [...new Set(names.flatMap((k) => (['synth', 'drums', 'sampled'].includes(k) ? catalog.filter((i) => i.kind === k).map((i) => i.key) : k === 'all' ? catalog.filter((i) => ['synth', 'drums', 'sampled'].includes(i.kind)).map((i) => i.key) : [k])))];
+  const keys = expand(list(process.env.KEYS, ['synth', 'drums']));
   const fxKey = process.env.FX_KEY || 'reeseBass';
   const cases = [
-    ...[...new Set(keys)].map((key) => ({ kind: 'instrument', key, label: key })),
+    ...keys.map((key) => ({ kind: 'instrument', key, label: key })),
+    ...(process.env.LONG === undefined ? keys : expand(list(process.env.LONG, []))).map((key) => ({ kind: 'long', key, ...LONG, label: `long:${key}` })),
     ...list(process.env.FX, INSERTS).map((fx) => ({ kind: 'insert', key: fxKey, fx, label: `${fxKey}+${fx}` })),
+    ...list(process.env.LONG_FX, []).flatMap((fx) => (fx === 'all' ? INSERTS : [fx])).map((fx) => ({ kind: 'insert', key: fxKey, fx, ...LONG, label: `long:${fxKey}+${fx}` })),
     ...list(process.env.STARTERS, ['lofi', 'latin', 'celtic', 'plaza', 'eastern']).map((id) => ({ kind: 'starter', id, bars: Number(process.env.STARTER_BARS || 8), label: `starter:${id}` })),
   ];
   const threads = process.env.THREADS ? Number(process.env.THREADS) : undefined;

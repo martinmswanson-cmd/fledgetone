@@ -8,6 +8,7 @@ import { monotonicTime } from './monotonic';
 import { joinsNote } from '../legato';
 import { createWideOutput } from './widen';
 import { createVoicePool } from './poly';
+import { keepOn } from '../keepOn';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
 import type { GlideRef } from '../instruments';
@@ -58,6 +59,8 @@ export function createWavetable(output: Tone.InputNode) {
   const wide = createWideOutput(output, PAD_WIDTH);
   const sweep = new Tone.AutoFilter({ frequency: 0.18, baseFrequency: 280, octaves: 4.5, depth: 0.85, wet: 1 }).start();
   sweep.filter.Q.value = 3;
+  // In an export the sweep runs on while no note sounds (see keepOn.ts)
+  const letGo = keepOn(sweep.input.input as unknown as AudioNode);
   const synth = createVoicePool(
     (context) =>
       new Tone.Synth({
@@ -77,6 +80,7 @@ export function createWavetable(output: Tone.InputNode) {
     releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();
+      letGo();
       sweep.dispose();
       wide.dispose();
     },

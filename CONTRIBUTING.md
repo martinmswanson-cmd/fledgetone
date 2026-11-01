@@ -204,7 +204,7 @@ When a change touches sound, also run the sound checks (they need the dev server
 `npx vite --port 5200`, and Playwright; see [Checking sound](#checking-sound)):
 
 ```sh
-node scripts/audio-check/repeat.cjs              # exports repeat exactly, sample for sample
+node scripts/audio-check/repeat.cjs              # exports repeat exactly, sample for sample (LONG=all: every instrument past a minute, gaps between notes)
 node scripts/audio-check/starters-loudness.cjs   # every starter's loudness (IDS=<id> for some)
 node scripts/audio-check/live-controllers.cjs    # live: a plugin's held controllers after Stop, a loop, an unmute
 node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost, releases, Stop, stalls
@@ -308,8 +308,10 @@ are the credits of the sound sources and the owner's name and contact in `TERMS.
   `Math.random` or the time. The export's offline contexts add up a node's inputs in a fixed order
   (`exactSums.ts`) and run sources' ended handlers on the render's clock (`endedOnTime.ts`); both
   hook into `connect` and the sources' `onended` / `'ended'` listeners, so new code gets them by
-  using those as usual. Run `scripts/audio-check/repeat.cjs` after touching an
-  instrument or effect.
+  using those as usual. An effect whose own oscillator sweeps a delay or filter between notes (a
+  chorus) is kept switched on in an export with `keepOn` (`keepOn.ts`): else the browser stops it,
+  sweep and all, while nothing plays, for a different time in each render. Run
+  `scripts/audio-check/repeat.cjs` after touching an instrument or effect.
 - **Code inlined into a worklet or a Worker as text sees no module constants.** A function sent as
   source text (`fn.toString()`) works in the dev server, then fails in a production build, where
   the minifier has renamed the constants it reads. Pass its constants in as arguments, as
@@ -341,7 +343,9 @@ heard, attach a short before-and-after recording of the same phrase to the pull 
 
 Exports must repeat exactly. `node scripts/audio-check/repeat.cjs` renders every generated
 instrument, kit, insert and a few starters twice and says which differ (`KEYS`, `FX`, `STARTERS`
-and `THREADS` pick what it renders; see its header). Run it after touching an instrument or effect.
+and `THREADS` pick what it renders; see its header), and each instrument again for over a minute
+with a gap after every note (`LONG`, `LONG_EVERY`, `LONG_FX`), where a voice stopping and starting
+again shows up what only goes wrong late in a song. Run it after touching an instrument or effect.
 
 ## Pull requests
 

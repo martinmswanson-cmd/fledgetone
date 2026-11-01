@@ -463,7 +463,10 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   (`exactSums.ts` gives each node at most two, through pass-through links); and it reports a
   source's end whenever the main thread gets to it, so the nodes a note let go of went at
   different moments, and the filters after them rang out for different lengths
-  (`endedOnTime.ts` runs ended handlers at the render's suspends instead). A render is split into
+  (`endedOnTime.ts` runs ended handlers at the render's suspends instead); and once nothing plays
+  into a delay or a filter, it switches the node off when its tail is over, again whenever the main
+  thread gets to it, stopping the oscillator that sweeps it (a chorus) for a different time in
+  each render (`keepOn.ts` keeps such a node on in an export). A render is split into
   parts the same way whether or not they run side by side.
 
 ## Builds
