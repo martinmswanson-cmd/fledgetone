@@ -73,23 +73,38 @@ export function applyComp(clip: Clip, makeId: () => string): Clip {
 /**
  * A MIDI folder whose notes were edited in the piano roll (moved, transposed, quantized): each
  * comp stretch's edited notes go back into the take it plays, so the next comp change keeps them.
+ * Only the clip's span counts: notes past a trimmed end are hidden, not edits, and the takes' notes
+ * out there stay as recorded (so dragging the end back out brings each take back whole).
  * Unedited (or a mic folder): as it is.
  */
 export function keepNoteEdits(clip: Clip): Clip {
   if (clip.audio || !clip.takes?.length) return clip;
   const playing = compNotes(clip);
+  const inSpan = (n: { startOffset: number }) => n.startOffset >= -EPS && n.startOffset < clip.lengthBars - EPS;
+  const shown = clip.notes.filter(inSpan);
   const key = (n: Omit<NoteEvent, 'id'>) => `${n.note}|${n.startOffset.toFixed(6)}|${n.duration}|${n.velocity}`;
-  const now = clip.notes.map(key).sort().join(',');
+  const now = shown.map(key).sort().join(',');
   if (now === playing.map(key).sort().join(',')) return clip;
   const segs = compSegments(clip);
   const ends = segmentEnds(segs, clip.lengthBars);
   const takes = clip.takes.map((t) => ({ ...t, notes: [...(t.notes ?? [])] }));
   segs.forEach((s, i) => {
-    const inside = (n: { startOffset: number }) => n.startOffset >= s.at - EPS && (n.startOffset < ends[i] - EPS || i === segs.length - 1);
+    const inside = (n: { startOffset: number }) => n.startOffset >= s.at - EPS && n.startOffset < ends[i] - EPS;
     const take = takes[s.take];
-    take.notes = [...take.notes.filter((n) => !inside(n)), ...clip.notes.filter(inside)];
+    take.notes = [...take.notes.filter((n) => !inside(n)), ...shown.filter(inside)];
   });
   return { ...clip, takes };
+}
+
+/**
+ * A MIDI folder's notes with its end moved to `lengthBars`: drawn back out, the stretch it gains
+ * plays the comp's notes there (the takes keep them while hidden); trimmed, the notes stay as they
+ * are (past the end, hidden). A mic folder, or not a folder: its notes as they are.
+ */
+export function notesForLength(clip: Clip, lengthBars: number, makeId: () => string): NoteEvent[] {
+  if (clip.audio || !clip.takes?.length || lengthBars <= clip.lengthBars + EPS) return clip.notes;
+  const gained = compNotes({ ...clip, lengthBars }).filter((n) => n.startOffset >= clip.lengthBars - EPS);
+  return [...clip.notes.filter((n) => n.startOffset < clip.lengthBars - EPS), ...gained.map((n) => ({ ...n, id: makeId() }))];
 }
 
 /** The comp with take `take` playing from `from` to `to` (bars into the clip), the rest as it was. */

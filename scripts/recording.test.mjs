@@ -232,6 +232,23 @@ test('two strikes of one note on the same line become one (the louder, then the 
   assert.equal(quantizeTakeClip(clipOf([['C4', 0.99]], 400, 1), '1/16').lengthBars, 1);
 });
 
+test('a punch-in off the grid: a note just after it snaps to the next line, never before the clip or onto its end', () => {
+  // Punched in at bar 2.01 (out at 3), a note played at 2.03: the line before (2.0) is outside the clip
+  const punch = clipOf([['C4', 0.02], ['D4', 0.5], ['E4', 0.98]], 2.01, 0.99);
+  const q = quantizeTakeClip(punch, '1/8');
+  const at = q.notes.map((n) => [n.note, +(punch.startBar + n.startOffset).toFixed(6)]);
+  assert.deepEqual(at, [['C4', 2.125], ['D4', 2.5], ['E4', 2.875]]);
+  assert.ok(q.notes.every((n) => n.startOffset >= 0 && n.startOffset < q.lengthBars));
+  assert.equal(q.lengthBars, 0.99);
+  // A punch too short to hold a grid line: the note stays as played
+  const tiny = quantizeTakeClip(clipOf([['C4', 0.01]], 2.01, 0.05), '1/8');
+  assert.equal(+tiny.notes[0].startOffset.toFixed(6), 0.01);
+  // A folder's take (can't grow): a note snapped onto the end goes to the line before it
+  const folderTake = quantizeTakeClip(clipOf([['C4', 1.99]], 1, 2), '1/16', false);
+  assert.equal(folderTake.notes[0].startOffset, 1.9375);
+  assert.equal(folderTake.lengthBars, 2);
+});
+
 test('record settings: missing or bad values fall back, good ones are kept', () => {
   assert.deepEqual(normalizeRecordOptions(null), DEFAULT_RECORD_OPTIONS);
   assert.deepEqual(normalizeRecordOptions('junk'), DEFAULT_RECORD_OPTIONS);

@@ -148,7 +148,7 @@ import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tid
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
-import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
+import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -1376,7 +1376,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         played = played.slice(-room);
       }
       // A take folder: quantized as it's made (one undo step), each take as it was played otherwise
-      const q = (notes: NoteEvent[]) => (grid === 'off' ? notes : quantizeTakeClip({ ...(same ?? ({} as Clip)), startBar: takeClip.startBar, lengthBars: takeClip.lengthBars, notes } as Clip, grid).notes);
+      // (inside the folder's span: its takes share one length, so it can't grow for one note)
+      const q = (notes: NoteEvent[]) =>
+        grid === 'off' ? notes : quantizeTakeClip({ ...(same ?? ({} as Clip)), startBar: takeClip.startBar, lengthBars: takeClip.lengthBars, notes } as Clip, grid, false).notes;
       const folderId = uid('clip');
       const name = `Take ${maxOf(0, s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`;
       const folderOf = (passes: typeof played): Clip => {
@@ -2710,7 +2712,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       updateClip(clipId, (c) => {
         // An audio clip ends where its sound does, at the latest
         const longest = c.audio ? audioLengthLimitAt(c, soundSeconds(c.audio.soundId), songTempo(get())) : Infinity;
-        return { lengthBars: Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, longest, newLengthBars)) };
+        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, longest, newLengthBars));
+        // (a take folder drawn back out plays its comp's notes in the stretch it gains)
+        return { lengthBars, notes: notesForLength(c, lengthBars, () => uid('note')) };
       }),
 
     splitClip: (clipId, atBar) =>
