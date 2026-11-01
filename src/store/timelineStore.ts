@@ -148,7 +148,7 @@ import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tid
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
-import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
+import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -2698,10 +2698,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const delta = start - c.startBar;
         // Notes keep their absolute song position; offsets shift so trimmed notes become hidden
         // (recoverable); an audio clip plays from further into (or back towards the start of) its sound
+        // (a take folder drawn back out plays its comp's notes in the stretch it gains)
         return {
           startBar: start,
           lengthBars: end - start,
-          notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
+          notes: notesForStart(c, delta, () => uid('note')),
           ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
           ...(c.stepLanes ? { stepLanes: moveStepLanes(c.stepLanes, -delta) } : {}),
           ...(c.audio ? { audio: trimAudioStart(c.audio, soundShift(c, delta, tempo)) } : {}),

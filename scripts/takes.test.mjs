@@ -180,6 +180,29 @@ test('a folder with its end trimmed back keeps every take as recorded', () => {
   assert.equal(t.notesForLength(c, 2, () => 'g'), c.notes);
 });
 
+test('a folder with its start trimmed in and back out keeps every take as recorded', () => {
+  // Comped A | B | A, the start trimmed in a bar (B now plays from the clip's start), then back out
+  const c = t.applyComp({ ...folder(), comp: [{ at: 0, take: 0 }, { at: 1, take: 1 }, { at: 3, take: 0 }] }, () => 'n');
+  const trim = (clip, delta) => ({ ...clip, startBar: clip.startBar + delta, lengthBars: clip.lengthBars - delta, notes: t.notesForStart(clip, delta, () => 'g'), ...t.trimTakes(clip, delta, 0) });
+  const trimmedIn = trim(c, 1);
+  assert.deepEqual(trimmedIn.notes.map((n) => n.startOffset).sort(), [-1, 0.5, 1.5, 2]);
+  assert.equal(t.keepNoteEdits(trimmedIn), trimmedIn);
+  // Back out: the bar it gains plays B (what the comp says), not the A note it hid
+  const out = trim(trimmedIn, -1);
+  assert.deepEqual(out.comp, [{ at: 0, take: 1 }, { at: 3, take: 0 }]);
+  assert.deepEqual(out.notes.map((n) => n.startOffset).sort(), [0.5, 1.5, 2.5, 3]);
+  assert.equal(t.keepNoteEdits(out), out);
+  // A comp change after: every take as recorded
+  const comped = t.applyComp({ ...out, comp: t.setCompRange(out, 3, 4, 1) }, () => 'n');
+  assert.deepEqual(comped.takes[0].notes.map((n) => n.startOffset), [0, 1, 2, 3]);
+  assert.deepEqual(comped.takes[1].notes.map((n) => n.startOffset), [0.5, 1.5, 2.5, 3.5]);
+  assert.deepEqual(comped.notes.map((n) => n.startOffset), [0.5, 1.5, 2.5, 3.5]);
+  // Not drawn back out (or not a MIDI folder): the notes just move
+  assert.deepEqual(t.notesForStart(c, 1, () => 'g'), c.notes.map((n) => ({ ...n, startOffset: n.startOffset - 1 })));
+  const plain = { ...c, takes: undefined, comp: undefined };
+  assert.deepEqual(t.notesForStart(plain, -1, () => 'g'), c.notes.map((n) => ({ ...n, startOffset: n.startOffset + 1 })));
+});
+
 test('review fixes: recorded passes', () => {
   const loop = { inBar: 5, outBar: 7 };
   // Takes on, one pass and a 50 ms tail: the tail isn't a take
