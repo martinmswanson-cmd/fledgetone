@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A suggestion muting a bounce is heard where the dip or pumping changes**: muting a bounced track of a game's dialogue or of drums changes the dip or the pumping where the track it came from plays, wherever the bounce's own clip is. After the bounce's clip was moved or deleted, the agent's suggestion left those bars out of what you're played, and could say there was nothing to hear. It now plays them.
 - **A song's names can't run anything from the game kit's instructions**: the examples in the game kit's README (for Godot, Unity and the web) wrote the song's own state, stinger, costume and parameter names into code you copy as they are, so a name made to do it could end its quotes and run as part of your game's code. The names are now written as proper quoted text.
 - **A markers spreadsheet shows names as typed**: a marker named with = + - or @ at the start was read as a formula when the markers' spreadsheet file was opened. It now shows as written.
 - **A bounced dialogue track no longer ducks under itself**: after Bounce in place of a track the others duck under (a game's dialogue or sound effects), the bounce dipped along with the music wherever it spoke, about 22 dB down. It now plays at the level the track had before the bounce, and the music still dips under it as before, live and in exports.

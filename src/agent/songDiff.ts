@@ -599,8 +599,11 @@ function hearing(before: ProjectSnapshot, after: ProjectSnapshot): (c: SongChang
     const dipped = [...new Set(tracks.flatMap(proxyDucked))].filter((id) => !tracks.includes(id));
     if (how === 'track' && tracks.length) {
       const own = tracks.flatMap((id) => sounds(id));
-      const duck = ducked.flatMap((p) => own.map((r) => ({ fromBar: r.fromBar, toBar: past(r.toBar, duckTail(p)) })));
-      const dips = dipped.flatMap((d) => own.map((r) => dipRange(r, d)));
+      // (A bounce's Pump and dip follow the notes of the track it stands in for, wherever its own clip is)
+      const sources = [...new Set(tracks.flatMap((id) => songs.map((s) => s.tracks.find((t) => t.id === id)?.bounceOf).filter((b): b is string => !!b)))];
+      const drives = [...own, ...sources.flatMap((id) => sounds(id))];
+      const duck = ducked.flatMap((p) => drives.map((r) => ({ fromBar: r.fromBar, toBar: past(r.toBar, duckTail(p)) })));
+      const dips = dipped.flatMap((d) => drives.map((r) => dipRange(r, d)));
       return { heard: joinRanges([...own, ...duck, ...dips]), sure: tracks.every((id) => sureOf(id)) && [...ducked, ...dipped].every((id) => tailOf(id).sure) };
     }
     // (a change on a track rings on past its bars: its notes' release, the track's effects, and those it plays into)
