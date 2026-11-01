@@ -15,7 +15,7 @@ register(
   }
 }`)
 );
-const { bounceInPlace, bounceStandIns, freezeFingerprint, freezeIsCurrent, liveView, trackForFreezing, frozenClipId } = await import('../src/store/freeze.ts');
+const { bounceDeleteLoss, bounceDeleteWords, bounceInPlace, bounceStandIns, freezeFingerprint, freezeIsCurrent, liveView, trackForFreezing, frozenClipId } = await import('../src/store/freeze.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 
 const track = (id, key, extra = {}) => ({ id, name: id, color: '#888', instrumentKey: key, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0.2, delaySend: 0, ...extra });
@@ -238,4 +238,32 @@ test("a drum track bounced in place still counts for the Pumps while its bounce 
   assert.equal(fp(pumped, bounced), fp(pumped, all));
   const silent = { ...bounced, tracks: bounced.tracks.map((t) => (t.id === 'b' ? { ...t, isMuted: true } : t)) };
   assert.notEqual(fp(pumped, silent), fp(pumped, all));
+});
+
+test('deleting a muted source behind a heard bounce says what of its sound stops', () => {
+  const made = { ...track('b', 'audio'), name: 'Drums (bounced)' };
+  const pad = { ...track('pad', 'keys'), name: 'Pad', fx: { ...defaultTrackFx(), pump: { ...defaultTrackFx().pump, on: true, trigger: 'kick' } } };
+  const kit = { ...drums, name: 'Drums' };
+  const clips = base().clips;
+  const tracks = bounceInPlace([pad, kit], kit, made);
+  const loss = bounceDeleteLoss(tracks, clips, 'drums');
+  assert.deepEqual(loss.pumped.map((t) => t.id), ['pad']);
+  assert.equal(loss.ducks, false);
+  assert.equal(bounceDeleteWords('Drums', loss), 'Deleted Drums: the pumping it gave Pad through its bounce stops too. Undo to bring it back.');
+  // Nothing to say: the bounce muted, no Pump on the kick, a Pump on the snare with only kicks played, or a muted Pad
+  assert.equal(bounceDeleteLoss(tracks.map((t) => (t.id === 'b' ? { ...t, isMuted: true } : t)), clips, 'drums'), null);
+  assert.equal(bounceDeleteLoss(bounceInPlace([synth, kit], kit, made), clips, 'drums'), null);
+  const snare = { ...pad, fx: { ...pad.fx, pump: { ...pad.fx.pump, trigger: 'snare' } } };
+  assert.equal(bounceDeleteLoss(bounceInPlace([snare, kit], kit, made), clips, 'drums'), null);
+  assert.equal(bounceDeleteLoss(bounceInPlace([{ ...pad, isMuted: true }, kit], kit, made), clips, 'drums'), null);
+  // Nor for a track with no bounce, or the bounce itself
+  assert.equal(bounceDeleteLoss([pad, kit], clips, 'drums'), null);
+  assert.equal(bounceDeleteLoss(tracks, clips, 'b'), null);
+  // A proxy behind its bounce: the dip it gives the others stops
+  const voice = { ...track('vo', 'audio'), name: 'Voice', duckProxy: { depth: 8 } };
+  const proxied = bounceInPlace([pad, voice], voice, made);
+  const duck = bounceDeleteLoss(proxied, [], 'vo');
+  assert.deepEqual(duck, { pumped: [], ducks: true });
+  assert.equal(bounceDeleteWords('Voice', duck), 'Deleted Voice: the dip it gave the other tracks through its bounce stops too. Undo to bring it back.');
+  assert.equal(bounceDeleteWords('Drums', { pumped: [pad, synth], ducks: true }), 'Deleted Drums: the pumping it gave Pad and lead, and the dip it gave the other tracks through its bounce stop too. Undo to bring it back.');
 });

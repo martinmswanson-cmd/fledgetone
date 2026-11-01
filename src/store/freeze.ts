@@ -37,6 +37,35 @@ export function bounceStandIns(tracks: readonly Track[], heard: ReadonlySet<stri
 }
 
 /**
+ * What stops when track `id` is deleted while a bounce of it is heard standing in for it: the
+ * Pumps its kicks or snares drive on other heard tracks, and the dip its proxy gives the others.
+ * Its own sound is gone already (it's muted), so this is all the delete changes; null when nothing.
+ */
+export function bounceDeleteLoss(tracks: readonly Track[], clips: readonly Clip[], id: string): { pumped: Track[]; ducks: boolean } | null {
+  const source = tracks.find((t) => t.id === id);
+  const anySolo = tracks.some((t) => t.isSoloed);
+  const sounds = new Set(tracks.filter((t) => !t.isMuted && (!anySolo || t.isSoloed)).map((t) => t.id));
+  if (!source || !bounceStandIns(tracks, sounds).has(id)) return null;
+  // (The hits it plays, as the scheduler reports them to the Pumps)
+  const hits = new Set(
+    clips.flatMap((c) => (c.trackId === id ? c.notes.filter((n) => n.startOffset >= 0 && n.startOffset < c.lengthBars).map((n) => pumpHitOf(source.instrumentKey, n.note)) : [])).filter((h): h is 'kick' | 'snare' => !!h)
+  );
+  const pumped = isDrumKind(source.instrumentKey)
+    ? tracks.filter((t) => t.id !== id && sounds.has(t.id) && t.fx.pump.on && pumpFollowsDrums(t.fx.pump.trigger) && [...hits].some((h) => pumpHears(t.fx.pump.trigger, h)))
+    : [];
+  const ducks = !!source.duckProxy && tracks.some((t) => t.id !== id && t.bounceOf !== id && sounds.has(t.id));
+  return pumped.length || ducks ? { pumped, ducks } : null;
+}
+
+/** The delete toast for `name` when `loss` stops (see bounceDeleteLoss), in plain words. */
+export function bounceDeleteWords(name: string, loss: { pumped: readonly Track[]; ducks: boolean }): string {
+  const names = loss.pumped.map((t) => t.name);
+  const who = names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} other tracks` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+  const parts = [...(names.length ? [`the pumping it gave ${who}`] : []), ...(loss.ducks ? ['the dip it gave the other tracks'] : [])];
+  return `Deleted ${name}: ${parts.join(', and ')} through its bounce ${parts.length > 1 ? 'stop' : 'stops'} too. Undo to bring it back.`;
+}
+
+/**
  * The tracks after a Bounce in place of `source` onto `made` (a new Audio track, not yet among
  * `tracks`), which goes just under it and takes over its volume, pan, sends, output, distance,
  * folder, their automation and its solo (soloed, the muted source would leave the song silent).
