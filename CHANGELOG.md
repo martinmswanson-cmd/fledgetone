@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Renaming a game sound to the name it already has leaves Undo and Redo alone**: typing a name that comes out the same (such as "Hit" for "hit") added an empty undo step and threw away what you could redo, and the field kept showing what you typed. Now nothing changes, and the field shows the name kept.
 - **A share link no longer carries your video's file name**: a song with a reference video put the video's file name, size and date in its share link, and the person opening it saw the name. The video can't travel in a link anyway, so the link now leaves it out.
 - **Exported file names keep no hidden characters**: a name with a tab, an escape or another control character, or an invisible mark that turns text round, kept it in the game kit's, the web runtime's, the stems' and other downloads' file names, where Windows refuses it and two names could come out as one file when unzipped. They're now left out (a control character becomes "-").
 - **Synth notes and the Sub enhancer start the same way every time, live and in the export**: an oscillator could start with a split-second blip at another pitch and then at a different point in its wave depending on exactly when the note fell, so identical bass notes under a Sub enhancer could differ by up to 12 dB, and what you heard live could differ from the export. Each note now starts cleanly on its own pitch at the same point every time. Exports of songs using the synths, the 808, chiptune and effect sounds change very slightly.

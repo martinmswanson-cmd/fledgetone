@@ -3054,16 +3054,16 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       return names;
     },
     updateGameSfx: (id, patch) =>
-      set((s) => ({
-        gameSfx: s.gameSfx.map((x) => {
-          if (x.id !== id) return x;
-          const next = { ...x, ...patch };
-          // A new name is made game-safe and unique
-          if (patch.name !== undefined) next.name = createGameSfx(patch.name, x.sound, s.gameSfx.filter((y) => y.id !== id), next.variations).name;
-          return next;
-        }),
-        ...pushPast(s),
-      })),
+      set((s) => {
+        const was = s.gameSfx.find((x) => x.id === id);
+        if (!was) return s;
+        const next = { ...was, ...patch };
+        // A new name is made game-safe and unique
+        if (patch.name !== undefined) next.name = createGameSfx(patch.name, was.sound, s.gameSfx.filter((y) => y.id !== id), next.variations).name;
+        // (A change that leaves it as it was, such as a name that cleans to the same one, isn't an undo step)
+        if ((Object.keys(next) as Array<keyof typeof next>).every((k) => next[k] === was[k])) return s;
+        return { gameSfx: s.gameSfx.map((x) => (x === was ? next : x)), ...pushPast(s) };
+      }),
     deleteGameSfx: (id) => set((s) => ({ gameSfx: s.gameSfx.filter((x) => x.id !== id), ...pushPast(s) })),
     costumes: [],
     addCostume: (preset) => {

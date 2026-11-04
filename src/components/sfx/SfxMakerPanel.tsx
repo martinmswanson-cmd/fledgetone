@@ -1078,7 +1078,12 @@ const GameSounds: React.FC = () => {
               <input
                 key={g.name}
                 defaultValue={g.name}
-                onBlur={(e) => e.target.value !== g.name && t.updateGameSfx(g.id, { name: e.target.value })}
+                onBlur={(e) => {
+                  if (e.target.value === g.name) return;
+                  t.updateGameSfx(g.id, { name: e.target.value });
+                  // (The field shows the name kept, also when it came out as it was)
+                  e.target.value = useTimelineStore.getState().gameSfx.find((x) => x.id === g.id)?.name ?? g.name;
+                }}
                 aria-label={`Name of ${g.name}`}
                 className="h-6 w-56 bg-forge-bg border border-forge-border rounded px-1.5 font-mono text-forge-text focus:outline-none focus:border-cyan-500"
               />
