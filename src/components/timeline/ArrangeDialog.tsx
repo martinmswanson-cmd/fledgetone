@@ -9,7 +9,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { showToast } from './toastStore';
-import { useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { barNumberAt, barNumberNear, barNumberStart, barSpan, rulerBarsLength } from '../../store/timelineTypes';
 import { NOTE_NAMES } from '../../store/songKey';
 import { songKey } from '../../store/smartActions';
 import { DARK_SCALES, DARK_SOUNDS, DARK_STYLES, darkKeyFor, type DarkRegister, type DarkScale, type DarkSound, type DarkStyle } from '../../store/darkMelody';
@@ -19,6 +20,7 @@ import { TAG_DUCK_DB } from '../../store/producerTag';
 import { DRUM_STYLES, type DrumStyle } from '../../store/smartTools';
 import { addDropFx, addStop, beatSwitch, dropOut, importTag, layOutSong, loadTag, placeTag, saveTag, writeDarkMelody } from '../../store/arrangeActions';
 import { startMic, type MicSession } from '../../audio/micRecorder';
+import type { MeterMap } from '../../audio/tempoMap';
 import { initAudio } from '../../audio/engine';
 import { pickAudioFiles } from './audioFiles';
 import { useArrangeDialog, type ArrangeRange, type ArrangeTab } from './arrangeDialogStore';
@@ -36,6 +38,13 @@ const TABS: ReadonlyArray<{ id: ArrangeTab; name: string }> = [
 ];
 
 const say = (message: string | null | undefined) => message && showToast(message);
+
+/** The last bar a bar field takes, as the ruler numbers it (400 in 4/4). */
+const lastBar = (meter: MeterMap) => barNumberAt(TOTAL_BARS, meter);
+
+/** Section lengths in the ruler's bars as lengths in positions (`perBar` long each). */
+const inPositions = (lengths: SectionLengths, perBar: number): SectionLengths =>
+  perBar === 1 ? lengths : (Object.fromEntries(Object.entries(lengths).map(([k, n]) => [k, n * perBar])) as SectionLengths);
 
 /** The Arrange a beat dialog (opened with openArrange). */
 export const ArrangeDialog: React.FC = () => {
@@ -75,7 +84,9 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
   const pitched = tracks.filter((t) => { const r = trackRole(t); return r === 'melody' || r === 'bass'; });
   const initialTarget = pitched.find((t) => t.id === (trackId ?? selectedId))?.id ?? `new:${DARK_STYLES.find((d) => d.id === o.style)!.sound}`;
   const [target, setTarget] = useState(initialTarget);
-  const [at, setAt] = useState(Math.max(1, Math.floor(bar ?? playhead)));
+  const meter = useSongMeter();
+  // The bar as the ruler numbers it (a measure, not in 4/4)
+  const [at, setAt] = useState(Math.max(1, barNumberAt(bar ?? playhead, meter)));
   /** The clip this dialog wrote last: New idea rewrites it */
   const written = useRef<string | null>(null);
   const set = (patch: Partial<typeof o>) => setO((x) => {
@@ -90,7 +101,7 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
   };
   const write = (seed: number, replace: boolean) => {
     const where = target.startsWith('new:') ? { sound: target.slice(4) as DarkSound } : { trackId: target };
-    const result = writeDarkMelody({ ...o, root, seed }, replace && written.current ? { ...where, replaceClipId: written.current } : where, at);
+    const result = writeDarkMelody({ ...o, root, seed }, replace && written.current ? { ...where, replaceClipId: written.current } : where, barNumberStart(at, meter));
     if (!result) return showToast('Pick a melody track (or a new one): drums, audio and FX tracks take no melody.');
     // (it would go past the most a song can have: nothing was done)
     if (typeof result === 'string') return showToast(result);
@@ -138,7 +149,7 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
         </label>
         <label className={field}>
           At bar
-          <input type="number" min={1} max={400} className={control} value={at} onChange={(e) => setAt(Math.max(1, Math.round(Number(e.target.value) || 1)))} />
+          <input type="number" min={1} max={lastBar(meter)} className={control} value={at} onChange={(e) => setAt(Math.max(1, Math.round(Number(e.target.value) || 1)))} />
         </label>
       </div>
       <label className={field}>
@@ -167,20 +178,26 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
   const tracks = useTimelineStore((s) => s.tracks);
   const loop = useTimelineStore((s) => s.loopRegion);
   const playhead = useTimelineStore((s) => s.playheadPosition);
+  const meter = useSongMeter();
   const sounding = tracks.filter((t) => trackRole(t) !== 'mix');
-  const start = Math.max(2, Math.round(bar ?? playhead));
+  // Bars typed here are the ruler's (measures, not in 4/4); the actions take positions (see at)
+  const start = Math.max(2, barNumberNear(bar ?? playhead, meter));
   const [dropBar, setDropBar] = useState(start);
   const [out, setOut] = useState<Set<string>>(() => new Set(sounding.filter((t) => trackRole(t) !== 'melody').map((t) => t.id)));
   const [outBars, setOutBars] = useState(1);
   const [stopBeats, setStopBeats] = useState<1 | 0.5>(1);
   const [fxBars, setFxBars] = useState(2);
   const [early, setEarly] = useState(0);
-  const [from, setFrom] = useState(Math.max(1, Math.round(loop.inBar)));
-  const [to, setTo] = useState(Math.max(Math.round(loop.inBar) + 1, Math.round(loop.outBar)));
+  const [from, setFrom] = useState(Math.max(1, barNumberNear(loop.inBar, meter)));
+  const [to, setTo] = useState(Math.max(barNumberNear(loop.inBar, meter) + 1, barNumberNear(loop.outBar, meter)));
   const [mode, setMode] = useState<SwitchMode>('half');
   const [style, setStyle] = useState<DrumStyle>('trap');
   const [seed, setSeed] = useState(1);
   const num = (v: string, min = 1) => Math.max(min, Math.round(Number(v) || min));
+  const at = (n: number) => barNumberStart(n, meter);
+  const drop = at(dropBar);
+  // `n` of the ruler's bars before the drop end on it (half a bar: half of the bar before)
+  const beforeDrop = (n: number) => (n < 1 ? n * (drop - at(dropBar - 1)) : drop - at(dropBar - n));
   const toggle = (id: string) => setOut((s) => {
     const n = new Set(s);
     if (n.has(id)) n.delete(id);
@@ -193,7 +210,7 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
         <h4 className="text-xs font-semibold text-forge-text">Into a drop</h4>
         <label className={`${field} w-40`}>
           The drop is at bar
-          <input type="number" min={2} max={400} className={control} value={dropBar} onChange={(e) => setDropBar(num(e.target.value, 2))} />
+          <input type="number" min={2} max={lastBar(meter)} className={control} value={dropBar} onChange={(e) => setDropBar(num(e.target.value, 2))} />
         </label>
         <div className="flex flex-wrap items-end gap-2">
           <span className="text-[11px] text-forge-muted w-full">Drop out (silent for the bars before the drop):</span>
@@ -210,13 +227,13 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
             <option value={1}>1 bar</option>
             <option value={2}>2 bars</option>
           </select>
-          <button type="button" className={secondary} onClick={() => say(dropOut([...out], dropBar - outBars, dropBar))}>Drop out</button>
+          <button type="button" className={secondary} onClick={() => say(dropOut([...out], drop - beforeDrop(outBars), drop))}>Drop out</button>
           <span className="w-px h-5 bg-forge-border mx-1" />
           <select className={control} value={stopBeats} onChange={(e) => setStopBeats(Number(e.target.value) as 1 | 0.5)} aria-label="Stop length">
             <option value={1}>1 beat</option>
             <option value={0.5}>half a beat</option>
           </select>
-          <button type="button" className={secondary} onClick={() => say(addStop(dropBar - 1, stopBeats))} title="Every track silent at the end of the bar before the drop">Stop before the drop</button>
+          <button type="button" className={secondary} onClick={() => say(addStop(at(dropBar - 1), stopBeats))} title="Every track silent at the end of the bar before the drop">Stop before the drop</button>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <select className={control} value={fxBars} onChange={(e) => setFxBars(Number(e.target.value))} aria-label="Riser length">
@@ -227,8 +244,8 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
             <option value={0.25}>ending a beat early (for a stop)</option>
             <option value={0.125}>ending half a beat early</option>
           </select>
-          <button type="button" className={secondary} onClick={() => say(addDropFx('riser', dropBar, fxBars, early))}>Riser</button>
-          <button type="button" className={secondary} onClick={() => say(addDropFx('reverse', dropBar, fxBars, early))}>Reverse cymbal</button>
+          <button type="button" className={secondary} onClick={() => say(addDropFx('riser', drop, beforeDrop(fxBars), early))}>Riser</button>
+          <button type="button" className={secondary} onClick={() => say(addDropFx('reverse', drop, beforeDrop(fxBars), early))}>Reverse cymbal</button>
         </div>
       </section>
       <section className="flex flex-col gap-2 border-t border-forge-border pt-3">
@@ -257,7 +274,7 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
               </select>
             </label>
           )}
-          <button type="button" className={primary} onClick={() => { say(beatSwitch(from, to, mode, style, seed)); setSeed(seed + 1); }}>Beat switch</button>
+          <button type="button" className={primary} onClick={() => { say(beatSwitch(at(from), at(to), mode, style, seed)); setSeed(seed + 1); }}>Beat switch</button>
         </div>
         <p className="text-[11px] text-forge-muted">{SWITCH_MODES.find((m) => m.id === mode)!.detail}.</p>
       </section>
@@ -273,13 +290,18 @@ const LENGTH_CHOICES = [0, 4, 8, 12, 16, 24, 32];
 const FormTab: React.FC = () => {
   const loop = useTimelineStore((s) => s.loopRegion);
   const bpm = useTimelineStore((s) => s.bpm);
-  const [from, setFrom] = useState(Math.max(1, Math.round(loop.inBar)));
-  const [loopBars, setLoopBars] = useState(Math.round(loop.outBar - loop.inBar) >= 8 ? 8 : 4);
+  const meter = useSongMeter();
+  // Bars here are the ruler's (measures, not in 4/4)
+  const [from, setFrom] = useState(Math.max(1, barNumberNear(loop.inBar, meter)));
+  const [loopBars, setLoopBars] = useState(Math.round(barSpan(loop.inBar, loop.outBar, meter)) >= 8 ? 8 : 4);
   const [lengths, setLengths] = useState<SectionLengths>(() => defaultLengths(loopBars));
   const [drop, setDrop] = useState(true);
   const plan = planSongForm(lengths);
   const total = plan.reduce((n, s) => n + s.bars, 0);
-  const seconds = Math.round((total * 240) / bpm);
+  // The song is laid out in positions: the loop and each section as long as those bars are there
+  const start = barNumberStart(from, meter);
+  const perBar = rulerBarsLength(start, 1, meter);
+  const seconds = Math.round((total * perBar * 240) / bpm);
   const kinds = [...new Set(SONG_FORM)] as SectionKind[];
   return (
     <div className="flex flex-col gap-3">
@@ -314,7 +336,7 @@ const FormTab: React.FC = () => {
         {plan.map((s) => `${s.name} ${s.bars}`).join(' · ')} = {total} bars, about {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')} at {bpm} BPM. Intro and outro: the melody alone. Verses: a thinner beat and a softer melody. Bridge: the kick under the melody and bass. Hooks: everything. Markers name each section; anything after the loop moves later.
       </p>
       <div className="flex justify-end">
-        <button type="button" className={primary} disabled={!total} onClick={() => say(layOutSong(from, loopBars, lengths, drop))}>Lay out the song</button>
+        <button type="button" className={primary} disabled={!total} onClick={() => say(layOutSong(start, rulerBarsLength(start, loopBars, meter), inPositions(lengths, perBar), drop))}>Lay out the song</button>
       </div>
     </div>
   );
@@ -326,8 +348,11 @@ const TagTab: React.FC = () => {
   const [tag, setTag] = useState(loadTag);
   const [session, setSession] = useState<MicSession | null>(null);
   const [busy, setBusy] = useState(false);
+  const meter = useSongMeter();
+  // Bars here are the ruler's (measures, not in 4/4)
   const [from, setFrom] = useState(1);
   const [every, setEvery] = useState(8);
+  const start = barNumberStart(from, meter);
   // Closing the dialog while recording throws the take away
   const live = useRef<MicSession | null>(null);
   useEffect(() => {
@@ -395,12 +420,12 @@ const TagTab: React.FC = () => {
           From bar
           <input type="number" min={1} className={`${control} w-20`} value={from} onChange={(e) => setFrom(Math.max(1, Math.round(Number(e.target.value) || 1)))} />
         </label>
-        <button type="button" className={primary} disabled={!tag} onClick={() => say(placeTag(from, 0))}>Tag the start</button>
+        <button type="button" className={primary} disabled={!tag} onClick={() => say(placeTag(start, 0))}>Tag the start</button>
         <span className="w-px h-5 bg-forge-border mx-1" />
         <select className={control} value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="How often">
           {[4, 8, 16].map((n) => <option key={n} value={n}>every {n} bars</option>)}
         </select>
-        <button type="button" className={secondary} disabled={!tag} onClick={() => say(placeTag(from, every))} title="For a beat-store preview">Tag the whole beat</button>
+        <button type="button" className={secondary} disabled={!tag} onClick={() => say(placeTag(start, rulerBarsLength(start, every, meter)))} title="For a beat-store preview">Tag the whole beat</button>
       </div>
     </div>
   );

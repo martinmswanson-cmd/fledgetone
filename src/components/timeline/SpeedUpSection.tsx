@@ -10,6 +10,9 @@ import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineSt
 import { barBeat, describeBeats, speedUpPoints, SPEED_CURVES, SPEED_UP_DEFAULTS, type SpeedCurve } from '../../store/speedUp';
 import { selectedSpan, speedUpIntoDrop, suggestBlock } from '../../store/speedUpActions';
 import type { ArrangeRange } from './arrangeDialogStore';
+import { formatBarPosition } from '../../store/timelineTypes';
+import { isPlainMeter, type MeterMap } from '../../audio/tempoMap';
+import { parseBarsBeats } from '../../audio/transport';
 
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
 const control = 'bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text';
@@ -21,6 +24,37 @@ const last = { ...SPEED_UP_DEFAULTS, roll: false };
 
 const round16 = (bar: number) => Math.round(bar * 16) / 16;
 const show = (bar: number) => `${Math.round(bar * 1000) / 1000}`;
+
+/**
+ * A typed position: in 4/4 a number of bars (4.5); in other time signatures as the ruler numbers
+ * it, measure.beat (9, 9.2 or 9.2.50), applied as it reads.
+ */
+const PositionInput: React.FC<{ value: number; min: number; meter: MeterMap; onChange: (bar: number) => void }> = ({ value, min, meter, onChange }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  if (isPlainMeter(meter)) {
+    return <input type="number" min={min} step={1} className={`${control} w-20`} value={show(value)} onChange={(e) => onChange(Math.max(1, round16(Number(e.target.value) || 1)))} />;
+  }
+  const read = (text: string) => {
+    const bar = parseBarsBeats(text);
+    return bar === null ? null : Math.max(1, round16(bar));
+  };
+  const invalid = draft !== null && read(draft) === null;
+  return (
+    <input
+      inputMode="decimal"
+      className={`${control} w-20 ${invalid ? '!border-red-500' : ''}`}
+      value={draft ?? formatBarPosition(value, meter)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const bar = read(e.target.value);
+        if (bar !== null) onChange(bar);
+      }}
+      onBlur={() => setDraft(null)}
+      aria-invalid={invalid}
+      title="measure, measure.beat or measure.beat.hundredths"
+    />
+  );
+};
 
 /** Speed up into the drop: the controls and the button. `range` is the block it was opened for. */
 export const SpeedUpSection: React.FC<{ range?: ArrangeRange; bar?: number }> = ({ range, bar }) => {
@@ -50,7 +84,6 @@ export const SpeedUpSection: React.FC<{ range?: ArrangeRange; bar?: number }> = 
     return speedUpPoints(tempoPoints, songTempo(st), songMeterOf(st), { from, to, share: o.share, amount: o.amount, curve: o.curve, snapBack: o.snapBack }, () => 'preview');
   }, [bpm, tempoPoints, meter, meterPoints, from, to, o.share, o.amount, o.curve, o.snapBack]);
   const meterMap = songMeterOf({ meter, meterPoints });
-  const num = (v: string, min: number) => Math.max(min, round16(Number(v) || min));
   const preview =
     typeof plan === 'string'
       ? plan
@@ -67,11 +100,11 @@ export const SpeedUpSection: React.FC<{ range?: ArrangeRange; bar?: number }> = 
       <div className="flex flex-wrap items-end gap-2">
         <label className={field}>
           Block from bar
-          <input type="number" min={1} step={1} className={`${control} w-20`} value={show(from)} onChange={(e) => setFrom(num(e.target.value, 1))} />
+          <PositionInput value={from} min={1} meter={meterMap} onChange={setFrom} />
         </label>
         <label className={field}>
           to the drop at bar
-          <input type="number" min={2} step={1} className={`${control} w-20`} value={show(to)} onChange={(e) => setTo(num(e.target.value, 1))} />
+          <PositionInput value={to} min={2} meter={meterMap} onChange={setTo} />
         </label>
         <button type="button" className={small} disabled={loop.outBar - loop.inBar <= 0} onClick={() => pickSpan({ from: loop.inBar, to: loop.outBar })} title="The loop's In to Out">Use the loop</button>
         <button type="button" className={small} disabled={!hasSelection} onClick={() => pickSpan(selectedSpan())} title="From the first selected clip's start to the last one's end">Use the selected clips</button>

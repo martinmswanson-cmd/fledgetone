@@ -4,11 +4,12 @@
  * beat, see tempoFinder.ts).
  */
 import React, { useMemo, useState } from 'react';
-import { TOTAL_BARS, useTimelineStore } from '../store/timelineStore';
-import { formatBarCount, formatBpm, frameRateLabel } from '../store/timelineTypes';
+import { TOTAL_BARS, useSongMeter, useTimelineStore } from '../store/timelineStore';
+import { barSpan, formatBarCount, formatBarSpan, formatBpm, frameRateLabel, rulerBarsLength } from '../store/timelineTypes';
 import { barToSeconds, formatBarsBeats, formatSmpte, parseTimecode, secondsToBar } from '../audio/transport';
 import { findTempos, HIT_GRIDS, scoreTempo, type HitGrid, type TempoSuggestion } from '../store/tempoFinder';
 import { formatFrameTimecode, secondsToFrames } from '../audio/timecode';
+import { isPlainMeter } from '../audio/tempoMap';
 import { Popover } from './Popover';
 
 /** Read a typed tempo: up to 3 digits and 2 decimals (a comma works as the point), 40 to 240. */
@@ -123,9 +124,13 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
   const [barsText, setBarsText] = useState('8');
   const [target, setTarget] = useState('');
   const [error, setError] = useState('');
+  const meter = useSongMeter();
+  // Typed bars are the ruler's (measures, not in 4/4), from bar 1; the most is the timeline's end
+  const mostBars = Math.floor(barSpan(1, 1 + TOTAL_BARS, meter) + 1e-6);
 
-  const typedBars = parseDecimal(barsText);
-  const bars = range === 'loop' ? loopBars : range === 'song' ? songBars : typedBars !== null && typedBars <= TOTAL_BARS ? typedBars : null;
+  const typedNumber = parseDecimal(barsText);
+  const typedBars = typedNumber === null ? null : rulerBarsLength(1, typedNumber, meter);
+  const bars = range === 'loop' ? loopBars : range === 'song' ? songBars : typedBars !== null && typedBars <= TOTAL_BARS + 1e-6 ? typedBars : null;
   // Plain numbers are seconds ("25.5"); anything else is a timecode at the project's rate
   const seconds = parseDecimal(target) ?? parseTimecode(target, fps, dropFrame);
   // With tempo changes, every tempo is scaled together (the changes keep their shape): the length
@@ -135,13 +140,15 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
   const scaledMap = (to: number) => ({ bpm: to, points: tempoPoints.map((p) => ({ ...p, bpm: (p.bpm * to) / bpm })) });
   const secondsAt = (b: number, to: number) => (mapped ? barToSeconds(from + b, scaledMap(to)) - barToSeconds(from, scaledMap(to)) : barToSeconds(1 + b, to));
   const newBpm = bars && seconds ? (mapped ? Math.round(((bpm * secondsAt(bars, bpm)) / seconds) * 100) / 100 : fitBpm(bars, seconds, fps)) : null;
+  // (Not in 4/4, counted in the song's measures from where the stretch starts)
+  const span = (b: number) => (isPlainMeter(meter) ? `${formatBarCount(b)} bar${b === 1 ? '' : 's'}` : formatBarSpan(from, from + b, meter));
   const lengthOf = (b: number, to: number) => {
     const sec = secondsAt(b, to);
     return `${formatFrameTimecode(secondsToFrames(sec, fps), fps, dropFrame)} (${sec.toFixed(3)} s)`;
   };
 
   const apply = () => {
-    if (!bars) return setError(range === 'song' ? 'The timeline is empty.' : `Type a number of bars, up to ${TOTAL_BARS}.`);
+    if (!bars) return setError(range === 'song' ? 'The timeline is empty.' : `Type a number of bars, up to ${mostBars}.`);
     if (!seconds || newBpm === null) return setError('Type a length: a timecode like 0:25:00 or seconds like 25.5.');
     if (newBpm < 40 || newBpm > 240) return setError(`That needs ${formatBpm(newBpm)} BPM. The tempo must be 40 to 240.`);
     if (mapped) {
@@ -193,7 +200,7 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
               setError('');
             }}
             onKeyDown={onEnter}
-            className={`${fieldClass(typedBars === null || typedBars > TOTAL_BARS)} !h-7 w-16`}
+            className={`${fieldClass(typedBars === null || typedBars > TOTAL_BARS + 1e-6)} !h-7 w-16`}
             aria-label="Number of bars to fit"
           />
         )}
@@ -205,12 +212,12 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
       <p>
         {bars ? (
           <>
-            {formatBarCount(bars)} bar{bars === 1 ? '' : 's'} now last <span className="font-mono text-forge-text">{lengthOf(bars, bpm)}</span>
+            {span(bars)} now last <span className="font-mono text-forge-text">{lengthOf(bars, bpm)}</span>
           </>
         ) : range === 'song' ? (
           'The timeline is empty.'
         ) : (
-          `Type a number of bars, up to ${TOTAL_BARS}.`
+          `Type a number of bars, up to ${mostBars}.`
         )}
       </p>
       <label className="flex flex-col gap-1">
@@ -245,7 +252,7 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
       </div>
       {newBpm !== null && bars !== null && newBpm >= 40 && newBpm <= 240 && (
         <p className="text-[11px]">
-          At {formatBpm(newBpm)} BPM, {formatBarCount(bars)} bar{bars === 1 ? '' : 's'} last <span className="font-mono">{lengthOf(bars, newBpm)}</span>.
+          At {formatBpm(newBpm)} BPM, {span(bars)} last <span className="font-mono">{lengthOf(bars, newBpm)}</span>.
         </p>
       )}
       {error && <p className="text-red-400">{error}</p>}
