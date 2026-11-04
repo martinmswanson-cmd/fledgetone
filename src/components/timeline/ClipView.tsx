@@ -501,7 +501,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       data-clip-id={clip.id}
       tabIndex={tabStop ? 0 : -1}
       role="button"
-      aria-label={`${clip.name || 'Clip'} on ${track.name}, at ${formatBarsBeats(clip.startBar)}, ${formatBarCount(clip.lengthBars)} bars${clip.isSelected ? ', selected' : ''}`}
+      aria-label={`${clip.name || 'Clip'} on ${track.name}, at ${formatBarsBeats(clip.startBar)}, ${isPlainMeter(meter) ? `${formatBarCount(clip.lengthBars)} bars` : formatBarSpan(clip.startBar, clip.startBar + clip.lengthBars, meter)}${clip.isSelected ? ', selected' : ''}`}
       aria-keyshortcuts="Enter Delete ArrowLeft ArrowRight Control+ArrowLeft Control+ArrowRight"
       onKeyDown={onKey}
       onFocus={(e) => {

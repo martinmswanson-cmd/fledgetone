@@ -5,11 +5,11 @@
 import { GROOVE_FEELS } from '../../store/grooveFeels';
 import React, { useMemo, useState } from 'react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { keyOf, NOTE_NAMES } from '../../store/songKey';
 import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
 import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
-import type { InstrumentKey } from '../../store/timelineTypes';
+import { formatBarPosition, type InstrumentKey } from '../../store/timelineTypes';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
 import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, makeMathClip, songKey, useSmartDialog, varyMelody } from '../../store/smartActions';
 import { MATH_PATTERNS, type MathPatternId } from '../../store/mathPatterns';
@@ -20,6 +20,9 @@ import { showToast } from './toastStore';
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
 const control = 'bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text';
 const primary = 'px-3 py-1.5 rounded bg-cyan-500 text-black text-xs font-semibold hover:bg-cyan-400';
+
+/** A position as the ruler numbers it (measure.beat, not in 4/4). */
+const BarAt: React.FC<{ bar: number }> = ({ bar }) => <>{formatBarPosition(bar, useSongMeter())}</>;
 
 /** Chord progression and Drummer: make a clip from a few choices, at the bar that was right-clicked. */
 export const SmartDialog: React.FC = () => {
@@ -116,7 +119,7 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
         </p>
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
-            Make clip at bar {bar}
+            Make clip at bar <BarAt bar={bar} />
           </button>
         </div>
       </div>
@@ -202,7 +205,7 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
         </p>
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
-            Make clip at bar {bar}
+            Make clip at bar <BarAt bar={bar} />
           </button>
         </div>
       </div>
@@ -403,7 +406,7 @@ const MathForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> 
         <p className="text-xs text-forge-text">{chosen.detail}</p>
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
-            Make clip at bar {bar}
+            Make clip at bar <BarAt bar={bar} />
           </button>
         </div>
       </div>

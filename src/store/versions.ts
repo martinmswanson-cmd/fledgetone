@@ -15,6 +15,8 @@ import { referencedSoundIds } from './audioClips';
 import { protectSounds } from '../audio/soundLibrary';
 import { versionDue, versionsToDrop } from './versionPolicy';
 import { maxOf } from '../support/minMax';
+import { barSpan } from './timelineTypes';
+import { FOUR_FOUR } from '../audio/tempoMap';
 
 /** Why a version was kept: while editing, before another song replaced it, or before going back to a version. */
 /** Why it was kept: 'otherTab', another tab's song just before this tab's autosave wrote over it. */
@@ -120,8 +122,9 @@ const lastKept = new Map<string, { at: number; json: string }>();
 /** Writes one after another, so thinning sees each */
 let queue: Promise<void> = Promise.resolve();
 
-/** How long a song is, in bars: to the end of its last clip. */
-const songBars = (p: ProjectSnapshot) => Math.max(0, Math.ceil(maxOf(1, p.clips.map((c) => c.startBar + c.lengthBars)) - 1 - 1e-6));
+/** How long a song is, in bars as its ruler counts them (measures, not in 4/4): to the end of its last clip. */
+const songBars = (p: ProjectSnapshot) =>
+  Math.max(0, Math.ceil(barSpan(1, maxOf(1, p.clips.map((c) => c.startBar + c.lengthBars)), { base: p.meter ?? FOUR_FOUR, points: p.meterPoints ?? [] }) - 1e-6));
 
 /**
  * Keep the song as a version now (unless it has no work in it, or it's just as last kept). Done

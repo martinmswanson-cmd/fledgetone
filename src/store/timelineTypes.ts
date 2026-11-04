@@ -5,7 +5,7 @@
  */
 import type { ClipFeel } from './grooveFeels';
 import type { DrumDesign } from './drumDesign';
-import { barToSeconds, isPlainMeter, measureAt, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
+import { barToSeconds, isPlainMeter, measureAt, measuresAfter, measureStart, nearestMeasureStart, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import type { RoomStyle } from '../audio/effects/roomIR';
@@ -1491,6 +1491,41 @@ export function formatBarSpan(from: number, to: number, meter?: MeterMap | null)
   const n = barSpan(from, to, meter);
   const one = measuredBy(meter) ? Number(n.toFixed(3)) === 1 : n === 1;
   return `${formatBarCount(n)} ${one ? 'bar' : 'bars'}`;
+}
+
+/**
+ * The number the ruler gives the bar nearest `bar`, for a field that takes a bar number: in plain
+ * 4/4 (or with no `meter`) `bar` rounded; in other time signatures the measure starting nearest it.
+ */
+export function barNumberNear(bar: number, meter?: MeterMap | null): number {
+  const map = measuredBy(meter);
+  if (!map) return Math.round(bar);
+  return bar < 1 ? Math.round(bar) : measureAt(nearestMeasureStart(bar, map), map).measure;
+}
+
+/** The number the ruler gives the bar `bar` is in: Math.floor(bar) in plain 4/4. */
+export function barNumberAt(bar: number, meter?: MeterMap | null): number {
+  const map = measuredBy(meter);
+  return map && bar >= 1 ? measureAt(bar, map).measure : Math.floor(bar);
+}
+
+/** Where the bar the ruler numbers `n` starts (a position in bars): `n` itself in plain 4/4. */
+export function barNumberStart(n: number, meter?: MeterMap | null): number {
+  const map = measuredBy(meter);
+  return map ? measureStart(n, map) : n;
+}
+
+/**
+ * How long (in bars, as positions count them) `n` of the ruler's bars are from `from`: `n` in plain
+ * 4/4; in other time signatures `n` measures, a part measure counting for its part of the measure there.
+ */
+export function rulerBarsLength(from: number, n: number, meter?: MeterMap | null): number {
+  const map = measuredBy(meter);
+  if (!map) return n;
+  const whole = Math.floor(n + 1e-9);
+  let at = measuresAfter(from, whole, map);
+  if (n - whole > 1e-9) at += (n - whole) * (measuresAfter(at, 1, map) - at);
+  return at - from;
 }
 
 /** A tempo for display: up to 2 decimals, trailing zeros dropped ("115.2", "122"). */

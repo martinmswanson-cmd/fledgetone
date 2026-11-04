@@ -6,7 +6,7 @@
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
-import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, secondsToBar as mapSecondsToBar, tempoChangeBars, tempoFrom, toMeasureBeat } from './tempoMap';
+import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, fromMeasureBeatLength, isPlainMeter, secondsToBar as mapSecondsToBar, tempoChangeBars, tempoFrom, toMeasureBeat, toMeasureBeatLength } from './tempoMap';
 import type { MeterMap, Tempo } from './tempoMap';
 
 export type { Tempo } from './tempoMap';
@@ -292,18 +292,31 @@ export function parseBarsBeats(text: string): number | null {
   return fromMeasureBeat(bar, beat, hundredths, songMeter);
 }
 
-/** A length as bars.beats.hundredths counted from zero: "4.0.00" is four bars, "2.2.00" two bars and two beats. */
-export function formatBarsBeatsLength(bars: number): string {
-  const total = Math.floor(Math.max(0, bars * 400) + 1e-6);
-  return `${Math.floor(total / 400)}.${Math.floor((total % 400) / 100)}.${String(total % 100).padStart(2, '0')}`;
+/**
+ * A length as bars.beats.hundredths counted from zero: "4.0.00" is four bars, "2.2.00" two bars and
+ * two beats. Not in 4/4, it's counted in the song's measures from `from` (where the length starts),
+ * the beats in the meter there: in 3/4, three bars from bar 1 is "4.0.00" (four measures).
+ */
+export function formatBarsBeatsLength(bars: number, from = 1): string {
+  if (isPlainMeter(songMeter)) {
+    const total = Math.floor(Math.max(0, bars * 400) + 1e-6);
+    return `${Math.floor(total / 400)}.${Math.floor((total % 400) / 100)}.${String(total % 100).padStart(2, '0')}`;
+  }
+  const { measures, beats, hundredths } = toMeasureBeatLength(from, bars, songMeter);
+  return `${measures}.${beats}.${String(hundredths).padStart(2, '0')}`;
 }
 
-/** Read a typed length as bars ("8", "2.2" for two bars and two beats, "0.1.50"), or null. */
-export function parseBarsBeatsLength(text: string): number | null {
+/**
+ * Read a typed length as bars ("8", "2.2" for two bars and two beats, "0.1.50"), or null. Not in
+ * 4/4, the bars are the song's measures from `from` and the beats the meter's there (in 3/4, "4"
+ * from bar 1 is four measures: 3 bars).
+ */
+export function parseBarsBeatsLength(text: string, from = 1): number | null {
   const m = text.trim().match(/^(\d+)(?:[.\s]+(\d+))?(?:[.\s]+(\d+))?$/);
   if (!m) return null;
   const beats = m[2] === undefined ? 0 : Number(m[2]);
   const hundredths = m[3] === undefined ? 0 : Number(m[3]);
+  if (!isPlainMeter(songMeter)) return fromMeasureBeatLength(from, Number(m[1]), beats, hundredths, songMeter);
   if (beats > 3 || hundredths > 99) return null;
   return Number(m[1]) + beats / 4 + hundredths / 400;
 }

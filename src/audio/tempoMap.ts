@@ -334,6 +334,44 @@ export function fromMeasureBeat(measure: number, beat: number, hundredths: numbe
   return start + ((beat - 1) + hundredths / 100) / meter.den;
 }
 
+/**
+ * The position `n` whole measures after `bar` (before it when `n` is negative), at the same place
+ * in its measure as `bar` is in its own (or the measure's end, when a shorter time signature there
+ * hasn't that much room).
+ */
+export function measuresAfter(bar: number, n: number, map: MeterMap): number {
+  const m = measureAt(bar, map);
+  const start = measureStart(m.measure + n, map);
+  return start + Math.min(bar - m.start, measureAt(start + EPS, map).length);
+}
+
+/**
+ * A length from `from`, counted as the ruler counts it: whole measures from there (each at the
+ * same place in its measure), then beats in the meter where they fall and hundredths of a beat.
+ */
+export function toMeasureBeatLength(from: number, bars: number, map: MeterMap): { measures: number; beats: number; hundredths: number } {
+  const end = from + Math.max(0, bars);
+  let measures = 0;
+  let at = from;
+  while (measures < 100000) {
+    const next = measuresAfter(from, measures + 1, map);
+    if (next > end + 1e-6) break;
+    measures++;
+    at = next;
+  }
+  const den = measureAt(at + EPS, map).meter.den;
+  const total = Math.floor(Math.max(0, (end - at) * den * 100) + 1e-6);
+  return { measures, beats: Math.floor(total / 100), hundredths: total % 100 };
+}
+
+/** The length (in bars) of measures, beats and hundredths from `from`, or null if there aren't that many beats in the measure. */
+export function fromMeasureBeatLength(from: number, measures: number, beats: number, hundredths: number, map: MeterMap): number | null {
+  const at = measuresAfter(from, measures, map);
+  const meter = measureAt(at + EPS, map).meter;
+  if (beats < 0 || beats >= meter.num || hundredths < 0 || hundredths > 99) return null;
+  return at + (beats + hundredths / 100) / meter.den - from;
+}
+
 /** True when the meter map is plain 4/4 throughout. */
 export const isPlainMeter = (map: MeterMap) => isFourFour(map);
 

@@ -22,8 +22,8 @@ import {
   ZoomOut,
   Loader2,
 } from 'lucide-react';
-import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
-import { frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
+import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { formatBarPosition, frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
 import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
 import { LoopRangeButton } from './LoopRangePopover';
@@ -127,6 +127,7 @@ const TimecodeRate = React.memo<{ fps: number; dropFrame: boolean }>(({ fps, dro
 const TimecodeDisplay: React.FC = () => {
   const position = usePlayheadReadout();
   const bpm = useSongTempo();
+  const meter = useSongMeter();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
@@ -141,7 +142,7 @@ const TimecodeDisplay: React.FC = () => {
           value={formatBarsBeats(position)}
           parse={(text) => inSong(parseBarsBeats(text))}
           label="bar position"
-          hint={`bar, bar.beat or bar.beat.hundredths, e.g. 17 or 17.3 (up to bar ${TOTAL_BARS + 1})`}
+          hint={`bar, bar.beat or bar.beat.hundredths, e.g. 17 or 17.3 (up to bar ${formatBarPosition(TOTAL_BARS + 1, meter)})`}
           className={isPlaying ? 'text-amber-300' : 'text-white'}
         />
       </div>

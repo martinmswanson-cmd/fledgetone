@@ -100,7 +100,7 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const timecode = (bar: number) => formatSmpte(bar, bpm, fps, dropFrame);
   const position = (bar: number) => ({ bars: formatBarsBeats(bar), timecode: timecode(bar) });
-  const length = { bars: formatBarsBeatsLength(outBar - inBar), timecode: timecode(1 + outBar - inBar) };
+  const length = { bars: formatBarsBeatsLength(outBar - inBar, inBar), timecode: timecode(1 + outBar - inBar) };
   const shown = (v: { bars: string; timecode: string }) => (units === 'bars' ? v.bars : v.timecode);
   const hidden = (v: { bars: string; timecode: string }) => (units === 'bars' ? v.timecode : v.bars);
 
@@ -111,8 +111,9 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
     const seconds = parseTimecode(text, fps, dropFrame);
     return seconds === null ? null : secondsToBar(seconds, bpm);
   };
-  const readLength = (text: string): number | null => {
-    if (!isTimecode(text)) return parseBarsBeatsLength(text);
+  const readLength = (text: string, from: number): number | null => {
+    // (Not in 4/4, counted in measures from the loop's In)
+    if (!isTimecode(text)) return parseBarsBeatsLength(text, from);
     const seconds = parseTimecode(text, fps, dropFrame);
     return seconds === null ? null : secondsToBar(seconds, bpm) - 1;
   };
@@ -157,8 +158,8 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
         value={shown(length)}
         other={hidden(length)}
         apply={(text) => {
-          const bars = readLength(text);
           const start = useTimelineStore.getState().loopRegion.inBar;
+          const bars = readLength(text, start);
           return bars !== null && inSong(start + bars) && setLoopRange(start, start + bars);
         }}
       />

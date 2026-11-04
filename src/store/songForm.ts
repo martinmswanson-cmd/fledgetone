@@ -59,7 +59,8 @@ export function planSongForm(lengths: SectionLengths): PlannedSection[] {
   return used.map((kind) => {
     seen[kind] = (seen[kind] ?? 0) + 1;
     const name = (total[kind] ?? 0) > 1 ? `${SECTION_NAMES[kind]} ${seen[kind]}` : SECTION_NAMES[kind];
-    const s = { kind, name, at, bars: Math.round(lengths[kind]) };
+    // (Whole bars; to a 16th for lengths in another time signature's measures, see ArrangeDialog)
+    const s = { kind, name, at, bars: Math.round(lengths[kind] * 16) / 16 };
     at += s.bars;
     return s;
   });
