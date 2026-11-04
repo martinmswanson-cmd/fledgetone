@@ -34,6 +34,7 @@ import { cellClip, copySection, moveSection, pocketSections, removeSection, sect
 import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './PocketDrawer';
 import { useMySounds } from '../store/mySounds';
 import { goToSection } from './PocketGrid';
+import { sectionChordPlan } from './pocketGrid';
 import { addVocalTrack } from './PocketVocals';
 import { bounceSection, resampleSection } from './pocketBounce';
 import { PocketShare } from './PocketShare';
@@ -316,16 +317,15 @@ const SectionSheet: React.FC = () => {
 const ChordsSheet: React.FC = () => {
   const { track, sec } = useSelection();
   const songKey = useSongKey();
+  const meter = useSongMeter();
   const [style, setStyle] = useState<ChordStyle>('sustain');
   if (!track || !sec) return null;
   const write = (prog: Progression) => {
-    const len = sec.to - sec.from;
     const chords = progressionChords(songKey, prog);
-    // A chord a bar in a section of 4 bars or more (two in one of 8 or more), else as many as fit
-    const chordBars = len >= 8 ? 2 : len >= 4 ? 1 : len / 4;
-    const count = Math.max(1, Math.round(len / chordBars));
+    // A chord a bar (a measure as the ruler counts them) in a section of 4 bars or more, two in one of 8 or more
+    const { chordBars, count, spans } = sectionChordPlan(sec.from, sec.to, meter);
     const all = Array.from({ length: count }, (_, k) => chords[k % chords.length]);
-    const notes = fitToInstrument(chordNotesFor(all, chordBars, style, pocketNoteId), track.instrumentKey);
+    const notes = fitToInstrument(chordNotesFor(all, chordBars, style, pocketNoteId, spans), track.instrumentKey);
     editCell(track.id, sec, () => notes);
     close();
   };

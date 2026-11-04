@@ -5,7 +5,8 @@
  */
 import React, { useState } from 'react';
 import { Disc3, Loader2, Trash2 } from 'lucide-react';
-import { useTimelineStore } from '../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../store/timelineStore';
+import { takePlace } from './pocketGrid';
 import { RACK_PADS, type Track } from '../store/timelineTypes';
 import { defaultRack, padNote, RACK_GAIN_MAX } from '../store/sampleKits';
 import { isAudioKind } from '../audio/instrumentCatalog';
@@ -55,6 +56,7 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
   const others = gridTracks(tracks).filter((t) => t.id !== track.id && clips.some((c) => c.trackId === t.id && c.startBar < sec.to && c.startBar + c.lengthBars > sec.from));
   // (The track picked, while it still plays in this section: another section may not have it)
   const chosen = others.some((t) => t.id === only) ? only : '';
+  const meter = useSongMeter();
   const takes = clips.filter((c) => c.audio && tracks.some((t) => t.id === c.trackId && isAudioKind(t.instrumentKey))).sort((a, b) => a.startBar - b.startBar);
   return (
     <div className="pk-scroll">
@@ -139,7 +141,7 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
                   if (placed !== false) showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
                 }}
               >
-                {c.name} <span className="text-[11px] text-forge-muted">bar {Math.round(c.startBar * 10) / 10}</span>
+                {c.name} <span className="text-[11px] text-forge-muted">bar {takePlace(c.startBar, meter)}</span>
               </button>
             ))}
           </div>

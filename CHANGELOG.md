@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Pocket counts bars as the ruler does in 3/4, 6/8 and other time signatures**: picking another section while playing now moves there at the end of the bar playing, not four beats on (part-way through a bar). The place at the top ("A · 2.1") counts the section's bars and the time signature's beats, the piano roll's ruler numbers the beats of each bar (1, 1.2, 1.3 in 3/4), the Chords sheet writes a chord a bar the same way the studio does, and a take's "bar" is the bar and beat the ruler shows. Songs in 4/4 work as before.
 - **Inserting bars never pushes a tempo or time signature change off the end**: inserting bars before a change near the song's end moved it past the last bar, where you couldn't see it, and opening the song again pulled it back, so the song played differently after saving. Such an insert is now refused with a word on why.
 - **A game section named ".." exports whole**: a section named only with dots made a folder step in the game kit's file names, so its stems went missing when the kit was unpacked. Such a name now becomes a plain file name.
 - **The reverse cymbal and a one-bar riser work in very short bars**: in 1/8 and 3/16 they always said there was no room before the drop. They now fit a whole bar.

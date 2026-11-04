@@ -16,7 +16,8 @@ register(
   }
 }`)
 );
-const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll, sectionJump, jumpStep } = await import('../src/pocket/pocketGrid.ts');
+const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll, sectionJump, jumpStep, sectionPlace, sectionChordPlan, rollRulerMarks, takePlace } = await import('../src/pocket/pocketGrid.ts');
+const { measureStart } = await import('../src/audio/tempoMap.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 
 test('a bar has 16 steps in 4/4 and 12 in 6/8 and 3/4', () => {
@@ -85,4 +86,70 @@ test('a jump forward plays to the bar line, then goes to the section', () => {
 
 test('no jump to the section already playing', () => {
   assert.equal(sectionJump(3.2, 1, 5), null);
+});
+
+const meterMap = (num, den) => ({ base: { num, den }, points: [] });
+const FOUR = meterMap(4, 4);
+const THREE = meterMap(3, 4);
+const SIX8 = meterMap(6, 8);
+
+test('in 3/4 a jump waits for the end of the measure playing, three beats long', () => {
+  // Playing measure 1 (bars 1-1.75) of A, B (measure 5 on) chosen
+  const from = measureStart(5, THREE);
+  const j = sectionJump(1.2, from, measureStart(13, THREE), THREE);
+  assert.deepEqual(j.loop, [1, measureStart(13, THREE)]);
+  assert.equal(j.when, 1.75);
+  // Late in measure 2 (1.75-2.5), back to A: lands at 2.5, not at bar 3
+  const back = sectionJump(2.4, 1, from, THREE);
+  assert.equal(back, null);
+  const j2 = sectionJump(from + 0.8, 1, from, THREE);
+  assert.equal(j2.when, from + 1.5);
+  assert.deepEqual(j2.loop, [1, from + 1.5]);
+  // In 4/4 the same as without a meter
+  assert.deepEqual(sectionJump(5.8, 1, 5, FOUR), sectionJump(5.8, 1, 5));
+});
+
+test("the header's place counts measures from the section's first, beats in the meter", () => {
+  assert.deepEqual(sectionPlace(measureStart(2, THREE), 1, THREE), { measure: 2, beat: 1 });
+  assert.deepEqual(sectionPlace(1.5, 1, THREE), { measure: 1, beat: 3 });
+  assert.deepEqual(sectionPlace(measureStart(6, THREE) + 0.25, measureStart(5, THREE), THREE), { measure: 2, beat: 2 });
+  // 6/8: the beats are eighths
+  assert.deepEqual(sectionPlace(1 + 5 / 8, 1, SIX8), { measure: 1, beat: 6 });
+  // 4/4 as before
+  assert.deepEqual(sectionPlace(6.75, 5, FOUR), { measure: 2, beat: 4 });
+  assert.deepEqual(sectionPlace(6.75, 5), { measure: 2, beat: 4 });
+});
+
+test('the chords sheet writes a chord a measure, as the studio does', () => {
+  // 8 measures of 3/4: two measures a chord, four chords, each 1.5 bars
+  const from = measureStart(5, THREE), to = measureStart(13, THREE);
+  const p = sectionChordPlan(from, to, THREE);
+  assert.equal(p.chordBars, 2);
+  assert.equal(p.count, 4);
+  assert.deepEqual(p.spans.map((x) => +x.start.toFixed(6)), [0, 1.5, 3, 4.5]);
+  assert.ok(p.spans.every((x) => Math.abs(x.length - 1.5) < 1e-9));
+  // 4 measures of 3/4: a chord a measure
+  const q = sectionChordPlan(1, measureStart(5, THREE), THREE);
+  assert.equal(q.count, 4);
+  assert.ok(q.spans.every((x) => Math.abs(x.length - 0.75) < 1e-9));
+  // 4/4 as before: no spans, a chord chordBars long
+  assert.deepEqual(sectionChordPlan(5, 13, FOUR), { chordBars: 2, count: 4 });
+  assert.deepEqual(sectionChordPlan(1, 3), { chordBars: 0.5, count: 4 });
+});
+
+test("the piano roll's ruler marks the meter's beats", () => {
+  assert.deepEqual(rollRulerMarks(1, measureStart(3, THREE), THREE).map((m) => m.label), ['1', '1.2', '1.3', '2', '2.2', '2.3']);
+  assert.deepEqual(rollRulerMarks(1, measureStart(3, THREE), THREE).map((m) => m.step), [0, 4, 8, 12, 16, 20]);
+  const six = rollRulerMarks(1, 1.75, SIX8);
+  assert.deepEqual(six.map((m) => m.label), ['1', '1.2', '1.3', '1.4', '1.5', '1.6']);
+  assert.deepEqual(six.map((m) => m.step), [0, 2, 4, 6, 8, 10]);
+  // 4/4 as before
+  assert.deepEqual(rollRulerMarks(5, 7, FOUR).map((m) => m.label), ['1', '1.2', '1.3', '1.4', '2', '2.2', '2.3', '2.4']);
+});
+
+test("a take's place: bars to a tenth in 4/4, measures and beats in other meters", () => {
+  assert.equal(takePlace(4.25, FOUR), '4.3');
+  assert.equal(takePlace(4.25), '4.3');
+  assert.equal(takePlace(measureStart(3, THREE), THREE), '3');
+  assert.equal(takePlace(measureStart(3, THREE) + 0.25, THREE), '3.2');
 });

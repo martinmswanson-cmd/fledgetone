@@ -8,7 +8,7 @@
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Disc3, Pause, Play, Redo2, Share2, Undo2 } from 'lucide-react';
-import { connectAutosave, connectTimelineToAudio, currentProject, onProjectReplaced, useTimelineStore } from '../store/timelineStore';
+import { connectAutosave, connectTimelineToAudio, currentProject, onProjectReplaced, useSongMeter, useTimelineStore } from '../store/timelineStore';
 import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
 import { initAudio, rawAudioState } from '../audio/engine';
@@ -22,6 +22,7 @@ import { Toast } from '../components/timeline/Toast';
 import { showToast } from '../components/timeline/toastStore';
 import { editorOf, usePlayPosition, usePocket } from './pocketStore';
 import { useSelection } from './pocketCell';
+import { sectionPlace } from './pocketGrid';
 import { PocketGrid } from './PocketGrid';
 import { DRAWER_SIZES, PocketDrawer, setTool } from './PocketDrawer';
 import { PocketSheets, StartScreen } from './PocketSheets';
@@ -97,7 +98,7 @@ const TopBar: React.FC = () => {
   const { sections } = useSelection();
   const bar = usePlayPosition();
   const at = sections.find((x) => bar >= x.from - EPS && bar < x.to - EPS);
-  const beat = Math.floor(((bar % 1) + 1) % 1 * 4) + 1;
+  const place = sectionPlace(bar, at?.from ?? 1, useSongMeter());
   const open = (sheet: 'song' | 'share') => usePocket.getState().set({ sheet });
   // Where the listening path couldn't start (no level matching, no safety limiter): a plain warning
   const unsafe = useListening().status === 'off';
@@ -111,7 +112,7 @@ const TopBar: React.FC = () => {
         <div className="font-mono text-[11px] text-forge-muted flex gap-2 tracking-wide">
           <span>{Math.round(bpm)} BPM</span>
           <span className="text-cyan-300 tabular-nums">
-            {at?.letter ?? '–'} · {Math.max(1, Math.floor(bar - (at?.from ?? 1)) + 1)}.{beat}
+            {at?.letter ?? '–'} · {place.measure}.{place.beat}
           </span>
           {unsafe && (
             <span className="text-amber-300 truncate" data-testid="listening-warning" title="This browser couldn't start level matching and the safety limiter (it needs https or the app): keep the volume down. The Loud master's push isn't heard here.">
