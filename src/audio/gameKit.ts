@@ -12,6 +12,7 @@ import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
 import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections, stateNames } from '../store/cutToLength';
+import { kitFileName, notReserved, uniqueKitNames } from '../store/kitNames';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
 import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
@@ -66,8 +67,8 @@ export interface GameKitSong {
 /** The stem that holds the tracks without a group: always at full level. */
 export const MAIN_STEM = 'Main';
 
-// (A name of only dots, "." or "..", would be a folder step in the zip: one is made of it)
-const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim().replace(/^\.+$/, '-') || 'Untitled';
+// (The same cleaning as the states' names are made unique by, so two can't make one file)
+const safe = kitFileName;
 
 /** What the kit holds before it's zipped: the manifest and every file by its path. */
 export interface GameKitParts {
@@ -171,6 +172,9 @@ export async function buildGameKitParts(
         ...(audible.some((t) => !t.stemGroup) ? [{ name: MAIN_STEM, tracks: audible.filter((t) => !t.stemGroup) }] : []),
       ]
     : [];
+  // Each stem's file name: groups told apart without regard to case ("Drums" and "drums"), and a
+  // group the musician named "Main" from the tracks without one
+  const stemFiles = uniqueKitNames(stemGroups.map((g) => g.name)).map(safe);
   const skipMix = stemsOnly && stemGroups.length > 0;
   const gameSfx = song.sfx ?? [];
   const costumes = (song.costumes ?? []).map((c) => ({ costume: c, ...applyCostume(song.tracks, song.clips, c) }));
@@ -214,7 +218,7 @@ export async function buildGameKitParts(
       if (!skipMix) tick(`stems ${name}`);
       const r = await renderGroupStems(range, stemGroups, within);
       for (const [k, stem] of r.stems.entries()) {
-        const stemFile = `stems/${safe(name)}/${safe(stem.name)}.wav`;
+        const stemFile = `stems/${safe(name)}/${stemFiles[k]}.wav`;
         files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
@@ -237,11 +241,11 @@ export async function buildGameKitParts(
       const cstems: Array<{ group: string; file: string }> = [];
       if (stemGroups.length) {
         // Each group's tracks as dressed, without the ones the costume leaves out
-        const groups = stemGroups.map((g) => ({ name: g.name, tracks: g.tracks.map((x) => byId.get(x.id) ?? x).filter((x) => !x.isMuted) })).filter((g) => g.tracks.length);
+        const groups = stemGroups.map((g, k) => ({ name: g.name, file: stemFiles[k], tracks: g.tracks.map((x) => byId.get(x.id) ?? x).filter((x) => !x.isMuted) })).filter((g) => g.tracks.length);
         if (groups.length) {
           const rs = await renderGroupStems(crange, groups);
-          for (const stem of rs.stems) {
-            const stemFile = `stems/${base}/${safe(stem.name)}.wav`;
+          for (const [k, stem] of rs.stems.entries()) {
+            const stemFile = `stems/${base}/${groups[k].file}.wav`;
             files.push({ name: stemFile, data: encodeChannels(stem.channels, rs.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
             cstems.push({ group: stem.name, file: stemFile });
           }
@@ -273,16 +277,15 @@ export async function buildGameKitParts(
   // Stingers (some also bridge transitions)
   const stingers: AudioManifest['stingers'] = [];
   const stingerName = new Map<string, string>();
-  const stingerFiles = new Set<string>();
-  for (const s of song.stingers) {
+  // (Each named once, told apart as files without regard to case: "Hit" and "hit" are "Hit" and "hit 2")
+  const stingerNames = uniqueKitNames(song.stingers.map((s) => s.name));
+  for (const [i, s] of song.stingers.entries()) {
     tick(`stinger ${s.name}`);
-    let base = safe(s.name);
-    for (let n = 2; stingerFiles.has(base); n++) base = `${safe(s.name)} ${n}`;
-    stingerFiles.add(base);
-    const file = `stingers/${base}.wav`;
+    const name = stingerNames[i];
+    const file = `stingers/${safe(name)}.wav`;
     files.push({ name: file, data: await renderStinger(s, song, sampleRate, recordings) });
-    stingers.push({ name: s.name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
-    stingerName.set(s.id, s.name);
+    stingers.push({ name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
+    stingerName.set(s.id, name);
   }
 
   // Transitions: the matrix by state name, and one sound per fill / riser / impact in use
@@ -357,7 +360,7 @@ export async function buildGameKitParts(
     for (let i = 0; i < variants; i++) {
       const channels = renderSfxStereo(varySfx(g.sound, i, g.spread), sampleRate);
       const samples = channels[0];
-      const file = `sfx/${g.name}${variants > 1 ? `_${String(i + 1).padStart(2, '0')}` : ''}.wav`;
+      const file = `sfx/${sfxFileName(g.name, variants > 1 ? i + 1 : undefined)}.wav`;
       files.push({ name: file, data: encodeChannels(channels, sampleRate, g.sound.modern ? 24 : 16, [], g.sound.loop ? { start: 0, end: samples.length } : undefined) });
       names.push(file);
       seconds = Math.max(seconds, samples.length / sampleRate);
@@ -415,7 +418,7 @@ export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: nu
     out.push({ name: `bos_music/${slug}_example.tscn`, data: text(godotScene(dir)) });
     out.push({ name: `bos_music/README_${slug}.md`, data: text(godotReadme(manifest, slug), 'text/markdown') });
   } else if (layout === 'unity') {
-    const folder = manifest.name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('') || 'Song';
+    const folder = notReserved(manifest.name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('') || 'Song');
     const resources = `BosMusic/${folder}`;
     out.push(...files.map((f) => ({ ...f, name: `Assets/Fledgetone/Resources/${resources}/${f.name}` })));
     out.push({ name: `Assets/Fledgetone/Resources/${resources}/audio_manifest.json`, data: json(manifest) });

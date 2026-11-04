@@ -93,6 +93,21 @@ test('the README lists the states, transitions and curves', () => {
   assert.match(r, /\*\*Percussion\*\*: 0% → silent, 50% → 0\.0 dB/);
 });
 
+test('two stem groups with one name each get their own track and file', () => {
+  // A group the musician named "Main" next to the tracks without one, as the game kit writes it
+  const twoMains = {
+    ...manifest,
+    intensity: { default: 1, groups: [{ name: 'Main', curve: [[0, 0], [1, 1]] }, { name: 'Main', curve: [[0, 1], [1, 1]] }] },
+    states: manifest.states.map((st) => ({ ...st, stems: [{ group: 'Main', file: `stems/${st.name}/Main.wav`, tracks: ['Pads'] }, { group: 'Main', file: `stems/${st.name}/Main 2.wav`, tracks: ['Bass'] }] })),
+  };
+  const literal = wwiseScript(twoMains).match(/DATA = json\.loads\((".*")\)/)[1];
+  const data = JSON.parse(JSON.parse(literal));
+  assert.deepEqual(data.states[1].tracks, [{ name: 'Main', file: 'stems/Combat/Main.wav' }, { name: 'Main 2', file: 'stems/Combat/Main 2.wav' }]);
+  const fmod = JSON.parse(fmodScript(twoMains).match(/^var DATA = (.*);$/m)[1]);
+  assert.deepEqual(fmod.tracks.map((t) => [t.name, t.sounds[0].file]), [['Main', 'stems/Explore/Main.wav'], ['Main 2', 'stems/Explore/Main 2.wav']]);
+  assert.deepEqual(fmod.curves.map((c) => c.name), ['Main', 'Main 2']);
+});
+
 function require_(file) {
   return execFileSync('cat', [file]).toString();
 }

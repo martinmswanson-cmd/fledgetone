@@ -36,6 +36,21 @@ export interface ZipEntry {
   data: Blob;
 }
 
+/**
+ * `path` as it can stand in a zip: "/" between folders, and no empty, "." or ".." steps and no
+ * leading "/" or drive, so unzipping can't write anything outside the folder it unzips into
+ * (whatever name a caller made it from).
+ */
+export function zipPath(path: string): string {
+  return (
+    path
+      .replace(/\\/g, '/')
+      .split('/')
+      .filter((part, i) => part !== '' && part !== '.' && part !== '..' && !(i === 0 && /^[A-Za-z]:$/.test(part)))
+      .join('/') || 'Untitled'
+  );
+}
+
 /** Bundle `entries` into a .zip file. */
 export async function createZip(entries: ZipEntry[], modified = new Date()): Promise<Blob> {
   const { time, date } = dosDateTime(modified);
@@ -45,7 +60,7 @@ export async function createZip(entries: ZipEntry[], modified = new Date()): Pro
   let offset = 0;
 
   for (const entry of entries) {
-    const name = encoder.encode(entry.name);
+    const name = encoder.encode(zipPath(entry.name));
     const size = entry.data.size;
     // Read one file at a time for its checksum, so a set of big stems isn't all in memory at once
     const crc = crc32(new Uint8Array(await entry.data.arrayBuffer()));
