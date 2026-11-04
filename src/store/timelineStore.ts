@@ -1317,7 +1317,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const s = get();
     const options = s.recordOptions;
     const punch = s.punch.enabled ? { inBar: s.punch.inBar, outBar: s.punch.outBar } : null;
-    const result = finishTake(heardTime(), songTempo(s), { passes: options.takes, punch });
+    const result = finishTake(heardTime(), songTempo(s), { passes: options.takes, punch, meter: songMeterOf(s) });
     if (s.take) set({ take: null });
     if (!result) return;
     const { trackId } = result;
@@ -1483,7 +1483,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     tell();
     if (grid === 'off') return;
     // (A punched take stays inside the punch: no growing past its out point)
-    const quantized = quantizeTakeClip(clip, grid, !punch);
+    const quantized = quantizeTakeClip(clip, grid, !punch, songMeterOf(get()));
     set((st) => ({ clips: st.clips.map((c) => (c.id === clip.id ? quantized : c)), ...pushPast(st) }));
   };
 

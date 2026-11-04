@@ -12,7 +12,7 @@ import { audioCuts, CUT_LEAD, barBeat, beatBars, describeBeats, rollNotes, speed
 import { retimeAudioClips } from './audioClips';
 import { retimeMarkers } from './markers';
 import { isDrumKind } from '../audio/instrumentCatalog';
-import { tempoAt } from '../audio/tempoMap';
+import { measureStart, measuresFrom, roundToMeasure, tempoAt } from '../audio/tempoMap';
 import { DRUM_NOTES } from '../audio/instruments';
 import { maxOf, minOf } from '../support/minMax';
 
@@ -147,7 +147,7 @@ export function selectedSpan(): { from: number; to: number } | null {
 /**
  * The block a speed-up is offered for, near `bar` (the drop, when a menu was opened there): the
  * loop when `bar` is in it (or, with no bar, when it's on), else the selected clips' span when
- * `bar` is in it, else the 4 bars before `bar` (or the playhead).
+ * `bar` is in it, else the 4 bars (measures) before the measure line nearest `bar` (or the playhead).
  */
 export function suggestBlock(bar?: number): { from: number; to: number; source: 'loop' | 'clips' | 'bars' } {
   const s = tl();
@@ -156,6 +156,8 @@ export function suggestBlock(bar?: number): { from: number; to: number; source: 
   if (loop.outBar - loop.inBar > EPS && (within(loop.inBar, loop.outBar) || (bar === undefined && loop.enabled))) return { from: loop.inBar, to: loop.outBar, source: 'loop' };
   const sel = selectedSpan();
   if (sel && (bar === undefined || within(sel.from, sel.to))) return { ...sel, source: 'clips' };
-  const drop = Math.max(2, Math.round(bar ?? s.playheadPosition));
-  return { from: Math.max(1, drop - 4), to: drop, source: 'bars' };
+  const meter = songMeterOf(s);
+  // On the nearest measure line (from the second), the 4 measures before it as the ruler counts them
+  const drop = Math.max(measureStart(2, meter), roundToMeasure(bar ?? s.playheadPosition, meter));
+  return { from: Math.max(1, measuresFrom(drop, -4, meter)), to: drop, source: 'bars' };
 }

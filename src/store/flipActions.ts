@@ -5,13 +5,13 @@
  * sampleAnalysis.ts and pitchShift.ts.
  */
 import { withClipHeld } from './clipJobs';
-import { allOrNothing, editStep, songTempo, useTimelineStore } from './timelineStore';
+import { allOrNothing, editStep, songMeterOf, songTempo, useTimelineStore } from './timelineStore';
 import type { Clip, NoteEvent, SoundMeta } from './timelineTypes';
 import { barsToDuration, uid } from './timelineTypes';
 import { chopEnd, chopsToRack, flipPattern, flipSeed, bassCutFilter } from './sampleFlip';
 import { padNote } from './sampleKits';
 import { detectKey, type SongKey } from './songKey';
-import { tempoAt, secondsToBar, barToSeconds } from '../audio/tempoMap';
+import { addMeasures, measureAt, tempoAt, secondsToBar, barToSeconds } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
 import { runDsp } from '../audio/dspRun';
@@ -69,12 +69,15 @@ export function chopToRack(req: ChopRequest): string | null {
     const after = useTimelineStore.getState();
     after.setTrackRack(trackId, rack, false);
     if (req.bassCut) after.setTrackFx(trackId, 'filter', bassCutFilter(true), false);
-    const startBar = source?.startBar ?? Math.max(1, Math.floor(after.playheadPosition));
+    const meter = songMeterOf(after);
+    // (With no clip to start with: from the start of the measure the playhead is in)
+    const startBar = source?.startBar ?? measureAt(Math.max(1, after.playheadPosition), meter).start;
     const bpm = tempoAt(startBar, songTempo(after));
     const notes = req.flip ? flipPattern(req.cuts.length, flipSeed(req.soundId, 0)) : inOrder(req.cuts, req.end, bpm);
     const tempo = songTempo(after);
+    // The flip's bars as the ruler counts them (in 7/8, two 7/8 measures)
     const lengthBars = req.flip
-      ? FLIP_BARS
+      ? addMeasures(startBar, FLIP_BARS, meter) - startBar
       : Math.max(1 / 16, Math.ceil((secondsToBar(barToSeconds(startBar, tempo) + (req.end - req.cuts[0]), tempo) - startBar) * 16) / 16);
     const clip: Clip = {
       id: uid('clip'),
@@ -82,7 +85,7 @@ export function chopToRack(req: ChopRequest): string | null {
       name: req.flip ? `${req.name} flip` : `${req.name} chops`,
       startBar,
       lengthBars,
-      notes: notes.map((n) => ({ ...n, id: uid('note') })),
+      notes: (req.flip ? notes.filter((n) => n.startOffset < lengthBars - 1e-6) : notes).map((n) => ({ ...n, id: uid('note') })),
       isSelected: true,
     };
     if (req.flip) ideas.set(clip.id, 0);

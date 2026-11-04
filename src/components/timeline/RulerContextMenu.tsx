@@ -145,7 +145,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       icon: <ChevronsRight className="w-3.5 h-3.5" />,
       onClick: () => {
         onClose();
-        openArrange('drops', Math.round(speedBlock.to), undefined, { from: speedBlock.from, to: speedBlock.to });
+        openArrange('drops', roundToMeasure(speedBlock.to, meter), undefined, { from: speedBlock.from, to: speedBlock.to });
       },
     },
     ...KEY_CHANGES.map(([semitones, label], i) => ({

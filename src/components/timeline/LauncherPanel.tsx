@@ -5,8 +5,8 @@
 import React, { useEffect, useState } from 'react';
 import { Play, Square, Undo2, LayoutList, Send, ListPlus, X } from 'lucide-react';
 import { useLivePlayhead } from '../../store/playheadClock';
-import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
-import { formatBarPosition } from '../../store/timelineTypes';
+import { songMeterOf, useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { formatBarPosition, formatBarSpan } from '../../store/timelineTypes';
 import { isPlainMeter, type MeterMap } from '../../audio/tempoMap';
 import { isMixTrack } from '../../store/buses';
 import { useLauncher, launcherActive, slotAt } from '../../store/launcherView';
@@ -64,6 +64,7 @@ export const LauncherPanel: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const anySelected = useTimelineStore((s) => s.clips.some((c) => c.isSelected));
+  const meter = useSongMeter();
   const segments = useLauncher((s) => s.segments);
   const last = useLauncher((s) => s.last);
   const quantize = useLauncher((s) => s.quantize);
@@ -231,7 +232,7 @@ export const LauncherPanel: React.FC = () => {
                           className={`group relative h-8 rounded flex items-center gap-1 px-1.5 border ${playing ? 'border-emerald-300 shadow-[0_0_0_1px_rgba(110,231,183,0.6)]' : 'border-transparent'} ${queued || leaving ? 'animate-pulse' : ''}`}
                           style={{ background: `${t.color}${playing ? '66' : '33'}` }}
                         >
-                          <button type="button" onClick={() => launchSlot(t.id, scene)} className="flex items-center gap-1 flex-1 min-w-0 text-left" aria-label={`Launch ${slot.clip.name} on ${t.name}`} title={`${slot.clip.name}: ${Math.round(slot.clip.lengthBars * 100) / 100} bars. Click to launch on the next ${quantize === 1 ? 'bar line' : 'launch point'}`}>
+                          <button type="button" onClick={() => launchSlot(t.id, scene)} className="flex items-center gap-1 flex-1 min-w-0 text-left" aria-label={`Launch ${slot.clip.name} on ${t.name}`} title={`${slot.clip.name}: ${formatBarSpan(1, 1 + slot.clip.lengthBars, meter)}. Click to launch on the next ${quantize === 1 ? 'bar line' : 'launch point'}`}>
                             <Play className={`w-3 h-3 shrink-0 ${playing ? 'text-emerald-300' : 'text-forge-text'}`} />
                             <span className="truncate text-forge-text">{slot.clip.name}</span>
                           </button>
