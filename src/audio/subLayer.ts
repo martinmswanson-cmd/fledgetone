@@ -111,7 +111,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
    * (DEFAULT_SLIDE). `chord`: one of the sines under a chord's lowest notes (see underLowest),
    * begun at `time` as it is, and ended there: the sine sounding plays on.
    */
-  const playNote = (n: PlayableNote, time: number, how: NoteSlide | null | undefined, chord = false): SubVoice | undefined => {
+  const playNote = (n: PlayableNote, time: number, how: NoteSlide | null | undefined, chord = false, since = time): SubVoice | undefined => {
     const s = settings;
     if (!s || s.level <= 0 || !nb || !voices) return;
     const { bus, raw, input } = nb;
@@ -150,14 +150,18 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     const osc = createOsc(raw, 'sine', slide ? from : freq, start, bends.at(start));
     // (A slide begun as the last sine had already died away: this one takes it on)
     if (slide) slideFreq(osc.frequency, start, from, freq, slide);
+    // (A sine taking over a note already sounding (`since`, its start) comes in at the level that
+    // note's sub has died away to by now, not struck again)
+    const into = Math.max(0, start - since);
+    const level = s.decay > 0 ? peak * Math.exp((-into * Math.log(1000)) / s.decay) : peak;
     const amp = raw.createGain();
     amp.gain.setValueAtTime(0, start);
-    amp.gain.linearRampToValueAtTime(peak, start + ATTACK);
+    amp.gain.linearRampToValueAtTime(level, start + ATTACK);
     if (s.decay > 0) amp.gain.setTargetAtTime(0, start + ATTACK, s.decay / Math.log(1000));
     amp.gain.setTargetAtTime(0, end, releaseTc);
     osc.connect(amp);
     amp.connect(input);
-    const stopAt = s.decay > 0 ? Math.min(end + RELEASE * 1.5, start + ATTACK + s.decay * 1.05) : end + RELEASE * 1.5;
+    const stopAt = s.decay > 0 ? Math.min(end + RELEASE * 1.5, Math.max(start + ATTACK, since + ATTACK + s.decay * 1.05)) : end + RELEASE * 1.5;
     const voice: SubVoice = { start, stopAt, sources: [osc], nodes: [osc, amp], amp, osc, end, glide: { t0: start, f0: slide ? from : freq, f1: freq, slide } };
     follow(voice, raw, start);
     set.add(voice);
@@ -201,7 +205,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
       if (!v) {
         if (to <= now) continue;
         const at = notLate(nb.bus.context, Math.max(from, now));
-        v = playNote({ ...h.note, duration: Number.isFinite(h.end) ? `${Math.max(0.01, h.end - at).toFixed(6)}s` : HELD_NOTE }, at, null, true);
+        v = playNote({ ...h.note, duration: Number.isFinite(h.end) ? `${Math.max(0.01, h.end - at).toFixed(6)}s` : HELD_NOTE }, at, null, true, Math.min(at, h.start));
         if (!v) continue;
         h.subs.set(from, v);
         // (Its note's own bend, as it is there and on)

@@ -107,7 +107,8 @@ export interface HeldSpan {
 /**
  * Which of `spans` is the lowest sounding, through time: the stretches [from, to) each is (by its
  * index), in time order, for a layer that follows one note of a chord (the Sub enhancer under an
- * instrument that plays many notes at once). Two at the same pitch: the one given first.
+ * instrument that plays many notes at once). Two at the same pitch: the one begun last (played
+ * again, it's the new note the instrument strikes), then the one given first.
  */
 export function lowestHeld(spans: readonly HeldSpan[]): Array<{ index: number; from: number; to: number }> {
   const times = [...new Set(spans.flatMap((s) => (s.end > s.start ? [s.start, s.end] : [])))].filter(Number.isFinite).sort((a, b) => a - b);
@@ -116,7 +117,7 @@ export function lowestHeld(spans: readonly HeldSpan[]): Array<{ index: number; f
     const t = times[i];
     let index = -1;
     spans.forEach((s, k) => {
-      if (s.start <= t && t < s.end && (index < 0 || s.freq < spans[index].freq)) index = k;
+      if (s.start <= t && t < s.end && (index < 0 || s.freq < spans[index].freq || (s.freq === spans[index].freq && s.start > spans[index].start))) index = k;
     });
     const to = i + 1 < times.length ? times[i + 1] : Infinity;
     if (index < 0) continue;

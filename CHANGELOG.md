@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The Sub enhancer with Decay strikes only where a note does**: under an instrument that plays chords, a sub set to die away struck again, as loud as a new note, whenever the lowest of the held notes changed (a low note let go under a held one), and a note played again at the same pitch got no sub of its own. It now carries on at the level it had died to, and strikes with each note played.
 - **J, Shift+J and Shift+L step a bar as the ruler counts it**: in a song in 3/4 (or any time signature but 4/4), J and Shift+L ("back a bar, forward a bar") moved four beats, so the playhead landed in the middle of a bar, and Shift+J went sixteen beats back. They now go to the start of this bar, the one before or the next one, and Shift+J four bars back, as the ruler numbers them. 4/4 songs step as before.
 - **A new "1 bar" clip is one bar of the song's time signature**: double-clicking a track, and New empty clip in the right-click menu, made clips four beats per bar in 3/4 or 6/8, so a one-bar clip ran into the next bar. They are now as many bars as they say, as the ruler counts them. A chord progression's "1 bar" chords and a Math pattern's bars are bars of the song too (three beats each in 3/4), and the clip is a whole number of bars.
 - **Chords, Drummer, Math patterns and Dark melody start in the bar you right-clicked**: in a song not in 4/4 they could start a bar or more earlier (right-clicking bar 6 of a 3/4 song made the clip at bar 5). They now start at the start of the bar clicked in.

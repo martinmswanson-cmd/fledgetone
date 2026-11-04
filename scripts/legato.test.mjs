@@ -150,3 +150,11 @@ test('under a chord the sub is under the lowest note held, moving on to the next
   ]);
   assert.deepEqual(L.lowestHeld([]), []);
 });
+
+test('lowestHeld: the same pitch played again is the new note', () => {
+  const out = lowestHeld([
+    { start: 0, end: 2, freq: 65.4 },
+    { start: 1, end: 3, freq: 65.4 },
+  ]);
+  assert.deepEqual(out.map((o) => [o.index, o.from, o.to]), [[0, 0, 1], [1, 1, 3]]);
+});
