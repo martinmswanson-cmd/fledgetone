@@ -187,7 +187,7 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them, and so is the release of one that ends just before it (it renders from up to 8 bars earlier and measures only the range, what the master's limiter and clipper did included; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
-| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them |
+| `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them. Ops that change nothing are refused: "These changes leave the song as it is." (live, the error `no_change`), and no card appears |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |
 | `get_suggestion {id?}`, `withdraw_suggestion {id}` | A suggestion's status (waiting, changed, accepted, undone, dismissed, out of date, other song), whether the musician heard it as it is (`heard`: Suggested played through every region, each to its end; never while it's `changed` and not made again yet), where its changes are heard (`regions`) and how that was found (`regionsBy`: `"rules"`, or `"rules and sound"` with `soundRegions`, the bars where the song renders differently with it, only while you're allowed to listen; `finding: true` while that's under way; `notBySound` when it can't be: the song is too long, the suggestion would make it too long, or the render failed, with `mayRingOn` when a tail the studio can't know may ring on past the regions. Without Listen you read the rules' regions alone and what a before-and-after of those plays, `heard` is whether Suggested played through every one of the rules' regions, there's no `finding`, and `notBySound` is only the song or the suggestion being too long to check: nothing you read moves with what the check by sound found), the stretches its before-and-after plays one after another (`audition`), and, when they can't hold every region, the bars left out (`unheard`) and the limit that left them out (`limit`: `"64 bars"` or `"90 seconds"`); `focusLeftOut` when your focus didn't fit. Or take one back |
 | `say {text, about?, replyTo?}` | A short message on your panel (plain text, 4000 characters, one a second); `replyTo` (the id of one of your messages) shows it as the answer to it |
@@ -368,8 +368,10 @@ was)". **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, or
 its fader, buses and the master together), a track unmuted (one that sits 12 dB or more under the
-rest of the mix is only a note), a Distortion or Saturation driven much
-harder, a Delay fed back at 80% or more, automation of any of those drawn high, the master up by
+rest of the mix is only a note), a track heard again because a solo was cleared or moved, a
+Distortion or Saturation driven much harder, a Delay fed back at 80% or more, automation of any of
+those drawn high, a lane that held one of them down taken away (removed, or left with no points),
+the master up by
 more than 3 dB, the Loud master or the clipper switched on. Every result is checked the way a
 saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
 suggestion adds at most 5000 notes, copies of clips (linked or not) included.
@@ -636,7 +638,8 @@ WebSocket on `127.0.0.1` only. Messages are JSON text frames:
 { "v": 1, "kind": "event", "method": "changed", "params": { "revision": 12 } }
 ```
 
-An error answer is `"error": {"code", "message"}` in place of `result`.
+An error answer is `"error": {"code", "message"}` in place of `result`. A `suggest` whose ops can't be applied
+answers `bad_ops` (with `errors`), and one whose ops change nothing `no_change`.
 
 **Pairing**, once per connection, before anything else:
 

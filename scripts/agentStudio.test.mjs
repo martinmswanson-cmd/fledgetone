@@ -97,6 +97,13 @@ test('a suggestion gets an id of its own, made plain, with what it touches', () 
   assert.equal(bad.ok, false);
   assert.match(bad.message, /unknown op/);
   assert.equal(makeSuggestion(p, ctxOf(p), { title: '  ', explanation: '', ops: [] }).ok, false);
+  // Ops that change nothing (a setting given the value it has): refused, no card
+  for (const ops of [[{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: p.tracks[0].volume, pan: p.tracks[0].pan }], [{ op: 'set_track', trackId: p.tracks[0].id, mute: !!p.tracks[0].isMuted }]]) {
+    const none = makeSuggestion(p, ctxOf(p), { title: 'Nothing', explanation: '', ops });
+    assert.equal(none.ok, false, JSON.stringify(ops));
+    assert.equal(none.code, 'no_change');
+    assert.equal(none.message, 'These changes leave the song as it is.');
+  }
   // Never posing as the app: a title or message that starts with its name is shown quoted
   assert.equal(makeSuggestion(p, ctxOf(p), { title: 'Fledgetone: update required', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[0].id, volumeDb: -6 }] }).suggestion.title, '“Fledgetone: update required”');
 });

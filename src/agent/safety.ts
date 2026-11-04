@@ -3,7 +3,9 @@
  * unannounced: a track turned up by more than TRACK_JUMP_DB, by its fader, its EQ, its inserts'
  * gains (compressor makeup, parametric EQ and multiband bands), or along its whole path (its
  * buses and the master together); a track unmuted; a drive or saturation pushed hard, a delay fed
- * back until it hardly dies away; automation of any of those drawn high; the master Level, the
+ * back until it hardly dies away; automation of any of those drawn high, or a lane that held one
+ * down taken away (removed or emptied); a track heard again because a solo was cleared or moved;
+ * the master Level, the
  * Loud master's push or the OTT's gains up by more than MASTER_JUMP_DB, the Loud master or the
  * clipper switched on. They are warnings on the suggestion's card (the musician decides), never
  * refusals; values beyond what the song can hold are already brought into range by the ops (see
@@ -12,10 +14,10 @@
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationParam, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings } from '../store/timelineTypes';
-import { busChain, isMixTrack } from '../store/buses';
+import { audibleIds, busChain, isMixTrack, soloLit } from '../store/buses';
 import { specOf } from '../audio/automation';
 import { nm, plainNames } from './names';
-import { maxOf } from '../support/minMax';
+import { maxOf, minOf } from '../support/minMax';
 
 /** A track raised by more than this many dB gets a warning. */
 export const TRACK_JUMP_DB = 6;
@@ -56,6 +58,13 @@ const LANE_LIMITS: Partial<Record<string, { kind: 'db' | 'drive' | 'feedback'; l
 /** A track's level along its whole way out: its fader and its buses' faders (the master is added by the caller). */
 function pathDb(t: Track, tracks: readonly Track[]): number {
   return t.volume + busChain(t, tracks).reduce((sum, b) => sum + b.volume, 0);
+}
+
+/** Up to three words joined with commas and "and", the rest counted ("A, B, C and 2 more"). */
+function listOf(words: string[]): string {
+  const shown = words.slice(0, 3);
+  if (words.length > 3) return `${shown.join(', ')} and ${words.length - 3} more`;
+  return shown.length > 1 ? `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}` : (shown[0] ?? '');
 }
 
 /** An unmuted track this far under the loudest other track is only mentioned, not warned about. */
@@ -139,11 +148,50 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
       if (limit.kind === 'drive' && top - base > DRIVE_JUMP + 1e-9) out.push(`On ${n}, the ${limit.label} automation pushes it to ${pct(top)}.`);
       if (limit.kind === 'feedback' && top >= FEEDBACK_HIGH - 1e-9) out.push(`On ${n}, the ${limit.label} automation feeds it back at up to ${pct(top)}.`);
     }
+    // Automation that held it down, taken away (removed, or left with no points): it rests at its setting
+    for (const oldLane of was?.automation ?? []) {
+      const limit = LANE_LIMITS[oldLane.param];
+      if (!limit || !oldLane.points.length) continue;
+      if (t.automation?.some((l) => l.param === oldLane.param && l.points.length)) continue;
+      const spec = specOf(oldLane.param as AutomationParam, t, after.tracks);
+      // (an insert that's off plays neither the lane nor its setting)
+      if (spec.insert && !fxOf(t)[spec.insert]?.on) continue;
+      const low = spec.toReal(minOf(oldLane.points.map((p) => p.value)));
+      const rest = spec.trackValue(t);
+      if (limit.kind === 'db' && rest - low > TRACK_JUMP_DB + 1e-9) out.push(`This takes away the ${limit.label} automation on ${n}: it held it down, and it comes up by as much as ${r1(rest - low)} dB. Turn your speakers down before you listen.`);
+      if (limit.kind === 'drive' && rest - low > DRIVE_JUMP + 1e-9) out.push(`This takes away the ${limit.label} automation on ${n}: it held it down, and it is driven at ${pct(rest)} all along.`);
+      if (limit.kind === 'feedback' && rest >= FEEDBACK_HIGH - 1e-9 && rest > low + 1e-9) out.push(`This takes away the ${limit.label} automation on ${n}: it feeds back at ${pct(rest)} all along.`);
+    }
+  }
+
+  // Tracks heard again (by the app's own rule, audibleIds): a solo cleared or moved, or a track led out of a muted bus
+  const heardBefore = audibleIds(before.tracks);
+  const heardAfter = audibleIds(after.tracks);
+  const unmuted = new Set(after.tracks.filter((t) => old.get(t.id)?.isMuted && !t.isMuted).map((t) => t.id));
+  const back = after.tracks.filter((t) => {
+    if (isMixTrack(t) || !old.has(t.id) || !heardAfter.has(t.id) || heardBefore.has(t.id)) return false;
+    // (its own unmuting, or its bus's, is said above)
+    return !unmuted.has(t.id) && !busChain(t, after.tracks).some((x) => unmuted.has(x.id));
+  });
+  if (back.length) {
+    const stillHeard = after.tracks.filter((t) => !isMixTrack(t) && heardAfter.has(t.id) && !back.includes(t)).map((t) => pathDb(t, after.tracks));
+    const quiet = stillHeard.length > 0 && maxOf(back.map((t) => pathDb(t, after.tracks))) <= maxOf(stillHeard) - QUIET_UNDER_MIX_DB;
+    const unsoloed = before.tracks.filter((w) => w.isSoloed && !after.tracks.find((t) => t.id === w.id)?.isSoloed);
+    const lines: string[] = [];
+    if (unsoloed.length) {
+      const who = listOf(unsoloed.map((t) => nm(t.name)));
+      if (!soloLit(after.tracks)) lines.push(`This un-solos ${who}: every other track is heard again.`);
+      else lines.push(`This un-solos ${who}: ${listOf(back.map((t) => `${nm(t.name)} (at ${r1(t.volume)} dB)`))} ${back.length === 1 ? 'is' : 'are'} heard again.`);
+    } else {
+      for (const t of back.slice(0, 3)) lines.push(t.isSoloed && !old.get(t.id)?.isSoloed ? `This solos ${nm(t.name)} (at ${r1(t.volume)} dB): it will be heard.` : `${nm(t.name)} will be heard again (at ${r1(t.volume)} dB).`);
+      if (back.length > 3) lines.push(`${back.length - 3} more tracks will be heard again.`);
+    }
+    if (quiet) notes?.push(...lines.map((l) => `${l.replace(/\.$/, '')}, quietly under the rest of the mix.`));
+    else out.push(...lines);
   }
 
   if (louder.length) {
-    const names = louder.slice(0, 3).map(([name]) => nm(name));
-    const who = louder.length > 3 ? `${names.join(', ')} and ${louder.length - 3} more` : names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+    const who = listOf(louder.map(([name]) => nm(name)));
     out.push(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(maxOf(louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`);
   }
   if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`);

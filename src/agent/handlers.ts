@@ -140,7 +140,7 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
       if (!Array.isArray(p.ops)) throw new HandlerError('bad_request', 'A suggestion needs "ops", a list of ops.');
       slow(suggestRate, 'suggestions');
       const made = makeSuggestion(currentProject(), songContext(), { title: p.title, explanation: p.explanation, ops: p.ops, focus: p.focus }, undefined, undefined, useConversation.getState().connection, useSuggestions.getState().connection.agent);
-      if (!made.ok) throw new HandlerError('bad_ops', made.message, { errors: made.errors });
+      if (!made.ok) throw new HandlerError(made.code ?? 'bad_ops', made.message, { errors: made.errors });
       // Added at the end (what's on the panel doesn't move), and only counted on the header's
       // button: the panel isn't opened for it, nor is anything focused or applied
       useSuggestions.setState((x) => ({ suggestions: keepSuggestions([...x.suggestions, made.suggestion]) }));

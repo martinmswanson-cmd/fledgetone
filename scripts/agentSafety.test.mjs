@@ -126,3 +126,29 @@ test('a quiet track unmuted is a note, a loud one a warning', () => {
   assert.match(l.warnings.join(''), /This unmutes "Rain" \(at 0 dB\)/);
   assert.deepEqual(l.notes, []);
 });
+
+test('a volume lane that held a track down, removed or emptied, is a warning', () => {
+  const t = base().tracks[0];
+  const low = [{ bar: 1, value: 0.1 }, { bar: 9, value: 0.1 }];
+  const held = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_track', trackId: t.id, volumeDb: 0 }, { op: 'set_automation', trackId: t.id, param: 'volume', points: low }] }, { idBase: 'sg-1' }).song;
+  for (const op of [{ op: 'remove_automation', trackId: t.id, param: 'volume' }, { op: 'set_automation', trackId: t.id, param: 'volume', points: [] }])
+    assert.match(warningsFor([op], held), /This takes away the volume automation on "Keys": it held it down, and it comes up by as much as \d+(\.\d)? dB/, op.op);
+  // A lane that sat at the fader's own level says nothing when it goes
+  const flat = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_track', trackId: t.id, volumeDb: -20 }, { op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 1 }] }] }, { idBase: 'sg-2' }).song;
+  assert.equal(warningsFor([{ op: 'remove_automation', trackId: t.id, param: 'volume' }], flat), '');
+  // A delay feedback lane that kept it short, taken away from a delay set to feed back hard
+  const echo = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'echo', settings: { on: true, feedback: 0.9 } }, { op: 'set_automation', trackId: t.id, param: 'fx:echo.feedback', points: [{ bar: 1, value: 0.1 }] }] }, { idBase: 'sg-3' }).song;
+  assert.match(warningsFor([{ op: 'remove_automation', trackId: t.id, param: 'fx:echo.feedback' }], echo), /takes away the delay feedback automation on "Keys": it feeds back at 90% all along/);
+});
+
+test('un-soloing a quiet soloed track brings the rest back: a warning', () => {
+  const a = base();
+  const t = a.tracks[4];
+  const soloed = { ...a, tracks: a.tracks.map((x, i) => (i === 4 ? { ...x, isSoloed: true, volume: -30 } : x)) };
+  const w = warningsFor([{ op: 'set_track', trackId: t.id, solo: false }], soloed);
+  assert.match(w, /This un-solos "Rain": every other track is heard again\./);
+  // Moving the solo to another track: that track is heard
+  assert.match(warningsFor([{ op: 'set_track', trackId: t.id, solo: false }, { op: 'set_track', trackId: a.tracks[0].id, solo: true }], soloed), /This un-solos "Rain": "Keys" \(at -?\d+(\.\d)? dB\) is heard again\./);
+  // Soloing (fewer heard) says nothing
+  assert.equal(warningsFor([{ op: 'set_track', trackId: t.id, solo: true }]), '');
+});

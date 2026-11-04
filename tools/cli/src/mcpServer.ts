@@ -22,7 +22,7 @@ import { z } from 'zod';
 import { toAgentSong, agentNotes, agentAutomation } from '../../../src/agent/agentSong';
 import { applyOps, checkOpsShape, OPS_VERSION } from '../../../src/agent/ops';
 import { diffSongs } from '../../../src/agent/songDiff';
-import { makeSuggestionFile, SUGGESTION_FORMAT } from '../../../src/agent/suggestion';
+import { makeSuggestionFile, NO_CHANGE, SUGGESTION_FORMAT } from '../../../src/agent/suggestion';
 import { previewOps } from '../../../src/agent/studioReads';
 import { LIMITS, RateLimiter, type StudioMethod } from '../../../src/agent/protocol';
 import { agentText, cleanForAgent } from '../../../src/agent/agentText';
@@ -359,6 +359,8 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
           const song = readSong(songPath);
           const result = applyOps(song, { opsVersion: OPS_VERSION, ops }, { idBase: suggestionIdBase(ops) });
           if (!result.ok) return fail(`The suggestion can't be applied:\n${result.errors.map((e) => `- op ${e.op}${e.path ? ` (${e.path})` : ''}: ${e.message}`).join('\n')}`);
+          // (as the studio refuses one live: a suggestion file with nothing in it isn't written)
+          if (!result.diff.changes.length) return fail(NO_CHANGE);
           writeJson(outPath, makeSuggestionFile(song, { title, explanation, ops: ops as never }));
           return { written: out, apply: `fledgetone apply ${file} ${out} -o <new song>.fledgetone.json`, changes: result.diff.changes.map((c) => c.text), warnings: result.warnings, notes: result.notes, regions: result.diff.regions, audition: focus ?? result.diff.audition };
         }
