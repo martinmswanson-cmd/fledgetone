@@ -5,8 +5,10 @@
  * 16ths, and back; and a jump to another section waiting for the next bar line.
  */
 import type { NoteEvent } from '../store/timelineTypes';
-import { barsToDuration, durationToBars } from '../store/timelineTypes';
+import { barSpan, barsToDuration, durationToBars, formatBarPosition } from '../store/timelineTypes';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
+import { chordSpans } from '../store/smartTools';
+import { beatsBetween, FOUR_FOUR, isPlainMeter, measureAt, toMeasureBeat, type MeterMap } from '../audio/tempoMap';
 
 /**
  * Note offsets and clip lengths are in 4/4 bars (whole notes), so a 16th step is always 1/16 of
@@ -93,7 +95,8 @@ export const fromRoll = (notes: readonly RollNote[]): NoteEvent[] =>
 
 /**
  * A jump to the section `from`–`to` while the song plays at `at` (bars): it lands on the next bar
- * line (`when`). Until then the song loops `loop`, the bar playing to the section, so it neither
+ * line (`when`), the end of the measure playing in the song's meter `map` (in 3/4 three beats
+ * long). Until then the song loops `loop`, the measure playing to the section, so it neither
  * wraps back early nor plays on past the bar line. Null when the song is already in the section.
  */
 export interface SectionJump {
@@ -103,10 +106,23 @@ export interface SectionJump {
   loop: [number, number];
 }
 
-export function sectionJump(at: number, from: number, to: number): SectionJump | null {
+const PLAIN: MeterMap = { base: FOUR_FOUR, points: [] };
+
+export function sectionJump(at: number, from: number, to: number, map: MeterMap = PLAIN): SectionJump | null {
   if (at >= from - 1e-6 && at < to - 1e-6) return null;
-  const bar = Math.floor(at + 1e-6);
-  return { from, to, when: bar + 1, loop: [Math.min(from, bar), Math.max(to, bar + 1)] };
+  const m = measureAt(at + 1e-6, map);
+  const end = m.start + m.length;
+  return { from, to, when: end, loop: [Math.min(from, m.start), Math.max(to, end)] };
+}
+
+/**
+ * Where `bar` is in the section starting at `from`, as the header shows it ("1.4"): the measure
+ * counted from the section's first, and the beat in the meter there (in 6/8 the eighths).
+ */
+export function sectionPlace(bar: number, from: number, map: MeterMap = PLAIN): { measure: number; beat: number } {
+  if (isPlainMeter(map) || bar < 1) return { measure: Math.max(1, Math.floor(bar - from) + 1), beat: Math.floor((((bar % 1) + 1) % 1) * 4) + 1 };
+  const at = toMeasureBeat(bar, map);
+  return { measure: Math.max(1, at.measure - measureAt(from + 1e-6, map).measure + 1), beat: at.beat };
 }
 
 /**
@@ -117,3 +133,37 @@ export function jumpStep(jump: SectionJump, at: number): 'wait' | 'land' | 'seek
   if (at >= jump.from - 1e-6 && at < jump.to - 1e-6) return 'land';
   return at >= jump.when - 0.01 ? 'seek' : 'wait';
 }
+
+/**
+ * How the chords sheet fills the section `from`–`to`: a chord a bar in a section of 4 bars or more
+ * (two in one of 8 or more), else as many as fit, the bars counted as the ruler counts measures.
+ * `spans` (from the section's start) places each chord on the song's measures, as the studio's
+ * chord clips do (three beats a bar in 3/4); in plain 4/4 there are none, a chord being chordBars.
+ */
+export function sectionChordPlan(from: number, to: number, map: MeterMap = PLAIN): { chordBars: number; count: number; spans?: Array<{ start: number; length: number }> } {
+  const plain = isPlainMeter(map);
+  const len = plain ? to - from : barSpan(from, to, map);
+  const chordBars = len >= 8 ? 2 : len >= 4 ? 1 : len / 4;
+  const count = Math.max(1, Math.round(len / chordBars));
+  return plain ? { chordBars, count } : { chordBars, count, spans: chordSpans(from, count, chordBars, map).spans };
+}
+
+/**
+ * The piano roll ruler's marks over the section `from`–`to`: a step (16ths from the section's
+ * start) and a label for each beat, "1" on a measure's first beat and "1.2" on the others,
+ * measures counted from the section's first. In plain 4/4 a mark every 4 steps as always; in other
+ * meters on the meter's beats (an eighth in 6/8, so stepsPerBar(meter) / num steps apart).
+ */
+export function rollRulerMarks(from: number, to: number, map: MeterMap = PLAIN): Array<{ step: number; label: string }> {
+  const steps = Math.round((to - from) * STEPS_PER_WHOLE);
+  if (isPlainMeter(map)) return Array.from({ length: Math.ceil(steps / 4) }, (_, b) => ({ step: b * 4, label: b % 4 === 0 ? `${b / 4 + 1}` : `${Math.floor(b / 4) + 1}.${(b % 4) + 1}` }));
+  const first = measureAt(Math.max(1, from) + 1e-6, map).measure;
+  return beatsBetween(from, to, map).map(({ bar }) => {
+    const at = toMeasureBeat(bar + 1e-9, map);
+    const measure = at.measure - first + 1;
+    return { step: Math.round((bar - from) * STEPS_PER_WHOLE), label: at.beat === 1 ? `${measure}` : `${measure}.${at.beat}` };
+  });
+}
+
+/** Where a take starts, for its "bar …" label: in plain 4/4 to a tenth of a bar as always, else the measure and beat as the ruler numbers them. */
+export const takePlace = (bar: number, map: MeterMap = PLAIN): string => (isPlainMeter(map) ? String(Math.round(bar * 10) / 10) : formatBarPosition(bar, map));

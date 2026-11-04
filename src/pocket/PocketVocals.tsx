@@ -25,6 +25,7 @@ import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
 import { useSongKey } from './pocketCell';
+import { takePlace } from './pocketGrid';
 import { chopClipToPads, clipToPad, placedMessage } from '../store/bounceToPadActions';
 import { chopVoiceToKeys } from '../store/voiceChopActions';
 import { LineUpCard, SlowOutputNotice } from './PocketMic';
@@ -232,7 +233,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
             {takes.map((c) => (
               <div key={c.id} className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-0 text-sm truncate">
-                  {c.name} <span className="text-[11px] text-forge-muted">bar {Math.round(c.startBar * 10) / 10}</span>
+                  {c.name} <span className="text-[11px] text-forge-muted">bar {takePlace(c.startBar, songMeter)}</span>
                 </span>
                 <button type="button" aria-label={`Double ${c.name}`} className={`${pill} !h-10 !px-3`} onClick={() => void doubleClip(c.id).then(showToast)}>
                   <Copy className="w-4 h-4" />

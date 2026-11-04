@@ -12,12 +12,12 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Copy, Home, Percent, Trash2 } from 'lucide-react';
 import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { ChanceSheet } from './pocketUi';
-import { useTimelineStore } from '../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { SLICE_KEY_BASE, type Track } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
-import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, scaleRows, toRoll, type RollNote } from './pocketGrid';
+import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, rollRulerMarks, scaleRows, toRoll, type RollNote } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import type { PocketSection } from './pocketSections';
 import { pocketNoteId, sliceCount, usePocket } from './pocketStore';
@@ -50,6 +50,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   const roll = useRef<HTMLDivElement>(null);
   const surf = useRef<HTMLDivElement>(null);
   const steps = Math.round((sec.to - sec.from) * STEPS_PER_WHOLE);
+  const meter = useSongMeter();
+  const rulerMarks = useMemo(() => rollRulerMarks(sec.from, sec.to, meter), [sec.from, sec.to, meter]);
 
   // A Slicer (not in Pitch mode) has a row per slice, from C3 up, as in the studio's piano roll
   const slices = sliceCount(track);
@@ -372,9 +374,9 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         <div className="pk-rinner" style={{ gridTemplateColumns: `${KEYW}px ${steps * RW}px`, gridTemplateRows: `${RULERH}px ${rows.length * RH}px ${POCKET_LANE_H}px` }}>
           <div className="pk-rcorner" />
           <div className="pk-rruler">
-            {Array.from({ length: Math.ceil(steps / 4) }, (_, b) => (
-              <span key={b} style={{ left: b * 4 * RW }}>
-                {b % 4 === 0 ? `${b / 4 + 1}` : `${Math.floor(b / 4) + 1}.${(b % 4) + 1}`}
+            {rulerMarks.map((m) => (
+              <span key={m.step} style={{ left: m.step * RW }}>
+                {m.label}
               </span>
             ))}
           </div>

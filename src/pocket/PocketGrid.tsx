@@ -8,7 +8,7 @@
  */
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Drum, Ellipsis, Mic, Music, Plus, SlidersHorizontal, Zap, Waves } from 'lucide-react';
-import { useTimelineStore } from '../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import type { Clip, NoteEvent, Track } from '../store/timelineTypes';
 import { gridTracks, copySection, pocketSections, type PocketSection } from './pocketSections';
@@ -38,7 +38,7 @@ export function goToSection(i: number, sections: readonly PocketSection[]): void
   }
   // (Until the bar line the loop runs from the bar playing to the section: a section earlier in
   // the song isn't jumped to at once by the loop wrapping, see sectionJump)
-  pendingJump = sectionJump(getAudiblePositionBar(), sec.from, sec.to);
+  pendingJump = sectionJump(getAudiblePositionBar(), sec.from, sec.to, songMeterOf(s));
   s.setLoopRange(...(pendingJump?.loop ?? [sec.from, sec.to]));
 }
 
