@@ -9,7 +9,7 @@
  * editing an A changes every A until one is made its own. Each action is one undo step, and the
  * song opens on a computer as an ordinary arrangement with a marker at each section.
  */
-import { allOrNothing, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
+import { allOrNothing, oneUndoStep, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
 import { uid, type Clip, type Track } from '../store/timelineTypes';
 import { pastCapsWords } from '../store/songCaps';
 import { songEnd, songSections } from '../store/cutToLength';
@@ -18,6 +18,7 @@ import { isMixTrack } from '../store/buses';
 import { canLink, unlinked } from '../store/patterns';
 import { showToast } from '../components/timeline/toastStore';
 import { mergePieces, sectionCopy } from './pocketClips';
+import { measureStart } from '../audio/tempoMap';
 
 const EPS = 1e-6;
 const tl = () => useTimelineStore.getState();
@@ -31,7 +32,7 @@ export interface PocketSection {
   letter: string;
 }
 
-/** A new song's first section, before anything is written: 4 bars. */
+/** A new song's first section, before anything is written: 4 measures (4 bars in 4/4). */
 export const FIRST_SECTION_BARS = 4;
 
 /** The tracks Pocket shows: everything but buses and returns. */
@@ -57,8 +58,9 @@ function contentOf(clips: readonly Clip[], trackId: string, from: number, to: nu
 
 /** The song's sections, in order, lettered. A song with nothing in it has one, of FIRST_SECTION_BARS. */
 export function pocketSections(s = tl()): PocketSection[] {
-  const found = songSections(s.clips, s.markers, songMeterOf(s));
-  const sections = found.length ? found.map((x) => ({ from: x.from, to: x.to, name: x.name })) : [{ from: 1, to: 1 + FIRST_SECTION_BARS, name: 'Start' }];
+  const meter = songMeterOf(s);
+  const found = songSections(s.clips, s.markers, meter);
+  const sections = found.length ? found.map((x) => ({ from: x.from, to: x.to, name: x.name })) : [{ from: 1, to: measureStart(1 + FIRST_SECTION_BARS, meter), name: 'Start' }];
   const tracks = gridTracks(s.tracks);
   const letters = new Map<string, string>();
   return sections.map((sec) => {
@@ -77,13 +79,7 @@ export const clipsIn = (clips: readonly Clip[], trackId: string, from: number, t
  * nothing: past the most a song can have, nothing is done (undefined) and a toast says so.
  */
 function oneStep<T>(edit: () => T): T | undefined {
-  const done = allOrNothing(() => {
-    tl().checkpoint();
-    const past = tl().past;
-    const result = edit();
-    useTimelineStore.setState({ past, future: [] });
-    return result;
-  });
+  const done = allOrNothing(() => oneUndoStep(edit));
   return done.done ? done.value : undefined;
 }
 
@@ -96,13 +92,7 @@ function oneStep<T>(edit: () => T): T | undefined {
  */
 function oneStepOr(edit: () => string | null): string | null {
   const futureBefore = tl().future;
-  const made = allOrNothing(() => {
-    tl().checkpoint();
-    const past = tl().past;
-    const error = edit();
-    useTimelineStore.setState({ past, future: [] });
-    return error;
-  }, true);
+  const made = allOrNothing(() => oneUndoStep(edit), true);
   if (!made.done) return pastCapsWords(made.past);
   if (made.value) {
     // (nothing of it kept, and nothing of it left to redo: the redo history is as it was)

@@ -6,7 +6,7 @@
  * markers, so live playback and every export hear them the same. The maths is in darkMelody.ts,
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
-import { allOrNothing, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, oneUndoStep, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
 import { TOTAL_BARS, barsToDuration, formatBarPosition, formatBarRange, uid } from './timelineTypes';
@@ -43,12 +43,7 @@ const CUT_FADE = 0.005;
  * what to say about that (null when it was done).
  */
 function oneStep(edit: () => void): string | null {
-  const made = allOrNothing(() => {
-    tl().checkpoint();
-    const past = tl().past;
-    edit();
-    useTimelineStore.setState({ past, future: [] });
-  }, true);
+  const made = allOrNothing(() => oneUndoStep(edit), true);
   return made.done ? null : pastCapsWords(made.past);
 }
 
