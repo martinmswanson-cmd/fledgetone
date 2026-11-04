@@ -1,4 +1,4 @@
-import { tempoAt, type Tempo } from '../audio/tempoMap';
+import { isPlainMeter, measureAt, roundToMeasure, tempoAt, type MeterMap, type Tempo } from '../audio/tempoMap';
 import type { Clip, ClipExpression, NoteEvent, NoteExpression } from './timelineTypes';
 import { tidyNoteLane } from './noteExpression';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
@@ -88,6 +88,8 @@ export interface FinishOptions {
   passes?: boolean;
   /** Only what was played from `inBar` to `outBar` is kept, and the clip is exactly that span. */
   punch?: { inBar: number; outBar: number } | null;
+  /** The song's time signatures: the clip starts and ends on its measure lines (whole bars in 4/4, or without it). */
+  meter?: MeterMap;
 }
 
 /** A note played into the take, in song bars (1-based) and audio seconds (for its length). */
@@ -136,7 +138,7 @@ export interface Take {
   count: () => number;
   /**
    * End the take at `bar` (where the Transport stopped) and `seconds`: notes still held end
-   * there. The clip runs from the first whole bar the take started or played in to the bar line
+   * there. The clip runs from the first whole bar (measure, with `options.meter`) the take started or played in to the bar line
    * nearest where it stopped, or to the end of the last note, whichever is later. Null if
    * nothing was played.
    */
@@ -236,10 +238,19 @@ export function createTake(startBar: number): Take {
         clipStart = punch.inBar;
         clipEnd = punch.outBar;
       } else {
+        const meter = options.meter && !isPlainMeter(options.meter) ? options.meter : null;
         // Stopped just past a bar line, the take ends on that line rather than a bar later
-        high = maxOf(high, Math.round(bar), kept.map((n) => n.bar + lengthOf(n)));
-        clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
-        clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
+        high = maxOf(high, meter ? roundToMeasure(bar, meter) : Math.round(bar), kept.map((n) => n.bar + lengthOf(n)));
+        if (meter) {
+          // From the start of the measure it began or played in to the end of the one it reached (at least one measure)
+          const first = measureAt(Math.max(1, low), meter);
+          const end = measureAt(high, meter);
+          clipStart = Math.min(TOTAL_BARS, first.start);
+          clipEnd = Math.max(first.start + first.length, Math.min(TOTAL_BARS + 1, high - end.start > EPS ? end.start + end.length : end.start));
+        } else {
+          clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
+          clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
+        }
       }
       const notesOf = (list: TakeNote[]) =>
         list
@@ -294,14 +305,16 @@ export function createTake(startBar: number): Take {
  * on one line become one (the louder, then the longer: a double strike would play as a flam). A
  * note snapped onto the clip's end would be hidden there (a clip plays the notes inside it), so a
  * clip on a whole bar grows a bar to keep it; one that can't grow (`grow` false, or starting off a
- * bar line) keeps it on the last line before its end.
+ * bar line) keeps it on the last line before its end. With the song's `meter` (not 4/4) the bar is
+ * a measure: a clip on a measure line grows to the end of the measure the note is in.
  */
-export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true): Clip {
+export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true, meter?: MeterMap): Clip {
+  const measured = meter && !isPlainMeter(meter) ? meter : null;
   if (grid === 'off') return clip;
   const step = QUANTIZE_TICKS[grid];
   const clipTicks = (clip.startBar - 1) * TICKS_PER_BAR;
   const endTicks = clipTicks + clip.lengthBars * TICKS_PER_BAR;
-  const canGrow = grow && Math.abs(clip.startBar - Math.round(clip.startBar)) < EPS;
+  const canGrow = grow && Math.abs(clip.startBar - (measured ? roundToMeasure(clip.startBar, measured) : Math.round(clip.startBar))) < EPS;
   // The lines a note can go to: from the first at or after the start to the last before the end
   const first = Math.ceil(clipTicks / step - EPS) * step;
   const last = Math.ceil(endTicks / step - 1 - EPS) * step;
@@ -322,8 +335,13 @@ export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true): C
     .sort((a, b) => a.tick - b.tick)
     .map(({ note, tick }) => ({ ...note, startOffset: Math.max(0, (tick - clipTicks) / TICKS_PER_BAR) }));
   const lastStart = notes.length ? notes[notes.length - 1].startOffset : 0;
-  // The shortest whole number of bars that holds the last note
-  const lengthBars = canGrow && lastStart >= clip.lengthBars - EPS ? Math.min(TOTAL_BARS + 1 - clip.startBar, Math.floor(lastStart + EPS) + 1) : clip.lengthBars;
+  // The shortest whole number of bars (measures) that holds the last note
+  const holding = () => {
+    if (!measured) return Math.floor(lastStart + EPS) + 1;
+    const m = measureAt(clip.startBar + lastStart, measured);
+    return m.start + m.length - clip.startBar;
+  };
+  const lengthBars = canGrow && lastStart >= clip.lengthBars - EPS ? Math.min(TOTAL_BARS + 1 - clip.startBar, holding()) : clip.lengthBars;
   return { ...clip, notes, lengthBars: Math.max(clip.lengthBars, lengthBars) };
 }
 

@@ -6,6 +6,12 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **The Arrange dialog's drop shows the bar you're at, in any time signature**: opened from the search palette at the playhead, from the ruler's "Speed up into here…" or a clip's "Speed up the end…", in a song not in 4/4 it could show the drop a bar later than the ruler. It now shows the bar nearest, as the ruler numbers it. Speed up into here's own 4 bars before the drop are the ruler's bars too.
+- **Recorded MIDI takes lie on the ruler's bars**: in 3/4, 7/8 and other time signatures a take's clip started and ended on 4-beat lines, part-way through a bar, and quantize grew it by 4 beats. It now starts at the start of the bar you began in and ends at the end of the bar you reached (or the bar line nearest where you stopped), and grows by one bar. A punched-in take still covers exactly the punch range.
+- **Stutter, Shuffle and Chop and play start on the bar the playhead is in**: their new 2-bar clips started on a 4-beat line and were 8 beats long in a song not in 4/4. They now start at that bar's start and are two of the song's bars long.
+- **A new clip just after a bar line in 7/8 starts in that bar**: double-clicking a track or New empty clip just past a bar line put the clip on a quarter before it, in the bar before. It now starts on the eighth (the beat of the time signature) clicked in.
+- **The clip launcher's slots say their length in the song's bars**: the tooltip counted 4-beat bars in a song not in 4/4.
+
 - **Inserting bars never pushes a tempo or time signature change off the end**: inserting bars before a change near the song's end moved it past the last bar, where you couldn't see it, and opening the song again pulled it back, so the song played differently after saving. Such an insert is now refused with a word on why.
 - **A game section named ".." exports whole**: a section named only with dots made a folder step in the game kit's file names, so its stems went missing when the kit was unpacked. Such a name now becomes a plain file name.
 - **The reverse cymbal and a one-bar riser work in very short bars**: in 1/8 and 3/16 they always said there was no room before the drop. They now fit a whole bar.

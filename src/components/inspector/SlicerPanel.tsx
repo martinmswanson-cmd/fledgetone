@@ -5,7 +5,8 @@
  */
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { FileAudio, Upload } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
+import { addMeasures, measureAt } from '../../audio/tempoMap';
 import type { SliceCount, SlicerSettings, Track } from '../../store/timelineTypes';
 import { SLICE_COUNTS } from '../../store/timelineTypes';
 import { importSoundFile, SoundError, useSoundLibrary } from '../../audio/soundLibrary';
@@ -263,11 +264,14 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
                 title={kind === 'stutter' ? 'A new 2-bar clip at the playhead that plays the slices with repeats and 1/32 rolls' : 'A new 2-bar clip at the playhead that plays a random slice on each 16th'}
                 onClick={() => {
                   const st = useTimelineStore.getState();
-                  const bar = Math.max(1, Math.floor(st.playheadPosition));
-                  const clipId = st.createEmptyClip(track.id, bar, 2);
+                  // From the start of the measure the playhead is in, two bars as the ruler counts them
+                  const meter = songMeterOf(st);
+                  const bar = measureAt(Math.max(1, st.playheadPosition), meter).start;
+                  const length = addMeasures(bar, 2, meter) - bar;
+                  const clipId = st.createEmptyClip(track.id, bar, length);
                   if (!clipId) return;
                   const seed = Math.floor(Math.random() * 1e9);
-                  const notes = slicePattern(kind, slicer.slices.length, 1, 2, seed).map((n) => ({ ...n, id: uid('note') }));
+                  const notes = slicePattern(kind, slicer.slices.length, 1, length, seed).map((n) => ({ ...n, id: uid('note') }));
                   // (One undo step with the new clip)
                   useTimelineStore.setState((x) => ({ clips: x.clips.map((c) => (c.id === clipId ? { ...c, name: `${slicer.name} ${kind}`, notes } : c)) }));
                 }}

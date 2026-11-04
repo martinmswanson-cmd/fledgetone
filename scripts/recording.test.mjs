@@ -334,3 +334,63 @@ test("a note quantized at the song's very end stays on the last line, inside the
   assert.ok(q.notes[0].startOffset < q.lengthBars, String(q.notes[0].startOffset));
   near(q.notes[0].startOffset, 1 - 1 / 16);
 });
+
+// Not in 4/4: a take's clip lies on the ruler's measure lines (3/4: measures at 1, 1.75, 2.5, 3.25, 4 ...)
+const THREE = { base: { num: 3, den: 4 }, points: [] };
+const SEVEN = { base: { num: 7, den: 8 }, points: [] };
+
+test('in 3/4 a take runs from the measure it started in to the measure line nearest where it stopped', () => {
+  // Recorded from measure 3 (bar 2.5), a note on its downbeat, stopped just past measure 4's line
+  const take = createTake(2.5);
+  take.noteOn(60, 'C4', 0.8, 2.5, at(2.5));
+  take.noteOff(60, at(2.5) + 0.5);
+  const clip = take.finish(3.3, at(3.3), BPM, { meter: THREE });
+  assert.equal(clip.startBar, 2.5);
+  near(clip.lengthBars, 0.75);
+  near(clip.notes[0].startOffset, 0);
+  // Without the meter (or in 4/4) it's whole bars, as before
+  const plain = createTake(2.5);
+  plain.noteOn(60, 'C4', 0.8, 2.5, at(2.5));
+  plain.noteOff(60, at(2.5) + 0.5);
+  const old = plain.finish(3.3, at(3.3), BPM, { meter: { base: { num: 4, den: 4 }, points: [] } });
+  assert.deepEqual([old.startBar, old.lengthBars], [2, 1]);
+});
+
+test('in 7/8 a take started inside a measure starts on that measure and ends on the end of the one its last note reached', () => {
+  // Measures at 1, 1.875, 2.75, 3.625: started at 1.9, a long note into the third measure
+  const take = createTake(1.9);
+  take.noteOn(60, 'C4', 0.8, 1.95, at(1.95));
+  take.noteOff(60, at(2.9));
+  const clip = take.finish(2.95, at(2.95), BPM, { meter: SEVEN });
+  near(clip.startBar, 1.875);
+  near(clip.startBar + clip.lengthBars, 3.625);
+  near(clip.notes[0].startOffset, 1.95 - 1.875);
+  // Nothing past the first measure: still one whole measure long
+  const short = createTake(1.9);
+  short.noteOn(60, 'C4', 0.8, 1.95, at(1.95));
+  short.noteOff(60, at(2));
+  const one = short.finish(2, at(2), BPM, { meter: SEVEN });
+  near(one.startBar, 1.875);
+  near(one.lengthBars, 0.875);
+});
+
+test('a punched take keeps the exact punch range whatever the meter', () => {
+  const take = createTake(1.5);
+  take.noteOn(60, 'C4', 0.8, 1.9, at(1.9));
+  take.noteOff(60, at(2));
+  const clip = take.finish(2.6, at(2.6), BPM, { meter: THREE, punch: { inBar: 1.6, outBar: 2.2 } });
+  assert.equal(clip.startBar, 1.6);
+  near(clip.lengthBars, 0.6);
+});
+
+test('in 3/4 a note quantized onto the clip end grows the clip by a measure, not a whole note', () => {
+  const q = quantizeTakeClip(clipOf([['C4', 0.74]], 1, 0.75), '1/16', true, THREE);
+  near(q.notes[0].startOffset, 0.75);
+  near(q.lengthBars, 1.5);
+  // 4/4 grows a bar, as before
+  const four = quantizeTakeClip(clipOf([['C4', 0.99]], 1, 1), '1/16', true, { base: { num: 4, den: 4 }, points: [] });
+  assert.equal(four.lengthBars, 2);
+  // A clip off a measure line doesn't grow
+  const off = quantizeTakeClip(clipOf([['C4', 0.74]], 1.25, 0.75), '1/16', true, THREE);
+  near(off.lengthBars, 0.75);
+});

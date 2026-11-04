@@ -25,7 +25,7 @@ import { patternSize } from '../../store/patterns';
 import { speedUpIntoDrop } from '../../store/speedUpActions';
 import { SPEED_UP_DEFAULTS } from '../../store/speedUp';
 import { maxOf, minOf } from '../../support/minMax';
-import { addMeasures, measureAt } from '../../audio/tempoMap';
+import { addMeasures, beatFloor, measureAt, roundToMeasure } from '../../audio/tempoMap';
 
 export interface ContextMenuState {
   x: number;
@@ -260,7 +260,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
     icon: <Piano className="w-3.5 h-3.5" />,
     onClick: run(() => {
       // On the beat, as a double-click makes one, `bars` bars as the ruler counts them
-      const at = Math.floor(menu.bar * 4 + 1e-6) / 4;
+      const at = beatFloor(menu.bar, meter);
       const id = track && s.createEmptyClip(track.id, at, addMeasures(at, bars, meter) - at);
       if (id) s.openEditor(id);
     }),
@@ -375,7 +375,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               icon: <ChevronsRight className="w-3.5 h-3.5" />,
               onClick: () => {
                 onClose();
-                openArrange('drops', Math.round(to), undefined, { from, to });
+                openArrange('drops', roundToMeasure(to, meter), undefined, { from, to });
               },
             },
           ];

@@ -6,7 +6,7 @@
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { addMeasures, isPlainMeter } from '../../audio/tempoMap';
+import { addMeasures, beatFloor, isPlainMeter } from '../../audio/tempoMap';
 import type { Track } from '../../store/timelineTypes';
 import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
@@ -90,7 +90,9 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       onDoubleClick={(e) => {
         if (e.target !== e.currentTarget || useTimelineStore.getState().activeTool !== 'select') return;
         const raw = barFromClientX(e.clientX, originRef.current);
-        const bar = Math.floor((raw - 1) * 4) / 4 + 1;
+        // (On the beat of the meter there: in 7/8 an eighth)
+        const meter = songMeterOf(useTimelineStore.getState());
+        const bar = isPlainMeter(meter) ? Math.floor((raw - 1) * 4) / 4 + 1 : beatFloor(raw, meter);
         if (isAudio) {
           // Sound files, as clips from the beat that was double-clicked
           void pickAudioFiles().then((files) => dropAudioFiles(track.id, bar, files));

@@ -326,6 +326,17 @@ export function nearestMeasureStart(bar: number, map: MeterMap): number {
 }
 
 /**
+ * The start of the beat `bar` is in, counted in the meter there (in 7/8 the beats are eighths from
+ * the measure's start): where a clip made at `bar` starts. In plain 4/4 the quarter at or before it.
+ */
+export function beatFloor(bar: number, map: MeterMap): number {
+  if (isFourFour(map) || bar < 1) return Math.floor(bar * 4 + 1e-6) / 4;
+  const m = measureAt(bar, map);
+  const step = 1 / m.meter.den;
+  return m.start + Math.min(m.meter.num - 1, Math.max(0, Math.floor((bar - m.start) / step + 1e-6))) * step;
+}
+
+/**
  * `bar` on the nearest measure line, for the tools that place things "at bar N": in plain 4/4 the
  * nearest whole bar as they always rounded it (Math.round), otherwise nearestMeasureStart.
  */
