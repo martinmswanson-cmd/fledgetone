@@ -5,7 +5,7 @@
  */
 import React, { useRef, useState } from 'react';
 import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, ChevronsRight, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
-import { meterAt, roundToMeasure, tempoAt } from '../../audio/tempoMap';
+import { addMeasures, meterAt, roundToMeasure, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
@@ -106,7 +106,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       icon: <CircleDot className="w-3.5 h-3.5" />,
       onClick: run(() => {
         const p = s.punch;
-        s.setPunch({ enabled: true, inBar: menu.bar, outBar: p.outBar > menu.bar ? p.outBar : menu.bar + 1 });
+        s.setPunch({ enabled: true, inBar: menu.bar, outBar: p.outBar > menu.bar ? p.outBar : addMeasures(menu.bar, 1, songMeterOf(s)) });
         return null;
       }),
     },
@@ -116,7 +116,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       icon: <CircleDot className="w-3.5 h-3.5" />,
       onClick: run(() => {
         const p = s.punch;
-        s.setPunch({ enabled: true, outBar: menu.bar, inBar: p.inBar < menu.bar ? p.inBar : Math.max(1, menu.bar - 1) });
+        s.setPunch({ enabled: true, outBar: menu.bar, inBar: p.inBar < menu.bar ? p.inBar : Math.max(1, addMeasures(menu.bar, -1, songMeterOf(s))) });
         return null;
       }),
     },

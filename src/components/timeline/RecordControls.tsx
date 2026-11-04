@@ -7,7 +7,9 @@ import { NoteRepeatPicker } from './NoteRepeatPicker';
 import { isMixKind } from '../../audio/instrumentCatalog';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Circle, KeyboardMusic, Triangle } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter } from '../../audio/tempoMap';
+import { PositionInput } from './SpeedUpSection';
 import { ALL_INPUTS, useMidiStore } from '../../store/midiStore';
 import { useMidiLearn } from '../../store/midiLearn';
 import { specOf } from '../../audio/automation';
@@ -39,6 +41,11 @@ const checkbox = 'accent-red-400 cursor-pointer';
 const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; onClose: () => void }> = ({ anchorRef, onClose }) => {
   const options = useTimelineStore((s) => s.recordOptions);
   const punch = useTimelineStore((s) => s.punch);
+  // (In and Out typed as the ruler counts them: measure.beat when the song isn't in 4/4)
+  const meterSig = useTimelineStore((s) => s.meter);
+  const meterPoints = useTimelineStore((s) => s.meterPoints);
+  const meter = songMeterOf({ meter: meterSig, meterPoints });
+  const plainMeter = isPlainMeter(meter);
   const latency = useMidiStore((s) => s.outputLatency);
   const { setRecordOptions, setPunch } = useTimelineStore.getState();
   const barInput = 'h-7 w-16 bg-forge-bg border border-forge-border rounded-md px-1.5 text-xs font-mono text-forge-text focus:outline-none focus:border-cyan-500';
@@ -79,7 +86,8 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
         </label>
         <div className="flex items-center gap-1.5">
           <span className="w-6">In</span>
-          <input
+          {plainMeter ? (
+            <input
             type="number"
             min={1}
             step={0.25}
@@ -88,8 +96,12 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
             className={barInput}
             aria-label="Punch in bar"
           />
+          ) : (
+            <PositionInput value={punch.inBar} min={1} meter={meter} onChange={(bar) => setPunch({ inBar: bar })} className={barInput} label="Punch in bar" />
+          )}
           <span className="w-7 text-right">Out</span>
-          <input
+          {plainMeter ? (
+            <input
             type="number"
             min={1}
             step={0.25}
@@ -98,6 +110,9 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
             className={barInput}
             aria-label="Punch out bar"
           />
+          ) : (
+            <PositionInput value={punch.outBar} min={1} meter={meter} onChange={(bar) => setPunch({ outBar: bar })} className={barInput} label="Punch out bar" />
+          )}
           <button
             type="button"
             onClick={() => {

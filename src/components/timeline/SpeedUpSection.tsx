@@ -29,7 +29,7 @@ const show = (bar: number) => `${Math.round(bar * 1000) / 1000}`;
  * A typed position: in 4/4 a number of bars (4.5); in other time signatures as the ruler numbers
  * it, measure.beat (9, 9.2 or 9.2.50), applied as it reads.
  */
-const PositionInput: React.FC<{ value: number; min: number; meter: MeterMap; onChange: (bar: number) => void }> = ({ value, min, meter, onChange }) => {
+export const PositionInput: React.FC<{ value: number; min: number; meter: MeterMap; onChange: (bar: number) => void; className?: string; label?: string }> = ({ value, min, meter, onChange, className, label }) => {
   const [draft, setDraft] = useState<string | null>(null);
   if (isPlainMeter(meter)) {
     return <input type="number" min={min} step={1} className={`${control} w-20`} value={show(value)} onChange={(e) => onChange(Math.max(1, round16(Number(e.target.value) || 1)))} />;
@@ -42,7 +42,8 @@ const PositionInput: React.FC<{ value: number; min: number; meter: MeterMap; onC
   return (
     <input
       inputMode="decimal"
-      className={`${control} w-20 ${invalid ? '!border-red-500' : ''}`}
+      className={`${className ?? `${control} w-20`} ${invalid ? '!border-red-500' : ''}`}
+      aria-label={label}
       value={draft ?? formatBarPosition(value, meter)}
       onChange={(e) => {
         setDraft(e.target.value);

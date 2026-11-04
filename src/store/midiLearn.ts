@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
+import { livePlayhead } from './playheadClock';
 import type { AutomationParam } from './timelineTypes';
 import { laneOf, normalizePoints, parseParam, specOf } from '../audio/automation';
 import { liveWam, paramMoved } from '../audio/wamHost';
@@ -101,7 +102,8 @@ function writeAutomation(trackId: string, param: AutomationParam, n: number): vo
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === trackId);
   if (!track) return;
-  const bar = s.playheadPosition;
+  // (Where the playhead is now: the store's own is set only a few times a second while playing)
+  const bar = s.isPlaying ? livePlayhead() : s.playheadPosition;
   const key = `${trackId}|${param}`;
   const from = writing.get(key);
   const points = laneOf(track, param)?.points ?? [];

@@ -361,7 +361,7 @@ const LessonOverlay: React.FC = () => {
                 <span>{done ? 'Done!' : <>Your turn: <strong>{task.hint}</strong></>}</span>
               </div>
             )}
-            {!rect && step.target && <p className="text-[11px] italic">(That part isn't on screen right now.)</p>}
+            {!rect && selectorOf(step) && <p className="text-[11px] italic">(That part isn't on screen right now.)</p>}
             <div className="flex items-center gap-2 pt-1">
               <button type="button" onClick={back} disabled={active.step === 0} className="h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:border-forge-borderLight disabled:opacity-30">
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
