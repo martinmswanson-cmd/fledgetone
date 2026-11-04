@@ -181,3 +181,28 @@ test("on a section of an odd length the chords sheet's last chord stops at the s
   // A whole number of chords as before
   assert.deepEqual(sectionChordPlan(1, 9), { chordBars: 2, count: 4 });
 });
+
+test("a jump in the song's last measure stops at the timeline's end", () => {
+  // 3/2: the last measure starts on bar 400 and would run to 401.5, past the end (401)
+  const THREE_TWO = meterMap(3, 2);
+  const j = sectionJump(400.3, 1, 5, THREE_TWO);
+  assert.equal(j.when, 401);
+  assert.deepEqual(j.loop, [1, 401]);
+  // A section running to the end, jumped to from earlier: its loop ends there too
+  const k = sectionJump(91.3, 397, 401.5, THREE_TWO);
+  assert.deepEqual(k, { from: 397, to: 401.5, when: 92.5, loop: [91, 401] });
+  // Inside the timeline as before
+  assert.deepEqual(sectionJump(5.8, 1, 5), { from: 1, to: 5, when: 6, loop: [1, 6] });
+});
+
+test("the ruler reads 1 at the start of a section starting part-way through a measure", () => {
+  // 1/2 has one beat a measure: a section from 16.875 has none of measure 1's beats in it
+  const HALF = meterMap(1, 2);
+  const marks = rollRulerMarks(16.875, 18, HALF);
+  assert.deepEqual(marks.map((m) => m.label), ['1', '2', '3']);
+  assert.deepEqual(marks.map((m) => m.step), [0, 2, 10]);
+  // On a beat of measure 1 it reads that beat, as before
+  assert.deepEqual(rollRulerMarks(1.25, 3, meterMap(2, 2)).map((m) => m.label), ['1.2', '2', '2.2']);
+  // On a measure line as before
+  assert.deepEqual(rollRulerMarks(17, 18, HALF).map((m) => m.label), ['1', '2']);
+});

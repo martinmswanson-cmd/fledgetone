@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Pocket's piano roll ruler starts at 1 on a section starting part-way through a bar**: in a time signature with one beat a bar (like 1/2), such a section's ruler started at "2". It now starts at "1", as the section's header counts it.
 - **A take recorded in the song's last bar stops at the end of the timeline**: in a time signature like 3/2 or 7/4, a MIDI take in the last bar could make a clip that ran past the end of the timeline (and quantize kept it that long), which Save and reopen then cut short. The clip now stops at the timeline's end, as it does in 4/4.
 - **Pocket's chords stop at the end of a section of an odd length**: on a 9- or 11-bar section, Chords wrote two-bar chords and the last one rang a bar into the next section (in 3/4 and other time signatures too). The last chord is now cut to end with the section; sections a whole number of chords long are unchanged.
 - **A beat switch or song form that can't be made leaves Redo alone**: when Beat switch or Song form couldn't be made (no room left at the end of the song), it threw away what you could still redo, an undone suggestion from the agent included. It now leaves it, as Pocket does.
