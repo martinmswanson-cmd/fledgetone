@@ -6,6 +6,9 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A caution when a suggestion lets something louder back in**: a suggestion that takes away a volume lane holding a track down (or leaves it with no points), takes away a drive or delay feedback lane that kept those low, or clears a solo so the rest of the song is heard again, now says so on its card (and to the agent), as an unmuted track already did. Before, it could bring the song up by 30 dB or more without a word.
+- **A suggestion that changes nothing isn't made**: your agent is told "These changes leave the song as it is." and no card appears. Accepting a suggestion when the song is already as it suggests no longer adds an empty undo step, and keeps what you can redo.
+
 - **Takes snap to the song's beats in any time signature**: in 7/8, 6/8 and other time signatures, dragging or clicking along a take in the Takes dialog snapped to quarter notes, between the song's beats. It now snaps to the song's own beats (eighths in 7/8), as its grid shows. Shift still snaps to 16ths, and 4/4 is as before.
 
 ## 2026.11.04 — Suggestions from your own agent, bars counted right in every time signature, and many fixes

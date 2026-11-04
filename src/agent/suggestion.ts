@@ -213,6 +213,9 @@ export function classifySuggestion(
 /** A suggestion's title as it's kept and shown: the agent's words made plain (fromAgent), on one line. */
 const titleOf = (text: string) => fromAgent(text, 80).replace(/\s+/g, ' ').trim();
 
+/** Why a suggestion whose ops change nothing is refused, to its agent (live, and in file mode). */
+export const NO_CHANGE = 'These changes leave the song as it is.';
+
 /** A suggestion file for `ops` on `song`. */
 export function makeSuggestionFile(song: ProjectSnapshot, s: { title: string; explanation: string; ops: Op[] }): SuggestionFile {
   return {

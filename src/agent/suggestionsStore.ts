@@ -20,7 +20,7 @@ import type { ProjectSnapshot } from '../store/project';
 import { barToSeconds, secondsToBar, measureAt } from '../audio/tempoMap';
 import { musicEnd } from '../audio/auditionMath';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
-import { classifySuggestion, touchedHashes, touchedNames } from './suggestion';
+import { classifySuggestion, NO_CHANGE, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, type Parts } from './revision';
 import { joinRanges, namesManyBars, rangesWords, wordMeter, type BarRange } from './songDiff';
@@ -528,7 +528,8 @@ const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: Project
 
 /**
  * A suggestion from an agent's request, on `base` (the song in `ctx`): its texts made plain and
- * cut to their limits, its ops applied with an id base of its own. The ops' errors if they can't.
+ * cut to their limits, its ops applied with an id base of its own. The ops' errors if they can't,
+ * and `no_change` (NO_CHANGE) if they change nothing: no card for a suggestion with nothing in it.
  */
 export function makeSuggestion(
   base: ProjectSnapshot,
@@ -538,12 +539,13 @@ export function makeSuggestion(
   now = Date.now(),
   connection?: number,
   agent?: string
-): { ok: true; suggestion: Suggestion } | { ok: false; errors: OpError[]; message: string } {
+): { ok: true; suggestion: Suggestion } | { ok: false; errors: OpError[]; message: string; code?: 'no_change' } {
   const title = fromAgent(req.title, LIMITS.titleMaxChars);
   if (!title) return { ok: false, errors: [], message: 'A suggestion needs a title.' };
   const explanation = fromAgent(req.explanation, LIMITS.explanationMaxChars);
   const out = applyOps(base, { opsVersion: OPS_VERSION, ops: req.ops }, { idBase: id });
   if (!out.ok) return { ok: false, errors: out.errors, message: `The ops can't be applied: ${out.errors.map((e) => `${e.path || 'ops'}: ${e.message}`).join('; ')}` };
+  if (!out.diff.changes.length) return { ok: false, errors: [], message: NO_CHANGE, code: 'no_change' };
   const ops = req.ops as Op[];
   const f = req.focus as Partial<BarRange> | undefined;
   const focus =

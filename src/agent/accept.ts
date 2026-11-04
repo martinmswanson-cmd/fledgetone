@@ -4,11 +4,13 @@
  * tempo and master), after checking it still fits (see acceptDecision: for another song, out of
  * date, or applied again to the song as it is now and to be heard again first). Then what the store's own actions
  * would have done on the side: the live mix's master and tempo-synced effects, and the recordings
- * of instruments the suggestion chose. Only a real click or key press accepts: a click made by a
- * script (an event that isn't trusted) does nothing.
+ * of instruments the suggestion chose. A song that would go in exactly as it is now adds no undo
+ * step: the undo and redo histories stay as they are. Only a real click or key press accepts: a
+ * click made by a script (an event that isn't trusted) does nothing.
  */
 import { allOrNothing, currentProject, masterFxOf, tagLastStep, useTimelineStore } from '../store/timelineStore';
 import type { ProjectSnapshot } from '../store/project';
+import { stableJson } from './fingerprint';
 import type { Track } from '../store/timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { liveMix } from '../audio/engine';
@@ -25,9 +27,11 @@ const MOMENT = ['isArmed', 'frozen', 'freezing', 'midiMap'] as const;
  * Put `song`'s edited parts into the store as one undo step. All or nothing: false (and the song
  * and its undo history exactly as they were) if it can't go in, checked first (an instrument this
  * version doesn't have), and undone if putting it in fails part way or would go past the most a
- * song can have (songCaps.ts: the store refuses that change, see allOrNothing).
+ * song can have (songCaps.ts: the store refuses that change, see allOrNothing). 'same' when it
+ * would put the song exactly as it is now: nothing is put, and the undo history (the redo
+ * history, the checkpoint waiting) is left as it is.
  */
-export function applyAsOneStep(song: ProjectSnapshot): boolean {
+export function applyAsOneStep(song: ProjectSnapshot): boolean | 'same' {
   if (!song.tracks.every((t) => isInstrumentKey(t.instrumentKey))) return false;
   const tl = useTimelineStore.getState();
   const before = tl.tracks;
@@ -53,6 +57,8 @@ export function applyAsOneStep(song: ProjectSnapshot): boolean {
     const { collapsed: _c, ...open } = t.folder;
     return { ...t, folder: folded.get(t.folder.id) ? { ...open, collapsed: true } : open };
   });
+  // (nothing to put: no empty undo step, and Redo kept, as an edit that does nothing, see oneUndoStepOr)
+  if (stableJson(partsOf(song, tracks, clips)) === stableJson(partsOf(tl, tl.tracks, tl.clips))) return 'same';
   const was = { tracks: tl.tracks, clips: tl.clips, markers: tl.markers, bpm: tl.bpm, tempoPoints: tl.tempoPoints, master: tl.master, selectedTrackId: tl.selectedTrackId, past: tl.past, future: tl.future };
   try {
     // (quiet: Accept says itself that nothing was changed)
@@ -76,6 +82,9 @@ export function applyAsOneStep(song: ProjectSnapshot): boolean {
   for (const t of tracks) if (had.get(t.id) !== t.instrumentKey && hasRecordings(t.instrumentKey)) void loadQuick(t.instrumentKey).catch(() => {});
   return true;
 }
+
+/** What put() puts, to tell whether it changes anything. */
+const partsOf = (s: Pick<ProjectSnapshot, 'markers' | 'bpm' | 'tempoPoints' | 'master'>, tracks: readonly Track[], clips: ProjectSnapshot['clips']) => ({ tracks, clips, markers: s.markers ?? [], bpm: s.bpm, tempoPoints: s.tempoPoints ?? [], master: s.master });
 
 /** The step itself: a checkpoint, then the song's parts in one change, and what the store's setters do besides. */
 function put(song: ProjectSnapshot, tracks: Track[], clips: ProjectSnapshot['clips'], selectedTrackId: string | null): void {
@@ -125,17 +134,19 @@ export function acceptSuggestion(id: string, event: { isTrusted: boolean } | nul
   const step = `${id}@${Date.now()}`;
   // (its statuses on the way are told to no one: only where it settles, see settledChanges)
   useSuggestions.setState({ settling: true });
-  let went = false;
+  let went: boolean | 'same' = false;
   try {
     updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step });
     went = applyAsOneStep(decision.apply);
     // Nothing went in: the suggestion is as it was, and says so
     if (!went) updateSuggestion(id, { ...decision.suggestion, status: s.status, step: s.step });
+    // The song is already as it suggests: accepted, with no undo step of its own to name
+    else if (went === 'same') updateSuggestion(id, { ...decision.suggestion, status: 'accepted', step: undefined });
   } finally {
     useSuggestions.setState({ settling: false });
   }
   if (!went) return "This suggestion can't go into your song: nothing was changed.";
-  tagLastStep(step);
+  if (went === true) tagLastStep(step);
   forgetAudition(id);
   return null;
 }
