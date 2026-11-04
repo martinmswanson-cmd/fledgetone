@@ -42,9 +42,6 @@ const say = (message: string | null | undefined) => message && showToast(message
 /** The last bar a bar field takes, as the ruler numbers it (400 in 4/4). */
 const lastBar = (meter: MeterMap) => barNumberAt(TOTAL_BARS, meter);
 
-/** Section lengths in the ruler's bars as lengths in positions (`perBar` long each). */
-const inPositions = (lengths: SectionLengths, perBar: number): SectionLengths =>
-  perBar === 1 ? lengths : (Object.fromEntries(Object.entries(lengths).map(([k, n]) => [k, n * perBar])) as SectionLengths);
 
 /** The Arrange a beat dialog (opened with openArrange). */
 export const ArrangeDialog: React.FC = () => {
@@ -244,8 +241,8 @@ const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range
             <option value={0.25}>ending a beat early (for a stop)</option>
             <option value={0.125}>ending half a beat early</option>
           </select>
-          <button type="button" className={secondary} onClick={() => say(addDropFx('riser', drop, beforeDrop(fxBars), early))}>Riser</button>
-          <button type="button" className={secondary} onClick={() => say(addDropFx('reverse', drop, beforeDrop(fxBars), early))}>Reverse cymbal</button>
+          <button type="button" className={secondary} onClick={() => say(addDropFx('riser', drop, fxBars, early))}>Riser</button>
+          <button type="button" className={secondary} onClick={() => say(addDropFx('reverse', drop, fxBars, early))}>Reverse cymbal</button>
         </div>
       </section>
       <section className="flex flex-col gap-2 border-t border-forge-border pt-3">
@@ -336,7 +333,7 @@ const FormTab: React.FC = () => {
         {plan.map((s) => `${s.name} ${s.bars}`).join(' · ')} = {total} bars, about {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')} at {bpm} BPM. Intro and outro: the melody alone. Verses: a thinner beat and a softer melody. Bridge: the kick under the melody and bass. Hooks: everything. Markers name each section; anything after the loop moves later.
       </p>
       <div className="flex justify-end">
-        <button type="button" className={primary} disabled={!total} onClick={() => say(layOutSong(start, rulerBarsLength(start, loopBars, meter), inPositions(lengths, perBar), drop))}>Lay out the song</button>
+        <button type="button" className={primary} disabled={!total} onClick={() => say(layOutSong(start, loopBars, lengths, drop))}>Lay out the song</button>
       </div>
     </div>
   );
@@ -425,7 +422,7 @@ const TagTab: React.FC = () => {
         <select className={control} value={every} onChange={(e) => setEvery(Number(e.target.value))} aria-label="How often">
           {[4, 8, 16].map((n) => <option key={n} value={n}>every {n} bars</option>)}
         </select>
-        <button type="button" className={secondary} disabled={!tag} onClick={() => say(placeTag(start, rulerBarsLength(start, every, meter)))} title="For a beat-store preview">Tag the whole beat</button>
+        <button type="button" className={secondary} disabled={!tag} onClick={() => say(placeTag(start, every))} title="For a beat-store preview">Tag the whole beat</button>
       </div>
     </div>
   );
