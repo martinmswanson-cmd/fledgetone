@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { STINGER_KINDS, STINGER_VARIATIONS, stingerNotes, fitNotesToRange, createStinger, parseStingers } = await import('../src/store/stingers.ts');
+const { STINGER_KINDS, STINGER_VARIATIONS, stingerNotes, fitNotesToRange, createStinger, parseStingers, stingerHold } = await import('../src/store/stingers.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 const { midiOf } = await import('../src/store/noteTools.ts');
 
@@ -73,4 +73,15 @@ test('a new stinger takes the first name not in use, so two never share one', ()
   assert.equal(createStinger('danger', key, [b, c]).name, 'Danger 3');
   // Told apart without regard to case, and from a stinger of another kind renamed to it
   assert.equal(createStinger('victory', key, [{ ...a, kind: 'item', name: 'victory' }]).name, 'Victory 2');
+});
+
+test('a bridging stinger holds whole bars of the song’s time signature', () => {
+  // 4/4 (or no meter): whole notes, as before
+  assert.deepEqual(stingerHold(1), { measures: 1, bars: 1 });
+  assert.deepEqual(stingerHold(1.5, { num: 4, den: 4 }), { measures: 2, bars: 2 });
+  // 3/4: a 1-bar (4-beat) stinger holds 2 bars of 3 beats
+  assert.deepEqual(stingerHold(1, { num: 3, den: 4 }), { measures: 2, bars: 1.5 });
+  assert.deepEqual(stingerHold(0.75, { num: 3, den: 4 }), { measures: 1, bars: 0.75 });
+  // 7/8: 2 whole notes are 16 eighths, 3 bars of 7
+  assert.deepEqual(stingerHold(2, { num: 7, den: 8 }), { measures: 3, bars: 21 / 8 });
 });

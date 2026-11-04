@@ -17,7 +17,7 @@ import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
 import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
 import { midiOf, nameOf } from '../store/noteTools';
-import { stingerKind } from '../store/stingers';
+import { stingerHold, stingerKind } from '../store/stingers';
 import type { Clip, Marker, MasterFx, MasterSettings, Stinger, Track, TransitionKind, TransitionRule } from '../store/timelineTypes';
 import webPlayer from '../gameKit/adaptive-music.js?raw';
 import godotPlayer from '../gameKit/godot/AdaptiveMusic.gd?raw';
@@ -283,8 +283,10 @@ export async function buildGameKitParts(
     tick(`stinger ${s.name}`);
     const name = stingerNames[i];
     const file = `stingers/${safe(name)}.wav`;
+    // (A bridge holds the new state back whole bars of the song's time signature)
+    const hold = stingerHold(s.lengthBars, meterMap.base);
     files.push({ name: file, data: await renderStinger(s, song, sampleRate, recordings) });
-    stingers.push({ name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
+    stingers.push({ name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: hold.measures, bridgeSeconds: +(hold.bars * secondsPerBar).toFixed(6) });
     stingerName.set(s.id, name);
   }
 

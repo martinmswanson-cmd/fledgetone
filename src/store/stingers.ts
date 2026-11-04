@@ -5,6 +5,7 @@ import { readNoteDuration, uid } from './timelineTypes';
 import { isPrototypeName } from './ownKey';
 import { NOTE_NAMES, type SongKey } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
+import { measureBars, type Meter } from '../audio/tempoMap';
 
 /**
  * Stingers: short musical cues a game plays over its music when something happens (a win, a level
@@ -100,6 +101,17 @@ export function stingerNotes(kind: StingerKind, key: SongKey, variation = 0): { 
 }
 
 /** Move notes by octaves into an instrument's range (MIDI numbers, inclusive). */
+/**
+ * How long a stinger bridging a switch holds the new state back: its length rounded up to whole
+ * bars of the song's time signature (in 4/4 whole notes, as before). `measures` is that many of
+ * the song's bars, `bars` the same length in whole notes (what the seconds are worked from).
+ */
+export function stingerHold(lengthBars: number, meter?: Meter): { measures: number; bars: number } {
+  const unit = meter ? measureBars(meter) : 1;
+  const measures = Math.max(1, Math.ceil(lengthBars / unit - 1e-6));
+  return { measures, bars: measures * unit };
+}
+
 export function fitNotesToRange(notes: NoteEvent[], [lo, hi]: readonly [number, number]): NoteEvent[] {
   const midi = (n: string) => {
     const m = /^([A-G]#?)(-?\d+)$/.exec(n);

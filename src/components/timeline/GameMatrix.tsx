@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { liveContext } from '../../audio/liveContext';
 import { Loader2, Play, Square, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { stingerHold } from '../../store/stingers';
 import { ANY_STATE, PHRASE_BARS, QUANTIZES, transitionKey, TRANSITIONS } from '../../store/transitions';
 import type { TransitionKind, TransitionRule } from '../../store/timelineTypes';
 import { buildGameKitParts, type AudioManifest } from '../../audio/gameKit';
@@ -43,6 +44,7 @@ function label(rule: TransitionRule | undefined, stingerName: (id?: string) => s
 export const TransitionMatrix: React.FC<{ states: StateRef[] }> = ({ states }) => {
   const rules = useTimelineStore((s) => s.transitions);
   const stingers = useTimelineStore((s) => s.stingers);
+  const meter = useTimelineStore((s) => s.meter);
   const [cell, setCell] = useState<{ from: string; to: string } | null>(null);
   const stingerName = (id?: string) => stingers.find((s) => s.id === id)?.name;
   const rows: StateRef[] = [{ id: ANY_STATE, name: 'Any' }, ...states];
@@ -159,7 +161,7 @@ export const TransitionMatrix: React.FC<{ states: StateRef[] }> = ({ states }) =
             <select value={editing.stingerId ?? ''} onChange={(e) => set({ stingerId: e.target.value })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="Bridging stinger">
               {stingers.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} ({Math.max(1, Math.ceil(s.lengthBars - 1e-6))} bar{Math.ceil(s.lengthBars - 1e-6) > 1 ? 's' : ''})
+                  {s.name} ({stingerHold(s.lengthBars, meter).measures} bar{stingerHold(s.lengthBars, meter).measures > 1 ? 's' : ''})
                 </option>
               ))}
             </select>

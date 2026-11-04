@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A bridging stinger holds whole bars of the song's time signature**: in 3/4, 7/8 and other time signatures a stinger bridging a switch held the new state back by 4-beat bars, so the new state came in part-way through a bar, and the transition matrix showed that count. It now holds whole bars of the song, in Try it in a game, the game kit and its players alike, and the matrix shows those bars. 4/4 is as before.
 - **Punch In and Out count the ruler's bars**: in a song not in 4/4 the Record settings' In and Out took 4-beat bars, so 5 there was not the ruler's bar 5, and the ruler's "Punch in here" and "Punch out here" set the other end 4 beats away. In and Out now read and take measure.beat as the ruler numbers it (as Speed up into the drop does), and the other end is one of the song's bars away. 4/4 is as before.
 - **MIDI learn writes moves where the playhead is**: turning a learned knob while playing with automation writing on put the points up to a few hundred milliseconds behind where you were. They now land where the playhead is.
 - **The tour says when the part it points at isn't on screen**: a step whose part was hidden (a closed panel) showed nothing to look for. It now says that part isn't on screen right now.

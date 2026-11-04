@@ -11,7 +11,7 @@ import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-rea
 import { currentProject, masterFxOf, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { captureWamStates } from '../../audio/wamHost';
 import { getAudibleMoment, transportStartsAt } from '../../audio/transport';
-import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
+import { STINGER_KINDS, stingerHold, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
 import { fireStinger, handOut, renderStinger, stingerAt, type HandedNotes } from '../../audio/stingerPlayer';
@@ -466,7 +466,8 @@ export const GamePanel: React.FC = () => {
     const bridge = rule.kind === 'stinger' ? s.stingers.find((x) => x.id === rule.stingerId) : undefined;
     // A written bridge (see transitions.ts): its parts on their tracks' instruments, then the state
     const written = rule.kind === 'bridge' ? bridgeFor(gameKitSong(), sec, rule.bridgeBars ?? 1, songTempo(s), { base: s.meter, points: s.meterPoints }) : null;
-    const bridgeBars = bridge ? Math.max(1, Math.ceil(bridge.lengthBars - 1e-6)) : written ? written.lengthBars : 0;
+    // (A stinger holds whole bars of the song's time signature, as the export's manifest has it)
+    const bridgeBars = bridge ? stingerHold(bridge.lengthBars, s.meter).bars : written ? written.lengthBars : 0;
     const when = rule.quantize ?? quantize;
     // The tempo the export plays them at (see gameKit.ts): a stinger and a cue at the song's own
     // tempo, a written bridge at the new state's; and the seconds the state waits for them
