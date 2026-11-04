@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.04 — Suggestions from your own agent, bars counted right in every time signature, and many fixes
 
 - **The Sub enhancer stays one smooth tone under chords**: under an instrument that plays chords, with Decay on, handing back to a held note at the same pitch after the note played over it ended cut the sub off within a few milliseconds, with a click; it now fades out as a note's end does. Notes at the same pitch played end to end could still dip for an instant where their times missed by a hair once worked out in seconds; they now carry on smoothly. And where a lower note took over from a held one (or gave it back), two sines a few hertz apart sounded together and beat, at random as you played but always the same in the export; the sub now moves its one sine to the new note's pitch, so playing and the export sound the same.
 - **The piano roll counts the song's bars**: in a song not in 4/4 (3/4, 7/8, or one that changes to 5/4 part-way) the piano roll's ruler, its bar and beat lines, the step lanes, the expression lane and the Takes rows still drew and counted 4-beat bars, so they didn't match the timeline's ruler, and Type notes grew a clip by 4 beats. They now show the song's own bars and beats (an eighth note in 7/8) as the timeline's ruler does, and Type notes grows a clip to the end of the song's bar. 4/4 is as before.

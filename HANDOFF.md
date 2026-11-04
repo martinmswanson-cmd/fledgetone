@@ -297,6 +297,16 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Bug-scan rounds 1-27** (2026.11.04): four reviewers a round (security, the agent bridge, renders,
+  the app) over a frozen snapshot, fixes merged per round. Main themes: bars counted by the song's
+  meter everywhere (tempoMap `measureAt`/`addMeasures`/`spanMeterLines`, timelineTypes
+  `formatBarRange`/`barNumberAt`, `stingerHold`); all-or-nothing undo steps (`oneUndoStep`,
+  `oneUndoStepOr`, putBack keeps past, future and the checkpoint); game kit file names
+  (kitNames.ts `kitFileName`/`uniqueKitNames`, zip.ts `zipPath`); the Sub enhancer as one sine
+  under chords (legato.ts `lowestRuns`/`lowestHeld` with SAME_MOMENT, `takeOverShape`, frequency
+  steps on the running oscillator). Known and left: noteStepper growth on long bent notes, the Dark
+  melody counts 4-beat bars, Beat switch doesn't copy time-signature changes, the Takes dialog snaps
+  drags to quarter notes in every meter.
 - **Sound fidelity programme** (2026.10.29): phase 1 2x sample decode (OVERSAMPLE, EXPORT_DECODE_BYTES
   512 MB, lowMemoryDevice), lossy exports limited at -1 dBTP with measured post-encode trim, gapless MP3
   tag, Fledge tables per level, 4x designer drive; phase 2 Fledge drive 2x (halfband, stage-internal
