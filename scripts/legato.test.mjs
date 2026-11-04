@@ -152,7 +152,7 @@ test('under a chord the sub is under the lowest note held, moving on to the next
 });
 
 test('lowestHeld: the same pitch played again is the new note', () => {
-  const out = lowestHeld([
+  const out = L.lowestHeld([
     { start: 0, end: 2, freq: 65.4 },
     { start: 1, end: 3, freq: 65.4 },
   ]);
