@@ -76,6 +76,18 @@ test('state names: a song without markers has phrase states, and names that make
   assert.deepEqual(stateNames([{ name: 'Boss/Fight' }, { name: 'Boss-Fight' }, { name: 'Calm' }]), ['Boss/Fight', 'Boss-Fight 2', 'Calm']);
   // Names that differ only in case make one file on Windows and macOS
   assert.deepEqual(stateNames([{ name: 'Drop' }, { name: 'drop' }]), ['Drop', 'drop 2']);
+  // ".", ".." and "-" are all the file "-": the game kit cleans them the same way
+  assert.deepEqual(stateNames([{ name: '.' }, { name: '..' }, { name: '-' }]), ['.', '.. 2', '- 2']);
+  assert.deepEqual(stateNames([{ name: 'NUL' }, { name: 'nul_' }]), ['NUL', 'nul_ 2']);
+});
+
+test("sections end at the timeline's end, even when the last measure runs past it", () => {
+  for (const meter of [{ num: 3, den: 2 }, { num: 7, den: 4 }]) {
+    const clip = { id: 'c', trackId: 't', name: '', startBar: 395.5, lengthBars: 5.5, notes: [], isSelected: false };
+    const sections = songSections([clip], [], { base: meter, points: [] });
+    assert.equal(sections.at(-1).to, 401, `${meter.num}/${meter.den}`);
+    for (const s of sections) assert.ok(s.to > s.from && s.to <= 401);
+  }
 });
 
 test('a 4/4 song without markers has the same phrases as ever, with or without its meter', () => {

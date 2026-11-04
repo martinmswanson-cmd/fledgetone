@@ -1,6 +1,7 @@
-import type { Clip, Marker } from './timelineTypes';
+import { TOTAL_BARS, type Clip, type Marker } from './timelineTypes';
 import { FOUR_FOUR, measureAt, measureStart, type MeterMap } from '../audio/tempoMap';
 import { maxOf } from '../support/minMax';
+import { uniqueKitNames } from './kitNames';
 
 /**
  * Cut to length: make a 15, 30 or 60-second version of a song (an ad, a trailer, a social clip) by
@@ -37,7 +38,8 @@ export function songEnd(clips: readonly Clip[], meter?: MeterMap): number {
 
 /** The song's sections, from its bar markers (hit points locked to time don't count). */
 export function songSections(clips: readonly Clip[], markers: readonly Marker[], meter?: MeterMap): Section[] {
-  const end = songEnd(clips, meter);
+  // (No further than the timeline's end: a last measure in 3/2 or 7/4 can run past it)
+  const end = Math.min(songEnd(clips, meter), TOTAL_BARS + 1);
   if (end <= 1) return [];
   const cuts = markers
     .filter((m) => m.anchor === 'bar' && m.bar > 1 + EPS && m.bar < end - EPS)
@@ -85,15 +87,7 @@ export function songSections(clips: readonly Clip[], markers: readonly Marker[],
  * name too ('Boss/Fight' and 'Boss-Fight' make the same file, so the second is 'Boss-Fight 2').
  */
 export function stateNames(sections: ReadonlyArray<{ name: string }>): string[] {
-  const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Untitled';
-  const used = new Set<string>();
-  return sections.map((sec) => {
-    let name = sec.name;
-    // (Told apart without regard to case: Windows and macOS keep "Drop.wav" and "drop.wav" as one file)
-    for (let n = 2; used.has(safe(name).toLowerCase()); n++) name = `${sec.name} ${n}`;
-    used.add(safe(name).toLowerCase());
-    return name;
-  });
+  return uniqueKitNames(sections.map((sec) => sec.name));
 }
 
 export interface CutPlan {

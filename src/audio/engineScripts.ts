@@ -24,11 +24,20 @@ export function stateLayout(m: AudioManifest): Array<{ name: string; start: numb
   });
 }
 
-/** The stem tracks every state has: its stems by group, or the whole mix as one. */
+/**
+ * The stem tracks every state has: its stems by group, or the whole mix as one. Each named as its
+ * stem's file is: two groups can share a name ("Main" and the tracks without a group, or "Drums"
+ * and "drums" to a tool that ignores case), and their files are told apart.
+ */
 function tracksOf(m: AudioManifest): Array<{ name: string; fileOf: (state: AudioManifest['states'][number]) => string }> {
   const groups = m.intensity.groups.map((g) => g.name);
   if (!groups.length) return [{ name: 'Music', fileOf: (s) => s.file }];
-  return groups.map((name) => ({ name, fileOf: (s) => s.stems.find((x) => x.group === name)?.file ?? s.file }));
+  // (By place: the stems are in the groups' order)
+  return groups.map((name, i) => {
+    const stemOf = (s: AudioManifest['states'][number]) => (s.stems[i]?.group === name ? s.stems[i] : s.stems.find((x) => x.group === name));
+    const first = m.states[0] ? stemOf(m.states[0])?.file : undefined;
+    return { name: first ? first.slice(first.lastIndexOf('/') + 1).replace(/\.wav$/, '') : name, fileOf: (s) => stemOf(s)?.file ?? s.file };
+  });
 }
 
 // (Line and paragraph separators escaped too: an older script engine ends a line at them)
@@ -45,7 +54,8 @@ const levelDb = (level: number) => (level <= 0.0001 ? -80 : Math.max(-80, 20 * M
 export function fmodScript(m: AudioManifest): string {
   const layout = stateLayout(m);
   const tracks = tracksOf(m).map((t) => ({ name: t.name, sounds: m.states.map((s, i) => ({ file: t.fileOf(s), start: layout[i].start, length: layout[i].length })) }));
-  const curves = m.intensity.groups.map((g) => ({ name: g.name, points: g.curve.map(([x, y]) => [x, +levelDb(y).toFixed(2)]) }));
+  // (Each curve on its group's track, by place: two groups can share a name)
+  const curves = m.intensity.groups.map((g, i) => ({ name: tracks[i].name, points: g.curve.map(([x, y]) => [x, +levelDb(y).toFixed(2)]) }));
   const data = { name: m.name, bpm: m.bpm, layout, tracks, curves, stingers: m.stingers.map((s) => ({ name: s.name, file: s.file })), transitions: m.transitions };
   return `// ${said(m.name)}: FMOD Studio import script, made by Fledgetone.
 //

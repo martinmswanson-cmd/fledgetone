@@ -62,3 +62,15 @@ test('stingers are named, numbered and survive a save', () => {
   assert.equal(parsed.length, 2);
   assert.deepEqual(parsed[0], a);
 });
+
+test('a new stinger takes the first name not in use, so two never share one', () => {
+  const key = keyOf(0, 'major');
+  const a = createStinger('danger', key, []);
+  const b = createStinger('danger', key, [a]);
+  // Add, add, delete the first, add: the new one is "Danger", not a second "Danger 2"
+  const c = createStinger('danger', key, [b]);
+  assert.deepEqual([a.name, b.name, c.name], ['Danger', 'Danger 2', 'Danger']);
+  assert.equal(createStinger('danger', key, [b, c]).name, 'Danger 3');
+  // Told apart without regard to case, and from a stinger of another kind renamed to it
+  assert.equal(createStinger('victory', key, [{ ...a, kind: 'item', name: 'victory' }]).name, 'Victory 2');
+});

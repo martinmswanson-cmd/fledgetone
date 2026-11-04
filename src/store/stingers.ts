@@ -117,9 +117,13 @@ export function fitNotesToRange(notes: NoteEvent[], [lo, hi]: readonly [number, 
 /** A new stinger of `kind` in `key`. */
 export function createStinger(kind: StingerKind, key: SongKey, existing: readonly Stinger[]): Stinger {
   const meta = stingerKind(kind);
-  const same = existing.filter((s) => s.kind === kind).length;
+  // The first name not taken ("Danger", "Danger 2"...), ignoring case: counting them would give two
+  // "Danger 2" after the first of three is deleted
+  const taken = new Set(existing.map((s) => s.name.trim().toLowerCase()));
+  let name = meta.label;
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${meta.label} ${n}`;
   const { notes, lengthBars } = stingerNotes(kind, key, 0);
-  return { id: uid('stinger'), name: same ? `${meta.label} ${same + 1}` : meta.label, kind, instrumentKey: meta.instrument, variation: 0, notes, lengthBars };
+  return { id: uid('stinger'), name, kind, instrumentKey: meta.instrument, variation: 0, notes, lengthBars };
 }
 
 const KINDS = new Set(STINGER_KINDS.map((k) => k.kind));

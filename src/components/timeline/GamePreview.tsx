@@ -23,6 +23,7 @@ import { liveContext } from '../../audio/liveContext';
 import { hasRecordings, loadSamplesForNotes } from '../../audio/samplers/samplerManager';
 import { livePlayhead } from '../../store/playheadClock';
 import { createZip } from '../../audio/zip';
+import { kitFileName, uniqueKitNames } from '../../store/kitNames';
 import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
 import { buildRuntimeKit } from '../../audio/runtimeKit';
 import { songPlugins } from '../../audio/runtimePlugins';
@@ -66,7 +67,8 @@ const LoopVariations: React.FC = () => {
         master: s.master,
       };
       const { takes: audio, sampleRate } = await renderLoopTakes(opts, takes, humanize, (f) => setProgress(f));
-      const base = s.projectName || 'Untitled';
+      // (The song's name made a file name: it can hold a path, and a zip entry must stay in the zip)
+      const base = kitFileName(s.projectName || 'Untitled');
       const files = audio.map((channels, k) => ({
         name: `${base} loop ${VARIATION_NAMES[k]}.wav`,
         data: encodeChannels(channels, sampleRate, 16, [], { start: 0, end: channels[0].length }),
@@ -146,7 +148,7 @@ const GameKitButton: React.FC = () => {
     setProgress('0%');
     try {
       const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`), 44100, layout);
-      downloadBlob(blob, `${s.projectName || 'Untitled'} game kit${layout === 'any' ? '' : ` for ${layout === 'godot' ? 'Godot' : 'Unity'}`}.zip`);
+      downloadBlob(blob, `${kitFileName(s.projectName || 'Untitled')} game kit${layout === 'any' ? '' : ` for ${layout === 'godot' ? 'Godot' : 'Unity'}`}.zip`);
     } catch (err) {
       showToast(`Couldn't build the game kit: ${err instanceof Error ? err.message : String(err)}.`);
     } finally {
@@ -222,7 +224,7 @@ const RuntimeKitButton: React.FC = () => {
         setAsking(gpl);
         return;
       }
-      downloadBlob(await buildRuntimeKit(p, { withGpl }), `${p.name || 'Untitled'} web runtime kit.zip`);
+      downloadBlob(await buildRuntimeKit(p, { withGpl }), `${kitFileName(p.name || 'Untitled')} web runtime kit.zip`);
     } catch (err) {
       showToast(`Couldn't build the web runtime kit: ${err instanceof Error ? err.message : String(err)}.`);
     } finally {
@@ -280,8 +282,10 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
     try {
       const song = { bpm: s.bpm, masterFx: masterFxOf(s), master: s.master };
       const files = [];
-      for (const x of s.stingers) files.push({ name: `${x.name.replace(/[\\/:*?"<>|]/g, '-')}.wav`, data: await renderStinger(x, song) });
-      downloadBlob(await createZip(files), `${s.projectName || 'Untitled'} stingers.zip`);
+      // (One file each, told apart without regard to case: "Hit" and "hit" are "Hit.wav" and "hit 2.wav")
+      const names = uniqueKitNames(s.stingers.map((x) => x.name));
+      for (const [i, x] of s.stingers.entries()) files.push({ name: `${kitFileName(names[i])}.wav`, data: await renderStinger(x, song) });
+      downloadBlob(await createZip(files), `${kitFileName(s.projectName || 'Untitled')} stingers.zip`);
     } catch {
       showToast("Couldn't export the stingers (an instrument didn't load).");
     } finally {
