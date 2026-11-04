@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Takes snap to the song's beats in any time signature**: in 7/8, 6/8 and other time signatures, dragging or clicking along a take in the Takes dialog snapped to quarter notes, between the song's beats. It now snaps to the song's own beats (eighths in 7/8), as its grid shows. Shift still snaps to 16ths, and 4/4 is as before.
+
 ## 2026.11.04 — Suggestions from your own agent, bars counted right in every time signature, and many fixes
 
 - **The Sub enhancer stays one smooth tone under chords**: under an instrument that plays chords, with Decay on, handing back to a held note at the same pitch after the note played over it ended cut the sub off within a few milliseconds, with a click; it now fades out as a note's end does. Notes at the same pitch played end to end could still dip for an instant where their times missed by a hair once worked out in seconds; they now carry on smoothly. And where a lower note took over from a held one (or gave it back), two sines a few hertz apart sounded together and beat, at random as you played but always the same in the export; the sub now moves its one sine to the new note's pitch, so playing and the export sound the same.

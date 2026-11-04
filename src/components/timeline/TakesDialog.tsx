@@ -74,7 +74,11 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
   const ends = segs.map((_, i) => (i + 1 < segs.length ? segs[i + 1].at : clip.lengthBars));
   const barW = WIDTH / clip.lengthBars;
   const store = () => useTimelineStore.getState();
+  // Beats to snap to: quarters in 4/4, else the song's own beats (an eighth in 7/8), from the
+  // clip's start to its end
+  const beats = meterLines ? [...new Set([0, ...meterLines.map((l) => l.at), clip.lengthBars])].sort((p, q) => p - q) : null;
   const snap = (at: number, fine: boolean) => {
+    if (beats && !fine) return beats.reduce((best, b) => (Math.abs(b - at) < Math.abs(best - at) ? b : best), 0);
     const step = fine ? 1 / 16 : 1 / 4;
     return Math.max(0, Math.min(clip.lengthBars, Math.round(at / step) * step));
   };
@@ -103,9 +107,15 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
       let { from: a, to: b } = current;
       // A click: the beat (or with Shift the 16th) it's in
       if (Math.abs(b - a) < 1e-6) {
-        const step = fine ? 1 / 16 : 1 / 4;
-        a = Math.min(Math.floor(clickedAt / step) * step, Math.max(0, clip.lengthBars - step));
-        b = Math.min(clip.lengthBars, a + step);
+        if (beats && !fine) {
+          const i = Math.max(0, Math.min(beats.length - 2, beats.findLastIndex((x) => x <= clickedAt + 1e-6)));
+          a = beats[i];
+          b = beats[i + 1];
+        } else {
+          const step = fine ? 1 / 16 : 1 / 4;
+          a = Math.min(Math.floor(clickedAt / step) * step, Math.max(0, clip.lengthBars - step));
+          b = Math.min(clip.lengthBars, a + step);
+        }
       }
       store().setTakeComp(clip.id, a, b, take);
     };
