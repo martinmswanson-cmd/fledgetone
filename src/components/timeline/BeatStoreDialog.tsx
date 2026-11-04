@@ -20,6 +20,7 @@ import { beatFileBase, coverExtension, layTag, tagTimes } from '../../audio/beat
 import { producerTagChannels, producerTagSound, setProducerTag } from '../../audio/producerTag';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
 import { safeFileName } from '../../store/project';
+import { cutToBytes } from '../../store/kitNames';
 import { showToast } from './toastStore';
 import { maxOf } from '../../support/minMax';
 
@@ -149,8 +150,9 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
         const stems = await renderStems({ ...render, bypassMaster: true, keepRingOut: false }, 24, (f, stem) => step(`Stem ${stem.index + 1} of ${stem.count}: ${stem.track.name}`, start + f * (1 - start) * 0.95));
         const used = new Set<string>();
         for (const { track, wav } of stems) {
-          let name = `${base} - ${safeFileName(track.name)}`;
-          for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} - ${safeFileName(track.name)} ${n}`;
+          const stem = cutToBytes(`${base} - ${safeFileName(track.name)}`);
+          let name = stem;
+          for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem} ${n}`;
           used.add(name.toLowerCase());
           files.push({ name: `Stems/${name}.wav`, data: wav });
         }

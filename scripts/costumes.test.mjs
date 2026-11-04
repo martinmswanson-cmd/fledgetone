@@ -76,6 +76,17 @@ test('costumes and state options from a file keep only what makes sense', () => 
   assert.deepEqual(opts, { m1: { shuffleBars: 4, gap: { min: 20, max: 20 } } });
 });
 
+test('a costume name is free only if no other is the same file: case and path characters too', () => {
+  assert.equal(C.freeCostumeName('Night', []), 'Night');
+  assert.equal(C.freeCostumeName('night', [{ name: 'Night' }]), 'night 2');
+  assert.equal(C.freeCostumeName('A-B', [{ name: 'A/B' }]), 'A-B 2');
+  assert.equal(C.freeCostumeName('Night.', [{ name: 'Night' }]), 'Night. 2');
+  assert.equal(C.freeCostumeName('night', [{ name: 'Night' }, { name: 'NIGHT 2' }]), 'night 3');
+  assert.equal(C.freeCostumeName('Day', [{ name: 'Night' }]), 'Day');
+  const back = C.parseCostumes([{ name: 'Night', tracks: {} }, { name: 'night', tracks: {} }], new Set(), isInstrumentKey);
+  assert.deepEqual(back.map((c) => c.name), ['Night', 'night 2']);
+});
+
 test('a costume never swaps a track to or from the Drop pad (its notes are moves on the whole mix)', () => {
   const ts = [track('lead', 'flute'), track('drop', 'dropPad')];
   const cs = [{ ...clips[0] }, { id: 'c3', trackId: 'drop', name: 'Moves', startBar: 1, lengthBars: 1, notes: [{ id: 'n3', note: 'C4', startOffset: 0, duration: '4n', velocity: 1 }], isSelected: false }];

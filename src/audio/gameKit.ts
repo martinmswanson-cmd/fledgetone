@@ -12,7 +12,7 @@ import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
 import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections, stateNames } from '../store/cutToLength';
-import { kitFileName, notReserved, uniqueKitNames } from '../store/kitNames';
+import { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, notReserved, uniqueKitNames, utf8Bytes } from '../store/kitNames';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
 import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
@@ -176,6 +176,9 @@ export async function buildGameKitParts(
   // Each stem's file name: groups told apart without regard to case ("Drums" and "drums"), and a
   // group the musician named "Main" from the tracks without one
   const stemFiles = uniqueKitNames(stemGroups.map((g) => g.name)).map(safe);
+  // Every file's name is chosen here, from the names already taken in its folder: a costume's
+  // state can't be another state's file ("Boss (Night)"), nor two sounds' variations one file
+  const fileName = kitFiles();
   const skipMix = stemsOnly && stemGroups.length > 0;
   const gameSfx = song.sfx ?? [];
   const costumes = (song.costumes ?? []).map((c) => ({ costume: c, ...applyCostume(song.tracks, song.clips, c) }));
@@ -195,6 +198,9 @@ export async function buildGameKitParts(
   const stateOfMarker = new Map<string, string>();
   const sectionOfMarker = new Map<string, (typeof sections)[number]>();
   const names = stateNames(sections);
+  // (The states first, so each keeps its own name; their stems' folders go by the same names)
+  const stateFiles = names.map((name) => fileName('states', name));
+  const costumeFiles = uniqueKitNames(costumes.map((d) => d.costume.name)).map(safe);
   for (const [i, sec] of sections.entries()) {
     tick(`state ${sec.name}`);
     const name = names[i];
@@ -205,7 +211,7 @@ export async function buildGameKitParts(
       sectionOfMarker.set(marker.id, sec);
     }
     const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, meter: meterMap, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal, recordings };
-    const file = `states/${safe(name)}.wav`;
+    const file = `states/${stateFiles[i]}.wav`;
     const seconds = secondsBetween(sec.from, sec.to, tempo);
     let samples = Math.round(seconds * sampleRate);
     if (!skipMix) {
@@ -219,19 +225,19 @@ export async function buildGameKitParts(
       if (!skipMix) tick(`stems ${name}`);
       const r = await renderGroupStems(range, stemGroups, within);
       for (const [k, stem] of r.stems.entries()) {
-        const stemFile = `stems/${safe(name)}/${stemFiles[k]}.wav`;
+        const stemFile = `stems/${stateFiles[i]}/${fileName(`stems/${stateFiles[i]}`, stemFiles[k])}.wav`;
         files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
     }
     // The state in each costume: the same bars, other instruments (and maybe another tempo)
     const dressed: NonNullable<AudioManifest['states'][number]['costumes']> = [];
-    for (const d of costumes) {
+    for (const [j, d] of costumes.entries()) {
       tick(`state ${name} (${d.costume.name})`);
       const t = d.costume.tempo;
       const byId = new Map(d.tracks.map((x) => [x.id, x]));
       const crange = { ...range, tracks: d.tracks, clips: d.clips, bpm: song.bpm * t, tempoPoints: (song.tempoPoints ?? []).map((p) => ({ ...p, bpm: p.bpm * t })) };
-      const base = `${safe(name)} (${safe(d.costume.name)})`;
+      const base = fileName('states', costumeFileName(stateFiles[i], costumeFiles[j]));
       let cfile: string | undefined;
       if (!skipMix || !stemGroups.length) {
         const audio = await renderArrangement({ ...crange, ending: 'seamless' }, within);
@@ -246,7 +252,7 @@ export async function buildGameKitParts(
         if (groups.length) {
           const rs = await renderGroupStems(crange, groups);
           for (const [k, stem] of rs.stems.entries()) {
-            const stemFile = `stems/${base}/${groups[k].file}.wav`;
+            const stemFile = `stems/${base}/${fileName(`stems/${base}`, groups[k].file)}.wav`;
             files.push({ name: stemFile, data: encodeChannels(stem.channels, rs.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
             cstems.push({ group: stem.name, file: stemFile });
           }
@@ -284,7 +290,7 @@ export async function buildGameKitParts(
   for (const [i, s] of song.stingers.entries()) {
     tick(`stinger ${s.name}`);
     const name = stingerNames[i];
-    const file = `stingers/${safe(name)}.wav`;
+    const file = `stingers/${fileName('stingers', name)}.wav`;
     // (A bridge holds the new state back whole bars of the song's time signature)
     const hold = stingerHold(s.lengthBars, meterMap.base);
     files.push({ name: file, data: await renderStinger(s, song, sampleRate, recordings) });
@@ -317,7 +323,8 @@ export async function buildGameKitParts(
           transitions.push(entry);
           continue;
         }
-        const file = `transitions/bridge into ${safe(to)}${bars > 1 ? ` (${bars} bars)` : ''}.wav`;
+        const tail = bars > 1 ? ` (${bars} bars)` : '';
+        const file = `transitions/${fileName('transitions', `bridge into ${cutToBytes(safe(to), MAX_NAME_BYTES - utf8Bytes(`bridge into ${tail}`))}${tail}`)}.wav`;
         const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate, signal, recordings });
         const channels = channelsOf(audio);
         files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], undefined) });
@@ -343,7 +350,7 @@ export async function buildGameKitParts(
           notes: cue.notes.map((n) => ({ ...n, startOffset: n.startOffset + cue.leadIn })),
           lengthBars: Math.max(0.25, cue.leadIn, maxOf(cue.notes.map((n) => n.startOffset + cue.leadIn)) + 0.25),
         };
-        const file = `transitions/${rule.kind}.wav`;
+        const file = `transitions/${fileName('transitions', rule.kind)}.wav`;
         files.push({ name: file, data: await renderStinger(sound, song, sampleRate, recordings) });
         cueFiles.set(rule.kind, { file, leadInSeconds: +(cue.leadIn * secondsPerBar).toFixed(6) });
       }
@@ -364,7 +371,7 @@ export async function buildGameKitParts(
     for (let i = 0; i < variants; i++) {
       const channels = renderSfxStereo(varySfx(g.sound, i, g.spread), sampleRate);
       const samples = channels[0];
-      const file = `sfx/${sfxFileName(g.name, variants > 1 ? i + 1 : undefined)}.wav`;
+      const file = `sfx/${fileName('sfx', sfxFileName(g.name, variants > 1 ? i + 1 : undefined), '_')}.wav`;
       files.push({ name: file, data: encodeChannels(channels, sampleRate, g.sound.modern ? 24 : 16, [], g.sound.loop ? { start: 0, end: samples.length } : undefined) });
       names.push(file);
       seconds = Math.max(seconds, samples.length / sampleRate);
@@ -422,7 +429,7 @@ export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: nu
     out.push({ name: `bos_music/${slug}_example.tscn`, data: text(godotScene(dir)) });
     out.push({ name: `bos_music/README_${slug}.md`, data: text(godotReadme(manifest, slug), 'text/markdown') });
   } else if (layout === 'unity') {
-    const folder = notReserved(manifest.name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('') || 'Song');
+    const folder = notReserved(cutToBytes(manifest.name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('')) || 'Song');
     const resources = `BosMusic/${folder}`;
     out.push(...files.map((f) => ({ ...f, name: `Assets/Fledgetone/Resources/${resources}/${f.name}` })));
     out.push({ name: `Assets/Fledgetone/Resources/${resources}/audio_manifest.json`, data: json(manifest) });

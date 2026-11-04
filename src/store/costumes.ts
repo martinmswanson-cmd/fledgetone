@@ -2,6 +2,7 @@ import type { Clip, InstrumentKey, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { currentInstrumentKey, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
+import { kitNameKey } from './kitNames';
 
 /**
  * Costumes and state options: the game music's second tier.
@@ -86,12 +87,15 @@ export function costumeFromPreset(preset: CostumePreset, tracks: readonly Track[
   return { id: uid('costume'), name: freeCostumeName(base, taken), tempo: preset === 'hurry' ? 1.2 : preset === 'night' ? 0.9 : 1, tracks: swaps };
 }
 
-/** A name not taken yet: "8-bit", then "8-bit 2"... */
+/**
+ * A name not taken yet: "8-bit", then "8-bit 2"... Taken as a file name too, so "night" next to
+ * "Night", or "A-B" next to "A/B", is "night 2" and "A-B 2" (they'd be one file in the game kit).
+ */
 export function freeCostumeName(name: string, taken: readonly Pick<Costume, 'name'>[]): string {
   const base = name.trim().slice(0, 40) || 'Costume';
-  const names = new Set(taken.map((c) => c.name));
-  if (!names.has(base)) return base;
-  for (let n = 2; ; n++) if (!names.has(`${base} ${n}`)) return `${base} ${n}`;
+  const names = new Set(taken.map((c) => kitNameKey(c.name)));
+  if (!names.has(kitNameKey(base))) return base;
+  for (let n = 2; ; n++) if (!names.has(kitNameKey(`${base} ${n}`))) return `${base} ${n}`;
 }
 
 /** A clip's notes moved by octaves into an instrument's range (the part first, then stragglers). */

@@ -17,7 +17,7 @@
 import { loopChunk } from '../wavCues';
 import { bodyRing, ModalBody, polyBlep, recordingFor, stereoSpace, SFX_MATERIALS, type SfxMaterial } from './sfxModern';
 import { maxOf } from '../../support/minMax';
-import { notReserved } from '../../store/kitNames';
+import { MAX_NAME_BYTES, notReserved } from '../../store/kitNames';
 
 export const SFX_WAVES = ['square', 'saw', 'triangle', 'sine', 'noise', 'pink', 'brown', 'fm', 'metal', 'crackle', 'rec'] as const;
 export type SfxWave = (typeof SFX_WAVES)[number];
@@ -1568,6 +1568,8 @@ export function sfxFileName(name: string, variation?: number): string {
       .toLowerCase()
       .normalize('NFKD')
       .replace(/[^a-z0-9]+/g, '_')
+      // (Short enough that a variation's "_02" and ".wav" still fit in a file name)
+      .slice(0, MAX_NAME_BYTES - 4)
       .replace(/^_+|_+$/g, '') || 'sound';
   // (Not a name Windows keeps for a device: "con" is "con_")
   return variation === undefined ? notReserved(base) : `${base}_${String(variation).padStart(2, '0')}`;

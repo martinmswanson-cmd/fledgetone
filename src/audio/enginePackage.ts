@@ -2,6 +2,7 @@ import { buildGameKitParts, MAIN_STEM, type GameKitSong } from './gameKit';
 import { engineReadme, fmodScript, stateLayout, wwiseScript, type EngineTarget } from './engineScripts';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { createZip, type ZipEntry } from './zip';
+import { cutToBytes } from '../store/kitNames';
 import type { SampleRate } from './exportWav';
 
 /**
@@ -26,7 +27,7 @@ export type { EngineTarget };
 export async function buildEnginePackage(song: GameKitSong, target: EngineTarget, onProgress?: (fraction: number, detail: string) => void, sampleRate: SampleRate = 48000): Promise<Blob> {
   // (FMOD and Wwise get the states as written: costumes and shuffled pieces are the game kit players')
   const { manifest, files } = await buildGameKitParts({ ...song, costumes: [], stateOptions: {}, gameParams: [] }, (f, d) => onProgress?.(f * 0.97, d), sampleRate);
-  const slug = manifest.name.replace(/[^A-Za-z0-9]+/g, '_');
+  const slug = cutToBytes(manifest.name.replace(/[^A-Za-z0-9]+/g, '_'));
   const out: ZipEntry[] = files.map((f) => ({ ...f, name: `Audio/${f.name}` }));
   const cues = { ...manifest, format: 'fledgetone-cues', mainStem: MAIN_STEM, timeline: stateLayout(manifest) };
   out.push({ name: 'cues.json', data: new Blob([JSON.stringify(cues, null, 2)], { type: 'application/json' }) });
