@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter, spanMeterLines } from '../../audio/tempoMap';
 import type { Clip, StepLane, StepTarget, Track } from '../../store/timelineTypes';
 import { uid } from '../../store/timelineTypes';
 import {
@@ -198,6 +199,9 @@ const LaneRow: React.FC<{
   const h = STEP_LANE_H;
   const width = clip.lengthBars * barW;
   const inner = h - 2 * PAD;
+  const meterMap = useSongMeter();
+  // In other time signatures than 4/4, the song's measures and beats (an eighth in 7/8)
+  const meterLines = useMemo(() => (isPlainMeter(meterMap) ? null : spanMeterLines(clip.startBar, clip.lengthBars, meterMap)), [meterMap, clip.startBar, clip.lengthBars]);
 
   const at = (e: { clientX: number; clientY: number }) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -286,7 +290,10 @@ const LaneRow: React.FC<{
           );
         })}
         {/* Beat lines */}
-        {Array.from({ length: Math.ceil(clip.lengthBars * 4) + 1 }, (_, b) => (
+        {meterLines?.map((l) => (
+          <line key={l.at} x1={l.at * barW} x2={l.at * barW} y1={0} y2={h} stroke={l.beat === 1 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'} />
+        ))}
+        {!meterLines && Array.from({ length: Math.ceil(clip.lengthBars * 4) + 1 }, (_, b) => (
           <line key={b} x1={(b * barW) / 4} x2={(b * barW) / 4} y1={0} y2={h} stroke={b % 4 === 0 ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'} />
         ))}
       </svg>

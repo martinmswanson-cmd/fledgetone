@@ -440,6 +440,24 @@ export function beatsBetween(from: number, to: number, map: MeterMap): Array<{ b
 }
 
 /**
+ * The song's measure and beat lines inside a stretch that starts at `from` and is `length` bars
+ * long (a clip), for drawing its grid and ruler: each at `at` bars from `from`, with the song's
+ * measure number and the beat in that measure (1 is the measure's start). A beat is the meter's
+ * own (an eighth in 7/8).
+ */
+export function spanMeterLines(from: number, length: number, map: MeterMap): Array<{ at: number; measure: number; beat: number }> {
+  const out: Array<{ at: number; measure: number; beat: number }> = [];
+  const to = from + length;
+  for (const m of measuresBetween(measureAt(Math.max(1, from), map).start, to, map)) {
+    for (let b = 0; b < m.meter.num; b++) {
+      const bar = m.bar + b / m.meter.den;
+      if (bar >= from - 1e-6 && bar < to - 1e-6) out.push({ at: bar - from, measure: m.measure, beat: b + 1 });
+    }
+  }
+  return out;
+}
+
+/**
  * Where the bar lines and beats of [from, to) fall, in seconds from `from`, when the tempo or the
  * time signature changes in there, or it starts part-way through a measure (a game player can't
  * find them from one beat length then); null when they run evenly from `from`. A beat is the

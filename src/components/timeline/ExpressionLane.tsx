@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { editStep, useTimelineStore } from '../../store/timelineStore';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { editStep, useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter, spanMeterLines } from '../../audio/tempoMap';
 import type { Clip, ExprPoint, NoteEvent } from '../../store/timelineTypes';
 import { durationToBars } from '../../store/timelineTypes';
 import { ccLabel, ccLane, EXPR_LANES, exprSpec, exprValueAt, laneCc, lanesOf, type ExprLane } from '../../store/expression';
@@ -50,6 +51,12 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
   const store = () => useTimelineStore.getState();
   const width = clip.lengthBars * barW;
   const h = EXPRESSION_LANE_H;
+  const meterMap = useSongMeter();
+  // In other time signatures than 4/4, a line on each of the song's measures
+  const measureAts = useMemo(
+    () => (isPlainMeter(meterMap) ? null : spanMeterLines(clip.startBar, clip.lengthBars, meterMap).filter((l) => l.beat === 1).map((l) => l.at)),
+    [meterMap, clip.startBar, clip.lengthBars]
+  );
 
   // The stretch the lane covers (bars into the clip), and its points in clip time
   const span: [number, number] = mode.kind === 'note' && note ? [note.startOffset, Math.min(clip.lengthBars, note.startOffset + durationToBars(note.duration))] : [0, clip.lengthBars];
@@ -237,7 +244,7 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
         {mode.kind === 'note' && <rect x={xOf(span[0])} y={0} width={Math.max(1, xOf(span[1]) - xOf(span[0]))} height={h} fill="rgba(34,211,238,0.08)" />}
         {/* Rest line (no bend, wheel down, full pressure) */}
         <line x1={0} x2={width} y1={yOf(rest)} y2={yOf(rest)} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
-        {Array.from({ length: Math.ceil(clip.lengthBars) + 1 }, (_, b) => (
+        {(measureAts ?? Array.from({ length: Math.ceil(clip.lengthBars) + 1 }, (_, b) => b)).map((b) => (
           <line key={b} x1={xOf(b)} x2={xOf(b)} y1={0} y2={h} stroke="rgba(255,255,255,0.08)" />
         ))}
         {held.map(([a, b]) => (
