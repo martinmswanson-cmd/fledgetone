@@ -33,8 +33,8 @@ import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useLivePlayhead } from '../../store/playheadClock';
-import { allOrNothing, editStep, songTempo, useTimelineStore } from '../../store/timelineStore';
-import { tempoAt } from '../../audio/tempoMap';
+import { allOrNothing, editStep, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter, measureAt, spanMeterLines, tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
@@ -200,6 +200,26 @@ function unitsOf(bars: number): number {
   const whole = Math.round(units);
   return Math.abs(units - whole) < 1e-6 ? whole : units;
 }
+
+/**
+ * The song's measure and beat lines across the piano roll's grid, in other time signatures than
+ * 4/4 (where a repeating background draws them).
+ */
+const MeterGridLines = React.memo(function MeterGridLines({ lines, pxPerBar, width, height }: { lines: Array<{ at: number; beat: number }>; pxPerBar: number; width: number; height: number }) {
+  let strong = '';
+  let weak = '';
+  for (const l of lines) {
+    const d = `M${Math.floor(l.at * pxPerBar) + 0.5} 0V${height}`;
+    if (l.beat === 1) strong += d;
+    else weak += d;
+  }
+  return (
+    <svg data-meter-grid="" className="absolute top-0 left-0 pointer-events-none" width={width} height={height} shapeRendering="crispEdges" aria-hidden="true">
+      <path d={weak} stroke="rgba(255,255,255,0.12)" />
+      <path d={strong} stroke="rgba(255,255,255,0.28)" />
+    </svg>
+  );
+});
 
 const noteUnits = (n: NoteEvent) => unitsOf(durationToBars(n.duration));
 
@@ -419,13 +439,25 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const totalUnits = Math.round(clip.lengthBars * UNITS_PER_BAR);
   /** Where the clip starts, in units from bar 1 (clips may start mid-bar): the grid lines up with the song. */
   const clipUnits = unitsOf(clip.startBar - 1);
+  const meterMap = useSongMeter();
+  const plainMeter = isPlainMeter(meterMap);
+  /** In other time signatures than 4/4: the song's measure and beat lines inside the clip (bars from its start). */
+  const meterLines = useMemo(() => (plainMeter ? null : spanMeterLines(clip.startBar, clip.lengthBars, meterMap)), [plainMeter, meterMap, clip.startBar, clip.lengthBars]);
   const beatMarks = useMemo(() => {
     const marks: { at: number; bar: number; beat: number }[] = [];
+    if (meterLines) {
+      // Measures as the song counts them; a beat's number only where there's room for it
+      meterLines.forEach((l, i) => {
+        const next = meterLines[i + 1]?.at ?? clip.lengthBars;
+        if (l.beat === 1 || (next - l.at) * UNITS_PER_BAR * unitW >= 28) marks.push({ at: l.at * UNITS_PER_BAR, bar: l.measure, beat: l.beat });
+      });
+      return marks;
+    }
     for (let abs = Math.ceil(clipUnits / UNITS_PER_BEAT - 1e-9) * UNITS_PER_BEAT; abs - clipUnits < totalUnits; abs += UNITS_PER_BEAT) {
       marks.push({ at: abs - clipUnits, bar: Math.floor(abs / UNITS_PER_BAR) + 1, beat: Math.floor((abs % UNITS_PER_BAR) / UNITS_PER_BEAT) + 1 });
     }
     return marks;
-  }, [clipUnits, totalUnits]);
+  }, [clipUnits, totalUnits, meterLines, clip.lengthBars, unitW]);
   const gridW = totalUnits * unitW;
   /** The nearest grid line to `u` (units from the clip start). */
   const snapUnits = (u: number) => Math.round((u + clipUnits) / gridUnits) * gridUnits - clipUnits;
@@ -560,7 +592,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           if (!chord) store.checkpoint();
           // Past the clip's end: it grows to the bar the note ends in (no further than the room)
           const endBars = (begun.at + length) / UNITS_PER_BAR;
-          if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.min(room, Math.ceil(endBars - 1e-9)));
+          if (endBars > live.lengthBars + 1e-9) {
+            const meter = songMeterOf(store);
+            // (in other time signatures, to the end of the song's measure the note ends in)
+            const ends = isPlainMeter(meter) ? null : measureAt(live.startBar + endBars - 1e-9, meter);
+            const grown = ends ? ends.start + ends.length - live.startBar : Math.ceil(endBars - 1e-9);
+            store.trimClipEnd(clip.id, Math.min(room, grown));
+          }
           const note = { note: name, startOffset: begun.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
           store.setClipNotes(clip.id, [...(useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? []), { ...note, id }]);
         });
@@ -1438,13 +1476,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 className="absolute inset-0 pointer-events-none"
                 style={{
                   // Bar, beat and grid lines, lined up with the song, not the clip start
-                  backgroundImage: [
-                    lines(UNITS_PER_BAR, 'rgba(255,255,255,0.28)'),
-                    lines(UNITS_PER_BEAT, 'rgba(255,255,255,0.12)'),
-                    lines(lineUnits, 'rgba(255,255,255,0.05)'),
-                  ].join(', '),
+                  backgroundImage: meterLines
+                    ? lines(lineUnits, 'rgba(255,255,255,0.05)')
+                    : [
+                        lines(UNITS_PER_BAR, 'rgba(255,255,255,0.28)'),
+                        lines(UNITS_PER_BEAT, 'rgba(255,255,255,0.12)'),
+                        lines(lineUnits, 'rgba(255,255,255,0.05)'),
+                      ].join(', '),
                 }}
               />
+              {meterLines && <MeterGridLines lines={meterLines} pxPerBar={UNITS_PER_BAR * unitW} width={gridW} height={gridH} />}
 
               {visibleNotes.map((n) => {
                 const idx = rowIndexOf(rows, n.note);

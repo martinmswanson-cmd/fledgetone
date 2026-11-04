@@ -1,12 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Layers, Trash2 } from 'lucide-react';
 import { Modal } from './Modal';
-import { songTempo, useTimelineStore } from '../../store/timelineStore';
+import { songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { compSegments } from '../../store/takes';
 import { useSoundLibrary } from '../../audio/soundLibrary';
 import { waveformPath } from '../../audio/waveform';
 import { secondsPerBar, stretchRatio } from '../../store/audioClips';
-import { tempoAt } from '../../audio/tempoMap';
+import { isPlainMeter, spanMeterLines, tempoAt } from '../../audio/tempoMap';
 import { durationToBars, type Clip, type ClipTake } from '../../store/timelineTypes';
 import { midiOf } from '../../store/noteTools';
 import { maxOf, minOf } from '../../support/minMax';
@@ -57,6 +57,11 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === clipId));
   const [drag, setDrag] = useState<{ take: number; from: number; to: number } | null>(null);
   const svgs = useRef<Array<SVGSVGElement | null>>([]);
+  const meterMap = useSongMeter();
+  const startBar = clip?.startBar ?? 1;
+  const lengthBars = clip?.lengthBars ?? 0;
+  // In other time signatures than 4/4, the song's measures and beats (an eighth in 7/8)
+  const meterLines = useMemo(() => (isPlainMeter(meterMap) ? null : spanMeterLines(startBar, lengthBars, meterMap)), [meterMap, startBar, lengthBars]);
   if (!clip?.takes?.length) {
     return (
       <Modal title="Takes" onClose={onClose}>
@@ -144,7 +149,10 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
                   {used.map(({ s, end }) => (
                     <rect key={s.at} x={s.at * barW} y={0} width={(end - s.at) * barW} height={ROW_H} fill={color} opacity={0.18} />
                   ))}
-                  {Array.from({ length: Math.ceil(clip.lengthBars * 4) + 1 }, (_, b) => (
+                  {meterLines?.map((l) => (
+                    <line key={l.at} x1={l.at * barW} x2={l.at * barW} y1={0} y2={ROW_H} stroke={l.beat === 1 ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)'} />
+                  ))}
+                  {!meterLines && Array.from({ length: Math.ceil(clip.lengthBars * 4) + 1 }, (_, b) => (
                     <line key={b} x1={b * barW / 4} x2={b * barW / 4} y1={0} y2={ROW_H} stroke={b % 4 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.14)'} />
                   ))}
                   <TakeContent clip={clip} take={take} color={color} width={WIDTH} />
