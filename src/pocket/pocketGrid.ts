@@ -138,14 +138,20 @@ export function jumpStep(jump: SectionJump, at: number): 'wait' | 'land' | 'seek
  * How the chords sheet fills the section `from`–`to`: a chord a bar in a section of 4 bars or more
  * (two in one of 8 or more), else as many as fit, the bars counted as the ruler counts measures.
  * `spans` (from the section's start) places each chord on the song's measures, as the studio's
- * chord clips do (three beats a bar in 3/4); in plain 4/4 there are none, a chord being chordBars.
+ * chord clips do (three beats a bar in 3/4); in plain 4/4 there are none, a chord being chordBars,
+ * unless the section's length isn't a whole number of chords: the last then stops at its end.
  */
 export function sectionChordPlan(from: number, to: number, map: MeterMap = PLAIN): { chordBars: number; count: number; spans?: Array<{ start: number; length: number }> } {
   const plain = isPlainMeter(map);
   const len = plain ? to - from : barSpan(from, to, map);
   const chordBars = len >= 8 ? 2 : len >= 4 ? 1 : len / 4;
   const count = Math.max(1, Math.round(len / chordBars));
-  return plain ? { chordBars, count } : { chordBars, count, spans: chordSpans(from, count, chordBars, map).spans };
+  const spans = plain ? Array.from({ length: count }, (_, i) => ({ start: i * chordBars, length: chordBars })) : chordSpans(from, count, chordBars, map).spans;
+  // A section of an odd length: the last chord stops at its end rather than ringing into the next
+  const end = to - from;
+  const cut = spans.filter((s) => s.start < end - 1e-6).map((s) => (s.start + s.length > end + 1e-6 ? { start: s.start, length: end - s.start } : s));
+  if (plain && cut.length === spans.length && cut.every((s, i) => s === spans[i])) return { chordBars, count };
+  return { chordBars, count: cut.length, spans: cut };
 }
 
 /**

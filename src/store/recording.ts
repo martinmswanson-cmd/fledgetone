@@ -246,7 +246,8 @@ export function createTake(startBar: number): Take {
           const first = measureAt(Math.max(1, low), meter);
           const end = measureAt(high, meter);
           clipStart = Math.min(TOTAL_BARS, first.start);
-          clipEnd = Math.max(first.start + first.length, Math.min(TOTAL_BARS + 1, high - end.start > EPS ? end.start + end.length : end.start));
+          // (a measure running past the timeline's end stops there, as Save + reopen keeps it)
+          clipEnd = Math.min(TOTAL_BARS + 1, Math.max(first.start + first.length, high - end.start > EPS ? end.start + end.length : end.start));
         } else {
           clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
           clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
@@ -306,7 +307,8 @@ export function createTake(startBar: number): Take {
  * note snapped onto the clip's end would be hidden there (a clip plays the notes inside it), so a
  * clip on a whole bar grows a bar to keep it; one that can't grow (`grow` false, or starting off a
  * bar line) keeps it on the last line before its end. With the song's `meter` (not 4/4) the bar is
- * a measure: a clip on a measure line grows to the end of the measure the note is in.
+ * a measure: a clip on a measure line grows to the end of the measure the note is in. Either way
+ * it stops at the timeline's end.
  */
 export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true, meter?: MeterMap): Clip {
   const measured = meter && !isPlainMeter(meter) ? meter : null;
@@ -342,7 +344,7 @@ export function quantizeTakeClip(clip: Clip, grid: QuantizeGrid, grow = true, me
     return m.start + m.length - clip.startBar;
   };
   const lengthBars = canGrow && lastStart >= clip.lengthBars - EPS ? Math.min(TOTAL_BARS + 1 - clip.startBar, holding()) : clip.lengthBars;
-  return { ...clip, notes, lengthBars: Math.max(clip.lengthBars, lengthBars) };
+  return { ...clip, notes, lengthBars: Math.min(TOTAL_BARS + 1 - clip.startBar, Math.max(clip.lengthBars, lengthBars)) };
 }
 
 /** Which of two notes to keep when they land on the same line: the louder, then the longer. */

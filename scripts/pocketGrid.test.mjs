@@ -153,3 +153,31 @@ test("a take's place: bars to a tenth in 4/4, measures and beats in other meters
   assert.equal(takePlace(measureStart(3, THREE), THREE), '3');
   assert.equal(takePlace(measureStart(3, THREE) + 0.25, THREE), '3.2');
 });
+
+test("on a section of an odd length the chords sheet's last chord stops at the section's end", async () => {
+  const { chordNotesFor } = await import('../src/store/smartTools.ts');
+  const { durationToBars } = await import('../src/store/timelineTypes.ts');
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} is not ${b}`);
+  let id = 0;
+  const newId = () => `n${id++}`;
+  const C = [0, 4, 7];
+  // 9 bars of 4/4: five chords of two bars, the last one bar
+  const p = sectionChordPlan(1, 10);
+  assert.equal(p.count, 5);
+  assert.deepEqual(p.spans.slice(-2), [{ start: 6, length: 2 }, { start: 8, length: 1 }]);
+  for (const style of ['sustain', 'pulse', 'offbeat', 'arp']) {
+    const notes = chordNotesFor(Array(p.count).fill(C), p.chordBars, style, newId, p.spans);
+    const end = Math.max(...notes.map((n) => n.startOffset + durationToBars(n.duration)));
+    assert.ok(end <= 9 + 1e-6, `${style} rings to ${end}`);
+  }
+  // 11 bars from bar 5
+  assert.deepEqual(sectionChordPlan(5, 16).spans.at(-1), { start: 10, length: 1 });
+  // 9 measures of 3/4: the last chord one measure (0.75)
+  const q = sectionChordPlan(1, measureStart(10, THREE), THREE);
+  assert.equal(q.count, 5);
+  const last = q.spans.at(-1);
+  near(last.start, 6);
+  near(last.length, 0.75);
+  // A whole number of chords as before
+  assert.deepEqual(sectionChordPlan(1, 9), { chordBars: 2, count: 4 });
+});
