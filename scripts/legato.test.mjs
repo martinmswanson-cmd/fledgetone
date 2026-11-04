@@ -206,3 +206,82 @@ test('lowestRuns: from one note to another at the same pitch the sub goes on (th
   );
   assert.deepEqual(L.lowestRuns([]), []);
 });
+
+test('lowestHeld and lowestRuns: notes that miss touching by a hair in floating point still touch', () => {
+  // 16ths at 133 bpm: where (i - 1) * len + len comes out under i * len
+  const len = (0.25 * 60) / 133;
+  const i = [...Array(32).keys()].find((k) => k > 0 && (k - 1) * len + len < k * len);
+  assert.ok(i !== undefined);
+  const end = (i - 1) * len + len;
+  const start = i * len;
+  assert.ok(end < start && start - end < 1e-12);
+  const out = L.lowestRuns([
+    { start: (i - 1) * len, end, freq: 73.4 },
+    { start, end: start + len, freq: 73.4 },
+  ]);
+  assert.deepEqual(out.map((o) => [o.index, o.goesOn, o.touches]), [
+    [0, false, false],
+    [1, true, true],
+  ]);
+  assert.equal(out[0].to, out[1].from);
+  // With a note held over them, no sliver under it in between
+  const under = L.lowestRuns([
+    { start: (i - 1) * len, end, freq: 73.4 },
+    { start, end: start + len, freq: 73.4 },
+    { start: 0, end: 10, freq: 98 },
+  ]);
+  assert.deepEqual(under.map((o) => [o.index, o.goesOn]), [
+    [2, false],
+    [0, false],
+    [1, true],
+    [2, false],
+  ]);
+  assert.ok(under.every((o) => o.to - o.from > 0.01));
+  // A lower note in: touches, another pitch (not goesOn)
+  const lower = L.lowestRuns([
+    { start: 0, end, freq: 73.4 },
+    { start, end: start + 1, freq: 65.4 },
+  ]);
+  assert.deepEqual(lower.map((o) => [o.touches, o.goesOn]), [
+    [false, false],
+    [true, false],
+  ]);
+  // A real gap (a millisecond) stays a gap
+  assert.deepEqual(
+    L.lowestRuns([
+      { start: 0, end: 1, freq: 73.4 },
+      { start: 1.001, end: 2, freq: 73.4 },
+    ]).map((o) => [o.from, o.to, o.touches]),
+    [
+      [0, 1, false],
+      [1.001, 2, false],
+    ]
+  );
+});
+
+test('takeOverShape: struck again rises as an attack; given back to a sub died away falls as a release', () => {
+  const attack = 0.006;
+  const release = 0.06;
+  // Struck where the note begins: an attack's constant, at its peak
+  const struck = L.takeOverShape(1.75, 1.75, 1.5, attack, release);
+  assert.equal(struck.back, false);
+  assert.equal(struck.constant, attack / 3);
+  assert.equal(struck.settled, 1.75 + attack);
+  assert.equal(struck.level, 1);
+  // Given back at 2 s to a D2 held from 0 with a 1.5 s decay (its sub is gone): it falls as the
+  // note ending there would (40 dB over its release), not within an attack, and rings on until
+  // that fall is done
+  const back = L.takeOverShape(0, 2, 1.5, attack, release);
+  assert.equal(back.back, true);
+  assert.ok(Math.abs(back.constant - release / Math.log(100)) < 1e-12);
+  assert.ok(back.constant > struck.constant);
+  assert.ok(back.level < 1e-3);
+  assert.ok(back.ends >= 2 + release * 1.5);
+  // Given back partway with no decay: to its peak, over the release, on as held
+  const flat = L.takeOverShape(0, 2, 0, attack, release);
+  assert.deepEqual([flat.back, flat.level, flat.ends], [true, 1, Infinity]);
+  // Given back while its sub still sounds: to where it has died away to once settled, ends with it
+  const mid = L.takeOverShape(0, 0.5, 1.5, attack, release);
+  assert.ok(Math.abs(mid.level - Math.exp((-(0.5 + release * 1.5) * Math.log(1000)) / 1.5)) < 1e-12);
+  assert.ok(Math.abs(mid.ends - (attack + 1.5 * 1.05)) < 1e-12);
+});

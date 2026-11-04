@@ -8,7 +8,7 @@ import type { SubLayer } from '../store/bassTools';
 import { subFrequency } from '../store/bassTools';
 import { createBendTimeline } from './bendTimeline';
 import type { BendTimeline } from './bendTimeline';
-import { lowestRuns, slideConstant, slidePitchAt } from './legato';
+import { lowestRuns, slideConstant, slidePitchAt, takeOverShape } from './legato';
 import type { NoteSlide } from './legato';
 
 /**
@@ -19,8 +19,10 @@ import type { NoteSlide } from './legato';
  * One sine at a time. Under a one-note instrument it slides from note to note as the instrument
  * does (when, how long and along which curve: see NoteSlide); under one that plays chords it's
  * under the lowest note sounding, and moves (without a slide: the instrument doesn't) when a lower
- * one starts or that one ends (see lowestHeld). From one of its notes to another at the same
- * pitch (struck again, or given back to) it's the same sine, shaped anew (see underLowest).
+ * one starts or that one ends (see lowestHeld). From one of its notes straight to another (struck
+ * again, a lower one begun, or given back to) it's the same sine, shaped anew and moved to that
+ * note's pitch (see underLowest): two sines a few hertz apart would beat as they crossed, at a
+ * phase set by when play began, so playing and the export would differ.
  *
  * Its nodes exist only while it's on, and per note only while that note sounds.
  */
@@ -49,6 +51,8 @@ interface SubVoice extends NativeVoice {
   own?: ConstantSourceNode;
   /** Under a chord-playing instrument: the notes it's under in turn, from when (stretch start, and the time it took over) */
   under?: Array<{ h: HeldUnder; from: number; at: number }>;
+  /** Moved on to another note's pitch at least once (see takeOver) */
+  stepped?: boolean;
 }
 
 /** A note under a chord-playing instrument the sub may go under (see lowestHeld): its own bend, and the sines it's had. */
@@ -59,7 +63,7 @@ interface HeldUnder {
   freq: number;
   /** Its own bend (cents) by time */
   own: BendTimeline;
-  /** Its sines, by when each of its stretches starts (one sine can be several notes' at the same pitch, see underLowest) */
+  /** Its sines, by when each of its stretches starts (one sine can be several notes' in a row, see underLowest) */
   subs: Map<number, SubVoice>;
 }
 
@@ -191,25 +195,35 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
 
   /**
    * The sine `v` (under a chord's lowest note) played on under `h` from `at` (its stretch from
-   * `from`), the next note at its pitch: shaped anew rather than a new sine begun. Struck again
-   * where `h` begins (up to its peak and its decay from there), or given back to it partway (to the
-   * level its sub has died away to by now, and on down). Its end is the caller's (see underLowest).
+   * `from`), the next note: shaped anew rather than a new sine begun, and moved to its pitch (a
+   * step on the sine sounding keeps its phase). Struck where `h` begins (up to its peak and its
+   * decay from there), or given back to it partway (as the note that ended there would fall, to
+   * the level its sub has died away to, and on down; one died away already, it ends there): see
+   * takeOverShape. Its end is the caller's (see underLowest).
    */
   const takeOver = (v: SubVoice, h: HeldUnder, from: number, at: number) => {
     const s = settings;
     if (!s || !nb || !voices) return;
     const { bus, raw } = nb;
+    const shape = takeOverShape(h.start, at, s.decay, ATTACK, RELEASE);
     const peak = PEAK * s.level * (0.4 + 0.6 * h.note.velocity);
-    const level = s.decay > 0 ? peak * Math.exp((-Math.max(0, at - h.start) * Math.log(1000)) / s.decay) : peak;
     const g = v.amp.gain;
     // (A target, not a ramp: a ramp would run from the last event, the hold adding none after one done)
     g.cancelAndHoldAtTime(at);
-    g.setTargetAtTime(level, at, ATTACK / 3);
-    if (s.decay > 0) g.setTargetAtTime(0, at + ATTACK, s.decay / Math.log(1000));
+    g.setTargetAtTime(peak * shape.level, at, shape.constant);
+    if (s.decay > 0) g.setTargetAtTime(0, shape.settled, s.decay / Math.log(1000));
+    const freq = subFrequency(h.freq, s.mode);
+    if (v.stepped || v.glide.f1 !== freq) {
+      const f = v.osc.frequency;
+      f.cancelAndHoldAtTime(at);
+      f.setValueAtTime(freq, at);
+      v.glide = { t0: at, f0: v.glide.f1, f1: freq, slide: null };
+      v.stepped = true;
+    }
     // (Rings on as a held note's would, until the caller ends it where its stretches do)
     const held = at + bus.toSeconds(HELD_NOTE);
     const followed = v.stopAt;
-    voices.extend(v, s.decay > 0 ? Math.min(held, Math.max(at + ATTACK, h.start + ATTACK + s.decay * 1.05)) : held);
+    voices.extend(v, Math.min(held, shape.ends));
     v.end = Infinity;
     if (v.stopAt > followed) follow(v, raw, followed - 1e-9);
     // (The last note's own bend was its own: this one's from here)
@@ -225,9 +239,9 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
   /**
    * Under a chord-playing instrument: the sines for the lowest of the notes held at each moment,
    * worked out again as notes start and end (they're sent out of order: a note's end and bends
-   * ahead, when it starts). Stretches in a row at the same pitch share one sine (see lowestRuns,
-   * takeOver). A sine already given whose stretches got shorter ends sooner; one no longer wanted
-   * never sounds.
+   * ahead, when it starts). Stretches in a row (with no gap between) share one sine (see
+   * lowestRuns, takeOver). A sine already given whose stretches got shorter ends sooner; one no
+   * longer wanted never sounds.
    */
   const underLowest = () => {
     if (!nb || !voices) return;
@@ -238,13 +252,14 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
     const wanted = new Set<SubVoice>();
     /** The stretches given a sine this time, by note */
     const given = new Map<HeldUnder, Set<number>>();
-    /** The sine of the stretches so far at one pitch: how many of its own it's had, to when, the last under */
+    /** The sine of the stretches so far in a row: how many of its own it's had, to when, the last under */
     let run: { v: SubVoice; n: number; to: number; h: HeldUnder } | null = null;
     const endRun = () => {
       if (!run) return;
       const { v, n, to, h } = run;
-      // (The stretches it went on to before aren't its any more)
+      // (The stretches it went on to before aren't its any more, nor their pitches)
       v.under!.length = n;
+      if (v.stepped) v.osc.frequency.cancelAndHoldAtTime(Math.max(now, to));
       if (to < v.end) {
         // Another note takes over there, or this one ends then
         set.release(v, Math.max(now, to), to < h.end ? HANDOVER : RELEASE);
@@ -252,12 +267,12 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
       }
       run = null;
     };
-    for (const { index, from, to, goesOn } of lowestRuns(held)) {
+    for (const { index, from, to, touches } of lowestRuns(held)) {
       const h = held[index];
       let v = h.subs.get(from);
       const at = notLate(nb.bus.context, Math.max(from, now));
-      if (run && goesOn && (v ? v === run.v : run.v.stopAt > at)) {
-        // The same pitch on: the same sine (see takeOver)
+      if (run && touches && (v ? v === run.v : run.v.stopAt > at)) {
+        // Straight on to the next note: the same sine (see takeOver)
         const r: { v: SubVoice; n: number; to: number; h: HeldUnder } = run;
         const under = r.v.under!;
         const k = under.findIndex((u, i) => i >= r.n && u.h === h && u.from === from);
@@ -385,7 +400,7 @@ export function createSubLayer(output: Tone.InputNode, initial: SubLayer | undef
           if (!h || !nb) return;
           const t = Math.max(nb.raw.currentTime, notLate(nb.bus.context, at));
           h.own.set(cents, t);
-          // (On its sines only while they're under it: one may go on under another note at its pitch)
+          // (On its sines only while they're under it: one may go on under another note)
           for (const v of new Set(h.subs.values())) {
             const under = v.under ?? [];
             under.forEach((u, k) => {
