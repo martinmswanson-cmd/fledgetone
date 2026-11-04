@@ -8,7 +8,7 @@ import { DEFAULT_BOUNDS, variationTakes, type VariationBounds } from '../../stor
 import { renderVariations } from '../../audio/microVariations';
 import { downloadBlob, encodeChannels } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
-import { cutToBytes } from '../../store/kitNames';
+import { cutToBytes, noControls } from '../../store/kitNames';
 import { importSoundFile } from '../../audio/soundLibrary';
 import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
@@ -28,7 +28,7 @@ const SLIDERS: ReadonlyArray<{ key: keyof VariationBounds; label: string; max: n
   { key: 'velocity', label: 'Level', max: 40, unit: '%' },
 ];
 
-const safe = (name: string) => cutToBytes(name.replace(/[\\/:*?"<>|]+/g, '-').trim()) || 'sound';
+const safe = (name: string) => cutToBytes(noControls(name).replace(/[\\/:*?"<>|]+/g, '-').trim()) || 'sound';
 
 export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === clipId));

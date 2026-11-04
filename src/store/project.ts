@@ -28,7 +28,7 @@ import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
-import { cutToBytes, notReserved } from './kitNames';
+import { cutToBytes, noControls, notReserved } from './kitNames';
 import { capSong, overWords, type OverCaps } from './songCaps';
 
 /**
@@ -1129,7 +1129,7 @@ export function songFromAnotherTab(json: string): ProjectSnapshot | null {
  * of one) and MAX_NAME_BYTES, and not a name Windows keeps for a device ("Aux" is "Aux_").
  */
 export function safeFileName(name: string): string {
-  const clean = name.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
+  const clean = noControls(name).trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
   const short = clean.slice(0, /[\uD800-\uDBFF]/.test(clean[79] ?? '') ? 79 : 80);
   return notReserved(cutToBytes(short)) || 'Untitled';
 }

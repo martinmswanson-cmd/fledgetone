@@ -21,7 +21,7 @@ import { renderStinger } from './stingerPlayer';
 import { generateSfx, renderSfxStereo } from './sfx/sfxSynth';
 import { ensureSfxRecordings } from './sfx/sfxRecordings';
 import { createZip, type ZipEntry } from './zip';
-import { cutToBytes } from '../store/kitNames';
+import { cutToBytes, noControls } from '../store/kitNames';
 import { barToSeconds, FOUR_FOUR, type MeterMap } from './tempoMap';
 import { songEnd, songSections } from '../store/cutToLength';
 import { planChannelKit, type ChannelKitPlan, type KitRange } from '../store/channelKit';
@@ -48,7 +48,7 @@ const ALERTS: ReadonlyArray<{ kind: StingerKind; file: string; what: string }> =
   { kind: 'victory', file: 'Alert 3 (big moment).wav', what: 'A fanfare: a raid, a goal reached, a win' },
 ];
 
-const safe = (name: string) => cutToBytes(name.replace(/[\\/:*?"<>|]+/g, '-').trim()) || 'Untitled';
+const safe = (name: string) => cutToBytes(noControls(name).replace(/[\\/:*?"<>|]+/g, '-').trim()) || 'Untitled';
 
 /** The song's plan, or null for an empty song */
 export function channelKitPlan(song: GameKitSong): ChannelKitPlan | null {

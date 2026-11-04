@@ -14,6 +14,13 @@ const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?=\s*(\.|$))/i;
 export const notReserved = (name: string) => name.replace(RESERVED, '$1_');
 
 /**
+ * `name` with no control characters (a tab, an escape, NUL: Windows refuses them in a file name
+ * and a zip reader stops a name at NUL) and no invisible marks that turn text round or hide in it.
+ * Each control character is a "-"; the joiner inside emoji is kept.
+ */
+export const noControls = (name: string) => name.replace(/\p{Cc}+/gu, '-').replace(/(?!\u200D)\p{Cf}/gu, '');
+
+/**
  * The most a file or folder name made from a name may take, in UTF-8 bytes. Most file systems
  * allow 255 per name: this leaves room for an extension and a few words added after it.
  */
@@ -61,7 +68,7 @@ export function cutToBytes(text: string, max = MAX_NAME_BYTES): string {
  * a name Windows keeps for a device, and at most MAX_NAME_BYTES long.
  */
 export function kitFileName(name: string): string {
-  const clean = name.replace(/[\\/:*?"<>|]+/g, '-').trim();
+  const clean = noControls(name).replace(/[\\/:*?"<>|]+/g, '-').trim();
   if (/^\.+$/.test(clean)) return '-';
   // (Cut after the device check, so the "_" it adds fits; and checked again, in case the cut left "con")
   return notReserved(cutToBytes(notReserved(clean)).replace(/[. ]+$/, '')) || 'Untitled';

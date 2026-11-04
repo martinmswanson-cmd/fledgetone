@@ -6,9 +6,11 @@
  * used without it.
  */
 
+import { noControls } from '../store/kitNames';
+
 /** "Title - 140 BPM - A minor" (the key left out when unknown), safe as a file name. */
 export function beatFileBase(title: string, bpm: number, key: string | null): string {
-  const clean = (s: string) => s.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
+  const clean = (s: string) => noControls(s).trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
   const tempo = `${Math.round(bpm * 100) / 100} BPM`;
   const name = clean(title).slice(0, 60) || 'Untitled';
   return [name, tempo, key ? clean(key) : null].filter(Boolean).join(' - ');

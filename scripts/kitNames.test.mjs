@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, notReserved, uniqueKitNames } = await import('../src/store/kitNames.ts');
+const { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, noControls, notReserved, uniqueKitNames } = await import('../src/store/kitNames.ts');
 const { safeFileName } = await import('../src/store/project.ts');
 const { createZip, zipPath } = await import('../src/audio/zip.ts');
 const { sfxFileName } = await import('../src/audio/sfx/sfxSynth.ts');
@@ -163,4 +163,17 @@ test('createZip writes the cleaned paths', async () => {
   // And in the central directory too
   const text = new TextDecoder().decode(b);
   assert.ok(!text.includes('..'));
+});
+
+test('file names keep no control characters or invisible direction marks', () => {
+  assert.equal(kitFileName('Hits\u0000 one'), 'Hits- one');
+  assert.equal(kitFileName('Drums\tA'), 'Drums-A');
+  assert.equal(kitFileName('Bass\u001b]0;x\u0007'), 'Bass-]0;x-');
+  assert.equal(kitFileName('Intro (Night‮exe)'), 'Intro (Nightexe)');
+  assert.equal(safeFileName('Song\u0000\u001b name'), 'Song- name');
+  // The joiner inside an emoji is kept
+  assert.equal(noControls('\u{1F468}‍\u{1F3A4}'), '\u{1F468}‍\u{1F3A4}');
+  // Two names that differed only by a control character stay two files
+  const [a, b] = uniqueKitNames(['Hits\u0000 one', 'Hits\u0000 two']).map(kitFileName);
+  assert.notEqual(a.toLowerCase(), b.toLowerCase());
 });

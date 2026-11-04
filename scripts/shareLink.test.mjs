@@ -157,3 +157,11 @@ test('notes that start together keep their order in the clip (Human drifts them 
   const back = await projectFromHash(await songLink(song, ''));
   assert.deepEqual(back.clips[0].notes.map((n) => n.note), ['F#1', 'C1', 'G3', 'C4', 'E4']);
 });
+
+test("a link leaves the reference video out: its file name, size and date are the sender's own", async () => {
+  const song = { ...SONG, video: { key: 'video:My clip 2026-10-31.mp4|48213377|1730392222000', name: 'My clip 2026-10-31.mp4', type: 'video/mp4', start: 0 } };
+  const link = await songLink(song, 'https://example.com/app');
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  assert.equal(back.video, undefined);
+  assert.equal(back.clips.length, SONG.clips.length);
+});

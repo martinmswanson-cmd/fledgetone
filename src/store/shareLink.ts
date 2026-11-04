@@ -332,7 +332,9 @@ export async function songLink(project: ProjectSnapshot, base: string): Promise<
   const tracks = await Promise.all(project.tracks.map(async (t) => lightTables(t.frozen ? { ...t, frozen: undefined } : t)));
   const compact = shortIds({ ...project, masterFx, tracks });
   // (The receiver's copy is a song of their own: it gets its own id when it opens)
-  const data = serializeProject({ ...compact, sounds: undefined, songId: undefined });
+  // The reference video stays out too: it can't travel in a link, and its file name, size and
+  // date are the sender's own
+  const data = serializeProject({ ...compact, sounds: undefined, songId: undefined, video: undefined });
   return `${base}${SHARE_PREFIX}${toBase64Url(await pipe(pack(data), new CompressionStream('deflate-raw')))}`;
 }
 
