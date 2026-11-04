@@ -1577,6 +1577,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
       return `Can't insert ${pluralBars(count)}: clips would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
     }
+    // (A tempo or time signature change past the last bar can't be kept in a saved song: it would move back on opening)
+    const pushedChange = [...s.tempoPoints, ...s.meterPoints].some((p) => p.bar >= at - EPS && p.bar + bars > TOTAL_BARS + EPS);
+    if (pushedChange) {
+      return `Can't insert ${pluralBars(count)}: a tempo or time signature change would be pushed past the end of the timeline.`;
+    }
     const pushedMarker = markerPushedPastEnd(s.markers, at, bars);
     if (pushedMarker) {
       return `Can't insert ${pluralBars(count)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;

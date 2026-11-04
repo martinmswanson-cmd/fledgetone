@@ -66,7 +66,8 @@ export interface GameKitSong {
 /** The stem that holds the tracks without a group: always at full level. */
 export const MAIN_STEM = 'Main';
 
-const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Untitled';
+// (A name of only dots, "." or "..", would be a folder step in the zip: one is made of it)
+const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim().replace(/^\.+$/, '-') || 'Untitled';
 
 /** What the kit holds before it's zipped: the manifest and every file by its path. */
 export interface GameKitParts {

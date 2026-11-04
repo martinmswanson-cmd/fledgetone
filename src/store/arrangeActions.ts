@@ -265,7 +265,8 @@ export function addDropFx(kind: DropFx, dropBar: number, bars: number, early = 0
   const drop = plain ? Math.round(dropBar) : nearestMeasureStart(dropBar, map);
   const count = kind === 'reverse' ? Math.min(1, bars) : bars;
   const len = plain ? Math.min(count, drop - 1) : drop - measuresFrom(drop, -count, map);
-  if (len < 0.25 - (plain ? 0 : EPS)) return 'Pick a later bar: there is no room before it.';
+  // (at least a beat of 4/4, or a whole measure where a measure is shorter than that)
+  if (len < (plain ? 0.25 : Math.min(0.25, measureAt(drop - 1e-6, map).length) - EPS)) return 'Pick a later bar: there is no room before it.';
   const from = drop - len;
   const earlyBars = plain ? early : (early * 4) / meterAt(drop - 1e-6, map).den;
   const s = tl();
