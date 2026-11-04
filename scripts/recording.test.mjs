@@ -394,3 +394,30 @@ test('in 3/4 a note quantized onto the clip end grows the clip by a measure, not
   const off = quantizeTakeClip(clipOf([['C4', 0.74]], 1.25, 0.75), '1/16', true, THREE);
   near(off.lengthBars, 0.75);
 });
+
+test("a take in the song's last measure stops at the timeline's end, whatever the meter", () => {
+  // In 3/2 the last measure starts on bar 400 and would run to 401.5, past the end (401)
+  const THREE_TWO = { base: { num: 3, den: 2 }, points: [] };
+  for (const meter of [THREE_TWO, { base: { num: 7, den: 4 }, points: [] }, SEVEN]) {
+    const take = createTake(400.2);
+    take.noteOn(60, 'C4', 0.8, 400.25, at(400.25));
+    take.noteOff(60, at(400.5));
+    const clip = take.finish(400.5, at(400.5), BPM, { meter });
+    assert.ok(clip.startBar + clip.lengthBars <= 401 + 1e-9, `${meter.base.num}/${meter.base.den}: ${clip.startBar}..${clip.startBar + clip.lengthBars}`);
+    assert.ok(clip.notes.every((n) => n.startOffset < clip.lengthBars));
+    // Quantize doesn't take it past the end either, nor keep a clip that already ran past it
+    for (const grid of ['1/16', '1/4', '1']) {
+      const q = quantizeTakeClip(clipOf([['C4', clip.notes[0].startOffset]], clip.startBar, clip.lengthBars), grid, true, meter);
+      assert.ok(q.startBar + q.lengthBars <= 401 + 1e-9, `${grid}: ${q.startBar}..${q.startBar + q.lengthBars}`);
+    }
+  }
+  const long = quantizeTakeClip(clipOf([['C4', 0.25]], 400, 1.5), '1/16', true, THREE_TWO);
+  assert.equal(long.lengthBars, 1);
+  // A take earlier in the song keeps its whole measure
+  const take = createTake(398.6);
+  take.noteOn(60, 'C4', 0.8, 398.75, at(398.75));
+  take.noteOff(60, at(399));
+  const clip = take.finish(399, at(399), BPM, { meter: THREE_TWO });
+  near(clip.startBar, 398.5);
+  near(clip.lengthBars, 1.5);
+});

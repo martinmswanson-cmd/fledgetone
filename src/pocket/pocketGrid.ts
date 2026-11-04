@@ -5,7 +5,7 @@
  * 16ths, and back; and a jump to another section waiting for the next bar line.
  */
 import type { NoteEvent } from '../store/timelineTypes';
-import { barSpan, barsToDuration, durationToBars, formatBarPosition } from '../store/timelineTypes';
+import { barSpan, barsToDuration, durationToBars, formatBarPosition, TOTAL_BARS } from '../store/timelineTypes';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import { chordSpans } from '../store/smartTools';
 import { beatsBetween, FOUR_FOUR, isPlainMeter, measureAt, toMeasureBeat, type MeterMap } from '../audio/tempoMap';
@@ -111,8 +111,9 @@ const PLAIN: MeterMap = { base: FOUR_FOUR, points: [] };
 export function sectionJump(at: number, from: number, to: number, map: MeterMap = PLAIN): SectionJump | null {
   if (at >= from - 1e-6 && at < to - 1e-6) return null;
   const m = measureAt(at + 1e-6, map);
-  const end = m.start + m.length;
-  return { from, to, when: end, loop: [Math.min(from, m.start), Math.max(to, end)] };
+  // (the song's last measure, longer than what's left of the timeline in 3/2, ends with the timeline, as does the loop)
+  const end = Math.min(TOTAL_BARS + 1, m.start + m.length);
+  return { from, to, when: end, loop: [Math.min(from, m.start), Math.min(TOTAL_BARS + 1, Math.max(to, end))] };
 }
 
 /**
@@ -138,14 +139,20 @@ export function jumpStep(jump: SectionJump, at: number): 'wait' | 'land' | 'seek
  * How the chords sheet fills the section `from`–`to`: a chord a bar in a section of 4 bars or more
  * (two in one of 8 or more), else as many as fit, the bars counted as the ruler counts measures.
  * `spans` (from the section's start) places each chord on the song's measures, as the studio's
- * chord clips do (three beats a bar in 3/4); in plain 4/4 there are none, a chord being chordBars.
+ * chord clips do (three beats a bar in 3/4); in plain 4/4 there are none, a chord being chordBars,
+ * unless the section's length isn't a whole number of chords: the last then stops at its end.
  */
 export function sectionChordPlan(from: number, to: number, map: MeterMap = PLAIN): { chordBars: number; count: number; spans?: Array<{ start: number; length: number }> } {
   const plain = isPlainMeter(map);
   const len = plain ? to - from : barSpan(from, to, map);
   const chordBars = len >= 8 ? 2 : len >= 4 ? 1 : len / 4;
   const count = Math.max(1, Math.round(len / chordBars));
-  return plain ? { chordBars, count } : { chordBars, count, spans: chordSpans(from, count, chordBars, map).spans };
+  const spans = plain ? Array.from({ length: count }, (_, i) => ({ start: i * chordBars, length: chordBars })) : chordSpans(from, count, chordBars, map).spans;
+  // A section of an odd length: the last chord stops at its end rather than ringing into the next
+  const end = to - from;
+  const cut = spans.filter((s) => s.start < end - 1e-6).map((s) => (s.start + s.length > end + 1e-6 ? { start: s.start, length: end - s.start } : s));
+  if (plain && cut.length === spans.length && cut.every((s, i) => s === spans[i])) return { chordBars, count };
+  return { chordBars, count: cut.length, spans: cut };
 }
 
 /**
@@ -158,11 +165,15 @@ export function rollRulerMarks(from: number, to: number, map: MeterMap = PLAIN):
   const steps = Math.round((to - from) * STEPS_PER_WHOLE);
   if (isPlainMeter(map)) return Array.from({ length: Math.ceil(steps / 4) }, (_, b) => ({ step: b * 4, label: b % 4 === 0 ? `${b / 4 + 1}` : `${Math.floor(b / 4) + 1}.${(b % 4) + 1}` }));
   const first = measureAt(Math.max(1, from) + 1e-6, map).measure;
-  return beatsBetween(from, to, map).map(({ bar }) => {
+  const marks = beatsBetween(from, to, map).map(({ bar }) => {
     const at = toMeasureBeat(bar + 1e-9, map);
     const measure = at.measure - first + 1;
     return { step: Math.round((bar - from) * STEPS_PER_WHOLE), label: at.beat === 1 ? `${measure}` : `${measure}.${at.beat}` };
   });
+  // A section starting part-way through a measure with no beat left in it (1/2 has one a measure):
+  // its start is still the section's first measure, as the header counts it
+  if (from >= 1 && (!marks.length || (marks[0].step > 0 && !/^1(\.|$)/.test(marks[0].label)))) marks.unshift({ step: 0, label: '1' });
+  return marks;
 }
 
 /** Where a take starts, for its "bar …" label: in plain 4/4 to a tenth of a bar as always, else the measure and beat as the ruler numbers them. */
