@@ -192,8 +192,11 @@ interface RippleSpot {
 interface RippleMove {
   before: RippleSpot;
   after: RippleSpot;
-  /** The edit itself, in plain numbers (see RippleEdit). */
-  edit: RippleEdit;
+  /**
+   * The edit itself, in plain numbers (see RippleEdit), in the order made: more than one when a
+   * step of several (song form, a beat switch: oneUndoStep) inserted or removed time more than once.
+   */
+  edits: RippleEdit[];
 }
 
 /**
@@ -312,14 +315,17 @@ function rippleSpot(s: TimelineState, move: RippleMove, undo: boolean): { loopRe
   const from = undo ? move.after : move.before;
   const to = undo ? move.before : move.after;
   const near = (a: number, b: number) => Math.abs(a - b) < EPS;
-  const rules = rippleRules(move.edit);
+  const rules = move.edits.map(rippleRules);
+  // (several edits: forward in the order made, back in the reverse order)
+  const back = (bar: number) => rules.reduceRight((at, r) => r.backPoint(at), bar);
+  const forward = (bar: number) => rules.reduce((at, r) => r.movePoint(at), bar);
   const loop = s.loopRegion;
   let moved: LoopRegion;
   if (near(loop.inBar, from.inBar) && near(loop.outBar, from.outBar)) moved = { ...loop, inBar: to.inBar, outBar: to.outBar };
-  else moved = undo ? { ...loop, inBar: rules.backPoint(loop.inBar), outBar: rules.backPoint(loop.outBar) } : rules.moveLoop(loop);
+  else moved = undo ? { ...loop, inBar: back(loop.inBar), outBar: back(loop.outBar) } : rules.reduce((l, r) => r.moveLoop(l), loop);
   // (A loop that would shrink to nothing stays where it is)
   const loopRegion = moved.outBar - moved.inBar > EPS && (moved.inBar !== loop.inBar || moved.outBar !== loop.outBar) ? moved : loop;
-  const playhead = near(s.playheadPosition, from.playhead) ? to.playhead : clampBar((undo ? rules.backPoint : rules.movePoint)(s.playheadPosition));
+  const playhead = near(s.playheadPosition, from.playhead) ? to.playhead : clampBar((undo ? back : forward)(s.playheadPosition));
   return { loopRegion, playhead };
 }
 
@@ -1194,6 +1200,31 @@ export function editStep<T>(make: () => T, refused: T): T {
   return made.done ? made.value : refused;
 }
 
+/** Where the loop and the playhead are now. */
+const spotOf = (s: TimelineState): RippleSpot => ({ inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, playhead: s.playheadPosition });
+
+/**
+ * A checkpoint, then `make`'s changes, as one undo step however many steps the store actions it
+ * calls push (an insert of bars, a new track): they fold into the checkpoint. Inserts and removes
+ * of time among them are kept with it as one RippleMove, from where the loop and the playhead were
+ * before to where they are after, so undo puts them back with the music and redo moves them again.
+ * The redo history goes. Call it inside allOrNothing for the caps.
+ */
+export function oneUndoStep<T>(make: () => T): T {
+  const store = useTimelineStore;
+  store.getState().checkpoint();
+  const start = store.getState();
+  const past = start.past;
+  const before = spotOf(start);
+  const value = make();
+  const end = store.getState();
+  const kept = new Set(past);
+  const edits = end.past.filter((e) => !kept.has(e)).flatMap((e) => e.ripple?.edits ?? []);
+  const step = past[past.length - 1];
+  store.setState({ past: edits.length && step ? [...past.slice(0, -1), { ...step, ripple: { before, after: spotOf(end), edits } }] : past, future: [] });
+  return value;
+}
+
 function putBack(state: TimelineState, checkpoint: HistoryEntry | null): void {
   if (useTimelineStore.getState() !== state) putExactly?.(state);
   pendingCheckpoint = checkpoint;
@@ -1541,7 +1572,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const ripple: RippleMove = {
       before: { inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, playhead: s.playheadPosition },
       after: { inBar: loopRegion.inBar, outBar: loopRegion.outBar, playhead },
-      edit,
+      edits: [edit],
     };
     // One undo step for all of it, even when only the loop or the playhead moved
     set((st) => ({
