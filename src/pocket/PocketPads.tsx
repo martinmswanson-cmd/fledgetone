@@ -13,12 +13,12 @@
  */
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dices } from 'lucide-react';
-import { useTimelineStore } from '../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
-import { STEPS_PER_WHOLE, midiToNote, noteToMidi, scaleRows, stepsPerBar } from './pocketGrid';
+import { STEPS_PER_WHOLE, midiToNote, noteToMidi, rollLengths, scaleRows, stepsPerBar } from './pocketGrid';
 import { audition, padsOf } from './pocketSound';
 import { editCell, inOneStep, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
@@ -33,13 +33,6 @@ import { withSwing } from '../store/drumGroove';
 import { buzz } from './pocketSession';
 
 const EPS = 1e-6;
-
-/** How long a held step's roll can be (bars): it speeds up into the next beat, two beats or bar */
-const ROLL_LENGTHS = [
-  { bars: 1 / 4, label: 'over a beat' },
-  { bars: 1 / 2, label: 'over two beats' },
-  { bars: 1, label: 'over a bar' },
-];
 
 /**
  * Keep a scrolling block of pads where the person left it as the drawer grows or shrinks: anchored
@@ -198,6 +191,7 @@ export const DrumPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
 
 export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ track, sec }) => {
   const meter = useTimelineStore((s) => s.meter);
+  const meterMap = useTimelineStore(songMeterOf);
   const clips = useTimelineStore((s) => s.clips);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   // (A Drum Rack opens on its first pad with a sound)
@@ -393,7 +387,8 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
           onClose={() => setChoosing(null)}
           onPick={(id) => editCell(track.id, sec, (have) => have.map((n) => (n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === choosing ? withChance(n, id) : n)))}
         >
-          {ROLL_LENGTHS.filter((r) => choosing / STEPS_PER_WHOLE + r.bars <= sec.to - sec.from + EPS).map((r) => (
+          {/* (A roll speeds up into the next beat, two beats or bar of the time signature at the step) */}
+          {rollLengths(sec.from + choosing / STEPS_PER_WHOLE, meterMap).filter((r) => choosing / STEPS_PER_WHOLE + r.bars <= sec.to - sec.from + EPS).map((r) => (
             <SheetItem
               key={r.bars}
               title={`Roll ${r.label}`}

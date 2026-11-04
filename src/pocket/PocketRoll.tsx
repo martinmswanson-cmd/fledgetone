@@ -23,7 +23,8 @@ import type { PocketSection } from './pocketSections';
 import { pocketNoteId, sliceCount, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
 import { buzz } from './pocketSession';
-import { penBars, rememberPen } from '../store/penLength';
+import { penBars, penLengths, rememberPen } from '../store/penLength';
+import type { MeterMap } from '../audio/tempoMap';
 import { PocketSteps, POCKET_LANE_H } from './PocketSteps';
 import { bendSupport, slideOf, withDive, withSlide } from '../store/slides';
 import { showToast } from '../components/timeline/toastStore';
@@ -32,8 +33,10 @@ import { maxOf, minOf } from '../support/minMax';
 
 const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
-const PEN_LENS: Array<[number, string]> = [[1, '1/16'], [2, '1/8'], [4, '1/4'], [8, '1/2'], [16, '1 bar']];
-const lenName = (len: number) => PEN_LENS.find(([l]) => l === len)?.[1] ?? `${len}/16`;
+/** New note lengths (16th steps) up to a half note; the song's bar where the section starts joins them (penLengths) */
+const SHORT_LENS = [{ bars: 1 / 16, label: '1/16' }, { bars: 1 / 8, label: '1/8' }, { bars: 1 / 4, label: '1/4' }, { bars: 1 / 2, label: '1/2' }];
+const penLens = (at: number, map: MeterMap): Array<[number, string]> => penLengths(SHORT_LENS, [1], at, map).map((o) => [Math.round(o.bars * STEPS_PER_WHOLE), o.label]);
+const lenName = (lens: Array<[number, string]>, len: number) => lens.find(([l]) => l === len)?.[1] ?? `${len}/16`;
 
 let pen: 'note' | 'chord' | 'erase' = 'note';
 /** A new note's length in 16ths: the last drawn for this kind of part, shared with the studio's roll (penLength.ts). */
@@ -52,6 +55,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   const steps = Math.round((sec.to - sec.from) * STEPS_PER_WHOLE);
   const meter = useSongMeter();
   const rulerMarks = useMemo(() => rollRulerMarks(sec.from, sec.to, meter), [sec.from, sec.to, meter]);
+  // ("1 bar" is the song's bar: three quarters in 3/4)
+  const lens = useMemo(() => penLens(sec.from, meter), [sec.from, meter]);
 
   // A Slicer (not in Pitch mode) has a row per slice, from C3 up, as in the studio's piano roll
   const slices = sliceCount(track);
@@ -314,7 +319,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         {selected ? (
           <>
             <span className="font-mono text-sm font-semibold px-1 whitespace-nowrap">
-              {nameOf(selected.midi)} <span className="text-[11px] text-forge-muted font-medium">{lenName(selected.len)}</span>
+              {nameOf(selected.midi)} <span className="text-[11px] text-forge-muted font-medium">{lenName(lens, selected.len)}</span>
             </span>
             <button type="button" aria-label="Shorter" className={ib} disabled={selected.len <= 1} onClick={() => change((n) => (n.len = Math.max(1, n.len - 1)))}>
               <ChevronLeft className="w-[18px] h-[18px]" />
@@ -353,8 +358,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
                 </button>
               ))}
             </div>
-            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track); const next = PEN_LENS.find(([l]) => l > len)?.[0] ?? PEN_LENS[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
-              {lenName(penSteps(track))}
+            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track); const next = lens.find(([l]) => l > len)?.[0] ?? lens[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
+              {lenName(lens, penSteps(track))}
             </button>
             <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: scrollBehavior() }); }}>
               <Home className="w-4 h-4" />

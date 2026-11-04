@@ -11,7 +11,7 @@ import { chopVoiceToKeys } from '../../store/voiceChopActions';
 import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
-import { formatBarPosition } from '../../store/timelineTypes';
+import { formatBarPosition, formatBarSpan, TOTAL_BARS } from '../../store/timelineTypes';
 import { canMoveClipBetween, isAudioKind, isDropKind, isDrumKind } from '../../audio/instrumentCatalog';
 import { isMixTrack } from '../../store/buses';
 import { bassForChords, chordsForMelody, fillClipBar, rollClipDrums, useSmartDialog } from '../../store/smartActions';
@@ -253,6 +253,10 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
             },
           ]
         : [];
+  const patternSpan = (lengthBars: number) => {
+    const at = Math.max(1, Math.min(TOTAL_BARS + 1 - lengthBars, menu.bar));
+    return formatBarSpan(at, at + lengthBars, meter);
+  };
   const newClip = (bars: number): Item => ({
     key: `new-${bars}`,
     label: `New empty clip (${bars} bar${bars === 1 ? '' : 's'})`,
@@ -454,7 +458,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           ? patternsFor(track.instrumentKey).map((p, i) => ({
               key: `pattern-${p.id}`,
               label: `Insert ${p.name}`,
-              shortcut: `${p.lengthBars} bars`,
+              // (Its length counted in the song's bars where it lands, as insertPatternClip places it)
+              shortcut: patternSpan(p.lengthBars),
               icon: <Plus className="w-3.5 h-3.5" />,
               onClick: run(() => s.insertPatternClip(track.id, p.id, menu.bar)),
               divider: i === 0,

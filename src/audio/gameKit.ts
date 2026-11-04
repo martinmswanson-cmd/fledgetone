@@ -1,4 +1,4 @@
-import { FOUR_FOUR, gridTimes, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
+import { FOUR_FOUR, gridTimes, measureCount, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
 import type { RenderRecordings } from './samplers/samplerManager';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
@@ -98,6 +98,7 @@ export interface AudioManifest {
   states: Array<{
     name: string;
     file: string;
+    /** Its length in the song's bars (measures of its time signature; a part-measure as a fraction) */
     bars: number;
     seconds: number;
     samples: number;
@@ -259,7 +260,8 @@ export async function buildGameKitParts(
     states.push({
       name,
       file,
-      bars: sec.to - sec.from,
+      // (Counted in the song's bars: four 3/4 measures are 4 bars, not 3)
+      bars: measureCount(sec.from, sec.to, meterMap),
       seconds: +seconds.toFixed(6),
       samples,
       bpm: +stateBpm.toFixed(2),
@@ -600,9 +602,9 @@ ${stems.length ? `Stem groups (crossfaded by intensity): ${stems.join(', ')}\n` 
 What's here
 -----------
 audio_manifest.json  Everything the players need: tempo, time signature, every state (its loop,
-                     its stems, its length in bars, seconds and samples), the transition rules
-                     between states, every stinger, and each stem group's intensity curve
-                     ([intensity, level] points, both 0 to 1).
+                     its stems, its length in the song's bars, seconds and samples), the
+                     transition rules between states, every stinger, and each stem group's
+                     intensity curve ([intensity, level] points, both 0 to 1).
 states/              One seamless loop per state (the whole mix), with loop points.
 stems/<state>/       The same loop split by stem group, all the same length: played together at
                      full level they make the mix. Mix them by the curves to follow intensity.

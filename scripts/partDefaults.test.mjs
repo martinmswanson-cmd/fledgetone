@@ -144,3 +144,19 @@ test('Duck to kick: a drum kit named "Sub kick" stays drums (no hole in its own 
   const hidden = [-0.875, -0.75, -0.625, -0.5, -0.375, -0.25, -0.125].map(hit);
   assert.equal(D.drumHitGapMs(tracks, clip([...hidden, ...heard]), 120), D.drumHitGapMs(tracks, clip(heard), 120));
 });
+
+test("the rolls' bar lengths for a new note are the song's bars where the clip starts", () => {
+  const short = [{ bars: 1 / 4, label: '1/4' }, { bars: 3 / 8, label: '1/4 dotted' }, { bars: 1 / 2, label: '1/2' }];
+  const labels = (xs) => xs.map((o) => `${o.label}=${o.bars}`);
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  assert.deepEqual(labels(P.penLengths(short, [1, 2, 4], 1, four)), ['1/4=0.25', '1/4 dotted=0.375', '1/2=0.5', '1 bar=1', '2 bars=2', '4 bars=4']);
+  assert.deepEqual(labels(P.penLengths(short, [1, 2, 4], 3, { base: { num: 3, den: 4 }, points: [] })), ['1/4=0.25', '1/4 dotted=0.375', '1/2=0.5', '1 bar=0.75', '2 bars=1.5', '4 bars=3']);
+  assert.deepEqual(labels(P.penLengths(short, [1], 1, { base: { num: 7, den: 8 }, points: [] })), ['1/4=0.25', '1/4 dotted=0.375', '1/2=0.5', '1 bar=0.875']);
+  // the same as a fixed length: offered once, as the bar
+  assert.deepEqual(labels(P.penLengths(short, [1], 1, { base: { num: 2, den: 4 }, points: [] })), ['1/4=0.25', '1/4 dotted=0.375', '1 bar=0.5']);
+  assert.deepEqual(labels(P.penLengths(short, [1], 1, { base: { num: 3, den: 8 }, points: [] })), ['1/4=0.25', '1 bar=0.375', '1/2=0.5']);
+  // counted from where the clip starts: 4/4 into 3/4 at bar 2
+  const mixed = { base: { num: 4, den: 4 }, points: [{ id: 'm', bar: 2, num: 3, den: 4 }] };
+  assert.deepEqual(labels(P.penLengths([], [1, 2], 1, mixed)), ['1 bar=1', '2 bars=1.75']);
+  assert.deepEqual(labels(P.penLengths([], [1], 2, mixed)), ['1 bar=0.75']);
+});

@@ -319,6 +319,20 @@ export function measuresBetween(from: number, to: number, map: MeterMap): Array<
   return out;
 }
 
+/**
+ * How many measures [from, to) spans, in the meters where they fall: a part-measure at either end
+ * counts as its share of that measure (a 3/4 measure and one beat is 1.333333). In plain 4/4 this
+ * is `to - from`.
+ */
+export function measureCount(from: number, to: number, map: MeterMap): number {
+  if (isFourFour(map)) return to - from;
+  const at = (bar: number) => {
+    const m = measureAt(bar, map);
+    return m.measure + (bar - m.start) / m.length;
+  };
+  return +(at(to) - at(from)).toFixed(6);
+}
+
 /** The nearest measure start to `bar`, where a time signature can change. */
 export function nearestMeasureStart(bar: number, map: MeterMap): number {
   const m = measureAt(bar, map);

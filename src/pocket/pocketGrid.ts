@@ -23,6 +23,22 @@ export const stepsPerBar = (meter: { num: number; den: number }): number => Math
 /** Bars a step lasts. */
 export const stepBars = (_meter: { num: number; den: number }): number => 1 / STEPS_PER_WHOLE;
 
+/**
+ * How long a held step's roll can be (bars, whole notes) at `at`: over a beat, two beats or the
+ * bar, in the time signature there (a beat is an eighth in 6/8, a bar three quarters in 3/4). In
+ * 4/4 a quarter, a half and a whole note.
+ */
+export function rollLengths(at: number, map: MeterMap): Array<{ bars: number; label: string }> {
+  const m = measureAt(at, map);
+  const beat = 1 / m.meter.den;
+  // (In 2/4 two beats are the bar: offered once, as the bar)
+  return [
+    { bars: beat, label: 'over a beat' },
+    ...(2 * beat < m.length - 1e-9 ? [{ bars: 2 * beat, label: 'over two beats' }] : []),
+    { bars: m.length, label: 'over a bar' },
+  ];
+}
+
 /** How many steps a note covers (at least 1), for drawing held notes across the grid. */
 export const noteSteps = (n: Pick<NoteEvent, 'duration'>, perBar: number): number => Math.max(1, Math.round(durationToBars(n.duration) * perBar));
 
