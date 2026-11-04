@@ -6,8 +6,8 @@ import { midiOf } from '../../store/noteTools';
 import React, { useMemo, useState } from 'react';
 import { Link2 } from 'lucide-react';
 import { patternLabelOf } from '../../store/patterns';
-import { TOTAL_BARS, useTimelineStore, songTempo, useSongMeter } from '../../store/timelineStore';
-import { isPlainMeter, tempoAt } from '../../audio/tempoMap';
+import { TOTAL_BARS, useTimelineStore, songMeterOf, songTempo, useSongMeter } from '../../store/timelineStore';
+import { isPlainMeter, stepMeasure, tempoAt } from '../../audio/tempoMap';
 import { formatBarsBeats } from '../../audio/transport';
 import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
@@ -465,7 +465,9 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     } else if (horizontal && !e.altKey) {
       // (Part of a selection: the selection moves together)
       const step = e.shiftKey ? 1 : minClipLength(s.snapGrid, s);
-      const moved = snapBar(clip.startBar + dir * step, s.snapGrid, s);
+      // (Shift: a bar, as the ruler counts them, to the next or previous bar line)
+      const map = songMeterOf(s);
+      const moved = e.shiftKey && !isPlainMeter(map) ? stepMeasure(clip.startBar, dir < 0 ? -1 : 1, map) : snapBar(clip.startBar + dir * step, s.snapGrid, s);
       const delta = Math.abs(moved - clip.startBar) > 1e-9 ? moved - clip.startBar : dir * step;
       const moving = clip.isSelected ? s.clips.filter((c) => c.isSelected) : [clip];
       const from = minOf(moving.map((c) => c.startBar));

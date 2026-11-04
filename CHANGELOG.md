@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Shift+Arrow moves a clip or marker one of the song's bars**: in 3/4, 7/8 and other time signatures it moved them 4 beats, off the bar lines. It now moves them to the next or previous bar line, as the ruler counts bars. 4/4 is as before.
+- **"No room" messages name the timeline's end as the ruler does**: Beat switch and Song form said "bar 401" in songs not in 4/4, where the ruler numbers the end differently. They now use the ruler's number.
 - **Takes snap to the song's beats in any time signature**: in 7/8, 6/8 and other time signatures, dragging or clicking along a take in the Takes dialog snapped to quarter notes, between the song's beats. It now snaps to the song's own beats (eighths in 7/8), as its grid shows. Shift still snaps to 16ths, and 4/4 is as before.
 
 ## 2026.11.04 — Suggestions from your own agent, bars counted right in every time signature, and many fixes

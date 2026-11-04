@@ -108,3 +108,17 @@ test('steadyBetween: true while one tempo holds, false across a jump or inside a
   assert.equal(tm.steadyBetween(5, 9, map), false);
   assert.equal(tm.steadyBetween(9, 40, map), true);
 });
+
+test('stepMeasure goes to the next or previous bar line as the ruler counts them', () => {
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  assert.equal(tm.stepMeasure(2.5, 1, four), 3.5);
+  assert.equal(tm.stepMeasure(2.5, -1, four), 1.5);
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  // 3/4: bar lines at 1, 1.75, 2.5, 3.25
+  assert.equal(tm.stepMeasure(1.75, 1, three), 2.5);
+  assert.equal(tm.stepMeasure(1.75, -1, three), 1);
+  // part-way through a bar: back to its own start, on to the next bar line
+  assert.equal(tm.stepMeasure(2, -1, three), 1.75);
+  assert.equal(tm.stepMeasure(2, 1, three), 2.5);
+  assert.equal(tm.stepMeasure(1, -1, three), 1);
+});

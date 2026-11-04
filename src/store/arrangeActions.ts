@@ -310,7 +310,7 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   // (how many measures that is, as the ruler counts them)
   const count = plain ? len : measureAt(b, map).measure - measureAt(a, map).measure;
   if (count < 1) return 'Pick a section at least one bar long.';
-  if (songEnd(s.clips) + len > TOTAL_BARS + 1) return `No room: the switch would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+  if (songEnd(s.clips) + len > TOTAL_BARS + 1) return `No room: the switch would run past the end of the timeline (bar ${plain ? TOTAL_BARS + 1 : formatBarPosition(TOTAL_BARS + 1, map)}).`;
   const plan = s.tracks
     .map((t) => ({ t, role: trackRole(t), parts: partsOf(s.clips, t.id, a, b) }))
     .filter((p) => p.parts.length && p.role !== 'mix');
@@ -367,7 +367,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
   const totalBars = plain ? total : Math.round(total / unit);
   if (!sections.length) return 'Give at least one section some bars.';
   if (total < loopLen - EPS) return `The song (${totalBars} bars) is shorter than the loop: give the sections more bars.`;
-  if (songEnd(s.clips) + total - loopLen > TOTAL_BARS + 1 + (plain ? 0 : EPS)) return `No room: the song would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+  if (songEnd(s.clips) + total - loopLen > TOTAL_BARS + 1 + (plain ? 0 : EPS)) return `No room: the song would run past the end of the timeline (bar ${plain ? TOTAL_BARS + 1 : formatBarPosition(TOTAL_BARS + 1, map)}).`;
   const plan = s.tracks
     .map((t) => ({ t, role: trackRole(t) as TrackRole, parts: partsOf(s.clips, t.id, from, to) }))
     .filter((p) => p.parts.length && p.role !== 'mix');

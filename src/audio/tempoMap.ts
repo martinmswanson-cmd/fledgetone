@@ -357,6 +357,17 @@ export function measuresFrom(at: number, n: number, map: MeterMap): number {
 }
 
 /**
+ * The next (dir 1) or previous (dir -1) bar line from `at`, as the ruler counts bars: from part-way
+ * through a bar, back goes to that bar's own start. In plain 4/4 a whole note either way, as before.
+ */
+export function stepMeasure(at: number, dir: 1 | -1, map: MeterMap): number {
+  if (isFourFour(map)) return at + dir;
+  const m = measureAt(at, map);
+  if (dir < 0) return at - m.start > EPS ? m.start : measuresFrom(at, -1, map);
+  return measuresFrom(at, 1, map);
+}
+
+/**
  * How long one measure inserted at the measure start `at` is: the meter the music before it is
  * in, so a time signature change right at `at` moves later with the music after it and stays on
  * a measure line (at bar 1, the song's first meter).

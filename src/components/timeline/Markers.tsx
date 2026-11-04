@@ -5,7 +5,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, LockOpen, Pencil, Trash2 } from 'lucide-react';
-import { TOTAL_BARS, useTimelineStore, songTempo, useSongTempo } from '../../store/timelineStore';
+import { TOTAL_BARS, useTimelineStore, songMeterOf, songTempo, useSongTempo } from '../../store/timelineStore';
+import { isPlainMeter, stepMeasure } from '../../audio/tempoMap';
 import type { Marker } from '../../store/timelineTypes';
 import { minClipLength, snapBar } from '../../store/timelineTypes';
 import { MARKER_NAME_MAX } from '../../store/markers';
@@ -111,8 +112,11 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
       const r = e.currentTarget.getBoundingClientRect();
       setMenu({ x: r.left, y: r.bottom, id: marker.id });
     } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const step = (e.shiftKey ? 1 : minClipLength(s.snapGrid, s)) * (e.key === 'ArrowLeft' ? -1 : 1);
-      const bar = Math.max(1, Math.min(TOTAL_BARS + 1, marker.bar + step));
+      const dir = e.key === 'ArrowLeft' ? -1 : 1;
+      // (Shift: a bar, as the ruler counts them, to the next or previous bar line)
+      const map = songMeterOf(s);
+      const to = e.shiftKey && !isPlainMeter(map) ? stepMeasure(marker.bar, dir, map) : marker.bar + (e.shiftKey ? 1 : minClipLength(s.snapGrid, s)) * dir;
+      const bar = Math.max(1, Math.min(TOTAL_BARS + 1, to));
       if (bar !== marker.bar) {
         s.checkpoint();
         s.moveMarker(marker.id, bar);
