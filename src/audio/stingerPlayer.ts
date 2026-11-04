@@ -10,6 +10,8 @@ import { fitNotesToRange } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
 import { defaultTrackFx, durationToBars } from '../store/timelineTypes';
 import { maxOf, minOf } from '../support/minMax';
+import { getAudibleMoment, getLiveTempo, getSongMeter, ticksToBar } from './transport';
+import { nextMeterLine, onMeterLine, secondsBetween } from './tempoMap';
 
 /**
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
@@ -239,10 +241,38 @@ export function stingerAt(stinger: Stinger, at: number, bpm: number): HandedNote
   return handOut(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range), at, bpm, 'wait');
 }
 
-/** The audio time of the next bar or beat line while the song plays (or `null` when stopped). */
-export function nextLineTime(unit: 'bar' | 'beat'): number | null {
-  if (liveTransport.state !== 'started') return null;
-  return liveTransport.nextSubdivision(unit === 'bar' ? '1m' : '4n');
+/**
+ * The audio time of the song's next bar or beat line while it plays, counted in its meter (a 3/4
+ * bar is three beats, a beat in 7/8 an eighth), as the exported players find their bar and beat
+ * lines: the first after what the Transport has scheduled already (in 4/4, Tone's nextSubdivision
+ * of a whole note or a quarter, as before). From what's heard now, along the tempo map; round the
+ * loop, past its end the song goes on from its start.
+ */
+function nextSongLine(unit: 'bar' | 'beat'): number {
+  const meter = getSongMeter();
+  const tempo = getLiveTempo();
+  const heard = getAudibleMoment();
+  const earliest = liveTransport.now();
+  const barOf = (t: Parameters<typeof liveTransport.toTicks>[0]) => ticksToBar(Math.round(liveTransport.toTicks(t)));
+  const loop = liveTransport.loop ? { from: barOf(liveTransport.loopStart), to: barOf(liveTransport.loopEnd) } : null;
+  const inLoop = !!loop && loop.to > loop.from + 1e-6 && heard.bar >= loop.from - 1e-6 && heard.bar < loop.to - 1e-6;
+  let bar = heard.bar;
+  let at = heard.at;
+  // (A start or a move on its way lands on a line: that one counts)
+  if (at > earliest && onMeterLine(bar, unit, meter)) return at;
+  for (let i = 0; i < 4096; i++) {
+    const next = nextMeterLine(bar, unit, meter);
+    if (inLoop && next >= loop!.to - 1e-6) {
+      at += secondsBetween(bar, loop!.to, tempo);
+      bar = loop!.from;
+      if (at > earliest && onMeterLine(bar, unit, meter)) return at;
+      continue;
+    }
+    at += secondsBetween(bar, next, tempo);
+    bar = next;
+    if (at > earliest) return at;
+  }
+  return earliest;
 }
 
 /**
@@ -263,7 +293,7 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
   const now = Math.max(liveContext.currentTime + 0.05, p.readyAt);
   const playing = liveTransport.state === 'started';
   // (`atTime`: a context time worked out by the caller, e.g. a transition's line)
-  const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
+  const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, nextSongLine(timing)) : now;
   const secondsPerBar = 240 / bpm;
   const byStart = new Map<number, typeof notes>();
   for (const n of notes) {

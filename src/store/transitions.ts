@@ -56,16 +56,23 @@ export interface TransitionCue {
   leadIn: number;
 }
 
-/** The cue for a transition, played on the song's own drum kit when it has one. */
-export function transitionCue(kind: TransitionKind, tracks: readonly Pick<Track, 'instrumentKey'>[]): TransitionCue | null {
+/**
+ * The cue for a transition, played on the song's own drum kit when it has one. A riser is one of
+ * the song's bars (`meter`, its time signature: three beats in 3/4), ending on the switch.
+ */
+export function transitionCue(kind: TransitionKind, tracks: readonly Pick<Track, 'instrumentKey'>[], meter: { num: number; den: number } = { num: 4, den: 4 }): TransitionCue | null {
   const note = (n: string, at: number, duration: string, velocity: number): NoteEvent => ({ id: uid('note'), note: n, startOffset: at, duration, velocity });
   switch (kind) {
     case 'fill': {
       const kit = tracks.find((t) => isDrumKind(t.instrumentKey))?.instrumentKey ?? 'drums';
       return { instrumentKey: kit, leadIn: 0.25, notes: [0, 1, 2, 3].map((i) => note('D1', -0.25 + i / 16, '16n', 0.5 + i * 0.12)) };
     }
-    case 'riser':
-      return { instrumentKey: 'fx', leadIn: 1, notes: [note(FX_NOTES.riser, -1, '1m', 0.7)] };
+    case 'riser': {
+      // (a whole note in 4/4, written as before)
+      const bar = meter.num > 0 && meter.den > 0 ? meter.num / meter.den : 1;
+      const plain = Math.abs(bar - 1) < 1e-9;
+      return { instrumentKey: 'fx', leadIn: plain ? 1 : bar, notes: [note(FX_NOTES.riser, plain ? -1 : -bar, plain ? '1m' : barsToDuration(bar), 0.7)] };
+    }
     case 'impact':
       return { instrumentKey: 'fx', leadIn: 0, notes: [note(FX_NOTES.impact, 0, '2n', 0.8)] };
     default:
