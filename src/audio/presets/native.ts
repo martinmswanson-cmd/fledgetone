@@ -235,6 +235,10 @@ export function createOsc(raw: BaseAudioContext, type: OscillatorType | Periodic
   // (PeriodicWave is an empty interface to TypeScript, so a string narrows no better than this)
   if (typeof type === 'string') osc.type = type as OscillatorType;
   else osc.setPeriodicWave(type);
+  // (Its own frequency from the first sample: set only on the timeline, an oscillator started off a
+  // render block's edge first plays the default 440 Hz for a moment and then starts its wave at a
+  // phase that depends on where in the block it began, so live and export would differ)
+  osc.frequency.value = frequency;
   osc.frequency.setValueAtTime(frequency, at);
   if (detune) osc.detune.value = detune;
   osc.start(at);

@@ -2053,6 +2053,8 @@ function samplerVoice(
     const { cents, hz } = vibrato!;
     const rate = hz * (1 + 0.07 * noteJitter(note, at, 71));
     const osc = raw.createOscillator();
+    // (Its frequency from the first sample, so its phase is the same live and in the export)
+    osc.frequency.value = rate * (legato ? 0.95 : 0.82);
     osc.frequency.setValueAtTime(rate * (legato ? 0.95 : 0.82), when);
     osc.frequency.linearRampToValueAtTime(rate, when + (legato ? 0.3 : 0.9));
     const depth = raw.createGain();

@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Synth notes and the Sub enhancer start the same way every time, live and in the export**: an oscillator could start with a split-second blip at another pitch and then at a different point in its wave depending on exactly when the note fell, so identical bass notes under a Sub enhancer could differ by up to 12 dB, and what you heard live could differ from the export. Each note now starts cleanly on its own pitch at the same point every time. Exports of songs using the synths, the 808, chiptune and effect sounds change very slightly.
 - **Shift+Arrow moves a clip or marker one of the song's bars**: in 3/4, 7/8 and other time signatures it moved them 4 beats, off the bar lines. It now moves them to the next or previous bar line, as the ruler counts bars. 4/4 is as before.
 - **"No room" messages name the timeline's end as the ruler does**: Beat switch and Song form said "bar 401" in songs not in 4/4, where the ruler numbers the end differently. They now use the ruler's number.
 - **Takes snap to the song's beats in any time signature**: in 7/8, 6/8 and other time signatures, dragging or clicking along a take in the Takes dialog snapped to quarter notes, between the song's beats. It now snaps to the song's own beats (eighths in 7/8), as its grid shows. Shift still snaps to 16ths, and 4/4 is as before.
