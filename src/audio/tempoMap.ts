@@ -351,6 +351,34 @@ export function beatFloor(bar: number, map: MeterMap): number {
 }
 
 /**
+ * The song's next bar ('bar') or beat ('beat') line after `bar`, counted in the meter there: a 3/4
+ * bar is three beats, a beat in 7/8 is an eighth. In plain 4/4 the next whole note or quarter.
+ */
+export function nextMeterLine(bar: number, unit: 'bar' | 'beat', map: MeterMap): number {
+  const m = measureAt(bar, map);
+  if (unit === 'bar') return m.start + m.length;
+  return beatFloor(bar, map) + 1 / m.meter.den;
+}
+
+/** True when `bar` is on one of the song's bar ('bar') or beat ('beat') lines. */
+export function onMeterLine(bar: number, unit: 'bar' | 'beat', map: MeterMap): boolean {
+  return Math.abs((unit === 'bar' ? measureAt(bar, map).start : beatFloor(bar, map)) - bar) < 1e-6;
+}
+
+/**
+ * A game state's phrase lines, as the game kit's players find them (every `phraseBars`-th of the
+ * bar lines the manifest gives, see gridTimes): every `phraseBars` measures from the first measure
+ * that starts in [from, to). A part-measure the state starts in comes before the first phrase.
+ */
+export function phraseLines(from: number, to: number, phraseBars: number, map: MeterMap): number[] {
+  const step = Math.max(1, Math.round(phraseBars));
+  return measuresBetween(measureAt(from + EPS, map).start, to, map)
+    .filter((m) => m.bar >= from - 1e-6)
+    .filter((_, i) => i % step === 0)
+    .map((m) => m.bar);
+}
+
+/**
  * `bar` on the nearest measure line, for the tools that place things "at bar N": in plain 4/4 the
  * nearest whole bar as they always rounded it (Math.round), otherwise nearestMeasureStart.
  */

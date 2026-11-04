@@ -5,7 +5,7 @@
  */
 import { CostumesPanel, StateOptionsPanel } from './GameCostumes';
 import { GameParamsPanel } from './GameParams';
-import { measureAt, secondsBetween } from '../../audio/tempoMap';
+import { isPlainMeter, measureAt, phraseLines, secondsBetween } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, masterFxOf, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
@@ -461,7 +461,8 @@ export const GamePanel: React.FC = () => {
     callOff();
     const playingNow = sections.find((x) => Math.abs(x.from - s.loopRegion.inBar) < 1e-6 && Math.abs(x.to - s.loopRegion.outBar) < 1e-6 && s.loopRegion.enabled);
     const rule = ruleFor(s.transitions, playingNow?.id ?? null, sec.id);
-    const cue = transitionCue(rule.kind, s.tracks);
+    // (a riser: one of the song's bars, as the export renders it)
+    const cue = transitionCue(rule.kind, s.tracks, s.meter);
     // A stinger bridge: the stinger on the line, then the new state that many bars later
     const bridge = rule.kind === 'stinger' ? s.stingers.find((x) => x.id === rule.stingerId) : undefined;
     // A written bridge (see transitions.ts): its parts on their tracks' instruments, then the state
@@ -515,8 +516,23 @@ export const GamePanel: React.FC = () => {
     };
     // A phrase: every few bars from the state's start (and its end); the end: where its loop wraps
     const phrase = (rule.phraseBars ?? 4) * unitAt(at).unit;
-    const after = (l: Line): Line => (state && when === 'phrase' ? fold(Math.min(state.to, l.bar + phrase), l.round) : state && when === 'end' ? { bar: state.from, round: l.round + 1 } : gridAfter(l));
-    let next: Line = state && when === 'phrase' ? fold(Math.min(state.to, state.from + Math.ceil((at - state.from) / phrase - 1e-6) * phrase), 0) : state && when === 'end' ? { bar: state.from, round: 1 } : gridAfter({ bar: at, round: 0 });
+    // Not in plain 4/4: every few measures from the state's first whole measure, as the exported
+    // players count them (a time signature can change inside the state); past the last, the first
+    // of the next time round (the state's start, when it starts on a bar line)
+    const lines = state && when === 'phrase' && !isPlainMeter(meter) ? phraseLines(state.from, state.to, rule.phraseBars ?? 4, meter) : null;
+    const phraseLine = (bar: number, round: number, strict: boolean): Line => {
+      const b = lines!.find((x) => (strict ? x > bar + 1e-6 : x >= bar - 1e-6));
+      return b !== undefined ? { bar: b, round } : { bar: lines![0] ?? state!.from, round: round + 1 };
+    };
+    const after = (l: Line): Line =>
+      lines ? phraseLine(l.bar, l.round, true) : state && when === 'phrase' ? fold(Math.min(state.to, l.bar + phrase), l.round) : state && when === 'end' ? { bar: state.from, round: l.round + 1 } : gridAfter(l);
+    let next: Line = lines
+      ? phraseLine(at, 0, false)
+      : state && when === 'phrase'
+        ? fold(Math.min(state.to, state.from + Math.ceil((at - state.from) / phrase - 1e-6) * phrase), 0)
+        : state && when === 'end'
+          ? { bar: state.from, round: 1 }
+          : gridAfter({ bar: at, round: 0 });
     // When the song is at a line: the line on the clock
     // the song plays by. `at` is what's heard now, which was played there an output latency ago (or
     // is still to start). The cue, stinger and bridge start on it and the song stops on it (by the

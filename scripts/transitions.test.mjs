@@ -29,6 +29,15 @@ test('a fill plays on the song\'s own kit over the beat before the switch', () =
 test('a riser leads in a bar; an impact lands on the downbeat; a cut is nothing', () => {
   assert.equal(transitionCue('riser', []).leadIn, 1);
   assert.equal(transitionCue('riser', []).notes[0].startOffset, -1);
+  assert.equal(transitionCue('riser', []).notes[0].duration, '1m');
+  assert.deepEqual(transitionCue('riser', [], { num: 4, den: 4 }).notes.map((n) => [n.startOffset, n.duration]), [[-1, '1m']]);
+  // One of the song's bars, ending on the switch: three beats in 3/4, seven eighths in 7/8
+  const three = transitionCue('riser', [], { num: 3, den: 4 });
+  assert.equal(three.leadIn, 0.75);
+  assert.deepEqual(three.notes.map((n) => [n.startOffset, n.duration]), [[-0.75, '2n.']]);
+  const seven = transitionCue('riser', [], { num: 7, den: 8 });
+  assert.equal(seven.leadIn, 0.875);
+  assert.equal(seven.notes[0].startOffset, -0.875);
   assert.equal(transitionCue('impact', []).notes[0].startOffset, 0);
   assert.equal(transitionCue('cut', []), null);
 });

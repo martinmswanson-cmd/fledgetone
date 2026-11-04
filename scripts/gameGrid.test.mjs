@@ -16,7 +16,7 @@ register(
   }
 }`)
 );
-const { gridTimes } = await import('../src/audio/tempoMap.ts');
+const { gridTimes, phraseLines, nextMeterLine, onMeterLine, secondsBetween } = await import('../src/audio/tempoMap.ts');
 const { AdaptiveMusic } = await import('../src/gameKit/adaptive-music.js');
 
 const FOUR = { base: { num: 4, den: 4 }, points: [] };
@@ -89,4 +89,63 @@ test('pieces of a shuffled state are cut at its own bar lines', () => {
   music.play('Run');
   assert.deepEqual(music.current.bounds, [[0, 4], [4, 8], [8, 16], [16, 24]]);
   music.stop();
+});
+
+// The Game tab's preview counts phrases as the players do (phraseLines): every few measures from
+// the state's first whole measure
+test('phrase lines are the players\' own: every few of the manifest\'s bar lines', () => {
+  const toThree = { base: { num: 4, den: 4 }, points: [{ bar: 3, num: 3, den: 4 }] };
+  // 4/4 then 3/4 at bar 3: measures at 1, 2, 3, 3.75, 4.5, ... the 4-bar phrases at 1, 4.5 and 7.5
+  assert.deepEqual(phraseLines(1, 9, 4, toThree), [1, 4.5, 7.5]);
+  const g = gridTimes(1, 9, 120, toThree);
+  const player = g.barTimes.filter((_, i) => i % 4 === 0).map((t) => 1 + t / 2);
+  assert.deepEqual(phraseLines(1, 9, 4, toThree), player);
+  // Starting part-way through a 3/4 measure: from the next measure line
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  assert.deepEqual(phraseLines(1.25, 7, 2, three), [1.75, 3.25, 4.75, 6.25]);
+  const h = gridTimes(1.25, 7, 120, three);
+  assert.deepEqual(h.barTimes.filter((_, i) => i % 2 === 0).map((t) => +(1.25 + t / 2).toFixed(6)), [1.75, 3.25, 4.75, 6.25]);
+  // Plain 4/4: every four bars from the start, as before
+  assert.deepEqual(phraseLines(1, 9, 4, FOUR), [1, 5]);
+  assert.deepEqual(phraseLines(5, 21, 8, FOUR), [5, 13]);
+});
+
+test('the web player\'s phrase lines in a state whose time signature changes are the preview\'s', () => {
+  const toThree = { base: { num: 4, den: 4 }, points: [{ bar: 3, num: 3, den: 4 }] };
+  const g = gridTimes(1, 9, 120, toThree);
+  const seconds = secondsBetween(1, 9, 120);
+  const state = { name: 'Calm', file: 'Calm.wav', bars: 8, seconds, bpm: 120, timeSignature: [4, 4], beatsPerBar: 4, beatSeconds: 0.5, stems: [], ...g };
+  const ctx = fakeContext();
+  const music = new AdaptiveMusic(ctx);
+  music.loadFrom({ bpm: 120, beatsPerBar: 4, beatSeconds: 0.5, states: [state], stingers: [], transitions: [], intensity: { default: 1, groups: [] } }, new Map());
+  music.play('Calm');
+  const start = 0.05;
+  const lines = phraseLines(1, 9, 4, toThree);
+  for (const heard of [1.2, 4, 5, 7.6]) {
+    ctx.currentTime = start + secondsBetween(1, heard, 120) - 0.02;
+    const want = lines.find((x) => x >= heard - 1e-6);
+    const at = want === undefined ? start + seconds : start + secondsBetween(1, want, 120);
+    assert.ok(Math.abs(music.nextLine('phrase', 4) - at) < 1e-6, `from ${heard}`);
+  }
+  music.stop();
+});
+
+test('the next bar and beat lines follow the time signature', () => {
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  const seven = { base: { num: 7, den: 8 }, points: [] };
+  // 4/4 as before: the next whole note, the next quarter
+  assert.equal(nextMeterLine(1.1, 'bar', FOUR), 2);
+  assert.equal(nextMeterLine(2, 'bar', FOUR), 3);
+  assert.equal(nextMeterLine(1.1, 'beat', FOUR), 1.25);
+  assert.equal(nextMeterLine(1.25, 'beat', FOUR), 1.5);
+  // 3/4: bars of three quarters
+  assert.equal(nextMeterLine(1.1, 'bar', three), 1.75);
+  assert.equal(nextMeterLine(1.8, 'bar', three), 2.5);
+  assert.equal(nextMeterLine(1.6, 'beat', three), 1.75);
+  // 7/8: the beat is an eighth, the bar seven of them
+  assert.equal(nextMeterLine(1.1, 'beat', seven), 1.125);
+  assert.equal(nextMeterLine(1.125, 'beat', seven), 1.25);
+  assert.equal(nextMeterLine(1.8, 'beat', seven), 1.875);
+  assert.equal(nextMeterLine(1.1, 'bar', seven), 1.875);
+  assert.ok(onMeterLine(1.875, 'bar', seven) && onMeterLine(2, 'beat', seven) && !onMeterLine(2, 'bar', seven));
 });

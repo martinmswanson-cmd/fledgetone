@@ -340,7 +340,8 @@ export async function buildGameKitParts(
     }
     if (rule.kind === 'fill' || rule.kind === 'riser' || rule.kind === 'impact') {
       if (!cueFiles.has(rule.kind)) {
-        const cue = transitionCue(rule.kind, song.tracks)!;
+        // (a riser: one of the song's bars, in its time signature, as a stinger's bridge holds them)
+        const cue = transitionCue(rule.kind, song.tracks, meterMap.base)!;
         const sound: Stinger = {
           id: rule.kind,
           name: rule.kind,
