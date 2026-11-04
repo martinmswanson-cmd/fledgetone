@@ -122,3 +122,21 @@ test('stepMeasure goes to the next or previous bar line as the ruler counts them
   assert.equal(tm.stepMeasure(2, 1, three), 2.5);
   assert.equal(tm.stepMeasure(1, -1, three), 1);
 });
+
+test('measureCount counts the song bars in a stretch, a part-measure as its share', () => {
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  assert.equal(tm.measureCount(1, 5, four), 4);
+  assert.equal(tm.measureCount(5, 9.25, four), 4.25);
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  // four 3/4 measures are 3 whole notes
+  assert.equal(tm.measureCount(1, 4, three), 4);
+  assert.equal(tm.measureCount(4, 6.25, three), 3);
+  // a measure and a beat
+  near(tm.measureCount(1, 2, three), 4 / 3);
+  const seven = { base: { num: 7, den: 8 }, points: [] };
+  assert.equal(tm.measureCount(1, 4.5, seven), 4);
+  // 4/4 then 3/4 from bar 3: two bars of 4/4 and two of 3/4
+  const mixed = { base: { num: 4, den: 4 }, points: [{ id: 'm', bar: 3, num: 3, den: 4 }] };
+  assert.equal(tm.measureCount(1, 4.5, mixed), 4);
+  assert.equal(tm.measureCount(2.5, 3.75, mixed), 1.5);
+});

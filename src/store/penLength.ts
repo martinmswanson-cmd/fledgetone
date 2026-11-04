@@ -7,6 +7,7 @@
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { partKind } from './partKind';
 import type { InstrumentKey } from './timelineTypes';
+import { addMeasures, type MeterMap } from '../audio/tempoMap';
 
 export type PenGroup = 'drums' | 'fx' | 'pad' | 'notes';
 
@@ -37,4 +38,16 @@ export function rememberPen(key: InstrumentKey, bars: number): void {
 /** Forget every remembered length (for tests). */
 export function forgetPens(): void {
   remembered.clear();
+}
+
+/**
+ * The rolls' choices of a new note's length (in bars, whole notes): `fixed` (1/16, 1/8, ...) and
+ * `counts` of the song's bars from `at`, where the clip or section starts, so "1 bar" is three
+ * quarters in 3/4 and seven eighths in 7/8. A fixed length the same as one of the bars is left out
+ * (a 1/2 in 2/4). Shortest first. In 4/4 the bars are 1, 2, 4.
+ */
+export function penLengths<T extends { bars: number; label: string }>(fixed: readonly T[], counts: readonly number[], at: number, map: MeterMap): Array<{ bars: number; label: string }> {
+  const bars = counts.map((n) => ({ bars: Math.round((addMeasures(at, n, map) - at) * 1e9) / 1e9, label: n === 1 ? '1 bar' : `${n} bars` }));
+  const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  return [...fixed.filter((f) => !bars.some((b) => same(b.bars, f.bars))), ...bars].sort((a, b) => a.bars - b.bars);
 }

@@ -16,7 +16,7 @@ register(
   }
 }`)
 );
-const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll, sectionJump, jumpStep, sectionPlace, sectionChordPlan, rollRulerMarks, takePlace } = await import('../src/pocket/pocketGrid.ts');
+const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll, sectionJump, jumpStep, sectionPlace, sectionChordPlan, rollRulerMarks, takePlace, rollLengths } = await import('../src/pocket/pocketGrid.ts');
 const { measureStart } = await import('../src/audio/tempoMap.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 
@@ -205,4 +205,19 @@ test("the ruler reads 1 at the start of a section starting part-way through a me
   assert.deepEqual(rollRulerMarks(1.25, 3, meterMap(2, 2)).map((m) => m.label), ['1.2', '2', '2.2']);
   // On a measure line as before
   assert.deepEqual(rollRulerMarks(17, 18, HALF).map((m) => m.label), ['1', '2']);
+});
+
+test("a held step's roll lengths follow the time signature at the step", () => {
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  assert.deepEqual(rollLengths(1.5, four), [{ bars: 1 / 4, label: 'over a beat' }, { bars: 1 / 2, label: 'over two beats' }, { bars: 1, label: 'over a bar' }]);
+  const three = { base: { num: 3, den: 4 }, points: [] };
+  assert.deepEqual(rollLengths(1, three).map((r) => r.bars), [1 / 4, 1 / 2, 3 / 4]);
+  const six = { base: { num: 6, den: 8 }, points: [] };
+  assert.deepEqual(rollLengths(1.25, six).map((r) => r.bars), [1 / 8, 1 / 4, 3 / 4]);
+  // 2/4: two beats are the bar, offered once
+  assert.deepEqual(rollLengths(1, { base: { num: 2, den: 4 }, points: [] }).map((r) => r.label), ['over a beat', 'over a bar']);
+  // the bar where the step is: 4/4, then 7/8 from bar 3
+  const mixed = { base: { num: 4, den: 4 }, points: [{ id: 'm', bar: 3, num: 7, den: 8 }] };
+  assert.deepEqual(rollLengths(2.5, mixed).map((r) => r.bars), [1 / 4, 1 / 2, 1]);
+  assert.deepEqual(rollLengths(3.25, mixed).map((r) => r.bars), [1 / 8, 1 / 4, 7 / 8]);
 });

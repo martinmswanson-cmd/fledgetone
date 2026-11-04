@@ -47,7 +47,7 @@ import { RollPainter } from './RollPainter';
 import { GrooveFeelPicker } from './GrooveFeelPicker';
 import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
-import { penBars, rememberPen } from '../../store/penLength';
+import { penBars, penLengths, rememberPen } from '../../store/penLength';
 import { duplicateAt, heldNotes, holdNotes, liveSelection, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
 import { ActionSelect } from '../actionSelect';
 import { maxOf, minOf } from '../../support/minMax';
@@ -172,6 +172,7 @@ const GRID_OPTIONS = [
   { label: '1/4', units: 24 },
 ];
 
+/** New note lengths up to a half note; 1, 2 and 4 of the song's bars join them (penLengths) */
 const LENGTH_OPTIONS = [
   { label: '1/32', units: 3 },
   { label: '1/16T', units: 4 },
@@ -182,12 +183,9 @@ const LENGTH_OPTIONS = [
   { label: '1/4', units: 24 },
   { label: '1/4 dotted', units: 36 },
   { label: '1/2', units: 48 },
-  { label: '1 bar', units: 96 },
-  { label: '2 bars', units: 192 },
-  { label: '4 bars', units: 384 },
 ];
 
-/** A note length not in LENGTH_OPTIONS (one drawn or stretched to it), by 16ths, or 96ths of a bar. */
+/** A note length not in the choices (one drawn or stretched to it), by 16ths, or 96ths of a bar. */
 const lengthLabel = (units: number) => (units % UNITS_PER_16TH === 0 ? `${units / UNITS_PER_16TH}/16` : `${units}/96`);
 
 /**
@@ -441,6 +439,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const clipUnits = unitsOf(clip.startBar - 1);
   const meterMap = useSongMeter();
   const plainMeter = isPlainMeter(meterMap);
+  // New note lengths: "1 bar" is the song's bar where the clip starts (three quarters in 3/4)
+  const lengthOptions = useMemo(
+    () => penLengths(LENGTH_OPTIONS.map((o) => ({ label: o.label, bars: o.units / UNITS_PER_BAR })), [1, 2, 4], clip.startBar, meterMap).map((o) => ({ label: o.label, units: Math.round(o.bars * UNITS_PER_BAR) })),
+    [clip.startBar, meterMap]
+  );
   /** In other time signatures than 4/4: the song's measure and beat lines inside the clip (bars from its start). */
   const meterLines = useMemo(() => (plainMeter ? null : spanMeterLines(clip.startBar, clip.lengthBars, meterMap)), [plainMeter, meterMap, clip.startBar, clip.lengthBars]);
   const beatMarks = useMemo(() => {
@@ -1156,7 +1159,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         <label className="flex items-center gap-1.5">
           NEW NOTE
           <select className={select} value={lengthUnits} onChange={(e) => choosePen(Number(e.target.value))}>
-            {(LENGTH_OPTIONS.some((o) => o.units === lengthUnits) ? LENGTH_OPTIONS : [...LENGTH_OPTIONS, { label: lengthLabel(lengthUnits), units: lengthUnits }].sort((a, b) => a.units - b.units)).map((o) => (
+            {(lengthOptions.some((o) => o.units === lengthUnits) ? lengthOptions : [...lengthOptions, { label: lengthLabel(lengthUnits), units: lengthUnits }].sort((a, b) => a.units - b.units)).map((o) => (
               <option key={o.units} value={o.units}>{o.label}</option>
             ))}
           </select>
