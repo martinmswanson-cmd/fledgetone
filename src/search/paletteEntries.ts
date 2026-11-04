@@ -4,7 +4,8 @@ import { suggestBlock } from '../store/speedUpActions';
 import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isDropKind, isMixKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
-import { useTimelineStore } from '../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../store/timelineStore';
+import { measureStart, roundToMeasure } from '../audio/tempoMap';
 import { useUiStore } from '../store/uiStore';
 import { STARTERS } from '../store/starters';
 import { showSfxMode } from '../components/sfx/SfxMakerPanel';
@@ -154,7 +155,8 @@ const TOOLS: Item[] = [
   { title: 'Markers list', keywords: 'markers sections rename jump list', run: async () => void (await press('button[title^="Markers:"]')) },
   { title: 'Build-up & drop at the playhead', keywords: 'buildup build up drop riser transition edm snare roll impact', detail: 'Adds a build-up before the playhead and a drop on it (also on the ruler’s right-click menu).', run: () => {
     const s = timeline();
-    return s.addBuildAndDrop(Math.max(2, Math.round(s.playheadPosition))) ?? undefined;
+    const meter = songMeterOf(s);
+    return s.addBuildAndDrop(Math.max(measureStart(2, meter), roundToMeasure(s.playheadPosition, meter))) ?? undefined;
   } },
   { title: 'Dark melody (bells, piano, riffs)', keywords: 'dark melody generator trap drill rage phonk minor phrygian harmonic bells pluck piano loop idea', detail: 'A short seeded loop in the song\u2019s key, onto a track or a new bell, pluck or piano track.', run: () => openArrange('melody', Math.max(1, Math.floor(timeline().playheadPosition))) },
   { title: 'Drop out, stop, riser or beat switch', keywords: 'drop out mute stop silence riser reverse cymbal beat switch half time double time arrange', detail: 'Into a drop at the playhead; a beat switch on the loop\u2019s bars.', run: () => openArrange('drops', Math.max(2, Math.round(timeline().playheadPosition))) },

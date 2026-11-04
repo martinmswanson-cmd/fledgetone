@@ -112,6 +112,6 @@ export const isHat = (note: string) => note === HAT || note === OPEN_HAT;
 
 /**
  * The drums of a section that a hook follows, with their last half bar dropped out (the pre-hook
- * drop). `bars` is the section's length.
+ * drop). `bars` is the section's length; `half` is half its last measure (half a bar in 4/4).
  */
-export const preHookDrop = (notes: readonly NoteEvent[], bars: number): NoteEvent[] => cutGap(notes, bars - 0.5, bars);
+export const preHookDrop = (notes: readonly NoteEvent[], bars: number, half = 0.5): NoteEvent[] => cutGap(notes, bars - half, bars);

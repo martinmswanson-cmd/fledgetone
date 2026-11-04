@@ -5,7 +5,7 @@
  */
 import React, { useRef, useState } from 'react';
 import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, ChevronsRight, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
-import { meterAt, tempoAt } from '../../audio/tempoMap';
+import { meterAt, roundToMeasure, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
@@ -124,7 +124,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       key: 'drop',
       divider: true,
       label: 'Build-up & drop here',
-      shortcut: `bar ${formatBarPosition(Math.round(menu.bar), meter)}`,
+      shortcut: `bar ${formatBarPosition(roundToMeasure(menu.bar, meter), meter)}`,
       icon: <Zap className="w-3.5 h-3.5" />,
       onClick: run(() => s.addBuildAndDrop(menu.bar)),
     },
@@ -135,7 +135,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       icon: <Zap className="w-3.5 h-3.5" />,
       onClick: () => {
         onClose();
-        openArrange('drops', Math.round(menu.bar));
+        openArrange('drops', roundToMeasure(menu.bar, meter));
       },
     },
     {

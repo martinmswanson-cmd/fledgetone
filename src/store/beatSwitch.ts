@@ -2,6 +2,7 @@ import type { AutomationPoint, InstrumentKey, NoteEvent, Track } from './timelin
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { INSTRUMENTS, isAudioKind, isDrumKind, isDropKind, isFxKind, isMixKind } from '../audio/instrumentCatalog';
 import { laneValueAt, normalizePoints } from '../audio/automation';
+import { isPlainMeter, measureAt, nearestMeasureStart, type MeterMap } from '../audio/tempoMap';
 
 /**
  * Beat switch and drop tools, on plain note lists: what each track is for in a beat (drums, bass,
@@ -82,8 +83,17 @@ export function silenceDip(points: readonly AutomationPoint[], from: number, to:
   return normalizePoints([...kept, { bar: close, value: at(close) }, { bar: from, value: 0 }, { bar: to - DIP_EDGE, value: 0 }, { bar: to, value: at(to) }]);
 }
 
-/** Where a stop goes: the last `beats` (1 or 0.5) of the bar `bar` (1-based song bar), as [from, to). */
-export function stopSpan(bar: number, beats: number): [number, number] {
+/**
+ * Where a stop goes: the last `beats` (1 or 0.5) of the bar `bar` (1-based song bar), as [from, to).
+ * With the song's `meter`, not in 4/4, the bar is the measure whose start is nearest `bar`, and a
+ * beat is the meter's own (an eighth in 6/8).
+ */
+export function stopSpan(bar: number, beats: number, meter?: MeterMap): [number, number] {
+  if (meter && !isPlainMeter(meter)) {
+    const m = measureAt(nearestMeasureStart(bar, meter), meter);
+    const to = m.start + m.length;
+    return [to - beats / m.meter.den, to];
+  }
   const to = Math.round(bar) + 1;
   return [to - beats / 4, to];
 }

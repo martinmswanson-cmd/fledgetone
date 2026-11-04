@@ -103,7 +103,7 @@ import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { makeTrack } from './trackFactory';
 import { designedKitStart } from './synthKits';
-import { REVERB_SEND_MAX, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
+import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
@@ -149,7 +149,7 @@ import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expr
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
-import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
+import { clampBpm, insertedMeasureBars, isPlainMeter, measureAt, measureBars, measureStart, measuresBetween, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
 import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
@@ -706,16 +706,29 @@ interface TimelineState {
   fillSelectionToLoopOut: () => string | null;
 
   // Ripple edits: add or remove time across every track
-  /** Insert `bars` empty bars at `atBar`: later clips move right, clips across it are split. */
+  /**
+   * Insert `bars` empty bars at `atBar`: later clips move right, clips across it are split. Not in
+   * 4/4, the bars are measures as the ruler counts them, inserted at the nearest measure start, in
+   * the meter of the music before it (so the time signature changes after it move with the music).
+   */
   insertBars: (atBar: number, bars: number) => string | null;
+  /**
+   * Insert exactly `bars` bars (whole notes) of empty time at `atBar`, not snapped: for tools that
+   * make room for a stretch of known length (a copy of a section). In 4/4 the same as insertBars.
+   */
+  insertTime: (atBar: number, bars: number) => string | null;
   /** Remove the bars from `fromBar` to `toBar`: clips inside go, later clips move left. */
   removeBars: (fromBar: number, toBar: number) => string | null;
   /**
    * A build-up into a drop at `dropBar` (one undo step): riser and snare roll over the bars
-   * before it, an impact on it, and markers. Returns a message when it can't.
+   * before it, an impact on it, and markers. Returns a message when it can't. Not in 4/4, the
+   * drop goes to the nearest measure start and the bars are the song's measures.
    */
   addBuildAndDrop: (dropBar: number) => string | null;
-  /** Move every pitched note from `fromBar` on by `semitones` (a key change), one undo step. A message back means nothing moved. */
+  /**
+   * Move every pitched note from `fromBar` on by `semitones` (a key change), one undo step. A
+   * message back means nothing moved. Not in 4/4, from the measure start nearest `fromBar`.
+   */
   keyChangeFrom: (fromBar: number, semitones: number) => string | null;
   /**
    * Rebuild the song from its sections (see cutToLength.ts) in `order`, a repeat playing twice, as
@@ -1540,6 +1553,41 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       ...(loopChanged ? { loopRegion } : {}),
     }));
     if (playhead !== s.playheadPosition) get().seek(playhead);
+  };
+
+  /**
+   * Insert `bars` bars (whole notes) of empty time at `at` (clamped): later clips move right, clips
+   * across it are split, everything else ripples with them. `count` is how many bars that is as
+   * the ruler counts them, for the messages.
+   */
+  const insertTime = (at: number, bars: number, count: number): string | null => {
+    const s = get();
+    if (!(bars > 0)) return null;
+    const clips: Clip[] = [];
+    for (const c of s.clips) {
+      const halves = splitClipAt(c, at, songTempo(s));
+      if (halves) {
+        // Across the insert point: split it there and move the right half
+        const [left, right] = halves;
+        clips.push(left, { ...right, startBar: right.startBar + bars, isSelected: c.isSelected });
+      } else {
+        clips.push(c.startBar >= at - EPS ? { ...c, startBar: c.startBar + bars } : c);
+      }
+    }
+    if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
+      return `Can't insert ${pluralBars(count)}: clips would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
+    }
+    const pushedMarker = markerPushedPastEnd(s.markers, at, bars);
+    if (pushedMarker) {
+      return `Can't insert ${pluralBars(count)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
+    }
+    applyRipple(
+      clips,
+      { kind: 'insert', at, bars },
+      (points) => insertLaneBars(points, at, bars),
+      (markers, tempo) => insertMarkerBars(markers, at, bars, tempo)
+    );
+    return null;
   };
 
   /**
@@ -2856,56 +2904,47 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     // ---------- Ripple edits ----------
     insertBars: (atBar, bars) => {
-      const s = get();
-      const at = clampBar(atBar);
+      const map = songMeterOf(get());
+      if (isPlainMeter(map)) return insertTime(clampBar(atBar), bars, bars);
       if (!(bars > 0)) return null;
-      const clips: Clip[] = [];
-      for (const c of s.clips) {
-        const halves = splitClipAt(c, at, songTempo(s));
-        if (halves) {
-          // Across the insert point: split it there and move the right half
-          const [left, right] = halves;
-          clips.push(left, { ...right, startBar: right.startBar + bars, isSelected: c.isSelected });
-        } else {
-          clips.push(c.startBar >= at - EPS ? { ...c, startBar: c.startBar + bars } : c);
-        }
-      }
-      if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
-        return `Can't insert ${pluralBars(bars)}: clips would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
-      }
-      const pushedMarker = markerPushedPastEnd(s.markers, at, bars);
-      if (pushedMarker) {
-        return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
-      }
-      applyRipple(
-        clips,
-        { kind: 'insert', at, bars },
-        (points) => insertLaneBars(points, at, bars),
-        (markers, tempo) => insertMarkerBars(markers, at, bars, tempo)
-      );
-      return null;
+      const at = clampBar(nearestMeasureStart(clampBar(atBar), map));
+      return insertTime(at, bars * insertedMeasureBars(at, map), bars);
+    },
+
+    insertTime: (atBar, bars) => {
+      const at = clampBar(atBar);
+      const map = songMeterOf(get());
+      return insertTime(at, bars, isPlainMeter(map) ? bars : barSpan(at, at + bars, map));
     },
 
     addBuildAndDrop: (dropBar) => {
       const s = get();
-      const drop = Math.round(dropBar);
-      const bars = Math.min(BUILD_BARS, drop - 1);
-      if (bars < 1) return 'Pick a later bar: the build-up needs at least one bar before the drop.';
-      if (drop + HIT_BARS > TOTAL_BARS + 1) return `Too close to the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}) for the drop hit.`;
-      const from = drop - bars;
+      const map = songMeterOf(s);
+      const plain = isPlainMeter(map);
+      // Not in 4/4: the drop on the nearest measure line, the build its last measures before it,
+      // and the hit two measures long, each part written in those measures
+      const drop = plain ? Math.round(dropBar) : nearestMeasureStart(dropBar, map);
+      const dropMeasure = plain ? drop : measureAt(drop, map).measure;
+      const count = Math.min(BUILD_BARS, dropMeasure - 1);
+      if (count < 1) return 'Pick a later bar: the build-up needs at least one bar before the drop.';
+      const hitEnd = plain ? drop + HIT_BARS : measureStart(dropMeasure + HIT_BARS, map);
+      if (hitEnd > TOTAL_BARS + 1 + (plain ? 0 : EPS)) return `Too close to the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}) for the drop hit.`;
+      const from = plain ? drop - count : measureStart(dropMeasure - count, map);
+      const bars = drop - from;
+      const lengths = (a: number, b: number) => (plain ? undefined : measuresBetween(a, b, map).map((m) => measureBars(m.meter)));
       const isFree = (t: Track, a: number, b: number) =>
         !s.clips.some((c) => c.trackId === t.id && c.startBar < b - EPS && c.startBar + c.lengthBars > a + EPS);
       // Onto an FX track and a drum track with room there, or new ones next to them
       const tracks = [...s.tracks];
-      const fxTrack = tracks.find((t) => isFxKind(t.instrumentKey) && isFree(t, from, drop + HIT_BARS)) ?? makeTrack('fx', tracks, tracks.some((t) => isFxKind(t.instrumentKey)) ? 'Build FX' : undefined);
+      const fxTrack = tracks.find((t) => isFxKind(t.instrumentKey) && isFree(t, from, hitEnd)) ?? makeTrack('fx', tracks, tracks.some((t) => isFxKind(t.instrumentKey)) ? 'Build FX' : undefined);
       if (!tracks.includes(fxTrack)) tracks.push(fxTrack);
       const kits = tracks.filter((t) => isDrumKind(t.instrumentKey));
       const rollTrack = kits.find((t) => isFree(t, from, drop)) ?? makeTrack(kits[0]?.instrumentKey ?? 'drumMachine', tracks, 'Snare Roll');
       if (!tracks.includes(rollTrack)) tracks.push(rollTrack);
       const parts = [
-        partClip(fxTrack.id, 'Build-up', from, bars, toNotes(buildUpSteps(bars))),
-        partClip(rollTrack.id, 'Snare roll', from, bars, toNotes(snareRollSteps(bars))),
-        partClip(fxTrack.id, 'Drop hit', drop, HIT_BARS, toNotes(dropHitSteps())),
+        partClip(fxTrack.id, 'Build-up', from, bars, toNotes(buildUpSteps(bars, lengths(from, drop)))),
+        partClip(rollTrack.id, 'Snare roll', from, bars, toNotes(snareRollSteps(bars, lengths(from, drop)))),
+        partClip(fxTrack.id, 'Drop hit', drop, hitEnd - drop, toNotes(dropHitSteps(lengths(drop, hitEnd)))),
       ];
       const markers = [...s.markers];
       for (const [bar, name] of [[from, 'Build'], [drop, 'Drop']] as const) {
@@ -3198,7 +3237,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     keyChangeFrom: (fromBar, semitones) => {
       const s = get();
-      const { clips, moved, outOfRange } = keyChange(s.clips, s.tracks, fromBar, semitones);
+      // (not in 4/4, from the nearest measure line, as the ruler counts measures)
+      const map = songMeterOf(s);
+      const from = isPlainMeter(map) ? fromBar : nearestMeasureStart(fromBar, map);
+      const { clips, moved, outOfRange } = keyChange(s.clips, s.tracks, from, semitones);
       if (!moved) return outOfRange ? "Nothing moved: those notes would leave their instruments' range." : 'No pitched notes from here on to move.';
       set((st) => ({ clips, ...pushPast(st) }));
       return outOfRange ? `Moved ${moved} notes; ${outOfRange} stayed put (outside their instrument's range).` : null;

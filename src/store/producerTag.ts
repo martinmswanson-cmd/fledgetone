@@ -6,6 +6,7 @@
  * file has the plain maths: where the tags go, trimming the silence around a recording, and
  * reading the remembered tag back safely. No store or audio here, so Node can unit-test it.
  */
+import { isPlainMeter, measureAt, measureStart, nearestMeasureStart, type MeterMap } from '../audio/tempoMap';
 
 /** The localStorage key holding the remembered tag. */
 export const TAG_STORAGE_KEY = 'fledgetone.producerTag';
@@ -37,9 +38,22 @@ export function parseTag(raw: string | null | undefined): ProducerTag | null {
 
 /**
  * Where tags go (1-based bars): at `from` only (every = 0), or every `every` bars from `from` up to
- * the song's end (`end`, exclusive), each one fitting before the end.
+ * the song's end (`end`, exclusive), each one fitting before the end. With the song's `meter`, not
+ * in 4/4, the bars are its measures: `from` goes to the nearest measure start.
  */
-export function tagBars(from: number, end: number, every: number, tagLength: number): number[] {
+export function tagBars(from: number, end: number, every: number, tagLength: number, meter?: MeterMap): number[] {
+  if (meter && !isPlainMeter(meter)) {
+    const first = nearestMeasureStart(Math.max(1, from), meter);
+    if (!(every > 0)) return [first];
+    const m = measureAt(first, meter).measure;
+    const out: number[] = [];
+    for (let k = 0; out.length < 10000; k++) {
+      const b = measureStart(m + k * every, meter);
+      if (b + Math.min(tagLength, measureStart(m + (k + 1) * every, meter) - b) > end + 1e-6) break;
+      out.push(b);
+    }
+    return out.length ? out : [first];
+  }
   const start = Math.max(1, Math.round(from));
   if (!(every > 0)) return [start];
   const out: number[] = [];
