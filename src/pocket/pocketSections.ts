@@ -269,7 +269,7 @@ export function copySection(i: number): string | null {
     // (Its clips that run on into other sections are cut at its edges first, so the copy is linked)
     cutAtEdges(sec.from, sec.to);
     const copies = copiesOf(sec.from, sec.to, len);
-    const error = tl().insertBars(sec.to, len);
+    const error = tl().insertTime(sec.to, len);
     if (error) return error;
     addCopies(copies);
     // A copy of a named section ("Verse") is named the same; one with no marker after its place in the song
@@ -304,7 +304,7 @@ export function moveSection(i: number, dir: -1 | 1): string | null {
     // later by its length) taken out. The copies keep B's links to sections elsewhere.
     const { copies } = copiesOf(b.from, b.to, a.from - b.from);
     for (const c of copies) if (!tl().clips.some((o) => o.pattern && o.pattern === c.pattern && (o.startBar < b.from - EPS || o.startBar >= b.to - EPS))) delete c.pattern;
-    const error = tl().insertBars(a.from, lenB);
+    const error = tl().insertTime(a.from, lenB);
     if (error) return error;
     addCopies({ copies, linked: new Map() });
     const removed = tl().removeBars(b.from + lenB, b.to + lenB);

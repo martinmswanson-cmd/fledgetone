@@ -312,6 +312,33 @@ export function nearestMeasureStart(bar: number, map: MeterMap): number {
 }
 
 /**
+ * `bar` on the nearest measure line, for the tools that place things "at bar N": in plain 4/4 the
+ * nearest whole bar as they always rounded it (Math.round), otherwise nearestMeasureStart.
+ */
+export const roundToMeasure = (bar: number, map: MeterMap): number => (isFourFour(map) ? Math.round(bar) : nearestMeasureStart(bar, map));
+
+/**
+ * The position `n` measures on from the measure `at` is in (back for a negative `n`, stopping at
+ * bar 1), counted in the meter of each measure passed; a fraction of a measure is that part of the
+ * last one (-0.5 from a measure start is half way through the measure before it).
+ */
+export function measuresFrom(at: number, n: number, map: MeterMap): number {
+  const whole = Math.floor(n + EPS);
+  const target = measureAt(at, map).measure + whole;
+  if (target < 1) return 1;
+  const start = measureStart(target, map);
+  const part = n - whole;
+  return part > EPS ? start + part * measureAt(start, map).length : start;
+}
+
+/**
+ * How long one measure inserted at the measure start `at` is: the meter the music before it is
+ * in, so a time signature change right at `at` moves later with the music after it and stays on
+ * a measure line (at bar 1, the song's first meter).
+ */
+export const insertedMeasureBars = (at: number, map: MeterMap): number => measureAt(at > 1 + EPS ? at - 1e-6 : at, map).length;
+
+/**
  * A position as measure, beat and hundredths of a beat, counted in the meter there: in 6/8 the
  * beats are eighths. In plain 4/4 this is the same as before meters existed.
  */

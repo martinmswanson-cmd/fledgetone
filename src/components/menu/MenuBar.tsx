@@ -20,6 +20,7 @@ import { bounceName, isRackTrack } from '../../store/bounceToPad';
 import { bounceRangeToPad, placedMessage } from '../../store/bounceToPadActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
 import { formatBarPosition, formatBarRange } from '../../store/timelineTypes';
+import { measureStart, roundToMeasure } from '../../audio/tempoMap';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { APP_VERSION } from '../../version';
@@ -186,9 +187,13 @@ const MENUS: MenuDef[] = [
     label: 'Song',
     items: () => {
       const s = tl();
-      const at = Math.max(1, Math.round(s.playheadPosition));
-      // Where `at` is, as the ruler numbers it (by measure, not in 4/4)
-      const atBar = (bar: number) => formatBarPosition(bar, songMeterOf(s));
+      const meter = songMeterOf(s);
+      // The playhead's nearest measure line (the nearest bar in 4/4), and where it is as the ruler
+      // numbers it (by measure, not in 4/4)
+      const at = Math.max(1, roundToMeasure(s.playheadPosition, meter));
+      const atBar = (bar: number) => formatBarPosition(bar, meter);
+      // (the drop needs a bar before it: at least the second measure)
+      const dropAt = Math.max(measureStart(2, meter), at);
       return [
         { label: 'Add marker at the playhead', shortcut: 'M', run: () => say(s.addMarker()) },
         { label: 'Add hit point (locked to time)', shortcut: 'Shift+M', run: () => say(s.addHit()) },
@@ -203,8 +208,8 @@ const MENUS: MenuDef[] = [
         { label: `Insert 1 bar at bar ${atBar(at)}`, run: () => say(s.insertBars(at, 1)), divider: true },
         { label: `Insert 4 bars at bar ${atBar(at)}`, run: () => say(s.insertBars(at, 4)) },
         { label: 'Delete bars In → Out', run: () => say(s.removeBars(s.loopRegion.inBar, s.loopRegion.outBar)) },
-        { label: `Build-up & drop at bar ${atBar(Math.max(2, at))}`, run: () => say(s.addBuildAndDrop(Math.max(2, at))), divider: true },
-        { label: 'Arrange a beat: drops, beat switch, song form, tag…', run: () => openArrange('drops', Math.max(2, at)) },
+        { label: `Build-up & drop at bar ${atBar(dropAt)}`, run: () => say(s.addBuildAndDrop(dropAt)), divider: true },
+        { label: 'Arrange a beat: drops, beat switch, song form, tag…', run: () => openArrange('drops', dropAt) },
         { label: 'Dark melody…', run: () => openArrange('melody', at) },
         { label: `Key change up a semitone from bar ${atBar(at)}`, run: () => say(s.keyChangeFrom(at, 1)) },
         { label: `Key change up a whole step from bar ${atBar(at)}`, run: () => say(s.keyChangeFrom(at, 2)) },

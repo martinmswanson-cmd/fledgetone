@@ -6,10 +6,10 @@
  * markers, so live playback and every export hear them the same. The maths is in darkMelody.ts,
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
-import { allOrNothing, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { allOrNothing, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
-import { TOTAL_BARS, barsToDuration, uid } from './timelineTypes';
+import { TOTAL_BARS, barsToDuration, formatBarPosition, formatBarRange, uid } from './timelineTypes';
 import { darkMelody, DARK_SOUNDS, DARK_STYLES, type DarkMelodyOptions, type DarkSound } from './darkMelody';
 import { cutGap, silenceDip, stopSpan, switchedNotes, trackRole, SWITCH_MODES, type SwitchMode, type TrackRole } from './beatSwitch';
 import { planSongForm, preHookDrop, repeatLoop, SECTION_RECIPES, treatPart, type SectionLengths } from './songForm';
@@ -19,13 +19,18 @@ import { fitToInstrument } from './smartActions';
 import { createMarker, retimeMarkers } from './markers';
 import { songEnd } from './cutToLength';
 import { FX_NOTES, isAudioKind, isFxKind } from '../audio/instrumentCatalog';
-import { tempoAt } from '../audio/tempoMap';
+import { isPlainMeter, measureAt, measuresFrom, meterAt, nearestMeasureStart, tempoAt } from '../audio/tempoMap';
 import { AUTOMATION, laneOf } from '../audio/automation';
 import { secondsPerBar } from './audioClips';
 import { decodeSound, ensureSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/exportWav';
 
 const tl = () => useTimelineStore.getState();
+/** The song's meter map now, and whether it's plain 4/4 (where a bar is a measure, as it always was). */
+const meterNow = () => {
+  const map = songMeterOf(tl());
+  return { map, plain: isPlainMeter(map) };
+};
 const newId = () => uid('note');
 const EPS = 1e-6;
 /** An audio clip cut by a drop-out or stop fades this long at the cut, so it doesn't click. */
@@ -205,15 +210,31 @@ export function dropOut(trackIds: readonly string[], from: number, to: number): 
     changed = cutTracks(ids, from, to);
   });
   if (refused) return refused;
-  return changed ? `Dropped out ${trackIds.length} track${trackIds.length === 1 ? '' : 's'} from bar ${fmt(from)} to ${fmt(to)}.` : 'Those tracks play nothing there.';
+  const { map, plain } = meterNow();
+  const where = plain ? `from bar ${fmt(from)} to ${fmt(to)}` : `from bar ${formatBarPosition(from, map)} to ${formatBarPosition(to, map)}`;
+  return changed ? `Dropped out ${trackIds.length} track${trackIds.length === 1 ? '' : 's'} ${where}.` : 'Those tracks play nothing there.';
+}
+
+/**
+ * Drop out for the `bars` bars before the drop at `dropBar` (0.5: the last half of the bar before
+ * it): dropOut from there to the drop. Not in 4/4 the bars are the song's measures, and the drop
+ * goes to the nearest measure start.
+ */
+export function dropOutBefore(trackIds: readonly string[], dropBar: number, bars: number): string {
+  const { map, plain } = meterNow();
+  if (plain) return dropOut(trackIds, dropBar - bars, dropBar);
+  const drop = nearestMeasureStart(dropBar, map);
+  return dropOut(trackIds, measuresFrom(drop, -bars, map), drop);
 }
 
 /**
  * A stop: every track silent for the last beat (or half beat) of bar `bar`, so the next bar hits
- * out of silence. Long notes ringing into it end where it starts. One undo step.
+ * out of silence. Long notes ringing into it end where it starts. One undo step. Not in 4/4, the
+ * bar is the measure starting nearest `bar` and the beat is the meter's (see stopSpan).
  */
 export function addStop(bar: number, beats: 1 | 0.5): string {
-  const [from, to] = stopSpan(bar, beats);
+  const { map, plain } = meterNow();
+  const [from, to] = stopSpan(bar, beats, map);
   // Every track, returns and buses too: a return's reverb tail stops with the rest (the shared
   // reverb of the master section isn't a track, so its tail of what came before still rings)
   const ids = new Set(tl().tracks.map((t) => t.id));
@@ -222,7 +243,7 @@ export function addStop(bar: number, beats: 1 | 0.5): string {
     changed = cutTracks(ids, from, to);
   });
   if (refused) return refused;
-  return changed ? `Stop: silence for ${beats === 1 ? 'the last beat' : 'the last half beat'} of bar ${Math.round(bar)}.` : 'Nothing plays there to stop.';
+  return changed ? `Stop: silence for ${beats === 1 ? 'the last beat' : 'the last half beat'} of bar ${plain ? Math.round(bar) : formatBarPosition(measureAt(from, map).start, map)}.` : 'Nothing plays there to stop.';
 }
 
 const fmt = (bar: number) => `${Math.round(bar * 100) / 100}`;
@@ -235,17 +256,22 @@ export type DropFx = 'riser' | 'reverse';
  * A riser (over `bars`) or a reverse cymbal (over the last bar, or less) into the drop at
  * `dropBar`, on an FX track with room there (or a new one). It ends `early` bars before the
  * drop (0, or a beat or half a beat when a stop sits there), peaking right where the silence or
- * the drop begins. One undo step.
+ * the drop begins. One undo step. Not in 4/4, the drop goes to the nearest measure start, `bars`
+ * counts measures, and `early` counts quarters of a 4/4 bar as the meter's beats (0.25 is one
+ * beat of the measure before the drop: an eighth in 6/8).
  */
 export function addDropFx(kind: DropFx, dropBar: number, bars: number, early = 0): string {
-  const drop = Math.round(dropBar);
-  const len = Math.min(kind === 'reverse' ? Math.min(1, bars) : bars, drop - 1);
-  if (len < 0.25) return 'Pick a later bar: there is no room before it.';
+  const { map, plain } = meterNow();
+  const drop = plain ? Math.round(dropBar) : nearestMeasureStart(dropBar, map);
+  const count = kind === 'reverse' ? Math.min(1, bars) : bars;
+  const len = plain ? Math.min(count, drop - 1) : drop - measuresFrom(drop, -count, map);
+  if (len < 0.25 - (plain ? 0 : EPS)) return 'Pick a later bar: there is no room before it.';
   const from = drop - len;
+  const earlyBars = plain ? early : (early * 4) / meterAt(drop - 1e-6, map).den;
   const s = tl();
   const free = (t: Track) => !s.clips.some((c) => c.trackId === t.id && c.startBar < drop - EPS && c.startBar + c.lengthBars > from + EPS);
   const note = kind === 'riser' ? FX_NOTES.riser : FX_NOTES.reverseCrash;
-  const ring = Math.max(1 / 16, len - early);
+  const ring = Math.max(1 / 16, len - earlyBars);
   const refused = oneStep(() => {
     let track = s.tracks.find((t) => isFxKind(t.instrumentKey) && free(t));
     if (!track) {
@@ -258,7 +284,7 @@ export function addDropFx(kind: DropFx, dropBar: number, bars: number, early = 0
     useTimelineStore.setState((st) => ({ clips: [...st.clips, noteClip(undefined, track!.id, kind === 'riser' ? 'Riser' : 'Reverse cymbal', from, len, notes)] }));
   });
   if (refused) return refused;
-  return `${kind === 'riser' ? 'Riser' : 'Reverse cymbal'} into bar ${drop}${early ? `, ending ${early === 0.25 ? 'a beat' : 'half a beat'} early` : ''}.`;
+  return `${kind === 'riser' ? 'Riser' : 'Reverse cymbal'} into bar ${plain ? drop : formatBarPosition(drop, map)}${early ? `, ending ${early === 0.25 ? 'a beat' : 'half a beat'} early` : ''}.`;
 }
 
 // ---------- Beat switch ----------
@@ -266,14 +292,18 @@ export function addDropFx(kind: DropFx, dropBar: number, bars: number, early = 0
 /**
  * Beat switch: a copy of bars `from` to `to` goes right after them (the rest of the song moves
  * later), with its drums and bass switched (see SWITCH_MODES) and everything else as it was. A
- * "Beat switch" marker names it. One undo step. Returns a message.
+ * "Beat switch" marker names it. One undo step. Returns a message. Not in 4/4, `from` and `to`
+ * go to their nearest measure starts, and a new drum pattern is written in the meter there.
  */
 export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle: DrumStyle = 'trap', seed = 1): string {
   const s = tl();
-  const a = Math.round(from);
-  const b = Math.round(to);
+  const { map, plain } = meterNow();
+  const a = plain ? Math.round(from) : nearestMeasureStart(from, map);
+  const b = plain ? Math.round(to) : nearestMeasureStart(to, map);
   const len = b - a;
-  if (len < 1) return 'Pick a section at least one bar long.';
+  // (how many measures that is, as the ruler counts them)
+  const count = plain ? len : measureAt(b, map).measure - measureAt(a, map).measure;
+  if (count < 1) return 'Pick a section at least one bar long.';
   if (songEnd(s.clips) + len > TOTAL_BARS + 1) return `No room: the switch would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
   const plan = s.tracks
     .map((t) => ({ t, role: trackRole(t), parts: partsOf(s.clips, t.id, a, b) }))
@@ -282,11 +312,11 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   const hasDrums = plan.some((p) => p.role === 'drums' && p.parts.some((c) => !c.audio));
   const hasBass = plan.some((p) => p.role === 'bass' && p.parts.some((c) => !c.audio));
   if (!hasDrums && !hasBass) return 'There are no drums or bass (as notes) in those bars to switch.';
-  const newDrums = mode === 'pattern' ? drummer(drumStyle, len, 0.7, Math.min(4, len), seed, newId) : undefined;
+  const newDrums = mode === 'pattern' ? (plain ? drummer(drumStyle, len, 0.7, Math.min(4, len), seed, newId) : drummer(drumStyle, count, 0.7, Math.min(4, count), seed, newId, meterAt(a, map))) : undefined;
   const label = SWITCH_MODES.find((m) => m.id === mode)!.name;
   let error = null as string | null;
   const refused = oneStep(() => {
-    error = tl().insertBars(b, len);
+    error = tl().insertTime(b, len);
     if (error) return;
     const made: Clip[] = [];
     for (const { t, role, parts } of plan) {
@@ -307,7 +337,8 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
     tl().undo();
     return error;
   }
-  return `Beat switch (${label.toLowerCase()}) at bar ${b}: bars ${a}-${b - 1} again with new drums and bass; the rest of the song moved ${len} bar${len === 1 ? '' : 's'} later.`;
+  const again = plain ? `bars ${a}-${b - 1}` : formatBarRange(a, b, map);
+  return `Beat switch (${label.toLowerCase()}) at bar ${plain ? b : formatBarPosition(b, map)}: ${again} again with new drums and bass; the rest of the song moved ${count} bar${count === 1 ? '' : 's'} later.`;
 }
 
 // ---------- Song form ----------
@@ -316,24 +347,30 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
  * Lay the loop at `loopFrom` (`loopBars` long) out as a whole song (see songForm.ts): the loop's
  * bars become the sections, one after another, each part dropped in or out by the section's
  * recipe, with a marker naming each section. Everything after the loop moves later to make room.
- * One undo step. Returns a message.
+ * One undo step. Returns a message. Not in 4/4, the loop starts at the nearest measure start and
+ * every length (the loop's and the sections') counts measures of the meter the loop starts in.
  */
 export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionLengths, dropBeforeHooks = true): string {
   const s = tl();
-  const from = Math.round(loopFrom);
-  const to = from + loopBars;
-  const sections = planSongForm(lengths);
+  const { map, plain } = meterNow();
+  const from = plain ? Math.round(loopFrom) : nearestMeasureStart(loopFrom, map);
+  // One measure, in bars (whole notes): 1 in 4/4
+  const unit = plain ? 1 : measureAt(from, map).length;
+  const loopLen = loopBars * unit;
+  const to = from + loopLen;
+  const sections = planSongForm(lengths).map((x) => (plain ? x : { ...x, at: x.at * unit, bars: x.bars * unit }));
   const total = sections.reduce((n, x) => n + x.bars, 0);
+  const totalBars = plain ? total : Math.round(total / unit);
   if (!sections.length) return 'Give at least one section some bars.';
-  if (total < loopBars) return `The song (${total} bars) is shorter than the loop: give the sections more bars.`;
-  if (songEnd(s.clips) + total - loopBars > TOTAL_BARS + 1) return `No room: the song would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+  if (total < loopLen - EPS) return `The song (${totalBars} bars) is shorter than the loop: give the sections more bars.`;
+  if (songEnd(s.clips) + total - loopLen > TOTAL_BARS + 1 + (plain ? 0 : EPS)) return `No room: the song would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
   const plan = s.tracks
     .map((t) => ({ t, role: trackRole(t) as TrackRole, parts: partsOf(s.clips, t.id, from, to) }))
     .filter((p) => p.parts.length && p.role !== 'mix');
-  if (!plan.length) return `Bars ${from}-${to - 1} are empty: make a loop there first.`;
+  if (!plan.length) return plain ? `Bars ${from}-${to - 1} are empty: make a loop there first.` : `Bars ${formatBarRange(from, to, map).replace(/^bars? /, '')} are empty: make a loop there first.`;
   let error = null as string | null;
   const refused = oneStep(() => {
-    if (total > loopBars) error = tl().insertBars(to, total - loopBars);
+    if (total > loopLen + (plain ? 0 : EPS)) error = tl().insertTime(to, total - loopLen);
     if (error) return;
     const tempo = songTempo(tl());
     // The loop's own clips make way for the song (a clip that starts before it keeps its start)
@@ -363,14 +400,14 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
         if (treatment === 'off') continue;
         const noteParts = parts.filter((c) => !c.audio);
         if (noteParts.length) {
-          let notes = treatPart(repeatLoop(mergedNotes(noteParts, from), loopBars, sec.bars, newId), role, treatment);
-          if (notes && dropBeforeHooks && hookNext && role === 'drums') notes = preHookDrop(notes, sec.bars);
+          let notes = treatPart(repeatLoop(mergedNotes(noteParts, from), loopLen, sec.bars, newId), role, treatment);
+          if (notes && dropBeforeHooks && hookNext && role === 'drums') notes = plain ? preHookDrop(notes, sec.bars) : preHookDrop(notes, sec.bars, unit / 2);
           if (notes?.length) made.push(noteClip(noteParts[0], t.id, sec.name, start, sec.bars, notes));
         }
         // Audio clips repeat as they are, cut at the section's end
-        for (let k = 0; k * loopBars < sec.bars - EPS; k++) {
+        for (let k = 0; k * loopLen < sec.bars - EPS; k++) {
           for (const c of parts.filter((p) => p.audio)) {
-            const at = start + k * loopBars + (c.startBar - from);
+            const at = start + k * loopLen + (c.startBar - from);
             const room = start + sec.bars - at;
             if (room < 1 / 16) continue;
             made.push({ ...copyAt(c, at), lengthBars: Math.min(c.lengthBars, room) });
@@ -390,7 +427,8 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
     tl().undo();
     return error;
   }
-  return `Song laid out from bar ${from}: ${sections.map((x) => `${x.name} ${x.bars}`).join(', ')} (${total} bars).`;
+  if (plain) return `Song laid out from bar ${from}: ${sections.map((x) => `${x.name} ${x.bars}`).join(', ')} (${total} bars).`;
+  return `Song laid out from bar ${formatBarPosition(from, map)}: ${sections.map((x) => `${x.name} ${Math.round(x.bars / unit)}`).join(', ')} (${totalBars} bars).`;
 }
 
 // ---------- Producer tag ----------
@@ -438,7 +476,8 @@ export async function importTag(file: File): Promise<ProducerTag> {
 /**
  * Place the tag: at bar `from`, or every `every` bars from there to the song's end (for a
  * beat-store preview), on the Producer tag track (made if needed), which the rest of the beat
- * ducks under by TAG_DUCK_DB. One undo step. Returns a message.
+ * ducks under by TAG_DUCK_DB. One undo step. Returns a message. Not in 4/4, the bars are the
+ * song's measures (see tagBars).
  */
 export function placeTag(from: number, every: number): string {
   const tag = loadTag();
@@ -447,7 +486,8 @@ export function placeTag(from: number, every: number): string {
   if (!useSoundLibrary.getState().metas[tag.soundId]) ensureSound(tag.soundId);
   const tagLength = (bar: number) => tag.seconds / secondsPerBar(tempoAt(bar, songTempo(s)));
   const end = Math.max(songEnd(s.clips.filter((c) => s.tracks.find((t) => t.id === c.trackId)?.name !== TAG_TRACK_NAME)), from + 1);
-  const bars = tagBars(from, end, every, tagLength(from)).filter((b) => b + tagLength(b) <= TOTAL_BARS + 1);
+  const { map } = meterNow();
+  const bars = tagBars(from, end, every, tagLength(from), map).filter((b) => b + tagLength(b) <= TOTAL_BARS + 1);
   if (!bars.length) return 'No room for the tag there.';
   let count = 0;
   const refused = oneStep(() => {
@@ -474,5 +514,5 @@ export function placeTag(from: number, every: number): string {
     }));
   });
   if (refused) return refused;
-  return count ? `Tag placed ${count === 1 ? `at bar ${bars[0]}` : `${count} times, every ${every} bars`}; the beat dips ${TAG_DUCK_DB} dB under it.` : 'The tag is already there.';
+  return count ? `Tag placed ${count === 1 ? `at bar ${formatBarPosition(bars[0], map)}` : `${count} times, every ${every} bars`}; the beat dips ${TAG_DUCK_DB} dB under it.` : 'The tag is already there.';
 }
