@@ -158,3 +158,51 @@ test('lowestHeld: the same pitch played again is the new note', () => {
   ]);
   assert.deepEqual(out.map((o) => [o.index, o.from, o.to]), [[0, 0, 1], [1, 1, 3]]);
 });
+
+test('lowestRuns: from one note to another at the same pitch the sub goes on (the same sine), not elsewhere', () => {
+  // D2 held, struck again and let go first: struck again goes on, and so does the hand back
+  const out = L.lowestRuns([
+    { start: 3, end: 5, freq: 73.4 },
+    { start: 3.5, end: 4, freq: 73.4 },
+  ]);
+  assert.deepEqual(out.map((o) => [o.index, o.from, o.to, o.goesOn]), [
+    [0, 3, 3.5, false],
+    [1, 3.5, 4, true],
+    [0, 4, 5, true],
+  ]);
+  // After another pitch, begun anew; back to a note at the pitch it was at (a lower one ended), on. A gap: anew
+  assert.deepEqual(
+    L.lowestRuns([
+      { start: 0, end: 4, freq: 65.4 },
+      { start: 1, end: 2, freq: 41.2 },
+      { start: 2, end: 3, freq: 65.4 },
+      { start: 3.5, end: 4.5, freq: 65.4 },
+    ]).map((o) => [o.index, o.from, o.goesOn]),
+    [
+      [0, 0, false],
+      [1, 1, false],
+      [2, 2, false],
+      [0, 3, true],
+      [3, 3.5, true],
+    ]
+  );
+  assert.deepEqual(
+    L.lowestRuns([
+      { start: 0, end: 1, freq: 65.4 },
+      { start: 2, end: 3, freq: 65.4 },
+    ]).map((o) => o.goesOn),
+    [false, false]
+  );
+  // Touching notes at one pitch go on too; still held, the last runs on
+  assert.deepEqual(
+    L.lowestRuns([
+      { start: 0, end: 1, freq: 65.4 },
+      { start: 1, end: Infinity, freq: 65.4 },
+    ]).map((o) => [o.index, o.from, o.to, o.goesOn]),
+    [
+      [0, 0, 1, false],
+      [1, 1, Infinity, true],
+    ]
+  );
+  assert.deepEqual(L.lowestRuns([]), []);
+});

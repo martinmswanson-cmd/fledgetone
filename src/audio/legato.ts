@@ -130,3 +130,17 @@ export function lowestHeld(spans: readonly HeldSpan[]): Array<{ index: number; f
   if (last) last.to = Math.min(last.to, spans[last.index].end);
   return out;
 }
+
+/**
+ * lowestHeld's stretches, each marked `goesOn` when it starts where the one before it ends at the
+ * same pitch (a note struck again over one held, or the held one given back to when that ends):
+ * a layer that follows the lowest note keeps its tone going there rather than starting a new one,
+ * which would come in at another phase and cancel or add to the last as they cross.
+ */
+export function lowestRuns(spans: readonly HeldSpan[]): Array<{ index: number; from: number; to: number; goesOn: boolean }> {
+  const out = lowestHeld(spans);
+  return out.map((o, i) => {
+    const last = out[i - 1];
+    return { ...o, goesOn: !!last && last.to === o.from && spans[last.index].freq === spans[o.index].freq };
+  });
+}
