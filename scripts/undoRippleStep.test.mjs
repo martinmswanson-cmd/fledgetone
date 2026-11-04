@@ -41,9 +41,10 @@ test('the arranging actions fold their steps with oneUndoStep, which keeps the r
   assert.match(fold, /e\.ripple\?\.edits/);
   assert.match(fold, /ripple: \{ before, after: spotOf\(end\), edits \}/);
   assert.match(store, /edits: \[edit\],/);
+  assert.match(store, /const made = allOrNothing\(\(\) => oneUndoStep\(make\), quiet\);/);
   for (const path of ['src/store/arrangeActions.ts', 'src/pocket/pocketSections.ts']) {
     const text = src(path);
-    assert.match(text, /allOrNothing\(\(\) => oneUndoStep\(edit\)/, path);
+    assert.match(text, /allOrNothing\(\(\) => oneUndoStep\(edit\)|oneUndoStepOr\(edit, /, path);
     // (putting back the past from before the edit dropped what its inserts moved)
     assert.doesNotMatch(text, /const past = tl\(\)\.past;/, path);
   }

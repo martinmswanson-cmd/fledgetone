@@ -1225,6 +1225,21 @@ export function oneUndoStep<T>(make: () => T): T {
   return value;
 }
 
+/**
+ * oneUndoStep inside allOrNothing, for an edit that can fail on its own part way or find it has
+ * nothing to do: when `keep` says no to what it gives, the store goes back exactly as it was before
+ * it, the undo and redo histories included (an Undo of its checkpoint would not: with a full
+ * history the checkpoint has already pushed out the oldest step, and the redo history is gone).
+ * `done` is false when the caps refused it (see allOrNothing).
+ */
+export function oneUndoStepOr<T>(make: () => T, keep: (value: T) => boolean, quiet = false): { done: true; value: T } | { done: false; past: CapKind[] } {
+  const before = useTimelineStore.getState();
+  const checkpointBefore = pendingCheckpoint;
+  const made = allOrNothing(() => oneUndoStep(make), quiet);
+  if (made.done && !keep(made.value)) putBack(before, checkpointBefore);
+  return made;
+}
+
 function putBack(state: TimelineState, checkpoint: HistoryEntry | null): void {
   if (useTimelineStore.getState() !== state) putExactly?.(state);
   pendingCheckpoint = checkpoint;
@@ -1241,7 +1256,8 @@ function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: 
         let next = typeof partial === 'function' ? partial(s) : partial;
         // Linked clips follow first: the caps measure the song as it would be, every copy counted
         if (next.clips && next.clips !== s.clips && !unsynced.has(next.clips)) {
-          const synced = syncPatterns(s.clips, next.clips);
+          // (Undo and Redo put back a song that was, its linked clips as they were: nothing follows, nothing leaves)
+          const synced = puttingBack ? null : syncPatterns(s.clips, next.clips);
           if (synced) next = { ...next, clips: synced };
           // A note's curves end with it, as a saved file keeps them (noteExpression.ts cutNoteLane):
           // whatever edit made a note shorter, what's past its end is cut, so the song sounds the

@@ -9,7 +9,7 @@
  * editing an A changes every A until one is made its own. Each action is one undo step, and the
  * song opens on a computer as an ordinary arrangement with a marker at each section.
  */
-import { allOrNothing, oneUndoStep, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
+import { allOrNothing, oneUndoStep, oneUndoStepOr, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
 import { uid, type Clip, type Track } from '../store/timelineTypes';
 import { pastCapsWords } from '../store/songCaps';
 import { songEnd, songSections } from '../store/cutToLength';
@@ -87,19 +87,13 @@ function oneStep<T>(edit: () => T): T | undefined {
  * As oneStep, for an edit that can fail on its own (`edit` returns what to say, or null): one undo
  * step, all or nothing. Refused past the most a song can have, nothing is done and no undo step is
  * pushed, so it returns what to say about that rather than leave an undo to take back the
- * musician's own step before; failed on its own, its step is taken back here and the redo history
- * left as it was.
+ * musician's own step before; failed on its own, it is taken back too, the undo and redo histories
+ * left exactly as they were.
  */
 function oneStepOr(edit: () => string | null): string | null {
-  const futureBefore = tl().future;
-  const made = allOrNothing(() => oneUndoStep(edit), true);
-  if (!made.done) return pastCapsWords(made.past);
-  if (made.value) {
-    // (nothing of it kept, and nothing of it left to redo: the redo history is as it was)
-    tl().undo();
-    useTimelineStore.setState({ future: futureBefore });
-  }
-  return made.value;
+  // (failed, nothing of it is kept: the song and the undo and redo histories are exactly as they were)
+  const made = oneUndoStepOr(edit, (said) => !said, true);
+  return made.done ? made.value : pastCapsWords(made.past);
 }
 
 /**
