@@ -6,12 +6,12 @@
  * markers, so live playback and every export hear them the same. The maths is in darkMelody.ts,
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
-import { allOrNothing, oneUndoStep, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { oneUndoStepOr, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
 import { TOTAL_BARS, barsToDuration, formatBarPosition, formatBarRange, uid } from './timelineTypes';
 import { darkMelody, DARK_SOUNDS, DARK_STYLES, type DarkMelodyOptions, type DarkSound } from './darkMelody';
-import { cutGap, silenceDip, stopSpan, switchedNotes, trackRole, SWITCH_MODES, type SwitchMode, type TrackRole } from './beatSwitch';
+import { cutClipGap, silenceDip, stopSpan, switchedNotes, trackRole, SWITCH_MODES, type SwitchMode, type TrackRole } from './beatSwitch';
 import { planSongForm, preHookDrop, repeatLoop, SECTION_RECIPES, treatPart, type SectionLengths } from './songForm';
 import { parseTag, TAG_DUCK_DB, TAG_STORAGE_KEY, TAG_TRACK_NAME, tagBars, trimSilence, fadeEdges, type ProducerTag } from './producerTag';
 import { drummer, type DrumStyle } from './smartTools';
@@ -40,10 +40,11 @@ const CUT_FADE = 0.005;
  * Run `edit` as one undo step: one snapshot before it, and whatever store actions it calls (an
  * insert of bars, a new track) fold into that one. All or nothing: if a change in it would go past
  * the most a song can have, nothing is done (no undo step, the redo history kept) and it returns
- * what to say about that (null when it was done).
+ * what to say about that (null when it was done). An edit that `kept` says failed or did nothing
+ * is taken back too, the song and both histories exactly as they were (see oneUndoStepOr).
  */
-function oneStep(edit: () => void): string | null {
-  const made = allOrNothing(() => oneUndoStep(edit), true);
+function oneStep(edit: () => void, kept: () => boolean = () => true): string | null {
+  const made = oneUndoStepOr(edit, kept, true);
   return made.done ? null : pastCapsWords(made.past);
 }
 
@@ -174,9 +175,10 @@ function cutTracks(trackIds: ReadonlySet<string>, from: number, to: number): num
       }
       continue;
     }
-    const notes = cutGap(c.notes, from - c.startBar, to - c.startBar);
-    if (notes.length !== c.notes.length || notes.some((n, i) => n !== c.notes[i])) changed++;
-    clips.push(notes === c.notes ? c : { ...c, notes });
+    // (one with nothing in the gap stays the very clip it was; a linked one that is cut leaves its pattern)
+    const cut = cutClipGap(c, from, to);
+    if (cut !== c) changed++;
+    clips.push(cut);
   }
   // The tracks' volume dips to silence over the gap too, so releases and echoes stop with the notes
   const tracks = s.tracks.map((t) => {
@@ -201,9 +203,13 @@ export function dropOut(trackIds: readonly string[], from: number, to: number): 
   let changed = 0;
   const s = tl();
   if (!s.clips.some((c) => ids.has(c.trackId) && c.startBar < to - EPS && c.startBar + c.lengthBars > from + EPS)) return 'Those tracks play nothing there.';
-  const refused = oneStep(() => {
-    changed = cutTracks(ids, from, to);
-  });
+  // (Nothing cut: the song stays as it was, no volume dip and no undo step, the redo history kept)
+  const refused = oneStep(
+    () => {
+      changed = cutTracks(ids, from, to);
+    },
+    () => changed > 0,
+  );
   if (refused) return refused;
   const { map, plain } = meterNow();
   const where = plain ? `from bar ${fmt(from)} to ${fmt(to)}` : `from bar ${formatBarPosition(from, map)} to ${formatBarPosition(to, map)}`;
@@ -234,9 +240,13 @@ export function addStop(bar: number, beats: 1 | 0.5): string {
   // reverb of the master section isn't a track, so its tail of what came before still rings)
   const ids = new Set(tl().tracks.map((t) => t.id));
   let changed = 0;
-  const refused = oneStep(() => {
-    changed = cutTracks(ids, from, to);
-  });
+  // (Nothing cut: the song stays as it was, no volume dip and no undo step, the redo history kept)
+  const refused = oneStep(
+    () => {
+      changed = cutTracks(ids, from, to);
+    },
+    () => changed > 0,
+  );
   if (refused) return refused;
   return changed ? `Stop: silence for ${beats === 1 ? 'the last beat' : 'the last half beat'} of bar ${plain ? Math.round(bar) : formatBarPosition(measureAt(from, map).start, map)}.` : 'Nothing plays there to stop.';
 }
@@ -311,7 +321,6 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   const newDrums = mode === 'pattern' ? (plain ? drummer(drumStyle, len, 0.7, Math.min(4, len), seed, newId) : drummer(drumStyle, count, 0.7, Math.min(4, count), seed, newId, meterAt(a, map))) : undefined;
   const label = SWITCH_MODES.find((m) => m.id === mode)!.name;
   let error = null as string | null;
-  const futureBefore = tl().future;
   const refused = oneStep(() => {
     error = tl().insertTime(b, len);
     if (error) return;
@@ -328,14 +337,10 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
       for (const c of parts) made.push(copyAt(c, c.startBar + len));
     }
     useTimelineStore.setState((st) => ({ clips: [...st.clips, ...made], markers: retimeMarkers(withMarker(st.markers, b, 'Beat switch'), songTempo(st)) }));
-  });
+  }, () => !error);
   if (refused) return refused;
-  if (error) {
-    // (Nothing of it kept, and nothing left to redo: the redo history is as it was, as in Pocket)
-    tl().undo();
-    useTimelineStore.setState({ future: futureBefore });
-    return error;
-  }
+  // (Nothing of it kept: the song and the undo and redo histories are as they were, as in Pocket)
+  if (error) return error;
   const again = plain ? `bars ${a}-${b - 1}` : formatBarRange(a, b, map);
   return `Beat switch (${label.toLowerCase()}) at bar ${plain ? b : formatBarPosition(b, map)}: ${again} again with new drums and bass; the rest of the song moved ${count} bar${count === 1 ? '' : 's'} later.`;
 }
@@ -368,7 +373,6 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
     .filter((p) => p.parts.length && p.role !== 'mix');
   if (!plan.length) return plain ? `Bars ${from}-${to - 1} are empty: make a loop there first.` : `Bars ${formatBarRange(from, to, map).replace(/^bars? /, '')} are empty: make a loop there first.`;
   let error = null as string | null;
-  const futureBefore = tl().future;
   const refused = oneStep(() => {
     if (total > loopLen + (plain ? 0 : EPS)) error = tl().insertTime(to, total - loopLen);
     if (error) return;
@@ -421,14 +425,10 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
       for (const sec of sections) markers = withMarker(markers, from + sec.at, sec.name);
       return { clips: [...kept.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...made], markers: retimeMarkers(markers, songTempo(st)) };
     });
-  });
+  }, () => !error);
   if (refused) return refused;
-  if (error) {
-    // (Nothing of it kept, and nothing left to redo: the redo history is as it was, as in Pocket)
-    tl().undo();
-    useTimelineStore.setState({ future: futureBefore });
-    return error;
-  }
+  // (Nothing of it kept: the song and the undo and redo histories are as they were, as in Pocket)
+  if (error) return error;
   if (plain) return `Song laid out from bar ${from}: ${sections.map((x) => `${x.name} ${x.bars}`).join(', ')} (${total} bars).`;
   return `Song laid out from bar ${formatBarPosition(from, map)}: ${sections.map((x) => `${x.name} ${Math.round(x.bars / unit)}`).join(', ')} (${totalBars} bars).`;
 }
@@ -514,7 +514,8 @@ export function placeTag(from: number, every: number): string {
       // The beat dips a little under the tag (a proxy: see duck.ts), live and in exports
       tracks: st.tracks.map((t) => (t.id === trackId ? { ...t, duckProxy: { depth: TAG_DUCK_DB }, reverbSend: 0 } : t)),
     }));
-  });
+    // (No tag placed: the song stays as it was, no undo step, the redo history kept)
+  }, () => count > 0);
   if (refused) return refused;
   return count ? `Tag placed ${count === 1 ? `at bar ${formatBarPosition(bars[0], map)}` : `${count} times, every ${every} bars`}; the beat dips ${TAG_DUCK_DB} dB under it.` : 'The tag is already there.';
 }

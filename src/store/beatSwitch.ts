@@ -1,4 +1,5 @@
-import type { AutomationPoint, InstrumentKey, NoteEvent, Track } from './timelineTypes';
+import type { AutomationPoint, Clip, InstrumentKey, NoteEvent, Track } from './timelineTypes';
+import { unlinked } from './patterns';
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { INSTRUMENTS, isAudioKind, isDrumKind, isDropKind, isFxKind, isMixKind } from '../audio/instrumentCatalog';
 import { laneValueAt, normalizePoints } from '../audio/automation';
@@ -64,6 +65,18 @@ export function cutGap(notes: readonly NoteEvent[], from: number, to: number): N
     out.push(n);
   }
   return out;
+}
+
+/**
+ * A note clip with song bars `from` to `to` cut out of it (cutGap): the very clip it was when
+ * nothing is in the gap, so its linked copies see no edit of it. A linked clip that is cut leaves
+ * its pattern: a stop or a drop-out silences this spot of the song, not every place its copies
+ * play (following the cut, they'd change what plays there unasked).
+ */
+export function cutClipGap(c: Clip, from: number, to: number): Clip {
+  const notes = cutGap(c.notes, from - c.startBar, to - c.startBar);
+  if (notes.length === c.notes.length && notes.every((n, i) => n === c.notes[i])) return c;
+  return c.pattern ? unlinked({ ...c, notes }) : { ...c, notes };
 }
 
 /** How long a silence dip takes to close and to open again, bars (a 192nd: about 9 ms at 140 BPM). */

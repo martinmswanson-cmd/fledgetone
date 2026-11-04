@@ -70,7 +70,7 @@ test('a song already past a cap can always be made smaller', () => {
 
 test('every "checkpoint, then edit" action is all or nothing against the caps', () => {
   // (each of these makes a checkpoint and then changes that could meet a cap: they go through
-  // allOrNothing or editStep, never a bare checkpoint followed by the changes)
+  // allOrNothing, editStep or oneUndoStepOr, never a bare checkpoint followed by the changes)
   const wrapped = {
     'src/store/smartActions.ts': ['function placeClip', 'function trackWithClip', 'function makeDrumClip', 'function fillClipBar', 'function rollClipDrums', 'function varyMelody'],
     'src/store/freezeActions.ts': ['function bounceTrack'],
@@ -96,7 +96,7 @@ test('every "checkpoint, then edit" action is all or nothing against the caps', 
       const from = text.lastIndexOf('\nfunction ', at) > text.lastIndexOf('\nexport ', at) ? text.lastIndexOf('\nfunction ', at) : text.lastIndexOf('\nexport ', at);
       const ends = ['\nexport ', '\nfunction ', '\nconst ', '\n// '].map((m) => text.indexOf(m, at)).filter((i) => i > 0);
       const body = text.slice(from, ends.length ? Math.min(...ends) : text.length);
-      assert.match(body, /allOrNothing\(|editStep[<(]/, `${file}: ${place} is all or nothing`);
+      assert.match(body, /allOrNothing\(|editStep[<(]|oneUndoStepOr\(/, `${file}: ${place} is all or nothing`);
     }
   }
   // A new track whose adding was refused is never filled in (no clip on a missing track, no `undefined` in the tracks)
