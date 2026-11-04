@@ -1,5 +1,6 @@
 import runtimeSource from '../../dist-runtime/bos-player.js?raw';
 import { createZip } from './zip';
+import { cutToBytes, notReserved } from '../store/kitNames';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { embedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
@@ -18,8 +19,9 @@ import { songPlugins } from './runtimePlugins';
  * README.
  */
 
-// ('#' and '%' too: in the URL loadSong fetches they'd start a fragment or an escape)
-const safe = (name: string) => name.replace(/[\\/:*?"<>|#%]+/g, '-').trim() || 'song';
+// ('#' and '%' too: in the URL loadSong fetches they'd start a fragment or an escape; and not too
+// long for a file name, nor a name Windows keeps for a device: "Aux" is "Aux_")
+const safe = (name: string) => notReserved(cutToBytes(name.replace(/[\\/:*?"<>|#%]+/g, '-').trim())) || 'song';
 /** A string as a JS literal that's safe inside an HTML <script> ('</script>' can't end it) */
 const scriptString = (v: string) => JSON.stringify(v).replace(/</g, '\\u003c');
 

@@ -16,7 +16,8 @@ register(
 }`)
 );
 
-const { kitFileName, notReserved, uniqueKitNames } = await import('../src/store/kitNames.ts');
+const { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, notReserved, uniqueKitNames } = await import('../src/store/kitNames.ts');
+const { safeFileName } = await import('../src/store/project.ts');
 const { createZip, zipPath } = await import('../src/audio/zip.ts');
 const { sfxFileName } = await import('../src/audio/sfx/sfxSynth.ts');
 
@@ -49,6 +50,92 @@ test('names that would make one file are told apart, ignoring case and against n
   assert.deepEqual(uniqueKitNames(['Main', 'Main']), ['Main', 'Main 2']);
   assert.deepEqual(uniqueKitNames(['main'], ['Main']), ['main 2']);
   assert.deepEqual(uniqueKitNames(['Drop', 'Drop.']), ['Drop', 'Drop. 2']);
+});
+
+const bytes = (s) => Buffer.byteLength(s);
+// (Valid UTF-16: no half of an emoji left on its own)
+const whole = (s) => !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(s);
+
+test('songs named after a Windows device get a "_" in every download and zip that starts with the name', () => {
+  assert.equal(safeFileName('Aux'), 'Aux_');
+  assert.equal(safeFileName('con'), 'con_');
+  assert.equal(safeFileName(' NUL '), 'NUL_');
+  assert.equal(safeFileName('Console'), 'Console');
+  assert.equal(safeFileName('Rainy Cafe'), 'Rainy Cafe');
+  assert.equal(safeFileName('a/b'), 'a-b');
+  assert.equal(safeFileName(''), 'Untitled');
+});
+
+test('one zip\'s file names: a costume\'s state, two costumes or two sounds can\'t make one file', () => {
+  const file = kitFiles();
+  const states = ['Boss', 'Boss (Night)'].map((s) => file('states', s));
+  assert.deepEqual(states, ['Boss', 'Boss (Night)']);
+  const costumes = uniqueKitNames(['Night', 'night', 'A/B', 'A-B']).map(kitFileName);
+  assert.deepEqual(costumes, ['Night', 'night 2', 'A-B', 'A-B 2']);
+  const dressed = states.flatMap((s) => costumes.map((c) => file('states', costumeFileName(s, c))));
+  assert.deepEqual(dressed, ['Boss (Night) 2', 'Boss (night 2)', 'Boss (A-B)', 'Boss (A-B 2)', 'Boss (Night) (Night)', 'Boss (Night) (night 2)', 'Boss (Night) (A-B)', 'Boss (Night) (A-B 2)']);
+  const all = [...states, ...dressed].map((n) => n.toLowerCase());
+  assert.equal(new Set(all).size, all.length);
+  // Folders apart: the same name in two folders is fine
+  assert.equal(file('stingers', 'Boss'), 'Boss');
+  assert.equal(file('STATES', 'boss'), 'boss 2');
+  // Sound effects: "hit" with 2 variations and a sound called "hit_01"
+  const sfx = ['hit_01', 'hit_02', 'hit_01'].map((n) => file('sfx', n, '_'));
+  assert.deepEqual(sfx, ['hit_01', 'hit_02', 'hit_01_2']);
+  // Bridges: into "X" for 2 bars, and into a state called "X (2 bars)" for 1
+  assert.deepEqual([file('transitions', 'bridge into X (2 bars)'), file('transitions', 'bridge into X (2 bars)')], ['bridge into X (2 bars)', 'bridge into X (2 bars) 2']);
+});
+
+test('names with no clash, no device name and no great length are as before', () => {
+  const file = kitFiles();
+  for (const n of ['Intro', 'Groove', 'Melody', 'Drop.', 'Boss/Fight', '夜の街', '🎮 Level 1']) assert.equal(file('states', n), kitFileName(n));
+  assert.equal(kitFileName('夜の街'), '夜の街');
+  assert.equal(costumeFileName('Intro', 'Night'), 'Intro (Night)');
+  assert.equal(sfxFileName('Sword hit', 3), 'sword_hit_03');
+});
+
+test('a long name is cut to MAX_NAME_BYTES at a whole character, before it is made unique', () => {
+  const marker = 'ボス戦'.repeat(27).slice(0, 80);
+  const costume = '夜の街'.repeat(14).slice(0, 40);
+  const state = kitFileName(marker);
+  assert.ok(bytes(state) <= MAX_NAME_BYTES && marker.startsWith(state));
+  const dressed = kitFiles()('states', costumeFileName(state, kitFileName(costume)));
+  assert.ok(bytes(`${dressed}.wav`) <= 255, `${bytes(dressed)} bytes`);
+  assert.ok(dressed.endsWith(`(${costume})`));
+  // 80 emoji: whole ones kept
+  const emoji = kitFileName('🎮'.repeat(80));
+  assert.ok(bytes(emoji) <= MAX_NAME_BYTES && whole(emoji));
+  assert.equal(emoji, '🎮'.repeat(50));
+  // An emoji with modifiers, and letters with accents written after them, aren't split
+  const family = '👩‍👩‍👧‍👦';
+  const cut = cutToBytes(family.repeat(20), 100);
+  assert.equal(cut, family.repeat(Math.floor(100 / bytes(family))));
+  const accents = cutToBytes('e\u0301'.repeat(100), 100);
+  assert.equal(accents, 'e\u0301'.repeat(33));
+  // One character longer than the limit on its own is still cut to valid text
+  const zalgo = cutToBytes('a' + '\u0301'.repeat(200), 50);
+  assert.ok(bytes(zalgo) <= 50 && whole(zalgo) && zalgo.startsWith('a'));
+  // Two names the same once cut are told apart, and the number survives the cut
+  const a = 'x'.repeat(300) + 'A', b = 'x'.repeat(300) + 'B';
+  const names = uniqueKitNames([a, b]).map(kitFileName);
+  assert.notEqual(names[0].toLowerCase(), names[1].toLowerCase());
+  assert.ok(names[1].endsWith(' 2'));
+  for (const n of names) assert.ok(bytes(n) <= MAX_NAME_BYTES);
+  const file = kitFiles();
+  assert.deepEqual([file('sfx', sfxFileName('a'.repeat(300), 1), '_'), file('sfx', sfxFileName('a'.repeat(300), 2), '_')].map((n) => n.slice(-3)), ['_01', '_02']);
+  assert.ok(bytes(`${sfxFileName('a'.repeat(300), 8)}.wav`) <= MAX_NAME_BYTES + 4);
+  // A device name found only after the cut is still caught; a long one stays in the limit
+  assert.equal(kitFileName('con' + ' '.repeat(300) + 'x'), 'con_');
+  assert.ok(bytes(kitFileName('con.' + 'x'.repeat(300))) <= MAX_NAME_BYTES);
+  assert.ok(kitFileName('con.' + 'x'.repeat(300)).startsWith('con_.'));
+  // Download names: never half an emoji, and in the limit
+  const song = safeFileName('a' + '🎮'.repeat(60));
+  assert.ok(whole(song) && bytes(song) <= MAX_NAME_BYTES);
+  assert.ok(bytes(safeFileName('夜'.repeat(80))) <= MAX_NAME_BYTES);
+});
+
+test('cleaning a file name twice changes nothing', () => {
+  for (const n of ['con', 'con.' + 'x'.repeat(300), 'Drop. ', '..', '🎮'.repeat(80), 'ボス戦'.repeat(40), 'a <> b', 'x'.repeat(300) + ' 2']) assert.equal(kitFileName(kitFileName(n)), kitFileName(n));
 });
 
 test('a zip entry path stays inside the zip', () => {

@@ -23,6 +23,15 @@ test('names are made game-safe and unique', () => {
   assert.equal(freeSfxName('Sword hit!', []), 'sword_hit');
   assert.equal(freeSfxName('Sword hit', [{ name: 'sword_hit' }]), 'sword_hit_2');
   assert.equal(freeSfxName('sword hit', [{ name: 'sword_hit' }, { name: 'sword_hit_2' }]), 'sword_hit_3');
+  // Not another sound's variation file: "hit" with 2 variations is hit_01 and hit_02
+  assert.equal(freeSfxName('hit_01', [{ name: 'hit', variations: 2 }]), 'hit_01_2');
+  assert.equal(freeSfxName('hit 01', [{ name: 'hit', variations: 2 }]), 'hit_01_2');
+  assert.equal(freeSfxName('hit_03', [{ name: 'hit', variations: 2 }]), 'hit_03');
+  assert.equal(freeSfxName('hit_01', [{ name: 'hit', variations: 1 }]), 'hit_01');
+  // Nor the other way round: "hit" with 2 variations next to a sound called "hit_02"
+  assert.equal(freeSfxName('hit', [{ name: 'hit_02' }], 2), 'hit_2');
+  assert.equal(freeSfxName('hit', [{ name: 'hit_02' }], 1), 'hit');
+  assert.equal(createGameSfx('hit', generateSfx('hit', 1), [{ name: 'hit_01', variations: 1 }], 3).name, 'hit_2');
   const a = createGameSfx('Coin', generateSfx('coin', 1), [], 12, 9);
   assert.equal(a.name, 'coin');
   assert.equal(a.variations, 8);
@@ -36,4 +45,7 @@ test('game sounds read back from a project file; bad ones are left out, names st
   assert.deepEqual(back[0], good);
   assert.equal(back[1].name, 'gem_2');
   assert.deepEqual(parseGameSfx(undefined), []);
+  // A file with a sound named like another's variation: that one renamed, so the kit's files stay apart
+  const hit = createGameSfx('hit', generateSfx('hit', 1), [], 2, 1);
+  assert.deepEqual(parseGameSfx(JSON.parse(JSON.stringify([hit, { ...hit, id: 'y', name: 'hit_01', variations: 1 }]))).map((g) => g.name), ['hit', 'hit_01_2']);
 });

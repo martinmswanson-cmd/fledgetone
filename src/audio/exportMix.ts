@@ -12,6 +12,7 @@ import { reachTarget, type LoudnessTarget } from './loudnessTarget';
 import type { LoudMatch } from './effects/loudMaster';
 import type { MasterStats } from './effects/masterAfter';
 import { safeFileName } from '../store/project';
+import { cutToBytes } from '../store/kitNames';
 import type { Track } from '../store/timelineTypes';
 
 /** How loud a mixdown is made. */
@@ -80,7 +81,8 @@ export function stemFileNames(base: string, tracks: readonly Pick<Track, 'name'>
   const used = new Set<string>();
   return tracks.map((track) => {
     // Cleaned apart, so a long project name can't cut the track name off
-    const stem = `${base} - ${safeFileName(track.name)}`;
+    // (Cut so the number and extension still fit in a file name)
+    const stem = cutToBytes(`${base} - ${safeFileName(track.name)}`);
     let name = stem;
     for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem} ${n}`;
     used.add(name.toLowerCase());

@@ -21,17 +21,25 @@ export interface GameSfx {
 
 export const MAX_GAME_SFX = 200;
 
-/** A name not taken yet in `list`: "sword_hit", then "sword_hit_2"... */
-export function freeSfxName(name: string, list: readonly Pick<GameSfx, 'name'>[]): string {
+/**
+ * A name not taken yet in `list`: "sword_hit", then "sword_hit_2"... Nor one that would be the same
+ * file as another sound's variation: next to "hit" with 2 variations (hit_01, hit_02), "hit 01" is
+ * "hit_01_2". (`variations`: how many this one will have, for the same check the other way round.)
+ */
+export function freeSfxName(name: string, list: readonly (Pick<GameSfx, 'name'> & Partial<Pick<GameSfx, 'variations'>>)[], variations = 1): string {
+  const files = (n: string, count: number) => (count > 1 ? Array.from({ length: count }, (_, i) => sfxFileName(n, i + 1)) : [n]);
+  const taken = new Set(list.flatMap((s) => files(s.name, Math.max(1, s.variations ?? 1))).map((f) => f.toLowerCase()));
+  const names = new Set(list.map((s) => s.name.toLowerCase()));
+  const free = (n: string) => !names.has(n) && files(n, variations).every((f) => !taken.has(f));
   const base = sfxFileName(name);
-  const taken = new Set(list.map((s) => s.name));
-  if (!taken.has(base)) return base;
-  for (let n = 2; ; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`;
+  if (free(base)) return base;
+  for (let n = 2; ; n++) if (free(`${base}_${n}`)) return `${base}_${n}`;
 }
 
 /** A new game sound from the maker's sound, named for the game. */
 export function createGameSfx(name: string, sound: SfxSound, list: readonly GameSfx[], variations = 1, spread = 1): GameSfx {
-  return { id: uid('sfx'), name: freeSfxName(name, list), sound, variations: clampVariations(variations), spread: clampSpread(spread) };
+  const count = clampVariations(variations);
+  return { id: uid('sfx'), name: freeSfxName(name, list, count), sound, variations: count, spread: clampSpread(spread) };
 }
 
 const clampVariations = (v: number) => (Number.isFinite(v) ? Math.max(1, Math.min(8, Math.round(v))) : 1);
@@ -46,11 +54,12 @@ export function parseGameSfx(raw: unknown): GameSfx[] {
     const o = v as Record<string, unknown>;
     const sound = parseSfx(o.sound);
     if (!sound || typeof o.name !== 'string') continue;
+    const variations = clampVariations(typeof o.variations === 'number' ? o.variations : 1);
     out.push({
       id: typeof o.id === 'string' && o.id ? o.id : uid('sfx'),
-      name: freeSfxName(o.name, out),
+      name: freeSfxName(o.name, out, variations),
       sound,
-      variations: clampVariations(typeof o.variations === 'number' ? o.variations : 1),
+      variations,
       spread: clampSpread(typeof o.spread === 'number' ? o.spread : 1),
     });
   }

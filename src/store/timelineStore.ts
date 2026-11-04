@@ -3059,7 +3059,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           if (x.id !== id) return x;
           const next = { ...x, ...patch };
           // A new name is made game-safe and unique
-          if (patch.name !== undefined) next.name = createGameSfx(patch.name, x.sound, s.gameSfx.filter((y) => y.id !== id)).name;
+          if (patch.name !== undefined) next.name = createGameSfx(patch.name, x.sound, s.gameSfx.filter((y) => y.id !== id), next.variations).name;
           return next;
         }),
         ...pushPast(s),
