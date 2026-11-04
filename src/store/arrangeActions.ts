@@ -311,6 +311,7 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   const newDrums = mode === 'pattern' ? (plain ? drummer(drumStyle, len, 0.7, Math.min(4, len), seed, newId) : drummer(drumStyle, count, 0.7, Math.min(4, count), seed, newId, meterAt(a, map))) : undefined;
   const label = SWITCH_MODES.find((m) => m.id === mode)!.name;
   let error = null as string | null;
+  const futureBefore = tl().future;
   const refused = oneStep(() => {
     error = tl().insertTime(b, len);
     if (error) return;
@@ -330,7 +331,9 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   });
   if (refused) return refused;
   if (error) {
+    // (Nothing of it kept, and nothing left to redo: the redo history is as it was, as in Pocket)
     tl().undo();
+    useTimelineStore.setState({ future: futureBefore });
     return error;
   }
   const again = plain ? `bars ${a}-${b - 1}` : formatBarRange(a, b, map);
@@ -365,6 +368,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
     .filter((p) => p.parts.length && p.role !== 'mix');
   if (!plan.length) return plain ? `Bars ${from}-${to - 1} are empty: make a loop there first.` : `Bars ${formatBarRange(from, to, map).replace(/^bars? /, '')} are empty: make a loop there first.`;
   let error = null as string | null;
+  const futureBefore = tl().future;
   const refused = oneStep(() => {
     if (total > loopLen + (plain ? 0 : EPS)) error = tl().insertTime(to, total - loopLen);
     if (error) return;
@@ -420,7 +424,9 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
   });
   if (refused) return refused;
   if (error) {
+    // (Nothing of it kept, and nothing left to redo: the redo history is as it was, as in Pocket)
     tl().undo();
+    useTimelineStore.setState({ future: futureBefore });
     return error;
   }
   if (plain) return `Song laid out from bar ${from}: ${sections.map((x) => `${x.name} ${x.bars}`).join(', ')} (${total} bars).`;
