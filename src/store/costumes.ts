@@ -2,7 +2,7 @@ import type { Clip, InstrumentKey, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { currentInstrumentKey, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
-import { kitNameKey } from './kitNames';
+import { kitNameKey, oneLineName } from './kitNames';
 
 /**
  * Costumes and state options: the game music's second tier.
@@ -174,7 +174,7 @@ export function parseCostumes(raw: unknown, trackIds: ReadonlySet<string>, isIns
       }
     }
     const tempo = typeof o.tempo === 'number' && Number.isFinite(o.tempo) ? Math.max(MIN_COSTUME_TEMPO, Math.min(MAX_COSTUME_TEMPO, o.tempo)) : 1;
-    out.push({ id: typeof o.id === 'string' && o.id ? o.id : uid('costume'), name: freeCostumeName(o.name, out), tempo, tracks });
+    out.push({ id: typeof o.id === 'string' && o.id ? o.id : uid('costume'), name: freeCostumeName(oneLineName(o.name), out), tempo, tracks });
   }
   return out;
 }

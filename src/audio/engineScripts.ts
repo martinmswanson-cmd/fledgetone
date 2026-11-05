@@ -1,4 +1,5 @@
 import type { AudioManifest } from './gameKit';
+import { markdownName } from '../store/kitNames';
 
 /**
  * The FMOD and Wwise scripts and README for the engine package (see enginePackage.ts). No audio
@@ -312,7 +313,10 @@ export function engineReadme(m: AudioManifest, target: EngineTarget): string {
   const fmod = target !== 'wwise';
   const wwise = target !== 'fmod';
   const slug = m.name.replace(/[^A-Za-z0-9]+/g, '_');
-  return `# ${m.name}: FMOD / Wwise package
+  // (Every name as plain text on its line: a song file's names can't add lines or formatting to the README)
+  const md = markdownName;
+  const name = md(m.name);
+  return `# ${name}: FMOD / Wwise package
 
 Made with Fledgetone. ${m.bpm} BPM, ${(m.timeSignature ?? [4, 4]).join('/')} at the start (a bar is ${bar.toFixed(4)} s there; each state keeps its own tempo and time signature, see the table)${m.key ? `, in ${m.key}` : ''}.
 
@@ -328,23 +332,23 @@ ${fmod ? `- \`fmod/Fledgetone_${slug}.js\`: builds the music in FMOD Studio.\n` 
 
 | State | Bars | Seconds | Tempo | Time signature | Timeline start (FMOD) |
 | --- | --- | --- | --- | --- | --- |
-${m.states.map((s, i) => `| ${s.name} | ${s.bars} | ${s.seconds.toFixed(3)} | ${layout[i].bpm} BPM | ${layout[i].num}/${layout[i].den} | ${layout[i].start.toFixed(3)} s |`).join('\n')}
+${m.states.map((s, i) => `| ${md(s.name)} | ${s.bars} | ${s.seconds.toFixed(3)} | ${layout[i].bpm} BPM | ${layout[i].num}/${layout[i].den} | ${layout[i].start.toFixed(3)} s |`).join('\n')}
 
 ## Transitions
 
-${m.transitions.length ? m.transitions.map((t) => `- ${t.from === '*' ? 'Any state' : t.from} → ${t.to}: ${t.kind}${t.kind === 'crossfade' ? ` over ${t.beats} beats` : ''}${t.stinger ? ` (stinger ${t.stinger})` : ''}, ${t.quantize === 'now' ? 'at once' : t.quantize === 'end' ? 'at the end of the loop' : t.quantize === 'phrase' ? `on the next ${t.phraseBars ?? 4}-bar phrase` : `on the next ${t.quantize}`}${t.file ? ` (sound: ${t.file}${t.leadInSeconds ? `, starting ${t.leadInSeconds.toFixed(3)} s early` : ''}${t.bridgeSeconds ? `, the state coming in ${t.bridgeSeconds.toFixed(3)} s after it starts` : ''})` : ''}`).join('\n') : '- None set: switch on the next bar line.'}
+${m.transitions.length ? m.transitions.map((t) => `- ${t.from === '*' ? 'Any state' : md(t.from)} → ${md(t.to)}: ${t.kind}${t.kind === 'crossfade' ? ` over ${t.beats} beats` : ''}${t.stinger ? ` (stinger ${md(t.stinger)})` : ''}, ${t.quantize === 'now' ? 'at once' : t.quantize === 'end' ? 'at the end of the loop' : t.quantize === 'phrase' ? `on the next ${t.phraseBars ?? 4}-bar phrase` : `on the next ${t.quantize}`}${t.file ? ` (sound: ${md(t.file, 400)}${t.leadInSeconds ? `, starting ${t.leadInSeconds.toFixed(3)} s early` : ''}${t.bridgeSeconds ? `, the state coming in ${t.bridgeSeconds.toFixed(3)} s after it starts` : ''})` : ''}`).join('\n') : '- None set: switch on the next bar line.'}
 
 ${curves.length ? `## Intensity
 
 Each stem group's level (0 to 1) at each intensity (0 to 1). In dB: 0 = 0 dB; below about 0.001 is silent.
 
-${curves.map((g) => `- **${g.name}**: ${g.curve.map(([x, y]) => `${Math.round(x * 100)}% → ${y <= 0.0001 ? 'silent' : `${levelDb(y).toFixed(1)} dB`}`).join(', ')}`).join('\n')}
+${curves.map((g) => `- **${md(g.name)}**: ${g.curve.map(([x, y]) => `${Math.round(x * 100)}% → ${y <= 0.0001 ? 'silent' : `${levelDb(y).toFixed(1)} dB`}`).join(', ')}`).join('\n')}
 ` : ''}${fmod ? `
 ## FMOD Studio
 
 1. Copy \`fmod/Fledgetone_${slug}.js\` into your project's \`Scripts\` folder (next to the .fspro) and choose **Scripts > Reload**.
-2. Choose **Scripts > Fledgetone > Import "${m.name}"**, and paste the full path of this package's \`Audio\` folder.
-3. It makes the event **Music/${m.name}**: ${tracksOf(m).length > 1 ? `a track per stem group (${tracksOf(m).map((t) => t.name).join(', ')})` : 'one track'}, every state laid end to end with a **loop region** and a **marker** named after it, the tempo marker, an **Intensity** parameter (0 to 1) automating each group's volume, and an event per stinger under **Stingers/**. The console lists each step as OK or SKIP: a SKIP is something your version of Studio's scripting doesn't allow, to do by hand below.
+2. Choose **Scripts > Fledgetone > Import "${name}"**, and paste the full path of this package's \`Audio\` folder.
+3. It makes the event **Music/${name}**: ${tracksOf(m).length > 1 ? `a track per stem group (${tracksOf(m).map((t) => md(t.name)).join(', ')})` : 'one track'}, every state laid end to end with a **loop region** and a **marker** named after it, the tempo marker, an **Intensity** parameter (0 to 1) automating each group's volume, and an event per stinger under **Stingers/**. The console lists each step as OK or SKIP: a SKIP is something your version of Studio's scripting doesn't allow, to do by hand below.
 4. By hand: add a **State** parameter (labelled, one label per state) and **transition regions** (or transition markers) to each state's marker with that label as the condition, quantized to the bar (or as the transitions above say). Set loop regions to loop while their state is set.
 5. In the game: start the event, set **State** and **Intensity**; play the stinger events on the next beat.
 ` : ''}${wwise ? `
@@ -352,8 +356,8 @@ ${curves.map((g) => `- **${g.name}**: ${g.curve.map(([x, y]) => `${Math.round(x 
 
 1. In Wwise, turn on **Project > User Preferences > Enable Wwise Authoring API**.
 2. \`pip install waapi-client\`, then from the \`wwise\` folder: \`python import_${slug}.py\` while the project is open.
-3. It makes, in the Interactive Music Hierarchy, a **Music Switch Container "${m.name}"** with a **Music Playlist Container** per state, each holding a **Music Segment** with a **Music Track** per stem group; a **State Group "${m.name} State"** with a state per section; an **Intensity** game parameter (0 to 100); and the stingers as **Sound SFX** under the Actor-Mixer **${m.name} Stingers**. It prints each step as OK or SKIP.
-4. By hand: in each playlist, make sure the segment is in the playlist and set to loop (infinite). In the switch container, assign each state of **${m.name} State** to its playlist. Each segment's exit cue goes at its end (they're exact loops). Add transitions by the rules above (Sync to: Next Bar; a stinger as a transition segment). For Intensity, add an RTPC on each stem track's Voice Volume with the points above (intensity × 100).
+3. It makes, in the Interactive Music Hierarchy, a **Music Switch Container "${name}"** with a **Music Playlist Container** per state, each holding a **Music Segment** with a **Music Track** per stem group; a **State Group "${name} State"** with a state per section; an **Intensity** game parameter (0 to 100); and the stingers as **Sound SFX** under the Actor-Mixer **${name} Stingers**. It prints each step as OK or SKIP.
+4. By hand: in each playlist, make sure the segment is in the playlist and set to loop (infinite). In the switch container, assign each state of **${name} State** to its playlist. Each segment's exit cue goes at its end (they're exact loops). Add transitions by the rules above (Sync to: Next Bar; a stinger as a transition segment). For Intensity, add an RTPC on each stem track's Voice Volume with the points above (intensity × 100).
 5. In the game: post an event that plays the switch container, set the state, and set the **Intensity** RTPC.
 ` : ''}
 The scripts were written against the FMOD Studio scripting API and the Wwise Authoring API; versions differ, so each step reports whether it worked rather than stopping the rest.

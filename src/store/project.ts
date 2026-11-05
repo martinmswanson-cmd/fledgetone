@@ -28,7 +28,7 @@ import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
-import { cutToBytes, noControls, notReserved } from './kitNames';
+import { cutToBytes, noControls, notReserved, oneLineName } from './kitNames';
 import { capSong, overWords, type OverCaps } from './songCaps';
 
 /**
@@ -398,7 +398,8 @@ export function parseTrack(raw: unknown): Track {
       ? { pluginFx: v.pluginFx.map(parsePlugin).filter((p): p is WamPlugin => !!p).slice(0, 16) }
       : {}),
     // Optional: its stem group for Intensity
-    ...(isStr(v.stemGroup) && v.stemGroup.trim() ? { stemGroup: v.stemGroup.trim().slice(0, 40) } : {}),
+    // (On one line, as marker names are: a group's name goes into the kits' file names and READMEs)
+    ...(isStr(v.stemGroup) && oneLineName(v.stemGroup).trim() ? { stemGroup: oneLineName(v.stemGroup).trim().slice(0, 40) } : {}),
     // Optional: the folder it's in
     ...(isObj(v.folder) && isStr(v.folder.id) && v.folder.id
       ? {
@@ -599,7 +600,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const sounds = parseEmbeddedSounds(raw.sounds);
   const markers = parseMarkers(raw.markers, tempo);
   return {
-    name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
+    // On one line and with no control characters, as marker names are (it goes into file names, READMEs and messages)
+    name: isStr(raw.name) && oneLineName(raw.name).trim() ? oneLineName(raw.name) : 'Untitled',
     ...(isStr(raw.songId) && /^[\w-]{1,64}$/.test(raw.songId) ? { songId: raw.songId } : {}),
     bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,

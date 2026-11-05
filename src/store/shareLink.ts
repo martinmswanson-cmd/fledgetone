@@ -5,6 +5,8 @@ import type { ProjectSnapshot } from './project';
 import { defaultTrackFx } from './timelineTypes';
 import type { Track, WamPlugin } from './timelineTypes';
 import { linkUserTable, normalizeUserTable } from '../audio/plugins/userTable';
+import { referencedSoundIds } from './audioClips';
+import { withNeutralSoundIds, withoutFileNames } from './ownFiles';
 
 /**
  * A song inside a link: the project (without its sound files), packed tight, deflated and written
@@ -322,19 +324,28 @@ async function lightTables(t: Track): Promise<Track> {
   };
 }
 
-/** The link to `project` at `base` (this page's address without its #). */
-export async function songLink(project: ProjectSnapshot, base: string): Promise<string> {
+/**
+ * The link to `project` at `base` (this page's address without its #). `fileNameOf` gives a
+ * sound's file name where it's known, so an audio clip still named after its file is renamed
+ * (the song's own embedded sounds are asked too).
+ */
+export async function songLink(project: ProjectSnapshot, base: string, fileNameOf?: (soundId: string) => string | undefined): Promise<string> {
   // Sound files stay out: they'd make the link megabytes long (Save carries them)
   // Frozen tracks' sounds can't come either: the receiver's copy plays them live
   // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
   const masterFx = project.masterFx?.room ? { ...project.masterFx, room: undefined } : project.masterFx;
   // Fledge Synth's user tables go in as their lighter copy (about 2 KB each, see linkUserTable)
   const tracks = await Promise.all(project.tracks.map(async (t) => lightTables(t.frozen ? { ...t, frozen: undefined } : t)));
-  const compact = shortIds({ ...project, masterFx, tracks });
+  // The sounds' file names stay out too (the Sampler's, the Slicer's, the pads' and zones'), and
+  // each sound's id, a hash of the file's bytes, is one that says nothing about the file (the
+  // sounds don't come with the link, as the Share dialog says: whoever opens it sees them missing)
+  const embedded = new Map((project.sounds ?? []).map((s) => [s.id, s.name]));
+  const own = withoutFileNames({ ...project, masterFx, tracks }, (id) => fileNameOf?.(id) ?? embedded.get(id));
+  const compact = shortIds(own);
   // (The receiver's copy is a song of their own: it gets its own id when it opens)
   // The reference video stays out too: it can't travel in a link, and its file name, size and
   // date are the sender's own
-  const data = serializeProject({ ...compact, sounds: undefined, songId: undefined, video: undefined });
+  const data = withNeutralSoundIds(serializeProject({ ...compact, sounds: undefined, songId: undefined, video: undefined }), referencedSoundIds(compact));
   return `${base}${SHARE_PREFIX}${toBase64Url(await pipe(pack(data), new CompressionStream('deflate-raw')))}`;
 }
 

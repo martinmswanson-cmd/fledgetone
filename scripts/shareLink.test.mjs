@@ -165,3 +165,63 @@ test("a link leaves the reference video out: its file name, size and date are th
   assert.equal(back.video, undefined);
   assert.equal(back.clips.length, SONG.clips.length);
 });
+
+test("a link names no sound file and carries no sound's content hash: the sounds can't travel in it", async () => {
+  const HASH = 'a3f1c2de0b9a8877665544332211ffee';
+  const PAD = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+  const ZONE = '99887766554433221100ffeeddccbbaa';
+  const files = { [HASH]: 'Voice memo - appointment 2026-10-02.m4a', [PAD]: 'kick from my desktop.wav', [ZONE]: 'my piano C4.wav' };
+  const pad = (name, soundId) => ({ name, ...(soundId ? { soundId } : {}), gain: 0, pan: 0, pitch: 0, decay: 0, lowpass: 20000, highpass: 20, drive: 0, choke: 0 });
+  const tracks = [
+    { ...SONG.tracks[0], instrumentKey: 'sampler', sample: { name: files[HASH], soundId: HASH, root: 'C4' } },
+    {
+      ...SONG.tracks[1],
+      instrumentKey: 'drumRack',
+      // A pad named after its file when the sound was dropped on it, one the musician named, one empty
+      rack: { pads: [pad('kick from my desktop', PAD), pad('Kick', PAD), pad('Snare')] },
+      slicer: { soundId: HASH, name: files[HASH], start: 0, end: 2, slices: [0, 1] },
+      multi: { zones: [{ soundId: ZONE, name: 'my piano C4', root: 60, lo: 0, hi: 63, velLo: 1, velHi: 127 }, { soundId: ZONE, name: 'Soft piano', root: 72, lo: 64, hi: 127, velLo: 1, velHi: 127 }] },
+    },
+  ];
+  const song = parseProject({ ...serializeProject(SONG), tracks });
+  const link = await songLink(song, 'https://example.com/app', (id) => files[id]);
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  const json = JSON.stringify(serializeProject(back));
+  for (const own of [HASH, PAD, ZONE, 'Voice memo', 'desktop', 'my piano']) assert.ok(!json.includes(own), own);
+  // The receiver still gets a Sampler, a Slicer and the pads and zones, each with a sound it doesn't have (shown as missing)
+  const [sampler, rack] = back.tracks;
+  assert.equal(sampler.sample.name, 'Sound');
+  assert.equal(sampler.sample.root, 'C4');
+  assert.ok(sampler.sample.soundId);
+  assert.equal(rack.slicer.name, 'Sound');
+  assert.deepEqual(rack.slicer.slices, [0, 1]);
+  // A name made from the file is replaced; one the musician typed is kept
+  assert.deepEqual(rack.rack.pads.slice(0, 3).map((p) => p.name), ['Pad 1', 'Kick', 'Snare']);
+  assert.deepEqual(rack.multi.zones.map((z) => z.name), ['Sound 1', 'Soft piano']);
+  // One sound is one id, wherever it plays
+  assert.equal(rack.rack.pads[0].soundId, rack.rack.pads[1].soundId);
+  assert.equal(rack.slicer.soundId, sampler.sample.soundId);
+  assert.notEqual(sampler.sample.soundId, rack.rack.pads[0].soundId);
+  assert.notEqual(rack.multi.zones[0].soundId, rack.rack.pads[0].soundId);
+});
+
+test('an audio clip still named after its file is "Audio" in a link; one the person named keeps its name', async () => {
+  const HASH = 'a3f1c2de0b9a8877665544332211ffee';
+  const audio = { soundId: HASH, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const clips = [
+    { id: 'c1', trackId: SONG.tracks[0].id, name: 'Voice memo 2026-10-02', startBar: 1, lengthBars: 1, notes: [], audio },
+    { id: 'c2', trackId: SONG.tracks[0].id, name: 'Chorus vocal', startBar: 2, lengthBars: 1, notes: [], audio },
+  ];
+  const song = parseProject({ ...serializeProject(SONG), tracks: [{ ...SONG.tracks[0], instrumentKey: 'audio' }], clips });
+  const back = await projectFromHash(await songLink(song, '', (id) => (id === HASH ? 'Voice memo 2026-10-02.m4a' : undefined)));
+  assert.deepEqual(back.clips.map((c) => c.name), ['Audio', 'Chorus vocal']);
+  assert.ok(back.clips.every((c) => c.audio && c.audio.soundId !== HASH));
+});
+
+test('a song with no sounds of its own makes the same link as before', async () => {
+  // (Nothing to rename and no ids to swap: the data is passed on untouched)
+  const { withoutFileNames, withNeutralSoundIds } = await import('../src/store/ownFiles.ts');
+  assert.equal(withoutFileNames(SONG).tracks[0], SONG.tracks[0]);
+  const data = serializeProject(SONG);
+  assert.equal(withNeutralSoundIds(data, []), data);
+});

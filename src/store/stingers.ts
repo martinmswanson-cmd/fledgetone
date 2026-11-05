@@ -3,6 +3,7 @@ import { currentInstrumentKey } from '../audio/instrumentCatalog';
 import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
 import { readNoteDuration, uid } from './timelineTypes';
 import { isPrototypeName } from './ownKey';
+import { oneLineName } from './kitNames';
 import { NOTE_NAMES, type SongKey } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
 import { measureBars, type Meter } from '../audio/tempoMap';
@@ -160,7 +161,8 @@ export function parseStingers(raw: unknown, isInstrument: (key: unknown) => key 
       .map((n) => ({ ...n, startOffset: Math.max(0, Math.min(lengthBars, n.startOffset)), duration: readNoteDuration(n.duration), velocity: Math.max(0, Math.min(1, n.velocity)) }));
     out.push({
       id: s.id,
-      name: s.name.slice(0, 80),
+      // (On one line, as marker names are: it goes into the kits' file names and READMEs)
+      name: oneLineName(s.name).slice(0, 80),
       kind: s.kind as StingerKind,
       instrumentKey: s.instrumentKey,
       variation: typeof s.variation === 'number' ? Math.round(s.variation) : 0,
