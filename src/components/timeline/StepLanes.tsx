@@ -214,16 +214,24 @@ const LaneRow: React.FC<{
     if (e.button !== 0 && e.button !== 2) return;
     e.preventDefault();
     const clear = e.button === 2 || e.altKey;
-    useTimelineStore.getState().checkpoint();
+    // The undo step is made with the first step that changes (clearing an empty step changes nothing)
+    let recorded = false;
     let current = lane;
     let last = at(e);
     const paint = (from: { i: number; v: number }, to: { i: number; v: number }) => {
+      const was = stepValues(current, clip.lengthBars);
       // Every step between the last place and this one (a quick drag skips none), heights in a line
       const n = Math.abs(to.i - from.i);
       for (let k = 0; k <= n; k++) {
         const i = from.i + Math.sign(to.i - from.i) * k;
         const v = n ? from.v + ((to.v - from.v) * k) / n : to.v;
         current = paintSteps(current, clip.lengthBars, i, i, clear ? null : Math.round(v * 100) / 100);
+      }
+      const now = stepValues(current, clip.lengthBars);
+      if (now.length === was.length && now.every((v, i) => v === was[i])) return;
+      if (!recorded) {
+        useTimelineStore.getState().checkpoint();
+        recorded = true;
       }
       onWrite(current, false);
     };

@@ -8,7 +8,7 @@
 import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
 import { scoop, springBounce, stutterBuild, tritoneSlide } from '../../store/mathPatterns';
 import { shapeDynamics } from '../../store/phraseDynamics';
-import { retrograde } from '../../store/noteTools';
+import { retrograde, sameNotes } from '../../store/noteTools';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { StepLanes } from './StepLanes';
 import { stepLanesHeight } from './stepTargets';
@@ -852,6 +852,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         default: return target;
       }
     })();
+    // (Notes already on the grid quantized, unbent notes unbent: nothing changes, so no undo step and Redo stays)
+    if (sameNotes(target, out)) return;
     const done = editStep(() => {
       store.setClipNotes(clip.id, [...rest, ...out]);
       return true;
@@ -1087,15 +1089,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         return u < 0 || u > totalUnits - 1e-6;
       };
       if (notes.some((n) => selected.has(n.id) && outside(n))) return;
+      const moved = notes.map((n) => {
+        if (!selected.has(n.id)) return n;
+        const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, n.note) + dRows));
+        return { ...n, startOffset: (unitsOf(n.startOffset) + dUnits) / UNITS_PER_BAR, note: rows[rowIdx].note };
+      });
+      // (Up from the top row, down from the bottom one: nothing moves, so no undo step)
+      if (sameNotes(notes, moved)) return;
       store.checkpoint();
-      store.setClipNotes(
-        clip.id,
-        notes.map((n) => {
-          if (!selected.has(n.id)) return n;
-          const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, n.note) + dRows));
-          return { ...n, startOffset: (unitsOf(n.startOffset) + dUnits) / UNITS_PER_BAR, note: rows[rowIdx].note };
-        })
-      );
+      store.setClipNotes(clip.id, moved);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -1124,8 +1126,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const onChance = (id: string) => {
     if (!selected.size || !NOTE_CHANCES.some((c) => c.id === id)) return;
     const s = useTimelineStore.getState();
+    const notes = currentNotes();
+    const next = notes.map((n) => (selected.has(n.id) ? withChance(n, id) : n));
+    if (sameNotes(notes, next)) return;
     s.checkpoint();
-    s.setClipNotes(clip.id, currentNotes().map((n) => (selected.has(n.id) ? withChance(n, id) : n)));
+    s.setClipNotes(clip.id, next);
   };
 
   const select = 'h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-forge-text focus:outline-none focus:border-cyan-500';
@@ -1364,6 +1369,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           pitched={!namedRows}
           apply={(next, select) => {
             const store = useTimelineStore.getState();
+            // (Nothing changed: no undo step)
+            if (sameNotes(currentNotes(), next)) return;
             const done = editStep(() => {
               store.setClipNotes(clip.id, next);
               return true;

@@ -391,3 +391,30 @@ export function retrograde(notes: readonly NoteEvent[], bars: number): NoteEvent
   const last = Math.min(bars, maxOf(spans.map((x) => x.end)));
   return spans.map(({ n, end }) => ({ ...n, startOffset: Math.max(0, first + last - end) }));
 }
+
+/** Two values alike all the way down (a field left undefined is the same as no field). */
+function alike(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(ra), ...Object.keys(rb)]);
+  for (const k of keys) if (!alike(ra[k], rb[k])) return false;
+  return true;
+}
+
+/**
+ * The same notes, whatever their order: each id once in both, with the same pitch, place, length,
+ * velocity, curves and chance. An edit that gives back the same notes changes nothing, so it
+ * makes no undo step (and the Redo history stays).
+ */
+export function sameNotes(a: readonly NoteEvent[], b: readonly NoteEvent[]): boolean {
+  if (a.length !== b.length) return false;
+  const byId = new Map(a.map((n) => [n.id, n]));
+  if (byId.size !== a.length) return false;
+  return b.every((n) => {
+    const m = byId.get(n.id);
+    return m !== undefined && alike(m, n);
+  });
+}

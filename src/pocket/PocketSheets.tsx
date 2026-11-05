@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useSongMeter, useTimelineStore } from '../store/timelineStore';
 import { formatBarRange } from '../store/timelineTypes';
-import { isPlainMeter } from '../audio/tempoMap';
+import { isPlainMeter, meterAt } from '../audio/tempoMap';
 import { notAutosavedWords } from '../store/autosaveWords';
 import { sayWhatWasLeftOut } from '../store/reopenLastSong';
 import { clearPreviousSession } from '../store/project';
@@ -352,9 +352,11 @@ const nextDrumSeed = () => (drumSeed = (drumSeed * 7919 + 104729) % 1000003);
 
 const DrummerSheet: React.FC = () => {
   const { track, sec } = useSelection();
-  const meter = useTimelineStore((s) => s.meter);
+  const meterMap = useSongMeter();
   if (!track || !sec) return null;
   const write = (style: DrumStyle) => {
+    // The time signature where the section starts (a song can change it part way), as the studio's Drummer uses
+    const meter = meterAt(sec.from, meterMap);
     const len = sec.to - sec.from;
     const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
     const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
@@ -413,8 +415,8 @@ const FillSheet: React.FC = () => {
           onClick={() => {
             inOneStep(() => {
               const id = cellClip(track.id, sec, true);
-              // (The middle of the section's last bar: the fill goes at that bar's end)
-              if (id) fillClipBar(id, sec.to - 0.5, f.id);
+              // (Just inside the section's last measure, however short: the fill goes at that measure's end)
+              if (id) fillClipBar(id, sec.to - 1e-6, f.id);
             });
             close();
           }}

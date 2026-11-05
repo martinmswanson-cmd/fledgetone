@@ -15,6 +15,7 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dices } from 'lucide-react';
 import { songMeterOf, useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
+import { meterAt } from '../audio/tempoMap';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
@@ -190,8 +191,9 @@ export const DrumPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
 };
 
 export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ track, sec }) => {
-  const meter = useTimelineStore((s) => s.meter);
   const meterMap = useTimelineStore(songMeterOf);
+  // The time signature where the section starts (a song can change it part way), as the studio's drum tools use
+  const meter = meterAt(sec.from, meterMap);
   const clips = useTimelineStore((s) => s.clips);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   // (A Drum Rack opens on its first pad with a sound)

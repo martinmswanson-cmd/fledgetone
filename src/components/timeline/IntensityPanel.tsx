@@ -19,6 +19,8 @@ const GROUP_COLORS = ['#34d399', '#f59e0b', '#f472b6', '#60a5fa', '#a78bfa', '#f
 const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: string; intensity: number }> = ({ group, curve, color, intensity }) => {
   const svg = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
+  // The drag's undo step is made on its first real move: a click on a point changes nothing
+  const recorded = useRef(false);
   const toX = (x: number) => PAD + x * (W - 2 * PAD);
   const toY = (y: number) => H - PAD - y * (H - 2 * PAD);
   const fromEvent = (e: React.PointerEvent): [number, number] => {
@@ -49,10 +51,12 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
         onPointerDown={(e) => {
           const i = near(e);
           if (i >= 0) {
-            // One undo step for the whole drag
-            useTimelineStore.getState().checkpoint();
+            // One undo step for the whole drag, made when the point first moves
+            recorded.current = false;
             setDrag(i);
           } else {
+            // (the point just added is that step)
+            recorded.current = true;
             const p = fromEvent(e);
             const next = [...curve, p].sort((a, b) => a[0] - b[0]) as IntensityCurve;
             save(next);
@@ -68,7 +72,13 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
           const lo = drag > 0 ? next[drag - 1][0] : 0;
           const hi = drag < next.length - 1 ? next[drag + 1][0] : 1;
           next[drag] = [Math.max(lo, Math.min(hi, p[0])), p[1]];
-          useTimelineStore.getState().setIntensityCurve(group, next, false);
+          if (next[drag][0] === curve[drag][0] && next[drag][1] === curve[drag][1]) return;
+          const store = useTimelineStore.getState();
+          if (!recorded.current) {
+            store.checkpoint();
+            recorded.current = true;
+          }
+          store.setIntensityCurve(group, next, false);
         }}
         onPointerUp={() => setDrag(null)}
         onDoubleClick={(e) => {

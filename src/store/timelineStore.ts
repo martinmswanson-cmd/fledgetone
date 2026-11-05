@@ -82,12 +82,12 @@ import { capsWords, editPastCaps, MAX_CLIP_NOTES, MAX_LANE_POINTS, pastCapsWords
 import { showToast } from '../components/timeline/toastStore';
 import { livePlayhead, setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
-import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFromPreset, TARGET_SPECS, type GameParam, type ParamPreset, type ParamTarget, type ParamTargetKind } from './gameParams';
+import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFromPreset, sameParamTarget, TARGET_SPECS, type GameParam, type ParamPreset, type ParamTarget, type ParamTargetKind } from './gameParams';
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
 import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
-import { ANY_STATE, transitionKey } from './transitions';
+import { ANY_STATE, sameRule, transitionKey } from './transitions';
 import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { breathe } from './breathe';
@@ -2276,6 +2276,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || clip.audio) return s;
         const tidy = tidyLane(points, lane);
+        // (The lane as it was, such as a swell drawn again over itself: nothing changes, no undo step)
+        if (JSON.stringify(tidy) === JSON.stringify(clip.expression?.[lane] ?? [])) return s;
         const expression = { ...clip.expression };
         if (tidy.length) expression[lane] = tidy;
         else delete expression[lane];
@@ -2314,6 +2316,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const note = clip?.notes.find((n) => n.id === noteId);
         if (!clip || !note) return s;
         const tidy = tidyNoteLane(points, lane, durationToBars(note.duration));
+        if (JSON.stringify(tidy) === JSON.stringify(note.expr?.[lane] ?? [])) return s;
         const expr = { ...note.expr };
         if (tidy.length) expr[lane] = tidy;
         else delete expr[lane];
@@ -3039,6 +3042,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const key = transitionKey(from, to);
         if (!rule || (rule.kind === 'cut' && !rule.quantize && from === ANY_STATE)) delete next[key];
         else next[key] = rule;
+        // (A Cut for Any with no rule there, the rule it already has: nothing changes, no undo step)
+        if (sameRule(s.transitions[key], next[key])) return s;
         return { transitions: next, ...pushPast(s) };
       }),
     gameSfx: [],
@@ -3128,6 +3133,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const p = s.gameParams.find((x) => x.id === id);
         if (!p || index < 0 || index >= p.targets.length) return s;
         const targets = target ? p.targets.map((t, i) => (i === index ? cleanTarget(target) : t)) : p.targets.filter((_, i) => i !== index);
+        // (A number typed past the end that clamps to the value it had: nothing changes, no undo step)
+        if (target && sameParamTarget(p.targets[index], targets[index])) return s;
         return { gameParams: s.gameParams.map((x) => (x === p ? { ...x, targets } : x)), ...pushPast(s) };
       }),
     deleteGameParam: (id) => set((s) => ({ gameParams: s.gameParams.filter((p) => p.id !== id), ...pushPast(s) })),

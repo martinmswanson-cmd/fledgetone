@@ -44,6 +44,13 @@ export function ruleFor(rules: Record<string, TransitionRule>, from: string | nu
   return (from !== null ? rules[transitionKey(from, to)] : undefined) ?? rules[transitionKey(ANY_STATE, to)] ?? { kind: 'cut' };
 }
 
+/** The same rule (or both no rule): each setting alike, one left undefined the same as one not there. */
+export function sameRule(a: TransitionRule | undefined, b: TransitionRule | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as Array<keyof TransitionRule>);
+  return [...keys].every((k) => a[k] === b[k]);
+}
+
 const KINDS = new Set<string>(TRANSITIONS.map((t) => t.kind));
 export const isTransitionKind = (v: unknown): v is TransitionKind => typeof v === 'string' && KINDS.has(v);
 
