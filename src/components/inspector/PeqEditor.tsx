@@ -136,14 +136,17 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
     const move = (ev: PointerEvent) => {
       const p = local(ev);
       const fine = ev.shiftKey ? 0.2 : 1;
-      if (!committed) {
-        committed = true;
-        useTimelineStore.getState().checkpoint();
-      }
       const freq = Math.round(hzOf(x0 + (p.x - start.x) * fine));
       const patch: Partial<PeqBand> = { freq, on: true };
       if (hasGain(b0.type)) patch.gain = Math.round(dbOf(y0 + (p.y - start.y) * fine) * 10) / 10;
       const now = useTimelineStore.getState().tracks.find((t) => t.id === track.id)?.fx.peq.bands ?? bands;
+      const was = now[i];
+      if (!was || (was.freq === patch.freq && was.on && (patch.gain === undefined || was.gain === patch.gain))) return;
+      // The undo step comes with the first change, so a click on a band leaves the history alone
+      if (!committed) {
+        committed = true;
+        useTimelineStore.getState().checkpoint();
+      }
       useTimelineStore.getState().setTrackFx(track.id, 'peq', { bands: now.map((b, k) => (k === i ? { ...b, ...patch } : b)) });
     };
     const up = () => {

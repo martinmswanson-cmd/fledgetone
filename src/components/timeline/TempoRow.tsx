@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2 } from 'lucide-react';
 import { TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { meterChangeMoveTo, tempoChangeMoveTo } from '../../store/tempoMoves';
 import { formatBpm, snapBar } from '../../store/timelineTypes';
-import { formatMeter, MAX_BPM, MIN_BPM, nearestMeasureStart, tempoAt } from '../../audio/tempoMap';
+import { formatMeter, MAX_BPM, MIN_BPM, tempoAt } from '../../audio/tempoMap';
 import type { Meter } from '../../audio/tempoMap';
 import { barFromClientX } from './Playhead';
 import { useDrawnStretch } from './drawnStretch';
@@ -55,18 +56,26 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
     const startX = e.clientX;
     const startY = e.clientY;
     let moved = false;
+    let committed = false;
     const onMove = (ev: PointerEvent) => {
       if (id === null) return; // the song's own tempo and meter stay at bar 1
       if (!moved && Math.abs(ev.clientX - startX) < 3) return;
-      const s = useTimelineStore.getState();
       if (!moved) {
         moved = true;
-        s.checkpoint();
         document.body.style.cursor = 'grabbing';
       }
+      const s = useTimelineStore.getState();
       const raw = barFromClientX(ev.clientX, origin) - grab;
-      if (kind === 'tempo') s.updateTempoChange(id, { bar: ev.shiftKey ? raw : snapBar(raw, s.snapGrid, s) }, false);
-      else s.updateMeterChange(id, { bar: nearestMeasureStart(raw, { base: s.meter, points: s.meterPoints.filter((p) => p.id !== id) }) }, false);
+      const now = (kind === 'tempo' ? s.tempoPoints : s.meterPoints).find((p) => p.id === id)?.bar;
+      const to = kind === 'tempo' ? tempoChangeMoveTo(s.tempoPoints, id, ev.shiftKey ? raw : snapBar(raw, s.snapGrid, s)) : meterChangeMoveTo(s.meter, s.meterPoints, id, raw);
+      if (now === undefined || Math.abs(to - now) < 1e-9) return;
+      // The undo step comes with the first real move, so a click that wobbles leaves the history alone
+      if (!committed) {
+        committed = true;
+        s.checkpoint();
+      }
+      if (kind === 'tempo') s.updateTempoChange(id, { bar: to }, false);
+      else s.updateMeterChange(id, { bar: to }, false);
     };
     const onUp = () => {
       document.body.style.cursor = '';
