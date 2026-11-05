@@ -206,7 +206,9 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
           <button
             key={c}
             type="button"
-            onClick={run(() => s.setTrackColor(track.id, c))}
+            onClick={run(() => {
+              if (c !== track.color) s.setTrackColor(track.id, c);
+            })}
             className={`w-4 h-4 rounded-sm ${c === track.color ? 'ring-2 ring-white' : 'hover:ring-1 hover:ring-white/60'}`}
             style={{ background: c }}
             aria-label={`Colour ${c}`}

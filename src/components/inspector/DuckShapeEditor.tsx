@@ -63,7 +63,7 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
             aria-pressed={shape === s}
             title={PUMP_SHAPE_INFO[s].about}
             // (A hole is short: its dip, hold and return fit in about 150 ms)
-            onClick={() => setPump(s === 'smooth' ? { shape: undefined } : s === 'hole' && pump.release > 200 ? { shape: s, release: 150 } : { shape: s }, true)}
+            onClick={() => shape !== s && setPump(s === 'smooth' ? { shape: undefined } : s === 'hole' && pump.release > 200 ? { shape: s, release: 150 } : { shape: s }, true)}
             className={`px-1.5 py-0.5 rounded border text-[10px] font-mono ${shape === s ? 'text-black' : 'bg-black/40 text-forge-muted border-forge-border hover:text-white'}`}
             style={shape === s ? { backgroundColor: accent, borderColor: accent } : undefined}
           >

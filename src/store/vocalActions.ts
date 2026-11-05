@@ -20,7 +20,11 @@ export const DOUBLE_LEVEL_DB = -7;
 /** Put vocal chain `id` on a track: one undo step that replaces only its built-in inserts (and, for Ad-lib, its pan). */
 export function applyVocalChain(trackId: string, id: VocalChainId): void {
   const s = useTimelineStore.getState();
-  if (!s.tracks.some((t) => t.id === trackId)) return;
+  const track = s.tracks.find((t) => t.id === trackId);
+  if (!track) return;
+  // (The chain it already has on: no change, and no undo step)
+  const next = withVocalChain(track, id);
+  if (JSON.stringify([next.fx, next.eq, next.pan]) === JSON.stringify([track.fx, track.eq, track.pan])) return;
   s.checkpoint();
   useTimelineStore.setState((st) => ({ tracks: st.tracks.map((t) => (t.id === trackId ? withVocalChain(t, id) : t)) }));
 }

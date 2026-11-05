@@ -141,7 +141,7 @@ const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; trackId:
                 type="button"
                 aria-pressed={d.index === wobble.division}
                 className={`h-11 min-w-[52px] px-2 rounded-xl border border-forge-border bg-forge-panel font-mono text-[13px] ${d.index === wobble.division ? pillOn : ''}`}
-                onClick={() => put(division.p, choiceValue(d.index, division.cap))}
+                onClick={() => d.index !== wobble.division && put(division.p, choiceValue(d.index, division.cap))}
               >
                 {d.label}
               </button>

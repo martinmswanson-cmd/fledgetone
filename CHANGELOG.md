@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Choosing what's already chosen leaves Undo and Redo alone**: pressing the vocal chain that's already on, tapping Pocket's lit wobble rate, picking a track's current colour or the duck shape it already has added an empty undo step and threw away what you could redo. Now nothing changes.
 - **A share link never carries a sound file**: a Sampler sound still held inside an older song file (when it couldn't be moved into your sounds) went into the song's share link whole. It now stays out, as every other sound does: whoever opens the link sees it missing.
 - **A shared song's name can't hide the "replace your song" warning**: the question before a shared song replaces your work now says that first, and a song's name is kept to one line of at most 80 characters, so a long name can't push the warning off the screen.
 - **Toms and chip kicks no longer click**: since the last change to how notes start, every tom and Chip Drums kick (and, more faintly, the other drum kits' kicks) began with a click, and a Chip Drums kick due just after you pressed Stop could still sound for an instant. Each hit now starts cleanly at the start of its wave, and a hit still to come when you press Stop stays silent.
