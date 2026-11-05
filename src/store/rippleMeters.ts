@@ -9,6 +9,22 @@ import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints,
 import type { RippleEdit } from './ripple';
 
 const EPS = 1e-6;
+/** How far before an edit point a glide under way there is ended (see endGlide). */
+const CUT = 1e-3;
+
+/** Whether the tempo is gliding at `bar` (part way through a glide that changes it). */
+const glidingAt = (bar: number, tempo: { bpm: number; points: TempoPoint[] }) => bar > 1 + EPS && tempoFrom(bar, tempo).glide !== null;
+
+/**
+ * A glide under way at `bar`, ended just before it at the tempo it had reached there, so the music
+ * before `bar` keeps its timing whatever follows: a glide point `CUT` before `bar` (none when a
+ * point is already that close).
+ */
+function endGlide(points: TempoPoint[], bar: number, tempo: { bpm: number; points: TempoPoint[] }, newId: NewPointId): TempoPoint[] {
+  const at = bar - CUT;
+  if (points.some((p) => p.bar > at - EPS) || at <= 1 + EPS) return points;
+  return [...points, { id: newId('tempo'), bar: at, bpm: tempoAt(at, tempo), ramp: true }];
+}
 
 /** The song's tempo and time signatures. */
 export interface SongTime {
@@ -46,14 +62,16 @@ const sameMeter = (a: Meter, b: Meter) => a.num === b.num && a.den === b.den;
  * move up, and when the deleted bars held a change, the music after them keeps the meter and the
  * tempo it had (a change put back where the bars were taken out; from bar 1, the song's own meter
  * and tempo become those). A change right at the end of the deleted bars moves to where they
- * started, and from bar 1 becomes the song's own. Unchanged parts are the same objects.
+ * started, and from bar 1 becomes the song's own. A tempo glide under way where bars go in or
+ * out ends there (see insertTempo, deleteTempo), so nothing before them is re-timed. Unchanged
+ * parts are the same objects.
  */
 export function rippleSongTime(s: SongTime, edit: RippleEdit, newId: NewPointId): SongTime {
   if (edit.kind === 'insert') {
     const shift = <P extends { bar: number }>(points: P[]): P[] => points.map((p) => (p.bar >= edit.at - EPS ? { ...p, bar: p.bar + edit.bars } : p));
     return {
       bpm: s.bpm,
-      tempoPoints: s.tempoPoints.length ? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints,
+      tempoPoints: s.tempoPoints.length ? insertTempo(s, edit.at, edit.bars, newId) ?? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints,
       meter: s.meter,
       meterPoints: s.meterPoints.length ? tidyMeters(shift(s.meterPoints), s.meter) : s.meterPoints,
     };
@@ -68,7 +86,9 @@ export function rippleSongTime(s: SongTime, edit: RippleEdit, newId: NewPointId)
 
   let bpm = s.bpm;
   let tempoPoints = s.tempoPoints;
-  if (s.tempoPoints.length) {
+  const glided = s.tempoPoints.length ? deleteTempo(s, from, to, newId) : null;
+  if (glided) ({ bpm, tempoPoints } = glided);
+  else if (s.tempoPoints.length) {
     const was = { bpm: s.bpm, points: s.tempoPoints };
     const keep = tempoAt(to, was);
     tempoPoints = sortedPoints(shift(s.tempoPoints));
@@ -98,6 +118,51 @@ export function rippleSongTime(s: SongTime, edit: RippleEdit, newId: NewPointId)
     meterPoints = tidyMeters(points, meter);
   }
   return { bpm, tempoPoints, meter, meterPoints };
+}
+
+/**
+ * The tempo after inserting `bars` bars at `at` when a glide is under way there (or ends right
+ * there), else null: the glide ends just before `at` at the tempo it had reached (the music before
+ * keeps its timing), the inserted bars hold that, and the music after them starts at the tempo it
+ * had at `at` and goes on with the rest of the glide.
+ */
+function insertTempo(s: SongTime, at: number, bars: number, newId: NewPointId): TempoPoint[] | null {
+  const was = { bpm: s.bpm, points: s.tempoPoints };
+  if (at <= 1 + EPS) {
+    // At bar 1: a glide from there starts again after the inserted bars, at the song's tempo
+    if (!tempoFrom(1, was).glide) return null;
+    return sortedPoints([{ id: newId('tempo'), bar: 1 + bars, bpm: s.bpm, ramp: false }, ...s.tempoPoints.map((p) => ({ ...p, bar: p.bar + bars }))]);
+  }
+  if (!glidingAt(at - CUT, was)) return null;
+  const out = endGlide(s.tempoPoints.filter((p) => p.bar < at - EPS), at, was, newId);
+  const later = s.tempoPoints.filter((p) => p.bar >= at - EPS).map((p) => ({ ...p, bar: p.bar + bars, ramp: Math.abs(p.bar - at) < EPS ? false : p.ramp }));
+  if (!later.some((p) => Math.abs(p.bar - at - bars) < EPS)) later.push({ id: newId('tempo'), bar: at + bars, bpm: tempoAt(at, was), ramp: false });
+  return sortedPoints([...out, ...later]);
+}
+
+/**
+ * The tempo after deleting bars `from` to `to` when a glide runs across either end (or ends right
+ * at one), else null: a glide under way at `from` ends just before it at the tempo it had reached
+ * (the music before keeps its timing), and the music after the deleted bars starts at `from` at the
+ * tempo it had at `to`, going on with the rest of any glide under way there.
+ */
+function deleteTempo(s: SongTime, from: number, to: number, newId: NewPointId): { bpm: number; tempoPoints: TempoPoint[] } | null {
+  const was = { bpm: s.bpm, points: s.tempoPoints };
+  const atTo = s.tempoPoints.find((p) => Math.abs(p.bar - to) < EPS);
+  const intoFrom = glidingAt(from - CUT, was);
+  const acrossTo = !atTo && glidingAt(to, was);
+  if (!intoFrom && !acrossTo && !atTo?.ramp) return null;
+  const keep = tempoAt(to, was);
+  const len = to - from;
+  let points = s.tempoPoints.filter((p) => p.bar < from - EPS);
+  if (intoFrom) points = endGlide(points, from, was, newId);
+  const later = s.tempoPoints.filter((p) => p.bar >= to - EPS).map((p) => (p === atTo ? { ...p, bar: from, ramp: false } : { ...p, bar: p.bar - len }));
+  if (from <= 1 + EPS) {
+    // From bar 1: the song starts at the tempo the music after the deleted bars had
+    return { bpm: Math.abs(keep - s.bpm) > 1e-6 ? clampBpm(keep) : s.bpm, tempoPoints: sortedPoints(later) };
+  }
+  if (!atTo && (acrossTo || Math.abs(tempoAt(from - EPS, { bpm: s.bpm, points }) - keep) > 1e-6)) later.push({ id: newId('tempo'), bar: from, bpm: keep, ramp: false });
+  return { bpm: s.bpm, tempoPoints: sortedPoints([...points, ...later]) };
 }
 
 /** A stretch of the song as it was, `len` bars from `src`, laid at the next place in a new order. */
@@ -140,15 +205,18 @@ export function placeSongTime(was: SongTime, from: number, pieces: readonly Plac
   const meterPoints = tidyMeters(meters, meter);
 
   // Tempos the same way, a glide still under way at a stretch's end going as far as it got there
-  const tempos: TempoPoint[] = was.tempoPoints.filter((p) => p.bar < from - EPS);
+  // (a glide under way at `from`, or ending there, ends just before it as far as it got)
+  const before = was.tempoPoints.filter((p) => p.bar < from - EPS);
+  const tempos: TempoPoint[] = glidingAt(from - CUT, oldTempo) ? endGlide(before, from, oldTempo, newId) : before;
   at = from;
   for (const p of pieces) {
     tempos.push({ id: newId('tempo'), bar: at, bpm: tempoAt(p.src, oldTempo), ramp: false });
     for (const q of was.tempoPoints) if (within(q.bar, p.src, p.len)) tempos.push({ ...q, id: newId('tempo'), bar: q.bar - p.src + at });
-    if (tempoFrom(p.src + p.len - 1e-3, oldTempo).glide) tempos.push({ id: newId('tempo'), bar: at + p.len - 1e-3, bpm: tempoAt(p.src + p.len - 1e-3, oldTempo), ramp: true });
+    if (tempoFrom(p.src + p.len - CUT, oldTempo).glide) tempos.push({ id: newId('tempo'), bar: at + p.len - CUT, bpm: tempoAt(p.src + p.len - CUT, oldTempo), ramp: true });
     at += p.len;
   }
-  const tempoAfter = was.tempoPoints.filter((p) => p.bar >= after - EPS).map((p) => ({ ...p, bar: p.bar + later }));
+  // (a glide that ended at `after` is over: the music from there starts at the tempo it reached)
+  const tempoAfter = was.tempoPoints.filter((p) => p.bar >= after - EPS).map((p) => (p.ramp && Math.abs(p.bar - after) < EPS ? { ...p, bar: p.bar + later, ramp: false } : { ...p, bar: p.bar + later }));
   if (!tempoAfter.some((p) => Math.abs(p.bar - to) < EPS)) tempos.push({ id: newId('tempo'), bar: to, bpm: tempoAt(after, oldTempo), ramp: false });
   tempos.push(...tempoAfter);
   const bpm = from <= 1 + EPS && pieces.length ? clampBpm(tempoAt(pieces[0].src, oldTempo)) : was.bpm;
