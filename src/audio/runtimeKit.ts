@@ -2,7 +2,7 @@ import runtimeSource from '../../dist-runtime/bos-player.js?raw';
 import { createZip } from './zip';
 import { cutToBytes, noControls, notReserved, textName } from '../store/kitNames';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
-import { embedSounds } from './soundLibrary';
+import { embedSounds, soundFileNames } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
 import { songFileNames, withFileMarks, withoutFileNames } from '../store/ownFiles';
@@ -53,7 +53,8 @@ export async function buildRuntimeKit(project: ProjectSnapshot, opts: { withGpl?
   // file's size (the player needs the bytes, the type and the length). The Sampler's, the Slicer's,
   // the pads' and zones' sounds, and audio clips named after their files, get plain names too.
   const embedded = await embedSounds(referencedSoundIds(project));
-  const fileNameOf = songFileNames(embedded);
+  // (every name each sound is known by: the file's it came in and this browser's, see songFileNames)
+  const fileNameOf = songFileNames([...(project.sounds ?? []), ...embedded], soundFileNames);
   const sounds = embedded.map((s, i) => ({ id: s.id, name: `Sound ${i + 1}`, type: s.type, seconds: s.seconds, data: s.data })) as EmbeddedSound[];
   const songFile = `${safe(project.name)}.json`;
   const song = JSON.stringify(serializeProject({ ...withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf), sounds, video: undefined, songId: undefined }));

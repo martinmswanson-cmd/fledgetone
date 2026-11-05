@@ -69,6 +69,29 @@ export const soundSeconds = (id: string): number | undefined => useSoundLibrary.
 /** The name of the file a sound was loaded from, if the library has read its meta. */
 export const soundFileName = (id: string): string | undefined => useSoundLibrary.getState().metas[id]?.name;
 
+/**
+ * The other names a sound came under in this page (a song's file that embeds the same bytes as
+ * one this browser keeps under another name): the library keeps its own name for the sound, so it
+ * reads the same after a reload, and these stay known for the check on names made from a file.
+ */
+const otherNames = new Map<string, Set<string>>();
+const addOtherName = (id: string, name: string, kept: string | undefined) => {
+  if (name === kept) return;
+  const names = otherNames.get(id) ?? new Set<string>();
+  names.add(name);
+  otherNames.set(id, names);
+};
+
+/**
+ * Every name a sound's file is known by in this page: the library's, and any other a song opened
+ * here carried for the same bytes. What the check on names made from a file asks (ownFiles.ts).
+ */
+export function soundFileNames(id: string): string[] | undefined {
+  const own = soundFileName(id);
+  const names = [...(own !== undefined ? [own] : []), ...[...(otherNames.get(id) ?? [])].filter((n) => n !== own)];
+  return names.length ? names : undefined;
+}
+
 // ---------- IndexedDB ----------
 
 const DB_NAME = 'bos-beat-box';
@@ -778,7 +801,11 @@ export async function embedSounds(ids: readonly string[]): Promise<EmbeddedSound
 export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<void> {
   for (const sound of sounds) {
     const { data: _data, ...meta } = sound;
-    setMeta(meta);
+    // (A sound the library already has keeps its name, as it reads after a reload: the file's
+    // name for the same bytes stays known as another, see soundFileNames)
+    const had = useSoundLibrary.getState().metas[sound.id];
+    if (had) addOtherName(sound.id, meta.name, had.name);
+    else setMeta(meta);
     if (soundStatus(sound.id) !== 'ready') setStatus(sound.id, 'loading');
     unstored.set(sound.id, sound);
   }
@@ -786,9 +813,14 @@ export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<
     for (const sound of sounds) {
       const { data, ...meta } = sound;
       try {
-        if (!(await readStoredMeta(meta.id))) {
+        const stored = await readStoredMeta(meta.id);
+        if (!stored) {
           const blob = await (await fetch(`data:${meta.type || 'application/octet-stream'};base64,${data}`)).blob();
           await writeStoredSound(meta, blob);
+        } else if (stored.name !== meta.name) {
+          // (Kept here under another name: that one it goes by, as after a reload, and the file's is known too)
+          addOtherName(meta.id, meta.name, stored.name);
+          setMeta(stored);
         }
         unstored.delete(meta.id);
       } catch {

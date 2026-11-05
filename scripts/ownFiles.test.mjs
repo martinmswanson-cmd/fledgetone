@@ -409,11 +409,11 @@ test('every flow that makes a name from another carries its mark', () => {
   has('src/store/reverseActions.ts', '...fileMade(only && (sourceTrack ? sourceTrack.nameFromFile : only.nameFromFile)),', '...fileMade(only?.nameFromFile),');
   // Every flow that sends a song out asks for the sounds' file names (a song from before the marks needs them)
   has('src/audio/gameKit.ts', 'fileNameOf: FileNameOf;', 'const listed = sharedTrackNames(song, song.fileNameOf);');
-  has('src/components/timeline/gameKitSong.ts', 'fileNameOf: soundFileName,');
+  has('src/components/timeline/gameKitSong.ts', 'fileNameOf: soundFileNames,');
   has('src/runtime/player.ts', 'fileNameOf: songFileNames(p.sounds),');
   has('src/store/shareLink.ts', 'const nameOf = songFileNames(project.sounds, fileNameOf);', 'withoutFileNames(withFileMarks({ ...project, masterFx, tracks }, nameOf), nameOf)');
-  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)');
-  for (const path of ['src/components/timeline/ShareDialog.tsx', 'src/pocket/PocketShare.tsx']) has(path, ', soundFileName)');
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)', 'songFileNames([...(project.sounds ?? []), ...embedded], soundFileNames)');
+  for (const path of ['src/components/timeline/ShareDialog.tsx', 'src/pocket/PocketShare.tsx']) has(path, ', soundFileNames)');
   // ...and no call leaves them out
   const calls = (text) => [...text.matchAll(/withoutFileNames\(/g)].map((m) => {
     let depth = 0;
@@ -433,7 +433,7 @@ test('every flow that makes a name from another carries its mark', () => {
     }
   }
   // The store: a new song is marked, an opened one checked, and both go out saying so
-  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const p = withFileMarks(opened, soundFileName);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
+  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const p = withFileMarks(opened, soundFileNames);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
   has('src/components/timeline/gameKitSong.ts', '...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),');
 });
 
@@ -471,8 +471,10 @@ test("the game kit lists a song from before the mark's tracks with the sounds' f
   assert.ok(/Grandma voicemail \(bounce\)/.test(JSON.stringify(BEFORE.tracks.map(sharedTrackNames(BEFORE, () => undefined)))));
   // The song's own embedded sounds are asked too
   const embedded = songFileNames([{ id: 'h1', name: 'Grandma voicemail.wav' }], () => undefined);
-  assert.equal(embedded('h1'), 'Grandma voicemail.wav');
-  assert.equal(songFileNames([{ id: 'h1', name: 'x.wav' }], (id) => (id === 'h1' ? 'y.wav' : undefined))('h1'), 'y.wav');
+  assert.deepEqual(embedded('h1'), ['Grandma voicemail.wav']);
+  // (Both, where the library knows the same bytes by another name: the library's first)
+  assert.deepEqual(songFileNames([{ id: 'h1', name: 'x.wav' }], (id) => (id === 'h1' ? 'y.wav' : undefined))('h1'), ['y.wav', 'x.wav']);
+  assert.equal(songFileNames([{ id: 'h1', name: 'x.wav' }])('h2'), undefined);
 });
 
 /** Names people type for a kit or loops, in a song with sounds dropped and the pads renamed by typing, and mic takes. */
@@ -675,4 +677,81 @@ test("in a song with the marks, a name left unmarked that is its own sound's fil
   assert.deepEqual(out.clips.map((c) => c.name), ['Audio', 'My chorus']);
   // (Without the file names known, the marks alone, as before)
   assert.equal(withoutFileNames(song).tracks[0].rack.pads[0].name, 'Doctor letter');
+});
+
+// ---------- A sound known by two names: the same bytes as this browser keeps under another ----------
+
+/** An old song (no marks) made elsewhere, its sound embedded as "Doctor letter.wav"; this browser has the same bytes as "Kick.wav". */
+const TWO = {
+  name: 'Song',
+  tracks: [T('a', 'Voice', 'audio'), T('b', 'Doctor letter (bounce)', 'audio'), T('r', 'Drums', 'drumRack', { rack: { pads: [pad('Doctor letter', 'x1'), pad('Snare', 'x1')] } })],
+  clips: [C('c1', 'a', 'Doctor letter', { audio: audio('x1') }), C('c2', 'a', 'Doctor letter chops 2', { audio: audio('x1') }), C('c3', 'a', 'My chorus', { audio: audio('x1') })],
+};
+const TWO_SOUNDS = [{ id: 'x1', name: 'Doctor letter.wav', type: 'audio/wav', size: 4, seconds: 1, data: 'AAAA' }];
+const LIBRARY = (id) => (id === 'x1' ? 'Kick.wav' : undefined);
+const NAMES = (out) => [out.tracks.map((t) => t.name), out.tracks[2].rack.pads.slice(0, 2).map((p) => p.name), out.clips.map((c) => c.name)];
+const GONE = [['Voice', 'Audio', 'Drums'], ['Pad 1', 'Snare'], ['Audio', 'Audio', 'My chorus']];
+
+test("a sound the library knows by another name: every name made from either is found, as it opens, reloads, saves, and goes out", async () => {
+  const opened = { ...TWO, sounds: TWO_SOUNDS };
+  // Opening it: the file's own name for the sound is asked as well as the library's
+  const marked = withFileMarks(opened, LIBRARY);
+  assert.equal(marked.fileMarks, FILE_MARKS);
+  assert.deepEqual(marked.clips.map((c) => !!c.nameFromFile), [true, true, false]);
+  assert.equal(marked.tracks[1].nameFromFile, true);
+  assert.equal(marked.tracks[2].rack.pads[0].nameFromFile, true);
+  assert.deepEqual(marked.clips.map((c) => c.name), TWO.clips.map((c) => c.name));
+  // (Before, only the library's was asked: the song was marked and the clip named after the file wasn't)
+  const libraryOnly = { ...withOldMarks(TWO, LIBRARY), fileMarks: FILE_MARKS };
+  assert.equal(withoutFileNames(libraryOnly, LIBRARY).clips[0].name, 'Doctor letter');
+  // Reloaded (the browser's copy keeps no sounds, the library still says "Kick.wav"): it goes out the same
+  const { packedProject, unpackProject } = await import('../src/store/project.ts');
+  const kept = unpackProject(packedProject(marked));
+  assert.deepEqual(NAMES(withoutFileNames(kept, LIBRARY)), GONE);
+  // Saved (Save embeds the library's name for the bytes): the marks carry what the name no longer says
+  const saved = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...kept, sounds: [{ ...TWO_SOUNDS[0], name: 'Kick.wav' }] }))));
+  assert.equal(saved.fileMarks, 1);
+  assert.deepEqual(NAMES(withoutFileNames(saved)), GONE);
+  // A link: from the song as opened, and from an old one whose sounds the lookup knows by both names
+  const { songLink, projectFromHash } = await import('../src/store/shareLink.ts');
+  for (const [song, names] of [[opened, LIBRARY], [TWO, (id) => (id === 'x1' ? ['Kick.wav', 'Doctor letter.wav'] : undefined)]]) {
+    const link = await projectFromHash(await songLink(song, '', names));
+    assert.ok(!/Doctor/.test(JSON.stringify(link)), JSON.stringify(link.clips));
+    assert.equal(link.fileMarks, 1);
+    assert.deepEqual(link.clips.map((c) => c.name), ['Audio', 'Audio', 'My chorus']);
+  }
+  // The web runtime kit asks as it does: the song's sounds and the ones it embeds (the library's name), and the library
+  const kit = songFileNames([...opened.sounds, { ...TWO_SOUNDS[0], name: 'Kick.wav' }], LIBRARY);
+  assert.deepEqual(kit('x1'), ['Kick.wav', 'Doctor letter.wav']);
+  assert.deepEqual(NAMES(withoutFileNames(withFileMarks(opened, kit), kit)), GONE);
+  // The game kit's list of tracks (the store's song, the lookup with both names)
+  const both = songFileNames(opened.sounds, LIBRARY);
+  assert.deepEqual(TWO.tracks.map(sharedTrackNames(TWO, both)), ['Voice', 'Audio', 'Drums']);
+  // Clips copied from it, and a saved sound playing it, are marked against both names
+  assert.deepEqual(withOldMarks(TWO, both).clips.map((c) => !!c.nameFromFile), [true, true, false]);
+  const sound = parseSound({ id: 'k', name: 'Kit B', settings: settings('drumRack', { rack: { pads: [pad('Doctor letter', 'x1'), pad('Kick', 'x1'), pad('Clap', 'x1')] } }) });
+  assert.deepEqual(soundWithFileMarks(sound, both).settings.rack.pads.slice(0, 3).map((p) => !!p.nameFromFile), [true, true, false]);
+  // The safety net in a song with the marks: an unmarked name that is either of its sound's file names goes
+  const since = { fileMarks: 1, tracks: [T('a', 'Voice', 'audio')], clips: [C('c1', 'a', 'Doctor letter', { audio: audio('x1') }), C('c2', 'a', 'My chorus', { audio: audio('x1') })] };
+  assert.deepEqual(withoutFileNames(since, both).clips.map((c) => c.name), ['Audio', 'My chorus']);
+  assert.deepEqual(withoutFileNames(since, LIBRARY).clips.map((c) => c.name), ['Doctor letter', 'My chorus']);
+  // Names typed are kept whatever the sound is called
+  assert.deepEqual(withoutFileNames(withFileMarks(opened, LIBRARY), LIBRARY).tracks.map((t) => t.name), ['Voice', 'Audio', 'Drums']);
+  // A set of loops whose sound is a mic take by one name and a file by the other may be a folder's
+  const loops = { tracks: [T('l', 'Night loops', 'audio')], clips: [C('c1', 'l', 'Take 1', { audio: audio('m1') })] };
+  assert.equal(withoutFileNames(loops, () => ['Mic take 1.wav', 'Night.wav']).tracks[0].name, 'Audio');
+  assert.equal(withoutFileNames(loops, () => ['Mic take 1.wav']).tracks[0].name, 'Night loops');
+});
+
+test('opening a song keeps the library\'s name for a sound it has, and knows the file\'s too', () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const lib = src('src/audio/soundLibrary.ts');
+  const body = lib.slice(lib.indexOf('export function importEmbeddedSounds'), lib.indexOf('// ---------- housekeeping'));
+  for (const s of ['if (had) addOtherName(sound.id, meta.name, had.name);', 'else setMeta(meta);', 'addOtherName(meta.id, meta.name, stored.name);', 'setMeta(stored);']) assert.ok(body.includes(s), s);
+  assert.ok(lib.includes('export function soundFileNames(id: string): string[] | undefined'));
+  // Every flow in the app asks every name (the library's and the other names opened songs carried)
+  const store = src('src/store/timelineStore.ts');
+  assert.ok(!/soundWithFileMarks\(sound, soundFileName\)|withOldMarks\([^)]*\), soundFileName\)|withFileMarks\(opened, soundFileName\)/.test(store));
+  assert.equal(store.match(/soundWithFileMarks\(sound, soundFileNames\)/g).length, 2);
+  assert.ok(store.includes('withOldMarks({ tracks, clips: get().clips }, soundFileNames)'));
 });
