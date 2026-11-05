@@ -581,3 +581,98 @@ test('the mark that a song is marked is saved, opened, kept by the browser and t
   // A song with no sounds of its own is marked as it's saved (nothing to check: a new song, a starter)
   assert.equal(serializeProject(parseProject(file({ name: 'S', tracks: [T('l', 'Lead', 'rhodes')], clips: [] }))).fileMarks, 1);
 });
+
+// What comes into a song with the marks from somewhere without them: a saved sound, clips copied from an older song
+const stored = new Map();
+globalThis.localStorage ??= { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, String(v)), removeItem: (k) => stored.delete(k) };
+const { soundWithFileMarks, withOldMarks } = await import('../src/store/ownFiles.ts');
+const { parseSound, parseMySoundsFile, withSound, useMySounds, MY_SOUNDS_FORMAT } = await import('../src/store/mySounds.ts');
+const IN_FILES = { s1: 'Doctor letter.wav', s2: 'Bank call.m4a', s3: 'Diary 2019.wav' };
+const settings = (instrumentKey, extra) => ({ instrumentKey, color: '#888', eq: { low: 0, mid: 0, high: 0 }, fx: {}, reverbSend: 0, delaySend: 0, ...extra });
+const put = (sound) => ({ fileMarks: 1, tracks: [withName(withSound(T('n', 'Track', sound.settings.instrumentKey), sound.settings), sound.name, !!sound.nameFromFile)], clips: [] });
+const LEAK = /Doctor|Bank|Diary/;
+
+test("a sound saved before the marks gets them as it goes on a track: its pads', zones' and Slicer's file names don't go out", () => {
+  const kit = parseSound({ id: 'k', name: 'Kit A', settings: settings('drumRack', { rack: { pads: [pad('Doctor letter', 's1'), pad('Kick')] } }) });
+  const multi = parseSound({ id: 'm', name: 'Keys', settings: settings('multiSampler', { multi: { zones: [{ soundId: 's2', name: 'Bank call', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } }) });
+  const slicer = parseSound({ id: 's', name: 'Chops', settings: settings('slicer', { slicer: { soundId: 's3', name: 'Diary 2019.wav', start: 0, end: 1, slices: [0] } }) });
+  for (const sound of [kit, multi, slicer]) {
+    // (Before: unmarked, and trusted in a song with the marks)
+    assert.ok(LEAK.test(JSON.stringify(withoutFileNames(put(sound)).tracks)));
+    const marked = soundWithFileMarks(sound, (id) => IN_FILES[id]);
+    const out = withoutFileNames(put(marked));
+    assert.ok(!LEAK.test(JSON.stringify(out.tracks)), JSON.stringify(out.tracks));
+  }
+  const marked = soundWithFileMarks(kit, (id) => IN_FILES[id]);
+  assert.equal(marked.settings.rack.pads[0].nameFromFile, true);
+  // A name the person typed is kept, and a sound with nothing to find comes back as it was
+  assert.ok(!marked.settings.rack.pads[1].nameFromFile);
+  assert.equal(withoutFileNames(put(marked)).tracks[0].rack.pads[1].name, 'Kick');
+  const typed = parseSound({ id: 't', name: 'My drum kit', fileMarks: 1, settings: settings('drumRack', { rack: { pads: [pad('Kick', 's1')] } }) });
+  assert.deepEqual(soundWithFileMarks(typed, (id) => IN_FILES[id]), typed);
+  assert.equal(withoutFileNames(put(typed)).tracks[0].name, 'My drum kit');
+  // File names unknown: what the old check finds anyway (a folder's "X kit" on a sound from before) is marked
+  const folder = parseSound({ id: 'f', name: 'Holiday kit', settings: settings('drumRack', { rack: { pads: [pad('Snare', 'zz')] } }) });
+  assert.equal(soundWithFileMarks(folder).nameFromFile, true);
+  assert.equal(withoutFileNames(put(soundWithFileMarks(folder))).tracks[0].name, 'Kit');
+  // ...but not on one saved since the marks, whose own name the person typed
+  assert.ok(!soundWithFileMarks({ ...folder, fileMarks: 1 }).nameFromFile);
+});
+
+test("a sound file is marked against its recordings' names as it opens, and a sound's name keeps the track's mark", () => {
+  const file = { format: MY_SOUNDS_FORMAT, version: 1, favourites: [], recordings: [{ id: 's1', name: 'Doctor letter.wav', type: 'audio/wav', size: 4, seconds: 1, data: 'AAAA' }], sounds: [{ id: 'k', name: 'Kit A', settings: settings('drumRack', { rack: { pads: [pad('Doctor letter', 's1')] } }) }] };
+  const [sound] = parseMySoundsFile(file).sounds;
+  assert.equal(sound.settings.rack.pads[0].nameFromFile, true);
+  assert.ok(!LEAK.test(JSON.stringify(withoutFileNames(put(sound)).tracks)));
+  // Saved with the name offered (the track's, made from a file): marked, and the track it goes on is too
+  const track = withName(T('x', 'Doctor letter.wav', 'slicer', { slicer: { soundId: 's1', name: 'Doctor letter.wav', nameFromFile: true, start: 0, end: 1, slices: [0] } }), 'Doctor letter.wav', true);
+  assert.equal(useMySounds.getState().saveSound('Doctor letter.wav', track, true), 'saved');
+  const saved = useMySounds.getState().sounds.find((s) => s.name === 'Doctor letter.wav');
+  assert.equal(saved.nameFromFile, true);
+  assert.equal(saved.fileMarks, 1);
+  assert.equal(parseSound(JSON.parse(JSON.stringify(saved))).nameFromFile, true);
+  assert.equal(withoutFileNames(put(saved)).tracks[0].name, 'Slices');
+  // A name typed for it is the person's, and so is one they rename it to
+  assert.equal(useMySounds.getState().saveSound('Night loops', track, true), 'saved');
+  assert.ok(!useMySounds.getState().sounds.find((s) => s.name === 'Night loops').nameFromFile);
+  useMySounds.getState().renameSound(saved.id, 'Lead chops');
+  assert.ok(!useMySounds.getState().sounds.find((s) => s.id === saved.id).nameFromFile);
+});
+
+test("clips copied from a song without the marks are marked as the old check finds them, so a song with the marks hides them", () => {
+  const old = {
+    tracks: [T('a', 'Audio', 'audio')],
+    clips: [C('c1', 'a', 'Doctor letter', { audio: audio('s1') }), C('c2', 'a', 'Doctor letter chops', { audio: audio('gone') }), C('c3', 'a', 'Chorus', { audio: audio('gone') })],
+  };
+  const fileOf = (id) => IN_FILES[id];
+  // (One sound unknown: the song stays without the marks)
+  assert.ok(!withFileMarks(old, fileOf).fileMarks);
+  const copied = withOldMarks(old, fileOf).clips;
+  assert.deepEqual(copied.map((c) => !!c.nameFromFile), [true, true, false]);
+  assert.deepEqual(copied.map((c) => c.name), old.clips.map((c) => c.name));
+  const pasted = withoutFileNames({ fileMarks: 1, tracks: old.tracks, clips: copied });
+  assert.deepEqual(pasted.clips.map((c) => c.name), ['Audio', 'Audio', 'Chorus']);
+  // A song with the marks is copied as it is
+  const since = { ...old, fileMarks: 1 };
+  assert.equal(withOldMarks(since, fileOf), since);
+});
+
+test("in a song with the marks, a name left unmarked that is its own sound's file name still goes; typed names stay", () => {
+  const song = {
+    fileMarks: 1,
+    tracks: [
+      T('r', 'My drum kit', 'drumRack', { rack: { pads: [pad('Doctor letter', 's1'), pad('Kick', 's1')] } }),
+      T('m', 'Night loops', 'multiSampler', { multi: { zones: [{ soundId: 's2', name: 'Bank call', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } }),
+      T('s', 'Chops', 'slicer', { slicer: { soundId: 's3', name: 'Diary 2019.wav', start: 0, end: 1, slices: [0] } }),
+      T('a', 'Vox', 'audio'),
+    ],
+    clips: [C('c1', 'a', 'Doctor letter', { audio: audio('s1') }), C('c2', 'a', 'My chorus', { audio: audio('s1') })],
+  };
+  const out = withoutFileNames(song, songFileNames([], (id) => IN_FILES[id]));
+  assert.ok(!LEAK.test(JSON.stringify([out.tracks, out.clips])), JSON.stringify(out));
+  assert.deepEqual(out.tracks.map((t) => t.name), ['My drum kit', 'Night loops', 'Chops', 'Vox']);
+  assert.equal(out.tracks[0].rack.pads[1].name, 'Kick');
+  assert.deepEqual(out.clips.map((c) => c.name), ['Audio', 'My chorus']);
+  // (Without the file names known, the marks alone, as before)
+  assert.equal(withoutFileNames(song).tracks[0].rack.pads[0].name, 'Doctor letter');
+});

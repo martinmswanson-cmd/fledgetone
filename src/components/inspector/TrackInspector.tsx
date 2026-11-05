@@ -79,7 +79,7 @@ async function saveTrackSound(trackId: string): Promise<void> {
   if (before.plugin || before.pluginFx?.length) await captureWamStates();
   const track = useTimelineStore.getState().tracks.find((t) => t.id === trackId);
   if (!track) return;
-  const saved = useMySounds.getState().saveSound(name, track);
+  const saved = useMySounds.getState().saveSound(name, track, useTimelineStore.getState().fileMarks);
   showToast(
     saved === 'too-big'
       ? "That sound's plugin settings are too big for the browser to keep."

@@ -191,7 +191,13 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[]; fil
     const file = fileOf(id);
     if (file !== undefined) files.add(file);
   }
-  const own = (x: FileMade & { name: string; soundId?: string }) => !!x.nameFromFile || madeFrom(x.name, x.soundId);
+  // (In a song with the marks too, a name left unmarked that is just its own sound's file name: one
+  // brought in from somewhere unmarked that slipped through, see soundWithFileMarks and withOldMarks)
+  const sameAsFile = (name: string, soundId: string | undefined) => {
+    const file = soundId === undefined ? undefined : fileNameOf(soundId);
+    return file !== undefined && nameFromFile(name, file);
+  };
+  const own = (x: FileMade & { name: string; soundId?: string }) => !!x.nameFromFile || madeFrom(x.name, x.soundId) || sameAsFile(x.name, x.soundId);
 
   // A song from before the mark: a Drum Rack, Multi Sampler or Audio track the app named after a
   // folder ("X kit", "X one-shots", "X loops", or a set of sounds all named after their files),
@@ -253,7 +259,7 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[]; fil
   // A plugin's or table's name is checked as it is too: a table made from a clip has the clip's name
   const pluginNamed = (name: string) => some && fromAny(name);
 
-  const clipFromFile = (c: Named) => !!c.nameFromFile || (!!c.audio && clipSounds(c.audio).some((id) => madeFrom(c.name, id))) || derived(c.name);
+  const clipFromFile = (c: Named) => !!c.nameFromFile || (!!c.audio && clipSounds(c.audio).some((id) => madeFrom(c.name, id) || sameAsFile(c.name, id))) || derived(c.name);
   const renamed = <C extends Named>(c: C): C => (clipFromFile(c) ? withName(c, neutralClipName(c)) : c);
   const slots = (list: LauncherSlot[]) => list.map((s) => (clipFromFile(s.clip) ? { ...s, clip: renamed(s.clip) } : s));
   // A plugin named as its track (renamed with it), or marked, or made from a file's name; its table
@@ -297,18 +303,14 @@ export function sharedTrackNames(song: { tracks: Track[]; clips: Clip[]; fileMar
 }
 
 /**
- * `song` (saved before the marks, without `fileMarks`) with every name made from a file or folder
- * marked, as the old-song check above finds them, and `fileMarks` set: from then on its marks
- * alone say which names go, and a name the person types after ("My drum kit") is theirs. Only
- * when every sound's file name is known (`fileNameOf`, or the song's embedded sounds): until
- * then it's left as it is, still an old song, still checked the old way. A song with the marks
- * already, or none to check, comes back as it was (or with `fileMarks`).
+ * `song` with a mark on each name withoutFileNames (the old-song check, with the file names
+ * `fileNameOf` knows) would replace: the names stay as they are, now marked. With some file names
+ * unknown it marks what it can find, which only ever hides more. A song with the marks comes back
+ * as it was. For what comes into a song from one without the marks (clips copied from it).
  */
-export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number; sounds?: ReadonlyArray<{ id: string; name: string }> }>(song: T, fileNameOf?: FileNameOf): T {
+export function withOldMarks<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number }>(song: T, fileNameOf: FileNameOf): T {
   if (song.fileMarks) return song;
-  const nameOf = songFileNames(song.sounds, fileNameOf);
-  if (namingSounds(song).some((id) => nameOf(id) === undefined)) return song;
-  const out = withoutFileNames(song, nameOf);
+  const out = withoutFileNames(song, fileNameOf);
   const mark = <X extends FileMade & { name: string }>(was: X, now: { name: string } | undefined): X => (now && now.name !== was.name && !was.nameFromFile ? { ...was, nameFromFile: true } : was);
   const markPlugin = (p: Plugin, now: Plugin | undefined): Plugin => {
     const marked = mark(p, now);
@@ -330,7 +332,49 @@ export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMa
     };
   });
   const clips = out.clips === song.clips ? song.clips : song.clips.map((c, i) => mark(c, out.clips[i]));
-  return { ...song, tracks, clips, fileMarks: FILE_MARKS };
+  return { ...song, tracks, clips };
+}
+
+/**
+ * `song` (saved before the marks, without `fileMarks`) with every name made from a file or folder
+ * marked, as the old-song check above finds them, and `fileMarks` set: from then on its marks
+ * alone say which names go, and a name the person types after ("My drum kit") is theirs. Only
+ * when every sound's file name is known (`fileNameOf`, or the song's embedded sounds): until
+ * then it's left as it is, still an old song, still checked the old way. A song with the marks
+ * already, or none to check, comes back as it was (or with `fileMarks`).
+ */
+export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number; sounds?: ReadonlyArray<{ id: string; name: string }> }>(song: T, fileNameOf?: FileNameOf): T {
+  if (song.fileMarks) return song;
+  const nameOf = songFileNames(song.sounds, fileNameOf);
+  if (namingSounds(song).some((id) => nameOf(id) === undefined)) return song;
+  return { ...withOldMarks(song, nameOf), fileMarks: FILE_MARKS };
+}
+
+/** A saved sound (My sounds, a sound file) as soundWithFileMarks reads it. */
+export interface MarkedSound<S> extends FileMade {
+  name: string;
+  /** FILE_MARKS on a sound saved from a song with the marks: its own name's mark is to be trusted */
+  fileMarks?: number;
+  settings: S;
+}
+
+/**
+ * A saved sound (My sounds, a sound file) with a mark on each name made from a file or folder, for
+ * putting on a track: one saved before the marks has none, and one saved from a song without them
+ * may lack some. Its pads', zones', Slicer sound's and plugins' names are checked as an old song's
+ * are, against the sounds' file names (`fileNameOf`); a name the check finds is marked, one it
+ * can't (a file name unknown) is left. Its own name (the track's when it goes on one) keeps its
+ * mark, and one saved without `fileMarks` is checked as an old song's track name too ("X kit").
+ */
+export function soundWithFileMarks<S extends object, T extends MarkedSound<S>>(sound: T, fileNameOf: FileNameOf = () => undefined): T {
+  const track = { ...sound.settings, id: 'sound', name: sound.name, ...fileMade(sound.nameFromFile) } as unknown as Track;
+  const [marked] = withOldMarks({ tracks: [track], clips: [] }, fileNameOf).tracks;
+  if (marked === track) return sound;
+  const settings = Object.fromEntries(Object.keys(sound.settings).map((k) => [k, (marked as unknown as Record<string, unknown>)[k]])) as S;
+  const named = !!sound.nameFromFile || (!sound.fileMarks && !!marked.nameFromFile);
+  const out: T = { ...sound, settings };
+  if (named) out.nameFromFile = true;
+  return out;
 }
 
 /**
