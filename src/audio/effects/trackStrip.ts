@@ -140,9 +140,9 @@ export interface TrackStrip {
   /**
    * Delay compensation (see delayCompensation.ts), in frames: `tail` after the inserts (before the
    * sends are taken), `dry` on the way out, `sends` on each send to a return. Null: none. A change
-   * crossfades while playing.
+   * crossfades while playing, and is set at once (`glide` false) while nothing it changes can be heard.
    */
-  setAlignment: (delays: PathDelays | null) => void;
+  setAlignment: (delays: PathDelays | null, glide?: boolean) => void;
   /** A send's level param, for its automation lane (null if it has no such send). */
   sendTarget: (returnId: string) => AutomationTarget | null;
   /**
@@ -150,6 +150,11 @@ export interface TrackStrip {
    * time. Until it's given (or while the plugin is loading) those lanes wait.
    */
   setPluginParams: (set: ((pluginId: string, paramId: string, value: number, time: number) => boolean) | null) => void;
+  /**
+   * Fade the whole channel out (its output and every send) over about `seconds`, starting a moment
+   * from now: a track deleted while it sounds, before its dispose. Returns when it's silent (audio clock).
+   */
+  fadeOut: (seconds: number) => number;
   dispose: () => void;
 }
 
@@ -369,7 +374,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
           joined = false;
         };
         if (!barrier || !awake) cut();
-        else timer = window.setTimeout(cut, (ramp + 0.05) * 1000 + 50);
+        // (The level's fade starts a look-ahead from now: see writer)
+        else timer = window.setTimeout(cut, (Math.max(0, now() - raw.currentTime) + ramp + 0.05) * 1000 + 50);
       }
     };
     linkSyncs.add(sync);
@@ -861,26 +867,25 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
     },
     setSends: (list, muted) => {
       const wanted = new Set(list.map((x) => x.id));
-      for (const [id, send] of sends) {
-        if (wanted.has(id)) continue;
-        // Faded out, then let go
+      /** Faded out, then let go */
+      const letGo = (id: string, send: NonNullable<ReturnType<typeof sends.get>>) => {
         send.writer.set(0, 0.03);
-        const gone = send;
         send.link.forget();
         sends.delete(id);
+        // (The fade starts a look-ahead from now, up to 0.4 s: gone only once it has played)
         window.setTimeout(() => {
-          gone.out.dispose();
-          gone.gain.dispose();
-        }, 120);
-        version++;
-      }
-      for (const want of list) {
-        let send = sends.get(want.id);
-        if (send && (send.target !== want.target || send.pre !== want.pre)) {
-          send.link.forget();
           send.out.dispose();
           send.gain.dispose();
-          sends.delete(want.id);
+        }, (now() + 0.03 - raw.currentTime) * 1000 + 120);
+        version++;
+      };
+      for (const [id, send] of sends) if (!wanted.has(id)) letGo(id, send);
+      for (const want of list) {
+        let send = sends.get(want.id);
+        // Into somewhere else now (the return's plugin effects rebuilt), or taken from the other side
+        // of the fader: the old one fades out as the new one fades in
+        if (send && (send.target !== want.target || send.pre !== want.pre)) {
+          letGo(want.id, send);
           send = undefined;
         }
         if (!send) {
@@ -896,11 +901,11 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
         send.link(lane || level > 0, 0.02);
       }
     },
-    setAlignment: (delays) => {
+    setAlignment: (delays, glide = true) => {
       const seconds = (frames: number) => Math.max(0, frames) / raw.sampleRate;
       sendDelays = delays?.sends ?? {};
-      dryLink.set(seconds(delays?.dry ?? 0));
-      for (const [id, send] of sends) send.out.set(seconds(sendDelays[id] ?? 0));
+      dryLink.set(seconds(delays?.dry ?? 0), glide);
+      for (const [id, send] of sends) send.out.set(seconds(sendDelays[id] ?? 0), glide);
       // The tail is a delay line at the end of the inserts, swapped in and out like any insert (a
       // new length is a new one), so the change crossfades (see rewire). Live, it glides there as
       // a delay link does (delayLink.ts): a delay line as long as the old one's takes over, glides
@@ -909,7 +914,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
       if (Math.abs((tailDelay?.seconds ?? 0) - tail) < 1e-9) return;
       const retired = tailDelay ? [tailDelay] : [];
       clearTimeout(tailTimer);
-      if (barrier) {
+      if (barrier && glide) {
         // (Its crossfade starts at switchAt and takes SWITCH_FADE; the glide starts after it)
         const at = switchAt();
         const from = tailDelay?.glide ? glideAt(tailDelay.glide, at) : (tailDelay?.seconds ?? 0);
@@ -1269,6 +1274,17 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
       return control ? [{ writer: control.writer, map: same }] : null;
     },
     automationVersion: () => version,
+    fadeOut: (seconds) => {
+      // After the fader (the output and the sends taken after it), and each send taken before it
+      // (on its native param, which its writer writes). A moment from now, as a switch is
+      // (SWITCH_LEAD): the audio clock as read can be behind what has been rendered already, and a
+      // fade set to start before that would jump partway down. The way Mute glides (smoothSet):
+      // over `seconds` (three time constants) it is 26 dB down, and 78 dB by three times that
+      const at = raw.currentTime + SWITCH_LEAD;
+      smoothSet(level.gain, 0, at, seconds / 3);
+      for (const send of sends.values()) smoothSet(send.gain.gain.input as AudioParam, 0, at, seconds / 3);
+      return at + 3 * seconds;
+    },
     dispose: () => {
       controls.clear();
       listenControls();

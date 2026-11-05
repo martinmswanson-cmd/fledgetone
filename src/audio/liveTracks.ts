@@ -23,6 +23,7 @@ import { compensateTracks } from './delayCompensation';
 import { compressorLatencyNow, measureCompressorLatency } from './compressorLatency';
 import { setMixDelay } from './latency';
 import { bendStamp } from './bendWindow';
+import { DELETE_FADE, mayBeHeard, retirePlan } from './letGoQuietly';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -35,6 +36,10 @@ interface LiveTrack {
   sampleUrl: string | undefined;
   strip: TrackStrip;
   instrument: TrackInstrument;
+  /** The instrument plays into this, and it into the strip: an instrument let go of fades out here (see retireInstrument) */
+  feed: Tone.Gain;
+  /** Until when (audio clock) something played into the strip may still ring (see mayBeHeard) */
+  ringsUntil: number;
   /** The settings last applied to the strip (the store replaces a track object when it changes) */
   applied: Track | null;
   /** It had sends to returns at the last sync (so removing the last one is heard) */
@@ -198,8 +203,15 @@ export function syncLiveTracks(tracks: Track[]): void {
   }
   for (const [id, lt] of live) {
     if (!keep.has(id)) {
-      lt.instrument.dispose();
-      lt.strip.dispose();
+      // Faded out (its sends with it), then let go: disposed at once, what it was playing stopped dead (a click)
+      const { instrument, feed, strip } = lt;
+      letGoOf(instrument);
+      safely(() => instrument.releaseAll());
+      whenPlayed(strip.fadeOut(DELETE_FADE), () => {
+        instrument.dispose();
+        feed.dispose();
+        strip.dispose();
+      });
       live.delete(id);
       intensityLevels.delete(id);
       awakeUntil.delete(id);
@@ -214,11 +226,14 @@ export function syncLiveTracks(tracks: Track[]): void {
     if (!lt) {
       const strip = createTrackStrip(liveMix.bus, liveMix.busFx);
       strip.setTempo(stripTempo);
+      const feed = feedInto(strip);
       lt = {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
         strip,
-        instrument: liveInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)),
+        feed,
+        ringsUntil: -Infinity,
+        instrument: liveInstrument(track.instrumentKey, feed, trackInstrumentOptions(track)),
         applied: null,
         audible: true,
         failed: false,
@@ -227,10 +242,9 @@ export function syncLiveTracks(tracks: Track[]): void {
       watchDownload(lt);
       live.set(track.id, lt);
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
-      lt.instrument.releaseAll();
-      lt.instrument.dispose();
       const hadBus = !!lt.instrument.clipBus;
-      lt.instrument = liveInstrument(track.instrumentKey, lt.strip.input, trackInstrumentOptions(track));
+      retireInstrument(track.id, lt);
+      lt.instrument = liveInstrument(track.instrumentKey, lt.feed, trackInstrumentOptions(track));
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
@@ -307,7 +321,7 @@ function alignLive(tracks: Track[]): void {
     return;
   }
   const { total, delays } = compensateTracks(tracks, frames);
-  for (const [id, lt] of live) lt.strip.setAlignment(delays.get(id) ?? null);
+  for (const [id, lt] of live) lt.strip.setAlignment(delays.get(id) ?? null, heardNow(lt));
   setMixDelay(total / rate);
 }
 
@@ -403,7 +417,70 @@ let sleepTimer = 0;
 
 function wake(trackId: string, lt: LiveTrack, until: number) {
   if ((awakeUntil.get(trackId) ?? 0) < until) awakeUntil.set(trackId, until);
+  lt.ringsUntil = Math.max(lt.ringsUntil, until);
+  ringingUntil = Math.max(ringingUntil, until);
   lt.strip.sleep(false);
+}
+
+/**
+ * Until when (audio clock) anything played into any strip may still ring: a bus or a return
+ * sounds with what plays into it, an audio track with its clips (stopped: for the longest tail).
+ */
+let ringingUntil = -Infinity;
+const RING_AFTER_STOP = 14;
+
+/** Whether a change to this track's strip now could be heard (see mayBeHeard). */
+function heardNow(lt: LiveTrack): boolean {
+  const ctx = liveMix.bus.context;
+  // (An armed track plays its input through the strip whenever the input sounds)
+  const kind = INSTRUMENTS[lt.instrumentKey]?.kind;
+  const mix = !!lt.instrument.clipBus || kind === 'bus' || kind === 'return' || !!lt.applied?.isArmed;
+  return mayBeHeard({
+    running: ctx.rawContext.state === 'running',
+    playing: ctx.transport.state === 'started',
+    now: ctx.currentTime,
+    ringsUntil: lt.applied?.isArmed ? Infinity : mix ? ringingUntil : lt.ringsUntil,
+  });
+}
+
+/** Run `then` once the audio has played up to `at` (at once if it isn't running: nothing can be heard). */
+function whenPlayed(at: number, then: () => void): void {
+  const raw = liveMix.bus.context.rawContext;
+  const check = () => {
+    if (raw.state === 'running' && raw.currentTime < at) window.setTimeout(check, Math.max(20, (at - raw.currentTime) * 1000 + 30));
+    else safely(then);
+  };
+  window.setTimeout(check, Math.max(0, (at - raw.currentTime) * 1000) + 30);
+}
+
+/** A feed for an instrument, into `strip` (see LiveTrack.feed). */
+function feedInto(strip: TrackStrip): Tone.Gain {
+  const feed = new Tone.Gain({ context: liveMix.bus.context, gain: 1 });
+  feed.connect(strip.input);
+  return feed;
+}
+
+/**
+ * Let go of a track's instrument while it may be sounding, for another on the same strip (a new
+ * feed): nothing more goes to it from now, its voices are released, and it rings out through its
+ * feed, which fades to silence; both are disposed once that has played (see letGoQuietly.ts).
+ * The strip stays awake meanwhile.
+ */
+function retireInstrument(trackId: string, lt: LiveTrack): void {
+  const { instrument, feed } = lt;
+  letGoOf(instrument);
+  safely(() => instrument.releaseAll());
+  const plan = retirePlan(liveMix.bus.context.rawContext.currentTime);
+  safely(() => {
+    feed.gain.setValueAtTime(1, plan.hold);
+    feed.gain.linearRampToValueAtTime(0, plan.silent);
+  });
+  lt.feed = feedInto(lt.strip);
+  if (live.get(trackId) === lt) wake(trackId, lt, plan.dispose);
+  whenPlayed(plan.dispose, () => {
+    instrument.dispose();
+    feed.dispose();
+  });
 }
 
 const canSleep = (lt: LiveTrack) => {
@@ -437,7 +514,10 @@ function watchSleep() {
     const now = liveMix.bus.context.currentTime;
     for (const id of live.keys()) awakeUntil.set(id, Math.max(awakeUntil.get(id) ?? 0, now + 2));
   });
-  transport.on('stop', check);
+  transport.on('stop', () => {
+    ringingUntil = Math.max(ringingUntil, liveMix.bus.context.currentTime + RING_AFTER_STOP);
+    check();
+  });
   sleepTimer = window.setInterval(check, 500);
 }
 
@@ -471,6 +551,13 @@ const gone = new Set<(inst: TrackInstrument) => void>();
 export function onInstrumentGone(listener: (inst: TrackInstrument) => void): void {
   gone.add(listener);
 }
+const wentAlready = new WeakSet<TrackInstrument>();
+/** Tell the listeners `inst` is gone (once): when it's let go of, or disposed. */
+function letGoOf(inst: TrackInstrument): void {
+  if (wentAlready.has(inst)) return;
+  wentAlready.add(inst);
+  gone.forEach((l) => safely(() => l(inst)));
+}
 
 /**
  * A track's live instrument. The player's wheel (a bend sent `live`) stays where it's held while
@@ -483,7 +570,7 @@ function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInst
   const inst = createInstrument(...args);
   const dispose = inst.dispose;
   inst.dispose = () => {
-    gone.forEach((l) => safely(() => l(inst)));
+    letGoOf(inst);
     dispose.call(inst);
   };
   if (!inst.bend) return inst;
@@ -657,11 +744,10 @@ export function previewTrackNotes(trackId: string, notes: PlayableNote[]): void 
  * Instruments built while the download was failing have no sounds attached, and never get any.
  */
 export function reloadInstrument(key: InstrumentKey): void {
-  for (const lt of live.values()) {
+  for (const [id, lt] of live) {
     if (lt.instrumentKey !== key || !lt.failed) continue;
-    safely(() => lt.instrument.releaseAll());
-    lt.instrument.dispose();
-    lt.instrument = liveInstrument(key, lt.strip.input, trackInstrumentOptions(lt.applied));
+    retireInstrument(id, lt);
+    lt.instrument = liveInstrument(key, lt.feed, trackInstrumentOptions(lt.applied));
     watchDownload(lt);
   }
 }

@@ -21,8 +21,13 @@ import { glideAt, planGlide, type Glide } from '../delayGlide';
 type Node = Tone.ToneAudioNode | AudioNode;
 
 export interface DelayLink {
-  /** Hold the sound back by `seconds` (0: none), crossfading to it live. */
-  set: (seconds: number) => void;
+  /**
+   * Hold the sound back by `seconds` (0: none), crossfading to it live. `glide` false: nothing on
+   * this link can be heard now (the audio isn't running, or nothing plays or rings), so it's set
+   * at once, as in an export: a glide planned on a clock that isn't running was heard on the
+   * first Play, the track early by a few ms and bending back over a second.
+   */
+  set: (seconds: number, glide?: boolean) => void;
   /** Play into `to` instead (null: into nothing, as a sleeping strip). Switched at once, as a re-routing always was. */
   retarget: (to: Tone.InputNode | null) => void;
   dispose: () => void;
@@ -174,11 +179,14 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
   paths.push(make(Math.max(0, seconds), 1));
 
   return {
-    set: (next) => {
+    set: (next, glide = true) => {
       const s = Math.max(0, next);
       const current = paths[paths.length - 1];
-      if (Math.abs(current.seconds - s) < 1e-9) return;
-      if (!live) {
+      if (Math.abs(current.seconds - s) < 1e-9 && !current.glide) return;
+      if (Math.abs(current.seconds - s) < 1e-9 && glide) return;
+      if (!live || !glide) {
+        window.clearTimeout(timer);
+        window.clearTimeout(settleTimer);
         paths.forEach(drop);
         paths = [make(s, 1)];
         return;
@@ -187,10 +195,10 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
       // other fades out; then it glides, and settles (see the top)
       const at = raw.currentTime + LEAD;
       const from = current.glide ? glideAt(current.glide, at) : current.seconds;
-      const glide = planGlide(from, s, at + FADE);
-      takeOver(make(s, 0, glide), at);
+      const plan = planGlide(from, s, at + FADE);
+      takeOver(make(s, 0, plan), at);
       window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(settle, (glide.end - raw.currentTime) * 1000 + 50);
+      settleTimer = window.setTimeout(settle, (plan.end - raw.currentTime) * 1000 + 50);
     },
     retarget: (next) => {
       if (next === target) return;
