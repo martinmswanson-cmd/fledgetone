@@ -8,7 +8,7 @@ import { Download, FolderOpen, Link2, Loader2, Monitor, Save } from 'lucide-reac
 import { currentProject, useTimelineStore } from '../store/timelineStore';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS } from '../audio/loudnessTarget';
 import { songLink } from '../store/shareLink';
-import { soundFileName } from '../audio/soundLibrary';
+import { soundFileNames } from '../audio/soundLibrary';
 import { captureWamStates } from '../audio/wamHost';
 import { downloadBlob, saveBlobFile } from '../audio/exportWav';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
@@ -68,7 +68,7 @@ export const PocketShare: React.FC = () => {
   const shareLink = async () => {
     await captureWamStates();
     // (From the app, the link opens fledgetone.com: the app's own address is on this phone only)
-    const url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileName);
+    const url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileNames);
     if (await shareSheet({ url, title: currentProject().name })) return;
     try {
       await navigator.clipboard.writeText(url);

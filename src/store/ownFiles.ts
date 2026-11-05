@@ -33,17 +33,31 @@ export interface FileMade {
  */
 export const FILE_MARKS = 1;
 
-/** A sound's file name, where it's known. */
-export type FileNameOf = (soundId: string) => string | undefined;
+/**
+ * A sound's file name where it's known, or every name it's known by: the same bytes can come under
+ * two (a song's file carries the name they had where it was made, this browser's library the one
+ * they were loaded here as).
+ */
+export type FileNameOf = (soundId: string) => string | readonly string[] | undefined;
+
+/** Every file name `fileNameOf` knows for the sound `id` (none when it knows none). */
+export function fileNamesOf(fileNameOf: FileNameOf, id: string): string[] {
+  const names = fileNameOf(id);
+  return names === undefined ? [] : typeof names === 'string' ? [names] : [...names];
+}
 
 /**
- * Each sound's file name as a song going out knows it: `known`'s (the sound library's) or the
- * song's own embedded sounds' (a saved file carries them). The one way a share link, the web
- * runtime kit and the game kit ask.
+ * Each sound's file names as a song going out knows them: `known`'s (the sound library's) and the
+ * song's own embedded sounds' (a saved file carries them), every one of them, so a name made from
+ * any is found. The one way opening a song, a share link, the web runtime kit and the game kit ask.
  */
 export function songFileNames(sounds: ReadonlyArray<{ id: string; name: string }> | undefined, known?: FileNameOf): FileNameOf {
-  const embedded = new Map((sounds ?? []).map((s) => [s.id, s.name]));
-  return (id) => known?.(id) ?? embedded.get(id);
+  const embedded = new Map<string, string[]>();
+  for (const s of sounds ?? []) embedded.set(s.id, [...(embedded.get(s.id) ?? []), s.name]);
+  return (id) => {
+    const names = [...new Set([...(known ? fileNamesOf(known, id) : []), ...(embedded.get(id) ?? [])])];
+    return names.length ? names : undefined;
+  };
 }
 
 /** The mark for a name made from a file or folder (`made`), or none: spread it into the item. */
@@ -179,24 +193,17 @@ function namingSounds(song: { tracks: Track[]; clips: Clip[] }): string[] {
 export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number }>(song: T, fileNameOf: FileNameOf = () => undefined): T {
   // (A song saved since the marks: its names are judged by them alone)
   const old = !song.fileMarks;
-  const fileOf = (id: string | undefined) => (id === undefined || !old ? undefined : fileNameOf(id));
-  const madeFrom = (name: string, soundId: string | undefined) => {
-    const file = fileOf(soundId);
+  // (Every name a sound's file is known by: a name made from any of them is one)
+  const filesOf = (id: string | undefined) => (id === undefined || !old ? [] : fileNamesOf(fileNameOf, id));
+  const madeFrom = (name: string, soundId: string | undefined) =>
     // (A recorded producer tag is the app's "Producer tag", kept as "Producer tag (tag).wav")
-    return file !== undefined && (nameFromFile(name, file) || (name !== 'Producer tag' && nameFromFile(name, sourceFile(file))));
-  };
+    filesOf(soundId).some((file) => nameFromFile(name, file) || (name !== 'Producer tag' && nameFromFile(name, sourceFile(file))));
   // Every file name the song's sounds have, for a name made from one ("X chops")
   const files = new Set<string>();
-  for (const id of namingSounds(song)) {
-    const file = fileOf(id);
-    if (file !== undefined) files.add(file);
-  }
+  for (const id of namingSounds(song)) filesOf(id).forEach((file) => files.add(file));
   // (In a song with the marks too, a name left unmarked that is just its own sound's file name: one
   // brought in from somewhere unmarked that slipped through, see soundWithFileMarks and withOldMarks)
-  const sameAsFile = (name: string, soundId: string | undefined) => {
-    const file = soundId === undefined ? undefined : fileNameOf(soundId);
-    return file !== undefined && nameFromFile(name, file);
-  };
+  const sameAsFile = (name: string, soundId: string | undefined) => soundId !== undefined && fileNamesOf(fileNameOf, soundId).some((file) => nameFromFile(name, file));
   const own = (x: FileMade & { name: string; soundId?: string }) => !!x.nameFromFile || madeFrom(x.name, x.soundId) || sameAsFile(x.name, x.soundId);
 
   // A song from before the mark: a Drum Rack, Multi Sampler or Audio track the app named after a
@@ -207,7 +214,11 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[]; fil
   const markedClips = new Set(song.clips.filter((c) => c.nameFromFile).map((c) => c.trackId));
   const sinceMark = (t: Track) =>
     markedClips.has(t.id) || !!t.rack?.pads.some((p) => p.nameFromFile) || !!t.multi?.zones.some((z) => z.nameFromFile) || !!t.slots?.some((x) => x.clip.nameFromFile);
-  const fromAFile = (a: Clip['audio']) => !!a && !MIC_TAKE.test(fileOf(a.soundId) ?? '');
+  // (A sound known by another name too, or by none, may be a file's)
+  const fromAFile = (a: Clip['audio']) => {
+    const names = a ? filesOf(a.soundId) : [];
+    return !!a && (!names.length || names.some((n) => !MIC_TAKE.test(n)));
+  };
   const fromFolder = (t: Track): boolean => {
     if (!old || t.nameFromFile || peopleType(t.name) || sinceMark(t)) return false;
     if (t.instrumentKey === 'drumRack') {
@@ -346,7 +357,7 @@ export function withOldMarks<T extends { tracks: Track[]; clips: Clip[]; fileMar
 export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number; sounds?: ReadonlyArray<{ id: string; name: string }> }>(song: T, fileNameOf?: FileNameOf): T {
   if (song.fileMarks) return song;
   const nameOf = songFileNames(song.sounds, fileNameOf);
-  if (namingSounds(song).some((id) => nameOf(id) === undefined)) return song;
+  if (namingSounds(song).some((id) => !fileNamesOf(nameOf, id).length)) return song;
   return { ...withOldMarks(song, nameOf), fileMarks: FILE_MARKS };
 }
 

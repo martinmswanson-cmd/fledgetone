@@ -108,7 +108,7 @@ import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
-import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileName, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
+import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileNames, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
@@ -2505,7 +2505,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // (Nor to or from the Drop pad once it has clips, as setTrackInstrument)
       if (isDropKind(sound.settings.instrumentKey) !== isDropKind(current.instrumentKey) && get().clips.some((c) => c.trackId === id)) return;
       // (Its names made from a file marked, the track's too: one saved before the marks has none, see ownFiles.ts)
-      const marked = soundWithFileMarks(sound, soundFileName);
+      const marked = soundWithFileMarks(sound, soundFileNames);
       set((s) => ({
         tracks: s.tracks.map((t) => (t.id === id ? withName(withSound(t, marked.settings), marked.name, !!marked.nameFromFile) : t)),
         ...pushPast(s),
@@ -2514,7 +2514,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
 
     addSoundTrack: (sound) => {
-      const marked = soundWithFileMarks(sound, soundFileName);
+      const marked = soundWithFileMarks(sound, soundFileNames);
       const made = withName(withSound(makeTrack(marked.settings.instrumentKey, get().tracks, marked.name), marked.settings), marked.name, !!marked.nameFromFile);
       set((s) => ({ tracks: [...s.tracks, made], selectedTrackId: made.id, isInspectorOpen: true, ...pushPast(s) }));
       if (hasRecordings(made.instrumentKey)) void loadQuick(made.instrumentKey).catch(() => {});
@@ -3360,7 +3360,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const { tracks, bpm, fileMarks } = get();
       // From a song without the marks, each clip's name the old check takes for a file's is marked
       // as it's copied: pasted into a song with them, its marks alone are what's judged (ownFiles.ts)
-      const clips = fileMarks ? get().clips : withOldMarks({ tracks, clips: get().clips }, soundFileName).clips;
+      const clips = fileMarks ? get().clips : withOldMarks({ tracks, clips: get().clips }, soundFileNames).clips;
       const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
       const origin = minOf(selected.map((c) => c.startBar));
@@ -3521,7 +3521,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     loadProject: (opened: ProjectSnapshot) => {
       // A song from before the marks gets them now, if its sounds' file names are known (the file's
       // embedded sounds', the library's): see withFileMarks. Otherwise it stays an old song.
-      const p = withFileMarks(opened, soundFileName);
+      const p = withFileMarks(opened, soundFileNames);
       // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
       // (with the plugins' latest settings: they otherwise reach the tracks every few seconds)
       captureWamStatesNow();

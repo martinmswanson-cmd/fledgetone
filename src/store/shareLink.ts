@@ -6,7 +6,7 @@ import { defaultTrackFx } from './timelineTypes';
 import type { Track, WamPlugin } from './timelineTypes';
 import { linkUserTable, normalizeUserTable } from '../audio/plugins/userTable';
 import { referencedSoundIds } from './audioClips';
-import { songFileNames, withFileMarks, withNeutralSoundIds, withoutFileNames } from './ownFiles';
+import { songFileNames, withFileMarks, withNeutralSoundIds, withoutFileNames, type FileNameOf } from './ownFiles';
 
 /**
  * A song inside a link: the project (without its sound files), packed tight, deflated and written
@@ -325,11 +325,11 @@ async function lightTables(t: Track): Promise<Track> {
 }
 
 /**
- * The link to `project` at `base` (this page's address without its #). `fileNameOf` gives a
- * sound's file name where it's known, so an audio clip still named after its file is renamed
+ * The link to `project` at `base` (this page's address without its #). `fileNameOf` gives each
+ * sound's file names where they're known, so an audio clip still named after any is renamed
  * (the song's own embedded sounds are asked too).
  */
-export async function songLink(project: ProjectSnapshot, base: string, fileNameOf?: (soundId: string) => string | undefined): Promise<string> {
+export async function songLink(project: ProjectSnapshot, base: string, fileNameOf?: FileNameOf): Promise<string> {
   // Sound files stay out: they'd make the link megabytes long (Save carries them)
   // Frozen tracks' sounds can't come either: the receiver's copy plays them live
   // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
