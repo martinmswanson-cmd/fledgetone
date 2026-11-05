@@ -535,8 +535,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           limitInPlace(channels, audio.sampleRate, ceilingDbtp);
           reading = await measureLoudness(channels, audio.sampleRate, controller.signal);
         }
-        // Showcase: the notes of the range, timed by the song's tempo map
-        const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo)) : undefined;
+        // Showcase: the notes of the range, timed by the song's tempo map, its measure lines in the song's time signatures
+        const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
         const blob = await renderVideo({
           footage,
           skin: settings.picture === 'showcase' ? 'bars' : settings.picture,

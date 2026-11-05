@@ -9,7 +9,7 @@
  * editing an A changes every A until one is made its own. Each action is one undo step, and the
  * song opens on a computer as an ordinary arrangement with a marker at each section.
  */
-import { allOrNothing, oneUndoStep, oneUndoStepOr, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
+import { allOrNothing, laySongTime, oneUndoStep, oneUndoStepOr, songTempo, splitClipAt, useTimelineStore, songMeterOf } from '../store/timelineStore';
 import { uid, type Clip, type Track } from '../store/timelineTypes';
 import { pastCapsWords } from '../store/songCaps';
 import { songEnd, songSections } from '../store/cutToLength';
@@ -233,6 +233,12 @@ function markAt(bar: number, name: string): void {
   useTimelineStore.setState((x) => ({ markers: retimeMarkers([...x.markers, createMarker(bar, songTempo(x), name)], songTempo(x)) }));
 }
 
+/** The song's tempo and time signatures now, to lay out again after an edit (laySongTime). */
+const songTime = () => {
+  const { bpm, tempoPoints, meter, meterPoints } = tl();
+  return { bpm, tempoPoints, meter, meterPoints };
+};
+
 /** The name of the marker at `bar`, or `fallback` (no marker there, or one Pocket numbered). */
 const markerNameAt = (bar: number, fallback: string) => {
   const name = tl().markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - bar) < EPS)?.name;
@@ -249,6 +255,7 @@ export function copySection(i: number): string | null {
   // A song with nothing in it yet has nothing to copy
   if (songEnd(tl().clips) <= 1 + EPS) return 'Write something in this section first, then copy it.';
   return oneStepOr(() => {
+    const was = songTime();
     pinSections(sections);
     // (Its clips that run on into other sections are cut at its edges first, so the copy is linked)
     cutAtEdges(sec.from, sec.to);
@@ -256,6 +263,8 @@ export function copySection(i: number): string | null {
     const error = tl().insertTime(sec.to, len);
     if (error) return error;
     addCopies(copies);
+    // The copy in the section's own time signatures and tempos, and what follows in its own
+    laySongTime(was, sec.to, [{ src: sec.from, len }], sec.to);
     // A copy of a named section ("Verse") is named the same; one with no marker after its place in the song
     markAt(sec.to, markerNameAt(sec.from, `Section ${i + 2}`));
     return null;
@@ -282,6 +291,7 @@ export function moveSection(i: number, dir: -1 | 1): string | null {
   if (!a || !b) return null;
   const lenB = b.to - b.from;
   return oneStepOr(() => {
+    const was = songTime();
     pinSections(sections, true);
     const name = markerNameAt(b.from, `Section ${(dir < 0 ? i : i + 1) + 1}`);
     // B's bars copied to where A starts, after making room there; then B's own bars (now
@@ -293,6 +303,9 @@ export function moveSection(i: number, dir: -1 | 1): string | null {
     addCopies({ copies, linked: new Map() });
     const removed = tl().removeBars(b.from + lenB, b.to + lenB);
     if (removed) return removed;
+    // Each section keeps the time signature and tempo it had (from its start, and its changes
+    // inside it), and what follows them the ones it had
+    laySongTime(was, a.from, [{ src: b.from, len: lenB }, { src: a.from, len: a.to - a.from }], b.to);
     markAt(a.from, name);
     return null;
   });

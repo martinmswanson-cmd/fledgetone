@@ -40,13 +40,16 @@ interface Candidate {
   weight: number;
 }
 
-/** How close `t` is to a beat of the bar it's in (1 on a beat, 0.5 on an eighth, else 0) */
-function onBeat(t: number, bars: readonly number[]): number {
+/**
+ * How close `t` is to a beat of the measure it's in (1 on a beat, 0.5 halfway between two, else
+ * 0), a beat being the meter's own: a quarter in 4/4 and 3/4, an eighth in 6/8.
+ */
+function onBeat(t: number, bars: readonly number[], beats: readonly number[] | undefined): number {
   let i = 0;
   while (i + 1 < bars.length && bars[i + 1] <= t) i++;
   const from = bars[i] ?? 0;
   const to = bars[i + 1] ?? from + 2;
-  const beat = (to - from) / 4;
+  const beat = (to - from) / (beats?.[i] ?? 4);
   if (beat <= 0) return 0;
   const pos = (t - from) / beat;
   const near = (step: number) => Math.abs(pos / step - Math.round(pos / step)) * step < 0.06;
@@ -64,7 +67,7 @@ function candidates(data: ShowcaseData): Candidate[] {
     const kick = standard ? n.midi === KICK : n.midi === lowest;
     const snare = standard ? SNARES.has(n.midi) : !kick && n.midi === data.drumRows[1];
     if (!kick && !snare) continue;
-    out.push({ time: n.start, kind: kick ? 'kick' : 'snare', midi: n.midi, end: n.start, weight: 3 + onBeat(n.start, data.bars) });
+    out.push({ time: n.start, kind: kick ? 'kick' : 'snare', midi: n.midi, end: n.start, weight: 3 + onBeat(n.start, data.bars, data.beats) });
   }
   // The melody: at each onset (notes within 30 ms count as together), the highest pitched note
   const pitched = data.notes.filter((n) => !n.drum);
@@ -75,7 +78,7 @@ function candidates(data: ShowcaseData): Candidate[] {
       if (pitched[j].midi > top.midi) top = pitched[j];
       j++;
     }
-    out.push({ time: top.start, kind: 'melody', midi: top.midi, end: top.end, weight: 2 + onBeat(top.start, data.bars) + (top.end - top.start > 0.4 ? 0.5 : 0) });
+    out.push({ time: top.start, kind: 'melody', midi: top.midi, end: top.end, weight: 2 + onBeat(top.start, data.bars, data.beats) + (top.end - top.start > 0.4 ? 0.5 : 0) });
     i = j;
   }
   return out.sort((a, b) => a.time - b.time);
@@ -148,7 +151,7 @@ export function buildChart(data: ShowcaseData, difficulty: RhythmDifficulty): Ch
     if (n.end - n.time < (rule.hold ?? 0)) delete n.end;
   }
 
-  // Hard: a second note with the strongest beats (the bar's downbeats), in the lane across
+  // Hard: a second note with the strongest beats (each measure's downbeat), in the lane across
   if (rule.pairs) {
     const extra: ChartNote[] = [];
     for (let i = 0; i < notes.length; i++) {

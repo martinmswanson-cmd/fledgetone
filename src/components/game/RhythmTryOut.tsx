@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Gamepad2, Loader2, RotateCcw, X } from 'lucide-react';
-import { masterFxOf, useTimelineStore } from '../../store/timelineStore';
+import { masterFxOf, songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { audibleTracks, renderArrangement } from '../../audio/exportWav';
 import { initAudio } from '../../audio/engine';
 import { useExclusivePreview } from '../../audio/exclusivePreview';
@@ -65,7 +65,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
     const heard = new Set(audibleTracks(s.tracks).map((t) => t.id));
     const end = maxOf(1, s.clips.filter((c) => heard.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
     const tempo = { bpm: s.bpm, points: s.tempoPoints };
-    return { end, data: showcaseData(s.tracks, s.clips, 1, end, (bar) => barToSeconds(bar, tempo)) };
+    return { end, data: showcaseData(s.tracks, s.clips, 1, end, (bar) => barToSeconds(bar, tempo), songMeterOf(s)) };
   }, []);
   const chart = useMemo(() => buildChart(notes.data, difficulty), [notes, difficulty]);
 
