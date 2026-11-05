@@ -27,24 +27,25 @@
  *
  * The same two renders are measured too, bar by bar (loudness from their gating blocks, and true
  * peak): where Suggested comes out much louder than the song (safety.ts measuredRise) and the
- * rules' cautions said nothing, the card gets a caution of its own (measuredCaution, withMeasured).
- * It can come only once the check has run: not for a song too long to check (where the
- * before-and-after's own measure stands in, songWatch.ts), not while the song plays, and not
- * before the renders are done (the before-and-after turns a much louder Suggested down meanwhile:
- * auditionPlayer.ts LOUDER_LIMIT_LU).
+ * rules' cautions said nothing about level (or less than it measured), the card gets a caution of
+ * its own (measuredCaution, withMeasured). Until the check has run (or where it can't be), a
+ * before-and-after's own renders measured the same way stand in (auditionRise, songWatch.ts): as
+ * soon as they're rendered, before it plays, and it plays Suggested turned down by its loudest bar
+ * over auditionPlayer.ts LOUDER_LIMIT_LU.
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
 import { currentProject, useTimelineStore } from '../store/timelineStore';
 import { renderRange } from '../audio/listen';
 import { channelsOf } from '../audio/exportWav';
-import { barToSeconds } from '../audio/tempoMap';
+import { barToSeconds, type Tempo } from '../audio/tempoMap';
 import { createLoudnessAnalyser, truePeakOf } from '../audio/loudness';
 import { barDifferences, barLoudness, changedRegions, type BarSpan } from './listenReport';
 import { measuredRise, type BarLevel, type MeasuredRise } from './safety';
 import { maxOf } from '../support/minMax';
 import { listenSnapshot } from './listenSnapshot';
 import { useAudition } from '../audio/auditionPlayer';
+import { stretchBars } from '../audio/auditionMath';
 import { announce, isOpen, measuredWarning, measureEnd, tooLongWhy, updateSuggestion, useSuggestions, withMeasured, withSoundRegions, type NotFoundWhy, type Suggestion } from './suggestionsStore';
 import type { BarRange } from './songDiff';
 
@@ -78,7 +79,7 @@ function spansOf(song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>, end: number
 type Found = { sound: BarRange[]; rise: MeasuredRise | null } | { why: NotFoundWhy } | null;
 
 /** A render's bars measured (loudness and true peak, `spans` where they lie in it), and the whole of it (its integrated loudness, its highest true peak). Rejects with the signal's reason if aborted. */
-async function levelsOf(audio: AudioBuffer, spans: readonly BarSpan[], signal: AbortSignal): Promise<{ bars: BarLevel[]; song: BarLevel }> {
+export async function levelsOf(audio: AudioBuffer, spans: readonly BarSpan[], signal: AbortSignal): Promise<{ bars: BarLevel[]; song: BarLevel }> {
   const channels = channelsOf(audio).slice(0, 2);
   const left = channels[0];
   const right = channels[1] ?? new Float32Array(left.length);
@@ -104,6 +105,30 @@ async function levelsOf(audio: AudioBuffer, spans: readonly BarSpan[], signal: A
     if (k % 8 === 7) await breathe();
   }
   return { bars: lufs.map((l, k) => ({ lufs: l, peak: peaks[k] })), song: { lufs: analyser.read().integrated, peak: peaks.length ? maxOf(peaks) : -Infinity } };
+}
+
+/**
+ * A before-and-after's own renders measured bar by bar, as the sound check measures the whole
+ * song: A and B (the song now and as suggested), each of the stretches `plays` one after another,
+ * stretch `i` starting `starts[side][i]` seconds into its render, each side's bars where its own
+ * tempo puts them. How much louder B comes out (measuredRise, against A's bars and A's whole
+ * loudness), its bar the song's; null: nowhere much louder. Rejects with the signal's reason if aborted.
+ */
+export async function auditionRise(
+  a: AudioBuffer,
+  b: AudioBuffer,
+  plays: ReadonlyArray<{ fromBar: number; toBar: number }>,
+  starts: { a: readonly number[]; b: readonly number[] },
+  tempo: { a: Tempo; b: Tempo },
+  signal: AbortSignal
+): Promise<MeasuredRise | null> {
+  const [sa, sb] = [stretchBars(plays, starts.a, tempo.a), stretchBars(plays, starts.b, tempo.b)];
+  const bars = sa.map((x) => x.bar);
+  const spans = { a: sa.map(({ start, end }) => ({ start, end })), b: sb.map(({ start, end }) => ({ start, end })) };
+  if (!bars.length) return null;
+  const [la, lb] = [await levelsOf(a, spans.a, signal), await levelsOf(b, spans.b, signal)];
+  const rise = measuredRise(la.bars, lb.bars, la.song);
+  return rise && { ...rise, bar: bars[rise.bar - 1] ?? plays[0].fromBar };
 }
 
 /** Render `before` and `s.song` whole and compare them (null: aborted): where they differ, and how much louder Suggested comes out (null: not much, or it couldn't be measured). */
@@ -205,11 +230,12 @@ export function findWhere(id: string, before: ProjectSnapshot = currentProject()
     if (!found) return false;
     const now = useSuggestions.getState().suggestions.find((x) => x.id === id);
     if (!now || now.version !== version || now.stale || !isOpen(now)) return false;
+    // (what it measured takes the place of what a before-and-after or the last version measured; where it can't be found, that stays)
     updateSuggestion(id, (x) => ('sound' in found ? withMeasured(withSoundRegions(x, found.sound, before), found.rise, before) : { ...x, foundWhy: found.why }));
-    // (a caution it found is said, as the card shows it)
+    // (a caution it found is said, as the card shows it, unless the card says it already)
     const said = useSuggestions.getState().suggestions.find((x) => x.id === id);
     const caution = said && measuredWarning(said);
-    if (caution) announce(`A caution, found by sound: ${caution}`);
+    if (caution && caution !== measuredWarning(now)) announce(`A caution, found by sound: ${caution}`);
     return true;
   })();
   job = { id, version, controller, done, asked };

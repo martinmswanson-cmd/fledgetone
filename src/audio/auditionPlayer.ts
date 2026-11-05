@@ -10,7 +10,9 @@
  * them) and the song itself is never touched: no store change, no undo step, no autosave.
  *
  * Ears first: playback fades in, every switch and the stop fade, and a B more than LOUDER_LIMIT_LU
- * louder than A is played turned down to A + LOUDER_LIMIT_LU (the note says so). The caller pauses
+ * louder than A, over the whole of what it plays or in any one bar (the caller's `measureBars`:
+ * both renders measured bar by bar), is played turned down by as much as it's over, from its very
+ * first sample (the note says so). The caller pauses
  * the song's own playback first, and it's one preview among the app's others: starting, it stops
  * any other (Try it in a game, the audition pads...), and another starting stops it
  * (exclusivePreview.ts). A small store says what's happening, for the suggestion card, and what of
@@ -34,6 +36,17 @@ export const FADE_SECONDS = 0.08;
 /** B is never played more than this many LU louder than A. */
 export const LOUDER_LIMIT_LU = 6;
 
+/**
+ * How much louder B comes out than A, measured bar by bar (the caller's measure: measuredRise in
+ * agent/safety.ts): `db`, at its most, against the line a bar is tested against; `own`, against A's
+ * same bar; `bar`, the first song bar over the line.
+ */
+export interface BarRise {
+  db: number;
+  bar: number;
+  own: number;
+}
+
 export interface AuditionState {
   /** The suggestion being heard (null: none). */
   key: string | null;
@@ -47,6 +60,9 @@ export interface AuditionState {
   levelDiff: number | null;
   /** B's true peak against A's, dB (as rendered), or null where either is silent. */
   peakDiff: number | null;
+  /** How much louder B came out bar by bar (BarRise; null: nowhere much louder), for the render `measuredKey` (null: not measured yet). */
+  rise: BarRise | null;
+  measuredKey: string | null;
   /** Plain words: B was turned down, or why it can't play. */
   note: string | null;
   error: string | null;
@@ -62,7 +78,7 @@ export interface AuditionState {
   heardB: Array<{ fromBar: number; toBar: number }>;
 }
 
-export const useAudition = create<AuditionState>(() => ({ key: null, renderKey: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, peakDiff: null, note: null, error: null, bars: null, plays: null, heardB: [] }));
+export const useAudition = create<AuditionState>(() => ({ key: null, renderKey: null, phase: 'idle', progress: 0, hearing: 'b', levelDiff: null, peakDiff: null, rise: null, measuredKey: null, note: null, error: null, bars: null, plays: null, heardB: [] }));
 
 type Side = 'a' | 'b';
 
@@ -138,7 +154,7 @@ let rendering: AbortController | null = null;
  * The last pair rendered, kept so a second Hear doesn't render again: for suggestion `key`, the
  * renders of `renderKey` (the caller's name for exactly what was rendered: the suggestion's version).
  */
-let cache: { key: string; renderKey: string; a: AudioBuffer; b: AudioBuffer; starts: Record<Side, number[]>; bLevel: number; diff: number; peakDiff: number | null } | null = null;
+let cache: { key: string; renderKey: string; a: AudioBuffer; b: AudioBuffer; starts: Record<Side, number[]>; bLevel: number; diff: number; peakDiff: number | null; rise: BarRise | null; byBars: boolean } | null = null;
 
 // (the context the output after the master lives in, as the other previews play into it)
 const raw = () => liveContext.rawContext as AudioContext;
@@ -251,19 +267,30 @@ export const auditionBuffers = (): { a: AudioBuffer; b: AudioBuffer } | null => 
 
 const tempoOf = (s: ListenSnapshot): Tempo => ({ bpm: s.bpm, points: s.tempoPoints ?? [] });
 
+/** The caller's measure of the two renders, bar by bar (BarRise), from where each stretch starts in each. */
+export type MeasureBars = (a: AudioBuffer, b: AudioBuffer, starts: Record<Side, number[]>, signal: AbortSignal) => Promise<BarRise | null>;
+
+/** The words for a B turned down (`over`, dB, by the whole of it, or `byBars`: by its loudest bar). */
+function turnedDownWords(diff: number, over: number, byBars: boolean, rise: BarRise | null): string {
+  if (byBars && rise) return `In places the suggestion is about ${Math.round(rise.own)} dB louder: it plays turned down by about ${Math.max(1, Math.round(over))} dB.`;
+  // (a song silent there has no loudness to be louder than: it's only turned down)
+  return Number.isFinite(diff) ? `The suggestion is about ${Math.round(diff)} dB louder (in loudness): it plays turned down to about ${LOUDER_LIMIT_LU} dB louder than the song as it is.` : 'The suggestion is much louder (in loudness): it plays turned down (the song is silent there).';
+}
+
 /**
  * Render the stretches `plays` ([fromBar, toBar) each, in order) of `now` and `suggested` (unless
  * `renderKey` was rendered last) and play them looped, one after another, hearing `hearing` first.
- * `key` is the suggestion. Resolves once playing (or stopped or failed).
+ * `key` is the suggestion. `measureBars`: how much louder B is bar by bar (said as `rise` once
+ * measured, before it plays; it's turned down by that too). Resolves once playing (or stopped or failed).
  */
-export async function startAudition(opts: { key: string; renderKey: string; now: ListenSnapshot; suggested: ListenSnapshot; plays: ReadonlyArray<{ fromBar: number; toBar: number }>; hearing?: Side }): Promise<void> {
+export async function startAudition(opts: { key: string; renderKey: string; now: ListenSnapshot; suggested: ListenSnapshot; plays: ReadonlyArray<{ fromBar: number; toBar: number }>; hearing?: Side; measureBars?: MeasureBars }): Promise<void> {
   stopAudition();
   const hearing = opts.hearing ?? 'b';
   const plays = opts.plays.map((p) => ({ fromBar: p.fromBar, toBar: p.toBar }));
   // (what B played counts for this render only: another starts again from nothing)
   if (played.key !== opts.renderKey) played = { key: opts.renderKey, spans: [] };
   const heardB = useAudition.getState().renderKey === opts.renderKey ? useAudition.getState().heardB : [];
-  useAudition.setState({ key: opts.key, renderKey: opts.renderKey, phase: 'rendering', progress: 0, hearing, note: null, error: null, bars: plays.length ? [plays[0].fromBar, plays[plays.length - 1].toBar] : null, plays, heardB });
+  useAudition.setState({ key: opts.key, renderKey: opts.renderKey, phase: 'rendering', progress: 0, hearing, note: null, error: null, rise: null, measuredKey: null, bars: plays.length ? [plays[0].fromBar, plays[plays.length - 1].toBar] : null, plays, heardB });
   const controller = new AbortController();
   rendering = controller;
   try {
@@ -281,12 +308,25 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
       const paired = pairedLoudnessDiff(ma.blocks, mb.blocks);
       const diff = paired ?? (Number.isFinite(ma.lufs) && Number.isFinite(mb.lufs) ? mb.lufs - ma.lufs : Number.isFinite(mb.lufs) ? Infinity : 0);
       // A B much louder than A is turned down to A + the limit (a B from silence: to -23 LUFS-ish, by its own level)
-      const over = Number.isFinite(diff) ? diff - LOUDER_LIMIT_LU : Number.isFinite(mb.lufs) ? Math.max(0, mb.lufs + 23) : 0;
+      const whole = Number.isFinite(diff) ? diff - LOUDER_LIMIT_LU : Number.isFinite(mb.lufs) ? Math.max(0, mb.lufs + 23) : 0;
+      // ...and by as much as its loudest bar is over the limit (a short loud jump hardly moves the whole)
+      const starts = { a: ra.starts, b: rb.starts };
+      let rise: BarRise | null = null;
+      try {
+        rise = opts.measureBars ? await opts.measureBars(a, b, starts, signal) : null;
+      } catch (err) {
+        if (signal.aborted) throw err;
+        console.warn('Measuring a before-and-after bar by bar failed:', err);
+      }
+      const bars = rise ? rise.db - LOUDER_LIMIT_LU : 0;
+      const over = Math.max(whole, bars);
       const peakDiff = Number.isFinite(ma.truePeakDbtp) && Number.isFinite(mb.truePeakDbtp) ? mb.truePeakDbtp - ma.truePeakDbtp : null;
-      pair = { key: opts.key, renderKey: opts.renderKey, a, b, starts: { a: ra.starts, b: rb.starts }, diff, peakDiff, bLevel: over > 0 ? 10 ** (-over / 20) : 1 };
+      pair = { key: opts.key, renderKey: opts.renderKey, a, b, starts, diff, peakDiff, rise, byBars: bars > whole, bLevel: over > 0 ? 10 ** (-over / 20) : 1 };
       cache = pair;
     }
     if (rendering !== controller) return;
+    // (what it measured, said at once: the card shows a caution before it plays)
+    useAudition.setState({ rise: pair.rise, measuredKey: opts.renderKey });
     rendering = null;
     await initAudio();
     const ctx = raw();
@@ -294,8 +334,9 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
     master.gain.value = 0;
     master.connect(afterMaster());
     const gains = { a: ctx.createGain(), b: ctx.createGain() };
-    gains.a.gain.value = hearing === 'a' ? 1 : 0;
-    gains.b.gain.value = hearing === 'b' ? pair.bLevel : 0;
+    // (B turned down from its very first sample: both gains set before either source starts, the master fading in)
+    gains.a.gain.setValueAtTime(hearing === 'a' ? 1 : 0, 0);
+    gains.b.gain.setValueAtTime(hearing === 'b' ? pair.bLevel : 0, 0);
     gains.a.connect(master);
     gains.b.connect(master);
     // Both start at the top of the range (a switch puts the other at the same bar again)
@@ -316,8 +357,7 @@ export async function startAudition(opts: { key: string; renderKey: string; now:
       progress: 1,
       levelDiff: Number.isFinite(diff) ? Math.round(diff * 10) / 10 : null,
       peakDiff: pair.peakDiff === null ? null : Math.round(pair.peakDiff * 10) / 10,
-      // (a song silent there has no loudness to be louder than: it's only turned down)
-      note: pair.bLevel < 1 ? (Number.isFinite(diff) ? `The suggestion is about ${Math.round(diff)} dB louder (in loudness): it plays turned down to about ${LOUDER_LIMIT_LU} dB louder than the song as it is.` : 'The suggestion is much louder (in loudness): it plays turned down (the song is silent there).') : null,
+      note: pair.bLevel < 1 ? turnedDownWords(diff, -20 * Math.log10(pair.bLevel), pair.byBars, pair.rise) : null,
     });
   } catch (err) {
     if (rendering === controller) rendering = null;

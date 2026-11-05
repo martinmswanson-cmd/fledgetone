@@ -55,7 +55,7 @@ import { normalizePoints, specOf } from '../audio/automation';
 import { clampBpm, sortedPoints, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 import { defaultClipper } from '../audio/effects/clipper';
 import { diffSongs, lengthWordsIn, positionWords, wordMeter, type SongDiff } from './songDiff';
-import { checkSafetyMarked } from './safety';
+import { louderSaid, safetyCautions } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
 import { byAgentId, givenKey, givenText as quoted } from './agentText';
@@ -166,8 +166,13 @@ export interface ApplyResult {
   notes: string[];
   /** The warnings and notes with each name marked, for showing the names apart (names.ts nameParts). */
   marked: { warnings: string[]; notes: string[] };
-  /** Whether the level rules (safety.ts) said something: then a louder sound check says nothing more (measuredCaution). */
+  /** Whether the level rules (safety.ts) warned about level (a caution that isn't, such as a delay fed back, doesn't count). */
   cautioned: boolean;
+  /**
+   * The largest rise those warnings about level state, dB (louderSaid), or null when none was
+   * about level: a louder sound check then says something only if it measured clearly more (measuredCaution).
+   */
+  louderSaid: number | null;
   /** What changed, in plain words, with the tracks, clips and bars it touches (see songDiff.ts). */
   diff: SongDiff;
   /** The ids the ops' `ref` names stand for. */
@@ -1023,8 +1028,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   song = withFileValues(base, song, gated, warn);
 
   const notes: string[] = [];
-  const cautions = checkSafetyMarked(base, song, notes);
-  for (const text of cautions) warn(text);
+  const cautions = safetyCautions(base, song, notes);
+  for (const c of cautions) warn(c.text);
+  const said = louderSaid(cautions);
   const diff = diffSongs(base, song);
   return {
     ok: true,
@@ -1032,7 +1038,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
     warnings,
     notes,
     marked: { warnings, notes },
-    cautioned: cautions.length > 0,
+    cautioned: said !== null,
+    louderSaid: said,
     diff,
     refs: Object.fromEntries([...refs].map(([k, v]) => [k, v.id])),
     idBase,

@@ -12,12 +12,14 @@
  * that held one down taken away (removed or emptied), all compared with what played there before
  * (a lane on an insert that was off, with nothing); a track heard again because a solo was cleared
  * or moved; the master Level, the Loud master's push or the OTT's gains up by more than
- * MASTER_JUMP_DB, the Loud master, the OTT or the clipper switched on, the OTT pushed much harder.
+ * MASTER_JUMP_DB, the Loud master or the clipper switched on, the OTT switched on so it lifts the
+ * song by more than MASTER_JUMP_DB (OTT_FULL_LIFT_DB at full depth), the OTT pushed much harder.
  * They are warnings on the suggestion's
  * card (the musician decides), never refusals; values beyond what the song can hold are already
  * brought into range by the ops (see ops.ts). And, as a catch-all for what the rules miss, the
  * words for what the studio's sound check measured (measuredRise, measuredCaution: whereHeard.ts
- * renders and measures). Plain logic.
+ * renders and measures), said when no caution was about level (each one marks whether it is:
+ * safetyCautions, louderSaid), or when it measured clearly more than they said. Plain logic.
  */
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationParam, AutomationPoint, Clip, PeqBand, Track, TrackFx } from '../store/timelineTypes';
@@ -38,6 +40,25 @@ export const MASTER_JUMP_DB = 3;
 export const DRIVE_JUMP = 0.4;
 /** A delay fed back this much or more gets a warning: its echoes take a long time to die away. */
 export const FEEDBACK_HIGH = 0.8;
+/**
+ * How much the master OTT lifts a song switched on at full depth with no gain, dB (+6.7 LU
+ * measured): each band's gain goes with its depth (ott.ts), so at depth 0 it lifts only by its gains.
+ */
+export const OTT_FULL_LIFT_DB = 6.7;
+
+/**
+ * One caution, in plain words, and whether it warns about level (it comes out louder): `louder`,
+ * the rise it states, dB (0: it gives no number). One that isn't about level (a delay fed back
+ * until it hardly dies away) has none.
+ */
+export interface Caution {
+  text: string;
+  louder?: number;
+}
+/** A caution about level, stating a rise of `db` (0: no number). */
+const lv = (text: string, db = 0): Caution => ({ text, louder: db });
+/** A caution that isn't about level. */
+const nl = (text: string): Caution => ({ text });
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -158,8 +179,8 @@ function alongTimeline(then: LaneSide, now: LaneSide, real: (n: number) => numbe
  * against the setting it replaces. A lane added, redrawn, removed or emptied all go through this one
  * rule; a lane on an insert that's off plays neither the lane nor its setting, and says nothing.
  */
-function laneCautions(was: Track | undefined, t: Track, tracks: readonly Track[], meter: MeterMap | null, warned?: Set<string>): string[] {
-  const out: string[] = [];
+function laneCautions(was: Track | undefined, t: Track, tracks: readonly Track[], meter: MeterMap | null, warned?: Set<string>): Caution[] {
+  const out: Caution[] = [];
   const n = `${nm(t.name)}`;
   const lanes = (x: Track | undefined) => (x?.automation ?? []).filter((l) => laneLimit(l.param, tracks) && l.points.length);
   const params = [...new Set([...lanes(was), ...lanes(t)].map((l) => l.param))];
@@ -198,22 +219,22 @@ function laneCautions(was: Track | undefined, t: Track, tracks: readonly Track[]
     const what = `the ${limit.label} automation on ${n}`;
     if (!lane) {
       // Taken away (removed, or left with no points): it rests at its setting
-      if (limit.kind === 'db') out.push(`This takes away ${what}: it held it down, and it comes up by as much as ${r1(rise)} dB. Turn your speakers down before you listen.`);
-      if (limit.kind === 'drive') out.push(`This takes away ${what}: it held it down, and it is driven at ${pct(now.rest)} all along.`);
-      if (limit.kind === 'feedback') out.push(`This takes away ${what}: it feeds back at ${pct(now.rest)} all along.`);
-      if (limit.kind === 'send') out.push(`This takes away ${what}: it sends at ${pct(now.rest)} all along, and what it sends to comes out much louder. Turn your speakers down before you listen.`);
+      if (limit.kind === 'db') out.push(lv(`This takes away ${what}: it held it down, and it comes up by as much as ${r1(rise)} dB. Turn your speakers down before you listen.`, rise));
+      if (limit.kind === 'drive') out.push(lv(`This takes away ${what}: it held it down, and it is driven at ${pct(now.rest)} all along.`));
+      if (limit.kind === 'feedback') out.push(nl(`This takes away ${what}: it feeds back at ${pct(now.rest)} all along.`));
+      if (limit.kind === 'send') out.push(lv(`This takes away ${what}: it sends at ${pct(now.rest)} all along, and what it sends to comes out much louder. Turn your speakers down before you listen.`));
     } else if (!oldLane) {
       // Drawn where there was none: measured from the setting it replaces
-      if (limit.kind === 'db') out.push(`On ${n}, the ${limit.label} automation goes up to ${r1(rise)} dB over what it was.`);
-      if (limit.kind === 'drive') out.push(`On ${n}, the ${limit.label} automation pushes it to ${pct(top)}.`);
-      if (limit.kind === 'feedback') out.push(`On ${n}, the ${limit.label} automation feeds it back at up to ${pct(top)}.`);
-      if (limit.kind === 'send') out.push(`On ${n}, the ${limit.label} automation sends at up to ${pct(top)}.`);
+      if (limit.kind === 'db') out.push(lv(`On ${n}, the ${limit.label} automation goes up to ${r1(rise)} dB over what it was.`, rise));
+      if (limit.kind === 'drive') out.push(lv(`On ${n}, the ${limit.label} automation pushes it to ${pct(top)}.`));
+      if (limit.kind === 'feedback') out.push(nl(`On ${n}, the ${limit.label} automation feeds it back at up to ${pct(top)}.`));
+      if (limit.kind === 'send') out.push(lv(`On ${n}, the ${limit.label} automation sends at up to ${pct(top)}.`));
     } else {
       // Redrawn: louder somewhere along the song than it was there
-      if (limit.kind === 'db') out.push(`This redraws ${what}: it comes up by as much as ${r1(rise)} dB from ${from}. Turn your speakers down before you listen.`);
-      if (limit.kind === 'drive') out.push(`This redraws ${what}: it is driven much harder from ${from} (as much as ${pct(most.then)} to ${pct(most.now)} drive): it gets louder and harsher.`);
-      if (limit.kind === 'feedback') out.push(`This redraws ${what}: it feeds back at up to ${pct(top)} from ${from}: its echoes build up and take a long time to die away.`);
-      if (limit.kind === 'send') out.push(`This redraws ${what}: it sends at up to ${pct(top)} from ${from}, and what it sends to comes out much louder. Turn your speakers down before you listen.`);
+      if (limit.kind === 'db') out.push(lv(`This redraws ${what}: it comes up by as much as ${r1(rise)} dB from ${from}. Turn your speakers down before you listen.`, rise));
+      if (limit.kind === 'drive') out.push(lv(`This redraws ${what}: it is driven much harder from ${from} (as much as ${pct(most.then)} to ${pct(most.now)} drive): it gets louder and harsher.`));
+      if (limit.kind === 'feedback') out.push(nl(`This redraws ${what}: it feeds back at up to ${pct(top)} from ${from}: its echoes build up and take a long time to die away.`));
+      if (limit.kind === 'send') out.push(lv(`This redraws ${what}: it sends at up to ${pct(top)} from ${from}, and what it sends to comes out much louder. Turn your speakers down before you listen.`));
     }
   }
   return out;
@@ -308,8 +329,8 @@ function holdDb(insert: 'compressor' | 'gate', f: Settings): number {
  * is, so it says no number), less its makeup (said on its own when that's what went up:
  * `makeupSaid`); the Gate by how much of each step it lets through.
  */
-function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track[], meter: MeterMap | null, makeupSaid: boolean): string[] {
-  const out: string[] = [];
+function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track[], meter: MeterMap | null, makeupSaid: boolean): Caution[] {
+  const out: Caution[] = [];
   const n = `${nm(t.name)}`;
   const lanesJson = (x: Track | undefined, insert: HoldInsert) => JSON.stringify(Object.values(INSERT_LANES[insert]).map((param) => x?.automation?.find((l) => l.param === param && l.points.length) ?? null));
   for (const insert of Object.keys(INSERT_LANES) as HoldInsert[]) {
@@ -337,9 +358,9 @@ function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track
       }
       if (best.rise <= TRACK_JUMP_DB + 1e-9) continue;
       const first = along.find((s) => [...PEQ_FREQS].some((hz) => at(s.now, hz) - at(s.then, hz) > TRACK_JUMP_DB + 1e-9))?.bar ?? best.bar;
-      if (off) out.push(`This switches off the Filter on ${n}: it held it down, and around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`);
-      else if (best.after > 1e-6) out.push(`On ${n}, the Filter peaks${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`);
-      else out.push(`On ${n}, the Filter lets much more through${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`);
+      if (off) out.push(lv(`This switches off the Filter on ${n}: it held it down, and around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
+      else if (best.after > 1e-6) out.push(lv(`On ${n}, the Filter peaks${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
+      else out.push(lv(`On ${n}, the Filter lets much more through${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
       continue;
     }
     const rises = along.map((s) => ({ bar: s.bar, rise: holdDb(insert, s.then) - holdDb(insert, s.now) }));
@@ -347,10 +368,10 @@ function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track
     if (!first) continue;
     const most = maxOf(rises.map((s) => s.rise));
     if (insert === 'compressor') {
-      if (off) out.push(`This switches off the compressor on ${n}: it held it down, and it comes up much louder. Turn your speakers down before you listen.`);
-      else out.push(`On ${n}, the compressor holds it down much less${from(first.bar)}: it comes up much louder. Turn your speakers down before you listen.`);
-    } else if (off) out.push(`This switches off the Gate on ${n}: it held it down, and it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`);
-    else out.push(`On ${n}, the Gate chops it much less${from(first.bar)}: it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`);
+      if (off) out.push(lv(`This switches off the compressor on ${n}: it held it down, and it comes up much louder. Turn your speakers down before you listen.`));
+      else out.push(lv(`On ${n}, the compressor holds it down much less${from(first.bar)}: it comes up much louder. Turn your speakers down before you listen.`));
+    } else if (off) out.push(lv(`This switches off the Gate on ${n}: it held it down, and it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`, most));
+    else out.push(lv(`On ${n}, the Gate chops it much less${from(first.bar)}: it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`, most));
   }
   return out;
 }
@@ -396,7 +417,7 @@ function noteLoad(trackId: string, clips: readonly Clip[]): Float64Array {
  * quiet or silent in, no harder than it plays elsewhere, isn't a jump), in dB. A track that had
  * no notes says nothing (it plays a new part).
  */
-function notesCaution(was: Track, t: Track, before: readonly Clip[], after: readonly Clip[], meter: MeterMap | null): string | null {
+function notesCaution(was: Track, t: Track, before: readonly Clip[], after: readonly Clip[], meter: MeterMap | null): Caution | null {
   const then = noteLoad(was.id, before);
   const fullest = maxOf([...then]);
   if (!(fullest > 0)) return null;
@@ -410,7 +431,7 @@ function notesCaution(was: Track, t: Track, before: readonly Clip[], after: read
     if (first < 0 && rise > TRACK_JUMP_DB + 1e-9) first = i;
   }
   if (first < 0) return null;
-  return `On ${nm(t.name)}, the notes play much harder (louder notes, or more of them at once) from ${positionWords(first + 1, meter)}: it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`;
+  return lv(`On ${nm(t.name)}, the notes play much harder (louder notes, or more of them at once) from ${positionWords(first + 1, meter)}: it comes up by about ${r1(most)} dB. Turn your speakers down before you listen.`, most);
 }
 
 /** Up to three words joined with commas and "and", the rest counted ("A, B, C and 2 more"). */
@@ -436,7 +457,23 @@ export function checkSafety(before: ProjectSnapshot, after: ProjectSnapshot, not
 
 /** checkSafety with each name in the words marked (names.ts), for a card to show them apart. */
 export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapshot, notes?: string[]): string[] {
-  const out: string[] = [];
+  return safetyCautions(before, after, notes).map((c) => c.text);
+}
+
+/**
+ * The largest rise the cautions about level state, dB (one that gives no number counts as
+ * TRACK_JUMP_DB, the line it crossed), or null when none of them is about level: a sound check
+ * that finds the song much louder says so too when nothing was said about level, or when it
+ * measured clearly more than this (measuredCaution).
+ */
+export function louderSaid(cautions: readonly Caution[]): number | null {
+  const said = cautions.filter((c) => c.louder !== undefined).map((c) => c.louder!);
+  return said.length ? maxOf(TRACK_JUMP_DB, said) : null;
+}
+
+/** checkSafetyMarked's cautions with what each says about level (Caution). */
+export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, notes?: string[]): Caution[] {
+  const out: Caution[] = [];
   // The loudest audible track's level along its way out, to tell a quiet track from a loud one
   const audible = after.tracks.filter((t) => !isMixTrack(t) && !t.isMuted);
   const old = new Map(before.tracks.map((t) => [t.id, t]));
@@ -465,7 +502,7 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
     // said only where it's heard: not under a volume lane, nor taken back by its buses or the master
     const from = was ? was.volume : 0;
     const ownJump = laneOwns('volume') ? 0 : t.volume - from;
-    if (ownJump > TRACK_JUMP_DB + 1e-9 && pathNow - pathThen > TRACK_JUMP_DB + 1e-9) out.push(`${n} goes up by ${r1(ownJump)} dB. Turn your speakers down before you listen.`);
+    if (ownJump > TRACK_JUMP_DB + 1e-9 && pathNow - pathThen > TRACK_JUMP_DB + 1e-9) out.push(lv(`${n} goes up by ${r1(ownJump)} dB. Turn your speakers down before you listen.`, ownJump));
     if (was?.isMuted && !t.isMuted && !heardAfter.has(t.id)) {
       // (still not heard: a solo elsewhere, or a muted bus it plays into, keeps it silent)
       const lit = soloLit(after.tracks);
@@ -474,7 +511,7 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
       const others = audible.filter((x) => x.id !== t.id).map((x) => pathDb(x, after.tracks));
       const quiet = others.length > 0 && pathDb(t, after.tracks) <= maxOf(others) - QUIET_UNDER_MIX_DB;
       if (quiet) notes?.push(`This unmutes ${n}, quietly under the rest of the mix (at ${r1(levelOf(t))} dB).`);
-      else out.push(`This unmutes ${n} (at ${r1(levelOf(t))} dB): it will be heard again.`);
+      else out.push(lv(`This unmutes ${n} (at ${r1(levelOf(t))} dB): it will be heard again.`));
     }
     // Along the whole path: its buses and the master together (what it adds on its own is said above)
     if (!isMixTrack(t) && !t.isMuted) {
@@ -486,40 +523,40 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
     for (const band of ['low', 'mid', 'high'] as const) {
       const lift = t.eq[band] - (was?.eq[band] ?? 0);
       const param = `eq${band.charAt(0).toUpperCase()}${band.slice(1)}` as AutomationParam;
-      if (lift > TRACK_JUMP_DB + 1e-9 && !laneOwns(param)) out.push(`On ${n}, the EQ ${band} goes up by ${r1(lift)} dB.`);
+      if (lift > TRACK_JUMP_DB + 1e-9 && !laneOwns(param)) out.push(lv(`On ${n}, the EQ ${band} goes up by ${r1(lift)} dB.`, lift));
     }
     const makeup = onValue(t, 'compressor', 'makeup') - onValue(was, 'compressor', 'makeup');
     const makeupJumps = makeup > TRACK_JUMP_DB + 1e-9 && !laneOwns('fx:compressor.makeup');
-    if (makeupJumps) out.push(`On ${n}, the compressor makes up ${r1(makeup)} dB more.`);
+    if (makeupJumps) out.push(lv(`On ${n}, the compressor makes up ${r1(makeup)} dB more.`, makeup));
     const peq = peqRise(was, t);
     if (peq.rise > TRACK_JUMP_DB + 1e-9) {
-      if (switchedOff(was, t, 'peq')) out.push(`This switches off the parametric EQ on ${n}: it held it down, and around ${formatHz(peq.hz)} it comes up by ${r1(peq.rise)} dB. Turn your speakers down before you listen.`);
-      else if (peq.after > 1e-6) out.push(`On ${n}, the parametric EQ lifts a band by ${r1(peq.rise)} dB more.`);
-      else out.push(`On ${n}, the parametric EQ cuts less: around ${formatHz(peq.hz)} it comes up by ${r1(peq.rise)} dB. Turn your speakers down before you listen.`);
+      if (switchedOff(was, t, 'peq')) out.push(lv(`This switches off the parametric EQ on ${n}: it held it down, and around ${formatHz(peq.hz)} it comes up by ${r1(peq.rise)} dB. Turn your speakers down before you listen.`, peq.rise));
+      else if (peq.after > 1e-6) out.push(lv(`On ${n}, the parametric EQ lifts a band by ${r1(peq.rise)} dB more.`, peq.rise));
+      else out.push(lv(`On ${n}, the parametric EQ cuts less: around ${formatHz(peq.hz)} it comes up by ${r1(peq.rise)} dB. Turn your speakers down before you listen.`, peq.rise));
     }
     const mbc = mbcRise(was, t);
     if (mbc > TRACK_JUMP_DB + 1e-9) {
-      if (switchedOff(was, t, 'mbc')) out.push(`This switches off the multiband compressor on ${n}: its bands held it down, and it comes up by as much as ${r1(mbc)} dB. Turn your speakers down before you listen.`);
-      else out.push(`On ${n}, the multiband compressor lifts a band by ${r1(mbc)} dB more.`);
+      if (switchedOff(was, t, 'mbc')) out.push(lv(`This switches off the multiband compressor on ${n}: its bands held it down, and it comes up by as much as ${r1(mbc)} dB. Turn your speakers down before you listen.`, mbc));
+      else out.push(lv(`On ${n}, the multiband compressor lifts a band by ${r1(mbc)} dB more.`, mbc));
     }
     // Drives and feedback
     for (const [insert, field, label] of [['distortion', 'amount', 'Distortion'], ['saturate', 'amount', 'Saturation']] as const) {
       const now = onValue(t, insert, field);
       const then = onValue(was, insert, field);
       if (now - then <= DRIVE_JUMP + 1e-9) continue;
-      if (then === 0) out.push(`This turns on ${label} on ${n} at ${pct(now)} drive: it gets louder and harsher.`);
-      else out.push(`On ${n}, ${label} is driven much harder (${pct(then)} to ${pct(now)} drive): it gets louder and harsher.`);
+      if (then === 0) out.push(lv(`This turns on ${label} on ${n} at ${pct(now)} drive: it gets louder and harsher.`));
+      else out.push(lv(`On ${n}, ${label} is driven much harder (${pct(then)} to ${pct(now)} drive): it gets louder and harsher.`));
     }
     const feedback = onValue(t, 'echo', 'feedback');
-    if (feedback >= FEEDBACK_HIGH - 1e-9 && feedback > onValue(was, 'echo', 'feedback') + 1e-9) out.push(`On ${n}, the Delay feeds back at ${pct(feedback)}: its echoes build up and take a long time to die away.`);
+    if (feedback >= FEEDBACK_HIGH - 1e-9 && feedback > onValue(was, 'echo', 'feedback') + 1e-9) out.push(nl(`On ${n}, the Delay feeds back at ${pct(feedback)}: its echoes build up and take a long time to die away.`));
     // The sends: the reverb's up to 300%
     if (!isMixTrack(t)) {
-      if (!laneOwns('reverbSend') && sendJumps(was?.reverbSend ?? 0, t.reverbSend)) out.push(`On ${n}, the reverb send goes up to ${pct(t.reverbSend)}: the reverb comes out much louder. Turn your speakers down before you listen.`);
-      if (!laneOwns('delaySend') && sendJumps(was?.delaySend ?? 0, t.delaySend)) out.push(`On ${n}, the delay send goes up to ${pct(t.delaySend)}: the delay comes out much louder. Turn your speakers down before you listen.`);
+      if (!laneOwns('reverbSend') && sendJumps(was?.reverbSend ?? 0, t.reverbSend)) out.push(lv(`On ${n}, the reverb send goes up to ${pct(t.reverbSend)}: the reverb comes out much louder. Turn your speakers down before you listen.`));
+      if (!laneOwns('delaySend') && sendJumps(was?.delaySend ?? 0, t.delaySend)) out.push(lv(`On ${n}, the delay send goes up to ${pct(t.delaySend)}: the delay comes out much louder. Turn your speakers down before you listen.`));
     }
     for (const send of t.sends ?? []) {
       const to = after.tracks.find((x) => x.id === send.to);
-      if (!laneOwns(`send:${send.to}`) && sendJumps(was?.sends?.find((x) => x.to === send.to)?.level ?? 0, send.level)) out.push(`On ${n}, the send to ${to ? nm(to.name) : 'a return'} goes up to ${pct(send.level)}: it comes out much louder. Turn your speakers down before you listen.`);
+      if (!laneOwns(`send:${send.to}`) && sendJumps(was?.sends?.find((x) => x.to === send.to)?.level ?? 0, send.level)) out.push(lv(`On ${n}, the send to ${to ? nm(to.name) : 'a return'} goes up to ${pct(send.level)}: it comes out much louder. Turn your speakers down before you listen.`));
     }
     // Automation drawn high, redrawn higher, or taken away from where it held the setting down
     const meter = wordMeter(before);
@@ -555,33 +592,37 @@ export function checkSafetyMarked(before: ProjectSnapshot, after: ProjectSnapsho
       if (back.length > 3) lines.push(`${back.length - 3} more tracks will be heard again.`);
     }
     if (quiet) notes?.push(...lines.map((l) => `${l.replace(/\.$/, '')}, quietly under the rest of the mix.`));
-    else out.push(...lines);
+    else out.push(...lines.map((l) => lv(l)));
   }
 
   if (louder.length) {
     const who = listOf(louder.map(([name]) => nm(name)));
-    out.push(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(maxOf(louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`);
+    out.push(lv(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(maxOf(louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`, maxOf(louder.map(([, d]) => d))));
   }
-  if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`);
+  if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`, b.level - a.level));
   const push = (m: typeof a) => (m.loud?.on ? m.loud.push : 0);
-  if (b.loud?.on && !a.loud?.on) out.push('This switches on the Loud master: the whole song gets louder.');
-  else if (push(b) - push(a) > MASTER_JUMP_DB + 1e-9) out.push(`The Loud master pushes ${r1(push(b) - push(a))} dB harder.`);
+  if (b.loud?.on && !a.loud?.on) out.push(lv('This switches on the Loud master: the whole song gets louder.'));
+  else if (push(b) - push(a) > MASTER_JUMP_DB + 1e-9) out.push(lv(`The Loud master pushes ${r1(push(b) - push(a))} dB harder.`, push(b) - push(a)));
   // The OTT lifts the quiet parts of the whole song, by its depth as well as its gains (switched on at depth 100% and no gain: +6.7 LU measured)
   const ott = (m: typeof a) => (m.ott.on ? m.ott.outGain + Math.max(0, m.ott.inGain) : 0);
-  if (b.ott.on && !a.ott.on) out.push('This switches on the master OTT: the whole song gets louder.');
-  else if (b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`);
-  if (a.ott.on && ott(b) - ott(a) > MASTER_JUMP_DB + 1e-9) out.push(`The master OTT's gain goes up by ${r1(ott(b) - ott(a))} dB.`);
-  if (b.clipper?.on && !a.clipper?.on) out.push('This switches on the master clipper.');
-  else if (b.clipper?.on && a.clipper?.on && b.clipper.drive - a.clipper.drive > MASTER_JUMP_DB + 1e-9) out.push(`The master clipper is driven ${r1(b.clipper.drive - a.clipper.drive)} dB harder.`);
+  // (switched on: by how much it lifts the song, OTT_FULL_LIFT_DB at full depth; at depth 0 it leaves the bands alone, ott.ts)
+  const lift = ott(b) + OTT_FULL_LIFT_DB * b.ott.depth;
+  if (b.ott.on && !a.ott.on && lift > MASTER_JUMP_DB + 1e-9) out.push(lv('This switches on the master OTT: the whole song gets louder.', lift));
+  else if (b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(lv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`));
+  if (a.ott.on && ott(b) - ott(a) > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master OTT's gain goes up by ${r1(ott(b) - ott(a))} dB.`, ott(b) - ott(a)));
+  if (b.clipper?.on && !a.clipper?.on) out.push(lv('This switches on the master clipper.'));
+  else if (b.clipper?.on && a.clipper?.on && b.clipper.drive - a.clipper.drive > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master clipper is driven ${r1(b.clipper.drive - a.clipper.drive)} dB harder.`, b.clipper.drive - a.clipper.drive));
   return out;
 }
 
-/** Suggested measured louder than the song, by the studio's own sound check, by more than this (LU, in any bar) gets a warning when the rules said nothing. */
+/** Suggested measured louder than the song, by the studio's own sound check, by more than this (LU, in any bar) gets a warning when the rules said nothing about level. */
 export const MEASURED_JUMP_LU = TRACK_JUMP_DB;
 /** ...or its true peak higher by more than this, dB. */
 export const MEASURED_PEAK_DB = TRACK_JUMP_DB;
 /** A song silent all through is taken to be this loud (LUFS) for comparing with: as loud as a quiet mix. */
 export const SILENT_SONG_LUFS = -23;
+/** For the number a caution gives, a bar of Now quieter than this many LU under the song (silent too) counts as this far under it. */
+export const MEASURED_FLOOR_LU = 20;
 
 /** One bar of a render, measured: its loudness (LUFS) and its true peak (dBTP), -Infinity where it's silent. */
 export interface BarLevel {
@@ -589,56 +630,63 @@ export interface BarLevel {
   peak: number;
 }
 
-/** How much louder Suggested is measured at its most, dB, and the first bar (1 on) where it's over the line; null: nowhere. */
+/**
+ * How much louder Suggested is measured: `db`, at its most against the line a bar is tested
+ * against (see measuredRise), for turning it down; `own`, the most a bar over the line rose
+ * against Now's same bar, for the words; `bar`, the first bar (1 on) over the line. Null: nowhere.
+ */
 export interface MeasuredRise {
   db: number;
   bar: number;
+  own: number;
 }
 
 /**
  * Where the song with a suggestion (`after`, bar 1 first) comes out much louder than the song as
- * it is (`before`, the same bars), by the studio's sound check (both rendered whole: whereHeard.ts):
- * a bar's loudness more than MEASURED_JUMP_LU over what it was there, or over the whole song's
- * loudness (`song.lufs`, integrated) where that's more (a quiet bar brought up only to the song's
- * own level is no jump); or its true peak more than MEASURED_PEAK_DB over its peak there, or over
- * the song's highest (`song.peak`) where that's more. A song silent all through is compared with
- * SILENT_SONG_LUFS (and its peaks aren't). Null: nowhere.
+ * it is (`before`, the same bars), by the studio's sound check (both rendered whole: whereHeard.ts)
+ * or a before-and-after's own renders (auditionPlayer.ts): a bar's loudness more than
+ * MEASURED_JUMP_LU over what it was there, or over the whole song's loudness (`song.lufs`,
+ * integrated) where that's more (a quiet bar brought up only to the song's own level is no jump);
+ * or its true peak more than MEASURED_PEAK_DB over its peak there, or over the song's highest
+ * (`song.peak`) where that's more. A song silent all through is compared with SILENT_SONG_LUFS
+ * (and its peaks aren't). What a bar over the line rose by against Now's same bar (`own`) is what
+ * a caution says: a bar of Now under the song by more than MEASURED_FLOOR_LU (or silent) counts as
+ * that far under it. Null: nowhere.
  */
 export function measuredRise(before: readonly BarLevel[], after: readonly BarLevel[], song: BarLevel): MeasuredRise | null {
   const songLufs = Number.isFinite(song.lufs) ? song.lufs : SILENT_SONG_LUFS;
-  let out: MeasuredRise | null = null;
+  const songPeak = Number.isFinite(song.peak) ? song.peak : -Infinity;
+  let bar = 0;
   let most = -Infinity;
+  let own = -Infinity;
   after.forEach((b, i) => {
     const a = before[i] ?? { lufs: -Infinity, peak: -Infinity };
     const lu = Number.isFinite(b.lufs) ? b.lufs - Math.max(a.lufs, songLufs) : -Infinity;
-    const pk = Number.isFinite(b.peak) && Number.isFinite(song.peak) ? b.peak - Math.max(a.peak, song.peak) : -Infinity;
-    const rise = Math.max(lu, pk);
-    if (rise > most) most = rise;
-    if (!out && (lu > MEASURED_JUMP_LU + 1e-9 || pk > MEASURED_PEAK_DB + 1e-9)) out = { db: rise, bar: i + 1 };
+    const pk = Number.isFinite(b.peak) && Number.isFinite(songPeak) ? b.peak - Math.max(a.peak, songPeak) : -Infinity;
+    most = Math.max(most, lu, pk);
+    const luOver = lu > MEASURED_JUMP_LU + 1e-9;
+    const pkOver = pk > MEASURED_PEAK_DB + 1e-9;
+    if (!luOver && !pkOver) return;
+    if (!bar) bar = i + 1;
+    // (against Now's same bar, with a floor under the song for a bar that was silent or nearly)
+    if (luOver) own = Math.max(own, b.lufs - Math.max(a.lufs, songLufs - MEASURED_FLOOR_LU));
+    if (pkOver) own = Math.max(own, b.peak - Math.max(a.peak, songPeak - MEASURED_FLOOR_LU));
   });
-  return out ? { db: Math.max(most, (out as MeasuredRise).db), bar: (out as MeasuredRise).bar } : null;
+  return bar ? { db: most, bar, own } : null;
 }
 
 /**
- * The same from a before-and-after's own measure (auditionPlayer.ts), for a suggestion the sound
- * check can't be run for: Suggested's loudness over the stretches it plays against the song's
- * there, moment by moment (`levelDiff`, LU), and its true peak against the song's (`peakDiff`,
- * dB); `fromBar`, where the stretches start. A difference that isn't a number (a song silent
- * there) says nothing: the before-and-after turns it down on its own.
+ * The warning for what a sound check measured (measuredRise), in plain words: "Suggested comes
+ * out up to 9 dB louder (from bar 5). Turn your speakers down before you listen." `said`: the
+ * largest rise the rules' cautions about level stated (louderSaid), or null when none was about
+ * level. When they said it, the warning comes only if it measured clearly more (over `said` by
+ * more than MEASURED_JUMP_LU), and says so. `earlier`: it was measured before the musician's last
+ * edit, which changed what the suggestion touches ("Before your last edit, Suggested came out...").
  */
-export function auditionRise(levelDiff: number | null, peakDiff: number | null, fromBar: number): MeasuredRise | null {
-  const lu = typeof levelDiff === 'number' && Number.isFinite(levelDiff) ? levelDiff : -Infinity;
-  const pk = typeof peakDiff === 'number' && Number.isFinite(peakDiff) ? peakDiff : -Infinity;
-  if (!(lu > MEASURED_JUMP_LU + 1e-9) && !(pk > MEASURED_PEAK_DB + 1e-9)) return null;
-  return { db: Math.max(lu, pk), bar: fromBar };
-}
-
-/**
- * The warning for what the sound check measured (measuredRise, auditionRise), unless the rules'
- * own cautions already said to take care (`cautioned`: checkSafety said something), in plain words:
- * "Suggested comes out up to 9 dB louder (from bar 5). Turn your speakers down before you listen."
- */
-export function measuredCaution(rise: MeasuredRise | null, cautioned: boolean, meter: MeterMap | null = null): string | null {
-  if (!rise || cautioned) return null;
-  return `Suggested comes out up to ${Math.round(rise.db)} dB louder (from ${positionWords(Math.floor(rise.bar), meter)}). Turn your speakers down before you listen.`;
+export function measuredCaution(rise: MeasuredRise | null, said: number | null, meter: MeterMap | null = null, earlier = false): string | null {
+  if (!rise) return null;
+  const db = Math.round(rise.own);
+  if (said !== null && !(db > said + MEASURED_JUMP_LU + 1e-9)) return null;
+  const where = `up to ${db} dB louder (from ${positionWords(Math.floor(rise.bar), meter)})${said !== null ? ', more than the cautions above say' : ''}`;
+  return `${earlier ? `Before your last edit, Suggested came out ${where}` : `Suggested comes out ${where}`}. Turn your speakers down before you listen.`;
 }
