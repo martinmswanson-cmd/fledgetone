@@ -148,11 +148,11 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
 
     // A wavetable (its table is in the synth's settings: no sound file needed)
     if (req.target === 'wavetable') {
-      const made = await userTableFrom(channels, sampleRate, name.replace(/ \(resampled\)$/, ''), req.frames ?? 16, req.cycle ?? 'pitch');
+      // (The table, the track and its synth are named after the source: marked as it is)
+      const made = await userTableFrom(channels, sampleRate, name.replace(/ \(resampled\)$/, ''), req.frames ?? 16, req.cycle ?? 'pitch', named.nameFromFile);
       if (elsewhere()) return ELSEWHERE;
       if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
-      const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`, () => !elsewhere());
-      if (id && named.nameFromFile) useTimelineStore.setState((x) => ({ tracks: x.tracks.map((t) => (t.id === id ? { ...t, ...named } : t)) }));
+      const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`, () => !elsewhere(), named.nameFromFile);
       if (elsewhere()) return ELSEWHERE;
       // (no room for a track: nothing was added)
       if (id && !useTimelineStore.getState().tracks.some((t) => t.id === id)) return { message: pastCapsWords(['tracks']) };
@@ -234,19 +234,22 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
 }
 
 /** A user table from a sound's channels, packed for the synth's settings (null when it can't be made). */
-export async function userTableFrom(channels: Float32Array[], sampleRate: number, name: string, frames: number, cycle: CycleChoice): Promise<{ table: UserTable; hz: number; found: boolean } | null> {
+export async function userTableFrom(channels: Float32Array[], sampleRate: number, name: string, frames: number, cycle: CycleChoice, nameFromFile?: boolean): Promise<{ table: UserTable; hz: number; found: boolean } | null> {
   const cut = tableFromSound(channels, sampleRate, { frames, cycle });
   if (!cut) return null;
-  return { table: await packUserTable(cut.cycles, cut.frames, name), hz: cut.hz, found: cut.found };
+  return { table: { ...(await packUserTable(cut.cycles, cut.frames, name)), ...fileMade(nameFromFile) }, hz: cut.hz, found: cut.found };
 }
 
-/** A user table from a sound in the library ([from, to) seconds of it). */
-export async function userTableFromSound(soundId: string, name: string, frames: number, cycle: CycleChoice, from?: number, to?: number): Promise<{ table: UserTable; hz: number; found: boolean } | null> {
+/**
+ * A user table from a sound in the library ([from, to) seconds of it), named `name` (marked as
+ * made from a file's when `nameFromFile`: a clip named after its sound's file, see ownFiles.ts).
+ */
+export async function userTableFromSound(soundId: string, name: string, frames: number, cycle: CycleChoice, from?: number, to?: number, nameFromFile?: boolean): Promise<{ table: UserTable; hz: number; found: boolean } | null> {
   const buffer = await decodeSound(soundId, 44100);
   const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
   const cut = tableFromSound(channels, 44100, { frames, cycle, from, to });
   if (!cut) return null;
-  return { table: await packUserTable(cut.cycles, cut.frames, name), hz: cut.hz, found: cut.found };
+  return { table: { ...(await packUserTable(cut.cycles, cut.frames, name)), ...fileMade(nameFromFile) }, hz: cut.hz, found: cut.found };
 }
 
 /**
@@ -272,14 +275,15 @@ export function wavetableSets(role: WavetableRole): Record<string, number> {
 
 /**
  * A new Fledge Synth track playing `table` as a bass, lead or pad (one undo step). Its id, or null
- * (also when `still()` says, after working out its settings, that it's no longer wanted).
+ * (also when `still()` says, after working out its settings, that it's no longer wanted). The
+ * track and its synth are named `name`, marked as made from a file's when `nameFromFile`.
  */
-export async function addWavetableTrack(table: UserTable, role: WavetableRole, name: string, still: () => boolean = () => true): Promise<string | null> {
+export async function addWavetableTrack(table: UserTable, role: WavetableRole, name: string, still: () => boolean = () => true, nameFromFile?: boolean): Promise<string | null> {
   const ref = findBuiltin(FLEDGE_URL);
   if (!ref) return null;
   const program = Math.max(0, FLEDGE_PRESETS.indexOf(ROLE_PRESETS[role]));
   const values = await fledgeValues(ref.family, program, wavetableSets(role));
   if (!still()) return null;
   const state = { builtin: 1, program, ...(values ? { values } : {}), table };
-  return useTimelineStore.getState().addPluginTrack(FLEDGE_URL, name.slice(0, 40), state);
+  return useTimelineStore.getState().addPluginTrack(FLEDGE_URL, name.slice(0, 40), state, fileMade(nameFromFile));
 }

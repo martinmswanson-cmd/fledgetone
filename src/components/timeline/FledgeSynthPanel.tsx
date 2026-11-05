@@ -346,7 +346,8 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     setMaking(true);
     try {
       const bpm = tempoAt(clip.startBar, songTempo(s));
-      const made = await userTableFromSound(clip.audio.soundId, clip.name, tableFrames, 'pitch', clip.audio.offset, clip.audio.offset + audioSourceSeconds(clip, bpm));
+      // (Named after the clip: marked as made from a file's when the clip's name is, see ownFiles.ts)
+      const made = await userTableFromSound(clip.audio.soundId, clip.name, tableFrames, 'pitch', clip.audio.offset, clip.audio.offset + audioSourceSeconds(clip, bpm), clip.nameFromFile);
       if (!made) return showToast('Couldn\u2019t make a table from that clip: it needs a held sound a few cycles long.');
       await editPluginTable(controls, made.table, o);
       showToast(`Oscillator ${o} plays "${clip.name}" as a wavetable: ${made.table.frames} cycles at ${Math.round(made.hz)} Hz${made.found ? '' : ' (no pitch found: 2048-sample cycles)'}. Move Position to travel through it.`);

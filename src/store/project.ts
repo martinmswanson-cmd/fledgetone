@@ -446,6 +446,7 @@ function parsePlugin(v: unknown): WamPlugin | null {
     id: v.id,
     url: v.url,
     name: isStr(v.name) && v.name ? v.name.slice(0, 40) : 'Plugin',
+    ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}),
     ...(v.state !== undefined && v.state !== null ? { state: pluginState(v.state) } : {}),
     ...(v.bypass === true ? { bypass: true } : {}),
   };

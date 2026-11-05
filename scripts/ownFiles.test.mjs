@@ -2,6 +2,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 register(
   'data:text/javascript,' +
@@ -270,4 +271,139 @@ test("a song from before the mark: edited clips, Stutter and Shuffle clips, chop
   const blind = withoutFileNames(OLD);
   assert.equal(blind.clips, OLD.clips);
   assert.deepEqual(blind.tracks.map((t) => t.name), OLD.tracks.map((t) => t.name));
+});
+
+// ---------- Wavetables, melody variations and reversed clips named after a file or folder ----------
+
+const { normalizeUserTable, packUserTable, linkUserTable } = await import('../src/audio/plugins/userTable.ts');
+
+test("a user table made from a clip named after a file, and a resample's synth, lose the name on every track, whatever the track is called", async () => {
+  const cycles = new Float32Array(2048 * 2).map((_, i) => Math.sin((i / 2048) * 2 * Math.PI));
+  const table = { ...(await packUserTable(cycles, 2, 'Voicemail 2026-03-02')), nameFromFile: true };
+  // (The mark is kept in a saved song and in a link's lighter copy of the table)
+  assert.equal(normalizeUserTable(JSON.parse(JSON.stringify(table))).nameFromFile, true);
+  assert.equal((await linkUserTable(table)).nameFromFile, true);
+  assert.ok(!('nameFromFile' in normalizeUserTable({ ...table, nameFromFile: 'yes' })));
+  const fledge = (name, extra = {}) => ({ id: 'p', url: 'builtin:fledge/Fledge Synth', name, state: { builtin: 1, table }, ...extra });
+  const song = {
+    name: 'Song',
+    tracks: [
+      // A synth's own name: its table made in the panel from a marked clip
+      T('a', 'Fledge Synth', 'plugin', { plugin: fledge('Fledge Synth') }),
+      // Resample to a wavetable, then the track renamed by the person (its mark gone, the synth's kept)
+      T('b', 'Bass', 'plugin', { plugin: fledge('Voicemail 2026-03-02 lead', { nameFromFile: true }) }),
+      // A table with a name the person typed for its clip: kept
+      T('c', 'Pad', 'plugin', { plugin: { ...fledge('Fledge Synth'), state: { builtin: 1, table: { ...table, nameFromFile: undefined, name: 'Warm pad' } } } }),
+    ],
+    clips: [],
+  };
+  const out = withoutFileNames(song);
+  assert.deepEqual(out.tracks.map((t) => t.name), ['Fledge Synth', 'Bass', 'Pad']);
+  assert.deepEqual(out.tracks.map((t) => t.plugin.name), ['Fledge Synth', 'Track', 'Fledge Synth']);
+  assert.deepEqual(out.tracks.map((t) => t.plugin.state.table.name), ['User table', 'User table', 'Warm pad']);
+  assert.ok(!/Voicemail|nameFromFile/.test(JSON.stringify(out)));
+  assert.equal(out.tracks[2], song.tracks[2]);
+  // Saved and opened, the plugin's mark is where it was
+  const data = { format: PROJECT_FORMAT, version: PROJECT_VERSION, name: 'Song', bpm: 120, tracks: song.tracks.map((t) => ({ color: '#fff', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, reverbSend: 0, delaySend: 0, ...t })), clips: [] };
+  const opened = parseProject(JSON.parse(JSON.stringify(serializeProject(parseProject(data)))));
+  assert.equal(opened.tracks[1].plugin.nameFromFile, true);
+  assert.equal(opened.tracks[0].plugin.state.table.nameFromFile, true);
+  assert.ok(!('nameFromFile' in opened.tracks[2].plugin.state.table));
+  // A song from before the mark: the synth and table named after a clip named after a file
+  const old = {
+    name: 'Song',
+    tracks: [T('v', 'Audio 1', 'audio'), T('b', 'Bass', 'plugin', { plugin: { ...fledge('Voicemail 2026-03-02 lead'), state: { table: { ...table, nameFromFile: undefined } } } })],
+    clips: [C('c1', 'v', 'Voicemail 2026-03-02', { audio: audio('h1') })],
+  };
+  const back = withoutFileNames(old, (id) => (id === 'h1' ? 'Voicemail 2026-03-02.m4a' : undefined));
+  assert.equal(back.tracks[1].plugin.name, 'Track');
+  assert.equal(back.tracks[1].plugin.state.table.name, 'User table');
+  assert.ok(!/Voicemail/.test(JSON.stringify(back)));
+});
+
+test('melody variations and reversed clips named after a marked track or clip are renamed, and so they are in a song from before the mark', () => {
+  const marked = {
+    name: 'Song',
+    tracks: [
+      T('p', 'Grandpa piano', 'multiSampler', { nameFromFile: true }),
+      T('h', 'Grandpa piano harmony', 'multiSampler', { nameFromFile: true }),
+      T('k', 'Family photos kit', 'drumRack', { nameFromFile: true }),
+      T('r', 'Family photos kit (reversed)', 'audio', { nameFromFile: true }),
+    ],
+    clips: [
+      C('c1', 'p', 'Grandpa piano 1', { nameFromFile: true }),
+      C('c2', 'p', 'Grandpa piano 1 (answer phrase)', { nameFromFile: true }),
+      C('c3', 'h', 'Grandpa piano 1 (harmony a third above)', { nameFromFile: true }),
+      C('c4', 'r', 'Family photos kit 1 (reversed)', { nameFromFile: true, audio: audio('h1') }),
+    ],
+  };
+  const out = withoutFileNames(marked);
+  assert.deepEqual(out.tracks.map((t) => t.name), ['Sounds', 'Sounds', 'Kit', 'Audio']);
+  assert.deepEqual(out.clips.map((c) => c.name), ['Pattern', 'Pattern', 'Pattern', 'Audio']);
+  // The same song saved before the mark: the names made from the folder's are found from the track's
+  const unmarked = JSON.parse(JSON.stringify(marked), (k, v) => (k === 'nameFromFile' ? undefined : v));
+  unmarked.tracks[0].multi = { zones: [{ soundId: 'h2', name: 'C4', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 };
+  const old = withoutFileNames(unmarked, (id) => ({ h2: 'C4.wav', h1: 'Family photos kit 1 (reversed).wav' })[id]);
+  assert.deepEqual(old.tracks.map((t) => t.name), ['Sounds', 'Sounds', 'Kit', 'Audio']);
+  assert.deepEqual(old.clips.map((c) => c.name), ['Pattern', 'Pattern', 'Pattern', 'Audio']);
+  assert.ok(!/Grandpa|Family/.test(JSON.stringify(old)));
+  // A variation of a clip the person named is kept
+  const typed = withoutFileNames({ ...marked, clips: [C('c5', 'p', 'Verse (variation)'), C('c6', 'p', 'Hook 2 (answer phrase)')] });
+  assert.deepEqual(typed.clips.map((c) => c.name), ['Verse (variation)', 'Hook 2 (answer phrase)']);
+});
+
+test("a song from before the mark: a sample pack's kits, one-shots, loops and instruments are taken for its folder's; names people type are kept", () => {
+  const files = { h1: 'Kick 01.wav', h2: 'C4.wav', h3: 'E4.wav', h4: 'Loop 90.wav', h5: 'kick from desktop.wav' };
+  const zone = (soundId, name, root) => ({ soundId, name, root, lo: 0, hi: 127, velLo: 1, velHi: 127 });
+  const song = {
+    name: 'Song',
+    tracks: [
+      T('k', 'Smith family photos kit', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1')] } }),
+      T('k2', 'Smith family photos kit 2', 'drumRack'),
+      T('o', 'Smith family photos one-shots', 'drumRack'),
+      T('l', 'Smith family photos loops', 'audio'),
+      T('m', 'JDoe private piano', 'multiSampler', { multi: { zones: [zone('h2', 'C4', 60), zone('h3', 'E4', 64)], attack: 0, release: 0.3 } }),
+      // A rack of the folder's sounds named as the folder is (it had "kit" in it)
+      T('f', 'Kit from the Smith wedding', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1')] } }),
+      // Typed, or the app's own: kept
+      T('d', 'Drums', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1')] } }),
+      T('my', 'My kit', 'drumRack'),
+      T('808', '808 kit 2', 'drumRack'),
+      T('sp', 'Sample pack kit', 'drumRack'),
+      T('vl', 'Vocal loops', 'audio'),
+      T('pi', 'Piano', 'multiSampler', { multi: { zones: [zone('h2', 'C4', 60)], attack: 0, release: 0.3 } }),
+      T('mix', 'Rack', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1'), pad('Snare', 'h5')] } }),
+      T('ms', 'Multi Sampler 2', 'multiSampler', { multi: { zones: [zone('h2', 'C4', 60)], attack: 0, release: 0.3 } }),
+      // Since the mark: a track whose sounds carry it was named by the person
+      T('ex', 'Ex kit', 'drumRack', { rack: { pads: [{ ...pad('Kick 01', 'h1'), nameFromFile: true }] } }),
+      T('lead', 'Lead', 'rhodes'),
+    ],
+    clips: [C('c1', 'l', 'Loop 90', { audio: audio('h4') }), C('c2', 'k', 'Smith family photos kit 3'), C('c3', 'lead', 'Lead 1')],
+  };
+  for (const fileNameOf of [(id) => files[id], undefined]) {
+    const out = withoutFileNames(song, fileNameOf);
+    const names = out.tracks.map((t) => t.name);
+    assert.deepEqual(names.slice(0, 4), ['Kit', 'Kit', 'Kit', 'Audio']);
+    assert.deepEqual(names.slice(6), ['Drums', 'My kit', '808 kit 2', 'Sample pack kit', 'Vocal loops', 'Piano', 'Rack', 'Multi Sampler 2', 'Ex kit', 'Lead']);
+    assert.deepEqual(out.clips.map((c) => c.name).slice(1), ['Pattern', 'Lead 1']);
+    if (fileNameOf) {
+      // (An instrument or a rack known only by its sounds' file names)
+      assert.deepEqual(names.slice(4, 6), ['Sounds', 'Kit']);
+      assert.ok(!/Smith|JDoe|Loop 90/.test(JSON.stringify(out)), JSON.stringify(out).match(/Smith|JDoe|Loop 90/)?.[0]);
+    }
+  }
+});
+
+test('every flow that makes a name from another carries its mark', () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const has = (path, ...snippets) => {
+    const text = src(path);
+    for (const s of snippets) assert.ok(text.includes(s), `${path}: ${s}`);
+  };
+  has('src/components/timeline/FledgeSynthPanel.tsx', 'audioSourceSeconds(clip, bpm), clip.nameFromFile);');
+  has('src/store/resampleActions.ts', "req.cycle ?? 'pitch', named.nameFromFile);", '() => !elsewhere(), named.nameFromFile);', 'addPluginTrack(FLEDGE_URL, name.slice(0, 40), state, fileMade(nameFromFile))');
+  has('src/store/timelineStore.ts', 'plugin: { id: uid(\'plugin\'), url, name, ...mark,');
+  has('src/store/smartActions.ts', 'const named = fileMade(clip.nameFromFile);', '{ name, ...named, startBar: clip.startBar, lengthBars: clip.lengthBars, notes }, fileMade(track.nameFromFile));', 'placeClip(track.id, at, clip.lengthBars, notes, name, named);', 'const id = s.addTrack(instrument, name, named);');
+  has('src/store/reverseActions.ts', '...fileMade(only && (sourceTrack ? sourceTrack.nameFromFile : only.nameFromFile)),', '...fileMade(only?.nameFromFile),');
+  has('src/audio/gameKit.ts', 'withoutFileNames({ tracks: song.tracks, clips: song.clips })');
 });
