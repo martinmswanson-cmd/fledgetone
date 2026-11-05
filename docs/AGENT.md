@@ -382,9 +382,18 @@ those drawn high, a lane of one of them redrawn so that it is louder (or driven 
 harder) anywhere along the song than it was there (the warning says from which bar; a lane on an
 insert that was off is measured from nothing), a lane that
 held one of them down taken away (removed, or left with no points), the master up by
-more than 3 dB, the Loud master or the clipper switched on, the OTT switched on so that it lifts the
-song more than 3 dB (about 6.7 dB at full depth, plus its gains: at depth 0 only its gains count),
-the OTT pushed much harder.
+more than 3 dB, the Loud master switched on so that it adds more than 3 dB (its push, and its sub
+tilt for the lows: "This switches on the Loud master, pushed 11 dB: the song comes out 11 dB
+louder. Turn your speakers down before you listen."), the clipper switched on with more than 3 dB
+of drive ("This switches on the master clipper at 11 dB of drive: the song comes out up to 11 dB
+louder. ..."; either with less is only a note, "it plays no louder" or "it plays up to N dB
+louder"), the OTT switched on so that it lifts the song more than 3 dB (about 6.7 dB at full depth,
+plus its gains: at depth 0 only its gains count), the OTT pushed much harder while it was on, the
+Loud master's push or sub tilt, the OTT's gains or the clipper's drive up by more than 3 dB, the
+clipper's ceiling raised so its peaks come up more than 3 dB, and the Loud master, the OTT or the
+clipper switched off where it held the song down by more than 3 dB ("Switching off the Loud master
+takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you
+listen."; the clipper's ceiling: "the peaks it held down come up by as much as N dB").
 **Measured** too: when the studio's sound check (the song rendered whole before and after, see
 `regionsBy`) finds the song with the suggestion more than 6 dB louder in some bar than that bar
 was, or than the whole song, whichever is louder (or its true peak more than 6 dB higher), and

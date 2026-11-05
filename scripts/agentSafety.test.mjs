@@ -39,7 +39,11 @@ test('the master up by more than 3 dB, the Loud master or the clipper switched o
   assert.deepEqual(checkSafety(a, { ...a, master: { ...a.master, level: a.master.level + 2 } }), []);
   assert.match(checkSafety(a, { ...a, master: { ...a.master, level: a.master.level + 4 } })[0], /master Level goes up by 4 dB/);
   assert.match(checkSafety(a, { ...a, master: { ...a.master, loud: { on: true, target: 'loud', push: 4, subTilt: 0 } } })[0], /Loud master/);
-  assert.match(checkSafety(a, { ...a, master: { ...a.master, clipper: { on: true, drive: 3, softness: 0.5, ceiling: -1 } } })[0], /clipper/);
+  assert.match(checkSafety(a, { ...a, master: { ...a.master, clipper: { on: true, drive: 4, softness: 0.5, ceiling: -1 } } })[0], /clipper/);
+  // (switched on adding no more than 3 dB: only a note)
+  const notes = [];
+  assert.deepEqual(checkSafety(a, { ...a, master: { ...a.master, clipper: { on: true, drive: 3, softness: 0.5, ceiling: -1 } } }, notes), []);
+  assert.match(notes.join(' '), /switches on the master clipper at 3 dB of drive: it plays up to 3 dB louder/);
 });
 
 test('a new track set loud, and a volume lane drawn high', () => {
@@ -457,7 +461,9 @@ test('a caution not about level (a delay fed back) leaves the measured caution t
   assert.equal(measuredCaution({ db: 10, bar: 1, own: 12 }, louderSaid(up)), null);
   assert.equal(measuredCaution(rise, louderSaid(up)), 'Suggested comes out up to 22 dB louder (from bar 1), more than the cautions above say. Turn your speakers down before you listen.');
   // A caution about level with no number counts as the line it crossed (6 dB)
-  const loud = marks([{ op: 'set_master', loud: { on: true } }]);
+  const muted = { ...s, tracks: s.tracks.map((t, i) => (i === 0 ? { ...t, isMuted: true } : t)) };
+  const loud = marks([{ op: 'set_track', trackId: K, mute: false }], muted);
+  assert.ok(loud.length === 1 && /unmutes/.test(loud[0].text), JSON.stringify(loud));
   assert.equal(louderSaid(loud), TRACK_JUMP_DB);
   assert.equal(measuredCaution({ db: 10, bar: 1, own: 11 }, louderSaid(loud)), null);
   // applyOps says the same: cautioned only by a caution about level
@@ -481,4 +487,94 @@ test("a bar's loudness from a render's gating blocks", () => {
   // A bar shorter than a hop reads the block nearest its middle; silence is -Infinity
   assert.ok(Number.isFinite(barLoudness(blocks, 0.1, [{ start: 0.5, end: 0.55 }])[0]));
   assert.equal(barLoudness([0, 0, 0], 0.1, [{ start: 0, end: 0.3 }])[0], -Infinity);
+});
+
+// ---- Round 32: the master's switches state what they add; switched off, a cut taken away ----
+
+test('the clipper or the Loud master switched on states the gain it adds; adding 3 dB or less is only a note, and leaves the sound check to say how much louder (scan r32)', async () => {
+  const { safetyCautions, louderSaid, measuredCaution } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: -14 } };
+  const run = (set) => {
+    const notes = [];
+    const c = safetyCautions(q, ap(q, [{ op: 'set_master', ...set }]), notes);
+    return { c, notes, said: louderSaid(c) };
+  };
+  // Drive 11 into the clipper: measured +11.0 LU, true peak +11.0 dB
+  const clip = run({ clipper: { on: true, drive: 11, ceiling: 0 } });
+  assert.deepEqual(clip.c, [{ text: 'This switches on the master clipper at 11 dB of drive: the song comes out up to 11 dB louder. Turn your speakers down before you listen.', louder: 11 }]);
+  // Pushed 11: measured +11.0 LU
+  const loud = run({ loud: { on: true, push: 11 } });
+  assert.deepEqual(loud.c, [{ text: 'This switches on the Loud master, pushed 11 dB: the song comes out 11 dB louder. Turn your speakers down before you listen.', louder: 11 }]);
+  // ...so a measured 18 dB still says it's more
+  assert.match(measuredCaution({ db: 18, bar: 1, own: 18 }, loud.said), /up to 18 dB louder \(from bar 1\), more than the cautions above say/);
+  // Drive 0, push 0 (measured the same in every bar), push -12: no caution, a note, and nothing hides the sound check
+  for (const set of [{ clipper: { on: true, drive: 0, ceiling: 0 } }, { loud: { on: true, push: 0 } }, { loud: { on: true, push: -12 } }]) {
+    const r = run(set);
+    assert.deepEqual(r.c, [], JSON.stringify(set));
+    assert.equal(r.said, null);
+    assert.equal(r.notes.length, 1);
+    assert.match(r.notes[0], /plays no louder/);
+    assert.doesNotMatch(r.notes[0], /gets louder/);
+    assert.equal(measuredCaution({ db: 9.9, bar: 6, own: 9.9 }, r.said), 'Suggested comes out up to 10 dB louder (from bar 6). Turn your speakers down before you listen.');
+  }
+  // A little drive or push: a note with its number
+  assert.deepEqual(run({ loud: { on: true, push: 2 } }).notes, ['This switches on the Loud master: it plays up to 2 dB louder.']);
+  // The sub tilt adds to the lows: up 4 is a caution (the lows), with the push it adds up
+  assert.deepEqual(run({ loud: { on: true, push: 0, subTilt: 4 } }).c, [{ text: 'This switches on the Loud master with its sub tilt up 4 dB: the lows come out up to 4 dB louder. Turn your speakers down before you listen.', louder: 4 }]);
+  assert.equal(run({ loud: { on: true, push: 5, subTilt: 2 } }).c[0].text, 'This switches on the Loud master, pushed 5 dB with its sub tilt up 2 dB: the song comes out up to 7 dB louder. Turn your speakers down before you listen.');
+  // (a tilt under a cut push: no part of the song comes out louder)
+  assert.deepEqual(run({ loud: { on: true, push: -6, subTilt: 4 } }).c, []);
+});
+
+test('the OTT switched on is judged by how much it lifts the song only, not by the depth it was left at while off (scan r32)', async () => {
+  const { safetyCautions } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: -14 } };
+  assert.equal(q.master.ott.on, false);
+  assert.equal(q.master.ott.depth, 0.5);
+  // Measured: -0.5, +1.2, +1.6 LU
+  for (const ott of [{ on: true, depth: 1, outGain: -6 }, { on: true, depth: 0.95, outGain: -4 }, { on: true, depth: 0.5, outGain: -1 }]) assert.deepEqual(safetyCautions(q, ap(q, [{ op: 'set_master', ott }])), [], JSON.stringify(ott));
+  // Still a caution when it lifts the song by more than 3 dB, and pushed harder while on
+  assert.match(safetyCautions(q, ap(q, [{ op: 'set_master', ott: { on: true, depth: 1 } }]))[0].text, /switches on the master OTT/);
+  const on = ap(q, [{ op: 'set_master', ott: { on: true, depth: 0.3, outGain: -3 } }]);
+  assert.match(safetyCautions(on, ap(on, [{ op: 'set_master', ott: { depth: 1 } }]))[0].text, /pushed much harder \(30% to 100% depth\)/);
+});
+
+test('the Loud master, the OTT or the clipper switched off where it held the song down: a caution with the number, in switch-off words (scan r32)', async () => {
+  const { safetyCautions } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: 0 } };
+  const off = (master, set) => {
+    const from = { ...q, master: { ...q.master, ...master } };
+    return safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]));
+  };
+  // Measured +12.0 LU each
+  assert.deepEqual(off({ loud: { on: true, target: 'loud', push: -12, subTilt: 0 } }, { loud: { on: false } }), [
+    { text: 'Switching off the Loud master takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you listen.', louder: 12 },
+  ]);
+  assert.deepEqual(off({ ott: { ...q.master.ott, on: true, depth: 0, outGain: -12, inGain: 0 } }, { ott: { on: false } }), [
+    { text: 'Switching off the master OTT takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you listen.', louder: 12 },
+  ]);
+  assert.deepEqual(off({ ott: { ...q.master.ott, on: true, depth: 0, outGain: 0, inGain: -12 } }, { ott: { on: false } }), [
+    { text: 'Switching off the master OTT takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you listen.', louder: 12 },
+  ]);
+  // ...and the in gain's cut taken away while it stays on (at depth 0 a plain gain)
+  assert.match(off({ ott: { ...q.master.ott, on: true, depth: 0, outGain: 0, inGain: -12 } }, { ott: { inGain: 0 } })[0].text, /The master OTT's gain goes up by 12 dB/);
+  // The clipper's ceiling: switched off or raised, its peaks come back up to the limiter (measured: true peak +10.3 dB)
+  const clip = { clipper: { on: true, drive: 0, softness: 0.3, ceiling: -12 } };
+  assert.deepEqual(off(clip, { clipper: { on: false } }), [
+    { text: 'Switching off the master clipper takes away its ceiling at -12 dB: the peaks it held down come up by as much as 11 dB. Turn your speakers down before you listen.', louder: 11 },
+  ]);
+  assert.deepEqual(off(clip, { clipper: { ceiling: 0 } }), [
+    { text: "The master clipper's ceiling goes up from -12 to 0 dB: the peaks it held down come up by as much as 11 dB. Turn your speakers down before you listen.", louder: 11 },
+  ]);
+  // The sub tilt raised while on (measured: the lows about 6 dB up)
+  assert.deepEqual(off({ loud: { on: true, target: 'loud', push: 0, subTilt: -4 } }, { loud: { subTilt: 4 } }), [
+    { text: "The Loud master's sub tilt goes up by 8 dB: the lows come out up to 8 dB louder. Turn your speakers down before you listen.", louder: 8 },
+  ]);
+  // Quiet: switched off where they turned it up or held nothing down (the clipper at drive 11: measured 11 LU quieter)
+  assert.deepEqual(off({ loud: { on: true, target: 'loud', push: 6, subTilt: 2 } }, { loud: { on: false } }), []);
+  assert.deepEqual(off({ ott: { ...q.master.ott, on: true, depth: 1, outGain: 6, inGain: 3 } }, { ott: { on: false } }), []);
+  assert.deepEqual(off({ ott: { ...q.master.ott, on: true, depth: 0, outGain: 0, inGain: 6 } }, { ott: { inGain: 0, outGain: 6 } }), []);
+  assert.deepEqual(off({ clipper: { on: true, drive: 11, softness: 0.3, ceiling: 0 } }, { clipper: { on: false } }), []);
+  assert.deepEqual(off({ clipper: { on: true, drive: 3, softness: 0.3, ceiling: -3 } }, { clipper: { on: false } }), []);
+  assert.deepEqual(off({ clipper: { on: true, drive: 3, softness: 0.3, ceiling: -1 } }, { clipper: { ceiling: 0 } }), []);
 });

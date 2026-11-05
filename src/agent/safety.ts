@@ -12,8 +12,12 @@
  * that held one down taken away (removed or emptied), all compared with what played there before
  * (a lane on an insert that was off, with nothing); a track heard again because a solo was cleared
  * or moved; the master Level, the Loud master's push or the OTT's gains up by more than
- * MASTER_JUMP_DB, the Loud master or the clipper switched on, the OTT switched on so it lifts the
- * song by more than MASTER_JUMP_DB (OTT_FULL_LIFT_DB at full depth), the OTT pushed much harder.
+ * MASTER_JUMP_DB, the Loud master or the clipper switched on so they add more than MASTER_JUMP_DB
+ * (the Loud master's push and sub tilt, the clipper's drive: less is only a note), the OTT
+ * switched on so it lifts the song by more than MASTER_JUMP_DB (OTT_FULL_LIFT_DB at full depth),
+ * the OTT pushed much harder while on, the Loud master, the OTT or the clipper switched off where
+ * it held the song down (a negative push, tilt or gain; the clipper's ceiling), the Loud master's
+ * sub tilt or the clipper's ceiling raised.
  * They are warnings on the suggestion's
  * card (the musician decides), never refusals; values beyond what the song can hold are already
  * brought into range by the ops (see ops.ts). And, as a catch-all for what the rules miss, the
@@ -31,6 +35,7 @@ import { positionWords, wordMeter } from './songDiff';
 import type { MeterMap } from '../audio/tempoMap';
 import { nm, plainNames } from './names';
 import { maxOf } from '../support/minMax';
+import { LIMITER_CEILING_DBTP } from '../audio/effects/limiter';
 
 /** A track raised by more than this many dB gets a warning. */
 export const TRACK_JUMP_DB = 6;
@@ -600,18 +605,57 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
     out.push(lv(`${who} come${louder.length === 1 ? 's' : ''} out up to ${r1(maxOf(louder.map(([, d]) => d)))} dB louder through the buses and the master together. Turn your speakers down before you listen.`, maxOf(louder.map(([, d]) => d))));
   }
   if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`, b.level - a.level));
+  // The Loud master: its push (a plain gain on the whole song) and its sub tilt (a low shelf, the
+  // lows only), both before its clipper and the limiter; switched off, they're 0 (loudMaster.ts)
   const push = (m: typeof a) => (m.loud?.on ? m.loud.push : 0);
-  if (b.loud?.on && !a.loud?.on) out.push(lv('This switches on the Loud master: the whole song gets louder.'));
-  else if (push(b) - push(a) > MASTER_JUMP_DB + 1e-9) out.push(lv(`The Loud master pushes ${r1(push(b) - push(a))} dB harder.`, push(b) - push(a)));
+  const tilt = (m: typeof a) => (m.loud?.on ? m.loud.subTilt : 0);
+  const pushUp = push(b) - push(a);
+  const tiltUp = Math.max(0, tilt(b) - tilt(a));
+  // (the most any part of the song rises: all of it by the push, the lows by the tilt as well)
+  const loudUp = pushUp + tiltUp;
+  const loudLouder = `the song comes out ${tiltUp > 1e-9 ? 'up to ' : ''}${r1(loudUp)} dB louder. Turn your speakers down before you listen.`;
+  if (b.loud?.on && !a.loud?.on) {
+    if (!(loudUp > MASTER_JUMP_DB + 1e-9)) notes?.push(loudUp > 0.05 ? `This switches on the Loud master: it plays up to ${r1(loudUp)} dB louder.` : 'This switches on the Loud master: it plays no louder.');
+    else if (!(tiltUp > 1e-9)) out.push(lv(`This switches on the Loud master, pushed ${r1(pushUp)} dB: ${loudLouder}`, loudUp));
+    else if (!(pushUp > 1e-9)) out.push(lv(`This switches on the Loud master with its sub tilt up ${r1(tiltUp)} dB: the lows come out up to ${r1(loudUp)} dB louder. Turn your speakers down before you listen.`, loudUp));
+    else out.push(lv(`This switches on the Loud master, pushed ${r1(pushUp)} dB with its sub tilt up ${r1(tiltUp)} dB: ${loudLouder}`, loudUp));
+  } else if (a.loud?.on && !b.loud?.on) {
+    // (switched off, a push or tilt that turned the song down is taken away)
+    if (loudUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the Loud master takes away its ${r1(loudUp)} dB cut: ${loudLouder}`, loudUp));
+  } else if (loudUp > MASTER_JUMP_DB + 1e-9) {
+    if (!(tiltUp > 1e-9)) out.push(lv(`The Loud master pushes ${r1(pushUp)} dB harder.`, pushUp));
+    else if (!(pushUp > 1e-9)) out.push(lv(`The Loud master's sub tilt goes up by ${r1(tiltUp)} dB: the lows come out up to ${r1(loudUp)} dB louder. Turn your speakers down before you listen.`, loudUp));
+    else out.push(lv(`The Loud master pushes ${r1(pushUp)} dB harder and its sub tilt goes up by ${r1(tiltUp)} dB: ${loudLouder}`, loudUp));
+  }
   // The OTT lifts the quiet parts of the whole song, by its depth as well as its gains (switched on at depth 100% and no gain: +6.7 LU measured)
   const ott = (m: typeof a) => (m.ott.on ? m.ott.outGain + Math.max(0, m.ott.inGain) : 0);
   // (switched on: by how much it lifts the song, OTT_FULL_LIFT_DB at full depth; at depth 0 it leaves the bands alone, ott.ts)
   const lift = ott(b) + OTT_FULL_LIFT_DB * b.ott.depth;
+  // Its gains' rise (switched off: 0): the out gain's, the in gain's over 0, and a cut by the in
+  // gain eased or taken away (at depth 0 it's a plain gain: switched off at -12 in, +12 LU measured)
+  const gainIn = (m: typeof a) => (m.ott.on ? m.ott.inGain : 0);
+  const ottUp = (b.ott.on ? b.ott.outGain : 0) - (a.ott.on ? a.ott.outGain : 0) + Math.max(0, gainIn(b)) - Math.max(0, gainIn(a)) + Math.max(0, Math.min(0, gainIn(b)) - Math.min(0, gainIn(a)));
   if (b.ott.on && !a.ott.on && lift > MASTER_JUMP_DB + 1e-9) out.push(lv('This switches on the master OTT: the whole song gets louder.', lift));
-  else if (b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(lv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`));
-  if (a.ott.on && ott(b) - ott(a) > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master OTT's gain goes up by ${r1(ott(b) - ott(a))} dB.`, ott(b) - ott(a)));
-  if (b.clipper?.on && !a.clipper?.on) out.push(lv('This switches on the master clipper.'));
-  else if (b.clipper?.on && a.clipper?.on && b.clipper.drive - a.clipper.drive > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master clipper is driven ${r1(b.clipper.drive - a.clipper.drive)} dB harder.`, b.clipper.drive - a.clipper.drive));
+  // (only while it was on: a depth stored while it was off isn't what played)
+  else if (a.ott.on && b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(lv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`));
+  if (a.ott.on && !b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the master OTT takes away its ${r1(ottUp)} dB cut: the song comes out ${a.ott.depth > 1e-9 ? 'up to ' : ''}${r1(ottUp)} dB louder. Turn your speakers down before you listen.`, ottUp));
+  else if (a.ott.on && b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master OTT's gain goes up by ${r1(ottUp)} dB.`, ottUp));
+  // The clipper: its drive is a plain gain into it, its ceiling holds the peaks down (the limiter
+  // after it holds them under LIMITER_CEILING_DBTP whatever it does)
+  const ceilingOf = (m: typeof a) => Math.min(m.clipper?.ceiling ?? 0, LIMITER_CEILING_DBTP);
+  if (b.clipper?.on && !a.clipper?.on) {
+    const drive = b.clipper.drive;
+    if (drive > MASTER_JUMP_DB + 1e-9) out.push(lv(`This switches on the master clipper at ${r1(drive)} dB of drive: the song comes out up to ${r1(drive)} dB louder. Turn your speakers down before you listen.`, drive));
+    else notes?.push(drive > 0.05 ? `This switches on the master clipper at ${r1(drive)} dB of drive: it plays up to ${r1(drive)} dB louder.` : 'This switches on the master clipper with no drive: it plays no louder, only its peaks over the ceiling are shaved.');
+  } else if (a.clipper?.on && !b.clipper?.on) {
+    // (the peaks it held down come back, as far as the limiter lets them)
+    const up = LIMITER_CEILING_DBTP - ceilingOf(a);
+    if (up > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the master clipper takes away its ceiling at ${r1(a.clipper.ceiling)} dB: the peaks it held down come up by as much as ${r1(up)} dB. Turn your speakers down before you listen.`, up));
+  } else if (b.clipper?.on && a.clipper?.on) {
+    const up = ceilingOf(b) - ceilingOf(a);
+    if (b.clipper.drive - a.clipper.drive > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master clipper is driven ${r1(b.clipper.drive - a.clipper.drive)} dB harder.`, b.clipper.drive - a.clipper.drive));
+    else if (up > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master clipper's ceiling goes up from ${r1(a.clipper.ceiling)} to ${r1(b.clipper.ceiling)} dB: the peaks it held down come up by as much as ${r1(up)} dB. Turn your speakers down before you listen.`, up));
+  }
   return out;
 }
 

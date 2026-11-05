@@ -117,8 +117,10 @@ export interface Suggestion {
    * since ("Before your last edit, ..."). Made again (freshen), it's kept until the new version's
    * own measure takes its place (worded as `earlier` if the edit reached what it touches). On the
    * card; for the agent only while it may listen (handlers.ts), as all the sound check finds.
+   * `rise` and `meter`: what was measured and the song's meters then, so a version made again
+   * words it against its own cautions (louderSaid), not the last one's.
    */
-  measured?: { version: number; text: string; earlier: string } | null;
+  measured?: { version: number; text: string; earlier: string; rise?: MeasuredRise; meter?: MeterMap | null } | null;
   touchedTracks: string[];
   bars: BarRange | null;
   /**
@@ -639,8 +641,12 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   // (the ops' errors quote what the agent wrote: the card says it in the app's own words instead)
   if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: [NO_LONGER_FITS], outOfDateAt: ctx.parts, armed: null };
   // (what was measured louder stays on the card until this version's own measure takes its place)
+  // (worded again against this version's own cautions: what they say about level may have changed)
   const m = checked.measured;
-  const measured = m ? (m.text !== m.earlier && touchedMoved(checked.song, again.song, [...checked.touchedTracks, ...again.diff.touchedTracks]) ? { ...m, text: m.earlier } : m) : null;
+  const reworded = m?.rise ? measuredCaution(m.rise, again.louderSaid ?? null, m.meter ?? null) : m?.text;
+  const rewordedEarlier = m?.rise ? measuredCaution(m.rise, again.louderSaid ?? null, m.meter ?? null, true) : m?.earlier;
+  const kept = m && reworded && rewordedEarlier ? { ...m, text: m.text === m.earlier ? rewordedEarlier : reworded, earlier: rewordedEarlier } : null;
+  const measured = kept ? (kept.text !== kept.earlier && touchedMoved(checked.song, again.song, [...checked.touchedTracks, ...again.diff.touchedTracks]) ? { ...kept, text: kept.earlier } : kept) : null;
   return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus, now), measured };
 }
 
@@ -703,7 +709,7 @@ export function withMeasured(s: Suggestion, rise: MeasuredRise | null, before: P
   const meter = wordMeter(before);
   const text = measuredCaution(rise, s.louderSaid ?? null, meter);
   const earlier = measuredCaution(rise, s.louderSaid ?? null, meter, true);
-  return { ...s, measured: text && earlier ? { version: s.version, text, earlier } : null };
+  return { ...s, measured: text && earlier && rise ? { version: s.version, text, earlier, rise, meter } : null };
 }
 
 /**
