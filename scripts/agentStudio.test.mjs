@@ -937,6 +937,33 @@ test('a caution measured louder stays on the card after an edit elsewhere and wh
   assert.equal((handlers.match(/measuredWarning\(/g) ?? []).length, 1, 'read in one place only');
 });
 
+test('a caution measured louder, kept while the suggestion is made again, is worded against the new version\'s own cautions (scan r32)', async () => {
+  const { withMeasured, measuredWarning } = await import('../src/agent/suggestionsStore.ts');
+  // The Flute muted; a suggestion unmutes it: a caution about level (no number: counts as 6 dB)
+  const s0 = base();
+  const p = { ...s0, tracks: s0.tracks.map((t, i) => (i === 3 ? { ...t, isMuted: true } : t)) };
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Flute back', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[3].id, mute: false }] }).suggestion;
+  assert.equal(s.louderSaid, 6);
+  const m = withMeasured(s, { db: 15, bar: 9, own: 15 }, p);
+  assert.equal(measuredWarning(m), 'Suggested comes out up to 15 dB louder (from bar 9), more than the cautions above say. Turn your speakers down before you listen.');
+  // Drums turned up 12 dB by hand: made again, the unmute is only a note (quietly under the mix), no caution above
+  const edited = { ...p, tracks: p.tracks.map((t, i) => (i === 1 ? { ...t, volume: t.volume + 12 } : t)) };
+  const fresh = freshen(checkSuggestion(m, edited, ctxOf(edited)), edited, ctxOf(edited));
+  assert.equal(fresh.version, 2);
+  assert.deepEqual(fresh.warnings, []);
+  assert.equal(fresh.louderSaid, null);
+  assert.equal(measuredWarning(fresh), 'Suggested comes out up to 15 dB louder (from bar 9). Turn your speakers down before you listen.');
+  // ...and the other way: made again with a caution about level above that says as much, none is carried over
+  const quiet = makeSuggestion(edited, ctxOf(edited), { title: 'Flute back', explanation: '', ops: [{ op: 'set_track', trackId: p.tracks[3].id, mute: false }] }).suggestion;
+  assert.equal(quiet.louderSaid, null);
+  const mq = withMeasured(quiet, { db: 11, bar: 9, own: 11 }, edited);
+  assert.equal(measuredWarning(mq), 'Suggested comes out up to 11 dB louder (from bar 9). Turn your speakers down before you listen.');
+  const remade = freshen(checkSuggestion(mq, p, ctxOf(p)), p, ctxOf(p));
+  assert.ok(isOpen(remade), remade.status);
+  assert.equal(remade.louderSaid, 6);
+  assert.equal(measuredWarning(remade), null);
+});
+
 test("Hear before the sound check is done: both renders measured bar by bar, Suggested turned down by its loudest bar, the caution at once (scan r31)", async () => {
   const { stretchBars } = await import('../src/audio/auditionMath.ts');
   const { measuredRise } = await import('../src/agent/safety.ts');
