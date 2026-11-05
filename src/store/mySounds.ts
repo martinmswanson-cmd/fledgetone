@@ -14,6 +14,7 @@ import { parseEmbeddedSounds, referencedSoundIds } from './audioClips';
 import { isMixTrack } from './buses';
 import { parseTrack } from './project';
 import { withSafeIds } from './ownKey';
+import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, type FileMade } from './ownFiles';
 import type { EmbeddedSound, Track, WamPlugin } from './timelineTypes';
 import { uid } from './timelineTypes';
 
@@ -52,9 +53,16 @@ const SOUND_FIELDS = [
 export type SoundSettings = Pick<Track, 'instrumentKey' | 'color' | 'eq' | 'fx' | 'reverbSend' | 'delaySend'> &
   Partial<Pick<Track, (typeof SOUND_FIELDS)[number]>>;
 
-export interface MySound {
+export interface MySound extends FileMade {
   id: string;
+  /** Its name, marked `nameFromFile` when it's the track's name the app made from a file's or folder's (see ownFiles.ts) */
   name: string;
+  /**
+   * FILE_MARKS on a sound saved from a song with the marks: its name's mark can be trusted. One
+   * without (saved before, or from an older song) has its name checked as an old song's track's
+   * when it goes on a track (soundWithFileMarks).
+   */
+  fileMarks?: number;
   settings: SoundSettings;
 }
 
@@ -95,7 +103,8 @@ export function parseSound(raw: unknown): MySound | null {
     // Instruments only: a bus, a return or an Audio track has no sound of its own to keep
     if (isMixTrack(track) || isAudioKind(track.instrumentKey)) return null;
     if (track.instrumentKey === 'plugin' && !track.plugin) return null;
-    return { id, name: name.slice(0, 60), settings: soundOf(track) };
+    const marks = raw as FileMade & { fileMarks?: unknown };
+    return { id, name: name.slice(0, 60), ...fileMade(marks.nameFromFile === true), ...(marks.fileMarks === FILE_MARKS ? { fileMarks: FILE_MARKS } : {}), settings: soundOf(track) };
   } catch {
     return null;
   }
@@ -150,10 +159,12 @@ export function parseMySoundsFile(raw: unknown): Omit<MySoundsFile, 'format' | '
   if (typeof v !== 'object' || v === null || v.format !== MY_SOUNDS_FORMAT) throw new Error('it is not a My sounds file');
   // (the sounds and the recordings they play renamed alike, so they still find each other)
   withSafeIds(v);
+  const recordings = parseEmbeddedSounds(v.recordings);
   return {
     favourites: Array.isArray(v.favourites) ? [...new Set(v.favourites.map(currentInstrumentKey).filter((k): k is InstrumentKey => typeof k === 'string' && Object.hasOwn(INSTRUMENTS, k)))] : [],
-    sounds: Array.isArray(v.sounds) ? v.sounds.map(parseSound).filter((x): x is MySound => !!x) : [],
-    recordings: parseEmbeddedSounds(v.recordings),
+    // (each marked against the file names its recordings carry: one saved before the marks has none)
+    sounds: Array.isArray(v.sounds) ? v.sounds.map(parseSound).filter((x): x is MySound => !!x).map((x) => soundWithFileMarks(x, songFileNames(recordings))) : [],
+    recordings,
   };
 }
 
@@ -204,8 +215,11 @@ interface MySoundsState {
   favourites: InstrumentKey[];
   sounds: MySound[];
   toggleFavourite: (key: InstrumentKey) => void;
-  /** Keep `track`'s sound as `name` (replacing a saved sound of that name). */
-  saveSound: (name: string, track: Track) => SaveResult;
+  /**
+   * Keep `track`'s sound as `name` (replacing a saved sound of that name). `songMarked`: the song
+   * it's from has the marks (its fileMarks), so the sound's own name's mark can be trusted.
+   */
+  saveSound: (name: string, track: Track, songMarked?: boolean) => SaveResult;
   removeSound: (id: string) => void;
   renameSound: (id: string, name: string) => void;
   /** Add a file's sounds and stars to this browser's (see mergeSounds); false if the browser wouldn't keep them. */
@@ -221,13 +235,15 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
     writeJson(FAVOURITE_INSTRUMENTS_KEY, favourites);
     set({ favourites });
   },
-  saveSound: (rawName, track) => {
+  saveSound: (rawName, track, songMarked = false) => {
     const name = rawName.trim().slice(0, 60) || INSTRUMENTS[track.instrumentKey].name;
+    // (The track's own name left as it was offered, made from a file's: still made from it)
+    const made = !!track.nameFromFile && name === track.name.trim().slice(0, 60);
     const settings = soundOf(track);
     if (JSON.stringify(settings).length > MAX_SOUND_CHARS) return 'too-big';
     const same = get().sounds.find((s) => s.name.toLowerCase() === name.toLowerCase());
     if (!same && get().sounds.length >= MAX_SOUNDS) return 'full';
-    const sound: MySound = { id: same?.id ?? uid('sound'), name, settings };
+    const sound: MySound = { id: same?.id ?? uid('sound'), name, ...fileMade(made), ...(songMarked ? { fileMarks: FILE_MARKS } : {}), settings };
     const sounds = same
       ? get().sounds.map((s) => (s.id === same.id ? sound : s))
       : [...get().sounds, sound];
@@ -251,7 +267,8 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
   renameSound: (id, rawName) => {
     const name = rawName.trim().slice(0, 60);
     if (!name) return;
-    const sounds = get().sounds.map((s) => (s.id === id ? { ...s, name } : s));
+    // (Typed by the person: no longer a name made from a file)
+    const sounds = get().sounds.map((s): MySound => (s.id === id ? { ...s, name, nameFromFile: undefined } : s));
     writeJson(MY_SOUNDS_KEY, sounds);
     set({ sounds });
   },

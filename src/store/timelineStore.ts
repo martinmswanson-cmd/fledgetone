@@ -127,7 +127,7 @@ import {
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
-import { FILE_MARKS, fileMade, typedName, withFileMarks, withName, type FileMade } from './ownFiles';
+import { FILE_MARKS, fileMade, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, type FileMade } from './ownFiles';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
@@ -2490,15 +2490,18 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (!current || isMixTrack(current) || isAudioKind(current.instrumentKey)) return;
       // (Nor to or from the Drop pad once it has clips, as setTrackInstrument)
       if (isDropKind(sound.settings.instrumentKey) !== isDropKind(current.instrumentKey) && get().clips.some((c) => c.trackId === id)) return;
+      // (Its names made from a file marked, the track's too: one saved before the marks has none, see ownFiles.ts)
+      const marked = soundWithFileMarks(sound, soundFileName);
       set((s) => ({
-        tracks: s.tracks.map((t) => (t.id === id ? { ...withSound(t, sound.settings), name: sound.name } : t)),
+        tracks: s.tracks.map((t) => (t.id === id ? withName(withSound(t, marked.settings), marked.name, !!marked.nameFromFile) : t)),
         ...pushPast(s),
       }));
       if (hasRecordings(sound.settings.instrumentKey)) void loadQuick(sound.settings.instrumentKey).catch(() => {});
     },
 
     addSoundTrack: (sound) => {
-      const made = withSound(makeTrack(sound.settings.instrumentKey, get().tracks, sound.name), sound.settings);
+      const marked = soundWithFileMarks(sound, soundFileName);
+      const made = withName(withSound(makeTrack(marked.settings.instrumentKey, get().tracks, marked.name), marked.settings), marked.name, !!marked.nameFromFile);
       set((s) => ({ tracks: [...s.tracks, made], selectedTrackId: made.id, isInspectorOpen: true, ...pushPast(s) }));
       if (hasRecordings(made.instrumentKey)) void loadQuick(made.instrumentKey).catch(() => {});
       return made.id;
@@ -3340,7 +3343,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     clipboardTracks: {},
 
     copySelectedClips: () => {
-      const { clips, tracks, bpm } = get();
+      const { tracks, bpm, fileMarks } = get();
+      // From a song without the marks, each clip's name the old check takes for a file's is marked
+      // as it's copied: pasted into a song with them, its marks alone are what's judged (ownFiles.ts)
+      const clips = fileMarks ? get().clips : withOldMarks({ tracks, clips: get().clips }, soundFileName).clips;
       const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
       const origin = minOf(selected.map((c) => c.startBar));
