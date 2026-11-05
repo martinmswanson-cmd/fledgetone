@@ -21,7 +21,7 @@ export interface PoolVoice {
   triggerRelease: (time?: Tone.Unit.Time) => unknown;
   envelope: ToneVoice['envelope'];
   modulationEnvelope?: ToneVoice['envelope'];
-  frequency?: ToneVoice['frequency'];
+  frequency?: Tone.Signal<'frequency'>;
   /** Its pitch offset in cents (a pitch bend moves it: the pool's bend is connected to it). */
   detune: Tone.Signal<'cents'>;
   connect: (destination: Tone.InputNode) => unknown;
@@ -107,6 +107,17 @@ export function choosePoolVoice<S extends PoolSlot>(voices: S[], time: number, r
  */
 export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVoice, maxVoices: number, output: Tone.InputNode): VoicePool {
   const out = new Tone.Gain(1).connect(output);
+  /**
+   * Every voice's pitch signal feeds this muted gain, so the browser keeps working it out between
+   * notes. Between notes nothing else listens to it (its oscillator is stopped) and Chrome leaves
+   * it as it was, so a voice taken again could start its note with one sample at the last note's
+   * pitch, even with the pitch set a block early (toneStart.ts pitchAhead): in the export, where
+   * the render waits each second for notes to be handed out, 3 Brass notes in 40 did, and differed
+   * from the others and from what was heard. Gain 0 sends out nothing at all (no sound, no
+   * offset); the cost is one constant worked out per voice, about a hundredth of a percent of
+   * the CPU each. (A mono synth played the same way never did, so they have none.)
+   */
+  const pull = new Tone.Gain({ context: out.context, gain: 0 }).connect(out);
   /** Each voice, its note's start and end, its velocity, and when its note was let go (Infinity while held) */
   let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number }[] = [];
   type Slot = (typeof voices)[number];
@@ -141,6 +152,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
     if (choice !== 'new') return choice;
     const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
     v.voice.connect(out);
+    v.voice.frequency?.connect(pull);
     bend?.signal.connect(v.voice.detune);
     voices.push(v);
     return v;
@@ -223,6 +235,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
       bend?.feed.dispose();
       bend?.signal.dispose();
       voices.forEach((v) => v.voice.dispose());
+      pull.dispose();
       out.dispose();
     },
   };
