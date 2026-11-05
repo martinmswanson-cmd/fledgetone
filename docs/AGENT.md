@@ -397,7 +397,12 @@ and its ceiling goes up from -12 to 0 dB: the song comes out up to 11 dB louder.
 down before you listen."), small rises on two or more of the master's plain gains (its Level, the
 Loud master's push, the clipper's drive, the OTT's gains) adding up to more than 3 dB that no
 warning above already says ("Together these master changes make the song up to 9 dB louder. Turn
-your speakers down before you listen."), and the Loud master, the OTT or the
+your speakers down before you listen."; one of them up by more than 3 dB that a cut on another
+takes back says what they come to together: no more than 3 dB, only a note, "The master Level goes
+up by 4 dB, but other master changes in this suggestion turn it back down."; more, "..., but other
+master changes in this suggestion turn part of it back down: together they make the song up to 4
+dB louder. Turn your speakers down before you listen."; a cut counts only on a control that stays
+on, and a sub tilt raised with it counts against it), and the Loud master, the OTT or the
 clipper switched off where it held the song down by more than 3 dB ("Switching off the Loud master
 takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you
 listen."; the clipper's ceiling: "the peaks it held down come up by as much as N dB").

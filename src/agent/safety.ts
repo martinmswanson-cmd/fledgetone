@@ -617,7 +617,13 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
   }
   // (the master's own cautions start here: the sum of its plain gains is weighed against them below)
   const masterFrom = out.length;
-  if (b.level - a.level > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master Level goes up by ${r1(b.level - a.level)} dB. Turn your speakers down before you listen.`, b.level - a.level));
+  // (a plain gain's own caution, said here with its own rise alone: weighed against the others at the end)
+  const plainSaid: { at: number; rise: number; clause: string }[] = [];
+  const plainLv = (clause: string, rise: number, tail = '') => {
+    plainSaid.push({ at: out.length, rise, clause });
+    out.push(lv(`${clause}.${tail}`, rise));
+  };
+  if (b.level - a.level > MASTER_JUMP_DB + 1e-9) plainLv(`The master Level goes up by ${r1(b.level - a.level)} dB`, b.level - a.level, ' Turn your speakers down before you listen.');
   // The Loud master: its push (a plain gain on the whole song) and its sub tilt (a low shelf, the
   // lows only), both before its clipper and the limiter; switched off, they're 0 (loudMaster.ts)
   const push = (m: typeof a) => (m.loud?.on ? m.loud.push : 0);
@@ -636,7 +642,7 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
     // (switched off, a push or tilt that turned the song down is taken away)
     if (loudUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the Loud master takes away its ${r1(loudUp)} dB cut: ${loudLouder}`, loudUp));
   } else if (loudUp > MASTER_JUMP_DB + 1e-9) {
-    if (!(tiltUp > 1e-9)) out.push(lv(`The Loud master pushes ${r1(pushUp)} dB harder.`, pushUp));
+    if (!(tiltUp > 1e-9)) plainLv(`The Loud master pushes ${r1(pushUp)} dB harder`, pushUp);
     else if (!(pushUp > 1e-9)) out.push(lv(`The Loud master's sub tilt goes up by ${r1(tiltUp)} dB: the lows come out up to ${r1(loudUp)} dB louder. Turn your speakers down before you listen.`, loudUp));
     else out.push(lv(`The Loud master pushes ${r1(pushUp)} dB harder and its sub tilt goes up by ${r1(tiltUp)} dB: ${loudLouder}`, loudUp));
   }
@@ -654,7 +660,7 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
   // (only while it was on: a depth stored while it was off isn't what played)
   else if (a.ott.on && b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(lv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`));
   if (a.ott.on && !b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the master OTT takes away its ${r1(ottUp)} dB cut: the song comes out ${a.ott.depth > 1e-9 ? 'up to ' : ''}${r1(ottUp)} dB louder. Turn your speakers down before you listen.`, ottUp));
-  else if (a.ott.on && b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master OTT's gain goes up by ${r1(ottUp)} dB.`, ottUp));
+  else if (a.ott.on && b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) plainLv(`The master OTT's gain goes up by ${r1(ottUp)} dB`, ottUp);
   // The clipper: its drive is a plain gain into it, its ceiling holds the peaks down (the limiter
   // after it holds them under LIMITER_CEILING_DBTP whatever it does)
   const ceilingOf = (m: typeof a) => Math.min(m.clipper?.ceiling ?? 0, LIMITER_CEILING_DBTP);
@@ -678,15 +684,32 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
     if (!(most > MASTER_JUMP_DB + 1e-9)) {
       // (nothing over the master's line)
     } else if (driveUp > 0.05 && up > 0.05) out.push(lv(`The master clipper is driven ${r1(driveUp)} dB harder and ${raised}: the song comes out up to ${r1(most)} dB louder. Turn your speakers down before you listen.`, most));
-    else if (driveUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`The master clipper is driven ${r1(driveUp)} dB harder.`, driveUp));
+    else if (driveUp > MASTER_JUMP_DB + 1e-9) plainLv(`The master clipper is driven ${r1(driveUp)} dB harder`, driveUp);
     else out.push(lv(`The master clipper's ceiling goes up from ${r1(a.clipper.ceiling)} to ${r1(b.clipper.ceiling)} dB: the peaks it held down come up by as much as ${r1(up)} dB. Turn your speakers down before you listen.`, up));
   }
   // Small rises on several of the master's plain gains add up: the Level, the Loud master's push, the
   // clipper's drive and the OTT's gains (with its lift, switched on) together (Level, push and drive
-  // up 3 each: +9 LU measured), said when no caution above already says as much
-  const ottAll = b.ott.on && !a.ott.on ? lift : a.ott.on && b.ott.on ? ottUp + OTT_FULL_LIFT_DB * (b.ott.depth - a.ott.depth) : ottUp;
-  const gains = [b.level - a.level, pushUp, driveOf(b) - driveOf(a), ottAll];
+  // up 3 each: +9 LU measured), said when no caution above already says as much. A cut counts only
+  // on a control that stays on (one switched off takes its clipper or compression away with it), and
+  // the OTT's depth eased lowers only its quiet parts, so it takes nothing off
+  const ottAll = b.ott.on && !a.ott.on ? lift : a.ott.on && b.ott.on ? ottUp + Math.max(0, OTT_FULL_LIFT_DB * (b.ott.depth - a.ott.depth)) : Math.max(0, ottUp);
+  const pushAll = a.loud?.on && b.loud?.on ? pushUp : Math.max(0, pushUp);
+  const driveAll = a.clipper?.on && b.clipper?.on ? driveOf(b) - driveOf(a) : Math.max(0, driveOf(b) - driveOf(a));
+  const gains = [b.level - a.level, pushAll, driveAll, ottAll];
   const together = gains.reduce((sum, g) => sum + g, 0);
+  // A plain gain's rise turned back down by another's cut (Level +4 with the OTT's out gain or the
+  // push -4: measured 0 LU, 0 dB peak) is said with what they come to together, the most any part of
+  // the song rises (the lows by the sub tilt as well): at most MASTER_JUMP_DB, only a note
+  const most = together + tiltUp;
+  const eased = plainSaid.filter((p) => p.rise > most + 0.05);
+  if (eased.length) {
+    const clauses = eased.map((p, i) => (i ? p.clause.replace(/^The /, 'the ') : p.clause));
+    const what = clauses.length > 1 ? `${clauses.slice(0, -1).join(', ')} and ${clauses.at(-1)}` : clauses[0];
+    const it = eased.length > 1 ? 'them' : 'it';
+    for (const p of [...eased].reverse()) out.splice(p.at, 1);
+    if (!(most > MASTER_JUMP_DB + 1e-9)) notes?.push(r1(most) > 0 ? `${what}, but other master changes in this suggestion turn most of ${it} back down: together they make the song up to ${r1(most)} dB louder.` : `${what}, but other master changes in this suggestion turn ${it} back down.`);
+    else out.splice(eased[0].at, 0, lv(`${what}, but other master changes in this suggestion turn part of ${it} back down: together they make the song up to ${r1(most)} dB louder. Turn your speakers down before you listen.`, most));
+  }
   const saidHere = maxOf(0, out.slice(masterFrom).map((c) => c.louder ?? 0));
   // (of two or more of them: one alone is said by its own caution)
   if (gains.filter((g) => g > 0.05).length > 1 && together > MASTER_JUMP_DB + 1e-9 && r1(together) > r1(saidHere)) out.push(lv(`Together these master changes make the song up to ${r1(together)} dB louder. Turn your speakers down before you listen.`, together));
