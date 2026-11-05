@@ -9,6 +9,7 @@ import { createBendFeed } from '../bendFeed';
 import { chooseNoteToSteal } from '../samplers/noteStealing';
 import { letGoToneSynth, type ToneVoice } from './toneStop';
 import { pitchAhead, type NoteSynth } from './toneStart';
+import { RENDER_BLOCK } from './native';
 
 /** Seconds a pool voice may sit silent before it's disposed. */
 const IDLE_SECONDS = 3;
@@ -43,6 +44,44 @@ export interface VoicePool {
   bend: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
   releaseAll: () => void;
   dispose: () => void;
+}
+
+/** What the pool knows of each voice's last note (see createVoicePool). */
+export interface PoolSlot {
+  start: number;
+  end: number;
+  velocity: number;
+  releasedAt: number;
+}
+
+/**
+ * Which voice plays a note at `time`: one whose last note ended at least `rest` before (the most
+ * recently freed, so spare ones go idle long enough to be disposed); else 'new', while there are
+ * fewer than `maxVoices`; else one that has just ended (it plays, only without the early start);
+ * else the busy one quietest now (see noteStealing.ts). undefined only if one chord has more
+ * notes than there are voices.
+ */
+export function choosePoolVoice<S extends PoolSlot>(voices: S[], time: number, rest: number, maxVoices: number): S | 'new' | undefined {
+  let free: S | undefined;
+  let ended: S | undefined;
+  const busy: S[] = [];
+  for (const v of voices) {
+    if (v.end + rest <= time) {
+      if (!free || v.end > free.end) free = v;
+    } else if (v.end <= time) {
+      // (the one longest ended: the nearest to free)
+      if (!ended || v.end < ended.end) ended = v;
+    } else if (v.start < time) {
+      // (a voice already starting at `time` can't be retriggered at the same instant)
+      busy.push(v);
+    }
+  }
+  if (free) return free;
+  if (voices.length < maxVoices) return 'new';
+  if (ended) return ended;
+  // About how loud each is now: its velocity, falling through its release (40 dB over it)
+  const level = (v: S) => (time > v.releasedAt ? v.velocity * Math.exp((-(time - v.releasedAt) * Math.log(100)) / Math.max(1e-3, v.end - v.releasedAt)) : v.velocity);
+  return busy[chooseNoteToSteal(busy.map((v) => ({ start: v.start, level: level(v), held: !(time >= v.releasedAt) })), time)];
 }
 
 /**
@@ -89,31 +128,22 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
     return bend;
   };
 
+  /**
+   * How long a voice rests after its note before it's taken for the next: two render blocks, so its
+   * note can start early silent (toneStart.ts pitchAhead). Taken sooner, the new note starts from
+   * where in the block it lands, so it sounded different live and in the export.
+   */
+  const rest = (2 * RENDER_BLOCK) / out.context.sampleRate;
+
   /** A voice for a note at `time`. */
   const pick = (time: number): Slot | undefined => {
-    let free: Slot | undefined;
-    const busy: Slot[] = [];
-    for (const v of voices) {
-      if (v.end <= time) {
-        // Reuse the most recently freed voice, so spare ones go idle long enough to be disposed
-        if (!free || v.end > free.end) free = v;
-      } else if (v.start < time) {
-        // (a voice already starting at `time` can't be retriggered at the same instant)
-        busy.push(v);
-      }
-    }
-    if (free) return free;
-    if (voices.length < maxVoices) {
-      const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
-      v.voice.connect(out);
-      bend?.signal.connect(v.voice.detune);
-      voices.push(v);
-      return v;
-    }
-    // About how loud each is now: its velocity, falling through its release (40 dB over it)
-    const level = (v: Slot) => (time > v.releasedAt ? v.velocity * Math.exp((-(time - v.releasedAt) * Math.log(100)) / Math.max(1e-3, v.end - v.releasedAt)) : v.velocity);
-    // (none only if one chord has more notes than there are voices)
-    return busy[chooseNoteToSteal(busy.map((v) => ({ start: v.start, level: level(v), held: !(time >= v.releasedAt) })), time)];
+    const choice = choosePoolVoice(voices, time, rest, maxVoices);
+    if (choice !== 'new') return choice;
+    const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
+    v.voice.connect(out);
+    bend?.signal.connect(v.voice.detune);
+    voices.push(v);
+    return v;
   };
 
   const disposeIdleVoices = () => {

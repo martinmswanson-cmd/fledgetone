@@ -162,12 +162,22 @@ export function getAudiblePositionBar(): number {
  * comes at `at + seconds` on that clock (what's scheduled there is heard on time).
  */
 export function getAudibleMoment(): { bar: number; at: number } {
-  const now = liveContext.immediate();
-  if (heading && now < heading.at) return { bar: heading.bar, at: heading.at };
-  heading = null;
   // What leaves the speakers now was rendered the output latency ago (larger with Stable playback)
-  const at = Math.max(0, now - outputLatency());
-  return { bar: ticksToBar(liveTransport.getTicksAtTime(at)), at };
+  const at = Math.max(0, liveContext.immediate() - outputLatency());
+  if (heading && at >= heading.at) heading = null;
+  return heardMoment(at, heading, (t) => ticksToBar(liveTransport.getTicksAtTime(t)));
+}
+
+/**
+ * The moment heard at audio time `at` (already the output latency behind the clock), with a start
+ * or a move `toward` a place: that's heard only once its own moment has come out of the speakers.
+ * Until then it's where things are going, not what the Transport reports (`barAt`): asked about a
+ * time before a start, Tone gives where it was before it (bar 1 after a Stop, the last Pause's
+ * place), so a Pause just after Play kept that and the playhead flashed there after every Play.
+ */
+export function heardMoment(at: number, toward: { bar: number; at: number } | null, barAt: (time: number) => number): { bar: number; at: number } {
+  if (toward && at < toward.at) return { bar: toward.bar, at: toward.at };
+  return { bar: barAt(at), at };
 }
 
 /**
