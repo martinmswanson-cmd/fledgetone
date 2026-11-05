@@ -3,6 +3,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { own } from '../../store/ownKey';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from '../../audio/instrumentCatalog';
 import { curveLevel, defaultCurve, groupsInUse, STEM_GROUP_PRESETS, type IntensityCurve } from '../../store/intensity';
+import { svgPoint } from '../svgPoint';
 
 /**
  * Intensity in the Game preview: the slider (the same one as in the header), each track's stem
@@ -27,9 +28,7 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
   const toX = (x: number) => PAD + x * (W - 2 * PAD);
   const toY = (y: number) => H - PAD - y * (H - 2 * PAD);
   const fromEvent = (e: React.PointerEvent): [number, number] => {
-    const r = svg.current!.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * W;
-    const y = ((e.clientY - r.top) / r.height) * H;
+    const [x, y] = svgPoint(svg.current!, e.clientX, e.clientY, W, H);
     return [Math.max(0, Math.min(1, (x - PAD) / (W - 2 * PAD))), Math.max(0, Math.min(1, (H - PAD - y) / (H - 2 * PAD)))];
   };
   const save = (c: IntensityCurve) => useTimelineStore.getState().setIntensityCurve(group, [...c].sort((a, b) => a[0] - b[0]));

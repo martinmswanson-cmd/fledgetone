@@ -8,6 +8,7 @@ import React, { useRef } from 'react';
 import { curveAt, MAX_DUCK_POINTS, normalizeDuckPoints, PUMP_SHAPE_INFO, PUMP_SHAPES, SHAPE_POINTS, type DuckPoint, type PumpShape } from '../../audio/effects/duckShape';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Track } from '../../store/timelineTypes';
+import { svgPoint } from '../svgPoint';
 
 const W = 220;
 const H = 64;
@@ -39,9 +40,7 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
 
   const toXY = ([x, y]: DuckPoint) => [PAD + x * (W - 2 * PAD), PAD + y * (H - 2 * PAD)] as const;
   const fromEvent = (e: React.PointerEvent | React.MouseEvent): DuckPoint => {
-    const r = svg.current!.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * W;
-    const y = ((e.clientY - r.top) / r.height) * H;
+    const [x, y] = svgPoint(svg.current!, e.clientX, e.clientY, W, H);
     return [Math.max(0, Math.min(1, (x - PAD) / (W - 2 * PAD))), Math.max(0, Math.min(1, (y - PAD) / (H - 2 * PAD)))];
   };
   const drawn = (pts: DuckPoint[]) => {
