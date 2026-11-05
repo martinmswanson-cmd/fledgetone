@@ -58,7 +58,10 @@ export const PocketSteps: React.FC<{ track: Track; sec: PocketSection; rw: numbe
     surf.current?.setPointerCapture(e.pointerId);
     // (Making the cell's clip and the drag are one undo step)
     const begun = inOneStep(() => {
+      const clipsBefore = useTimelineStore.getState().clips;
       const id = cellClip(track.id, sec, true);
+      // (A cell made one clip just now is a change already; else the step waits for the first step that changes)
+      const made = useTimelineStore.getState().clips !== clipsBefore;
       const c = useTimelineStore.getState().clips.find((x) => x.id === id);
       if (!id || !c) return null;
       const have = c.stepLanes?.find((l) => l.target === target);
@@ -67,11 +70,12 @@ export const PocketSteps: React.FC<{ track: Track; sec: PocketSection; rw: numbe
         showToast(`This clip already has ${MAX_STEP_LANES} step lanes (the most there can be): clear one in the studio first.`);
         return null;
       }
-      useTimelineStore.getState().checkpoint();
-      return { id, c, have };
+      if (made) useTimelineStore.getState().checkpoint();
+      return { id, c, have, made };
     });
     if (!begun) return;
     const { id, c, have } = begun;
+    let recorded = begun.made;
     let current: StepLane = have ?? { id: uid('steps'), target, grid: DEFAULT_STEP_GRID, steps: [] };
     const step = stepBars(current) * STEPS_PER_WHOLE * rw;
     const count = stepValues(current, c.lengthBars).length;
@@ -80,14 +84,22 @@ export const PocketSteps: React.FC<{ track: Track; sec: PocketSection; rw: numbe
       return { i: Math.max(0, Math.min(count - 1, Math.floor((ev.clientX - r.left) / step))), v: Math.max(0, Math.min(1, 1 - (ev.clientY - r.top - 5) / inner)) };
     };
     const paint = (p: { i: number; v: number }, from: { i: number; v: number }) => {
+      const was = stepValues(current, c.lengthBars);
       const n = Math.abs(p.i - from.i);
       for (let k = 0; k <= n; k++) {
         const i = from.i + Math.sign(p.i - from.i) * k;
         current = paintSteps(current, c.lengthBars, i, i, erase ? null : Math.round((n ? from.v + ((p.v - from.v) * k) / n : p.v) * 100) / 100);
       }
+      const now = stepValues(current, c.lengthBars);
+      // (Erasing an empty step, or a height it already has: nothing changes, no undo step)
+      if (now.length === was.length && now.every((v, i) => v === was[i])) return;
       const st = useTimelineStore.getState();
       const live = st.clips.find((x) => x.id === id);
       if (!live) return;
+      if (!recorded) {
+        st.checkpoint();
+        recorded = true;
+      }
       const others = (live.stepLanes ?? []).filter((l) => l.id !== current.id && l.target !== current.target);
       const mine = current;
       st.setClipStepLanes(id, current.steps.length ? [...others, mine] : others, false);

@@ -93,11 +93,14 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
     let moved = recorded;
     const onMove = (ev: PointerEvent) => {
       const { x, y } = pointer(ev);
+      const to = { at: atOf(x, ev.shiftKey), value: round(valueOf(y)) };
+      // (A nudge that snaps back to where the point is changes nothing: no undo step yet)
+      if (!moved && to.at === start[index].at && to.value === start[index].value) return;
       if (!moved) {
         moved = true;
         store().checkpoint();
       }
-      write(start.map((p, i) => (i === index ? { at: atOf(x, ev.shiftKey), value: round(valueOf(y)) } : p)), false);
+      write(start.map((p, i) => (i === index ? to : p)), false);
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);

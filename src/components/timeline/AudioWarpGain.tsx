@@ -54,12 +54,23 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
     return best;
   };
 
-  /** Follow the pointer until it's let go. */
-  const drag = (e: React.PointerEvent, move: (ev: PointerEvent) => void, checkpoint = true) => {
+  /**
+   * Follow the pointer until it's let go. `move` gives the change to make, or null when the pointer
+   * hasn't moved it anywhere new; the undo step is made with the first change (a click changes nothing).
+   */
+  const drag = (e: React.PointerEvent, move: (ev: PointerEvent) => (() => void) | null, checkpoint = true) => {
     e.preventDefault();
     e.stopPropagation();
-    if (checkpoint) store().checkpoint();
-    const onMove = (ev: PointerEvent) => move(ev);
+    let recorded = !checkpoint;
+    const onMove = (ev: PointerEvent) => {
+      const change = move(ev);
+      if (!change) return;
+      if (!recorded) {
+        recorded = true;
+        store().checkpoint();
+      }
+      change();
+    };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -84,6 +95,7 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
     if (i < 0) return;
     const startSongBeat = (clip.startBar - 1) * 4;
     const offsetBeat = beatAt(audio, audio.offset);
+    let last = markers[i].beat;
     drag(e, (ev) => {
       const q = at(ev);
       let beat = offsetBeat + (q.t * bpm) / 60;
@@ -93,7 +105,9 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
       const lo = i > 0 ? markers[i - 1].beat + WARP_MIN_GAP * k * 2 : -Infinity;
       const hi = i < markers.length - 1 ? markers[i + 1].beat - WARP_MIN_GAP * k * 2 : Infinity;
       beat = Math.max(lo, Math.min(hi, beat));
-      setWarp(markers.map((m, j) => (j === i ? { src: m.src, beat } : m)), false);
+      if (beat === last) return null;
+      last = beat;
+      return () => setWarp(markers.map((m, j) => (j === i ? { src: m.src, beat } : m)), false);
     });
   };
   const onWarpDouble = (e: React.MouseEvent) => {
@@ -130,12 +144,16 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
     const added = points !== envelope;
     const index = i;
     const base = points;
+    let last = `${base[index].src}|${base[index].db}`;
     drag(e, (ev) => {
       const q = at(ev);
       const lo = index > 0 ? base[index - 1].src : -Infinity;
       const hi = index < base.length - 1 ? base[index + 1].src : Infinity;
       const src = Math.max(lo, Math.min(hi, sourceAt(audio, q.t, bpm)));
-      setEnvelope(base.map((g, j) => (j === index ? { src, db: yToDb(q.y, height) } : g)), false);
+      const db = yToDb(q.y, height);
+      if (`${src}|${db}` === last) return null;
+      last = `${src}|${db}`;
+      return () => setEnvelope(base.map((g, j) => (j === index ? { src, db } : g)), false);
     }, !added);
   };
   const onGainMenu = (e: React.MouseEvent) => {

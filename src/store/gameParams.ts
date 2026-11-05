@@ -152,6 +152,11 @@ export function cleanTarget(t: ParamTarget): ParamTarget {
   return target(t.kind, value(t.start), value(t.end), clamp01(t.from), clamp01(t.to), t.kind === 'layer' ? t.group || undefined : undefined);
 }
 
+/** The same target: what it moves, its stem group, its window and its values. */
+export function sameParamTarget(a: ParamTarget, b: ParamTarget): boolean {
+  return a.kind === b.kind && (a.group ?? '') === (b.group ?? '') && a.from === b.from && a.to === b.to && a.start === b.start && a.end === b.end;
+}
+
 /** Parameters from a project file, keeping the readable ones. */
 export function parseGameParams(raw: unknown): GameParam[] {
   if (!Array.isArray(raw)) return [];
