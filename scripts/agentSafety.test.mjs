@@ -152,3 +152,98 @@ test('un-soloing a quiet soloed track brings the rest back: a warning', () => {
   // Soloing (fewer heard) says nothing
   assert.equal(warningsFor([{ op: 'set_track', trackId: t.id, solo: true }]), '');
 });
+
+test('a lane kept but redrawn louder somewhere along the song is a warning, said from where it comes up', () => {
+  const t = base().tracks[0];
+  // Loud only in bar 1, held far down after; redrawn at its top all along
+  const held = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_track', trackId: t.id, volumeDb: 0 }, { op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 1 }, { bar: 2, value: 0.05 }, { bar: 64, value: 0.05 }] }] }, { idBase: 'sg-1' }).song;
+  const top = [{ bar: 1, value: 1 }, { bar: 64, value: 1 }];
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: top }], held), /^This redraws the volume automation on "Keys": it comes up by as much as 66 dB from bar 1\.\d\. Turn your speakers down before you listen\.$/);
+  // The low part raised with a jump at bar 2: from bar 2
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 1 }, { bar: 2, value: 0.05 }, { bar: 2, value: 1 }, { bar: 64, value: 1 }] }], held), /it comes up by as much as 66 dB from bar 2\./);
+  // A drive lane: on at 10%, the lane at the top in bar 1 then down to nothing, redrawn at its top all along
+  const driven = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'distortion', settings: { on: true, amount: 0.1 } }, { op: 'set_automation', trackId: t.id, param: 'fx:distortion.amount', points: [{ bar: 1, value: 1 }, { bar: 1.25, value: 0 }, { bar: 64, value: 0 }] }] }, { idBase: 'sg-2' }).song;
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'fx:distortion.amount', points: top }], driven), /This redraws the distortion drive automation on "Keys": it is driven much harder from bar 1\.\d \(as much as 0% to 100% drive\): it gets louder and harsher\./);
+  // A delay feedback lane short in bar 1 to 8, redrawn to feed back hard from bar 9
+  const echo = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'echo', settings: { on: true, feedback: 0.3 } }, { op: 'set_automation', trackId: t.id, param: 'fx:echo.feedback', points: [{ bar: 1, value: 0.2 }, { bar: 64, value: 0.2 }] }] }, { idBase: 'sg-3' }).song;
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'fx:echo.feedback', points: [{ bar: 1, value: 0.2 }, { bar: 9, value: 0.2 }, { bar: 9, value: 1 }, { bar: 64, value: 1 }] }], echo), /This redraws the delay feedback automation on "Keys": it feeds back at up to \d+% from bar 9: its echoes build up and take a long time to die away\./);
+});
+
+test('a lane redrawn quieter, or a fade-in moved later, says nothing', () => {
+  const t = base().tracks[0];
+  const fadeIn = [{ bar: 1, value: 0 }, { bar: 9, value: 0.84 }, { bar: 64, value: 0.84 }];
+  const song = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_track', trackId: t.id, volumeDb: 0 }, { op: 'set_automation', trackId: t.id, param: 'volume', points: fadeIn }] }, { idBase: 'sg-1' }).song;
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0 }, { bar: 17, value: 0 }, { bar: 25, value: 0.84 }, { bar: 64, value: 0.84 }] }], song), '');
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0 }, { bar: 9, value: 0.7 }, { bar: 64, value: 0.6, curve: 0.5 }] }], song), '');
+  // A drive lane made gentler
+  const driven = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'distortion', settings: { on: true, amount: 0.5 } }, { op: 'set_automation', trackId: t.id, param: 'fx:distortion.amount', points: [{ bar: 1, value: 0.8 }, { bar: 64, value: 0.8 }] }] }, { idBase: 'sg-2' }).song;
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'fx:distortion.amount', points: [{ bar: 1, value: 0.2 }, { bar: 32, value: 0.8 }] }], driven), '');
+});
+
+test('a volume lane added over a quiet fader is a warning; one at the fader level is not', () => {
+  const t = base().tracks[0];
+  const quiet = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_track', trackId: t.id, volumeDb: -30 }] }, { idBase: 'sg-1' }).song;
+  // At the fader's -30 dB up to bar 33 (0.355 up the lane), then at the top
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0.355 }, { bar: 33, value: 0.355 }, { bar: 33, value: 1 }] }], quiet), /^On "Keys", the volume automation goes up to 3\d(\.\d)? dB over what it was\.$/);
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0.355 }, { bar: 33, value: 0.355 }] }], quiet), '');
+});
+
+test('a bus lane redrawn louder is a warning too', () => {
+  const song = applyOps(base(), { opsVersion: 1, ops: [{ op: 'add_track', instrument: 'bus', ref: 'b' }, { op: 'set_automation', trackId: '$b', param: 'volume', points: [{ bar: 1, value: 0.2 }, { bar: 64, value: 0.2 }] }] }, { idBase: 'sg-1' }).song;
+  const bus = song.tracks.find((x) => x.instrumentKey === 'bus');
+  assert.match(warningsFor([{ op: 'set_automation', trackId: bus.id, param: 'volume', points: [{ bar: 1, value: 0.2 }, { bar: 5, value: 1 }] }], song), /This redraws the volume automation on "[^"]+": it comes up by as much as \d+(\.\d)? dB from bar \d/);
+});
+
+test('a volume lane at silence says a number of dB, never Infinity', () => {
+  const t = base().tracks[0];
+  const silent = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 0 }, { bar: 5, value: 0 }] }] }, { idBase: 'sg-1' }).song;
+  const removed = warningsFor([{ op: 'remove_automation', trackId: t.id, param: 'volume' }], silent);
+  const redrawn = warningsFor([{ op: 'set_automation', trackId: t.id, param: 'volume', points: [{ bar: 1, value: 1 }] }], silent);
+  assert.match(removed, /This takes away the volume automation on "Keys": it held it down, and it comes up by as much as \d+(\.\d)? dB\./);
+  assert.match(redrawn, /This redraws the volume automation on "Keys": it comes up by as much as 66 dB from bar 1\./);
+  assert.doesNotMatch(removed + redrawn, /Infinity|NaN/);
+  // Said once: not again as louder through the buses and the master
+  assert.doesNotMatch(removed + redrawn, /through the buses/);
+});
+
+test('a parametric EQ or multiband cut taken away, or a band raised from below 0 dB, is a warning', () => {
+  const t = base().tracks[0];
+  const cut = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { on: true, bands: [{ on: true, type: 'bell', freq: 500, gain: -24, q: 0.3 }] } }] }, { idBase: 'sg-1' }).song;
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { on: false } }], cut), /^This switches off the parametric EQ on "Keys": it held it down, and around 500 Hz it comes up by 24 dB\. Turn your speakers down before you listen\.$/);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { bands: [{ on: true, type: 'bell', freq: 500, gain: 0, q: 0.3 }] } }], cut), /^On "Keys", the parametric EQ cuts less: around 500 Hz it comes up by 24 dB\./);
+  // A low-cut at 5 kHz taken away
+  const lowCut = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { on: true, bands: [{ on: true, type: 'lowcut', freq: 5000, gain: 0, q: 0.7 }] } }] }, { idBase: 'sg-2' }).song;
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { bands: [{ on: false, type: 'lowcut', freq: 5000, gain: 0, q: 0.7 }] } }], lowCut), /the parametric EQ cuts less: around \d+ Hz it comes up by \d+(\.\d)? dB/);
+  // A cut made deeper, or a band only nudged, says nothing
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'peq', settings: { bands: [{ on: true, type: 'bell', freq: 500, gain: -20, q: 0.3 }] } }], cut), '');
+  const mb = applyOps(base(), { opsVersion: 1, ops: [{ op: 'set_insert', trackId: t.id, insert: 'mbc', settings: { on: true, bands: [{ threshold: 0, ratio: 1, gain: -12 }, { threshold: 0, ratio: 1, gain: -12 }, { threshold: 0, ratio: 1, gain: -12 }] } }] }, { idBase: 'sg-3' }).song;
+  const up = [{ threshold: 0, ratio: 1, gain: 6 }, { threshold: 0, ratio: 1, gain: 6 }, { threshold: 0, ratio: 1, gain: 6 }];
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'mbc', settings: { bands: up } }], mb), /^On "Keys", the multiband compressor lifts a band by 18 dB more\.$/);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'mbc', settings: { on: false } }], mb), /^This switches off the multiband compressor on "Keys": its bands held it down, and it comes up by as much as 12 dB\. Turn your speakers down before you listen\.$/);
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: t.id, insert: 'mbc', settings: { bands: up.map((b) => ({ ...b, gain: -8 })) } }], mb), '');
+});
+
+test('a volume lane counts along the way out: a track led out of a bus held down, a muted track with a lane', () => {
+  const s = base();
+  const [keys, , , , rain] = s.tracks;
+  const held = applyOps(s, { opsVersion: 1, ops: [{ op: 'add_track', instrument: 'bus', ref: 'B', name: 'Grp' }, { op: 'set_track', trackId: keys.id, output: '$B' }, { op: 'set_automation', trackId: '$B', param: 'volume', points: [{ bar: 1, value: 0.3 }] }] }, { idBase: 'sg-1' }).song;
+  assert.match(warningsFor([{ op: 'set_track', trackId: keys.id, output: null }], held), /"Keys" comes out up to 35\.8 dB louder through the buses and the master together/);
+  const muted = applyOps(s, { opsVersion: 1, ops: [{ op: 'set_automation', trackId: rain.id, param: 'volume', points: [{ bar: 1, value: 1 }] }, { op: 'set_track', trackId: rain.id, mute: true }] }, { idBase: 'sg-2' }).song;
+  const out = applyOps(muted, { opsVersion: 1, ops: [{ op: 'set_track', trackId: rain.id, mute: false }] }, { idBase: 'sg-3' });
+  assert.match(out.warnings.join('\n'), /This unmutes "Rain" \(at 6 dB\): it will be heard again\./);
+  assert.deepEqual(out.notes, []);
+});
+
+test('a drive or makeup lane on an insert that was off is measured from nothing', () => {
+  const t = base().tracks[0];
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'fx:distortion.amount', points: [{ bar: 1, value: 0.65 }] }]), /^On "Keys", the distortion drive automation pushes it to 65%\.$/);
+  assert.match(warningsFor([{ op: 'set_automation', trackId: t.id, param: 'fx:compressor.makeup', points: [{ bar: 1, value: 0.5 }] }]), /^On "Keys", the compressor makeup automation goes up to 9 dB over what it was\.$/);
+});
+
+test('unmuting a track a solo keeps silent is a note, not a warning', () => {
+  const s = base();
+  const soloed = applyOps(s, { opsVersion: 1, ops: [{ op: 'set_track', trackId: s.tracks[0].id, mute: true }, { op: 'set_track', trackId: s.tracks[4].id, solo: true }] }, { idBase: 'sg-1' }).song;
+  const out = applyOps(soloed, { opsVersion: 1, ops: [{ op: 'set_track', trackId: s.tracks[0].id, mute: false }] }, { idBase: 'sg-2' });
+  assert.deepEqual(out.warnings, []);
+  assert.deepEqual(out.notes, ['This unmutes "Keys", but it stays silent: other tracks are soloed.']);
+});

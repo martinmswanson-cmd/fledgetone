@@ -366,12 +366,16 @@ characters). The warnings and what changes, which the musician reads on the card
 text an op gave: a setting given a value that isn't one of its choices says so, "(left as it
 was)". **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
-than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, or
-its fader, buses and the master together), a track unmuted (one that sits 12 dB or more under the
-rest of the mix is only a note), a track heard again because a solo was cleared or moved, a
+than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, a
+parametric EQ cut eased or taken away, a parametric EQ or multiband compressor that held it down
+switched off, or its fader, buses and the master together, a volume lane counted where there is
+one), a track unmuted (one that sits 12 dB or more under the rest of the mix, or that a solo or a
+muted bus still keeps silent, is only a note), a track heard again because a solo was cleared or moved, a
 Distortion or Saturation driven much harder, a Delay fed back at 80% or more, automation of any of
-those drawn high, a lane that held one of them down taken away (removed, or left with no points),
-the master up by
+those drawn high, a lane of one of them redrawn so that it is louder (or driven or fed back
+harder) anywhere along the song than it was there (the warning says from which bar; a lane on an
+insert that was off is measured from nothing), a lane that
+held one of them down taken away (removed, or left with no points), the master up by
 more than 3 dB, the Loud master or the clipper switched on. Every result is checked the way a
 saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
 suggestion adds at most 5000 notes, copies of clips (linked or not) included.
