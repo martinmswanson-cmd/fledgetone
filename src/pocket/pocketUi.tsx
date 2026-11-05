@@ -6,6 +6,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import { onBack } from '../native/backButton';
+import { useSliderUndo } from '../components/sliderUndo';
 import { NOTE_CHANCES, chanceIdOf } from '../store/noteChance';
 import type { NoteEvent } from '../store/timelineTypes';
 
@@ -95,28 +96,30 @@ export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chanc
 /**
  * A slider in a list that scrolls: a finger moves it only by going sideways (or by a tap), so one
  * scrolling the list up or down past it leaves it alone (a plain range input jumps to wherever the
- * finger lands). The keyboard works it as usual. `onStart`: a drag, tap or key is about to change it.
+ * finger lands). The keyboard works it as usual. `undoable`: each adjustment (a drag, a tap, a burst
+ * of keys, a screen reader's change) is one undo step, as the studio's sliders (useSliderUndo).
  */
-export const TouchRange: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; onStart?: () => void; className?: string; style?: React.CSSProperties }> = ({
+export const TouchRange: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; undoable?: boolean; className?: string; style?: React.CSSProperties }> = ({
   label,
   value,
   min,
   max,
   step,
   onChange,
-  onStart,
+  undoable = false,
   className = '',
   style,
 }) => {
   const input = useRef<HTMLInputElement>(null);
   const drag = useRef<{ id: number; x: number; y: number; on: boolean } | null>(null);
-  const set = (x: number) => {
+  const undo = useSliderUndo(undoable);
+  const set = (x: number, fresh?: boolean) => {
     const r = input.current?.getBoundingClientRect();
     if (!r) return;
     // (The thumb's centre runs from about 8 px in at either end)
     const f = Math.max(0, Math.min(1, (x - r.left - 8) / Math.max(1, r.width - 16)));
     const v = Math.max(min, Math.min(max, min + Math.round((f * (max - min)) / step) * step));
-    if (v !== value) onChange(v);
+    if (v !== value) undo.change(() => onChange(v), value, fresh);
   };
   return (
     <span
@@ -126,7 +129,7 @@ export const TouchRange: React.FC<{ label: string; value: number; min: number; m
         drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, on: e.pointerType !== 'touch' };
         if (drag.current.on) {
           e.currentTarget.setPointerCapture(e.pointerId);
-          onStart?.();
+          undo.press();
           set(e.clientX);
         }
       }}
@@ -138,24 +141,35 @@ export const TouchRange: React.FC<{ label: string; value: number; min: number; m
           if (dx < 8 || dx < Math.abs(e.clientY - d.y)) return;
           d.on = true;
           e.currentTarget.setPointerCapture(e.pointerId);
-          onStart?.();
+          undo.press();
         }
         set(e.clientX);
       }}
       onPointerUp={(e) => {
         const d = drag.current;
         drag.current = null;
-        // A tap puts it there
-        if (d && !d.on && d.id === e.pointerId) {
-          onStart?.();
-          set(e.clientX);
-        }
+        // A tap puts it there (an adjustment of its own)
+        if (d && !d.on && d.id === e.pointerId) set(e.clientX, true);
       }}
       onPointerCancel={() => (drag.current = null)}
     >
-      <input ref={input} type="range" aria-label={label} min={min} max={max} step={step} value={value} onKeyDown={(e) => {
-          if (/^(Arrow|Page|Home$|End$)/.test(e.key)) onStart?.();
-        }} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-full pointer-events-none block" style={style} />
+      <input
+        ref={input}
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onKeyDown={(e) => undo.key(e)}
+        onBlur={() => undo.blur()}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          undo.change(() => onChange(next), value);
+        }}
+        className="w-full h-full pointer-events-none block"
+        style={style}
+      />
     </span>
   );
 };

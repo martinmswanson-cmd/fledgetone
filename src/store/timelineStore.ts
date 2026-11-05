@@ -834,6 +834,12 @@ interface TimelineState {
    */
   beginEdit: () => void;
   /**
+   * The field or slider is let go (a drag ended, focus left it): a beginEdit() that nothing
+   * changed after is dropped, so it can't become an empty undo step with a later change that makes
+   * none of its own (the starting tempo).
+   */
+  endEdit: () => void;
+  /**
    * A built-in plugin's knobs are about to turn (pluginEdits.ts): its settings now become an undo
    * step, which puts them back on the plugin when undone.
    */
@@ -1128,7 +1134,11 @@ let pendingCheckpoint: HistoryEntry | null = null;
 function changesHistory(s: TimelineState, next: Partial<TimelineState>): boolean {
   const after = historyEntry({ ...s, ...next } as TimelineState);
   const before = historyEntry(s);
-  return (Object.keys(before) as Array<keyof HistoryEntry>).some((k) => (k === 'masterFx' ? JSON.stringify(before[k]) !== JSON.stringify(after[k]) : before[k] !== after[k]));
+  // The starting tempo on its own isn't undone (restoreEntry puts it back only with the tempo changes)
+  const tempoOnly = after.tempoPoints === before.tempoPoints;
+  return (Object.keys(before) as Array<keyof HistoryEntry>).some((k) =>
+    k === 'masterFx' ? JSON.stringify(before[k]) !== JSON.stringify(after[k]) : k === 'bpm' && tempoOnly ? false : before[k] !== after[k]
+  );
 }
 
 /** Say that an edit wasn't made because it would go past the caps (after the change in hand: a toast is a change of its own). */
@@ -1826,11 +1836,15 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // Hundredths, so a tempo fitted to a video length lands within a frame or so
       const clamped = clampBpm(bpm);
       // Markers held to their time stay at the same timecode, so their bars move; audio clips keep
-      // their length in seconds, so their bars change too
+      // their length in seconds, so their bars change too. None of it is an undo step: a field or
+      // slider taken hold of (beginEdit) stays waiting for a change of its own
+      const held = pendingCheckpoint;
+      pendingCheckpoint = null;
       set((s) => {
         const to = songTempo({ bpm: clamped, tempoPoints: s.tempoPoints });
         return { bpm: clamped, markers: retimeMarkers(s.markers, to), clips: retimeAudioClips(s.clips, songTempo(s), to) };
       });
+      pendingCheckpoint = held;
     },
 
     breatheTempo: (phrase, amount) => {
@@ -3412,6 +3426,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
     beginEdit: () => {
       pendingCheckpoint = historyEntry(get());
+    },
+    endEdit: () => {
+      pendingCheckpoint = null;
     },
     checkpointPlugin: (pluginId) => {
       pendingCheckpoint = null;

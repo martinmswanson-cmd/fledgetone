@@ -9,6 +9,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FolderOpen, Share2, Star, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
+import { UndoableRange } from '../components/UndoableRange';
 import { CATEGORIES, INSTRUMENTS, listedCategory } from '../audio/instrumentCatalog';
 import { LEVEL_MAX, LEVEL_MIN, REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX, type InstrumentKey, type Track } from '../store/timelineTypes';
 import { showToast } from '../components/timeline/toastStore';
@@ -158,7 +159,7 @@ const Handle: React.FC<{ appRef: React.RefObject<HTMLDivElement | null> }> = ({ 
 const Slider: React.FC<{ label: string; value: number; min: number; max: number; step: number; show: string; onChange: (v: number) => void; color: string }> = ({ label, value, min, max, step, show, onChange, color }) => (
   <label className="grid grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2.5 text-[13px] text-forge-muted min-h-11">
     <span>{label}</span>
-    <TouchRange label={label} min={min} max={max} step={step} value={value} onStart={() => useTimelineStore.getState().beginEdit()} onChange={onChange} className="w-full h-8" style={{ accentColor: color }} />
+    <TouchRange label={label} min={min} max={max} step={step} value={value} undoable onChange={onChange} className="w-full h-8" style={{ accentColor: color }} />
     <span className="font-mono text-xs text-forge-text text-right">{show}</span>
   </label>
 );
@@ -325,7 +326,7 @@ const MixAll: React.FC = () => {
             <button type="button" className="text-xs font-semibold max-w-full truncate min-h-6" onClick={() => usePocket.getState().set({ trackId: t.id, mixAll: false })}>
               {t.name}
             </button>
-            <input type="range" className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setTrackVolume(t.id, Number(e.target.value))} />
+            <UndoableRange className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onValue={(v) => s().setTrackVolume(t.id, v)} />
             <span className="font-mono text-[10.5px] text-forge-muted">{db(t.volume)}</span>
             <div className="flex gap-1 w-full">
               <button type="button" aria-pressed={t.isMuted} aria-label={`Mute ${t.name}`} className={`${ms} ${t.isMuted ? 'bg-amber-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleMute(t.id)}>
@@ -339,7 +340,7 @@ const MixAll: React.FC = () => {
         ))}
         <div className="pk-strip !basis-[96px]" style={{ ['--c' as string]: '#e4e4e7' }}>
           <span className="text-xs font-semibold min-h-6">Master</span>
-          <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
+          <UndoableRange className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onValue={(v) => s().setMasterLevel(v, false)} />
           <span className="font-mono text-[10.5px] text-forge-muted">{db(master.level)}</span>
           <button
             type="button"

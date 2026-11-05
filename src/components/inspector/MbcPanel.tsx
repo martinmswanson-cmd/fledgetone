@@ -5,6 +5,7 @@ import type { MbcBand, Track, TrackFx } from '../../store/timelineTypes';
 import { defaultTrackFx } from '../../store/timelineTypes';
 import { liveMbcReduction } from '../../audio/liveTracks';
 import { FxSlider, InsertPanel } from './InsertFx';
+import { roundedKeyStep } from '../keyboard';
 
 /**
  * The multiband compressor: where the low, mid and high bands split, how hard each is squeezed,
@@ -15,6 +16,10 @@ const BAND_NAMES = ['Low', 'Mid', 'High'] as const;
 const BAND_COLORS = ['#f59e0b', '#22c55e', '#06b6d4'];
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} kHz` : `${Math.round(v)} Hz`);
 const db = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
+/** The crossover sliders: the natural log of Hz, kept in whole Hz */
+const wholeHz = (v: number) => Math.round(Math.exp(v));
+/** (Under 50 Hz the slider's step is less than a hertz: an arrow key goes to the next whole one) */
+const logHzStep = (v: number, dir: 1 | -1) => roundedKeyStep(v, dir, 0.01, wholeHz, Math.log, 1);
 
 /** The gain reduction meters, read each frame without re-rendering the panel. */
 const Reduction: React.FC<{ trackId: string }> = ({ trackId }) => {
@@ -80,8 +85,8 @@ export const MbcControls: React.FC<{ track: Track; wide?: boolean }> = ({ track,
         ))}
         {wide && <Reduction trackId={track.id} />}
       </div>
-      <FxSlider label="Low / mid" value={Math.log(m.lowFreq)} min={Math.log(40)} max={Math.log(1000)} step={0.01} format={(v) => hz(Math.exp(v))} onChange={(v) => set({ lowFreq: Math.round(Math.exp(v)) })} reset={Math.log(d.lowFreq)} accent={accent} disabled={off} />
-      <FxSlider label="Mid / high" value={Math.log(m.highFreq)} min={Math.log(1000)} max={Math.log(12000)} step={0.01} format={(v) => hz(Math.exp(v))} onChange={(v) => set({ highFreq: Math.round(Math.exp(v)) })} reset={Math.log(d.highFreq)} accent={accent} disabled={off} />
+      <FxSlider label="Low / mid" value={Math.log(m.lowFreq)} min={Math.log(40)} max={Math.log(1000)} step={0.01} format={(v) => hz(Math.exp(v))} onChange={(v) => wholeHz(v) !== m.lowFreq && set({ lowFreq: wholeHz(v) })} keyStep={logHzStep} reset={Math.log(d.lowFreq)} accent={accent} disabled={off} />
+      <FxSlider label="Mid / high" value={Math.log(m.highFreq)} min={Math.log(1000)} max={Math.log(12000)} step={0.01} format={(v) => hz(Math.exp(v))} onChange={(v) => wholeHz(v) !== m.highFreq && set({ highFreq: wholeHz(v) })} keyStep={logHzStep} reset={Math.log(d.highFreq)} accent={accent} disabled={off} />
       <FxSlider label="Attack" value={m.attack * 1000} min={1} max={200} step={1} format={(v) => `${Math.round(v)} ms`} onChange={(v) => set({ attack: v / 1000 })} reset={d.attack * 1000} accent={accent} disabled={off} />
       <FxSlider label="Release" value={m.release * 1000} min={20} max={1000} step={5} format={(v) => `${Math.round(v)} ms`} onChange={(v) => set({ release: v / 1000 })} reset={d.release * 1000} accent={accent} disabled={off} />
       {!wide && m.on && <Reduction trackId={track.id} />}

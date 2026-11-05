@@ -99,6 +99,8 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
         onPointerUp={(e) => {
           if (!drag.current) return;
           svg.current?.releasePointerCapture(e.pointerId);
+          // (A press that moved nothing leaves no undo step waiting)
+          st().endEdit();
           // (The click after the drag adds nothing)
           setTimeout(() => (drag.current = null), 0);
         }}

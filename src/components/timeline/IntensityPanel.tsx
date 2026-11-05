@@ -21,6 +21,9 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
   const [drag, setDrag] = useState<number | null>(null);
   // The drag's undo step is made on its first real move: a click on a point changes nothing
   const recorded = useRef(false);
+  // Where the drag started and the point then: the point moves by as much as the pointer has (a
+  // press near a point that doesn't move leaves it where it is, not under the pointer)
+  const grab = useRef<{ from: [number, number]; point: [number, number] } | null>(null);
   const toX = (x: number) => PAD + x * (W - 2 * PAD);
   const toY = (y: number) => H - PAD - y * (H - 2 * PAD);
   const fromEvent = (e: React.PointerEvent): [number, number] => {
@@ -53,6 +56,7 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
           if (i >= 0) {
             // One undo step for the whole drag, made when the point first moves
             recorded.current = false;
+            grab.current = { from: fromEvent(e), point: curve[i] };
             setDrag(i);
           } else {
             // (the point just added is that step)
@@ -60,13 +64,17 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
             const p = fromEvent(e);
             const next = [...curve, p].sort((a, b) => a[0] - b[0]) as IntensityCurve;
             save(next);
+            grab.current = { from: p, point: p };
             setDrag(next.indexOf(p));
           }
           (e.target as Element).setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
-          if (drag === null) return;
-          const p = fromEvent(e);
+          if (drag === null || !grab.current) return;
+          const [x, y] = fromEvent(e);
+          const { from, point } = grab.current;
+          const clamp = (v: number) => Math.max(0, Math.min(1, v));
+          const p: [number, number] = [clamp(point[0] + (x - from[0])), clamp(point[1] + (y - from[1]))];
           const next = curve.map((q, k) => (k === drag ? p : q)) as IntensityCurve;
           // Keep the order while dragging (a point can't pass its neighbours)
           const lo = drag > 0 ? next[drag - 1][0] : 0;
