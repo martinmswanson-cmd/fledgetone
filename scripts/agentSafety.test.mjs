@@ -653,5 +653,56 @@ test('small rises on several master controls add up: one caution with their sum 
   assert.deepEqual(run({ levelDb: -11 }), []);
   assert.deepEqual(run({ loud: { push: 8 }, clipper: { drive: 1 } }).map((c) => c.text), ['The Loud master pushes 8 dB harder.', 'Together these master changes make the song up to 9 dB louder. Turn your speakers down before you listen.']);
   assert.deepEqual(run({ levelDb: -13, loud: { push: 8 } }).length, 2);
-  assert.deepEqual(run({ levelDb: -15, loud: { push: 8 } }), [{ text: 'The Loud master pushes 8 dB harder.', louder: 8 }]);
+  // (the Level down 1 takes 1 dB off the push's 8: measured, see the next test)
+  assert.deepEqual(run({ levelDb: -15, loud: { push: 8 } }), [{ text: 'The Loud master pushes 8 dB harder, but other master changes in this suggestion turn part of it back down: together they make the song up to 7 dB louder. Turn your speakers down before you listen.', louder: 7 }]);
+  assert.deepEqual(run({ loud: { push: 8 } }), [{ text: 'The Loud master pushes 8 dB harder.', louder: 8 }]);
+});
+
+// ---- Round 34: a master plain gain's rise turned back down by another's cut ----
+
+test('a master Level rise taken back by a cut on another master gain: a note, or a caution with the net (scan r34)', async () => {
+  const { safetyCautions, louderSaid } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: -20, loud: { on: true, target: 'loud', push: 0, subTilt: 0 }, clipper: { on: true, drive: 6, softness: 0.5, ceiling: 0 }, ott: { ...base().master.ott, on: true, depth: 0, inGain: 0, outGain: 0 } } };
+  const run = (set, from = q) => {
+    const notes = [];
+    const c = safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]), notes);
+    return { c, notes, said: louderSaid(c) };
+  };
+  const back = (what) => `${what}, but other master changes in this suggestion turn it back down.`;
+  // Level +4 with the OTT's out gain -4 (on, depth 0), or with the push -4: measured 0 LU, 0 dB peak
+  for (const set of [{ levelDb: -16, ott: { outGain: -4 } }, { levelDb: -16, loud: { push: -4 } }, { levelDb: -16, clipper: { drive: 2 } }]) {
+    const r = run(set);
+    assert.deepEqual(r.c, []);
+    assert.equal(r.said, null);
+    assert.deepEqual(r.notes, [back('The master Level goes up by 4 dB')]);
+  }
+  // The other way round: the push, the OTT's gain or the drive up, the Level down as much
+  assert.deepEqual(run({ levelDb: -24, loud: { push: 4 } }).notes, [back('The Loud master pushes 4 dB harder')]);
+  assert.deepEqual(run({ levelDb: -24, ott: { outGain: 4 } }).notes, [back("The master OTT's gain goes up by 4 dB")]);
+  assert.deepEqual(run({ levelDb: -24, clipper: { drive: 10 } }).c, []);
+  // Part of it taken back, the rest no more than 3 dB: a note with what's left (Level +4, push -2)
+  const part = run({ levelDb: -16, loud: { push: -2 } });
+  assert.deepEqual(part.c, []);
+  assert.deepEqual(part.notes, ['The master Level goes up by 4 dB, but other master changes in this suggestion turn most of it back down: together they make the song up to 2 dB louder.']);
+  // ...more than 3 dB left (Level +6, push -2: measured +4 LU): a caution with the net, and the net is what it says
+  const net = run({ levelDb: -14, loud: { push: -2 } });
+  assert.deepEqual(net.c, [{ text: 'The master Level goes up by 6 dB, but other master changes in this suggestion turn part of it back down: together they make the song up to 4 dB louder. Turn your speakers down before you listen.', louder: 4 }]);
+  assert.equal(net.said, 6);
+  // Two rises over the line taken back by one cut: one caution naming both
+  assert.deepEqual(run({ levelDb: -15, loud: { push: 5 }, clipper: { drive: 0 } }).c, [
+    { text: 'The master Level goes up by 5 dB and the Loud master pushes 5 dB harder, but other master changes in this suggestion turn part of them back down: together they make the song up to 4 dB louder. Turn your speakers down before you listen.', louder: 4 },
+  ]);
+  // Ear safety: a cut that doesn't hold the whole song down takes nothing off
+  // (the sub tilt raised 5 with the push cut 4: the lows come up by the tilt as well, so the Level's caution stays)
+  assert.deepEqual(run({ levelDb: -16, loud: { push: -4, subTilt: 5 } }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  // (the OTT's depth eased: only its quiet parts come down)
+  const deep = { ...q, master: { ...q.master, ott: { ...q.master.ott, depth: 1 } } };
+  assert.deepEqual(run({ levelDb: -16, ott: { depth: 0 } }, deep).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  // (the Loud master or the clipper switched off: their push or drive goes with their clipper)
+  const pushed = { ...q, master: { ...q.master, loud: { ...q.master.loud, push: 4 } } };
+  assert.deepEqual(run({ levelDb: -16, loud: { on: false } }, pushed).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  assert.deepEqual(run({ levelDb: -16, clipper: { on: false } }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  // The Level up alone, or with other rises: as before
+  assert.deepEqual(run({ levelDb: -16 }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  assert.deepEqual(run({ levelDb: -16, loud: { push: 2 } }).c.map((c) => c.louder), [4, 6]);
 });
