@@ -17,6 +17,7 @@ import { useSoundLibrary } from '../../audio/soundLibrary';
 import { dbToGain } from '../../audio/clipEnvelope';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
+import { useFieldUndo } from '../sliderUndo';
 import { ChopSampleDialog } from './ChopSampleDialog';
 import { SampleInfo } from './SampleInfo';
 import { ClipWaveform } from './Waveform';
@@ -61,6 +62,8 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
   const [chopping, setChopping] = useState(false);
   const [tool, setTool] = useState<AudioTool>(null);
   const [busy, setBusy] = useState(false);
+  // One undo step for the whole rename
+  const nameUndo = useFieldUndo();
   const [grid, setGrid] = useState(0.25);
   const [strength, setStrength] = useState(1);
   /** Run an edit that works on the sound, with a word if it fails. */
@@ -110,10 +113,12 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
           <AudioWaveform className="w-4 h-4" style={{ color: track.color }} />
           <input
             value={clip.name}
-            // One undo step for the whole rename
-            onFocus={() => useTimelineStore.getState().beginEdit()}
-            onBlur={() => useTimelineStore.getState().endEdit()}
-            onChange={(e) => useTimelineStore.getState().renameClip(clip.id, e.target.value)}
+            onFocus={nameUndo.focus}
+            onBlur={nameUndo.blur}
+            onChange={(e) => {
+              const name = e.target.value;
+              nameUndo.change(() => useTimelineStore.getState().renameClip(clip.id, name));
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="h-7 w-40 bg-transparent border border-transparent hover:border-forge-border focus:border-cyan-500 rounded-md px-2 text-sm font-semibold text-forge-text focus:outline-none"
             aria-label="Clip name"

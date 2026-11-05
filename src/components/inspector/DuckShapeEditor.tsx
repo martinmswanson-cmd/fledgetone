@@ -34,7 +34,9 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
   const shape: PumpShape = pump.shape === 'drawn' && !pump.points ? 'smooth' : (pump.shape ?? 'smooth');
   const points = pointsOf(pump);
   const svg = useRef<SVGSVGElement>(null);
-  const drag = useRef<{ index: number; points: DuckPoint[] } | null>(null);
+  // A dot's drag: the points then, and where the pointer took hold (screen and drawing units). The
+  // dot moves by as much as the pointer has, once it has moved 3 px: a click on a dot changes nothing
+  const drag = useRef<{ index: number; points: DuckPoint[]; clientX: number; clientY: number; from: [number, number]; moved: boolean } | null>(null);
   const st = useTimelineStore.getState;
   const setPump = (patch: Partial<Track['fx']['pump']>, record = false) => st().setTrackFx(track.id, 'pump', patch, record);
 
@@ -87,12 +89,18 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
         onPointerMove={(e) => {
           const d = drag.current;
           if (!d) return;
-          const [x, y] = fromEvent(e);
+          if (!d.moved && Math.abs(e.clientX - d.clientX) < 3 && Math.abs(e.clientY - d.clientY) < 3) return;
+          d.moved = true;
+          const [sx, sy] = svgPoint(svg.current!, e.clientX, e.clientY, W, H);
+          const [x0, y0] = d.points[d.index];
+          const x = x0 + (sx - d.from[0]) / (W - 2 * PAD);
+          const y = Math.max(0, Math.min(1, y0 + (sy - d.from[1]) / (H - 2 * PAD)));
           const pts = d.points.map((q) => [...q] as DuckPoint);
           const lo = pts[d.index - 1][0] + 0.005;
           const hi = pts[d.index + 1][0] - 0.005;
           pts[d.index] = [Math.max(lo, Math.min(hi, x)), y];
-          d.points = pts;
+          // (The points the drag started from stay its reference, so the dot follows the pointer)
+          if (pts[d.index][0] === points[d.index]?.[0] && pts[d.index][1] === points[d.index]?.[1]) return;
           drawn(pts);
         }}
         onPointerUp={(e) => {
@@ -124,7 +132,7 @@ export const DuckShapeEditor: React.FC<{ track: Track; accent: string; disabled:
                 e.stopPropagation();
                 st().beginEdit();
                 svg.current?.setPointerCapture(e.pointerId);
-                drag.current = { index: i, points: handles.map((q) => [...q] as DuckPoint) };
+                drag.current = { index: i, points: handles.map((q) => [...q] as DuckPoint), clientX: e.clientX, clientY: e.clientY, from: svgPoint(svg.current!, e.clientX, e.clientY, W, H), moved: false };
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();

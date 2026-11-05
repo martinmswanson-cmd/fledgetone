@@ -2,10 +2,12 @@
  * How a slider's adjustments become undo steps (UndoableRange, Pocket's TouchRange): one step for
  * a drag, a burst of arrow keys or a lone change (a screen reader's), taken with the first change
  * that actually changes the song, so a press or a click that changes nothing leaves no empty step.
+ * Also a name field's (useFieldUndo).
  */
 import { useRef } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { isSliderKey } from './keyboard';
+import { fieldEdit } from './fieldUndo';
 
 /** Slider key presses closer together than this are one adjustment. */
 const KEY_BURST_MS = 800;
@@ -119,4 +121,19 @@ export function useSliderUndo(undoable = true) {
       g.checkpointAt = performance.now();
     },
   };
+}
+
+const storeHistory = {
+  begin: () => useTimelineStore.getState().beginEdit(),
+  end: () => useTimelineStore.getState().endEdit(),
+  latest: latestStep,
+};
+
+/**
+ * A name field's undo step (see fieldEdit): `focus` on focus, `blur` on blur, and each change made
+ * through `change`. Typing a whole name is one step, and typing after another step is a new one.
+ */
+export function useFieldUndo() {
+  const ref = useRef<ReturnType<typeof fieldEdit> | null>(null);
+  return (ref.current ??= fieldEdit(storeHistory));
 }

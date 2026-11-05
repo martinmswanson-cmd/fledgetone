@@ -42,6 +42,7 @@ import type { ChordId, Scale, ScaleId } from '../../store/noteTools';
 import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
+import { useFieldUndo } from '../sliderUndo';
 import { AudioClipEditor } from './AudioClipEditor';
 import { RollPainter } from './RollPainter';
 import { GrooveFeelPicker } from './GrooveFeelPicker';
@@ -365,6 +366,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   // So does the Slicer (one row per slice), unless it's in Pitch mode
   const sliceRows = isSlicerKind(instrument) && !slicer?.pitch;
   const namedRows = isDrums || sliceRows;
+  // One undo step for the whole rename
+  const nameUndo = useFieldUndo();
   const rowH = isDrums ? 30 : sliceRows ? 22 : 16;
   const [stepW, setStepW] = useState(24);
   const unitW = stepW / UNITS_PER_16TH;
@@ -1147,10 +1150,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           <Piano className="w-4 h-4" style={{ color }} />
           <input
             value={clip.name}
-            // One undo step for the whole rename
-            onFocus={() => useTimelineStore.getState().beginEdit()}
-            onBlur={() => useTimelineStore.getState().endEdit()}
-            onChange={(e) => useTimelineStore.getState().renameClip(clip.id, e.target.value)}
+            onFocus={nameUndo.focus}
+            onBlur={nameUndo.blur}
+            onChange={(e) => {
+              const name = e.target.value;
+              nameUndo.change(() => useTimelineStore.getState().renameClip(clip.id, name));
+            }}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="h-7 w-40 bg-transparent border border-transparent hover:border-forge-border focus:border-cyan-500 rounded-md px-2 text-sm font-semibold text-forge-text focus:outline-none"
             aria-label="Clip name"
