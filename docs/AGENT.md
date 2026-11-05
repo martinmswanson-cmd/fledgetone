@@ -388,9 +388,16 @@ louder. Turn your speakers down before you listen."), the clipper switched on wi
 of drive ("This switches on the master clipper at 11 dB of drive: the song comes out up to 11 dB
 louder. ..."; either with less is only a note, "it plays no louder" or "it plays up to N dB
 louder"), the OTT switched on so that it lifts the song more than 3 dB (about 6.7 dB at full depth,
-plus its gains: at depth 0 only its gains count), the OTT pushed much harder while it was on, the
-Loud master's push or sub tilt, the OTT's gains or the clipper's drive up by more than 3 dB, the
-clipper's ceiling raised so its peaks come up more than 3 dB, and the Loud master, the OTT or the
+plus its gains: at depth 0 only its gains count, a cut by its in gain in full; at depth its upward
+compression lifts back up to 55% of that cut at full depth, so it counts for less), the OTT pushed
+much harder while it was on, the Loud master's push or sub tilt, the OTT's gains or the clipper's
+drive up by more than 3 dB, the clipper's ceiling raised so its peaks come up more than 3 dB (driven
+harder as well, one warning with the larger of the two: "The master clipper is driven 5 dB harder
+and its ceiling goes up from -12 to 0 dB: the song comes out up to 11 dB louder. Turn your speakers
+down before you listen."), small rises on two or more of the master's plain gains (its Level, the
+Loud master's push, the clipper's drive, the OTT's gains) adding up to more than 3 dB that no
+warning above already says ("Together these master changes make the song up to 9 dB louder. Turn
+your speakers down before you listen."), and the Loud master, the OTT or the
 clipper switched off where it held the song down by more than 3 dB ("Switching off the Loud master
 takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you
 listen."; the clipper's ceiling: "the peaks it held down come up by as much as N dB").
