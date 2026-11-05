@@ -395,9 +395,11 @@ drive up by more than 3 dB, the clipper's ceiling raised so its peaks come up mo
 harder as well, one warning with the larger of the two: "The master clipper is driven 5 dB harder
 and its ceiling goes up from -12 to 0 dB: the song comes out up to 11 dB louder. Turn your speakers
 down before you listen."), small rises on two or more of the master's plain gains (its Level, the
-Loud master's push, the clipper's drive, the OTT's gains) adding up to more than 3 dB that no
-warning above already says ("Together these master changes make the song up to 9 dB louder. Turn
-your speakers down before you listen."; one of them up by more than 3 dB that a cut on another
+Loud master's push, the clipper's drive, the OTT's gains, and the Loud master's sub tilt, which
+lifts the lows) adding up to more than 3 dB that no warning above already says ("Together these
+master changes make the song up to 9 dB louder. Turn your speakers down before you listen.", or
+with the sub tilt among them "Together these master changes make the song up to 5.8 dB louder (the
+lows most). Turn your speakers down before you listen."; one of them up by more than 3 dB that a cut on another
 takes back says what they come to together: no more than 3 dB, only a note, "The master Level goes
 up by 4 dB, but other master changes in this suggestion turn it back down."; more, "..., but other
 master changes in this suggestion turn part of it back down: together they make the song up to 4

@@ -711,8 +711,10 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
     else out.splice(eased[0].at, 0, lv(`${what}, but other master changes in this suggestion turn part of ${it} back down: together they make the song up to ${r1(most)} dB louder. Turn your speakers down before you listen.`, most));
   }
   const saidHere = maxOf(0, out.slice(masterFrom).map((c) => c.louder ?? 0));
-  // (of two or more of them: one alone is said by its own caution)
-  if (gains.filter((g) => g > 0.05).length > 1 && together > MASTER_JUMP_DB + 1e-9 && r1(together) > r1(saidHere)) out.push(lv(`Together these master changes make the song up to ${r1(together)} dB louder. Turn your speakers down before you listen.`, together));
+  // (of two or more of them, the sub tilt's rise counted with them: one alone is said by its own
+  // caution. Level and the sub tilt up 2.9 each: +3.6 LU, +4.4 dB peak measured, said as 5.8)
+  const lows = tiltUp > 0.05 ? ' (the lows most)' : '';
+  if ([...gains, tiltUp].filter((g) => g > 0.05).length > 1 && most > MASTER_JUMP_DB + 1e-9 && r1(most) > r1(saidHere)) out.push(lv(`Together these master changes make the song up to ${r1(most)} dB louder${lows}. Turn your speakers down before you listen.`, most));
   return out;
 }
 

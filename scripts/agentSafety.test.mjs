@@ -706,3 +706,37 @@ test('a master Level rise taken back by a cut on another master gain: a note, or
   assert.deepEqual(run({ levelDb: -16 }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
   assert.deepEqual(run({ levelDb: -16, loud: { push: 2 } }).c.map((c) => c.louder), [4, 6]);
 });
+
+// ---- Round 35: the Loud master's sub tilt counts with the other master rises ----
+
+test("the sub tilt's rise counts with the master's plain gains: one caution with their sum, the lows most (scan r35)", async () => {
+  const { safetyCautions, louderSaid } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: -20, loud: { on: true, target: 'loud', push: 0, subTilt: 0 }, ott: { ...base().master.ott, on: true, depth: 0, inGain: 0, outGain: 0 } } };
+  const run = (set, from = q) => {
+    const notes = [];
+    const c = safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]), notes);
+    return { c, notes, said: louderSaid(c) };
+  };
+  const lows = (n) => ({ text: `Together these master changes make the song up to ${n} dB louder (the lows most). Turn your speakers down before you listen.`, louder: n });
+  // Level +2.9 with the sub tilt +2.9 (measured +3.6 LU, +4.4 dB peak), or the OTT's out gain with it: it said nothing
+  assert.deepEqual(run({ levelDb: -17.1, loud: { subTilt: 2.9 } }).c.map((c) => c.text), [lows(5.8).text]);
+  assert.deepEqual(run({ ott: { outGain: 2.9 }, loud: { subTilt: 2.9 } }).c.map((c) => c.text), [lows(5.8).text]);
+  // The Loud master switched on at push 0 with its tilt 2.9, the Level +2.9: its note, and a numbered caution
+  const off = { ...q, master: { ...q.master, loud: undefined } };
+  const on = run({ levelDb: -17.1, loud: { on: true, push: 0, subTilt: 2.9 } }, off);
+  assert.deepEqual(on.notes, ['This switches on the Loud master: it plays up to 2.9 dB louder.']);
+  assert.deepEqual(on.c.map((c) => c.text), [lows(5.8).text]);
+  assert.ok(on.said > 5.7);
+  // Level, push and tilt up 3 each (measured 6.9 LU in a bar, +7.6 dB peak): the sum, over the Loud master's own 6
+  const all = run({ levelDb: -17, loud: { push: 3, subTilt: 3 } });
+  assert.deepEqual(all.c.map((c) => c.louder), [6, 9]);
+  assert.equal(all.c[1].text, lows(9).text);
+  // Level +4 and tilt +4 (measured 5.3 LU, +6.2 dB peak): their two cautions, and the sum
+  assert.deepEqual(run({ levelDb: -16, loud: { subTilt: 4 } }).c.map((c) => c.louder), [4, 4, 8]);
+  // The tilt alone, a tilt cut, or a sum no more than 3 dB: nothing more
+  assert.deepEqual(run({ loud: { subTilt: 2 } }).c, []);
+  assert.deepEqual(run({ levelDb: -18.5, loud: { subTilt: 1.5 } }).c, []);
+  assert.deepEqual(run({ loud: { push: 5, subTilt: -5 } }).c.map((c) => c.text), ['The Loud master pushes 5 dB harder.']);
+  // A Level rise taken back by a cut, the tilt up as well: its own caution says as much
+  assert.deepEqual(run({ levelDb: -16, loud: { push: -4, subTilt: 4 } }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+});
