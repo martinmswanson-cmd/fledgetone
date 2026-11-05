@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createOsc, createVoiceSet, noteFrequency, slidePitch } from './native';
+import { createBus, createFilter, createOsc, createOscAhead, createVoiceSet, noteFrequency, slidePitch } from './native';
 import type { NativeVoice, PitchGlide } from './native';
 import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
@@ -137,10 +137,12 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     // The previous note (ringing on after its end) gives way quickly: one 808 at a time
     if (current && current.stopAt > from) voices.release(current, from, 0.015);
 
-    const osc = createOsc(raw, 'sine', s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq, from, bends.at(start));
+    // A punch starts a block early, so its drop starts on time (silent until `from`: see createOscAhead)
+    const osc = s.punch > 0 ? createOscAhead(raw, 'sine', freq * 2 ** (s.punch / 12), from, bends.at(start)) : createOsc(raw, 'sine', freq, from, bends.at(start));
     if (s.punch > 0) osc.frequency.exponentialRampToValueAtTime(freq, from + s.punchTime);
     const env = raw.createGain();
     const peak = PEAK * (0.35 + 0.65 * n.velocity);
+    env.gain.value = 0;
     env.gain.setValueAtTime(0, from);
     env.gain.linearRampToValueAtTime(peak, from + ATTACK);
     env.gain.setTargetAtTime(0, from + ATTACK, decayConstant(s.decay));

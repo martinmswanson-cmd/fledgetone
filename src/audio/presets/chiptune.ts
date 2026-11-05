@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createNoise, createOsc, createVoiceSet, noteFrequency, releaseConstant, releaseTail } from './native';
+import { createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, noteFrequency, releaseConstant, releaseTail } from './native';
 import { noiseKey } from '../seededNoise';
 import { HELD_NOTE } from './edmSynths';
 
@@ -149,9 +149,11 @@ export function createChipDrums(output: Tone.InputNode, seed = 0) {
   const kick = (time: number, velocity: number) => {
     const t = notLate(bus.context, time);
     // A square sweeping down fast, then the triangle's thump
-    const sq = createOsc(raw, 'square', 300, t);
+    // (Started a block early, so the sweep starts on time: silent until the hit)
+    const sq = createOscAhead(raw, 'square', 300, t);
     sq.frequency.exponentialRampToValueAtTime(45, t + 0.08);
     const amp = raw.createGain();
+    amp.gain.value = 0;
     amp.gain.setValueAtTime(0.55 * velocity, t);
     amp.gain.setTargetAtTime(0, t + 0.02, 0.05);
     const lp = createFilter(raw, 'lowpass', 1800, 0.7);
@@ -168,9 +170,10 @@ export function createChipDrums(output: Tone.InputNode, seed = 0) {
     const amp = raw.createGain();
     amp.gain.setValueAtTime(0.5 * velocity, t);
     amp.gain.setTargetAtTime(0, t + 0.01, 0.045);
-    const tone = createOsc(raw, 'square', 220, t);
+    const tone = createOscAhead(raw, 'square', 220, t);
     tone.frequency.exponentialRampToValueAtTime(140, t + 0.05);
     const toneAmp = raw.createGain();
+    toneAmp.gain.value = 0;
     toneAmp.gain.setValueAtTime(0.18 * velocity, t);
     toneAmp.gain.setTargetAtTime(0, t, 0.025);
     noise.connect(hp);

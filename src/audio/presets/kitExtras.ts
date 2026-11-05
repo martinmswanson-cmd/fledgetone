@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createNoise, createOsc, createVoiceSet } from './native';
+import { createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet } from './native';
 import { noiseKey } from '../seededNoise';
 
 /**
@@ -56,9 +56,11 @@ export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_
     tom: (pitch: TomPitch, time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
       const hz = TOM_HZ[pitch] * ratio;
-      const osc = createOsc(raw, 'sine', hz * 1.6, t);
+      // (Started a block early, so the drop starts on time: silent until the hit)
+      const osc = createOscAhead(raw, 'sine', hz * 1.6, t);
       osc.frequency.exponentialRampToValueAtTime(hz, t + 0.05);
       const amp = raw.createGain();
+      amp.gain.value = 0;
       amp.gain.setValueAtTime(0.8 * velocity, t);
       amp.gain.setTargetAtTime(0, t + 0.01, 0.12);
       osc.connect(amp);

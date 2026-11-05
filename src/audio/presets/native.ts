@@ -245,6 +245,25 @@ export function createOsc(raw: BaseAudioContext, type: OscillatorType | Periodic
   return osc;
 }
 
+/** Frames in one of the browser's render blocks (the audio thread works in blocks this long). */
+export const RENDER_BLOCK = 128;
+
+/**
+ * createOsc for a pitch that starts to move at `at`, the note's start (a drum's fast drop, an
+ * 808's punch). Chrome works out the first render block of a starting oscillator from the pitch at
+ * that block's start, so a drop that begins with the oscillator ran late by however far into the
+ * block the note landed: each hit came out a little different, and the export differed from what
+ * was heard. This oscillator starts one block early instead (no earlier than now) and holds
+ * `frequency` until `at`, so the drop begins on its own frame wherever the note lands. Whatever it
+ * feeds must be silent until `at`.
+ */
+export function createOscAhead(raw: BaseAudioContext, type: OscillatorType | PeriodicWave, frequency: number, at: number, detune = 0): OscillatorNode {
+  const osc = createOsc(raw, type, frequency, Math.max(raw.currentTime, at - RENDER_BLOCK / raw.sampleRate), detune);
+  // (The drop the caller sets runs from here, not from the early start)
+  osc.frequency.setValueAtTime(frequency, at);
+  return osc;
+}
+
 /** A pitch going from `f0` at `t0` to `f1` at `t1` along an exponential ramp (held before and after). */
 export interface PitchGlide { t0: number; f0: number; t1: number; f1: number }
 

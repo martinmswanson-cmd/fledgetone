@@ -2101,7 +2101,11 @@ function samplerVoice(
     const from = 2 ** ((interval * PORTAMENTO_REACH) / 12);
     for (const [src, base] of [[next.src, next.base], ...(next.pair ? [[next.pair.src, next.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
       const rate = base * ratioAt(when);
+      // (A slide from the new note's own start: its source is set to the slide's first speed as well.
+      // Chrome works out a starting source's first render block from the speed before its start,
+      // so at its own speed its first moments played that and not the slide's)
       src.playbackRate.cancelScheduledValues(when);
+      if (when <= next.start) src.playbackRate.value = rate * from;
       src.playbackRate.setValueAtTime(rate * from, when);
       src.playbackRate.exponentialRampToValueAtTime(rate, when + glide);
     }

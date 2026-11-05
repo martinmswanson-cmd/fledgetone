@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createVoiceSet, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave } from './native';
+import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave } from './native';
 import { noteJitter } from '../samplers/samplerManager';
 import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
@@ -189,12 +189,11 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     const panners = new Map<number, StereoPannerNode>();
 
     const addOsc = (wave: PeriodicWave, hz: number, detune: number, pan: number) => {
-      const o = createOsc(raw, wave, hz, start, detune + bendCents);
-      if (glideFrom !== null) {
-        const ratio = hz / freq;
-        o.frequency.setValueAtTime(glideFrom * ratio, start);
-        o.frequency.exponentialRampToValueAtTime(hz, start + p.glide);
-      }
+      // A glide's oscillator starts a block early at the pitch it slides from, behind the gate
+      // below, so the slide starts on time wherever the note lands (see createOscAhead). Made at
+      // its own pitch, its first moments played that and not the glide's start.
+      const o = glideFrom !== null ? createOscAhead(raw, wave, (glideFrom * hz) / freq, start, detune + bendCents) : createOsc(raw, wave, hz, start, detune + bendCents);
+      if (glideFrom !== null) o.frequency.exponentialRampToValueAtTime(hz, start + p.glide);
       if (pan !== 0) {
         let panner = panners.get(pan);
         if (!panner) {
@@ -277,7 +276,15 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
       nodes.push(warm);
       head = warm;
     }
-    feeds.forEach((f) => f.connect(head));
+    if (glideFrom !== null) {
+      // (Silent until the note: its oscillators started a block early)
+      const gate = raw.createGain();
+      gate.gain.value = 0;
+      gate.gain.setValueAtTime(1, start);
+      gate.connect(head);
+      feeds.forEach((f) => f.connect(gate));
+      nodes.push(gate);
+    } else feeds.forEach((f) => f.connect(head));
     nodes.push(...filters);
     let tail: AudioNode = filters[filters.length - 1];
     if (p.drive > 0) {

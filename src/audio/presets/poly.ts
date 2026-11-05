@@ -8,6 +8,7 @@ import { notLate } from './monotonic';
 import { createBendFeed } from '../bendFeed';
 import { chooseNoteToSteal } from '../samplers/noteStealing';
 import { letGoToneSynth, type ToneVoice } from './toneStop';
+import { pitchAhead, type NoteSynth } from './toneStart';
 
 /** Seconds a pool voice may sit silent before it's disposed. */
 const IDLE_SECONDS = 3;
@@ -135,6 +136,8 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
         const v = pick(t);
         if (!v) return;
         try {
+          // (A free voice still has the last note's pitch: this one's is set before it starts)
+          pitchAhead(v.voice as unknown as NoteSynth, note, t);
           v.voice.triggerAttackRelease(note, length, t, velocity);
           v.start = t;
           v.end = t + length + v.voice.toSeconds(v.voice.envelope.release);
@@ -150,6 +153,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
       const t = notLate(out.context, time);
       const v = pick(t);
       if (!v) return { release: () => {} };
+      pitchAhead(v.voice as unknown as NoteSynth, note, t);
       v.voice.triggerAttack(note, t, velocity);
       v.start = t;
       v.end = Infinity;
