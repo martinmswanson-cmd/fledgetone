@@ -7,6 +7,7 @@
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
 import { laySongTime, oneUndoStepOr, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import type { PlacedStretch } from './rippleMeters';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
 import { TOTAL_BARS, barsToDuration, formatBarPosition, formatBarRange, uid } from './timelineTypes';
@@ -19,7 +20,7 @@ import { fitToInstrument } from './smartActions';
 import { createMarker, retimeMarkers } from './markers';
 import { songEnd } from './cutToLength';
 import { FX_NOTES, isAudioKind, isFxKind } from '../audio/instrumentCatalog';
-import { isPlainMeter, measureAt, measuresFrom, meterAt, nearestMeasureStart, tempoAt } from '../audio/tempoMap';
+import { isPlainMeter, measureAt, measuresBetween, measuresFrom, meterAt, nearestMeasureStart, tempoAt } from '../audio/tempoMap';
 import { AUTOMATION, laneOf } from '../audio/automation';
 import { secondsPerBar } from './audioClips';
 import { decodeSound, ensureSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
@@ -355,21 +356,38 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
  * bars become the sections, one after another, each part dropped in or out by the section's
  * recipe, with a marker naming each section. Everything after the loop moves later to make room.
  * One undo step. Returns a message. Not in 4/4, the loop starts at the nearest measure start and
- * every length (the loop's and the sections') counts measures of the meter the loop starts in.
+ * every length (the loop's and the sections') counts measures: the loop's own, in the meters they
+ * are in, each section being the loop played again from its start. The loop's tempo and time
+ * signature changes come again in every section.
  */
 export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionLengths, dropBeforeHooks = true): string {
   const s = tl();
   const { map, plain } = meterNow();
   const from = plain ? Math.round(loopFrom) : nearestMeasureStart(loopFrom, map);
-  // One measure, in bars (whole notes): 1 in 4/4
-  const unit = plain ? 1 : measureAt(from, map).length;
-  const loopLen = loopBars * unit;
-  const to = from + loopLen;
-  const sections = planSongForm(lengths).map((x) => (plain ? x : { ...x, at: x.at * unit, bars: x.bars * unit }));
-  const total = sections.reduce((n, x) => n + x.bars, 0);
-  const totalBars = plain ? total : Math.round(total / unit);
+  const to = plain ? from + loopBars : measuresFrom(from, loopBars, map);
+  const loopLen = to - from;
+  // The loop's measures (their lengths in bars), and how many bars `n` of them are, played from its start
+  const measures = plain ? [] : measuresBetween(from, to, map).map((m, i, all) => (all[i + 1]?.bar ?? to) - m.bar);
+  const barsOf = (n: number) => {
+    if (plain) return n;
+    const whole = Math.floor(n + EPS);
+    let bars = Math.floor(whole / measures.length) * loopLen;
+    for (let i = 0; i < whole % measures.length; i++) bars += measures[i];
+    return bars + Math.max(0, n - whole) * measures[whole % measures.length];
+  };
+  // (half the section's last measure: half a bar in 4/4)
+  const halfLast = (n: number) => (plain ? 0.5 : measures[(Math.ceil(n - EPS) - 1) % measures.length] / 2);
+  const planned = planSongForm(lengths);
+  let at = 0;
+  const sections = planned.map((x) => {
+    const sec = { ...x, at, measures: x.bars, bars: barsOf(x.bars) };
+    at += sec.bars;
+    return sec;
+  });
+  const total = at;
+  const totalBars = planned.reduce((n, x) => n + x.bars, 0);
   if (!sections.length) return 'Give at least one section some bars.';
-  if (total < loopLen - EPS) return `The song (${totalBars} bars) is shorter than the loop: give the sections more bars.`;
+  if (totalBars < loopBars - EPS) return `The song (${totalBars} bars) is shorter than the loop: give the sections more bars.`;
   if (songEnd(s.clips) + total - loopLen > TOTAL_BARS + 1 + (plain ? 0 : EPS)) return `No room: the song would run past the end of the timeline (bar ${plain ? TOTAL_BARS + 1 : formatBarPosition(TOTAL_BARS + 1, map)}).`;
   const plan = s.tracks
     .map((t) => ({ t, role: trackRole(t) as TrackRole, parts: partsOf(s.clips, t.id, from, to) }))
@@ -377,6 +395,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
   if (!plan.length) return plain ? `Bars ${from}-${to - 1} are empty: make a loop there first.` : `Bars ${formatBarRange(from, to, map).replace(/^bars? /, '')} are empty: make a loop there first.`;
   let error = null as string | null;
   const refused = oneStep(() => {
+    const { bpm, tempoPoints, meter, meterPoints } = tl();
     if (total > loopLen + (plain ? 0 : EPS)) error = tl().insertTime(to, total - loopLen);
     if (error) return;
     const tempo = songTempo(tl());
@@ -408,7 +427,7 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
         const noteParts = parts.filter((c) => !c.audio);
         if (noteParts.length) {
           let notes = treatPart(repeatLoop(mergedNotes(noteParts, from), loopLen, sec.bars, newId), role, treatment);
-          if (notes && dropBeforeHooks && hookNext && role === 'drums') notes = plain ? preHookDrop(notes, sec.bars) : preHookDrop(notes, sec.bars, unit / 2);
+          if (notes && dropBeforeHooks && hookNext && role === 'drums') notes = plain ? preHookDrop(notes, sec.bars) : preHookDrop(notes, sec.bars, halfLast(sec.measures));
           if (notes?.length) made.push(noteClip(noteParts[0], t.id, sec.name, start, sec.bars, notes));
         }
         // Audio clips repeat as they are, cut at the section's end
@@ -428,12 +447,20 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
       for (const sec of sections) markers = withMarker(markers, from + sec.at, sec.name);
       return { clips: [...kept.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...made], markers: retimeMarkers(markers, songTempo(st)) };
     });
+    // Each section in the loop's own time signatures and tempos (the loop again, cut at the
+    // section's end), and what follows the song in its own
+    const pieces = sections.flatMap((sec) => {
+      const out: PlacedStretch[] = [];
+      for (let k = 0; k * loopLen < sec.bars - EPS; k++) out.push({ src: from, len: Math.min(loopLen, sec.bars - k * loopLen) });
+      return out;
+    });
+    laySongTime({ bpm, tempoPoints, meter, meterPoints }, from, pieces, to);
   }, () => !error);
   if (refused) return refused;
   // (Nothing of it kept: the song and the undo and redo histories are as they were, as in Pocket)
   if (error) return error;
   if (plain) return `Song laid out from bar ${from}: ${sections.map((x) => `${x.name} ${x.bars}`).join(', ')} (${total} bars).`;
-  return `Song laid out from bar ${formatBarPosition(from, map)}: ${sections.map((x) => `${x.name} ${Math.round(x.bars / unit)}`).join(', ')} (${totalBars} bars).`;
+  return `Song laid out from bar ${formatBarPosition(from, map)}: ${sections.map((x) => `${x.name} ${x.measures}`).join(', ')} (${totalBars} bars).`;
 }
 
 // ---------- Producer tag ----------
