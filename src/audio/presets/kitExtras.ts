@@ -29,11 +29,12 @@ export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_
   const { bus, raw, input } = createBus(output);
   // Noise-fed voices linger before disconnecting (see createVoiceSet)
   const voices = createVoiceSet(raw, 0.5);
-  const add = (start: number, seconds: number, sources: AudioScheduledSourceNode[], nodes: AudioNode[], amp: GainNode) =>
-    voices.add({ start, stopAt: start + seconds, sources, nodes, amp });
+  // (`hit`: when the hit it's part of starts, see NativeVoice)
+  const add = (start: number, seconds: number, sources: AudioScheduledSourceNode[], nodes: AudioNode[], amp: GainNode, hit = start) =>
+    voices.add({ start, hit, stopAt: start + seconds, sources, nodes, amp });
 
   /** A noise burst through a filter, with an exponential tail (`what`: which, for its noise). */
-  const noiseHit = (what: string, t: number, type: BiquadFilterType, hz: number, q: number, level: number, tail: number, seconds: number) => {
+  const noiseHit = (what: string, t: number, type: BiquadFilterType, hz: number, q: number, level: number, tail: number, seconds: number, hit = t) => {
     const noise = createNoise(raw, t, noiseKey(seed, what));
     const filter = createFilter(raw, type, hz, q);
     const amp = raw.createGain();
@@ -42,7 +43,7 @@ export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_
     noise.connect(filter);
     filter.connect(amp);
     amp.connect(input);
-    add(t, seconds, [noise], [noise, filter, amp], amp);
+    add(t, seconds, [noise], [noise, filter, amp], amp, hit);
   };
 
   return {
@@ -50,8 +51,8 @@ export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_
     clap: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
       // Three quick slaps, then the room; clapGain puts it a few dB under the kit's kick, as heard
-      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(`clap${i}`, t + offset, 'bandpass', 1300 * ratio, 1.2, clapGain * (0.55 - i * 0.08) * velocity, 0.006, 0.05);
-      noiseHit('clapRoom', t + 0.03, 'bandpass', 1100 * ratio, 0.9, clapGain * 0.38 * velocity, 0.07, 0.45);
+      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(`clap${i}`, t + offset, 'bandpass', 1300 * ratio, 1.2, clapGain * (0.55 - i * 0.08) * velocity, 0.006, 0.05, t);
+      noiseHit('clapRoom', t + 0.03, 'bandpass', 1100 * ratio, 0.9, clapGain * 0.38 * velocity, 0.07, 0.45, t);
     },
     tom: (pitch: TomPitch, time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);

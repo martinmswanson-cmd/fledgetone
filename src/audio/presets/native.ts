@@ -45,6 +45,11 @@ export const noteFrequency = (note: string): number => Tone.Frequency(note).toFr
 export interface NativeVoice {
   /** When it starts sounding (seconds, context time). */
   start: number;
+  /**
+   * When the hit it is part of starts, if that's earlier: a clap's later slaps and its room are
+   * voices of their own, and a Stop or Pause treats them with the hit (heard, they ring out).
+   */
+  hit?: number;
   /** When its sources stop. */
   stopAt: number;
   sources: AudioScheduledSourceNode[];
@@ -136,12 +141,17 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
      * Call off the voices still to come at `now` (Stop on a drum kit): they never start. Sounding
      * ones ring out as they would have, but with `heard` (Pause: the time being heard now) those
      * begun at or after it, not heard yet, fade out over UNHEARD_FADE: Play will play them again.
+     * A voice goes by its hit's start (`hit`): the rest of a clap begun goes on as it would have,
+     * and of one not heard yet, a part still to come never starts (faded, it would start at the
+     * level it has before its own start, not the hit's).
      */
     callOffComing(now: number, heard?: number): void {
       for (const v of voices) {
         if (v.stopAt <= now) continue;
-        if (v.start >= now) callOff(v, now);
-        else if (heard !== undefined && v.start >= heard) {
+        const begun = v.hit ?? v.start;
+        const unheard = heard !== undefined && begun >= heard;
+        if (begun >= now || (unheard && v.start >= now)) callOff(v, now);
+        else if (unheard) {
           const gain = v.amp.gain;
           if (typeof gain.cancelAndHoldAtTime === 'function') {
             gain.cancelAndHoldAtTime(now);
