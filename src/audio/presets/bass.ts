@@ -5,6 +5,7 @@ import type { GlideRef } from '../instruments';
 import { legatoGlide, letGoMono, playMono, toneSlide } from './synths';
 import type { NoteSlide } from '../legato';
 import { createBendFeed } from '../bendFeed';
+import { pitchAhead } from './toneStart';
 
 /**
  * Funk Slap Bass (Monophonic)
@@ -68,6 +69,7 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
     // A key held on a MIDI keyboard: sounds until released
     attack: (note: string, time: number, velocity: number) => {
       const start = safeTime(time);
+      pitchAhead(synth, note, start);
       synth.triggerAttack(note, start, velocity);
       slid = toneSlide(synth, start);
     },

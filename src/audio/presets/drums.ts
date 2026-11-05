@@ -4,6 +4,7 @@ import { monotonicTime } from './monotonic';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
 import { createComingHits } from './toneStop';
+import { pitchAhead } from './toneStart';
 
 /**
  * Groove Drum Kit (Synthesized Analog Drums)
@@ -103,6 +104,8 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
     kick: (time?: Tone.Unit.Time, velocity: number = 0.95, ratio = 1) => {
       const t = kickTime(time);
       coming.add(kick, t);
+      // (Its pitch, and its drop, start on time wherever the hit lands: see toneStart.ts)
+      pitchAhead(kick, 32.703 * ratio, t);
       kick.triggerAttackRelease(32.703 * ratio, '8n', t, velocity);
     },
     snare: (time?: Tone.Unit.Time, velocity: number = 0.85, ratio = 1) => {
@@ -110,6 +113,7 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
       coming.add(snareNoise, t);
       coming.add(snareSnap, t);
       snareNoise.triggerAttackRelease('16n', t, velocity);
+      pitchAhead(snareSnap, 200 * ratio, t);
       snareSnap.triggerAttackRelease(200 * ratio, '16n', t, velocity * 0.9);
     },
     /** open: longer 0.28s decay; otherwise 0.05s tight closed hat */
@@ -118,11 +122,13 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
       coming.add(hat, t);
       hat.envelope.decay = open ? 0.28 : 0.05;
       hat.envelope.release = open ? 0.28 : 0.05;
+      pitchAhead(hat, 200 * ratio, t);
       hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', t, velocity);
     },
     cowbell: (time?: Tone.Unit.Time, velocity: number = 0.8, ratio = 1) => {
       const t = cowbellTime(time);
       coming.add(cowbell, t);
+      pitchAhead(cowbell, 800 * ratio, t);
       cowbell.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
     /** Stop: the hits still to come never sound (the ones ringing ring out) */

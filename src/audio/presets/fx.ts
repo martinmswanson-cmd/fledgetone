@@ -3,7 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { FX_NOTES } from '../instrumentCatalog';
 import { notLate } from './monotonic';
-import { createBus, createDrive, createFilter, createNoise, createOsc, createVoiceSet } from './native';
+import { createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet } from './native';
 import type { NativeVoice } from './native';
 import { noiseKey } from '../seededNoise';
 
@@ -100,9 +100,11 @@ const HITS: Record<string, Hit> = {
   // Boom (a sine dropping from 140 to 38 Hz, lightly driven) over a burst of noise with a long, darkening tail
   [FX_NOTES.impact]: (raw, start, _length, level, key) => {
     const end = start + IMPACT_SECONDS;
-    const boom = createOsc(raw, 'sine', 140, start);
+    // (Started a block early, so the drop starts on time: silent until the hit)
+    const boom = createOscAhead(raw, 'sine', 140, start);
     boom.frequency.exponentialRampToValueAtTime(38, start + 0.4);
     const boomAmp = raw.createGain();
+    boomAmp.gain.value = 0;
     boomAmp.gain.setValueAtTime(0, start);
     boomAmp.gain.linearRampToValueAtTime(1, start + 0.004);
     boomAmp.gain.setTargetAtTime(0, start + 0.01, 0.45);
