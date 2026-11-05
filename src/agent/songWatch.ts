@@ -17,7 +17,8 @@
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
-import { checkSuggestion, extKey, playedThrough, freshen, hearingByRules, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, type SongContext, type Suggestion } from './suggestionsStore';
+import { announce, checkSuggestion, extKey, measuredWarning, playedThrough, freshen, hearingByRules, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, withMeasured, type SongContext, type Suggestion } from './suggestionsStore';
+import { auditionRise } from './safety';
 import type { BarRange } from './songDiff';
 import { partsChanged } from './revision';
 import { findWhere, needsFinding, stopFinding, useFinding } from './whereHeard';
@@ -200,6 +201,24 @@ useAudition.subscribe((a) => noteHeard(a));
 useSuggestions.subscribe((st, prev) => st.suggestions !== prev.suggestions && noteHeard());
 
 /**
+ * For a suggestion the sound check can't be run for (the song too long, or the render failed:
+ * `foundWhy`), what its before-and-after measured as it began to play (auditionPlayer.ts: B's
+ * loudness and true peak against A's over the stretches it plays) stands in for it: a caution on
+ * the card when Suggested came out much louder and the rules said nothing (auditionRise,
+ * withMeasured). Said once, as the card shows it.
+ */
+function measuredByAudition(id: string): void {
+  const s = useSuggestions.getState().suggestions.find((x) => x.id === id);
+  const a = useAudition.getState();
+  if (!s || !isOpen(s) || s.stale || s.found !== 'rules' || !s.foundWhy || s.measured?.version === s.version) return;
+  if (a.key !== id || a.phase !== 'playing' || a.renderKey !== renderKeyOf(s)) return;
+  const next = withMeasured(s, auditionRise(a.levelDiff, a.peakDiff, s.audition[0]?.fromBar ?? 1), currentProject());
+  updateSuggestion(id, { measured: next.measured });
+  const caution = measuredWarning(next);
+  if (caution) announce(`A caution, found by sound: ${caution}`);
+}
+
+/**
  * Hear suggestion `id` against the song now (its audition: each region where a change is heard, one after another, with the agent's focus if that fits), made again on
  * the song as it is first. Once its Suggested side plays, that version counts as heard (noteHeard).
  */
@@ -230,6 +249,7 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
     hearing,
   });
   noteHeard();
+  measuredByAudition(id);
   const after = useSuggestions.getState().suggestions.find((x) => x.id === id);
   if (after && !isOpen(after)) forgetAudition(id);
   else if (after && needsFinding(after) && useAudition.getState().key === id && useAudition.getState().phase === 'playing') void findWhere(id, nowSong);

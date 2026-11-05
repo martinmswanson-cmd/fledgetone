@@ -249,3 +249,29 @@ export function changedRegions(diffs: ReadonlyArray<number | null | 'tempo'>, fi
   });
   return out;
 }
+
+/**
+ * Each bar's loudness (LUFS, -Infinity: silent there), from a render's 400 ms gating blocks
+ * (LoudnessAnalyser.blocks: one ending every `hopSeconds`, the first at 4 hops): the blocks centred
+ * in the bar (or the one nearest its middle, in a bar shorter than a hop), gated as integrated
+ * loudness is (BS.1770: over -70 LUFS, and within 10 LU of their mean), as the agent's listen reads
+ * a bar on its own. Bar `i` lies at `spans[i]` (seconds) in the render.
+ */
+export function barLoudness(blocks: readonly number[], hopSeconds: number, spans: readonly BarSpan[]): number[] {
+  const lufs = (power: number) => (power > 0 ? -0.691 + 10 * Math.log10(power) : -Infinity);
+  const centre = (i: number) => (i + 2) * hopSeconds;
+  const mean = (list: readonly number[]) => list.reduce((sum, p) => sum + p, 0) / Math.max(1, list.length);
+  return spans.map((s) => {
+    let inBar: number[] = [];
+    const from = Math.max(0, Math.ceil(s.start / hopSeconds - 2 - 1e-9));
+    for (let i = from; i < blocks.length && centre(i) < s.end - 1e-9; i++) inBar.push(blocks[i]);
+    if (!inBar.length) {
+      const near = Math.round((s.start + s.end) / 2 / hopSeconds - 2);
+      inBar = near >= 0 && near < blocks.length ? [blocks[near]] : [];
+    }
+    const loud = inBar.filter((p) => lufs(p) > -70);
+    if (!loud.length) return -Infinity;
+    const gate = lufs(mean(loud)) - 10;
+    return lufs(mean(loud.filter((p) => lufs(p) > gate)));
+  });
+}

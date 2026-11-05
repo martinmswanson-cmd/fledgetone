@@ -369,14 +369,28 @@ was)". **Values out of range** are brought into range with a warning
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, a
 parametric EQ cut eased or taken away, a parametric EQ or multiband compressor that held it down
 switched off, or its fader, buses and the master together, a volume lane counted where there is
-one), a track unmuted (one that sits 12 dB or more under the rest of the mix, or that a solo or a
+one; a fader, EQ band or makeup that a lane plays over isn't counted, nor a fader rise that its
+buses or the master take back), a Filter, compressor or Gate that held it down switched off,
+opened up or eased (the Filter compared by what it lets through, the compressor and the Gate by
+how far they hold the track down, their lanes too), its notes played much harder (velocities
+raised, the same notes stacked, copies of a clip piled on one bar: by how hard its notes play at
+once, bar by bar), a send pushed over full level (the reverb send goes up to 300%), a track
+unmuted (one that sits 12 dB or more under the rest of the mix, or that a solo or a
 muted bus still keeps silent, is only a note), a track heard again because a solo was cleared or moved, a
 Distortion or Saturation driven much harder, a Delay fed back at 80% or more, automation of any of
 those drawn high, a lane of one of them redrawn so that it is louder (or driven or fed back
 harder) anywhere along the song than it was there (the warning says from which bar; a lane on an
 insert that was off is measured from nothing), a lane that
 held one of them down taken away (removed, or left with no points), the master up by
-more than 3 dB, the Loud master or the clipper switched on. Every result is checked the way a
+more than 3 dB, the Loud master, the OTT or the clipper switched on, the OTT pushed much harder.
+**Measured** too: when the studio's sound check (the song rendered whole before and after, see
+`regionsBy`) finds the song with the suggestion more than 6 dB louder than the song as it is in
+some bar (or its true peak more than 6 dB higher), and none of the warnings above was given, the
+card adds "Suggested comes out up to N dB louder (from bar B). Turn your speakers down before you
+listen." You read it among `warnings` only while you're allowed to listen (it's what the renders
+found), and only once the check has run: not while the song plays, and not for a song too long to
+check by sound (there the before-and-after's own measure stands in, once the musician presses
+Hear). Every result is checked the way a
 saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
 suggestion adds at most 5000 notes, copies of clips (linked or not) included.
 

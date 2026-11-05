@@ -24,7 +24,7 @@ import { setDelivery, useConversation } from './conversation';
 import { songReadHandlers } from './studioReads';
 import { agentIdOf, byAgentId, cleanForAgent } from './agentText';
 import { applyOps, OPS_VERSION } from './ops';
-import { announce, freshen, hearingAsFound, hearingByRules, heardForAgent, isOpen, keepSuggestions, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
+import { announce, freshen, hearingAsFound, hearingByRules, heardForAgent, isOpen, keepSuggestions, measuredWarning, notFoundWords, shortText, makeSuggestion, tooLongWhy, uncheckedTail, updateSuggestion, useSuggestions, waitingCount, type Suggestion } from './suggestionsStore';
 import { refreshSuggestions, songContext } from './songWatch';
 import { forgetAudition } from '../audio/auditionPlayer';
 import { queueFinding, stopFinding, useFinding } from './whereHeard';
@@ -34,7 +34,7 @@ const str = (v: unknown, max = 200) => (typeof v === 'string' && v ? v.slice(0, 
 
 /**
  * A suggestion as the agent reads it back. Where it's heard by sound (the whole song rendered
- * before and after) only with Listen allowed: without it, only the rules' regions and what a
+ * before and after), and the caution its sound check found (Suggestion.measured), only with Listen allowed: without it, only the rules' regions and what a
  * before-and-after of those plays (hearingByRules), never a bar the renders found, nor anything
  * that moves with them: `heard` is whether Suggested played through every region of the rules'
  * (heardByRules), there's no `finding`, and `notBySound` is only what the rules say (the song, or
@@ -46,13 +46,15 @@ const view = (s: Suggestion) => {
   const by = listen ? hearingAsFound(s) : hearingByRules(s, song);
   const finding = useFinding.getState().id === s.id && useFinding.getState().version === s.version;
   const rulesWhy = listen ? null : tooLongWhy(song, s);
+  const measured = listen ? measuredWarning(s) : null;
   return {
     id: s.id,
     title: s.title,
     status: s.status,
     heard: heardForAgent(s, listen),
     changes: s.changes,
-    warnings: s.warnings,
+    // (and what the sound check measured, as the card says it: only while it may listen)
+    warnings: measured ? [...s.warnings, measured] : s.warnings,
     notes: s.notes,
     // Where its changes are heard, what its before-and-after plays (one stretch after another), and what that leaves out
     regions: by.regions,

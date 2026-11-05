@@ -27,6 +27,7 @@ import { joinRanges, namesManyBars, rangesWords, wordMeter, type BarRange } from
 import type { MeterMap } from '../audio/tempoMap';
 import type { BridgeInfo } from './bridgeProtocolClient';
 import { maxOf, minOf } from '../support/minMax';
+import { measuredCaution, type MeasuredRise } from './safety';
 
 /**
  * Where a suggestion is: waiting (for the musician); changed (the song changed elsewhere since:
@@ -101,6 +102,15 @@ export interface Suggestion {
   notes: string[];
   /** The same with each name marked, for the card to show the names apart (names.ts nameParts). */
   marked?: { changes: string[]; warnings: string[]; notes: string[] };
+  /** Whether the level rules said something among `warnings` (ApplyResult.cautioned): then a sound check that finds it louder says nothing more. */
+  cautioned?: boolean;
+  /**
+   * A caution found by measuring, for version `version`: the studio's sound check (whereHeard.ts)
+   * or, where that can't be run, the before-and-after's own measure, found Suggested much louder
+   * than the song (measuredRise, auditionRise) where the rules said nothing (measuredCaution). On
+   * the card; for the agent only while it may listen (handlers.ts), as all the sound check finds.
+   */
+  measured?: { version: number; text: string } | null;
   touchedTracks: string[];
   bars: BarRange | null;
   /**
@@ -509,6 +519,8 @@ const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: Project
     marked: { changes: r.diff.changes.map((c) => c.marked ?? c.text), warnings: r.marked.warnings, notes: r.marked.notes },
     warnings: r.warnings,
     notes: r.notes,
+    cautioned: r.cautioned,
+    measured: null,
     touchedTracks: r.diff.touchedTracks,
     bars: r.diff.bars,
     regions: r.diff.regions,
@@ -646,6 +658,19 @@ export function withSoundRegions(s: Suggestion, sound: readonly BarRange[], befo
     ...(grew && s.heard === s.version ? { heard: null, partHeard: s.version } : {}),
   };
 }
+
+/**
+ * `s` with what a measure of its sound found (`rise`: whereHeard.ts's sound check, or the
+ * before-and-after's own), on `before` (the song it's made on, for the bars' words): a caution
+ * for this version when it's much louder and the rules said nothing (measuredCaution), else none.
+ */
+export function withMeasured(s: Suggestion, rise: MeasuredRise | null, before: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): Suggestion {
+  const text = measuredCaution(rise, !!s.cautioned, wordMeter(before));
+  return { ...s, measured: text ? { version: s.version, text } : null };
+}
+
+/** The caution a measure found (withMeasured), while it's for the version the suggestion is now: else null. */
+export const measuredWarning = (s: Pick<Suggestion, 'measured' | 'version' | 'stale'>): string | null => (s.measured && s.measured.version === s.version && !s.stale ? s.measured.text : null);
 
 /** Where a suggestion is heard and what its before-and-after plays, as an agent may read it. */
 export interface AgentHearing {
