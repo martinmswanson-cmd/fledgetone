@@ -151,6 +151,8 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
     if (!bars) return setError(range === 'song' ? 'The timeline is empty.' : `Type a number of bars, up to ${mostBars}.`);
     if (!seconds || newBpm === null) return setError('Type a length: a timecode like 0:25:00 or seconds like 25.5.');
     if (newBpm < 40 || newBpm > 240) return setError(`That needs ${formatBpm(newBpm)} BPM. The tempo must be 40 to 240.`);
+    // Already that length: nothing to change, and no undo step
+    if (newBpm === bpm) return onClose();
     if (mapped) {
       const message = useTimelineStore.getState().scaleTempo(newBpm / bpm);
       if (message) return setError(message);

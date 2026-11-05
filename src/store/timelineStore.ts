@@ -153,6 +153,7 @@ import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expr
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
+import { meterChangeMoveTo, scaledTempos, tempoChangeMoveTo } from './tempoMoves';
 import { clampBpm, insertedMeasureBars, isPlainMeter, measureAt, measureBars, measureStart, measuresBetween, meterAt, nearestMeasureStart, secondsBetween, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -1836,10 +1837,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
     scaleTempo: (factor) => {
       const s = get();
-      const all = [s.bpm, ...s.tempoPoints.map((p) => p.bpm)].map((b) => Math.round(b * factor * 100) / 100);
-      if (all.some((b) => b < 40 || b > 240)) return 'That would take a tempo outside 40 to 240 BPM.';
-      const bpm = all[0];
-      const tempoPoints = s.tempoPoints.map((p, i) => ({ ...p, bpm: all[i + 1] }));
+      const scaled = scaledTempos(s.bpm, s.tempoPoints, factor);
+      if (typeof scaled === 'string') return scaled;
+      // Nothing changes (a factor of 1, or one too small to move any tempo a hundredth): no undo step
+      if (!scaled) return null;
+      const { bpm, tempoPoints } = scaled;
       const to = songTempo({ bpm, tempoPoints });
       set({ bpm, tempoPoints, markers: retimeMarkers(s.markers, to), clips: retimeAudioClips(s.clips, songTempo(s), to), ...pushPast(s) });
       return null;
@@ -1855,12 +1857,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       retempo((pts) =>
         pts.map((p) => {
           if (p.id !== id) return p;
-          // Onto another change's bar it doesn't go (one of the two would be lost): it stays put
-          const bar = patch.bar === undefined ? p.bar : Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, patch.bar));
-          const free = !pts.some((o) => o.id !== id && Math.abs(o.bar - bar) < 1e-6);
           return {
                 ...p,
-                ...(free ? { bar } : {}),
+                ...(patch.bar !== undefined ? { bar: tempoChangeMoveTo(pts, id, patch.bar) } : {}),
                 ...(patch.bpm !== undefined ? { bpm: clampBpm(patch.bpm) } : {}),
                 ...(patch.ramp !== undefined ? { ramp: patch.ramp } : {}),
               };
@@ -1883,18 +1882,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
     updateMeterChange: (id, patch, record = true) =>
       set((s) => {
-        const others = { base: s.meter, points: s.meterPoints.filter((p) => p.id !== id) };
         const self = s.meterPoints.find((p) => p.id === id);
-        let bar = self?.bar ?? 1;
-        if (self && patch.bar !== undefined) {
-          // Moved only between its neighbours, and not onto bar 1: passing one would swallow it
-          const sorted = sortedPoints(s.meterPoints);
-          const i = sorted.findIndex((p) => p.id === id);
-          const lo = sorted[i - 1]?.bar ?? 1;
-          const hi = sorted[i + 1]?.bar ?? Infinity;
-          const next = nearestMeasureStart(patch.bar, others);
-          if (next > lo + 1e-6 && next < hi - 1e-6) bar = next;
-        }
+        const bar = patch.bar === undefined ? (self?.bar ?? 1) : meterChangeMoveTo(s.meter, s.meterPoints, id, patch.bar);
         const points = s.meterPoints.map((p) => (p.id === id ? { ...p, ...patch, bar } : p));
         return { meterPoints: tidyMeters(points, s.meter), ...(record ? pushPast(s) : {}) };
       }),
