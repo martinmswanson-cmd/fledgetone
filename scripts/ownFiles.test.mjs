@@ -11,7 +11,7 @@ register(
     throw err;
   } }`)
 );
-const { withoutFileNames, withNeutralSoundIds, SOUND_NAME } = await import('../src/store/ownFiles.ts');
+const { nameFromFile, withoutFileNames, withNeutralSoundIds, SOUND_NAME } = await import('../src/store/ownFiles.ts');
 
 const pad = (name, soundId) => ({ name, ...(soundId ? { soundId } : {}), gain: 0, pan: 0, pitch: 0, decay: 0, lowpass: 20000, highpass: 20, drive: 0, choke: 0 });
 const audio = (soundId) => ({ soundId, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 });
@@ -21,8 +21,8 @@ const SONG = {
   tracks: [
     { id: 't1', name: 'Keys', instrumentKey: 'sampler', sample: { name: 'Voice memo.m4a', soundId: 'h1', root: 'C4' } },
     { id: 't2', name: 'Chops', instrumentKey: 'slicer', slicer: { soundId: 'h2', name: 'Holiday.wav', start: 0, end: 1, slices: [0] } },
-    { id: 't3', name: 'Rack', instrumentKey: 'drumRack', rack: { pads: [pad('kick from desktop', 'h3'), pad('Snare')] } },
-    { id: 't4', name: 'Multi', instrumentKey: 'multiSampler', multi: { zones: [{ soundId: 'h4', name: 'piano C4.wav', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } },
+    { id: 't3', name: 'Rack', instrumentKey: 'drumRack', rack: { pads: [pad('kick from desktop', 'h3'), pad('Snare'), pad('Kick', 'h3')] } },
+    { id: 't4', name: 'Multi', instrumentKey: 'multiSampler', multi: { zones: [{ soundId: 'h4', name: 'piano C4', root: 60, lo: 0, hi: 63, velLo: 1, velHi: 127 }, { soundId: 'h4', name: 'Bright keys', root: 72, lo: 64, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } },
     { id: 't5', name: 'Vox', instrumentKey: 'audio', slots: [{ scene: 0, clip: { name: 'Voice memo', lengthBars: 1, notes: [], audio: audio('h1') } }] },
     { id: 't6', name: 'Lead', instrumentKey: 'rhodes' },
   ],
@@ -40,8 +40,8 @@ test("the sounds' file names are replaced by plain ones, and each sound keeps it
   assert.deepEqual(sampler.sample, { name: SOUND_NAME, soundId: 'h1', root: 'C4' });
   assert.equal(slicer.slicer.name, SOUND_NAME);
   assert.equal(slicer.slicer.soundId, 'h2');
-  assert.deepEqual(rack.rack.pads.map((p) => p.name), ['Pad 1', 'Snare']);
-  assert.equal(multi.multi.zones[0].name, 'Sound 1');
+  assert.deepEqual(rack.rack.pads.map((p) => p.name), ['Pad 1', 'Snare', 'Kick']);
+  assert.deepEqual(multi.multi.zones.map((z) => z.name), ['Sound 1', 'Bright keys']);
   assert.equal(vox.slots[0].clip.name, 'Audio');
   // A track with no sound of its own is the same object
   assert.equal(lead, SONG.tracks[5]);
@@ -54,10 +54,22 @@ test("the sounds' file names are replaced by plain ones, and each sound keeps it
   for (const own of ['.m4a', '.wav', 'desktop', 'Holiday']) assert.ok(!text.includes(own), own);
 });
 
-test('without the file names known, only the names that are file names by kind change', () => {
+test('without the file names known, only the Sampler sound (always its file name) changes', () => {
   const out = withoutFileNames(SONG);
   assert.equal(out.clips, SONG.clips);
   assert.equal(out.tracks[0].sample.name, SOUND_NAME);
+  for (const i of [1, 2, 3, 4, 5]) assert.equal(out.tracks[i], SONG.tracks[i]);
+});
+
+test('a name made from the file: the file name, without its extension, trimmed or cut to a pad or zone; a typed one is not', () => {
+  assert.ok(nameFromFile('Voice memo.m4a', 'Voice memo.m4a'));
+  assert.ok(nameFromFile('Voice memo', 'Voice memo.m4a'));
+  assert.ok(nameFromFile('Kick 01', 'Kick 01'));
+  assert.ok(nameFromFile('x'.repeat(40), `${'x'.repeat(60)}.wav`));
+  assert.ok(nameFromFile('Snare', ' Snare .wav'));
+  assert.ok(!nameFromFile('Kick', 'kick from desktop.wav'));
+  assert.ok(!nameFromFile('Voice', 'Voice memo.m4a'));
+  assert.ok(!nameFromFile('voice memo', 'Voice memo.m4a'));
 });
 
 test('a song with no sounds of its own comes back as it was', () => {
