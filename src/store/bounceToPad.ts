@@ -57,6 +57,8 @@ export function choosePadTarget(tracks: ReadonlyArray<Pick<Track, 'id' | 'instru
 export interface PadSound {
   soundId: string;
   name: string;
+  /** `name` was made from a file's (see ownFiles.ts) */
+  nameFromFile?: true;
   gainDb: number;
   /** The stretch of the sound it plays, seconds (both or neither) */
   start?: number;
@@ -71,6 +73,7 @@ export function fillPad(rack: DrumRack | undefined, i: number, sound: PadSound):
   const pad: RackPad = {
     ...emptyPad(i),
     name: sound.name.trim().slice(0, 40) || emptyPad(i).name,
+    ...(sound.nameFromFile ? { nameFromFile: true as const } : {}),
     soundId: sound.soundId,
     gain: Math.round(Math.max(RACK_GAIN_MIN, Math.min(RACK_GAIN_MAX, sound.gainDb)) * 100) / 100,
     ...(sound.start !== undefined && sound.end !== undefined && sound.end > sound.start && sound.start >= 0 ? { start: round(sound.start), end: round(sound.end) } : {}),
@@ -103,7 +106,7 @@ export function padLevel(peak: number, playbackDb: number): { scale: number; gai
  * play through a track's strip, so no correction). Its fades become the pad's fade (the shorter,
  * up to the pad's longest), at least a few ms when it starts or stops inside the sound.
  */
-export function padFromClip(clip: Pick<Clip, 'name' | 'lengthBars' | 'audio'>, soundSeconds: number, bpm: number): PadSound | null {
+export function padFromClip(clip: Pick<Clip, 'name' | 'nameFromFile' | 'lengthBars' | 'audio'>, soundSeconds: number, bpm: number): PadSound | null {
   const audio = clip.audio;
   if (!audio) return null;
   const start = Math.max(0, audio.offset);
@@ -114,6 +117,7 @@ export function padFromClip(clip: Pick<Clip, 'name' | 'lengthBars' | 'audio'>, s
   return {
     soundId: audio.soundId,
     name: clip.name,
+    ...(clip.nameFromFile ? { nameFromFile: true as const } : {}),
     gainDb: audio.gain,
     ...(whole ? {} : { start, end }),
     ...(fade > 0 ? { fade } : {}),

@@ -160,10 +160,13 @@ export interface PlanOptions {
   maxFiles?: number;
 }
 
+/** A pack's name when its files share no folder. */
+export const PACK_NAME = 'Sample pack';
+
 /** The pack's name: the dropped folder's (the first folder all its files share), else "Sample pack". */
 export function packName(files: readonly PackFile[]): string {
   const first = files.find((f) => f.path.includes('/'))?.path.split('/')[0];
-  return first && files.every((f) => f.path.startsWith(`${first}/`)) ? first : 'Sample pack';
+  return first && files.every((f) => f.path.startsWith(`${first}/`)) ? first : PACK_NAME;
 }
 
 /**

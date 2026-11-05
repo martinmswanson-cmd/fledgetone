@@ -12,6 +12,7 @@ import { uid, type Clip, type Track } from './timelineTypes';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/exportWav';
 import { doubleSeed, doubleTake } from '../audio/vocalDouble';
+import { fileMade } from './ownFiles';
 
 const RATE = 44100;
 /** How much lower a double plays than the take, dB (the track's fader). */
@@ -78,6 +79,7 @@ async function doubleClipNow(clipId: string): Promise<string> {
   const track: Track = {
     id: uid('track'),
     name: `${from.name} double`,
+    ...fileMade(from.nameFromFile),
     color: from.color,
     instrumentKey: 'audio',
     isMuted: from.isMuted,

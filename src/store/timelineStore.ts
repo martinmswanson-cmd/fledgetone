@@ -126,6 +126,7 @@ import {
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
+import { fileMade, typedName, withName, type FileMade } from './ownFiles';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
@@ -503,7 +504,8 @@ interface TimelineState {
   isInspectorOpen: boolean;
   selectTrack: (trackId: string | null) => void;
   toggleInspector: (open?: boolean) => void;
-  addTrack: (instrumentKey: InstrumentKey, name?: string) => string;
+  /** `named`: its name was made from a file's or folder's (see ownFiles.ts) */
+  addTrack: (instrumentKey: InstrumentKey, name?: string, named?: FileMade) => string;
   deleteTrack: (trackId: string) => void;
   /**
    * Play a track into a bus track (its group channel), or straight to the master with null (one
@@ -2065,8 +2067,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     selectTrack: (id) => set({ selectedTrackId: id }),
     toggleInspector: (open) => set((s) => ({ isInspectorOpen: open !== undefined ? open : !s.isInspectorOpen })),
 
-    addTrack: (instrumentKey, name) => {
-      const made = makeTrack(instrumentKey, get().tracks, name);
+    addTrack: (instrumentKey, name, named) => {
+      const made = { ...makeTrack(instrumentKey, get().tracks, name), ...(name && named?.nameFromFile ? { nameFromFile: true as const } : {}) };
       // A bus or a return sends nothing to the reverb itself unless asked: its tracks have their own sends
       const newTrack = isMixTrack(made) ? { ...made, reverbSend: 0, delaySend: 0 } : made;
       set((s) => ({
@@ -2411,7 +2413,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     renameTrack: (trackId, name) => {
       const trimmed = name.trim().slice(0, 40);
       if (!trimmed || get().tracks.find((t) => t.id === trackId)?.name === trimmed) return;
-      updateTrack(trackId, () => ({ name: trimmed }), true);
+      // (Typed by the person: no longer a name made from a file, see ownFiles.ts)
+      set((s) => (s.tracks.some((t) => t.id === trackId) ? { tracks: s.tracks.map((t) => (t.id === trackId ? typedName(t, trimmed) : t)), ...pushPast(s) } : s));
     },
 
     toggleFolderMute: (folderId) =>
@@ -2468,6 +2471,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         () => ({
           instrumentKey,
           name: meta.name,
+          // (The instrument's own name: none made from a file, see ownFiles.ts)
+          nameFromFile: undefined,
           color: meta.color,
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
@@ -2618,6 +2623,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           id: uid('clip'),
           trackId: track.id,
           name: clipNameFromFile(sound.name),
+          // (Named after its sound's file: see ownFiles.ts)
+          nameFromFile: true,
           startBar: at,
           lengthBars,
           notes: [],
@@ -2705,6 +2712,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         id: uid('clip'),
         trackId: track.id,
         name: `${clip.name} chops`,
+        ...fileMade(clip.nameFromFile),
         startBar: clip.startBar,
         lengthBars: clip.lengthBars,
         notes: sliceNotes(slicer.slices, slicer.start, slicer.end, tempoAt(clip.startBar, songTempo(s))).map((n) => ({ ...n, id: uid('note') })),
@@ -3612,6 +3620,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         id: uid('clip'),
         trackId,
         name: `${track.name} ${count}`,
+        ...fileMade(track.nameFromFile),
         startBar: Math.max(1, Math.min(TOTAL_BARS + 1 - lengthBars, atBar)),
         lengthBars,
         notes: [],
@@ -3650,14 +3659,14 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       set((st) => ({
         clips: st.clips.map((c) =>
           c.id === clipId
-            ? { ...c, name: payload.label, notes: notes.map((n) => ({ ...n, id: uid('note'), startOffset: 0 })) }
+            ? { ...withName(c, payload.label), notes: notes.map((n) => ({ ...n, id: uid('note'), startOffset: 0 })) }
             : c
         ),
       }));
     },
 
     // Low-level, as typed: the name field checkpoint()s once when it's focused
-    renameClip: (clipId, name) => updateClip(clipId, () => ({ name })),
+    renameClip: (clipId, name) => set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? typedName(c, name) : c)) })),
 
     setClipWobble: (clipId, wobble) =>
       set((s) => {

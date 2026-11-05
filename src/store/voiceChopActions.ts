@@ -20,6 +20,7 @@ import { encodeChannels } from '../audio/wavFile';
 import { detectPitch, type PitchFrame } from '../audio/vocalTune';
 import { chopGain, findSyllables, layoutChops, MAX_CHOPS, tuneChop, type ChopScale, type Syllable } from '../audio/voiceChops';
 import { maxOf, minOf } from '../support/minMax';
+import { fileMade } from './ownFiles';
 
 const RATE = 44100;
 /** The chop instrument's envelope: a quick start, and a short release so each chop stops cleanly. */
@@ -90,7 +91,8 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
     for (let j = 0; j < y.length; j++) y[j] *= g;
     const name = `${base} chop ${i + 1} ${midiName(k.root)}`;
     const sound = await importSoundFile(new Blob([encodeChannels([y], RATE, 24)], { type: 'audio/wav' }), `${name}.wav`);
-    zones.push({ soundId: sound.id, name, root: k.root, lo: k.lo, hi: k.hi, velLo: 1, velHi: 127 });
+    // (Named after the take's sound file: see ownFiles.ts)
+    zones.push({ soundId: sound.id, name, nameFromFile: true, root: k.root, lo: k.lo, hi: k.hi, velLo: 1, velHi: 127 });
   }
 
   const now = useTimelineStore.getState();
@@ -100,7 +102,7 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
   // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
   const done = allOrNothing(() => {
     // One undo step: adding the track is it, the rest goes in with it
-    const trackId = now.addTrack('multiSampler', `${clip.name} chops`.slice(0, 40));
+    const trackId = now.addTrack('multiSampler', `${clip.name} chops`.slice(0, 40), fileMade(clip.nameFromFile));
     // (no room for a track: nothing more, see allOrNothing)
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return trackId;
     const after = useTimelineStore.getState();
@@ -125,6 +127,7 @@ async function chopVoiceToKeysNow(clipId: string, opts: { scale?: ChopScale | nu
       id: uid('clip'),
       trackId,
       name: `${clip.name} chops`,
+      ...fileMade(clip.nameFromFile),
       startBar,
       lengthBars: Math.max(1 / 16, Math.ceil((lastEnd - first) * 16) / 16),
       notes,

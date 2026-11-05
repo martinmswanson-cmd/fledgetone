@@ -13,6 +13,7 @@ import { importSoundFile } from '../audio/soundLibrary';
 import { BUS_GAIN, liveMix } from '../audio/engine';
 import { captureWamStates } from '../audio/wamHost';
 import { maxOf, minOf } from '../support/minMax';
+import { fileMade } from './ownFiles';
 
 /** Tracks being frozen right now, with how far along (0 to 1). */
 export const useFreezing = create<Record<string, number>>(() => ({}));
@@ -187,7 +188,7 @@ export async function bounceTrack(trackId: string): Promise<string | null> {
   if (!source) return null;
   const done = allOrNothing(() => {
     s.checkpoint();
-    const id = s.addTrack('audio', `${source.name} (bounce)`);
+    const id = s.addTrack('audio', `${source.name} (bounce)`, fileMade(source.nameFromFile));
     // (no room for a track: nothing more, and allOrNothing puts the checkpoint back)
     if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
     const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
@@ -202,6 +203,7 @@ export async function bounceTrack(trackId: string): Promise<string | null> {
             id: `clip-bounce-${id}`,
             trackId: id,
             name: `${source.name} (bounce)`,
+            ...fileMade(source.nameFromFile),
             startBar: r.startBar,
             lengthBars,
             notes: [],

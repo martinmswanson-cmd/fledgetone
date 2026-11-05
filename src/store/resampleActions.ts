@@ -23,6 +23,7 @@ import { packUserTable, tableFromSound, USER_TABLE_INDEX, type CycleChoice, type
 import { FLEDGE_PRESETS, FLEDGE_URL } from '../audio/plugins/fledgeMacros';
 import { findBuiltin } from '../audio/plugins/builtinHost';
 import { fledgeValues } from '../audio/plugins/fledgeWave';
+import { fileMade } from './ownFiles';
 
 /** A resample under way: how far along (0 to 1). Null when none is. */
 export const useResampling = create<{ fraction: number | null }>(() => ({ fraction: null }));
@@ -124,6 +125,11 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     const stored = channels.map((ch) => ch.map((v) => v * scale));
     const names = new Map(s.tracks.map((t) => [t.id, t.name]));
     const name = resampleName(req.source, s.clips, names, songMeterOf(s));
+    // Named after a clip or track whose name was made from a file's, it is too (see ownFiles.ts)
+    const source = req.source;
+    const picked = source.kind === 'clips' ? s.clips.filter((c) => source.clipIds.includes(c.id)) : [];
+    const onlyTrack = source.kind === 'range' && source.trackIds?.length === 1 ? s.tracks.find((t) => t.id === source.trackIds![0]) : undefined;
+    const named = fileMade(picked.length === 1 ? picked[0].nameFromFile : onlyTrack?.nameFromFile);
     // (Checked after each wait: a song opened meanwhile gets nothing)
     const elsewhere = () => songGeneration() !== song;
     const ELSEWHERE: ResampleResult = { message: 'Another song was opened while it rendered: nothing was added.' };
@@ -146,6 +152,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
       if (elsewhere()) return ELSEWHERE;
       if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
       const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`, () => !elsewhere());
+      if (id && named.nameFromFile) useTimelineStore.setState((x) => ({ tracks: x.tracks.map((t) => (t.id === id ? { ...t, ...named } : t)) }));
       if (elsewhere()) return ELSEWHERE;
       // (no room for a track: nothing was added)
       if (id && !useTimelineStore.getState().tracks.some((t) => t.id === id)) return { message: pastCapsWords(['tracks']) };
@@ -160,7 +167,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
       // (all or nothing: past the most a song can have, nothing is done, and that's what's said)
       const done = allOrNothing(() => {
         const st = useTimelineStore.getState();
-        const id = st.addTrack('audio', `${short} print`);
+        const id = st.addTrack('audio', `${short} print`, named);
         if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
         // (What the clip gain can't take down, the track's fader does: never louder than it was)
         const { gain, volume } = printLevel(playDb);
@@ -169,6 +176,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
           id: uid('clip'),
           trackId: id,
           name: `${short} print`,
+          ...named,
           startBar: from,
           lengthBars,
           notes: [],
@@ -187,7 +195,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     // A Slicer (its hits found in the sound as the live context decodes it)
     await decodeSound(meta.id, rate);
     if (elsewhere()) return ELSEWHERE;
-    const base = slicerFor(meta);
+    const base = { ...slicerFor(meta), ...named };
     const choice = req.slices ?? 'transients';
     let slicer: SlicerSettings = choice === 'transients' ? base : resliced({ ...base, mode: 'equal', count: choice });
     if (req.reverseLast && slicer.slices.length > 1) slicer = { ...slicer, reversed: [slicer.slices.length - 1] };
@@ -199,7 +207,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     // (all or nothing, as above)
     const done = allOrNothing(() => {
       const st = useTimelineStore.getState();
-      const id = st.addTrack('slicer', `${short} chops`);
+      const id = st.addTrack('slicer', `${short} chops`, named);
       if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return id;
       useTimelineStore.getState().setTrackSlicer(id, slicer, false);
       printed(id, { volume: Math.max(-60, Math.min(6, Math.round(playDb * 10) / 10)) });
@@ -207,6 +215,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
         id: uid('clip'),
         trackId: id,
         name: pattern === 'order' ? `${short} chops` : `${short} ${pattern}`,
+        ...named,
         startBar: from,
         lengthBars: bars,
         notes: notes.map((n) => ({ ...n, id: uid('note') })),

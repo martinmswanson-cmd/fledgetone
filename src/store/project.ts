@@ -310,6 +310,7 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
         scene,
         clip: {
           name: c.name,
+          ...(c.nameFromFile ? { nameFromFile: true as const } : {}),
           lengthBars: c.lengthBars,
           notes: c.notes,
           ...(c.wobble ? { wobble: c.wobble } : {}),
@@ -340,6 +341,8 @@ export function parseTrack(raw: unknown): Track {
   return {
     id: v.id,
     name: v.name,
+    // Optional: its name was made from a file's or folder's (see ownFiles.ts)
+    ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}),
     color: isStr(v.color) ? v.color : '#9ca3af',
     instrumentKey: v.instrumentKey as InstrumentKey,
     isMuted: v.isMuted === true,
@@ -498,6 +501,8 @@ function parseClip(v: unknown): Clip {
     id: v.id,
     trackId: v.trackId,
     name: isStr(v.name) ? v.name : 'Clip',
+    // Optional: its name was made from a file's (see ownFiles.ts)
+    ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}),
     startBar,
     // No clip is shorter than a 16th; a zero or negative length (a hand-edited file) would break edits
     lengthBars,

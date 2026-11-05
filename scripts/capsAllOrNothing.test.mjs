@@ -85,7 +85,7 @@ test('every "checkpoint, then edit" action is all or nothing against the caps', 
     'src/pocket/pocketCell.ts': ['function inOneStep'],
     'src/pocket/pocketSections.ts': ['function oneStep'],
     'src/pocket/PocketVocals.tsx': ['function addVocalTrack'],
-    'src/components/timeline/samplePackImport.ts': ["addTrack('drumRack', kit.name)"],
+    'src/components/timeline/samplePackImport.ts': ["addTrack('drumRack', kit.name, fromFolder)"],
   };
   for (const [file, places] of Object.entries(wrapped)) {
     const text = src(file);

@@ -61,6 +61,7 @@ import { agentLabel, LIMITS } from './protocol';
 import { byAgentId, givenKey, givenText as quoted } from './agentText';
 import { insertLabel, masterPartLabel, settingWord, valueWord } from './settingWords';
 import { nm, plainNames } from './names';
+import { fileMade } from '../store/ownFiles';
 
 
 /** The version of the op vocabulary this file reads. */
@@ -490,6 +491,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           id: uid('clip'),
           trackId: track.id,
           name: cleanName(op.name, `${at}.name`) ?? `${track.name} ${count}`,
+          // (Named after a track named after a file, it is too: see ownFiles.ts)
+          ...fileMade(op.name === undefined && track.nameFromFile),
           startBar,
           lengthBars,
           notes: [],
@@ -638,6 +641,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           throw new OpFail(`${at}.instrument`, `${nm(track.name)} has clips: they can't switch between the Drop pad and an instrument`);
         const meta = INSTRUMENTS[key];
         const next: Track = { ...track, instrumentKey: key, name: meta.name, color: meta.color, ...(key === 'designedKit' ? designedKitStart(track) : {}) };
+        // (The instrument's own name: none made from a file, see ownFiles.ts)
+        delete next.nameFromFile;
         delete next.plugin;
         w.tracks = w.tracks.map((t) => (t === track ? next : t));
         if (isMixTrack(track)) w.tracks = tidySends(tidyRoutes(w.tracks));

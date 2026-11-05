@@ -18,6 +18,7 @@ import { encodeChannels } from '../audio/wavFile';
 import { runDsp } from '../audio/dspRun';
 import { SHIFT_VERSION } from './shiftVersion';
 import { keyShift } from '../audio/sampleAnalysis';
+import { fileMade } from './ownFiles';
 
 /** The rate re-pitched copies are made at. */
 const SHIFT_RATE = 44100;
@@ -28,6 +29,8 @@ export interface ChopRequest {
   soundId: string;
   /** The track's and pads' name */
   name: string;
+  /** `name` was made from a file's (see ownFiles.ts) */
+  nameFromFile?: true;
   /** Where the chops start in the sound, seconds, ascending (see sampleFlip.ts) */
   cuts: number[];
   /** The end of the chopped part */
@@ -64,7 +67,7 @@ export function chopToRack(req: ChopRequest): string | null {
   // (all or nothing: past the most a song can have, nothing is done and a toast says so)
   const done = allOrNothing(() => {
     // One undo step: adding the track is it, the rest goes in with it
-    const trackId = s.addTrack('drumRack', `${req.name} chops`.slice(0, 40));
+    const trackId = s.addTrack('drumRack', `${req.name} chops`.slice(0, 40), fileMade(req.nameFromFile));
     // (no room for a track: nothing more, see allOrNothing)
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null;
     const after = useTimelineStore.getState();
@@ -84,6 +87,7 @@ export function chopToRack(req: ChopRequest): string | null {
       id: uid('clip'),
       trackId,
       name: req.flip ? `${req.name} flip` : `${req.name} chops`,
+      ...fileMade(req.nameFromFile),
       startBar,
       lengthBars,
       notes: (req.flip ? notes.filter((n) => n.startOffset < lengthBars - 1e-6) : notes).map((n) => ({ ...n, id: uid('note') })),

@@ -21,6 +21,7 @@ import { Modal } from './Modal';
 import { Waveform } from './Waveform';
 import { SampleInfo } from './SampleInfo';
 import { showToast } from './toastStore';
+import { fileMade } from '../../store/ownFiles';
 
 const WAVE_H = 96;
 const COLUMNS = 720;
@@ -114,10 +115,12 @@ export const ChopSampleDialog: React.FC<{ clipId: string; onClose: () => void }>
     setHandCuts(next);
   };
   const name = (clip.name || meta?.name || 'Sample').replace(/\.[a-z0-9]+$/i, '').slice(0, 30);
+  // (The clip's name, or its sound's file name: see ownFiles.ts)
+  const named = fileMade(clip.name ? clip.nameFromFile : !!meta);
 
   const chop = () => {
     if (!part || !cuts.length) return;
-    const trackId = chopToRack({ soundId, name, cuts, end: part.end, fade: fadeMs / 1000, choke, flip, bassCut, clipId });
+    const trackId = chopToRack({ soundId, name, ...named, cuts, end: part.end, fade: fadeMs / 1000, choke, flip, bassCut, clipId });
     if (trackId) {
       showToast(`${cuts.length} chops on the pads of a new Drum Rack (C2 up)${flip ? ', with a pattern that flips them: New idea (in its panel) writes another' : ''}.`);
       onClose();
@@ -125,7 +128,7 @@ export const ChopSampleDialog: React.FC<{ clipId: string; onClose: () => void }>
   };
   const toSlicer = () => {
     if (!part || !cuts.length) return;
-    const trackId = useTimelineStore.getState().chopClipToSlicer(clipId, { soundId, name, start: part.start, end: part.end, slices: cuts, mode: 'auto', count: 8, sensitivity, pitch: false, focus: 0 });
+    const trackId = useTimelineStore.getState().chopClipToSlicer(clipId, { soundId, name, ...named, start: part.start, end: part.end, slices: cuts, mode: 'auto', count: 8, sensitivity, pitch: false, focus: 0 });
     if (trackId) {
       showToast(`${cuts.length} slices on a new Slicer track (C3 up).`);
       onClose();

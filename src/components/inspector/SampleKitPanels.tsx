@@ -23,6 +23,7 @@ import { kitFromFolder } from '../timeline/samplePackImport';
 import { isAudioPath } from '../../store/samplePack';
 import { UndoableRange } from '../UndoableRange';
 import { SoundLibraryFooter } from './SoundLibraryFooter';
+import { typedName, withName } from '../../store/ownFiles';
 
 const panel = 'flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border shadow-md';
 const small = 'h-6 px-2 rounded border border-forge-border text-[10px] font-mono text-forge-muted hover:text-forge-text hover:border-cyan-500 disabled:opacity-50';
@@ -68,7 +69,8 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
       if (!sounds.length) return;
       const pads = rack.pads.map((p, j) => {
         const sound = sounds[j - first];
-        return sound && j >= first ? { ...p, soundId: sound.id, name: fileBase(sound.name).slice(0, 40) } : p;
+        // (Named after its file: see ownFiles.ts)
+        return sound && j >= first ? { ...withName(p, fileBase(sound.name).slice(0, 40), true), soundId: sound.id } : p;
       });
       setRack({ pads });
     } finally {
@@ -156,7 +158,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
           <input
             value={pad.name}
             onFocus={() => s.beginEdit()}
-            onChange={(e) => setPad(selected, { name: e.target.value.slice(0, 40) })}
+            onChange={(e) => setRack({ pads: rack.pads.map((p, j) => (j === selected ? typedName(p, e.target.value.slice(0, 40)) : p)) }, false)}
             className="flex-1 min-w-0 h-6 bg-forge-panel border border-forge-border rounded px-1.5 text-xs text-forge-text"
             aria-label="Pad name"
           />
@@ -283,8 +285,8 @@ export const MultiPanel: React.FC<{ track: Track }> = ({ track }) => {
     setBusy(true);
     try {
       const sounds = await importAudioFiles(files);
-      const found = await Promise.all(sounds.map(async (m) => ({ soundId: m.id, name: fileBase(m.name), root: await guessRoot(m.id, m.name) })));
-      const all = [...multi.zones.map((z) => ({ soundId: z.soundId, name: z.name, root: z.root })), ...found];
+      const found = await Promise.all(sounds.map(async (m) => ({ soundId: m.id, name: fileBase(m.name), nameFromFile: true as const, root: await guessRoot(m.id, m.name) })));
+      const all = [...multi.zones.map((z) => ({ soundId: z.soundId, name: z.name, ...(z.nameFromFile ? { nameFromFile: true as const } : {}), root: z.root })), ...found];
       setMulti({ ...multi, zones: mapZones(all) });
     } finally {
       setBusy(false);
