@@ -22,6 +22,7 @@ import { dropHasFolder, filesFromDrop, hasFiles, importAudioFiles, pickAudioFile
 import { kitFromFolder } from '../timeline/samplePackImport';
 import { isAudioPath } from '../../store/samplePack';
 import { UndoableRange } from '../UndoableRange';
+import { useFieldUndo } from '../sliderUndo';
 import { SoundLibraryFooter } from './SoundLibraryFooter';
 import { typedName, withName } from '../../store/ownFiles';
 
@@ -52,6 +53,8 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
   const rack = track.rack ?? defaultRack();
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
+  // One undo step for the whole rename of a pad
+  const nameUndo = useFieldUndo();
   const pad = rack.pads[selected];
   const bounce = usePadBounce((b) => b.fraction);
   const loopIn = useTimelineStore((st) => st.loopRegion.inBar);
@@ -157,9 +160,9 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
         <div className="flex items-center gap-1.5">
           <input
             value={pad.name}
-            onFocus={() => s.beginEdit()}
-            onBlur={() => s.endEdit()}
-            onChange={(e) => setRack({ pads: rack.pads.map((p, j) => (j === selected ? typedName(p, e.target.value.slice(0, 40)) : p)) }, false)}
+            onFocus={nameUndo.focus}
+            onBlur={nameUndo.blur}
+            onChange={(e) => nameUndo.change(() => setRack({ pads: rack.pads.map((p, j) => (j === selected ? typedName(p, e.target.value.slice(0, 40)) : p)) }, false))}
             className="flex-1 min-w-0 h-6 bg-forge-panel border border-forge-border rounded px-1.5 text-xs text-forge-text"
             aria-label="Pad name"
           />

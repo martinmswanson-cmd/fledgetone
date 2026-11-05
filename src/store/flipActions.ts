@@ -147,11 +147,12 @@ export function setBassCut(trackId: string, on: boolean): void {
   useTimelineStore.getState().setTrackFx(trackId, 'filter', bassCutFilter(on), true);
 }
 
-/** The song's tempo set to a sample's. */
+/**
+ * The song's tempo set to a sample's. Not an undo step, like the header's tempo buttons: the
+ * starting tempo on its own isn't undone, so a step here would be empty (and clear the redo history).
+ */
 export function matchSongTempo(bpm: number): void {
-  const s = useTimelineStore.getState();
-  s.checkpoint();
-  s.setBpm(bpm);
+  useTimelineStore.getState().setBpm(bpm);
 }
 
 /** The audio clip follows the song's tempo from the tempo its sample was found at (time-stretched, same pitch). */

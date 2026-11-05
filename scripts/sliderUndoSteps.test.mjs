@@ -3,7 +3,9 @@
 // is taken with the first change that touches the song, Pocket's Mix all faders are their own undo
 // steps from the keyboard or a screen reader, a starting tempo change never turns a field or slider
 // that was only held into an empty step, and a click on a Pro EQ band, a warp marker, a gain point or
-// an intensity point leaves it as it was. Run with `npm test`.
+// an intensity point leaves it as it was. A name field's typing after another step (a warp marker
+// dragged while it keeps focus) is a step of its own, Match song tempo makes no empty step, and a
+// click on a duck shape dot keeps the preset. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +23,7 @@ register(
 }`)
 );
 const { roundedKeyStep } = await import('../src/components/keyboard.ts');
+const { fieldEdit } = await import('../src/components/fieldUndo.ts');
 
 const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const between = (text, from, to) => text.slice(text.indexOf(from), text.indexOf(to, text.indexOf(from)));
@@ -119,8 +122,80 @@ test('a starting tempo change makes no undo step, even with a field or slider he
   assert.match(between(store, '    endEdit: () => {', '\n    },'), /pendingCheckpoint = null;/);
   // Fields that hold an edit let it go when left
   for (const f of ['src/components/timeline/AudioClipEditor.tsx', 'src/components/timeline/PianoRoll.tsx', 'src/components/inspector/SampleKitPanels.tsx']) {
-    assert.match(src(f), /onFocus=\{\(\) => [^\n]*beginEdit\(\)\}\s*onBlur=\{\(\) => [^\n]*endEdit\(\)\}/, f);
+    assert.match(src(f), /onFocus=\{nameUndo\.focus\}\s*onBlur=\{nameUndo\.blur\}\s*onChange=\{\(e\) => (?:\{[^}]*\s*)?nameUndo\.change\(/, f);
   }
+  assert.match(src('src/components/sliderUndo.ts'), /begin: \(\) => useTimelineStore\.getState\(\)\.beginEdit\(\),\s*end: \(\) => useTimelineStore\.getState\(\)\.endEdit\(\),/);
+});
+
+/** A small undo history that works as the store's does: a begin's step is taken with the first change. */
+function history() {
+  const h = { past: [], name: 'loop', pending: null };
+  h.begin = () => (h.pending = { name: h.name });
+  h.end = () => (h.pending = null);
+  h.latest = () => h.past[h.past.length - 1];
+  h.rename = (name) => {
+    if (name === h.name) return;
+    if (h.pending) h.past.push(h.pending);
+    h.pending = null;
+    h.name = name;
+  };
+  // Another action's own step (a warp marker's drag: a checkpoint, then its change)
+  h.other = () => {
+    h.pending = null;
+    h.past.push({ name: h.name });
+  };
+  h.undo = () => {
+    h.pending = null;
+    const e = h.past.pop();
+    if (e) h.name = e.name;
+  };
+  return h;
+}
+
+test("a name typed after another step, the field still focused, is a step of its own", () => {
+  const h = history();
+  const field = fieldEdit(h);
+  field.focus();
+  for (const name of ['loopA', 'loopAb', 'loopAbc']) field.change(() => h.rename(name));
+  // A whole name typed is one step
+  assert.equal(h.past.length, 1);
+  h.other();
+  field.change(() => h.rename('loopAbcB'));
+  field.change(() => h.rename('loopAbcBC'));
+  assert.equal(h.past.length, 3);
+  // One Undo takes back the typing after the other step, not the other step with it
+  h.undo();
+  assert.equal(h.name, 'loopAbc');
+  assert.equal(h.past.length, 2);
+  // Typing after an Undo is a new step too
+  field.change(() => h.rename('loopAbcD'));
+  assert.equal(h.past.length, 3);
+  h.undo();
+  assert.equal(h.name, 'loopAbc');
+  // Left, a begin nothing changed after is let go
+  field.focus();
+  field.blur();
+  assert.equal(h.pending, null);
+});
+
+test('Match song tempo makes no undo step (the starting tempo alone is not undone)', () => {
+  const match = between(src('src/store/flipActions.ts'), 'export function matchSongTempo', '\n}\n');
+  assert.doesNotMatch(match, /checkpoint/);
+  assert.match(match, /setBpm\(bpm\)/);
+  // No other tempo change checkpoints before setBpm
+  for (const f of ['src/components/Header.tsx', 'src/components/TempoControls.tsx', 'src/components/timeline/TempoRow.tsx', 'src/pocket/PocketSheets.tsx']) {
+    assert.doesNotMatch(src(f), /checkpoint\(\);?[^\n]*\n(?:[^\n]*\n){0,3}[^\n]*setBpm\(/, f);
+  }
+});
+
+test('a click on a duck shape dot keeps the preset: the dot moves by the pointer, after 3 px', () => {
+  const duck = src('src/components/inspector/DuckShapeEditor.tsx');
+  const move = between(duck, 'onPointerMove={(e) => {', 'onPointerUp=');
+  assert.match(move, /if \(!d\.moved && Math\.abs\(e\.clientX - d\.clientX\) < 3 && Math\.abs\(e\.clientY - d\.clientY\) < 3\) return;/);
+  assert.match(move, /const x = x0 \+ \(sx - d\.from\[0\]\) \/ \(W - 2 \* PAD\);/);
+  // Its step waits for a change (and a press that changed nothing lets it go)
+  assert.match(duck, /st\(\)\.beginEdit\(\);\s*svg\.current\?\.setPointerCapture/);
+  assert.match(between(duck, 'onPointerUp={(e) => {', '}}'), /st\(\)\.endEdit\(\);/);
 });
 
 test('a click on a Pro EQ band, a warp marker, a gain point or an intensity point changes nothing', () => {
