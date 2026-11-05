@@ -110,5 +110,5 @@ test('new empty clips, Smart tools and Math patterns are sized and placed by the
   assert.equal(tm.measureAt(5.2 + 1e-6, THREE).start, 4.75);
   const actions = src('src/store/smartActions.ts');
   assert.match(actions, /chordSpans\(atBar, chords\.length, chordBars, songMeterOf\(tl\(\)\)\)/);
-  assert.match(actions, /const length = addMeasures\(atBar, bars, songMeterOf\(tl\(\)\)\) - atBar;\s+const notes = mathPattern\(pattern, \{ root: key\.root, steps: key\.steps \}, length, newId\);/);
+  assert.match(actions, /const map = songMeterOf\(tl\(\)\);\s+const length = addMeasures\(atBar, bars, map\) - atBar;\s+const notes = mathPattern\(pattern, \{ root: key\.root, steps: key\.steps \}, length, newId, \{ start: atBar, map \}\);/);
 });

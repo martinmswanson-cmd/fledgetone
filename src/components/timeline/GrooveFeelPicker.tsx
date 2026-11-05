@@ -8,10 +8,11 @@
 import React, { useRef, useState } from 'react';
 import { Popover } from '../Popover';
 import { FxSlider } from '../inspector/InsertFx';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter } from '../../audio/tempoMap';
 import { GROOVE_ROLE_NAMES, GROOVE_ROLES, feelOf, type GrooveRole } from '../../store/grooveFeels';
 import { feelChoices, takeGrooveFromAudio } from './grooveFeelActions';
-import type { Clip } from '../../store/timelineTypes';
+import { formatBarPosition, type Clip } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
 
 const ACCENT = '#22d3ee';
@@ -19,6 +20,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 export const GrooveFeelPicker: React.FC<{ clip: Clip; className: string }> = ({ clip, className }) => {
   const clips = useTimelineStore((s) => s.clips);
+  const meter = useSongMeter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -107,7 +109,7 @@ export const GrooveFeelPicker: React.FC<{ clip: Clip; className: string }> = ({ 
               ) : audioClips.length ? (
                 audioClips.slice(0, 12).map((a) => (
                   <button key={a.id} type="button" onClick={() => void fromAudio(a.id)} className="h-6 px-1.5 rounded border border-forge-border text-left text-forge-text hover:border-cyan-500 truncate" title="Measure where this audio's hits land against the song's bars and play this clip with that groove">
-                    {a.name} (bar {Math.round(a.startBar * 100) / 100})
+                    {a.name} (bar {isPlainMeter(meter) ? Math.round(a.startBar * 100) / 100 : formatBarPosition(a.startBar, meter)})
                   </button>
                 ))
               ) : (

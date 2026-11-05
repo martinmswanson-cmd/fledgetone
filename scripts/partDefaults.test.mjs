@@ -64,6 +64,26 @@ test('a new note is drawn at the length last drawn for that kind of part', () =>
   P.forgetPens();
 });
 
+test("the FX pen starts at one of the song's bars where the clip starts, shown as 1 bar", () => {
+  P.forgetPens();
+  const map = (num, den) => ({ base: { num, den }, points: [] });
+  assert.equal(P.penBars('fx', 1, map(4, 4)), 1);
+  assert.equal(P.penBars('fx', 2.5, map(4, 4)), 1);
+  assert.equal(P.penBars('fx', 1, map(3, 4)), 3 / 4);
+  assert.equal(P.penBars('fx', 1, map(7, 8)), 7 / 8);
+  // A 3/4 song changing to 7/8 at measure 3: a clip there draws seven eighths
+  assert.equal(P.penBars('fx', 2.5, { base: { num: 3, den: 4 }, points: [{ bar: 2.5, num: 7, den: 8 }] }), 7 / 8);
+  for (const [num, den] of [[3, 4], [7, 8], [4, 4]]) {
+    const lens = P.penLengths([{ bars: 1 / 16, label: '1/16' }, { bars: 1 / 2, label: '1/2' }], [1, 2, 4], 1, map(num, den));
+    assert.equal(lens.find((o) => o.bars === P.penBars('fx', 1, map(num, den)))?.label, '1 bar', `${num}/${den}`);
+  }
+  // Other pens, and a length drawn, as before
+  assert.equal(P.penBars('piano', 1, map(3, 4)), 1 / 8);
+  P.rememberPen('fx', 1 / 2);
+  assert.equal(P.penBars('fx', 1, map(3, 4)), 1 / 2);
+  P.forgetPens();
+});
+
 test('Duck to kick: a hole for the drums in the bass, the other music parts pumping on the kick, releases in time', () => {
   const tracks = [track('kit', 'drums'), track('bass', 'subBass'), track('pad', 'supersaw'), track('lead', 'lead'), track('voice', 'audio', { name: 'Vocals' }), track('riser', 'fx')];
   const { tracks: out, changed } = D.duckToKick(tracks, [], 128);

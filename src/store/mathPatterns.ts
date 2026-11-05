@@ -1,6 +1,7 @@
 import { barsToDuration, durationToBars } from './timelineTypes';
 import type { ExprPoint, NoteEvent } from './timelineTypes';
 import { nameOf } from './noteTools';
+import { addMeasures, isPlainMeter, measureAt, type MeterMap } from '../audio/tempoMap';
 
 /**
  * Math patterns: music a formula writes. Generators make a clip's notes from a key (the right-click
@@ -24,6 +25,12 @@ export interface PatternKey {
   root: number;
   /** The scale's semitones from the root (7 of them) */
   steps: readonly number[];
+}
+
+/** Where a clip sits in the song, for the tools that count its measures and beats: its start (bar 1 is the song's start) and the song's time signatures. */
+export interface ClipPlace {
+  start: number;
+  map: MeterMap;
 }
 
 export type MathPatternId = 'pendulum' | 'fibonacci' | 'fifths' | 'pascal' | 'riser';
@@ -57,18 +64,25 @@ const rootMidi = (key: PatternKey, octave: number) => 60 + key.root + octave * 1
 /**
  * Six pendulums over `bars` (whole cycles of 4 bars): pendulum k swings 6 + k times per 16 beats,
  * cos(2π N t / 16), and plays its note each time it crosses the middle. Low notes for the slow ones.
+ * Where `place` gives the song's time signatures, a cycle is 4 of the song's measures from the
+ * clip's start (three whole notes in 3/4), so they still line up on a measure line every 4 bars.
  */
-export function pendulumWave(key: PatternKey, bars: number, newId: () => string): NoteEvent[] {
+export function pendulumWave(key: PatternKey, bars: number, newId: () => string, place?: ClipPlace): NoteEvent[] {
   const out: NoteEvent[] = [];
   const degrees = [0, 2, 4, 7, 9, 11];
   const base = rootMidi(key, 0);
-  for (let cycle = 0; cycle * 4 < bars - 1e-9; cycle++) {
+  const plain = !place || isPlainMeter(place.map);
+  // Where cycle `c` starts, in bars from the clip's start
+  const cycleAt = (c: number) => (plain ? c * 4 : addMeasures(place.start, c * 4, place.map) - place.start);
+  for (let cycle = 0; cycleAt(cycle) < bars - 1e-9; cycle++) {
+    const from = cycleAt(cycle);
+    const span = cycleAt(cycle + 1) - from;
     degrees.forEach((degree, k) => {
       const swings = 6 + k;
       // cos crosses zero at N t / 16 = 1/4 + j/2 (t in beats)
       for (let j = 0; j < swings * 2; j++) {
         const beat = (16 / swings) * (0.25 + j / 2);
-        const at = cycle * 4 + beat / 4;
+        const at = plain ? cycle * 4 + beat / 4 : from + (beat / 16) * span;
         if (at >= bars - 1e-9) break;
         out.push(note(newId(), degreeMidi(key, base, degree), at, 1 / 16, 0.62 + 0.04 * (k % 2)));
       }
@@ -96,12 +110,19 @@ export function fibonacciGroove(key: PatternKey, bars: number, newId: () => stri
   return fibonacciMod4(Math.round(bars * 8)).map((r, i) => note(newId(), degreeMidi(key, base, tones[r] + (r === 0 && i % 12 >= 6 ? 7 : 0)), i / 8, 1 / 8, i % 6 === 0 ? 0.85 : 0.62));
 }
 
-/** Quarter notes for `bars`: scale degree 4n mod 7 (a fifth each step), the n-th note's octave following the walk. */
-export function fifthsWalk(key: PatternKey, bars: number, newId: () => string): NoteEvent[] {
+/**
+ * Quarter notes for `bars`: scale degree 4n mod 7 (a fifth each step), the n-th note's octave
+ * following the walk. The first note of each bar is louder: of the song's measures where `place`
+ * gives them (every third quarter in 3/4), else every fourth quarter.
+ */
+export function fifthsWalk(key: PatternKey, bars: number, newId: () => string, place?: ClipPlace): NoteEvent[] {
   const base = rootMidi(key, -1);
+  const plain = !place || isPlainMeter(place.map);
+  // The first quarter at or after a measure line
+  const downbeat = (n: number) => (plain ? n % 4 === 0 : n === 0 || measureAt(place.start + n / 4 + 1e-9, place.map).start > place.start + (n - 1) / 4 + 1e-9);
   return Array.from({ length: Math.round(bars * 4) }, (_, n) => {
     const degree = (4 * n) % 7;
-    return note(newId(), degreeMidi(key, base, degree), n / 4, 1 / 4, n % 4 === 0 ? 0.8 : 0.66);
+    return note(newId(), degreeMidi(key, base, degree), n / 4, 1 / 4, downbeat(n) ? 0.8 : 0.66);
   });
 }
 
@@ -151,12 +172,12 @@ export function endlessRiser(key: PatternKey, bars: number, newId: () => string)
   return out;
 }
 
-/** Make a pattern's notes. */
-export function mathPattern(id: MathPatternId, key: PatternKey, bars: number, newId: () => string): NoteEvent[] {
+/** Make a pattern's notes, for a clip at `place` in the song (its measures, where a pattern follows them). */
+export function mathPattern(id: MathPatternId, key: PatternKey, bars: number, newId: () => string, place?: ClipPlace): NoteEvent[] {
   switch (id) {
-    case 'pendulum': return pendulumWave(key, bars, newId);
+    case 'pendulum': return pendulumWave(key, bars, newId, place);
     case 'fibonacci': return fibonacciGroove(key, bars, newId);
-    case 'fifths': return fifthsWalk(key, bars, newId);
+    case 'fifths': return fifthsWalk(key, bars, newId, place);
     case 'pascal': return pascalHarp(key, bars, newId);
     case 'riser': return endlessRiser(key, bars, newId);
   }
@@ -165,27 +186,42 @@ export function mathPattern(id: MathPatternId, key: PatternKey, bars: number, ne
 // ---------- Tools ----------
 
 /**
- * The stutter build: in each bar, the notes in its last beat retrigger, twice as many times each
- * bar of four (2, 4, 8, then 16 times), every hit dying away quickly, so a loop tightens into the
- * next phrase.
+ * The stutter build: in each measure, the notes in its last beat retrigger, twice as many times
+ * each measure of four (2, 4, 8, then 16 times), every hit dying away quickly, so a loop tightens
+ * into the next phrase. Measures and beats are the song's where `place` gives it (in 3/4 the last
+ * of three quarters, in 7/8 the last of seven eighths), counted from the clip's first; without it,
+ * or in 4/4, the last quarter of each whole note from the clip's start.
  */
-export function stutterBuild(notes: readonly NoteEvent[], newId: () => string): NoteEvent[] {
-  const lastBeat = (n: NoteEvent) => n.startOffset - Math.floor(n.startOffset + 1e-9) >= 0.75 - 1e-9;
+export function stutterBuild(notes: readonly NoteEvent[], newId: () => string, place?: ClipPlace): NoteEvent[] {
+  // The measure a note is in, in bars from the clip's start: its count from the clip's first, start, length and beat
+  const plain = !place || isPlainMeter(place.map);
+  const firstMeasure = plain ? 0 : measureAt(place.start + 1e-9, place.map).measure;
+  const measureOf = (offset: number): { index: number; start: number; length: number; beat: number } => {
+    if (plain) {
+      const bar = Math.floor(offset + 1e-9);
+      return { index: bar, start: bar, length: 1, beat: 0.25 };
+    }
+    const m = measureAt(place.start + offset + 1e-9, place.map);
+    return { index: m.measure - firstMeasure, start: m.start - place.start, length: m.length, beat: 1 / m.meter.den };
+  };
   return notes.flatMap((n) => {
-    if (!lastBeat(n)) return [n];
-    const bar = Math.floor(n.startOffset + 1e-9);
-    const count = 2 ** ((bar % 4) + 1);
-    const len = 0.25 / count;
-    // Each hit fills the beat on its own row, up to that row's next hit in it (or the bar's end)
+    const m = measureOf(n.startOffset);
+    // Where the measure's last beat starts, from the measure's start (0.75 in 4/4)
+    const into = m.length - m.beat;
+    if (!(n.startOffset - m.start >= into - 1e-9)) return [n];
+    const end = m.start + m.length;
+    const count = 2 ** ((m.index % 4) + 1);
+    const len = m.beat / count;
+    // Each hit fills the beat on its own row, up to that row's next hit in it (or the measure's end)
     const next = notes
-      .filter((m) => m !== n && m.note === n.note && m.startOffset > n.startOffset + 1e-9 && m.startOffset < bar + 1 - 1e-9)
-      .reduce((min, m) => Math.min(min, m.startOffset), bar + 1);
-    const first = Math.round((n.startOffset - bar - 0.75) / len);
-    const last = Math.max(first + 1, Math.min(count, Math.round((next - bar - 0.75) / len)));
+      .filter((o) => o !== n && o.note === n.note && o.startOffset > n.startOffset + 1e-9 && o.startOffset < end - 1e-9)
+      .reduce((min, o) => Math.min(min, o.startOffset), end);
+    const first = Math.round((n.startOffset - m.start - into) / len);
+    const last = Math.max(first + 1, Math.min(count, Math.round((next - m.start - into) / len)));
     return Array.from({ length: last - first }, (_, i) => ({
       ...n,
       id: i === 0 ? n.id : newId(),
-      startOffset: Math.round((bar + 0.75 + (first + i) * len) * 768) / 768,
+      startOffset: Math.round((m.start + into + (first + i) * len) * 768) / 768,
       duration: barsToDuration(len),
       velocity: Math.round(Math.max(0.1, n.velocity * (0.55 + (0.45 * (i + 1)) / (last - first))) * 100) / 100,
     }));

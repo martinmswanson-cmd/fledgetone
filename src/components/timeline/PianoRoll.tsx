@@ -369,9 +369,18 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [stepW, setStepW] = useState(24);
   const unitW = stepW / UNITS_PER_16TH;
   const [gridUnits, setGridUnits] = useState(UNITS_PER_16TH);
-  // New notes start at the length last drawn for this kind of part (penLength.ts): FX notes a bar
-  // (a useful riser to start from), drums a 16th, pads and chords a quarter, other notes an eighth
-  const [lengthUnits, setLengthUnits] = useState(() => Math.max(1, Math.round(penBars(instrument) * UNITS_PER_BAR)));
+  // New notes start at the length last drawn for this kind of part (penLength.ts): FX notes one of
+  // the song's bars where the clip starts (a useful riser to start from), drums a 16th, pads and
+  // chords a quarter, other notes an eighth
+  const meterMap = useSongMeter();
+  const penUnits = () => Math.max(1, Math.round(penBars(instrument, clip.startBar, meterMap) * UNITS_PER_BAR));
+  const [lengthUnits, setLengthUnits] = useState(penUnits);
+  // A new song's time signatures (another song opened with the roll open): the pen it would open with
+  const [penMeter, setPenMeter] = useState(meterMap);
+  if (penMeter !== meterMap) {
+    setPenMeter(meterMap);
+    setLengthUnits(penUnits());
+  }
   const choosePen = (units: number) => {
     setLengthUnits(units);
     rememberPen(instrument, units / UNITS_PER_BAR);
@@ -437,7 +446,6 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const totalUnits = Math.round(clip.lengthBars * UNITS_PER_BAR);
   /** Where the clip starts, in units from bar 1 (clips may start mid-bar): the grid lines up with the song. */
   const clipUnits = unitsOf(clip.startBar - 1);
-  const meterMap = useSongMeter();
   const plainMeter = isPlainMeter(meterMap);
   // New note lengths: "1 bar" is the song's bar where the clip starts (three quarters in 3/4)
   const lengthOptions = useMemo(
@@ -834,7 +842,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'octaveDown': return transpose(target, -12, lo, hi);
         case 'fitScale': return scale ? fitToScale(target, scale) : target;
         case 'retrograde': return retrograde(target, bars);
-        case 'stutterBuild': return stutterBuild(target, newId);
+        case 'stutterBuild': return stutterBuild(target, newId, { start: clip.startBar, map: songMeterOf(store) });
         case 'springBounce': return springBounce(target, barSeconds);
         case 'tritoneSlide': return tritoneSlide(target, barSeconds);
         case 'scoop': return scoop(target, barSeconds);

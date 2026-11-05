@@ -2,7 +2,8 @@
  * How long a new note is drawn, in both piano rolls (the studio's and Pocket's): the length last
  * drawn, stretched or resized for that kind of part in this session, else the length its kind is
  * usually drawn with (a 16th for drums, a quarter for pads and chords, an eighth for other notes,
- * a bar for the FX instrument's risers). Kept for the session only, as the rolls' other choices are.
+ * one of the song's bars for the FX instrument's risers). Kept for the session only, as the rolls'
+ * other choices are.
  */
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { partKind } from './partKind';
@@ -19,15 +20,25 @@ export function penGroup(key: InstrumentKey): PenGroup {
   return partKind(key) === 'pad' ? 'pad' : 'notes';
 }
 
-/** Each pen's length until one is drawn, in bars. */
+/** Each pen's length until one is drawn, in bars (the FX pen's 1 is one of the song's bars: penBars). */
 export const DEFAULT_PEN_BARS: Record<PenGroup, number> = { drums: 1 / 16, fx: 1, pad: 1 / 4, notes: 1 / 8 };
+
+/** `n` of the song's bars from `at`, in whole notes (three quarters for one in 3/4), as the length choices give it. */
+const songBars = (at: number, n: number, map: MeterMap) => Math.round((addMeasures(at, n, map) - at) * 1e9) / 1e9;
 
 const remembered = new Map<PenGroup, number>();
 
-/** The length a new note on a track of `key` is drawn, in bars. */
-export function penBars(key: InstrumentKey): number {
+/**
+ * The length a new note on a track of `key` is drawn, in bars. Until one is drawn, the FX pen is
+ * one of the song's bars from `at` (where the clip or section starts) when the song's `map` is
+ * given: three quarters in 3/4, seven eighths in 7/8, a whole note in 4/4.
+ */
+export function penBars(key: InstrumentKey, at?: number, map?: MeterMap): number {
   const group = penGroup(key);
-  return remembered.get(group) ?? DEFAULT_PEN_BARS[group];
+  const kept = remembered.get(group);
+  if (kept !== undefined) return kept;
+  if (group === 'fx' && map && at !== undefined) return songBars(at, DEFAULT_PEN_BARS.fx, map);
+  return DEFAULT_PEN_BARS[group];
 }
 
 /** A note of `bars` was drawn, stretched or resized on a track of `key`: the next one starts at that length. */
@@ -47,7 +58,7 @@ export function forgetPens(): void {
  * (a 1/2 in 2/4). Shortest first. In 4/4 the bars are 1, 2, 4.
  */
 export function penLengths<T extends { bars: number; label: string }>(fixed: readonly T[], counts: readonly number[], at: number, map: MeterMap): Array<{ bars: number; label: string }> {
-  const bars = counts.map((n) => ({ bars: Math.round((addMeasures(at, n, map) - at) * 1e9) / 1e9, label: n === 1 ? '1 bar' : `${n} bars` }));
+  const bars = counts.map((n) => ({ bars: songBars(at, n, map), label: n === 1 ? '1 bar' : `${n} bars` }));
   const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   return [...fixed.filter((f) => !bars.some((b) => same(b.bars, f.bars))), ...bars].sort((a, b) => a.bars - b.bars);
 }
