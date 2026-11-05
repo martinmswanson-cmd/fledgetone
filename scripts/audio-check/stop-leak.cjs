@@ -18,6 +18,10 @@
 //    0.7 s around it: the Space Clav's chorus alone moves it by up to 4 dB from one play to the
 //    next; twice at once would be 6 dB louder, none silent. Either way the note handed out before
 //    the press would have been heard during the pause). Some again with the Stable look-ahead.
+// Every press is timed on the audio clock against the note's own time as handed out: one that came
+// less than 5 ms before the note (a timer woken late under load: the note has begun, and rings out
+// by design) checks nothing, and that case is played again, up to 5 times. The level is read by an
+// AudioWorklet, each block placed at the audio thread's own time.
 // Each page plays the song and stops once first, as a musician's first Play does (the live context
 // runs only from the app's own Play). It exits with 1 when any check fails. APP_URL overrides
 // http://localhost:5200/. Needs Playwright with Chromium.
@@ -73,10 +77,13 @@ const RUN = async ({ text, before, how }) => {
   while (first === null) await sleep(1);
   // A note a few eighths in, pressed `before` seconds ahead of it
   const due = first + 4 * 0.25;
-  while (raw.currentTime < due - before) await sleep(1);
+  // (A timer can wake tens of ms late under load: the last few ms are waited out without one)
+  for (let left; (left = due - before - raw.currentTime) > 0;) if (left > 0.015) await sleep(1);
   pressed = raw.currentTime;
   if (how === 'pause') s.getState().pause();
   else s.getState().stop();
+  // How long before the note the press really came, on the audio clock (the caller tries again if too late)
+  const ahead = due - raw.currentTime;
   await sleep(2600);
   const b = await new AudioContext().decodeAudioData(await (await rec.stop()).arrayBuffer());
   const x = b.getChannelData(0);
@@ -85,7 +92,7 @@ const RUN = async ({ text, before, how }) => {
   let e = 0;
   let n = 0;
   for (let i = Math.round((base + 0.5) * sr); i < Math.min(x.length, Math.round((base + 2) * sr)); i++) { e += x[i] * x[i]; n++; }
-  return { lookAhead: T.getContext().lookAhead, late, after: +(10 * Math.log10(e / Math.max(1, n) + 1e-20)).toFixed(1) };
+  return { lookAhead: T.getContext().lookAhead, late, ahead, after: +(10 * Math.log10(e / Math.max(1, n) + 1e-20)).toFixed(1) };
 };
 
 // ---------- 2. one note at bar 2, on each instrument family ----------
@@ -163,17 +170,33 @@ const RUN_ONE = async ({ text, cases }) => {
       return f(...a);
     };
   }
-  // The live output's level, each block placed on the audio clock
+  // The live output's level, each block placed on the audio clock by the audio thread's own time
+  // (a ScriptProcessor's playbackTime is not when its input was made: that comes 20-30 ms earlier)
   const blocks = [];
-  const tap = raw.createScriptProcessor(1024, 2, 2);
-  tap.onaudioprocess = (ev) => {
-    const l = ev.inputBuffer.getChannelData(0);
-    const r = ev.inputBuffer.getChannelData(1);
-    const m = new Float32Array(l.length);
-    for (let i = 0; i < l.length; i++) m[i] = Math.max(Math.abs(l[i]), Math.abs(r[i]));
-    blocks.push({ t: ev.playbackTime - 1024 / sr, m });
-  };
+  const TAP = `registerProcessor('stop-leak-tap', class extends AudioWorkletProcessor {
+    constructor() { super(); this.m = new Float32Array(1024); this.n = 0; this.t = 0; }
+    process([input]) {
+      const l = input[0];
+      const r = input[1] || l;
+      const len = l ? l.length : 128;
+      if (this.n + len > this.m.length) this.flush();
+      if (this.n === 0) this.t = currentTime;
+      for (let i = 0; i < len; i++) this.m[this.n + i] = l ? Math.max(Math.abs(l[i]), Math.abs(r[i])) : 0;
+      this.n += len;
+      if (this.n === this.m.length) this.flush();
+      return true;
+    }
+    flush() {
+      this.port.postMessage({ t: this.t, m: this.m.subarray(0, this.n) });
+      this.m = new Float32Array(1024);
+      this.n = 0;
+    }
+  });`;
+  await raw.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP], { type: 'text/javascript' })));
+  const tap = new AudioWorkletNode(raw, 'stop-leak-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: 'explicit' });
+  tap.port.onmessage = (ev) => blocks.push(ev.data);
   NN.nativeOutputOf(LC.liveDestination).connect(tap);
+  // (Its output is silent: connected only so that it runs)
   tap.connect(raw.destination);
   const peakDb = (from, to) => {
     let p = 0;
@@ -193,8 +216,9 @@ const RUN_ONE = async ({ text, cases }) => {
     }
     return +(10 * Math.log10(e / Math.max(1, n) + 1e-20)).toFixed(1);
   };
-  const out = [];
-  for (const { how, before } of cases) {
+  // The note's time as handed to the instrument (a kit's hits all come at once), or null before then
+  const dueOf = (from = 0) => (calls.length > from ? Math.min(...calls.slice(from).map((c) => c.at)) : null);
+  const start = async () => {
     s.getState().seek(1);
     await sleep(400);
     // (The last run's tail rung out first: a pad's release can be long)
@@ -202,31 +226,53 @@ const RUN_ONE = async ({ text, cases }) => {
     blocks.length = 0;
     calls.length = 0;
     await s.getState().togglePlay();
-    const due = (TR.transportStartsAt() ?? raw.currentTime) + 2;
+    // Where the note should come, until it's handed out (the start may already have passed: then
+    // this is late, and the note's own time, once handed out, is taken instead)
+    return (TR.transportStartsAt() ?? raw.currentTime) + 2;
+  };
+  const TRIES = 5;
+  const out = [];
+  for (const { how, before } of cases) {
     if (how === 'through') {
+      const planned = await start();
+      while (dueOf() === null && raw.currentTime < planned + 0.5) await sleep(5);
+      const due = dueOf() ?? planned;
       while (raw.currentTime < due + 0.8) await sleep(5);
       s.getState().stop();
       await sleep(400);
       out.push({ how, db: rmsDb(due - 0.1, due + 0.6) });
       continue;
     }
-    while (raw.currentTime < due - before) await sleep(1);
-    const pressed = raw.currentTime;
-    if (how === 'pause') s.getState().pause();
-    else s.getState().stop();
-    const handedOut = calls.some((c) => c.made < pressed && c.at > pressed);
-    await sleep(1500);
-    const r = { how, before, handedOut, after: peakDb(pressed + 0.003, pressed + 1.4), ahead: peakDb(pressed - 0.5, pressed) };
-    if (how === 'pause') {
-      const n0 = calls.length;
-      await s.getState().togglePlay();
-      const resumed = TR.transportStartsAt() ?? raw.currentTime;
-      await sleep(1200);
-      s.getState().stop();
-      await sleep(300);
-      r.again = calls.length - n0;
-      // (the note comes `before` after the Transport starts again)
-      r.againDb = rmsDb(resumed + before - 0.1, resumed + before + 0.6);
+    // A press that came less than 5 ms before the note (a timer woken late under load) checks
+    // nothing: the note has begun and rings out by design. That case is played again.
+    let r;
+    for (let tries = 1; ; tries++) {
+      let due = await start();
+      for (let left; (left = (due = dueOf() ?? due) - before - raw.currentTime) > 0;) {
+        // (The last few ms are waited out without a timer, once the note is handed out)
+        if (left > 0.015 || dueOf() === null) await sleep(1);
+      }
+      const t0 = raw.currentTime;
+      if (how === 'pause') s.getState().pause();
+      else s.getState().stop();
+      const pressed = raw.currentTime;
+      due = dueOf() ?? due;
+      const handedOut = calls.some((c) => c.made < t0 && c.at > pressed);
+      await sleep(1500);
+      r = { how, before, handedOut, tries, timed: due - pressed >= 0.005, dueAfter: +((due - pressed) * 1000).toFixed(1), after: peakDb(pressed + 0.003, pressed + 1.4), ahead: peakDb(pressed - 0.5, pressed) };
+      if (how === 'pause') {
+        const n0 = calls.length;
+        await s.getState().togglePlay();
+        const resumed = TR.transportStartsAt() ?? raw.currentTime;
+        await sleep(1200);
+        s.getState().stop();
+        await sleep(300);
+        r.again = calls.length - n0;
+        // (The level around the note as handed out again, or where it should have come)
+        const at = dueOf(n0) ?? resumed + (due - pressed);
+        r.againDb = rmsDb(at - 0.1, at + 0.6);
+      }
+      if (due - pressed >= 0.005 || tries === TRIES) break;
     }
     out.push(r);
   }
@@ -252,12 +298,21 @@ const RUN_ONE = async ({ text, cases }) => {
     for (const stable of [false, true]) {
       for (const how of ['stop', 'pause']) {
         for (const before of stable ? [0.07, 0.15, 0.22] : [0.03, 0.065, 0.09]) {
-          const pg = await page(stable);
-          const r = await pg.evaluate(RUN, { text: JSON.stringify(SONG), before, how });
-          const ok = r.late === 0 && r.after <= -120;
+          // (A press less than 5 ms before the note, from a timer woken late, is tried again)
+          let r;
+          let tries = 0;
+          while (tries < 5) {
+            tries++;
+            const pg = await page(stable);
+            r = await pg.evaluate(RUN, { text: JSON.stringify(SONG), before, how });
+            await pg.close();
+            if (r.ahead >= 0.005) break;
+          }
+          const ok = r.late === 0 && r.after <= -120 && r.ahead >= 0.005;
           if (!ok) bad++;
-          console.log(`${ok ? 'ok  ' : 'FAIL'} eighths ${how} ${before}s before a note (look-ahead ${r.lookAhead}s): ${r.late} note(s) after the press, ${r.after} dBFS 0.5-2 s after`);
-          await pg.close();
+          const retried = tries > 1 ? `, pressed late, retried ${tries - 1}x` : '';
+          const timing = r.ahead >= 0.005 ? '' : `, pressed too late ${tries} times (${+(r.ahead * 1000).toFixed(1)} ms before the note)`;
+          console.log(`${ok ? 'ok  ' : 'FAIL'} eighths ${how} ${before}s before a note (look-ahead ${r.lookAhead}s${retried}): ${r.late} note(s) after the press, ${r.after} dBFS 0.5-2 s after${timing}`);
         }
       }
     }
@@ -277,7 +332,8 @@ const RUN_ONE = async ({ text, cases }) => {
         if (c.how === 'pause' && Math.abs(c.againDb - through) > 4.5) fails.push(`${c.againDb} dBFS on Play, ${through} played through`);
         if (through < -70) fails.push(`silent played through (${through} dBFS)`);
         if (fails.length) bad++;
-        const note = c.handedOut ? 'handed out before the press' : 'not yet handed out';
+        if (!c.timed) fails.push(`pressed less than 5 ms before the note on all ${c.tries} tries`);
+        const note = `${c.dueAfter <= 0 ? `due ${-c.dueAfter} ms before the press` : c.handedOut ? 'handed out before the press' : 'not yet handed out'}${c.tries > 1 ? `, pressed late, retried ${c.tries - 1}x` : ''}`;
         console.log(`${fails.length ? 'FAIL' : 'ok  '} ${key} ${c.how} ${c.before}s before it (look-ahead ${r.lookAhead}s, ${note}): ${fails.length ? fails.join(', ') : `${c.after} dBFS after${c.how === 'pause' ? `, once on Play at ${c.againDb} dBFS (${through} played through)` : ''}`}`);
       }
     } catch (e) {
