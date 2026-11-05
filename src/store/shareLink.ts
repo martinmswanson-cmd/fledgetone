@@ -335,7 +335,10 @@ export async function songLink(project: ProjectSnapshot, base: string, fileNameO
   // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
   const masterFx = project.masterFx?.room ? { ...project.masterFx, room: undefined } : project.masterFx;
   // Fledge Synth's user tables go in as their lighter copy (about 2 KB each, see linkUserTable)
-  const tracks = await Promise.all(project.tracks.map(async (t) => lightTables(t.frozen ? { ...t, frozen: undefined } : t)));
+  // (A Sampler's sound still held in the song itself, from an older file, stays out as well)
+  const tracks = await Promise.all(
+    project.tracks.map(async (t) => lightTables({ ...t, ...(t.frozen ? { frozen: undefined } : {}), ...(t.sample?.dataUrl ? { sample: { ...t.sample, dataUrl: undefined } } : {}) }))
+  );
   // The sounds' file names stay out too (the Sampler's, the Slicer's, the pads' and zones'), and
   // each sound's id, a hash of the file's bytes, is one that says nothing about the file (the
   // sounds don't come with the link, as the Share dialog says: whoever opens it sees them missing)

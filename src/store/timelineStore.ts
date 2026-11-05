@@ -36,6 +36,7 @@
  * master inserts and returns, ducking and intensity.
  */
 import { isDropTrack } from './dropMoves';
+import { textName } from './kitNames';
 import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
@@ -3471,7 +3472,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     // ---------- Project ----------
     autosaveStatus: null,
-    setProjectName: (name) => set({ projectName: name }),
+    // (On one line and at most TEXT_NAME_MAX characters, as a song file keeps it)
+    setProjectName: (name) => set({ projectName: textName(name) }),
 
     newProject: (template) => {
       // A new arrangement keeps the frame rate you're working in

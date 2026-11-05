@@ -7,6 +7,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import { hasWork, unreadWords } from '../store/project';
 import { isShareHash, projectFromHash } from '../store/shareLink';
 import { showToast } from './timeline/toastStore';
+import { textName } from '../store/kitNames';
 
 /** Take the shared song out of the address, so a reload doesn't open it again over later work. */
 const clearHash = () => history.replaceState(null, '', `${location.pathname}${location.search}`);
@@ -23,7 +24,7 @@ export function SharedLinkOpener(): null {
       try {
         const project = await projectFromHash(location.hash);
         if (!project) return;
-        if (askFirst && hasWork(useTimelineStore.getState()) && !window.confirm(`Open the shared song "${project.name}"? It replaces what's on the timeline.`)) {
+        if (askFirst && hasWork(useTimelineStore.getState()) && !window.confirm(`Replace what's on the timeline with a shared song? It's called “${textName(project.name).replace(/["“”]/g, '')}”.`)) {
           clearHash();
           return;
         }

@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A share link never carries a sound file**: a Sampler sound still held inside an older song file (when it couldn't be moved into your sounds) went into the song's share link whole. It now stays out, as every other sound does: whoever opens the link sees it missing.
+- **A shared song's name can't hide the "replace your song" warning**: the question before a shared song replaces your work now says that first, and a song's name is kept to one line of at most 80 characters, so a long name can't push the warning off the screen.
 - **Toms and chip kicks no longer click**: since the last change to how notes start, every tom and Chip Drums kick (and, more faintly, the other drum kits' kicks) began with a click, and a Chip Drums kick due just after you pressed Stop could still sound for an instant. Each hit now starts cleanly at the start of its wave, and a hit still to come when you press Stop stays silent.
 - **Chords for this melody follow the song's bars**: in 3/4, 7/8 and other time signatures "Chords for this melody" put a chord every four beats, so over eight bars of 3/4 there were six chords, changing part-way through bars. It now writes a chord a bar (half a bar for a clip of two bars or less), each starting on the bar line and chosen from that bar's notes. 4/4 is as before.
 - **New riff writes bars of the song's time signature**: in the piano roll, "New riff" wrote bars of four beats, so in 3/4 the call and answer drifted off the bar lines and some bars had no note on beat one. Each bar of the riff is now a bar of the song (three beats in 3/4), starting on its bar line. 4/4 is as before.

@@ -225,3 +225,18 @@ test('a song with no sounds of its own makes the same link as before', async () 
   const data = serializeProject(SONG);
   assert.equal(withNeutralSoundIds(data, []), data);
 });
+
+test("a Sampler sound still held in the song itself doesn't travel in the link", async () => {
+  const dataUrl = 'data:audio/wav;base64,UklGRi4uLi5XQVZF';
+  const song = { ...SONG, tracks: [{ ...SONG.tracks[0], instrumentKey: 'sampler', sample: { name: 'Sound', dataUrl, root: 'C4' } }, ...SONG.tracks.slice(1)] };
+  const link = await songLink(song, 'https://example.com/app');
+  assert.ok(!link.includes('UklGRi4uLi5XQVZF'));
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  assert.equal(back.tracks[0].sample?.dataUrl, undefined);
+});
+
+test('a song name is kept to one line of at most 80 characters', () => {
+  const p = parseProject(serializeProject({ ...SONG, name: `Summer beat"? Press OK.${' '.repeat(4000)}It replaces what's on the timeline` }));
+  assert.ok(p.name.length <= 80);
+  assert.equal(parseProject(serializeProject({ ...SONG, name: 'Night drive' })).name, 'Night drive');
+});

@@ -28,7 +28,7 @@ import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
-import { cutToBytes, noControls, notReserved, oneLineName } from './kitNames';
+import { cutToBytes, noControls, notReserved, oneLineName, textName } from './kitNames';
 import { capSong, overWords, type OverCaps } from './songCaps';
 
 /**
@@ -601,7 +601,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const markers = parseMarkers(raw.markers, tempo);
   return {
     // On one line and with no control characters, as marker names are (it goes into file names, READMEs and messages)
-    name: isStr(raw.name) && oneLineName(raw.name).trim() ? oneLineName(raw.name) : 'Untitled',
+    // (and no longer than the app lets you type: a name thousands of characters long could push a question's warning off screen)
+    name: isStr(raw.name) && oneLineName(raw.name).trim() ? textName(oneLineName(raw.name)) : 'Untitled',
     ...(isStr(raw.songId) && /^[\w-]{1,64}$/.test(raw.songId) ? { songId: raw.songId } : {}),
     bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,
