@@ -2,6 +2,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // The app imports its own modules without the .ts extension (Vite resolves them); do the same here
 register(
@@ -163,4 +164,109 @@ test('brushes: soft snare 8ths leaning on two and four, quiet throughout', () =>
   const onTwoFour = (n) => Math.abs(((n.startOffset * 4) % 2) - 1) < 1e-6;
   const avg = (xs) => xs.reduce((a, n) => a + n.velocity, 0) / xs.length;
   assert.ok(avg(snares.filter(onTwoFour)) > avg(snares.filter((n) => !onTwoFour(n))) + 0.05, 'two and four lean');
+});
+
+// ---------- Bars as the song counts them (3/4, 7/8), 4/4 as before ----------
+
+const TM = await import('../src/audio/tempoMap.ts');
+const meterMap = (num, den) => ({ base: { num, den }, points: [] });
+const FOUR_MAP = meterMap(4, 4);
+const THREE_MAP = meterMap(3, 4);
+const SEVEN_MAP = meterMap(7, 8);
+/** A short fingerprint of a tool's output, to hold 4/4 to the notes it always wrote */
+const fnv = (v) => {
+  const s = JSON.stringify(v);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(16);
+};
+const counter = () => {
+  let i = 0;
+  return () => `n${i++}`;
+};
+const onMeasure = (map, atBar) => (x) => TM.onMeterLine(atBar + x, 'bar', map);
+
+test('chords for a melody: one chord per measure (half a measure for a short clip) in 3/4 and 7/8', () => {
+  for (const map of [THREE_MAP, SEVEN_MAP]) {
+    const m = TM.measureBars(map.base);
+    // Eight measures of a tune, a note on each measure's first beat
+    const pitches = [60, 65, 67, 60, 69, 62, 67, 60];
+    const tune = pitches.map((midi, i) => ({ at: i * m, bars: m, midi }));
+    const len = 8 * m;
+    const spans = S.clipChordSpans(1, len, 1, map);
+    assert.equal(spans.length, 8, `${map.base.num}/${map.base.den}: a chord a measure`);
+    assert.ok(spans.every((sp) => onMeasure(map, 1)(sp.start) && Math.abs(sp.length - m) < 1e-9));
+    const { chords } = S.harmonize(tune, C, len, 1, spans);
+    assert.equal(chords.length, 8);
+    const notes = S.chordNotesFor(chords, 1, 'sustain', newId, spans);
+    const starts = [...new Set(notes.map((x) => x.startOffset))];
+    assert.equal(starts.length, 8);
+    assert.ok(starts.every(onMeasure(map, 1)), 'every chord starts on a bar line');
+    // Each measure's chord holds the note that starts it
+    chords.forEach((pcs, i) => assert.ok(pcs.includes(pitches[i] % 12), `measure ${i + 1}`));
+    // Two measures: a chord every half measure, the last stopping at the clip's end
+    const half = S.clipChordSpans(1, 2 * m, 0.5, map);
+    assert.equal(half.length, 4);
+    assert.ok(Math.abs(half[1].start - m / 2) < 1e-9 && Math.abs(half[2].start - m) < 1e-9);
+    // A clip part-way into its last measure: the last chord stops at the clip's end
+    const cut = S.clipChordSpans(1, 2 * m + m / 2, 1, map);
+    assert.equal(cut.length, 3);
+    assert.ok(Math.abs(cut[2].length - m / 2) < 1e-9);
+  }
+});
+
+test('chords for a melody in 4/4: the chords and notes it always made', () => {
+  const tune = [[60, 0], [64, 0.5], [65, 1], [69, 1.5], [67, 2], [71, 2.5], [72, 3]].map(([midi, at]) => ({ at, bars: 0.5, midi }));
+  assert.equal(fnv([S.harmonize(tune, C, 4, 1), S.harmonize(tune, C, 4, 0.5)]), '6b341a1c');
+  // (with spans of a whole note each, the same chords as without)
+  assert.deepEqual(S.harmonize(tune, C, 4, 1, S.chordSpans(1, 4, 1, FOUR_MAP).spans), S.harmonize(tune, C, 4, 1));
+});
+
+test('quarter-note pulse chords lean on each measure’s first beat in 3/4 and 7/8, on each whole note in 4/4', () => {
+  const pop = S.progressionChords(C, S.PROGRESSIONS[0]).slice(0, 2);
+  for (const [map, atBar] of [[THREE_MAP, 1], [SEVEN_MAP, 1], [THREE_MAP, TM.measureStart(3, THREE_MAP)]]) {
+    const { spans } = S.chordSpans(atBar, 2, 2, map);
+    const notes = S.chordNotesFor(pop, 2, 'pulse', newId, spans, { map, atBar });
+    const loud = [...new Set(notes.filter((x) => x.velocity > 0.7).map((x) => x.startOffset))].sort((a, b) => a - b);
+    // Two chords of two measures each: four measures, four accents, each on a bar line
+    assert.equal(loud.length, 4, `${map.base.num}/${map.base.den}`);
+    assert.ok(loud.every(onMeasure(map, atBar)));
+  }
+  // 4/4: the accents and notes as before, the meter passed or not
+  const { spans } = S.chordSpans(1, 2, 2, FOUR_MAP);
+  const before = S.chordNotesFor(pop, 2, 'pulse', counter(), spans);
+  assert.deepEqual(S.chordNotesFor(pop, 2, 'pulse', counter(), spans, { map: FOUR_MAP, atBar: 1 }), before);
+  assert.deepEqual([...new Set(before.filter((x) => x.velocity > 0.7).map((x) => x.startOffset))], [0, 1, 2, 3]);
+  assert.equal(fnv(['sustain', 'pulse', 'offbeat', 'arp'].map((st) => S.chordNotesFor(S.progressionChords(C, S.PROGRESSIONS[0]), 2, st, counter()))), 'afe4a7f9');
+});
+
+test('the syncopated bass plays its push in each measure of a chord, and the drone is struck every two measures', () => {
+  for (const map of [THREE_MAP, SEVEN_MAP]) {
+    const m = TM.measureBars(map.base);
+    const chordPart = S.chordNotesFor(S.progressionChords(C, S.PROGRESSIONS[0]).slice(0, 2), 2, 'sustain', newId, S.chordSpans(1, 2, 2, map).spans);
+    const len = 4 * m;
+    const bass = S.bassFromChords(chordPart, len, 'syncopated', newId, 33, m);
+    const downs = bass.filter((x) => x.velocity > 0.85).map((x) => x.startOffset);
+    assert.equal(downs.length, 4, `${map.base.num}/${map.base.den}: one push a measure`);
+    assert.ok(downs.every(onMeasure(map, 1)));
+    assert.ok(bass.every((x) => x.startOffset < len - 1e-9));
+    const drone = S.accompany(chordPart, len, 'drone', newId, map.base);
+    const struck = [...new Set(drone.map((x) => x.startOffset))];
+    assert.deepEqual(struck.map((x) => Math.round((x / m) * 1e6) / 1e6), [0, 2]);
+  }
+  // 4/4 as before
+  const chordPart = S.chordNotesFor(S.progressionChords(C, S.PROGRESSIONS[0]), 2, 'sustain', counter());
+  assert.equal(fnv(['root', 'eighths', 'octaves', 'syncopated'].map((st) => S.bassFromChords(chordPart, 8, st, counter()))), '6eaa895f');
+  assert.equal(fnv(S.accompany(chordPart, 8, 'drone', counter())), '3d1f0735');
+});
+
+test('the studio and Pocket pass the song’s meter to the chord, bass and drum tools', () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const actions = src('src/store/smartActions.ts');
+  assert.match(actions, /harmonize\(melody, songKey\(\), clip\.lengthBars, chordBars, spans\)/);
+  assert.match(actions, /chordNotesFor\(chords, chordBars, style, newId, spans, \{ map, atBar \}\)/);
+  assert.match(actions, /bassFromChords\(clip\.notes, clip\.lengthBars, style, newId, 33, meter\.num \/ meter\.den\)/);
+  const pocket = src('src/pocket/PocketSheets.tsx');
+  assert.match(pocket, /chordNotesFor\(all, chordBars, style, pocketNoteId, spans, \{ map: meter, atBar: sec\.from \}\)/);
+  assert.match(pocket, /const meter = meterAt\(sec\.from, map\)/);
 });

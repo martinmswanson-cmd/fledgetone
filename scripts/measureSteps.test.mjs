@@ -109,6 +109,35 @@ test('new empty clips, Smart tools and Math patterns are sized and placed by the
   // Right-clicking measure 6 in 3/4 (bar 4.75 to 5.5) makes it at measure 6
   assert.equal(tm.measureAt(5.2 + 1e-6, THREE).start, 4.75);
   const actions = src('src/store/smartActions.ts');
-  assert.match(actions, /chordSpans\(atBar, chords\.length, chordBars, songMeterOf\(tl\(\)\)\)/);
+  assert.match(actions, /const map = songMeterOf\(tl\(\)\);\s+const \{ spans, length \} = chordSpans\(atBar, chords\.length, chordBars, map\);/);
   assert.match(actions, /const map = songMeterOf\(tl\(\)\);\s+const length = addMeasures\(atBar, bars, map\) - atBar;\s+const notes = mathPattern\(pattern, \{ root: key\.root, steps: key\.steps \}, length, newId, \{ start: atBar, map \}\);/);
+});
+
+test('clipMeasures: the song’s measures under a clip, for the tools that write a measure at a time', () => {
+  // 4/4: a whole note each from the clip's start, as many as the clip needs, as the tools always counted
+  for (const [from, len] of [[1, 4], [2.5, 1.5], [3, 0.25]]) {
+    const m = tm.clipMeasures(from, len, FOUR);
+    assert.equal(m.length, Math.ceil(len - 1e-9));
+    m.forEach((x, i) => assert.deepEqual([x.start, x.length], [i, 1]));
+  }
+  const three = tm.clipMeasures(1, 1.5, THREE);
+  assert.deepEqual(three.map((x) => [x.start, x.length]), [[0, 0.75], [0.75, 0.75]]);
+  // Part-way into a measure: the first one starts before the clip
+  const mid = tm.clipMeasures(1.25, 1, THREE);
+  assert.deepEqual(mid.map((x) => [x.start, x.length]), [[-0.25, 0.75], [0.5, 0.75]]);
+  // 7/8, and a change of meter inside the clip (4/4 for two measures, then 3/4)
+  near(tm.clipMeasures(1, 1.75, { base: { num: 7, den: 8 }, points: [] })[1].start, 0.875);
+  const mixed = tm.clipMeasures(2, 2.5, MIXED);
+  assert.deepEqual(mixed.map((x) => [x.start, x.length, `${x.meter.num}/${x.meter.den}`]), [[0, 1, '4/4'], [1, 0.75, '3/4'], [1.75, 0.75, '3/4']]);
+});
+
+test('Pocket writes a section’s drums in the meter it starts in, and its fill in the section’s last measure', () => {
+  const pocket = src('src/pocket/PocketSheets.tsx');
+  assert.match(pocket, /const meter = meterAt\(sec\.from, map\)/);
+  assert.match(pocket, /const lastBar = isPlainMeter\(map\) \? sec\.to - 0\.5 : measureAt\(sec\.to - 1e-6, map\)\.start/);
+  // In 3/8 half a bar back from the section's end is the measure before the last
+  const THREE_EIGHT = { base: { num: 3, den: 8 }, points: [] };
+  const to = tm.measureStart(9, THREE_EIGHT);
+  assert.equal(tm.measureAt(to - 0.5, THREE_EIGHT).measure, 7);
+  assert.equal(tm.measureAt(tm.measureAt(to - 1e-6, THREE_EIGHT).start, THREE_EIGHT).measure, 8);
 });

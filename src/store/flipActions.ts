@@ -11,7 +11,8 @@ import { barsToDuration, uid } from './timelineTypes';
 import { chopEnd, chopsToRack, flipPattern, flipSeed, bassCutFilter } from './sampleFlip';
 import { padNote } from './sampleKits';
 import { detectKey, type SongKey } from './songKey';
-import { addMeasures, measureAt, tempoAt, secondsToBar, barToSeconds } from '../audio/tempoMap';
+import { addMeasures, clipMeasures, isPlainMeter, measureAt, tempoAt, secondsToBar, barToSeconds } from '../audio/tempoMap';
+import type { MeterMap } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
 import { runDsp } from '../audio/dspRun';
@@ -73,12 +74,12 @@ export function chopToRack(req: ChopRequest): string | null {
     // (With no clip to start with: from the start of the measure the playhead is in)
     const startBar = source?.startBar ?? measureAt(Math.max(1, after.playheadPosition), meter).start;
     const bpm = tempoAt(startBar, songTempo(after));
-    const notes = req.flip ? flipPattern(req.cuts.length, flipSeed(req.soundId, 0)) : inOrder(req.cuts, req.end, bpm);
     const tempo = songTempo(after);
     // The flip's bars as the ruler counts them (in 7/8, two 7/8 measures)
     const lengthBars = req.flip
       ? addMeasures(startBar, FLIP_BARS, meter) - startBar
       : Math.max(1 / 16, Math.ceil((secondsToBar(barToSeconds(startBar, tempo) + (req.end - req.cuts[0]), tempo) - startBar) * 16) / 16);
+    const notes = req.flip ? flipPattern(req.cuts.length, flipSeed(req.soundId, 0), FLIP_BARS, flipLayout(startBar, lengthBars, meter)) : inOrder(req.cuts, req.end, bpm);
     const clip: Clip = {
       id: uid('clip'),
       trackId,
@@ -113,6 +114,14 @@ export function rackChops(trackId: string): { count: number; soundId: string } |
   return count ? { count, soundId: pads[0].soundId! } : null;
 }
 
+/**
+ * How a flip lies on the song's measures under a clip (see flipPattern): none in plain 4/4, where
+ * it is bars of four beats as it always was; otherwise a measure at a time, up to the clip's end.
+ */
+function flipLayout(startBar: number, lengthBars: number, meter: MeterMap): Parameters<typeof flipPattern>[3] {
+  return isPlainMeter(meter) ? undefined : { measures: clipMeasures(startBar, lengthBars, meter), end: lengthBars };
+}
+
 /** "New idea": the flip clip's notes become the next pattern for its chops. One undo step per click. */
 export function newFlipIdea(clipId: string): boolean {
   const s = useTimelineStore.getState();
@@ -122,8 +131,9 @@ export function newFlipIdea(clipId: string): boolean {
   const idea = (ideas.get(clipId) ?? 0) + 1;
   ideas.set(clipId, idea);
   const bars = Math.max(1, Math.round(clip.lengthBars));
+  const layout = flipLayout(clip.startBar, clip.lengthBars, songMeterOf(s));
   return editStep(() => {
-    s.setClipNotes(clipId, flipPattern(chops.count, flipSeed(chops.soundId, idea), bars).map((n) => ({ ...n, id: uid('note') })));
+    s.setClipNotes(clipId, flipPattern(chops.count, flipSeed(chops.soundId, idea), bars, layout).map((n) => ({ ...n, id: uid('note') })));
     return true;
   }, false);
 }

@@ -8,8 +8,8 @@ import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, chordSpans, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
-import { addMeasures, measureAt, meterAt } from '../audio/tempoMap';
+import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, chordSpans, clipChordSpans, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
+import { addMeasures, isPlainMeter, measureAt, measureCount, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
 import { INSTRUMENTS, isDropKind, isDrumKind } from '../audio/instrumentCatalog';
@@ -86,8 +86,9 @@ function trackWithClip(afterId: string, instrument: InstrumentKey, name: string,
 export function makeChordClip(trackId: string, atBar: number, chords: number[][], chordBars: number, style: ChordStyle): string | null {
   if (onDropPad(trackId)) return null;
   // A chord lasts chordBars measures as the ruler counts them (three beats a bar in 3/4)
-  const { spans, length } = chordSpans(atBar, chords.length, chordBars, songMeterOf(tl()));
-  const notes = chordNotesFor(chords, chordBars, style, newId, spans);
+  const map = songMeterOf(tl());
+  const { spans, length } = chordSpans(atBar, chords.length, chordBars, map);
+  const notes = chordNotesFor(chords, chordBars, style, newId, spans, { map, atBar });
   // Named after one pass of the progression
   const names = chords.map(chordName);
   const period = names.findIndex((_, p) => p > 0 && names.length % p === 0 && names.every((n, i) => n === names[i % p]));
@@ -169,8 +170,9 @@ export function rollClipDrums(clipId: string, row?: string): boolean {
 
 /**
  * Chords for a melody clip, on a new keys track under it, over the same bars: a chord a bar (half
- * a bar for a clip of two bars or less). Returns the chord names, or null if the clip has no notes
- * (false: it would go past the caps, nothing done, a toast says so).
+ * a bar for a clip of two bars or less), a bar being a measure as the ruler counts it. Returns the
+ * chord names, or null if the clip has no notes (false: it would go past the caps, nothing done,
+ * a toast says so).
  */
 export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'keys'): string[] | null | false {
   const s = tl();
@@ -178,9 +180,13 @@ export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'key
   if (!clip || clip.audio) return null;
   const melody = melodyOf(clip.notes, clip.lengthBars);
   if (!melody.length) return null;
-  const chordBars = clip.lengthBars <= 2 ? 0.5 : 1;
-  const { chords } = harmonize(melody, songKey(), clip.lengthBars, chordBars);
-  const notes = chordNotesFor(chords, chordBars, 'sustain', newId).filter((n) => n.startOffset < clip.lengthBars - 1e-6);
+  const map = songMeterOf(s);
+  const plain = isPlainMeter(map);
+  // (In a song not in 4/4 a "bar" is a measure as the ruler counts it: three beats in 3/4)
+  const chordBars = (plain ? clip.lengthBars : measureCount(clip.startBar, clip.startBar + clip.lengthBars, map)) <= 2 ? 0.5 : 1;
+  const spans = plain ? undefined : clipChordSpans(clip.startBar, clip.lengthBars, chordBars, map);
+  const { chords } = harmonize(melody, songKey(), clip.lengthBars, chordBars, spans);
+  const notes = chordNotesFor(chords, chordBars, 'sustain', newId, spans).filter((n) => n.startOffset < clip.lengthBars - 1e-6);
   const names = chords.map(chordName);
   if (trackWithClip(clip.trackId, instrument, 'Chords', { name: names.join(' '), startBar: clip.startBar, lengthBars: clip.lengthBars, notes }) === false) return false;
   return names;
@@ -194,7 +200,8 @@ export function bassForChords(clipId: string, style: BassStyle = 'eighths', inst
   const s = tl();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip || clip.audio || !clip.notes.length) return null;
-  const notes = bassFromChords(clip.notes, clip.lengthBars, style, newId);
+  const meter = meterAt(clip.startBar, songMeterOf(s));
+  const notes = bassFromChords(clip.notes, clip.lengthBars, style, newId, 33, meter.num / meter.den);
   if (!notes.length) return null;
   return trackWithClip(clip.trackId, instrument, 'Bass line', { name: 'Bass line', startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
 }

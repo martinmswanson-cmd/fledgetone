@@ -5,6 +5,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // The app imports its own modules without the .ts extension (Vite resolves them); do the same here
 register(
@@ -133,4 +134,47 @@ test('a clip moved into another key keeps its original sound, through a project 
   assert.equal(normalizeClipAudio({ soundId: 'x', shiftedFrom: 'orig' }).shiftedFrom, undefined, 'no shift, no original');
   assert.equal(normalizeClipAudio({ soundId: 'x', shiftedFrom: 'o', shift: 40 }).shift, 12);
   assert.deepEqual(referencedSoundIds({ clips: [{ audio }], tracks: [] }).sort(), ['moved', 'orig']);
+});
+
+test('flipPattern on the song’s measures (3/4, 7/8): the anchor chop on every bar line, nothing past the clip', async () => {
+  const TM = await import('../src/audio/tempoMap.ts');
+  for (const map of [{ base: { num: 3, den: 4 }, points: [] }, { base: { num: 7, den: 8 }, points: [] }]) {
+    const m = TM.measureBars(map.base);
+    for (const measures of [1, 2, 3, 4]) {
+      for (let seed = 1; seed <= 30; seed++) {
+        const len = measures * m;
+        const p = F.flipPattern(8, seed * 101, measures, { measures: TM.clipMeasures(1, len, map), end: len });
+        const anchor = p[0].note;
+        for (let k = 0; k < measures; k++) {
+          const down = p.find((x) => Math.abs(x.startOffset - k * m) < 1e-9);
+          assert.ok(down, `${map.base.num}/${map.base.den}: a hit on measure ${k + 1}'s first beat`);
+          assert.equal(down.note, anchor, 'the anchor chop');
+          assert.equal(down.velocity >= 0.96, true, 'accented');
+        }
+        for (const x of p) {
+          assert.ok(x.startOffset >= 0 && x.startOffset + durationToBars(x.duration) <= len + 1e-9, 'inside the clip');
+          assert.ok(Math.abs(x.startOffset * 16 - Math.round(x.startOffset * 16)) < 1e-9, 'on the 16th grid');
+        }
+      }
+    }
+  }
+  // "New idea" on a 1.5-bar clip in 3/4 (two measures) writes those two measures, not two whole notes
+  const THREE = { base: { num: 3, den: 4 }, points: [] };
+  const p = F.flipPattern(8, 7, 2, { measures: TM.clipMeasures(1, 1.5, THREE), end: 1.5 });
+  assert.ok(p.every((x) => x.startOffset < 1.5 - 1e-9));
+  assert.ok(Math.abs(p.reduce((a, x) => Math.max(a, x.startOffset + durationToBars(x.duration)), 0) - 1.5) < 1e-9, 'the last hit lasts to the clip’s end');
+});
+
+test('flipPattern in 4/4: the patterns it always made, and the store passes no layout there', () => {
+  const fnv = (v) => {
+    const s = JSON.stringify(v);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+    return h.toString(16);
+  };
+  assert.equal(fnv([2, 4].flatMap((bars) => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((seed) => F.flipPattern(8, seed, bars)))), 'bc07e80a');
+  const src = readFileSync(new URL('../src/store/flipActions.ts', import.meta.url), 'utf8');
+  assert.match(src, /isPlainMeter\(meter\) \? undefined : \{ measures: clipMeasures\(startBar, lengthBars, meter\), end: lengthBars \}/);
+  assert.match(src, /flipPattern\(req\.cuts\.length, flipSeed\(req\.soundId, 0\), FLIP_BARS, flipLayout\(startBar, lengthBars, meter\)\)/);
+  assert.match(src, /flipPattern\(chops\.count, flipSeed\(chops\.soundId, idea\), bars, layout\)/);
 });

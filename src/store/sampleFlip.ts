@@ -126,8 +126,12 @@ export const flipSeed = (soundId: string, idea: number) => hashSeed(`flip|${soun
  * that play the chops in a new order. The first chop of the order comes back on every downbeat
  * as the anchor, a chop sometimes repeats straight away (a stutter), and each hit lasts until the
  * next (the choke group cuts it there anyway). The same seed always gives the same pattern.
+ *
+ * With `layout`, the pattern follows the song's measures under the clip (see clipMeasures: each
+ * one's start and length in bars from the clip's start) instead of bars of four beats, the anchor
+ * on each measure's first beat, and stops at `layout.end` (the clip's length).
  */
-export function flipPattern(chops: number, seed: number, bars = 2): Array<Omit<NoteEvent, 'id'>> {
+export function flipPattern(chops: number, seed: number, bars = 2, layout?: { measures: ReadonlyArray<{ start: number; length: number }>; end: number }): Array<Omit<NoteEvent, 'id'>> {
   const n = Math.max(1, Math.min(MAX_CHOPS, Math.floor(chops)));
   const random = seededRandom(seed);
   // A new order: shuffled, and not the plain one (that's the sample as it was)
@@ -142,11 +146,38 @@ export function flipPattern(chops: number, seed: number, bars = 2): Array<Omit<N
   const first = RHYTHMS[Math.floor(random() * RHYTHMS.length)];
   const second = random() < 0.5 ? first : RHYTHMS[Math.floor(random() * RHYTHMS.length)];
   const steps: number[] = [];
-  for (let b = 0; b < bars; b++) for (const s of b % 2 === 0 ? first : second) steps.push(b * 16 + s);
+  /** Each hit's 16th within its measure */
+  const inMeasure: number[] = [];
+  // Where the measures start, in 16ths from the clip's start (every 16 in 4/4, every 12 in 3/4)
+  const downbeats = new Set<number>();
+  const total = layout ? Math.round(layout.end * 16) : bars * 16;
+  if (layout) {
+    layout.measures.forEach((m, b) => {
+      const at = Math.round(m.start * 16);
+      const len = Math.max(1, Math.round(m.length * 16));
+      downbeats.add(at);
+      // (A measure longer than four beats plays the rhythm's start again)
+      const rhythm = b % 2 === 0 ? first : second;
+      const hits = len > 16 ? [...rhythm, ...rhythm.map((s) => s + 16)] : rhythm;
+      for (const s of hits) {
+        if (s >= len || at + s < 0 || at + s >= total) continue;
+        steps.push(at + s);
+        inMeasure.push(s);
+      }
+    });
+  } else {
+    for (let b = 0; b < bars; b++) {
+      for (const s of b % 2 === 0 ? first : second) {
+        steps.push(b * 16 + s);
+        inMeasure.push(s);
+      }
+    }
+  }
+  const isDownbeat = (step: number) => (layout ? downbeats.has(step) : step % 16 === 0);
   const pads: number[] = [];
   let next = 1 % n;
   steps.forEach((step, k) => {
-    if (step % 16 === 0) {
+    if (isDownbeat(step) || k === 0) {
       pads.push(order[0]);
       return;
     }
@@ -161,8 +192,8 @@ export function flipPattern(chops: number, seed: number, bars = 2): Array<Omit<N
     if (next === 0 && n > 1) next = 1;
   });
   return steps.map((step, k) => {
-    const until = k + 1 < steps.length ? steps[k + 1] : bars * 16;
-    const accent = step % 16 === 0 ? 1 : step % 4 === 0 ? 0.9 : 0.78;
+    const until = k + 1 < steps.length ? steps[k + 1] : total;
+    const accent = isDownbeat(step) ? 1 : inMeasure[k] % 4 === 0 ? 0.9 : 0.78;
     return {
       note: padNote(pads[k]),
       startOffset: step / 16,
