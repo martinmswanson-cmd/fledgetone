@@ -293,7 +293,8 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
 export function makeMathClip(trackId: string, atBar: number, pattern: MathPatternId, key: SongKey, bars: number): string | null {
   if (onDropPad(trackId)) return null;
   // `bars` measures as the ruler counts them (three beats a bar in 3/4)
-  const length = addMeasures(atBar, bars, songMeterOf(tl())) - atBar;
-  const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, length, newId);
+  const map = songMeterOf(tl());
+  const length = addMeasures(atBar, bars, map) - atBar;
+  const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, length, newId, { start: atBar, map });
   return placeClip(trackId, atBar, length, notes, MATH_PATTERNS.find((m) => m.id === pattern)?.name ?? 'Math pattern');
 }

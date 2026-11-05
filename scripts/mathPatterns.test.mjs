@@ -86,3 +86,68 @@ test('spring bounce, tritone slide and scoop draw bend curves over each note', (
   assert.equal(sc.at(-1).value, 0);
   assert.ok(sc.at(-1).at <= durationToBars('2n'));
 });
+
+const { measureAt } = await import('../src/audio/tempoMap.ts');
+const meterMap = (num, den) => ({ base: { num, den }, points: [] });
+/** Hits per [measure, beat] (1-based) of notes in a clip at `start`, beats of 1/den */
+const hitsAt = (notes, start, map) => {
+  const by = {};
+  for (const x of notes) {
+    const m = measureAt(start + x.startOffset + 1e-9, map);
+    const k = `${m.measure}.${Math.floor((start + x.startOffset - m.start) * m.meter.den + 1e-6) + 1}`;
+    by[k] = (by[k] ?? 0) + 1;
+  }
+  return by;
+};
+/** A hit on every beat of four measures of num/den, from the clip's start */
+const everyBeat = (num, den) =>
+  Array.from({ length: 4 * num }, (_, i) => ({ id: `h${i}`, note: 'F#1', startOffset: Math.floor(i / num) * (num / den) + (i % num) / den, duration: '16n', velocity: 0.8 }));
+
+test('the stutter build in 3/4 and 7/8 doubles the last beat of each of the song\'s measures: 2, 4, 8, 16', () => {
+  for (const [num, den] of [[3, 4], [7, 8]]) {
+    const map = meterMap(num, den);
+    const out = M.stutterBuild(everyBeat(num, den), id, { start: 1, map });
+    const by = hitsAt(out, 1, map);
+    for (let m = 1; m <= 4; m++) {
+      for (let b = 1; b <= num; b++) assert.equal(by[`${m}.${b}`], b === num ? 2 ** m : 1, `${num}/${den} measure ${m} beat ${b}`);
+    }
+    // Each hit is its share of the beat (a 1/den beat)
+    const last = out.filter((x) => Math.abs(x.startOffset - (3 * num + num - 1) / den) < 1 / den - 1e-9 && x.startOffset >= (3 * num + num - 1) / den - 1e-9);
+    assert.equal(last.length, 16);
+    assert.ok(Math.abs(durationToBars(last[0].duration) - 1 / den / 16) < 1e-6, `${num}/${den} hit length`);
+  }
+  // Counted from the clip's first measure: a clip from measure 2 of a 3/4 song stutters ×2 there
+  const map = meterMap(3, 4);
+  const one = [{ id: 'a', note: 'D2', startOffset: 0.5, duration: '16n', velocity: 0.8 }];
+  assert.equal(M.stutterBuild(one, id, { start: 1.75, map }).length, 2);
+  // Beat 2 of a 3/4 measure (the last quarter of a whole note in 4/4 counting) is left alone
+  const notLast = [{ id: 'b', note: 'D2', startOffset: 0.75 + 0.25, duration: '16n', velocity: 0.8 }];
+  assert.deepEqual(M.stutterBuild(notLast, id, { start: 1, map }), notLast);
+});
+
+test('the stutter build in 4/4 is as it was, wherever the clip starts', () => {
+  const notes = [...everyBeat(4, 4), { id: 'x', note: 'D2', startOffset: 2.8125, duration: '32n', velocity: 0.7 }, { id: 'y', note: 'D2', startOffset: 3.9, duration: '32n', velocity: 0.5 }];
+  const run = (place) => {
+    let k = 0;
+    return M.stutterBuild(notes, () => `s${k++}`, place);
+  };
+  const before = run(undefined);
+  for (const start of [1, 2.5, 3.25]) assert.deepEqual(run({ start, map: meterMap(4, 4) }), before, `clip at ${start}`);
+  const by = hitsAt(before, 1, meterMap(4, 4));
+  assert.deepEqual([1, 2, 3, 4].map((m) => by[`${m}.4`]), [2, 4, 8 + 6, 16 + 6]);
+});
+
+test('in 3/4 the pendulums line up every 4 measures and the fifths walk is loud on each measure\'s first beat', () => {
+  const map = meterMap(3, 4);
+  const notes = M.pendulumWave(C_MAJOR, 6, id, { start: 1, map });
+  const first = notes.filter((x) => x.startOffset < 3).map((x) => `${x.note}@${x.startOffset.toFixed(3)}`);
+  const second = notes.filter((x) => x.startOffset >= 3).map((x) => `${x.note}@${(x.startOffset - 3).toFixed(3)}`);
+  assert.deepEqual(second, first);
+  assert.equal(first.length, 2 * (6 + 7 + 8 + 9 + 10 + 11));
+  const walk = M.fifthsWalk(C_MAJOR, 1.5, id, { start: 1, map });
+  assert.deepEqual(walk.map((x) => x.velocity), [0.8, 0.66, 0.66, 0.8, 0.66, 0.66]);
+  // In 4/4, as before
+  const strip = (xs) => xs.map(({ id: _, ...x }) => x);
+  assert.deepEqual(strip(M.pendulumWave(C_MAJOR, 8, id, { start: 1, map: meterMap(4, 4) })), strip(M.pendulumWave(C_MAJOR, 8, id)));
+  assert.deepEqual(strip(M.fifthsWalk(C_MAJOR, 2, id, { start: 1, map: meterMap(4, 4) })), strip(M.fifthsWalk(C_MAJOR, 2, id)));
+});

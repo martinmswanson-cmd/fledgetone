@@ -2,10 +2,11 @@
  * The reference video's lane under the ruler (its frames along the song), and the Find cuts and
  * Dip under dialogue buttons.
  */
-import { tempoAt } from '../../audio/tempoMap';
+import { isPlainMeter, tempoAt } from '../../audio/tempoMap';
 import React, { useRef } from 'react';
 import { Clapperboard, Eye, EyeOff, MessageSquareText, Scissors, X } from 'lucide-react';
-import { useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { formatBarPosition } from '../../store/timelineTypes';
 import { findDialogue, findSceneCuts, useVideoStore } from '../../store/videoStore';
 import { DEFAULT_DIP, type Span } from '../../store/dialogue';
 import { Modal } from '../timeline/Modal';
@@ -35,6 +36,7 @@ export const VideoLane: React.FC = () => {
   const previewOpen = useVideoStore((s) => s.previewOpen);
   const zoom = useTimelineStore((s) => s.zoom);
   const bpm = useSongTempo();
+  const meter = useSongMeter();
   const laneRef = useRef<HTMLDivElement>(null);
   if (!video) return null;
 
@@ -83,7 +85,7 @@ export const VideoLane: React.FC = () => {
         <Clapperboard className="w-3.5 h-3.5 text-amber-400 shrink-0" />
         <span className="truncate text-forge-text" title={video.name}>{video.name}</span>
         <span className="ml-auto tabular-nums shrink-0" title="Where the video starts in the song (drag the strip to move it)">
-          @{clock(start)} · bar {secondsToBar(start, bpm).toFixed(2)}
+          @{clock(start)} · bar {isPlainMeter(meter) ? secondsToBar(start, bpm).toFixed(2) : formatBarPosition(secondsToBar(start, bpm), meter)}
         </span>
         <FindCutsButton />
         <DialogueDipButton />

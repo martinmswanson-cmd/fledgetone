@@ -1,9 +1,11 @@
 import React from 'react';
 import { Clapperboard, Crosshair, Download, Eye, EyeOff, Film, Scissors, Volume2, VolumeX, X } from 'lucide-react';
 import { useVideoStore } from '../../store/videoStore';
-import { useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { formatBarPosition } from '../../store/timelineTypes';
 import { useUiStore } from '../../store/uiStore';
 import { secondsToBar } from '../../audio/transport';
+import { isPlainMeter } from '../../audio/tempoMap';
 import { VideoButton } from './VideoButton';
 import { DialogueDipButton, FindCutsButton } from './VideoLane';
 import { ExportForEditors } from '../timeline/MarkerList';
@@ -35,6 +37,7 @@ export const VideoPanel: React.FC = () => {
   const previewOpen = useVideoStore((s) => s.previewOpen);
   const muted = useVideoStore((s) => s.muted);
   const bpm = useSongTempo();
+  const meter = useSongMeter();
   const markers = useTimelineStore((s) => s.markers);
   const hits = markers.filter((m) => m.anchor === 'time').length;
   const missing = useVideoStore((s) => s.missing);
@@ -78,7 +81,7 @@ export const VideoPanel: React.FC = () => {
                 className="w-20 h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
                 aria-label="Where the video starts in the song (seconds)"
               />
-              s · bar {secondsToBar(start, bpm).toFixed(2)}
+              s · bar {isPlainMeter(meter) ? secondsToBar(start, bpm).toFixed(2) : formatBarPosition(secondsToBar(start, bpm), meter)}
             </label>
             <span>Drag the film strip on the timeline to move it too. The video is saved in this browser and in project files.</span>
           </div>

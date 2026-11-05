@@ -40,7 +40,7 @@ const lenName = (lens: Array<[number, string]>, len: number) => lens.find(([l]) 
 
 let pen: 'note' | 'chord' | 'erase' = 'note';
 /** A new note's length in 16ths: the last drawn for this kind of part, shared with the studio's roll (penLength.ts). */
-const penSteps = (track: Track) => Math.max(1, Math.round(penBars(track.instrumentKey) * STEPS_PER_WHOLE));
+const penSteps = (track: Track, at: number, map: MeterMap) => Math.max(1, Math.round(penBars(track.instrumentKey, at, map) * STEPS_PER_WHOLE));
 
 export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: SongKey }> = ({ track, sec, songKey }) => {
   const clips = useTimelineStore((s) => s.clips);
@@ -220,7 +220,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
       const row = rowOf(rows[c.row]);
       // (A Slicer's rows are slices, not notes of a key: no chords there)
       const chordRows = pen === 'chord' && !slices ? [row, row - 2, row - 4].filter((r) => r >= 0) : [row];
-      const len = Math.min(penSteps(track), steps - c.step);
+      const len = Math.min(penSteps(track, sec.from, meter), steps - c.step);
       for (const r of chordRows) {
         const id = pocketNoteId();
         work.push({ id, midi: rows[r], step: c.step, len, velocity: 0.8 });
@@ -358,8 +358,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
                 </button>
               ))}
             </div>
-            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track); const next = lens.find(([l]) => l > len)?.[0] ?? lens[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
-              {lenName(lens, penSteps(track))}
+            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track, sec.from, meter); const next = lens.find(([l]) => l > len)?.[0] ?? lens[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
+              {lenName(lens, penSteps(track, sec.from, meter))}
             </button>
             <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: scrollBehavior() }); }}>
               <Home className="w-4 h-4" />

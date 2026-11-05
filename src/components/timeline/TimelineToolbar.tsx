@@ -26,6 +26,7 @@ import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useSongMeter, useSongTempo, useTimeline
 import { formatBarPosition, frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
 import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
+import { formatMeter, isPlainMeter, measureAt } from '../../audio/tempoMap';
 import { LoopRangeButton } from './LoopRangePopover';
 import { MarkersButton } from './MarkerList';
 import { MetronomeButton, MidiButton, RecordButton } from './RecordControls';
@@ -204,6 +205,10 @@ export const TimelineToolbar: React.FC = () => {
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const zoom = useTimelineStore((s) => s.zoom);
+  // Zoom is pixels per whole note; the readout gives pixels per bar of the song's time signature at bar 1
+  const zoomMeter = useSongMeter();
+  const zoomPlain = isPlainMeter(zoomMeter);
+  const barPx = zoomPlain ? zoom : Math.round(zoom * measureAt(1, zoomMeter).length);
   const canUndo = useTimelineStore((s) => s.past.length > 0);
   const canRedo = useTimelineStore((s) => s.future.length > 0);
   const isInspectorOpen = useTimelineStore((s) => s.isInspectorOpen);
@@ -348,12 +353,12 @@ export const TimelineToolbar: React.FC = () => {
           }}
           className="w-28 accent-cyan-400 cursor-pointer"
           aria-label="Timeline zoom"
-          aria-valuetext={`${zoom} pixels per bar`}
+          aria-valuetext={zoomPlain ? `${zoom} pixels per bar` : `${barPx} pixels per bar of ${formatMeter(measureAt(1, zoomMeter).meter)}`}
         />
         <button type="button" title="Zoom in (+)" onClick={() => setZoom(zoom * 1.25)} className="hover:text-forge-text">
           <ZoomIn className="w-4 h-4" />
         </button>
-        <span className="font-mono text-[11px] w-[4.5rem] text-right tabular-nums">{zoom}px/bar</span>
+        <span className="font-mono text-[11px] w-[4.5rem] text-right tabular-nums" title={zoomPlain ? undefined : `Pixels per bar of ${formatMeter(measureAt(1, zoomMeter).meter)}, at bar 1`}>{barPx}px/bar</span>
       </div>
     </div>
   );
