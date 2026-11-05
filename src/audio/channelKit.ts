@@ -21,7 +21,7 @@ import { renderStinger } from './stingerPlayer';
 import { generateSfx, renderSfxStereo } from './sfx/sfxSynth';
 import { ensureSfxRecordings } from './sfx/sfxRecordings';
 import { createZip, type ZipEntry } from './zip';
-import { cutToBytes, noControls } from '../store/kitNames';
+import { cutToBytes, noControls, textName } from '../store/kitNames';
 import { barToSeconds, FOUR_FOUR, type MeterMap } from './tempoMap';
 import { songEnd, songSections } from '../store/cutToLength';
 import { planChannelKit, type ChannelKitPlan, type KitRange } from '../store/channelKit';
@@ -78,7 +78,7 @@ export function channelKitPieces(song: GameKitSong): KitPiece[] {
   const pieces: KitPiece[] = [
     { file: 'Intro.wav', what: 'The opening of the main part, about 6 seconds, fading out', range: plan.intro },
     { file: 'Outro.wav', what: "The song's ending, about 10 seconds", range: plan.outro },
-    { file: 'Loop - Starting soon.wav', what: `The main part (${plan.main.name}) as a seamless loop`, range: plan.loop },
+    { file: 'Loop - Starting soon.wav', what: `The main part (${textName(plan.main.name)}) as a seamless loop`, range: plan.loop },
   ];
   if (brb) pieces.push({ file: 'Loop - Be right back.wav', what: `The main part ${brb.how}, as a seamless loop`, range: plan.loop });
   if (ending) pieces.push({ file: 'Loop - Ending.wav', what: `${ending.how[0].toUpperCase()}${ending.how.slice(1)}, as a seamless loop`, range: ending.range });
@@ -96,7 +96,7 @@ const UPBEAT: ReadonlySet<StingerKind> = new Set(['victory', 'levelUp', 'item', 
  */
 function alertsOf(song: GameKitSong): Array<{ file: string; what: string; stinger: Stinger }> {
   const own = song.stingers.filter((s) => UPBEAT.has(s.kind)).slice(0, 3);
-  const out = own.map((s, i) => ({ file: `Alert ${i + 1} (${safe(s.name)}).wav`, what: `Your stinger "${s.name}"`, stinger: s }));
+  const out = own.map((s, i) => ({ file: `Alert ${i + 1} (${safe(s.name)}).wav`, what: `Your stinger "${textName(s.name)}"`, stinger: s }));
   const key = detectKey(song.clips, song.tracks) ?? keyOf(0, 'major');
   for (const a of ALERTS) {
     if (out.length >= 3) break;
@@ -119,8 +119,9 @@ function fade(channels: Float32Array[], sampleRate: number, seconds: number, at:
 }
 
 function readme(song: GameKitSong, pieces: KitPiece[]): string {
-  const list = pieces.map((p) => `  ${p.file}\n      ${p.what}`).join('\n');
-  return `${song.name}: channel kit
+  // (Names on one line, with no control characters: they come from the song)
+  const list = pieces.map((p) => `  ${textName(p.file, 400)}\n      ${p.what}`).join('\n');
+  return `${textName(song.name)}: channel kit
 
 Music for the start, the breaks and the end of your streams and videos, all from one song, so
 everything sounds like it belongs together. Every file is a WAV at 48 kHz.

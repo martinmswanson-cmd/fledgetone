@@ -20,7 +20,7 @@ import { beatFileBase, coverExtension, layTag, tagTimes } from '../../audio/beat
 import { producerTagChannels, producerTagSound, setProducerTag } from '../../audio/producerTag';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
 import { safeFileName } from '../../store/project';
-import { cutToBytes } from '../../store/kitNames';
+import { cutToBytes, textName } from '../../store/kitNames';
 import { showToast } from './toastStore';
 import { maxOf } from '../../support/minMax';
 
@@ -162,7 +162,8 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
         if (ext) files.push({ name: `${base} - cover.${ext}`, data: cover });
       }
       const info = [
-        title.trim() || 'Untitled',
+        // (On one line, with no control characters: it can come from the song's name)
+        textName(title.trim()) || 'Untitled',
         `Tempo: ${Math.round(s.bpm * 100) / 100} BPM`,
         `Key: ${key || 'not given'}`,
         reading ? `Loudness: ${formatLufs(reading.integrated)}, true peak ${formatDbtp(reading.truePeakMax)}` : null,

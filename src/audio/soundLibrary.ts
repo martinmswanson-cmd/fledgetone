@@ -66,6 +66,9 @@ export const soundStatus = (id: string): SoundStatus | undefined => useSoundLibr
 /** How long a sound is, in seconds, if the library has read its meta. */
 export const soundSeconds = (id: string): number | undefined => useSoundLibrary.getState().metas[id]?.seconds;
 
+/** The name of the file a sound was loaded from, if the library has read its meta. */
+export const soundFileName = (id: string): string | undefined => useSoundLibrary.getState().metas[id]?.name;
+
 // ---------- IndexedDB ----------
 
 const DB_NAME = 'bos-beat-box';

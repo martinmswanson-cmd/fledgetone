@@ -1,10 +1,12 @@
 import runtimeSource from '../../dist-runtime/bos-player.js?raw';
 import { createZip } from './zip';
-import { cutToBytes, noControls, notReserved } from '../store/kitNames';
+import { cutToBytes, noControls, notReserved, textName } from '../store/kitNames';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { embedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
+import { withoutFileNames } from '../store/ownFiles';
+import type { EmbeddedSound } from '../store/timelineTypes';
 import { songSections, stateNames } from '../store/cutToLength';
 import { FOUR_FOUR } from './tempoMap';
 import { pluginFamilies, pluginSource } from './plugins/pluginSources';
@@ -22,6 +24,8 @@ import { songPlugins } from './runtimePlugins';
 // ('#' and '%' too: in the URL loadSong fetches they'd start a fragment or an escape; and not too
 // long for a file name, nor a name Windows keeps for a device: "Aux" is "Aux_")
 const safe = (name: string) => notReserved(cutToBytes(noControls(name).replace(/[\\/:*?"<>|#%]+/g, '-').trim())) || 'song';
+/** A string as a JS literal in the README (a line or paragraph separator escaped too, so it stays on its line) */
+const lit = (v: string) => JSON.stringify(v).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 /** A string as a JS literal that's safe inside an HTML <script> ('</script>' can't end it) */
 const scriptString = (v: string) => JSON.stringify(v).replace(/</g, '\\u003c');
 
@@ -43,17 +47,25 @@ export async function buildRuntimeKit(project: ProjectSnapshot, opts: { withGpl?
     pluginFiles.push({ name: 'GPL-PLUGINS-NOTICE.txt', data: new Blob([gplNotice(plugins.gpl)], { type: 'text/plain' }) });
     pluginFiles.push({ name: 'GPL-PLUGINS-LICENSE.txt', data: new Blob([licences], { type: 'text/plain' }) });
   }
-  const sounds = await embedSounds(referencedSoundIds(project));
+  // The kit goes into a public game: the song in it carries nothing of the person's own files or
+  // device. No reference video (the player has no use for it, and its key is the file's name,
+  // size and date), no song id, and the sounds by id only, as "Sound 1", "Sound 2"... without the
+  // file's size (the player needs the bytes, the type and the length). The Sampler's, the Slicer's,
+  // the pads' and zones' sounds, and audio clips named after their files, get plain names too.
+  const embedded = await embedSounds(referencedSoundIds(project));
+  const fileNames = new Map(embedded.map((s) => [s.id, s.name]));
+  const sounds = embedded.map((s, i) => ({ id: s.id, name: `Sound ${i + 1}`, type: s.type, seconds: s.seconds, data: s.data })) as EmbeddedSound[];
   const songFile = `${safe(project.name)}.json`;
-  const song = JSON.stringify(serializeProject({ ...project, sounds }));
+  const song = JSON.stringify(serializeProject({ ...withoutFileNames(project, (id) => fileNames.get(id)), sounds, video: undefined, songId: undefined }));
   // The states as the player will name them (a song without markers has 8-bar ones, "Bars 1-8"...)
   const states = stateNames(songSections(project.clips, project.markers ?? [], { base: project.meter ?? FOUR_FOUR, points: project.meterPoints ?? [] }));
   const first = states[0] ?? 'Start';
   const second = states[1] ?? first;
   const sting = project.stingers?.[0]?.name;
+  const title = textName(project.name);
   const example = `<!doctype html>
 <meta charset="utf-8">
-<title>${project.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}: music test</title>
+<title>${title.replace(/&/g, '&amp;').replace(/</g, '&lt;')}: music test</title>
 <button id="start">Load and play</button> <progress id="bar" max="1" value="0"></progress>
 <div id="pads"></div>
 <script type="module">
@@ -81,8 +93,8 @@ export async function buildRuntimeKit(project: ProjectSnapshot, opts: { withGpl?
   };
 </script>
 `;
-  const readme = `${project.name}: web runtime kit, made with Fledgetone
-${'='.repeat(project.name.length + 46)}
+  const readme = `${title}: web runtime kit, made with Fledgetone
+${'='.repeat(title.length + 46)}
 
 For web games where download size matters. Instead of audio files, the game loads the song as
 its project file (${songFile}, ${Math.round(song.length / 1024)} KB) and bos-player.js
@@ -92,10 +104,10 @@ stem groups), the stingers and the transitions, with the same engine as Fledgeto
 plays like the game kit's player: transitions by your rules, on the beat, and intensity.
 
     import { loadSong } from './bos-player.js';
-    const music = await loadSong(${JSON.stringify('./' + songFile)}, { onProgress: (f) => console.log(f) });
-    music.play(${JSON.stringify(first)});          // after the player clicks or presses a key
-    music.setState(${JSON.stringify(second)});
-    music.setIntensity(0.7);${sting ? `\n    music.stinger(${JSON.stringify(sting)});` : ''}
+    const music = await loadSong(${lit('./' + songFile)}, { onProgress: (f) => console.log(f) });
+    music.play(${lit(first)});          // after the player clicks or presses a key
+    music.setState(${lit(second)});
+    music.setIntensity(0.7);${sting ? `\n    music.stinger(${lit(sting)});` : ''}
 
 loadSong takes a few seconds per minute of music (more on slow devices), so start it while the
 game loads and show a progress bar. Pass { context: yourAudioContext } to share the game's

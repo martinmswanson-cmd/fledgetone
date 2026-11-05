@@ -12,7 +12,7 @@ import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
 import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections, stateNames } from '../store/cutToLength';
-import { costumeFileName, cutToBytes, kitFileName, kitFiles, MAX_NAME_BYTES, notReserved, uniqueKitNames, utf8Bytes } from '../store/kitNames';
+import { costumeFileName, cutToBytes, kitFileName, kitFiles, markdownName, MAX_NAME_BYTES, notReserved, textName, uniqueKitNames, utf8Bytes } from '../store/kitNames';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
 import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
@@ -507,23 +507,25 @@ function paramLine(m: AudioManifest, lang: 'js' | 'gd' | 'cs'): string {
 
 const TARGET_WORDS: Record<string, string> = { intensity: 'intensity', filter: 'filter', reverb: 'reverb', volume: 'volume', layer: 'layer' };
 
+/** The kit's list of what's in it, for the Godot and Unity READMEs (Markdown: each name as plain text, on its line). */
 function inventory(m: AudioManifest): string {
-  const lines = [`- **States** (each loops until you switch): ${m.states.map((s) => s.name).join(', ')}`];
-  if (m.intensity.groups.length) lines.push(`- **Intensity layers**: ${m.intensity.groups.map((g) => g.name).join(', ')}`);
-  if (m.stingers.length) lines.push(`- **Stingers**: ${m.stingers.map((s) => s.name).join(', ')}`);
-  if (m.sfx?.length) lines.push(`- **Sound effects**: ${m.sfx.map((s) => `${s.name}${s.files.length > 1 ? ` (${s.files.length} variations)` : ''}${s.loop ? ' (loop)' : ''}`).join(', ')}`);
-  const costumes = m.states[0]?.costumes?.map((c) => c.name) ?? [];
+  const md = markdownName;
+  const lines = [`- **States** (each loops until you switch): ${m.states.map((s) => md(s.name)).join(', ')}`];
+  if (m.intensity.groups.length) lines.push(`- **Intensity layers**: ${m.intensity.groups.map((g) => md(g.name)).join(', ')}`);
+  if (m.stingers.length) lines.push(`- **Stingers**: ${m.stingers.map((s) => md(s.name)).join(', ')}`);
+  if (m.sfx?.length) lines.push(`- **Sound effects**: ${m.sfx.map((s) => `${md(s.name)}${s.files.length > 1 ? ` (${s.files.length} variations)` : ''}${s.loop ? ' (loop)' : ''}`).join(', ')}`);
+  const costumes = m.states[0]?.costumes?.map((c) => md(c.name)) ?? [];
   if (costumes.length) lines.push(`- **Costumes** (the same music played another way, swapped mid-loop): ${costumes.join(', ')}`);
-  if (m.parameters?.length) lines.push(`- **Parameters** (0 to 1, set by the game): ${m.parameters.map((p) => `${p.name} (moves ${[...new Set(p.targets.map((t) => (t.target === 'layer' ? `the ${t.group} layer` : TARGET_WORDS[t.target])))].join(', ') || 'nothing yet'}; starts at ${p.default})`).join('; ')}`);
+  if (m.parameters?.length) lines.push(`- **Parameters** (0 to 1, set by the game): ${m.parameters.map((p) => `${md(p.name)} (moves ${[...new Set(p.targets.map((t) => (t.target === 'layer' ? `the ${md(t.group ?? '')} layer` : TARGET_WORDS[t.target])))].join(', ') || 'nothing yet'}; starts at ${p.default})`).join('; ')}`);
   const shaped = m.states.filter((s) => s.shuffleBars || s.gap);
-  if (shaped.length) lines.push(`- **Played in pieces**: ${shaped.map((s) => `${s.name} (${[s.shuffleBars ? `${s.shuffleBars}-bar pieces shuffled` : '', s.gap ? `${s.gap.min}-${s.gap.max} s silences` : ''].filter(Boolean).join(', ')})`).join('; ')}`);
+  if (shaped.length) lines.push(`- **Played in pieces**: ${shaped.map((s) => `${md(s.name)} (${[s.shuffleBars ? `${s.shuffleBars}-bar pieces shuffled` : '', s.gap ? `${s.gap.min}-${s.gap.max} s silences` : ''].filter(Boolean).join(', ')})`).join('; ')}`);
   lines.push('- **Effects** (no files needed): underwater, muffled, lowHealth, dream, none');
   return lines.join('\n');
 }
 
 function godotReadme(m: AudioManifest, slug: string): string {
   const c = callNames(m);
-  return `# ${m.name}: music${m.sfx?.length ? ' and sound effects' : ''} for Godot 4
+  return `# ${markdownName(m.name)}: music${m.sfx?.length ? ' and sound effects' : ''} for Godot 4
 
 Made with Fledgetone. ${m.bpm} BPM.
 
@@ -561,7 +563,7 @@ Sound effects play on the bus named in **sfx_bus** (Master unless you change it)
 
 function unityReadme(m: AudioManifest, resources: string): string {
   const c = callNames(m);
-  return `# ${m.name}: music${m.sfx?.length ? ' and sound effects' : ''} for Unity
+  return `# ${markdownName(m.name)}: music${m.sfx?.length ? ' and sound effects' : ''} for Unity
 
 Made with Fledgetone. ${m.bpm} BPM.
 
@@ -592,7 +594,9 @@ Changes are scheduled on Unity's audio clock, so they land exactly on the beat. 
 }
 
 function readme(m: AudioManifest): string {
-  const { name, bpm } = m;
+  const { bpm } = m;
+  // (The names as plain text, each on its line; the calls below take them as they are, quoted)
+  const name = textName(m.name);
   const [tsNum, tsDen] = m.timeSignature ?? [4, 4];
   const barSeconds = (60 / bpm) * (4 / tsDen) * tsNum;
   const states = m.states.map((s) => s.name);
@@ -605,8 +609,8 @@ function readme(m: AudioManifest): string {
 ${'='.repeat(name.length + 49)}
 
 ${bpm} BPM, ${tsNum}/${tsDen}.
-States (each a seamless loop): ${states.join(', ')}
-${stems.length ? `Stem groups (crossfaded by intensity): ${stems.join(', ')}\n` : ''}${stingers.length ? `Stingers: ${stingers.join(', ')}\n` : ''}
+States (each a seamless loop): ${states.map((s) => textName(s)).join(', ')}
+${stems.length ? `Stem groups (crossfaded by intensity): ${stems.map((s) => textName(s)).join(', ')}\n` : ''}${stingers.length ? `Stingers: ${stingers.map((s) => textName(s)).join(', ')}\n` : ''}
 What's here
 -----------
 audio_manifest.json  Everything the players need: tempo, time signature, every state (its loop,
