@@ -17,7 +17,7 @@
  * roll, Recording, Automation, and the rest after.
  *
  * 3. Helpers the actions share: splitClipAt, copyClip, selectionBlock, viewShowing,
- * tidyMeters, and onProjectReplaced (listeners told when New, Open, a link or Restore replaces the
+ * and onProjectReplaced (listeners told when New, Open, a link or Restore replaces the
  * song).
  *
  * 4. useTimelineStore = create(...): the actions' implementations, in the same order as
@@ -146,12 +146,13 @@ import {
   retimeMarkers,
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
+import { placeSongTime, rippleSongTime, tidyMeters, type PlacedStretch, type SongTime } from './rippleMeters';
 import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
-import { clampBpm, insertedMeasureBars, isPlainMeter, measureAt, measureBars, measureStart, measuresBetween, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
+import { clampBpm, insertedMeasureBars, isPlainMeter, measureAt, measureBars, measureStart, measuresBetween, meterAt, nearestMeasureStart, secondsBetween, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
 import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
@@ -1103,23 +1104,6 @@ function viewShowing(s: TimelineState, bar: number, fromStart = false): Partial<
 }
 
 /**
- * Time signature changes in order, each on a measure start of the meter before it, dropping any
- * that change nothing.
- */
-function tidyMeters(points: MeterPoint[], base: Meter): MeterPoint[] {
-  const out: MeterPoint[] = [];
-  let current = base;
-  for (const p of sortedPoints(points)) {
-    const bar = nearestMeasureStart(p.bar, { base, points: out });
-    if (bar <= 1 + 1e-6 || out.some((o) => Math.abs(o.bar - bar) < 1e-6)) continue;
-    if (p.num === current.num && p.den === current.den) continue;
-    out.push({ ...p, bar });
-    current = p;
-  }
-  return out;
-}
-
-/**
  * Linked clips follow the one edited (see patterns.ts), in the same update as the edit: everything
  * that watches the store (the live engine, the views) sees them change together, and one Undo
  * takes the whole edit back. Every way in is covered: the store's own `set` and setState from outside.
@@ -1205,6 +1189,18 @@ export function editStep<T>(make: () => T, refused: T): T {
 
 /** Where the loop and the playhead are now. */
 const spotOf = (s: TimelineState): RippleSpot => ({ inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, playhead: s.playheadPosition });
+
+/**
+ * After an arranging edit laid the bars from `from` out in a new order (Pocket's Move and Play it
+ * twice, the Beat switch): the tempo and time signatures there as the song `was` had them for each
+ * stretch (see placeSongTime), and the markers locked to time kept at their moment. No undo step
+ * of its own: it's part of the edit's.
+ */
+export function laySongTime(was: SongTime, from: number, pieces: readonly PlacedStretch[], after: number): void {
+  const time = placeSongTime(was, from, pieces, after, (kind) => uid(kind));
+  if (!time) return;
+  useTimelineStore.setState((st) => ({ ...time, markers: retimeMarkers(st.markers, songTempo(time)) }));
+}
 
 /**
  * A checkpoint, then `make`'s changes, as one undo step however many steps the store actions it
@@ -1554,22 +1550,14 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
   ) => {
     const { movePoint, moveLoop } = rippleRules(edit);
     const s = get();
-    // Tempo and time signature changes move with the music after the edit (and go with removed bars)
-    const shift = <P extends { bar: number }>(points: P[]): P[] =>
-      edit.kind === 'insert'
-        ? points.map((p) => (p.bar >= edit.at - EPS ? { ...p, bar: p.bar + edit.bars } : p))
-        : shiftTempoPoints(points.filter((p) => !(p.bar >= edit.from - EPS && p.bar < edit.to - EPS)), edit.from, -(edit.to - edit.from));
-    let tempoPoints = s.tempoPoints.length ? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints;
-    // Deleting bars that held tempo changes: the music after them keeps the tempo it had
-    if (edit.kind !== 'insert' && edit.from > 1 + 1e-6 && s.tempoPoints.some((p) => p.bar >= edit.from - EPS && p.bar < edit.to - EPS)) {
-      const keep = tempoAt(edit.to, songTempo(s));
-      if (Math.abs(tempoAt(edit.from - 1e-6, songTempo({ bpm: s.bpm, tempoPoints })) - keep) > 1e-6 && !tempoPoints.some((p) => Math.abs(p.bar - edit.from) < 1e-6)) {
-        tempoPoints = sortedPoints([...tempoPoints, { id: uid('tempo'), bar: edit.from, bpm: keep, ramp: false }]);
-      }
-    }
-    const meterPoints = s.meterPoints.length ? tidyMeters(shift(s.meterPoints), s.meter) : s.meterPoints;
-    const tempoChanged = tempoPoints.some((p, i) => p.bar !== s.tempoPoints[i]?.bar) || tempoPoints.length !== s.tempoPoints.length;
-    const meterChanged = meterPoints.some((p, i) => p.bar !== s.meterPoints[i]?.bar) || meterPoints.length !== s.meterPoints.length;
+    // Tempo and time signature changes move with the music after the edit; the music after bars
+    // deleted keeps the meter and tempo it had (see rippleMeters.ts)
+    const time = rippleSongTime(s, edit, (kind) => uid(kind));
+    const { tempoPoints, meterPoints } = time;
+    const bpmChanged = time.bpm !== s.bpm;
+    const baseMeterChanged = time.meter !== s.meter;
+    const tempoChanged = bpmChanged || tempoPoints.length !== s.tempoPoints.length || tempoPoints.some((p, i) => p.bar !== s.tempoPoints[i]?.bar || p.bpm !== s.tempoPoints[i]?.bpm || p.ramp !== s.tempoPoints[i]?.ramp);
+    const meterChanged = baseMeterChanged || meterPoints.length !== s.meterPoints.length || meterPoints.some((p, i) => p.bar !== s.meterPoints[i]?.bar || p.num !== s.meterPoints[i]?.num || p.den !== s.meterPoints[i]?.den);
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
     const tracks = s.tracks.map((t) => {
       if (!t.automation) return t;
@@ -1584,7 +1572,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
     // (and a marker locked to time stays at its moment in the new tempo map, as the hit points
     // lined up with a video must)
-    const rippledTempo = songTempo({ bpm: s.bpm, tempoPoints });
+    const rippledTempo = songTempo({ bpm: time.bpm, tempoPoints });
     const markers = retimeMarkers(moveMarkers(s.markers, rippledTempo), rippledTempo);
     const markersChanged = markers !== s.markers;
     const playhead = clampBar(movePoint(s.playheadPosition));
@@ -1597,8 +1585,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     set((st) => ({
       ...(clipsChanged || tracksChanged || markersChanged || loopChanged || tempoChanged || meterChanged || playhead !== s.playheadPosition ? pushPast(st, ripple) : {}),
       ...(clipsChanged || tracksChanged || markersChanged ? { clips, tracks, markers } : {}),
-      ...(tempoChanged ? { tempoPoints } : {}),
-      ...(meterChanged ? { meterPoints } : {}),
+      ...(tempoChanged ? { tempoPoints, ...(bpmChanged ? { bpm: time.bpm } : {}) } : {}),
+      ...(meterChanged ? { meterPoints, ...(baseMeterChanged ? { meter: time.meter } : {}) } : {}),
       ...(tracksChanged ? { automationSelection: null } : {}),
       ...(loopChanged ? { loopRegion } : {}),
     }));

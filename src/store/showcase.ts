@@ -12,6 +12,7 @@ import { midiOf } from './noteTools';
 import { audibleIds } from './buses';
 import { isDrumKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../audio/instrumentCatalog';
 import { maxOf, minOf } from '../support/minMax';
+import { isPlainMeter, measuresBetween, type MeterMap } from '../audio/tempoMap';
 
 export interface ShowcaseNote {
   /** Seconds from the start of the video */
@@ -30,8 +31,13 @@ export interface ShowcaseData {
   notes: ShowcaseNote[];
   /** The tracks that have notes in the range, in timeline order */
   tracks: Array<{ name: string; color: string }>;
-  /** Where each bar line falls (seconds), for the grid */
+  /** Where each bar line falls (seconds), for the grid: each measure's start, in the song's time signatures */
   bars: number[];
+  /**
+   * How many beats the measure starting at each bar line has (a beat being the meter's own: an
+   * eighth in 6/8). Left out in plain 4/4, where every measure has 4.
+   */
+  beats?: number[];
   /** The pitched notes' lowest and highest MIDI note; the drum band's rows (MIDI notes, low to high) */
   low: number;
   high: number;
@@ -43,9 +49,10 @@ const hitsTrack = (t: Track) => isDrumKind(t.instrumentKey) || isRackKind(t.inst
 
 /**
  * The notes of bars [startBar, endBar), `toSeconds(bar)` giving the time of a bar from bar 1 (the
- * song's tempo map). Times are from startBar.
+ * song's tempo map), and its measure lines in the song's time signatures `meter` (4/4 without).
+ * Times are from startBar.
  */
-export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], startBar: number, endBar: number, toSeconds: (bar: number) => number): ShowcaseData {
+export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], startBar: number, endBar: number, toSeconds: (bar: number) => number, meter?: MeterMap): ShowcaseData {
   const heard = audibleIds(tracks);
   const origin = toSeconds(startBar);
   // (Not the Drop pad: its notes are moves on the whole mix, not notes anyone hears)
@@ -83,11 +90,20 @@ export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], s
   notes.sort((a, b) => a.start - b.start || a.midi - b.midi);
   const pitched = notes.filter((n) => !n.drum).map((n) => n.midi);
   const bars: number[] = [];
-  for (let b = Math.ceil(startBar); b <= endBar + 1e-9; b++) bars.push(toSeconds(b) - origin);
+  let beats: number[] | undefined;
+  if (!meter || isPlainMeter(meter)) {
+    for (let b = Math.ceil(startBar); b <= endBar + 1e-9; b++) bars.push(toSeconds(b) - origin);
+  } else {
+    // (a line at the range's end too, as in 4/4)
+    const measures = measuresBetween(startBar - 1e-9, endBar + 1e-6, meter);
+    for (const m of measures) bars.push(toSeconds(m.bar) - origin);
+    beats = measures.map((m) => m.meter.num);
+  }
   return {
     notes,
     tracks: used,
     bars,
+    ...(beats ? { beats } : {}),
     low: pitched.length ? minOf(pitched) : 60,
     high: pitched.length ? maxOf(pitched) : 72,
     drumRows: [...new Set(notes.filter((n) => n.drum).map((n) => n.midi))].sort((a, b) => a - b),

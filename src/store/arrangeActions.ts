@@ -6,7 +6,7 @@
  * markers, so live playback and every export hear them the same. The maths is in darkMelody.ts,
  * beatSwitch.ts, songForm.ts and producerTag.ts; this file applies it.
  */
-import { oneUndoStepOr, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { laySongTime, oneUndoStepOr, songMeterOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { pastCapsWords } from './songCaps';
 import type { Clip, InstrumentKey, Marker, NoteEvent, Track } from './timelineTypes';
 import { TOTAL_BARS, barsToDuration, formatBarPosition, formatBarRange, uid } from './timelineTypes';
@@ -322,8 +322,11 @@ export function beatSwitch(from: number, to: number, mode: SwitchMode, drumStyle
   const label = SWITCH_MODES.find((m) => m.id === mode)!.name;
   let error = null as string | null;
   const refused = oneStep(() => {
+    const { bpm, tempoPoints, meter, meterPoints } = tl();
     error = tl().insertTime(b, len);
     if (error) return;
+    // The switch in the time signatures and tempos of the bars it copies, and what follows in its own
+    laySongTime({ bpm, tempoPoints, meter, meterPoints }, b, [{ src: a, len }], b);
     const made: Clip[] = [];
     for (const { t, role, parts } of plan) {
       const switching = role === 'drums' || role === 'bass';
