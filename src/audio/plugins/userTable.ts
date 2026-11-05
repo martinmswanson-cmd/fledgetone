@@ -31,6 +31,8 @@ export interface UserTable {
   v: 1;
   /** What it was made from, for display */
   name: string;
+  /** Its name was made from a file's (a clip or sound named after one): see ownFiles.ts */
+  nameFromFile?: true;
   /** How many cycles */
   frames: number;
   /** Samples in each (a power of two, 64 to 2048) */
@@ -55,7 +57,8 @@ export function normalizeUserTable(raw: unknown): UserTable | undefined {
   if (typeof size !== 'number' || !Number.isInteger(size) || size < 64 || size > USER_CYCLE || (size & (size - 1)) !== 0) return undefined;
   if (raw.bits !== 8 && raw.bits !== 16) return undefined;
   if (typeof raw.data !== 'string' || !raw.data || raw.data.length > MAX_DATA || !/^[A-Za-z0-9+/]+=*$/.test(raw.data)) return undefined;
-  return { v: 1, name: typeof raw.name === 'string' && raw.name ? raw.name.slice(0, 60) : 'User table', frames, size, bits: raw.bits, data: raw.data };
+  const name = typeof raw.name === 'string' && raw.name ? raw.name.slice(0, 60) : 'User table';
+  return { v: 1, name, ...(raw.nameFromFile === true ? { nameFromFile: true as const } : {}), frames, size, bits: raw.bits, data: raw.data };
 }
 
 // --- An FFT, for resampling cycles without aliasing ---
@@ -401,7 +404,9 @@ export async function linkUserTable(table: UserTable): Promise<UserTable | null>
     const f = n === 1 ? 0 : Math.round((k * (table.frames - 1)) / (n - 1));
     picked.set(cycles.subarray(f * USER_CYCLE, (f + 1) * USER_CYCLE), k * USER_CYCLE);
   }
-  return packUserTable(picked, n, table.name, LINK_CYCLE, 8);
+  const light = await packUserTable(picked, n, table.name, LINK_CYCLE, 8);
+  // (Its name's mark goes with it: the link leaves out a name made from a file's, see ownFiles.ts)
+  return table.nameFromFile ? { ...light, nameFromFile: true } : light;
 }
 
 /** How big a table is in a saved song, in kB (for the panel). */

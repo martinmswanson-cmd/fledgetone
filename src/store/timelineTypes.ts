@@ -796,6 +796,8 @@ export interface WamPlugin {
   /** The plugin's module (its index.js), whose default export is the WebAudioModule */
   url: string;
   name: string;
+  /** Its name was made from a file's (a resample of a clip named after one): see ownFiles.ts */
+  nameFromFile?: true;
   /** Its settings, as the plugin gives them (getState) */
   state?: unknown;
   /** Skipped: the sound passes it by */

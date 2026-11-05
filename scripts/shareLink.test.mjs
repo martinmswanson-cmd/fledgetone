@@ -378,3 +378,31 @@ test('each flow that names something after a file or folder marks it, and a type
   // The web runtime kit goes through the same renaming as a link
   has('src/audio/runtimeKit.ts', 'withoutFileNames(project, (id) => fileNames.get(id))');
 });
+
+test("a link leaves out a wavetable's name made from a clip named after a file, and the synth's, and a melody variation's and a reversed clip's", async () => {
+  const { packUserTable } = await import('../src/audio/plugins/userTable.ts');
+  const cycles = new Float32Array(2048 * 2).map((_, i) => Math.sin((i / 2048) * 2 * Math.PI));
+  const table = { ...(await packUserTable(cycles, 2, 'Divorce lawyer call')), nameFromFile: true };
+  const song = parseProject({
+    ...serializeProject(SONG),
+    tracks: [
+      T('tf', 'Fledge Synth', 'plugin', { plugin: { id: 'p1', url: 'builtin:fledge/Fledge Synth', name: 'Fledge Synth', state: { builtin: 1, table } } }),
+      T('tb', 'Bass', 'plugin', { plugin: { id: 'p2', url: 'builtin:fledge/Fledge Synth', name: 'Divorce lawyer call lead', nameFromFile: true, state: { builtin: 1, table } } }),
+      T('tm', 'Rhodes', 'multiSampler', { nameFromFile: true }),
+      T('th', 'Rhodes harmony', 'multiSampler', { nameFromFile: true }),
+      T('tr', 'Rhodes (reversed)', 'audio', { nameFromFile: true }),
+    ],
+    clips: [
+      { id: 'c1', trackId: 'tm', name: 'Rhodes 1 (answer phrase)', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [] },
+      { id: 'c2', trackId: 'th', name: 'Rhodes 1 (harmony a third above)', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [] },
+      { id: 'c3', trackId: 'tr', name: 'Rhodes 1 (reversed)', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [], audio: A('hRev') },
+    ],
+  });
+  const back = await projectFromHash(await songLink(song, ''));
+  const json = JSON.stringify(serializeProject(back));
+  assert.ok(!OWN_NAMES.test(json), json.match(OWN_NAMES)?.[0]);
+  assert.ok(!json.includes('nameFromFile'));
+  assert.deepEqual(back.tracks.map((t) => t.name), ['Fledge Synth', 'Bass', 'Sounds', 'Sounds', 'Audio']);
+  assert.deepEqual(back.tracks.slice(0, 2).map((t) => [t.plugin.name, t.plugin.state.table.name]), [['Fledge Synth', 'User table'], ['Track', 'User table']]);
+  assert.deepEqual(back.clips.map((c) => c.name), ['Pattern', 'Pattern', 'Audio']);
+});

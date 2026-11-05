@@ -3,6 +3,7 @@ import { pastCapsWords } from './songCaps';
 import { isMixTrack } from './buses';
 import { defaultMasterSettings, defaultTrackFx, formatBarPosition, uid } from './timelineTypes';
 import type { Clip, Track } from './timelineTypes';
+import { fileMade } from './ownFiles';
 import { audibleTracks, encodeChannels, renderArrangement } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { barToSeconds, isPlainMeter, secondsToBar } from '../audio/tempoMap';
@@ -84,6 +85,8 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   const track: Track = {
     id: uid('track'),
     name: only ? `${sourceTrack?.name ?? only.name} (reversed)` : `Reversed ${label}`,
+    // (Named after its track, or the clip: marked as that name is, see ownFiles.ts)
+    ...fileMade(only && (sourceTrack ? sourceTrack.nameFromFile : only.nameFromFile)),
     color: sourceTrack?.color ?? '#22d3ee',
     instrumentKey: 'audio',
     isMuted: false,
@@ -104,6 +107,7 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
     id: uid('clip'),
     trackId: track.id,
     name: `${label} (reversed)`,
+    ...fileMade(only?.nameFromFile),
     startBar: from,
     lengthBars,
     notes: [],

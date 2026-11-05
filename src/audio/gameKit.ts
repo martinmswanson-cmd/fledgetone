@@ -25,7 +25,7 @@ import unityPlayer from '../gameKit/unity/AdaptiveMusic.cs?raw';
 import godotExample from '../gameKit/godot/music_example.gd?raw';
 import unityExample from '../gameKit/unity/AdaptiveMusicExample.cs?raw';
 import { maxOf } from '../support/minMax';
-import { sharedTrackName } from '../store/ownFiles';
+import { sharedTrackName, withoutFileNames } from '../store/ownFiles';
 
 /**
  * The game kit: everything a game needs to play the song the way the Game preview does, in one
@@ -177,6 +177,9 @@ export async function buildGameKitParts(
   // Each stem's file name: groups told apart without regard to case ("Drums" and "drums"), and a
   // group the musician named "Main" from the tracks without one
   const stemFiles = uniqueKitNames(stemGroups.map((g) => g.name)).map(safe);
+  // The tracks in each stem, as the manifest lists them: none named after the person's files or folders (see ownFiles.ts)
+  const sharedNames = new Map(withoutFileNames({ tracks: song.tracks, clips: song.clips }).tracks.map((t) => [t.id, t.name]));
+  const listed = (t: Track) => sharedNames.get(t.id) ?? sharedTrackName(t);
   // Every file's name is chosen here, from the names already taken in its folder: a costume's
   // state can't be another state's file ("Boss (Night)"), nor two sounds' variations one file
   const fileName = kitFiles();
@@ -228,7 +231,7 @@ export async function buildGameKitParts(
       for (const [k, stem] of r.stems.entries()) {
         const stemFile = `stems/${stateFiles[i]}/${fileName(`stems/${stateFiles[i]}`, stemFiles[k])}.wav`;
         files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
-        stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map(sharedTrackName) });
+        stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map(listed) });
       }
     }
     // The state in each costume: the same bars, other instruments (and maybe another tempo)

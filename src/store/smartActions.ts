@@ -15,6 +15,7 @@ import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './
 import { INSTRUMENTS, isDropKind, isDrumKind } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 import { melodyVariation, MELODY_VARIATIONS, surprisePair, type MelodyVariation, type VariationPlace } from './melodyVariations';
+import { fileMade, type FileMade } from './ownFiles';
 
 /**
  * The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one
@@ -37,13 +38,14 @@ export function songKey(): SongKey {
 }
 
 /** A new note clip on a track, selected (one undo step). Returns its id (null: none, see above). */
-export function placeClip(trackId: string, atBar: number, lengthBars: number, notes: NoteEvent[], name: string): string | null {
+export function placeClip(trackId: string, atBar: number, lengthBars: number, notes: NoteEvent[], name: string, named: FileMade = {}): string | null {
   const s = tl();
   if (!s.tracks.some((t) => t.id === trackId)) return null;
   const clip: Clip = {
     id: uid('clip'),
     trackId,
     name,
+    ...fileMade(named.nameFromFile),
     startBar: Math.max(1, Math.min(TOTAL_BARS + 1 - lengthBars, atBar)),
     lengthBars,
     notes,
@@ -57,13 +59,14 @@ export function placeClip(trackId: string, atBar: number, lengthBars: number, no
 
 /**
  * A new track right under `afterId`, holding `clip` (one undo step with it). Returns the track's
- * id; false if it would go past the caps (nothing done, a toast says so).
+ * id; false if it would go past the caps (nothing done, a toast says so). `named` marks the
+ * track's name as made from a file's or folder's (see ownFiles.ts).
  */
-function trackWithClip(afterId: string, instrument: InstrumentKey, name: string, clip: Omit<Clip, 'id' | 'trackId' | 'isSelected'>): string | false {
+function trackWithClip(afterId: string, instrument: InstrumentKey, name: string, clip: Omit<Clip, 'id' | 'trackId' | 'isSelected'>, named: FileMade = {}): string | false {
   const done = allOrNothing(() => {
     const s = tl();
     s.checkpoint();
-    const id = s.addTrack(instrument, name);
+    const id = s.addTrack(instrument, name, named);
     // (no room for a track: nothing more, and allOrNothing puts the checkpoint back)
     if (!tl().tracks.some((t) => t.id === id)) return id;
     useTimelineStore.setState((st) => {
@@ -264,6 +267,8 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   if (!notes.length) return null;
   const what = kind === 'surprise' ? surprisePair(seed) : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase();
   const name = `${clip.name} (${kind === 'surprise' ? 'variation' : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase()})`;
+  // Named after the clip (and the new track after its track): marked as they are (see ownFiles.ts)
+  const named = fileMade(clip.nameFromFile);
   // (past the caps: nothing done, and what's said is why)
   const once = (edit: () => void): string | null => {
     const made = allOrNothing(edit, true);
@@ -280,7 +285,7 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   if (place === 'track') {
     return (
       once(() => {
-        trackWithClip(track.id, track.instrumentKey, `${track.name} ${kind === 'harmony' ? 'harmony' : 'variation'}`, { name, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+        trackWithClip(track.id, track.instrumentKey, `${track.name} ${kind === 'harmony' ? 'harmony' : 'variation'}`, { name, ...named, startBar: clip.startBar, lengthBars: clip.lengthBars, notes }, fileMade(track.nameFromFile));
       }) ?? `${what[0].toUpperCase()}${what.slice(1)} on a new track under "${track.name}"`
     );
   }
@@ -291,7 +296,7 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   if (at + clip.lengthBars > TOTAL_BARS + 1 + 1e-6) return 'No room after this clip on its track: try a new track';
   return (
     once(() => {
-      placeClip(track.id, at, clip.lengthBars, notes, name);
+      placeClip(track.id, at, clip.lengthBars, notes, name, named);
     }) ?? `${what[0].toUpperCase()}${what.slice(1)} at bar ${Math.round(at * 100) / 100}`
   );
 }

@@ -528,7 +528,8 @@ interface TimelineState {
   /** A new return, and `trackId` (if given) sending to it at half level (one undo step). Returns its id. */
   addReturn: (trackId?: string, name?: string) => string;
   /** A new Plugin track playing the WAM at `url` (one undo step). Returns its id. */
-  addPluginTrack: (url: string, name: string, state?: unknown) => string;
+  /** A Plugin track (its plugin named `name` too, both marked by `named`: see ownFiles.ts). */
+  addPluginTrack: (url: string, name: string, state?: unknown, named?: FileMade) => string;
   /** Make a track play the plugin instrument at `url`, keeping its notes and effects (one undo step). */
   setTrackPlugin: (trackId: string, url: string, name: string, state?: unknown) => void;
   /** Add a WAM effect to a track, after its other plugin effects (one undo step). Returns the plugin's id. */
@@ -2071,9 +2072,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       return newTrack.id;
     },
 
-    addPluginTrack: (url, name, state) => {
-      const made = makeTrack('plugin', get().tracks, name);
-      const track: Track = { ...made, plugin: { id: uid('plugin'), url, name, ...(state !== undefined ? { state } : {}) } };
+    addPluginTrack: (url, name, state, named) => {
+      const mark = named?.nameFromFile ? { nameFromFile: true as const } : {};
+      const made = { ...makeTrack('plugin', get().tracks, name), ...mark };
+      const track: Track = { ...made, plugin: { id: uid('plugin'), url, name, ...mark, ...(state !== undefined ? { state } : {}) } };
       set((s) => ({ tracks: [...s.tracks, track], selectedTrackId: track.id, isInspectorOpen: true, ...pushPast(s) }));
       return track.id;
     },
