@@ -1328,8 +1328,11 @@ export function syncTransport(loop: LoopRegion, tempo: Tempo, swing: number): vo
   liveSwing = swing;
 }
 
-/** Release sustained voices (tracks and deck) so nothing hangs after Stop. */
-export function releaseAllVoices(): void {
-  releaseAllLiveVoices();
+/**
+ * Release sustained voices (tracks and deck) so nothing hangs after Stop. `heard`: on Pause, the
+ * time on the audio clock being heard now (see releaseAllLiveVoices).
+ */
+export function releaseAllVoices(heard?: number): void {
+  releaseAllLiveVoices(heard);
   releaseAuditionSamplers();
 }

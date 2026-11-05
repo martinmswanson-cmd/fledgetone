@@ -131,8 +131,8 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
       pitchAhead(cowbell, 800 * ratio, t);
       cowbell.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
-    /** Stop: the hits still to come never sound (the ones ringing ring out) */
-    releaseAll: () => coming.callOff(kick.context.currentTime),
+    /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
+    releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),
   };
 }
 

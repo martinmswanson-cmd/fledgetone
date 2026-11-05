@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
+import { UNHEARD_FADE } from './toneStop';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -133,12 +134,27 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
     },
     /**
      * Call off the voices still to come at `now` (Stop on a drum kit): they never start. Sounding
-     * ones ring out as they would have.
+     * ones ring out as they would have, but with `heard` (Pause: the time being heard now) those
+     * begun at or after it, not heard yet, fade out over UNHEARD_FADE: Play will play them again.
      */
-    callOffComing(now: number): void {
+    callOffComing(now: number, heard?: number): void {
       for (const v of voices) {
-        if (v.start < now || v.stopAt <= now) continue;
-        callOff(v, now);
+        if (v.stopAt <= now) continue;
+        if (v.start >= now) callOff(v, now);
+        else if (heard !== undefined && v.start >= heard) {
+          const gain = v.amp.gain;
+          if (typeof gain.cancelAndHoldAtTime === 'function') {
+            gain.cancelAndHoldAtTime(now);
+            gain.linearRampToValueAtTime(0, now + UNHEARD_FADE);
+            v.stopAt = Math.min(v.stopAt, now + UNHEARD_FADE);
+          } else {
+            // (no hold: from where the level is heading, about 50 dB down before it stops)
+            gain.cancelScheduledValues(now);
+            gain.setTargetAtTime(0, now, UNHEARD_FADE / 2);
+            v.stopAt = Math.min(v.stopAt, now + UNHEARD_FADE * 3);
+          }
+          silenceAtStop(v);
+        } else continue;
         v.sources.forEach((s) => s.stop(v.stopAt));
       }
     },

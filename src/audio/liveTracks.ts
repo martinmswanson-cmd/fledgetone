@@ -624,10 +624,13 @@ export function getLiveClipBus(trackId: string): NativeBus | undefined {
   return live.get(trackId)?.instrument.clipBus;
 }
 
-/** Release sustained voices so nothing hangs after Stop. */
-export function releaseAllLiveVoices(): void {
+/**
+ * Release sustained voices so nothing hangs after Stop. `heard`: on Pause, the time on the audio
+ * clock being heard now, which the pause keeps (see TrackInstrument.releaseAll).
+ */
+export function releaseAllLiveVoices(heard?: number): void {
   for (const lt of live.values()) {
-    safely(() => lt.instrument.releaseAll());
+    safely(() => lt.instrument.releaseAll(heard));
     lt.strip.resendPluginControls();
     // A bend left by a clip's expression ends with playback (with any sent for later: a note's
     // slide), and so does the wheel played live: centred and forgotten (sent as the wheel's, so

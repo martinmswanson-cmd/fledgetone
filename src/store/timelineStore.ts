@@ -51,6 +51,7 @@ import { initAudio } from '../audio/engine';
 import { resetHeardLoudness, setHeardSongPlaying } from '../audio/monitor';
 import {
   formatBarsBeats,
+  getAudibleMoment,
   getAudiblePositionBar,
   getScheduledPositionBar,
   pauseTransport,
@@ -1763,11 +1764,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     pause: () => {
       playToken++;
       if (!get().isPlaying) return;
-      const pos = getAudiblePositionBar();
+      // The place being heard, kept; what has begun since (not heard yet: Play plays it) fades out
+      const { bar: pos, at: heard } = getAudibleMoment();
       endTake();
       pauseTransport();
       stopFrameLoop();
-      releaseAllVoices();
+      releaseAllVoices(heard);
       set({ isPlaying: false, isRecording: false, playheadPosition: clampBar(pos) });
     },
 
