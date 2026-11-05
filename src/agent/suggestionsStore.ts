@@ -22,7 +22,8 @@ import { musicEnd } from '../audio/auditionMath';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
 import { classifySuggestion, NO_CHANGE, touchedHashes, touchedNames } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
-import { partsChanged, type Parts } from './revision';
+import { partsChanged, VIEW_ONLY, type Parts } from './revision';
+import { stableJson } from './fingerprint';
 import { joinRanges, namesManyBars, rangesWords, wordMeter, type BarRange } from './songDiff';
 import type { MeterMap } from '../audio/tempoMap';
 import type { BridgeInfo } from './bridgeProtocolClient';
@@ -102,15 +103,22 @@ export interface Suggestion {
   notes: string[];
   /** The same with each name marked, for the card to show the names apart (names.ts nameParts). */
   marked?: { changes: string[]; warnings: string[]; notes: string[] };
-  /** Whether the level rules said something among `warnings` (ApplyResult.cautioned): then a sound check that finds it louder says nothing more. */
-  cautioned?: boolean;
+  /**
+   * The largest rise the level rules' warnings among `warnings` state, dB, or null when none of
+   * them is about level (ApplyResult.louderSaid): a sound check that finds it louder says so only
+   * when nothing was said about level, or when it measured clearly more (measuredCaution).
+   */
+  louderSaid?: number | null;
   /**
    * A caution found by measuring, for version `version`: the studio's sound check (whereHeard.ts)
-   * or, where that can't be run, the before-and-after's own measure, found Suggested much louder
-   * than the song (measuredRise, auditionRise) where the rules said nothing (measuredCaution). On
-   * the card; for the agent only while it may listen (handlers.ts), as all the sound check finds.
+   * or the before-and-after's own renders measured bar by bar (until the sound check is done, or
+   * where it can't be run), found Suggested much louder than the song (measuredRise,
+   * measuredCaution). `earlier`: the same words for once the musician has edited what it touches
+   * since ("Before your last edit, ..."). Made again (freshen), it's kept until the new version's
+   * own measure takes its place (worded as `earlier` if the edit reached what it touches). On the
+   * card; for the agent only while it may listen (handlers.ts), as all the sound check finds.
    */
-  measured?: { version: number; text: string } | null;
+  measured?: { version: number; text: string; earlier: string } | null;
   touchedTracks: string[];
   bars: BarRange | null;
   /**
@@ -519,8 +527,7 @@ const fromResult = (r: ApplyResult, focus: BarRange | undefined, before: Project
     marked: { changes: r.diff.changes.map((c) => c.marked ?? c.text), warnings: r.marked.warnings, notes: r.marked.notes },
     warnings: r.warnings,
     notes: r.notes,
-    cautioned: r.cautioned,
-    measured: null,
+    louderSaid: r.louderSaid,
     touchedTracks: r.diff.touchedTracks,
     bars: r.diff.bars,
     regions: r.diff.regions,
@@ -585,6 +592,7 @@ export function makeSuggestion(
       touchedNames: touchedNames(base, ops),
       status: 'waiting',
       ...fromResult(out, focus, base),
+      measured: null,
       createdAt: now,
       ...(connection !== undefined ? { connection } : {}),
       ...(agent ? { agent } : {}),
@@ -630,7 +638,33 @@ export function freshen(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): 
   const again = applyOps(now, { opsVersion: OPS_VERSION, ops: s.ops }, { idBase: s.idBase });
   // (the ops' errors quote what the agent wrote: the card says it in the app's own words instead)
   if (!again.ok) return { ...checked, status: 'out_of_date', outOfDate: [NO_LONGER_FITS], outOfDateAt: ctx.parts, armed: null };
-  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus, now) };
+  // (what was measured louder stays on the card until this version's own measure takes its place)
+  const m = checked.measured;
+  const measured = m ? (m.text !== m.earlier && touchedMoved(checked.song, again.song, [...checked.touchedTracks, ...again.diff.touchedTracks]) ? { ...m, text: m.earlier } : m) : null;
+  return { ...checked, status: 'changed', stale: false, armed: null, epoch: ctx.epoch, parts: ctx.parts, ext: ctx.ext, version: checked.version + 1, idBase: again.idBase, ...fromResult(again, checked.focus, now), measured };
+}
+
+/** `x` without the fields in `skip`. */
+const omit = (x: object, skip: readonly string[]) => Object.fromEntries(Object.entries(x).filter(([k]) => !skip.includes(k)));
+
+/**
+ * Whether the musician's edits between two versions of a suggestion's song (`was`, `now`) reached
+ * what it touches: its tracks (`tracks`) or their clips, or the master, the tempo or the meter
+ * (they reach every track). What only the screen holds (a selection) doesn't count.
+ */
+export function touchedMoved(was: ProjectSnapshot, now: ProjectSnapshot, tracks: readonly string[]): boolean {
+  const ids = new Set(tracks);
+  const view = (x: ProjectSnapshot) =>
+    stableJson({
+      tracks: x.tracks.filter((t) => ids.has(t.id)).map((t) => omit(t, VIEW_ONLY.track)),
+      clips: x.clips.filter((c) => ids.has(c.trackId)).map((c) => omit(c, VIEW_ONLY.clip)),
+      master: x.master ?? null,
+      bpm: x.bpm,
+      tempoPoints: x.tempoPoints ?? [],
+      meter: x.meter ?? null,
+      meterPoints: x.meterPoints ?? [],
+    });
+  return view(was) !== view(now);
 }
 
 export { barWords, rangesWords, wordMeter } from './songDiff';
@@ -662,15 +696,22 @@ export function withSoundRegions(s: Suggestion, sound: readonly BarRange[], befo
 /**
  * `s` with what a measure of its sound found (`rise`: whereHeard.ts's sound check, or the
  * before-and-after's own), on `before` (the song it's made on, for the bars' words): a caution
- * for this version when it's much louder and the rules said nothing (measuredCaution), else none.
+ * for this version when it's much louder and the rules said nothing about level, or less than it
+ * measured (measuredCaution), else none.
  */
 export function withMeasured(s: Suggestion, rise: MeasuredRise | null, before: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): Suggestion {
-  const text = measuredCaution(rise, !!s.cautioned, wordMeter(before));
-  return { ...s, measured: text ? { version: s.version, text } : null };
+  const meter = wordMeter(before);
+  const text = measuredCaution(rise, s.louderSaid ?? null, meter);
+  const earlier = measuredCaution(rise, s.louderSaid ?? null, meter, true);
+  return { ...s, measured: text && earlier ? { version: s.version, text, earlier } : null };
 }
 
-/** The caution a measure found (withMeasured), while it's for the version the suggestion is now: else null. */
-export const measuredWarning = (s: Pick<Suggestion, 'measured' | 'version' | 'stale'>): string | null => (s.measured && s.measured.version === s.version && !s.stale ? s.measured.text : null);
+/**
+ * The caution a measure found (withMeasured): for the version the suggestion is now, or, until
+ * that one's own measure is done, the last one's (also while the song has changed and it isn't
+ * made again yet). Else null.
+ */
+export const measuredWarning = (s: Pick<Suggestion, 'measured'>): string | null => s.measured?.text ?? null;
 
 /** Where a suggestion is heard and what its before-and-after plays, as an agent may read it. */
 export interface AgentHearing {

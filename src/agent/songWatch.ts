@@ -15,13 +15,16 @@
  * hearing it).
  */
 import { currentProject, onProjectReplaced, songGeneration, songParts, stepPlace, useTimelineStore } from '../store/timelineStore';
+import type { ProjectSnapshot } from '../store/project';
 import { forgetAudition, startAudition, stopAudition, useAudition, type AuditionState } from '../audio/auditionPlayer';
 import { listenSnapshot } from './listenSnapshot';
 import { announce, checkSuggestion, extKey, measuredWarning, playedThrough, freshen, hearingByRules, isOpen, uncheckedTail, undoCheck, updateSuggestion, useSuggestions, withMeasured, type SongContext, type Suggestion } from './suggestionsStore';
-import { auditionRise } from './safety';
 import type { BarRange } from './songDiff';
 import { partsChanged } from './revision';
-import { findWhere, needsFinding, stopFinding, useFinding } from './whereHeard';
+import { auditionRise, findWhere, needsFinding, stopFinding, useFinding } from './whereHeard';
+
+/** A song's tempo, for measuring its before-and-after bar by bar. */
+const tempoOfSong = (x: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: x.bpm, points: x.tempoPoints ?? [] });
 
 /** How often the watch looks at most, ms. */
 export const WATCH_MS = 150;
@@ -201,22 +204,29 @@ useAudition.subscribe((a) => noteHeard(a));
 useSuggestions.subscribe((st, prev) => st.suggestions !== prev.suggestions && noteHeard());
 
 /**
- * For a suggestion the sound check can't be run for (the song too long, or the render failed:
- * `foundWhy`), what its before-and-after measured as it began to play (auditionPlayer.ts: B's
- * loudness and true peak against A's over the stretches it plays) stands in for it: a caution on
- * the card when Suggested came out much louder and the rules said nothing (auditionRise,
- * withMeasured). Said once, as the card shows it.
+ * For a suggestion not yet checked by sound (the check still under way, or it can't be run: the
+ * song too long, or the render failed, `foundWhy`), what its before-and-after measured bar by bar
+ * as soon as both renders were done (auditionPlayer.ts `rise`: whereHeard.ts auditionRise) stands
+ * in for it: a caution on the card when Suggested came out much louder and the rules said nothing
+ * about level, or less than it measured (withMeasured). Where the check will still run, finding
+ * nothing leaves the last version's caution until it's done. Said once, as the card shows it.
  */
 function measuredByAudition(id: string): void {
   const s = useSuggestions.getState().suggestions.find((x) => x.id === id);
   const a = useAudition.getState();
-  if (!s || !isOpen(s) || s.stale || s.found !== 'rules' || !s.foundWhy || s.measured?.version === s.version) return;
-  if (a.key !== id || a.phase !== 'playing' || a.renderKey !== renderKeyOf(s)) return;
-  const next = withMeasured(s, auditionRise(a.levelDiff, a.peakDiff, s.audition[0]?.fromBar ?? 1), currentProject());
+  if (!s || !isOpen(s) || s.stale || s.found !== 'rules' || s.measured?.version === s.version) return;
+  if (a.key !== id || a.measuredKey === null || a.measuredKey !== renderKeyOf(s)) return;
+  const next = withMeasured(s, a.rise, currentProject());
+  if (!next.measured && !s.foundWhy) return;
+  const was = measuredWarning(s);
   updateSuggestion(id, { measured: next.measured });
   const caution = measuredWarning(next);
-  if (caution) announce(`A caution, found by sound: ${caution}`);
+  if (caution && caution !== was) announce(`A caution, found by sound: ${caution}`);
 }
+// (as soon as a before-and-after's renders are measured, before it plays)
+useAudition.subscribe((a, prev) => {
+  if (a.key && a.measuredKey && a.measuredKey !== prev.measuredKey) measuredByAudition(a.key);
+});
 
 /**
  * Hear suggestion `id` against the song now (its audition: each region where a change is heard, one after another, with the agent's focus if that fits), made again on
@@ -247,6 +257,8 @@ export async function hearSuggestion(id: string, hearing: 'a' | 'b' = 'b'): Prom
     suggested: listenSnapshot(s.song),
     plays: s.audition,
     hearing,
+    // (both renders measured bar by bar: B turned down by its loudest bar too, and a caution on the card at once)
+    measureBars: (a, b, starts, signal) => auditionRise(a, b, s.audition, starts, { a: tempoOfSong(nowSong), b: tempoOfSong(s.song) }, signal),
   });
   noteHeard();
   measuredByAudition(id);

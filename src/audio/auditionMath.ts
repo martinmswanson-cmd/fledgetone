@@ -321,3 +321,17 @@ export function playedBars(spans: ReadonlyArray<readonly [number, number]>, play
   }
   return joined;
 }
+
+/**
+ * The song bars a before-and-after plays (its stretches `plays` one after another, stretch `i`
+ * starting `starts[i]` seconds into its render) and where each lies in that render, by its own
+ * tempo: a bar a stretch starts or ends inside is only the part of it played.
+ */
+export function stretchBars(plays: ReadonlyArray<{ fromBar: number; toBar: number }>, starts: readonly number[], tempo: Tempo): Array<{ bar: number; start: number; end: number }> {
+  const out: Array<{ bar: number; start: number; end: number }> = [];
+  plays.forEach((p, i) => {
+    const at = (x: number) => (starts[i] ?? 0) + barToSeconds(x, tempo) - barToSeconds(p.fromBar, tempo);
+    for (let bar = Math.floor(p.fromBar + 1e-9); bar < p.toBar - 1e-9; bar++) out.push({ bar, start: at(Math.max(bar, p.fromBar)), end: at(Math.min(bar + 1, p.toBar)) });
+  });
+  return out;
+}

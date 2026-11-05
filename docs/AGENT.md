@@ -382,16 +382,25 @@ those drawn high, a lane of one of them redrawn so that it is louder (or driven 
 harder) anywhere along the song than it was there (the warning says from which bar; a lane on an
 insert that was off is measured from nothing), a lane that
 held one of them down taken away (removed, or left with no points), the master up by
-more than 3 dB, the Loud master, the OTT or the clipper switched on, the OTT pushed much harder.
+more than 3 dB, the Loud master or the clipper switched on, the OTT switched on so that it lifts the
+song more than 3 dB (about 6.7 dB at full depth, plus its gains: at depth 0 only its gains count),
+the OTT pushed much harder.
 **Measured** too: when the studio's sound check (the song rendered whole before and after, see
-`regionsBy`) finds the song with the suggestion more than 6 dB louder than the song as it is in
-some bar (or its true peak more than 6 dB higher), and none of the warnings above was given, the
-card adds "Suggested comes out up to N dB louder (from bar B). Turn your speakers down before you
-listen." You read it among `warnings` only while you're allowed to listen (it's what the renders
-found), and only once the check has run: not while the song plays, and not for a song too long to
-check by sound (there the before-and-after's own measure stands in, once the musician presses
-Hear). Every result is checked the way a
-saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
+`regionsBy`) finds the song with the suggestion more than 6 dB louder in some bar than that bar
+was, or than the whole song, whichever is louder (or its true peak more than 6 dB higher), and
+none of the warnings above was about level (a Delay fed back isn't), the card adds "Suggested
+comes out up to N dB louder (from bar B). Turn your speakers down before you listen." N is the
+most such a bar rose against the same bar as it is now (a bar that was silent, or more than 20 dB
+under the song, counts as 20 dB under it). When a warning above was about level but N is more
+than 6 dB over the most any of them states (one with no number counts as 6 dB), it adds the same
+words with ", more than the cautions above say" after the bar. You read it among `warnings` only
+while you're allowed to listen (it's what the renders found). It comes once the check has run (not
+while the song plays), or as soon as the musician's before-and-after has rendered, if that's
+first: that measures its own two renders bar by bar the same way and, until the check is done,
+stands in for it (for a song too long to check by sound, for good). After the musician edits
+the song, the last caution stays until the suggestion's new version is measured; if the edit
+changed what the suggestion touches (its tracks, their clips, the master or the tempo), it reads
+"Before your last edit, Suggested came out up to N dB louder (from bar B). ...". Every result is checked the way a saved song is when it opens, so a suggestion can never hold what a song file couldn't. A
 suggestion adds at most 5000 notes, copies of clips (linked or not) included.
 
 Linked clips (clips that share a pattern, `linkedTo` in the song summary) follow each other: change

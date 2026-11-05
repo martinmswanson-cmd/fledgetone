@@ -16,7 +16,7 @@ register(
   }
 }`)
 );
-const { checkSafety, TRACK_JUMP_DB, MASTER_JUMP_DB } = await import('../src/agent/safety.ts');
+const { checkSafety, TRACK_JUMP_DB, MASTER_JUMP_DB, OTT_FULL_LIFT_DB } = await import('../src/agent/safety.ts');
 const { applyOps } = await import('../src/agent/ops.ts');
 const { createStarter } = await import('../src/store/starters.ts');
 
@@ -321,6 +321,18 @@ test('the master OTT switched on, or pushed much harder, is a warning even witho
   assert.equal(warningsFor([{ op: 'set_master', ott: { depth: 0.4 } }], on), '');
 });
 
+test('the master OTT switched on at depth 0 (or hardly any) lifts nothing: no caution; its gains still count (scan r31)', () => {
+  // Each band's gain goes with the depth (ott.ts): at depth 0 the OTT passes the song through, but for its gains
+  assert.equal(OTT_FULL_LIFT_DB, 6.7);
+  assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0 } }]), '');
+  assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0.4, inGain: 0, outGain: 0 } }]), '');
+  assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0, inGain: -12, outGain: 3 } }]), '');
+  // 6.7 x 0.5 = 3.35 dB, over the master's 3: a caution
+  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0.5, inGain: 0, outGain: 0 } }]), /^This switches on the master OTT: the whole song gets louder\.$/);
+  // At depth 0 its gains alone lift it: out +2 and in +2 is 4 dB
+  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0, inGain: 2, outGain: 2 } }]), /^This switches on the master OTT/);
+});
+
 test('no false cautions: a setting a lane plays over, a fader rise taken back, distance 0', () => {
   const s = base();
   const K = s.tracks[0].id;
@@ -372,7 +384,7 @@ test("the reviewer's cases measured no louder say nothing", () => {
   for (const [ops, setup] of quiet) assert.equal(warningsFor(ops, setup ? ap(s, setup) : s), '', JSON.stringify(ops[0]));
 });
 
-const { measuredRise, measuredCaution, auditionRise, MEASURED_JUMP_LU, MEASURED_PEAK_DB, SILENT_SONG_LUFS } = await import('../src/agent/safety.ts');
+const { measuredRise, measuredCaution, safetyCautions, louderSaid, MEASURED_JUMP_LU, MEASURED_PEAK_DB, MEASURED_FLOOR_LU, SILENT_SONG_LUFS } = await import('../src/agent/safety.ts');
 const { barLoudness } = await import('../src/agent/listenReport.ts');
 
 test('the measured caution: Suggested much louder than the song in some bar, where the rules said nothing', () => {
@@ -383,27 +395,78 @@ test('the measured caution: Suggested much louder than the song in some bar, whe
   const before = bars([[-20, -6], [-20, -6], [-30, -12], [-20, -6]]);
   // Bar 2 up 9 LU: from bar 2, up to 9 dB
   const up = measuredRise(before, bars([[-20, -6], [-11, -4], [-30, -12], [-18, -6]]), song);
-  assert.deepEqual(up, { db: 9, bar: 2 });
-  assert.equal(measuredCaution(up, false), 'Suggested comes out up to 9 dB louder (from bar 2). Turn your speakers down before you listen.');
-  // Said nothing more when the rules already cautioned
-  assert.equal(measuredCaution(up, true), null);
+  assert.deepEqual(up, { db: 9, bar: 2, own: 9 });
+  assert.equal(measuredCaution(up, null), 'Suggested comes out up to 9 dB louder (from bar 2). Turn your speakers down before you listen.');
+  // Said nothing more when the rules already warned about level, by about as much
+  assert.equal(measuredCaution(up, 6), null);
   // Up 6 LU, or a quiet bar brought up only to the song's own level: nothing
   assert.equal(measuredRise(before, bars([[-14, -6], [-20, -6], [-20, -6], [-20, -6]]), song), null);
-  // The true peak up by more than 6 dB over the song's highest: a warning even at the same loudness
-  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, 1], [-20, -6]]), song), { db: 7, bar: 3 });
+  // The true peak up by more than 6 dB over the song's highest: a warning even at the same loudness (said against the bar's own peak)
+  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, 1], [-20, -6]]), song), { db: 7, bar: 3, own: 13 });
   // A song silent all through is compared with a quiet mix's loudness
   const silent = bars([[-Infinity, -Infinity], [-Infinity, -Infinity]]);
   assert.equal(measuredRise(silent, bars([[-24, -10], [-24, -10]]), { lufs: -Infinity, peak: -Infinity }), null);
-  assert.deepEqual(measuredRise(silent, bars([[-24, -10], [SILENT_SONG_LUFS + 8, -1]]), { lufs: -Infinity, peak: -Infinity }), { db: 8, bar: 2 });
+  assert.deepEqual(measuredRise(silent, bars([[-24, -10], [SILENT_SONG_LUFS + 8, -1]]), { lufs: -Infinity, peak: -Infinity }), { db: 8, bar: 2, own: 8 + MEASURED_FLOOR_LU });
   // Bars the suggestion adds past the song's end are measured against the song
-  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, -12], [-20, -6], [-10, -3]]), song), { db: 10, bar: 5 });
+  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, -12], [-20, -6], [-10, -3]]), song), { db: 10, bar: 5, own: 10 + MEASURED_FLOOR_LU });
   // In a song not in 4/4, the bar as the ruler numbers it
-  assert.match(measuredCaution({ db: 7.4, bar: 3 }, false, { base: { num: 3, den: 4 }, points: [] }), /^Suggested comes out up to 7 dB louder \(from bar \d+( beat [\d.]+)?\)\./);
-  // The before-and-after's own measure, where the sound check can't run
-  assert.deepEqual(auditionRise(8.2, 1, 9), { db: 8.2, bar: 9 });
-  assert.deepEqual(auditionRise(2, 7.5, 9), { db: 7.5, bar: 9 });
-  assert.equal(auditionRise(5, 5, 9), null);
-  assert.equal(auditionRise(Infinity, null, 9), null);
+  assert.match(measuredCaution({ db: 7.4, bar: 3, own: 7.4 }, null, { base: { num: 3, den: 4 }, points: [] }), /^Suggested comes out up to 7 dB louder \(from bar \d+( beat [\d.]+)?\)\./);
+});
+
+test("the measured caution says the bar's own rise against Now, not against the song's loudness (scan r31)", () => {
+  assert.equal(MEASURED_FLOOR_LU, 20);
+  const bars = (list) => list.map(([lufs, peak]) => ({ lufs, peak }));
+  // The reviewer's wall of supersaws: bar 1 from -31.9 to -10.3 LUFS in a song of -26.9: +21.6 against Now, +16.6 against the song
+  const song = { lufs: -26.9, peak: -10.5 };
+  const before = bars([[-31.9, -14], [-34.2, -15], [-26.6, -11]]);
+  const rise = measuredRise(before, bars([[-10.3, -1], [-10.3, -1], [-22.2, -9]]), song);
+  assert.equal(rise.bar, 1);
+  assert.ok(Math.abs(rise.db - 16.6) < 1e-9, String(rise.db));
+  // (bar 2: -10.3 against -34.2)
+  assert.ok(Math.abs(rise.own - 23.9) < 1e-9, String(rise.own));
+  assert.equal(measuredCaution(rise, null), 'Suggested comes out up to 24 dB louder (from bar 1). Turn your speakers down before you listen.');
+  // Deciding when to warn is as before: a quiet bar brought up only to the song's level says nothing, however far it rose
+  assert.equal(measuredRise(bars([[-45, -30]]), bars([[-24, -10]]), song), null);
+  // A silent bar of Now counts as MEASURED_FLOOR_LU under the song
+  assert.equal(measuredRise(bars([[-Infinity, -Infinity]]), bars([[-12, -2]]), song).own, -12 - (-26.9 - MEASURED_FLOOR_LU));
+  // Words for a caution measured before the musician's last edit
+  assert.equal(measuredCaution(rise, null, null, true), 'Before your last edit, Suggested came out up to 24 dB louder (from bar 1). Turn your speakers down before you listen.');
+});
+
+test('a caution not about level (a delay fed back) leaves the measured caution to say how much louder; one about level, only when it measured clearly more (scan r31)', () => {
+  const s = base();
+  const [K, R] = [s.tracks[0].id, s.tracks.find((t) => t.name === 'Rain')?.id ?? s.tracks.at(-1).id];
+  const marks = (ops, from = s) => safetyCautions(from, ap(from, ops));
+  // The delay fed back: a caution, not about level
+  const fb = marks([{ op: 'set_insert', trackId: R, insert: 'echo', settings: { on: true, feedback: 0.9 } }]);
+  assert.equal(fb.length, 1);
+  assert.match(fb[0].text, /the Delay feeds back at 90%/);
+  assert.equal(fb[0].louder, undefined);
+  assert.equal(louderSaid(fb), null);
+  const rise = { db: 16.6, bar: 1, own: 21.6 };
+  assert.equal(measuredCaution(rise, louderSaid(fb)), 'Suggested comes out up to 22 dB louder (from bar 1). Turn your speakers down before you listen.');
+  // A lane feeding back, too
+  const lane = marks([{ op: 'set_insert', trackId: R, insert: 'echo', settings: { on: true, feedback: 0.2 } }, { op: 'set_automation', trackId: R, param: 'fx:echo.feedback', points: [{ bar: 1, value: 0.95 }] }]);
+  assert.ok(lane.length >= 1 && lane.every((c) => c.louder === undefined), JSON.stringify(lane));
+  // A fader up 9 dB: about level, stating 9 dB
+  const up = marks([{ op: 'set_track', trackId: K, volumeDb: s.tracks[0].volume + 9 }]);
+  assert.equal(up.length, 1);
+  assert.equal(up[0].louder, 9);
+  assert.equal(louderSaid(up), 9);
+  // ...so a measured 12 dB says nothing more, a measured 22 dB says it's more
+  assert.equal(measuredCaution({ db: 10, bar: 1, own: 12 }, louderSaid(up)), null);
+  assert.equal(measuredCaution(rise, louderSaid(up)), 'Suggested comes out up to 22 dB louder (from bar 1), more than the cautions above say. Turn your speakers down before you listen.');
+  // A caution about level with no number counts as the line it crossed (6 dB)
+  const loud = marks([{ op: 'set_master', loud: { on: true } }]);
+  assert.equal(louderSaid(loud), TRACK_JUMP_DB);
+  assert.equal(measuredCaution({ db: 10, bar: 1, own: 11 }, louderSaid(loud)), null);
+  // applyOps says the same: cautioned only by a caution about level
+  const r = applyOps(s, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: R, insert: 'echo', settings: { on: true, feedback: 0.9 } }] }, { idBase: 'r31' });
+  assert.equal(r.cautioned, false);
+  assert.equal(r.louderSaid, null);
+  const r2 = applyOps(s, { opsVersion: 1, ops: [{ op: 'set_track', trackId: K, volumeDb: s.tracks[0].volume + 9 }] }, { idBase: 'r31' });
+  assert.equal(r2.cautioned, true);
+  assert.equal(r2.louderSaid, 9);
 });
 
 test("a bar's loudness from a render's gating blocks", () => {

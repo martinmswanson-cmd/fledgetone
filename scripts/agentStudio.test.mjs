@@ -899,3 +899,65 @@ test('an agent never reads a suggestion as heard while it is changed and not mad
   const { readFileSync } = await import('node:fs');
   assert.match(readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8'), /heard: heardForAgent\(s, listen\)/);
 });
+
+test('a caution measured louder stays on the card after an edit elsewhere and while it is made again; worded as found before the edit if the edit reached what it touches (scan r31)', async () => {
+  const { withMeasured, measuredWarning, touchedMoved } = await import('../src/agent/suggestionsStore.ts');
+  const { readFileSync } = await import('node:fs');
+  const p = base();
+  const keys = p.tracks[0].id;
+  const s = makeSuggestion(p, ctxOf(p), { title: 'Keys up', explanation: '', ops: [{ op: 'set_track', trackId: keys, volumeDb: p.tracks[0].volume + 3 }] }).suggestion;
+  assert.equal(s.measured, null);
+  const m = withMeasured(s, { db: 11.5, bar: 1, own: 16.5 }, p);
+  const words = 'Suggested comes out up to 17 dB louder (from bar 1). Turn your speakers down before you listen.';
+  assert.equal(measuredWarning(m), words);
+  // Another track edited: changed and not made again yet, the caution still shows
+  const elsewhere = { ...p, tracks: p.tracks.map((t, i) => (i === 4 ? { ...t, volume: t.volume - 1 } : t)) };
+  const stale = checkSuggestion(m, elsewhere, ctxOf(elsewhere));
+  assert.equal(stale.stale, true);
+  assert.equal(measuredWarning(stale), words);
+  // Made again (as Hear does): kept, as it was, until this version's own measure takes its place
+  const fresh = freshen(stale, elsewhere, ctxOf(elsewhere));
+  assert.equal(fresh.version, 2);
+  assert.equal(measuredWarning(fresh), words);
+  assert.equal(withMeasured(fresh, null, elsewhere).measured, null, "the new version's own measure takes its place");
+  // An edit that reached what it touches (a note of Keys' clip): found before your last edit
+  const clip = p.clips.find((c) => c.trackId === keys && c.notes.length);
+  const onKeys = { ...p, clips: p.clips.map((c) => (c === clip ? { ...c, notes: c.notes.map((n, i) => (i === 0 ? { ...n, velocity: 0.2 } : n)) } : c)) };
+  const touched = freshen(checkSuggestion(m, onKeys, ctxOf(onKeys)), onKeys, ctxOf(onKeys));
+  assert.ok(isOpen(touched), touched.status);
+  assert.equal(measuredWarning(touched), 'Before your last edit, Suggested came out up to 17 dB louder (from bar 1). Turn your speakers down before you listen.');
+  assert.equal(touchedMoved(m.song, touched.song, [keys]), true);
+  assert.equal(touchedMoved(m.song, fresh.song, m.touchedTracks), false, 'a track it does not touch');
+  // A selection is only on screen: not an edit of what it touches
+  const selected = { ...m.song, clips: m.song.clips.map((c) => (c === clip ? { ...c, isSelected: !c.isSelected } : c)) };
+  assert.equal(touchedMoved(m.song, selected, [keys]), false);
+  // The Listen rule holds: the agent reads it only with Listen; the card always
+  const handlers = readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8');
+  assert.match(handlers, /const measured = listen \? measuredWarning\(s\) : null;/);
+  assert.equal((handlers.match(/measuredWarning\(/g) ?? []).length, 1, 'read in one place only');
+});
+
+test("Hear before the sound check is done: both renders measured bar by bar, Suggested turned down by its loudest bar, the caution at once (scan r31)", async () => {
+  const { stretchBars } = await import('../src/audio/auditionMath.ts');
+  const { measuredRise } = await import('../src/agent/safety.ts');
+  const { readFileSync } = await import('node:fs');
+  // Two stretches at 120 bpm (2 s a bar): bars 1-3 from 0 s, bar 9 and half of 10 from 4.5 s
+  const tempo = { bpm: 120, points: [] };
+  const bars = stretchBars([{ fromBar: 1, toBar: 3 }, { fromBar: 9, toBar: 10.5 }], [0, 4.5], tempo);
+  assert.deepEqual(bars.map((b) => b.bar), [1, 2, 9, 10]);
+  assert.deepEqual(bars.map((b) => [b.start, b.end]), [[0, 2], [2, 4], [4.5, 6.5], [6.5, 7.5]]);
+  // A one-bar hit 16.5 dB over Now's bar: the whole stretch hardly moves, the bar does
+  const now = [-31.9, -34.2, -32.6, -31.9].map((lufs) => ({ lufs, peak: lufs + 15 }));
+  const sug = [-15.4, -34, -32.6, -31.9].map((lufs, i) => ({ lufs, peak: i ? lufs + 15 : -4.6 }));
+  const rise = measuredRise(now, sug, { lufs: -26.9, peak: -10.5 });
+  assert.equal(rise.bar, 1);
+  assert.ok(rise.db > 6 && Math.abs(rise.own - 16.5) < 1e-9, JSON.stringify(rise));
+  const player = readFileSync(new URL('../src/audio/auditionPlayer.ts', import.meta.url), 'utf8');
+  // Turned down by the bar too, from its first sample, and said as soon as both are measured, before it plays
+  assert.match(player, /const bars = rise \? rise\.db - LOUDER_LIMIT_LU : 0;\s+const over = Math\.max\(whole, bars\);/);
+  assert.match(player, /gains\.b\.gain\.setValueAtTime\(hearing === 'b' \? pair\.bLevel : 0, 0\);/);
+  assert.ok(player.indexOf("useAudition.setState({ rise: pair.rise, measuredKey: opts.renderKey })") < player.indexOf('await initAudio()'));
+  const watch = readFileSync(new URL('../src/agent/songWatch.ts', import.meta.url), 'utf8');
+  assert.match(watch, /measureBars: \(a, b, starts, signal\) => auditionRise\(/);
+  assert.match(watch, /if \(a\.key && a\.measuredKey && a\.measuredKey !== prev\.measuredKey\) measuredByAudition\(a\.key\);/);
+});

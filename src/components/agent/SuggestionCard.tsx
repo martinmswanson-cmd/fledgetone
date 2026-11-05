@@ -90,7 +90,7 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
     return () => window.clearTimeout(t);
   }, [s.id, s.armed?.at]);
   const open = isOpen(s);
-  // (what its sound check found louder, where the rules said nothing: Suggestion.measured)
+  // (what its sound check or its before-and-after measured louder, where the rules said nothing about level or less: Suggestion.measured)
   const measured = measuredWarning(s);
   // (each place its changes are heard, one after another, and the agent's focus with them if that fits: see hearingPlan)
   const range = s.audition;
