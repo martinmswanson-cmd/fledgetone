@@ -104,7 +104,7 @@ test("Pocket's Drummer in a 3/4 section plays a 3/4 beat: the snare on beat 2 of
   // In 4/4 the meter there is the song's own
   assert.deepEqual(T.meterAt(1, map), { num: 4, den: 4 });
   // (and the code reads it where the section starts)
-  assert.match(src('src/pocket/PocketSheets.tsx'), /const meter = meterAt\(sec\.from, meterMap\);/);
+  assert.match(src('src/pocket/PocketSheets.tsx'), /const meter = meterAt\(sec\.from, (map|meterMap)\);/);
   assert.match(src('src/pocket/PocketPads.tsx'), /const meter = meterAt\(sec\.from, meterMap\);/);
   assert.doesNotMatch(src('src/pocket/PocketPads.tsx') + src('src/pocket/PocketSheets.tsx'), /\(s\) => s\.meter\)/);
 });
@@ -120,5 +120,7 @@ test("Pocket's fill goes in the section's last measure, however short the measur
   // 4/4: the same measure as the middle of the last bar
   const plain = { base: { num: 4, den: 4 }, points: [] };
   assert.equal(T.measureAt(5 - 1e-6, plain).start, T.measureAt(4.5, plain).start);
-  assert.match(src('src/pocket/PocketSheets.tsx'), /fillClipBar\(id, sec\.to - 1e-6, f\.id\)/);
+  // (In 4/4 the middle of the last bar, as before; otherwise just inside the section's last measure)
+  assert.match(src('src/pocket/PocketSheets.tsx'), /const lastBar = isPlainMeter\(map\) \? sec\.to - 0\.5 : measureAt\(sec\.to - 1e-6, map\)\.start/);
+  assert.match(src('src/pocket/PocketSheets.tsx'), /fillClipBar\(id, lastBar, f\.id\)/);
 });
