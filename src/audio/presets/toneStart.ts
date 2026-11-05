@@ -44,9 +44,9 @@ function silentFrom(source: States | undefined, start: number, context: Tone.Bas
 /**
  * Before a Tone synth's note at `start` (before triggerAttack): when its oscillator is stopped,
  * its pitch is set a render block early, so the note starts on its own pitch wherever in the
- * block it lands. A MembraneSynth (a kick's drop) also starts its oscillator a block early and has
- * its pitch set a block before that, so the drop itself starts on time (its envelope is silent
- * until `start`). A note that starts while the oscillator still sounds (legato, a ringing tail)
+ * block it lands. A MembraneSynth (a kick's drop) also starts its oscillator a block early, held at
+ * 0 Hz from a block before that until `start`, so the drop itself starts on time and at the start
+ * of its wave (its envelope is silent until `start`). A note that starts while the oscillator still sounds (legato, a ringing tail)
  * is left as it was.
  */
 export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): void {
@@ -55,7 +55,9 @@ export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: n
     const early = silentFrom(source, start, synth.context, 2);
     if (early === null) return;
     const ahead = start - RENDER_BLOCK / synth.context.sampleRate;
-    synth.oscillator.frequency.setValueAtTime(synth.toFrequency(note) * synth.octaves, early);
+    // (At 0 Hz until the hit, where Tone sets the drop's pitch: the wave waits at its start and
+    // begins there, as one started at the hit would, so the envelope opening onto it can't click)
+    synth.oscillator.frequency.setValueAtTime(early < ahead ? 0 : synth.toFrequency(note) * synth.octaves, early);
     // (Too close to now for two blocks: the pitch is still set early, the drop left to start late)
     if (early < ahead) synth.oscillator.start(ahead);
     return;

@@ -86,6 +86,13 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
   const silenceAtStop = (v: NativeVoice) => {
     if (Number.isFinite(v.stopAt)) v.amp.gain.setValueAtTime(0, v.stopAt);
   };
+  // A voice still to come never starts: its amp (at 0 until the note: some oscillators start a
+  // render block early, see createOscAhead) stays at 0, so not one frame of it opens before the stop
+  const callOff = (v: NativeVoice, now: number) => {
+    v.stopAt = v.start;
+    v.amp.gain.cancelScheduledValues(now);
+    v.amp.gain.setValueAtTime(0, now);
+  };
   return {
     add(v: NativeVoice): void {
       voices.add(v);
@@ -111,7 +118,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       for (const v of voices) {
         if (v.stopAt <= now) continue;
         if (v.start >= now) {
-          v.stopAt = v.start;
+          callOff(v, now);
         } else {
           // Hold the level it has reached (cancelling would undo a swell in progress: a jump)
           const gain = v.amp.gain;
@@ -131,7 +138,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
     callOffComing(now: number): void {
       for (const v of voices) {
         if (v.start < now || v.stopAt <= now) continue;
-        v.stopAt = v.start;
+        callOff(v, now);
         v.sources.forEach((s) => s.stop(v.stopAt));
       }
     },
@@ -142,7 +149,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
     release(v: NativeVoice, at: number, seconds: number): void {
       if (!voices.has(v) || v.stopAt <= at) return;
       if (v.start >= at) {
-        v.stopAt = v.start;
+        callOff(v, at);
       } else {
         const gain = v.amp.gain;
         if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(at);
@@ -253,12 +260,15 @@ export const RENDER_BLOCK = 128;
  * 808's punch). Chrome works out the first render block of a starting oscillator from the pitch at
  * that block's start, so a drop that begins with the oscillator ran late by however far into the
  * block the note landed: each hit came out a little different, and the export differed from what
- * was heard. This oscillator starts one block early instead (no earlier than now) and holds
- * `frequency` until `at`, so the drop begins on its own frame wherever the note lands. Whatever it
+ * was heard. This oscillator starts one block early instead (no earlier than now) at 0 Hz
+ * (waiting at the start of its wave) and takes `frequency` at `at`, so the drop begins on its own frame wherever the note lands. Whatever it
  * feeds must be silent until `at`.
  */
 export function createOscAhead(raw: BaseAudioContext, type: OscillatorType | PeriodicWave, frequency: number, at: number, detune = 0): OscillatorNode {
-  const osc = createOsc(raw, type, frequency, Math.max(raw.currentTime, at - RENDER_BLOCK / raw.sampleRate), detune);
+  // At 0 Hz until the note, the wave waits at its start (phase 0) and begins there, as one started
+  // at the note would: started at its own pitch it would be part way round its cycle by then, and
+  // the amp opening onto it would click
+  const osc = createOsc(raw, type, 0, Math.max(raw.currentTime, at - RENDER_BLOCK / raw.sampleRate), detune);
   // (The drop the caller sets runs from here, not from the early start)
   osc.frequency.setValueAtTime(frequency, at);
   return osc;
