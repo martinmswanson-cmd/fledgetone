@@ -9,9 +9,11 @@ import type { Clip, InstrumentKey, LauncherSlot, Track } from './timelineTypes';
  * types a name of their own. A marked name gets a plain one: an audio clip "Audio", a clip of
  * notes "Pattern", a Drum Rack pad "Pad 1"..., a Multi Sampler zone "Sound 1"..., the Slicer's
  * sound "Sound", a track by its instrument ("Kit", "Slices", "Audio"...). The Sampler's sound is
- * always "Sound" (its name is always its file's). Songs saved before the mark existed are checked
- * against the sounds' file names instead (the nameFromFile function). A name the person typed ("Kick") is
- * kept. For a link, each sound's id (a hash of the file's bytes) is swapped for a plain one too.
+ * always "Sound" (its name is always its file's). A song saved since the mark carries `fileMarks`
+ * and is judged by its marks alone. Songs saved before it are checked against the sounds' file
+ * names and the app's folder names instead (the nameFromFile function), and get their marks and
+ * `fileMarks` once every sound's file name is known (withFileMarks). A name the person typed
+ * ("Kick") is kept. For a link, each sound's id (a hash of the file's bytes) is swapped for a plain one too.
  * Nothing else changes, and a song with none of these comes back as it was. No audio or store
  * here, so Node can unit-test it.
  */
@@ -22,6 +24,26 @@ export const SOUND_NAME = 'Sound';
 /** The mark on a name the app made from a file's or folder's name. */
 export interface FileMade {
   nameFromFile?: true;
+}
+
+/**
+ * What a song saved since every name made from a file is marked says (a project's `fileMarks`):
+ * its marks alone tell which names go. A song without it is from before, and is checked against
+ * its sounds' file names and the app's folder names too.
+ */
+export const FILE_MARKS = 1;
+
+/** A sound's file name, where it's known. */
+export type FileNameOf = (soundId: string) => string | undefined;
+
+/**
+ * Each sound's file name as a song going out knows it: `known`'s (the sound library's) or the
+ * song's own embedded sounds' (a saved file carries them). The one way a share link, the web
+ * runtime kit and the game kit ask.
+ */
+export function songFileNames(sounds: ReadonlyArray<{ id: string; name: string }> | undefined, known?: FileNameOf): FileNameOf {
+  const embedded = new Map((sounds ?? []).map((s) => [s.id, s.name]));
+  return (id) => known?.(id) ?? embedded.get(id);
 }
 
 /** The mark for a name made from a file or folder (`made`), or none: spread it into the item. */
@@ -92,6 +114,8 @@ const TYPED = new Set(
   ].map((w) => w.toLowerCase())
 );
 const peopleType = (name: string) => TYPED.has(name.replace(/ \d+$/, '').trim().toLowerCase());
+/** The app's own name for a recording from the mic (the studio's, Pocket's): not a file of the person's. */
+const MIC_TAKE = /^(?:Mic|Vocal) take \d+\.wav$/;
 
 /**
  * Whether `name` is what the app calls a sound loaded from `file` (or a cut of it): the file name
@@ -126,10 +150,25 @@ const CUTS = [32, 40, 60];
 const clipSounds = (a: NonNullable<Clip['audio']>): string[] =>
   [a.soundId, a.reversedFrom, a.shiftedFrom, a.tunedFrom, a.mangled?.from, a.mangled?.was?.soundId].filter((id): id is string => !!id);
 
+/** Every sound a song's names may have come from: the Slicer's, the pads', the zones', the audio clips' (and the sounds they were edited from). */
+function namingSounds(song: { tracks: Track[]; clips: Clip[] }): string[] {
+  const ids = new Set<string>();
+  const add = (id: string | undefined) => id !== undefined && ids.add(id);
+  for (const t of song.tracks) {
+    add(t.slicer?.soundId);
+    t.rack?.pads.forEach((p) => add(p.soundId));
+    t.multi?.zones.forEach((z) => add(z.soundId));
+    t.slots?.forEach((s) => s.clip.audio && clipSounds(s.clip.audio).forEach(add));
+  }
+  for (const c of song.clips) if (c.audio) clipSounds(c.audio).forEach(add);
+  return [...ids];
+}
+
 /**
  * `song` without its sounds' file names, or its files' and folders' names. Marked names are
  * replaced (a track's, a clip's, a pad's or zone's, a plugin's and its user table's, on every
- * track). For an unmarked one (a song saved before the mark), `fileNameOf` gives a sound's file
+ * track). A song with `fileMarks` is judged by those marks alone. For an unmarked one (a song
+ * saved before the mark), `fileNameOf` gives a sound's file
  * name when it's known: a pad, zone, Slicer sound or audio clip still named after its file (or
  * the file its sound was edited from) is renamed, and so is a name made from one of those or
  * from a marked name ("X chops", "X stutter", "X 1 (variation)", "X harmony", "X (reversed)",
@@ -137,8 +176,10 @@ const clipSounds = (a: NonNullable<Clip['audio']>): string[] =>
  * kit", "X one-shots", "X loops", or one whose sounds are all named after their files) is taken
  * for one, unless it's a name people type ("Drums", "My kit").
  */
-export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[] }>(song: T, fileNameOf: (soundId: string) => string | undefined = () => undefined): T {
-  const fileOf = (id: string | undefined) => (id === undefined ? undefined : fileNameOf(id));
+export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number }>(song: T, fileNameOf: FileNameOf = () => undefined): T {
+  // (A song saved since the marks: its names are judged by them alone)
+  const old = !song.fileMarks;
+  const fileOf = (id: string | undefined) => (id === undefined || !old ? undefined : fileNameOf(id));
   const madeFrom = (name: string, soundId: string | undefined) => {
     const file = fileOf(soundId);
     // (A recorded producer tag is the app's "Producer tag", kept as "Producer tag (tag).wav")
@@ -146,38 +187,33 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[] }>(s
   };
   // Every file name the song's sounds have, for a name made from one ("X chops")
   const files = new Set<string>();
-  const addFile = (id: string | undefined) => {
+  for (const id of namingSounds(song)) {
     const file = fileOf(id);
     if (file !== undefined) files.add(file);
-  };
-  for (const t of song.tracks) {
-    addFile(t.slicer?.soundId);
-    t.rack?.pads.forEach((p) => addFile(p.soundId));
-    t.multi?.zones.forEach((z) => addFile(z.soundId));
-    t.slots?.forEach((s) => s.clip.audio && clipSounds(s.clip.audio).forEach(addFile));
   }
-  for (const c of song.clips) if (c.audio) clipSounds(c.audio).forEach(addFile);
   const own = (x: FileMade & { name: string; soundId?: string }) => !!x.nameFromFile || madeFrom(x.name, x.soundId);
 
   // A song from before the mark: a Drum Rack, Multi Sampler or Audio track the app named after a
   // folder ("X kit", "X one-shots", "X loops", or a set of sounds all named after their files),
   // unless it's a name people type ("Drums", "My kit"). A track whose sounds or clips carry a mark
-  // was made since: its name has none because the person typed it.
+  // was made since: its name has none because the person typed it. A kit named so needs sounds
+  // from files on its pads, and a set of loops clips from files (not only takes from the mic).
   const markedClips = new Set(song.clips.filter((c) => c.nameFromFile).map((c) => c.trackId));
   const sinceMark = (t: Track) =>
     markedClips.has(t.id) || !!t.rack?.pads.some((p) => p.nameFromFile) || !!t.multi?.zones.some((z) => z.nameFromFile) || !!t.slots?.some((x) => x.clip.nameFromFile);
+  const fromAFile = (a: Clip['audio']) => !!a && !MIC_TAKE.test(fileOf(a.soundId) ?? '');
   const fromFolder = (t: Track): boolean => {
-    if (t.nameFromFile || peopleType(t.name) || sinceMark(t)) return false;
+    if (!old || t.nameFromFile || peopleType(t.name) || sinceMark(t)) return false;
     if (t.instrumentKey === 'drumRack') {
-      const m = FOLDER_KIT.exec(t.name);
-      if (m && !peopleType(m[1])) return true;
       const sounds = t.rack?.pads.filter((p) => p.soundId) ?? [];
-      return sounds.length > 0 && sounds.every(own);
+      if (!sounds.length) return false;
+      const m = FOLDER_KIT.exec(t.name);
+      return (!!m && !peopleType(m[1])) || sounds.every(own);
     }
     if (t.instrumentKey === 'multiSampler') return !!t.multi?.zones.length && t.multi.zones.every(own);
     if (t.instrumentKey === 'audio') {
       const m = FOLDER_LOOPS.exec(t.name);
-      return !!m && !peopleType(m[1]);
+      return !!m && !peopleType(m[1]) && (song.clips.some((c) => c.trackId === t.id && fromAFile(c.audio)) || !!t.slots?.some((s) => fromAFile(s.clip.audio)));
     }
     return false;
   };
@@ -200,9 +236,11 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[] }>(s
     }
   }
   song.clips.forEach(addMade);
+  // (A song from before the marks: a name that is one of its sounds' file names, or the file a sound was made from)
+  const namedAfterFile = (name: string) => [...files].some((f) => nameFromFile(name, f) || (name !== 'Producer tag' && nameFromFile(name, sourceFile(f))));
   const isMade = (name: string): boolean =>
     made.has(name) ||
-    [...files].some((f) => nameFromFile(name, f) || (name !== 'Producer tag' && nameFromFile(name, sourceFile(f)))) ||
+    namedAfterFile(name) ||
     (CUTS.includes(name.length) && [...made, ...[...files].map(sourceFile)].some((m) => m.length > name.length && m.startsWith(name)));
   const fromAny = (name: string, depth = 0): boolean => {
     if (isMade(name)) return true;
@@ -225,7 +263,8 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[] }>(s
     return neutralPlugin(p, goes, name, !!table && (!!table.nameFromFile || trackGoes || pluginNamed(table.name)));
   };
   const tracks = song.tracks.map((t): Track => {
-    const name = !!t.nameFromFile || folderTracks.has(t) || derived(t.name);
+    // (a track named after a file dropped on it, in a song from before the marks, too)
+    const name = !!t.nameFromFile || folderTracks.has(t) || derived(t.name) || namedAfterFile(t.name);
     const slicer = !!t.slicer && own(t.slicer);
     const pads = !!t.rack?.pads.some(own);
     const zones = !!t.multi?.zones.some(own);
@@ -245,6 +284,53 @@ export function withoutFileNames<T extends { tracks: Track[]; clips: Clip[] }>(s
     };
   });
   return { ...song, tracks, clips: song.clips.some(clipFromFile) ? song.clips.map(renamed) : song.clips };
+}
+
+/**
+ * Each track's name as a list of tracks that leaves the machine has it (the game kit's manifest,
+ * an engine package's): as withoutFileNames names it, with the sounds' file names (`fileNameOf`,
+ * as a share link asks) for a song from before the marks.
+ */
+export function sharedTrackNames(song: { tracks: Track[]; clips: Clip[]; fileMarks?: number }, fileNameOf: FileNameOf): (t: Track) => string {
+  const names = new Map(withoutFileNames({ tracks: song.tracks, clips: song.clips, fileMarks: song.fileMarks }, fileNameOf).tracks.map((t) => [t.id, t.name]));
+  return (t) => names.get(t.id) ?? sharedTrackName(t);
+}
+
+/**
+ * `song` (saved before the marks, without `fileMarks`) with every name made from a file or folder
+ * marked, as the old-song check above finds them, and `fileMarks` set: from then on its marks
+ * alone say which names go, and a name the person types after ("My drum kit") is theirs. Only
+ * when every sound's file name is known (`fileNameOf`, or the song's embedded sounds): until
+ * then it's left as it is, still an old song, still checked the old way. A song with the marks
+ * already, or none to check, comes back as it was (or with `fileMarks`).
+ */
+export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number; sounds?: ReadonlyArray<{ id: string; name: string }> }>(song: T, fileNameOf?: FileNameOf): T {
+  if (song.fileMarks) return song;
+  const nameOf = songFileNames(song.sounds, fileNameOf);
+  if (namingSounds(song).some((id) => nameOf(id) === undefined)) return song;
+  const out = withoutFileNames(song, nameOf);
+  const mark = <X extends FileMade & { name: string }>(was: X, now: { name: string } | undefined): X => (now && now.name !== was.name && !was.nameFromFile ? { ...was, nameFromFile: true } : was);
+  const markPlugin = (p: Plugin, now: Plugin | undefined): Plugin => {
+    const marked = mark(p, now);
+    const table = tableOf(p);
+    const newTable = now && tableOf(now);
+    return table && newTable && newTable.name !== table.name && !table.nameFromFile ? { ...marked, state: { ...(p.state as object), table: { ...table, nameFromFile: true } } } : marked;
+  };
+  const tracks = song.tracks.map((t, i): Track => {
+    const o = out.tracks[i];
+    if (o === t) return t;
+    return {
+      ...mark(t, o),
+      ...(t.plugin ? { plugin: markPlugin(t.plugin, o.plugin) } : {}),
+      ...(t.pluginFx ? { pluginFx: t.pluginFx.map((p, j) => markPlugin(p, o.pluginFx?.[j])) } : {}),
+      ...(t.slicer ? { slicer: mark(t.slicer, o.slicer) } : {}),
+      ...(t.rack ? { rack: { ...t.rack, pads: t.rack.pads.map((p, j) => mark(p, o.rack?.pads[j])) } } : {}),
+      ...(t.multi ? { multi: { ...t.multi, zones: t.multi.zones.map((z, j) => mark(z, o.multi?.zones[j])) } } : {}),
+      ...(t.slots ? { slots: t.slots.map((s, j) => ({ ...s, clip: mark(s.clip, o.slots?.[j]?.clip) })) } : {}),
+    };
+  });
+  const clips = out.clips === song.clips ? song.clips : song.clips.map((c, i) => mark(c, out.clips[i]));
+  return { ...song, tracks, clips, fileMarks: FILE_MARKS };
 }
 
 /**

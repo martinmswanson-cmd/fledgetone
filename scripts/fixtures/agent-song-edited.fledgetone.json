@@ -4,6 +4,7 @@
   "modWheel": "dynamics",
   "name": "Agent test song",
   "songId": "agent-test-song",
+  "fileMarks": 1,
   "bpm": 70,
   "swing": 0,
   "loopRegion": {

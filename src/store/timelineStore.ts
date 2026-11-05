@@ -108,7 +108,7 @@ import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
-import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
+import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileName, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
@@ -127,7 +127,7 @@ import {
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
-import { fileMade, typedName, withName, type FileMade } from './ownFiles';
+import { FILE_MARKS, fileMade, typedName, withFileMarks, withName, type FileMade } from './ownFiles';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
@@ -846,6 +846,12 @@ interface TimelineState {
   projectName: string;
   /** Which song is open (the same through renames: its kept versions are found by it, versions.ts) */
   songId: string;
+  /**
+   * Whether every name made from a file in the song is marked (ProjectData.fileMarks): a new song's
+   * are, and an older one's once its sounds' file names are known when it opens (withFileMarks).
+   * Until then it's checked against them the old way wherever it goes.
+   */
+  fileMarks: boolean;
   setProjectName: (name: string) => void;
   /** Replace the arrangement with a blank one or a starter (see starters.ts). Clears undo history. */
   newProject: (template: 'blank' | StarterId) => void;
@@ -1716,6 +1722,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     viewJumps: 0,
     projectName: 'Untitled',
     songId: newSongId(),
+    fileMarks: true,
     selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
     isInspectorOpen: false,
     masterReverbDecay: 2.4,
@@ -3480,7 +3487,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const { fps, dropFrame } = get();
       // A new song plays expressively (older projects opened later keep their sound)
       // ...and keeps its lows in the middle (Mono below 120 Hz), as a club or a phone needs
-      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: { ...(p.master ?? defaultMasterSettings()), monoLow: true } });
+      // (and every name made from a file in it is marked as it's made: see ownFiles.ts)
+      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: { ...(p.master ?? defaultMasterSettings()), monoLow: true } });
       get().loadProject(expressive(
         isStarterId(template)
           ? { ...createStarter(template), fps, dropFrame }
@@ -3498,7 +3506,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       ));
     },
 
-    loadProject: (p: ProjectSnapshot) => {
+    loadProject: (opened: ProjectSnapshot) => {
+      // A song from before the marks gets them now, if its sounds' file names are known (the file's
+      // embedded sounds', the library's): see withFileMarks. Otherwise it stays an old song.
+      const p = withFileMarks(opened, soundFileName);
       // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
       // (with the plugins' latest settings: they otherwise reach the tracks every few seconds)
       captureWamStatesNow();
@@ -3545,6 +3556,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       set({
         projectName: p.name,
         songId,
+        fileMarks: !!p.fileMarks,
         bpm: p.bpm,
         tempoPoints: p.tempoPoints ?? [],
         meter: p.meter ?? FOUR_FOUR,
@@ -3855,6 +3867,7 @@ export function currentProject(): ProjectSnapshot {
   return {
     name: s.projectName,
     songId: s.songId,
+    ...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),
     bpm: s.bpm,
     tempoPoints: s.tempoPoints,
     meter: s.meter,

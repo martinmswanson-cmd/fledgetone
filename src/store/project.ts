@@ -30,6 +30,7 @@ import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
 import { cutToBytes, noControls, notReserved, oneLineName, textName } from './kitNames';
 import { capSong, overWords, type OverCaps } from './songCaps';
+import { FILE_MARKS, withFileMarks } from './ownFiles';
 
 /**
  * Project file format (.fledgetone.json) and browser autosave.
@@ -118,12 +119,20 @@ export interface ProjectData {
    * gets one when it opens). Its kept versions in this browser are found by it (versions.ts).
    */
   songId?: string;
+  /**
+   * 1 in a song whose every name made from a file's or a folder's name carries `nameFromFile`
+   * (see ownFiles.ts): its marks alone say which names go when it leaves the machine. Absent in
+   * older files, which are checked against their sounds' file names too.
+   */
+  fileMarks?: number;
 }
 
 export interface ProjectSnapshot {
   name: string;
   /** Which song this is (older projects don't say: they get one when they open) */
   songId?: string;
+  /** Every name made from a file is marked (see ProjectData.fileMarks): absent in a song from before */
+  fileMarks?: number;
   bpm: number;
   swing: number;
   loopRegion: LoopRegion;
@@ -198,13 +207,16 @@ function masterForFile({ level, ...rest }: MasterSettings): Omit<MasterSettings,
   return level ? { ...rest, level } : rest;
 }
 
-export function serializeProject(p: ProjectSnapshot): ProjectData {
+export function serializeProject(song: ProjectSnapshot): ProjectData {
+  // A song from before the marks gets them here when its sounds go with it (Save embeds them)
+  const p = withFileMarks(song);
   return {
     format: PROJECT_FORMAT,
     version: PROJECT_VERSION,
     modWheel: 'dynamics',
     name: p.name,
     ...(p.songId ? { songId: p.songId } : {}),
+    ...(p.fileMarks ? { fileMarks: FILE_MARKS } : {}),
     bpm: p.bpm,
     swing: p.swing,
     loopRegion: p.loopRegion,
@@ -610,6 +622,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     // (and no longer than the app lets you type: a name thousands of characters long could push a question's warning off screen)
     name: isStr(raw.name) && oneLineName(raw.name).trim() ? textName(oneLineName(raw.name)) : 'Untitled',
     ...(isStr(raw.songId) && /^[\w-]{1,64}$/.test(raw.songId) ? { songId: raw.songId } : {}),
+    ...(isNum(raw.fileMarks) && raw.fileMarks >= FILE_MARKS ? { fileMarks: FILE_MARKS } : {}),
     bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,
     // In order and on the timeline (an Out before the In would hold playback at the In)
