@@ -9,10 +9,15 @@ import { liveTrackSpectrum } from '../../audio/liveTracks';
 import { liveMix } from '../../audio/engine';
 import { InsertPanel } from './InsertFx';
 import { UndoableRange } from '../UndoableRange';
+import { roundedKeyStep } from '../keyboard';
 
 
 /** A band's frequency from the slider: whole hertz up high, tenths down low, where a step of the slider is under 1 Hz (so the arrow keys move it). */
 const fineHz = (hz: number): number => (hz < 1000 ? Math.round(hz * 10) / 10 : Math.round(hz));
+/** The Q slider: the natural log of Q, kept in hundredths */
+const qOf = (v: number) => Math.round(Math.exp(v) * 100) / 100;
+/** (Under a Q of about 0.7 the slider's step is less than a hundredth: an arrow key goes to the next one) */
+const qKeyStep = (v: number, dir: 1 | -1) => roundedKeyStep(v, dir, 0.01, qOf, Math.log, 0.01);
 /**
  * The parametric EQ, drawn: the curve the bands make (exactly what the filters do), the track's
  * sound behind it while it plays, and a dot per band to drag. Drag a dot sideways for its
@@ -133,12 +138,19 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
     const x0 = xOf(b0.freq);
     const y0 = hasGain(b0.type) ? yOf(b0.gain) : 0;
     let committed = false;
+    let moved = false;
     const move = (ev: PointerEvent) => {
       const p = local(ev);
+      const dx = p.x - start.x;
+      const dy = p.y - start.y;
+      // A click (a wobble under 3 px) only selects the band: its frequency, gain and on stay as they are
+      if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      moved = true;
       const fine = ev.shiftKey ? 0.2 : 1;
-      const freq = Math.round(hzOf(x0 + (p.x - start.x) * fine));
+      // (An axis the pointer is back at its start on keeps its value, unrounded)
+      const freq = dx === 0 ? b0.freq : Math.round(hzOf(x0 + dx * fine));
       const patch: Partial<PeqBand> = { freq, on: true };
-      if (hasGain(b0.type)) patch.gain = Math.round(dbOf(y0 + (p.y - start.y) * fine) * 10) / 10;
+      if (hasGain(b0.type)) patch.gain = dy === 0 ? b0.gain : Math.round(dbOf(y0 + dy * fine) * 10) / 10;
       const now = useTimelineStore.getState().tracks.find((t) => t.id === track.id)?.fx.peq.bands ?? bands;
       const was = now[i];
       if (!was || (was.freq === patch.freq && was.on && (patch.gain === undefined || was.gain === patch.gain))) return;
@@ -279,7 +291,7 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
           {hasQ(b.type) && (
             <label className="flex items-center gap-1">
               Q
-              <UndoableRange min={Math.log(PEQ_Q_MIN)} max={Math.log(PEQ_Q_MAX)} step={0.01} value={Math.log(b.q)} onValue={(v) => update(sel, { q: Math.round(Math.exp(v) * 100) / 100 })} className={big ? 'w-28' : 'w-14'} aria-label="Band width (Q)" />
+              <UndoableRange min={Math.log(PEQ_Q_MIN)} max={Math.log(PEQ_Q_MAX)} step={0.01} value={Math.log(b.q)} onValue={(v) => qOf(v) !== b.q && update(sel, { q: qOf(v) })} keyStep={qKeyStep} className={big ? 'w-28' : 'w-14'} aria-label="Band width (Q)" />
               <span className="w-8 text-forge-text tabular-nums">{b.q.toFixed(2)}</span>
             </label>
           )}

@@ -1,7 +1,8 @@
 /**
  * Shared rules for the app's global keyboard shortcuts (timeline, piano roll, guide).
  * Shortcuts must never steal keys from something the user is typing into, but a slider or menu
- * that merely has focus shouldn't switch them off either.
+ * that merely has focus shouldn't switch them off either. Also the arrow-key step of a slider whose
+ * value is rounded before it's kept (roundedKeyStep).
  */
 
 /** <input> types that take typed text. An input without a type (or an unknown one) is "text". */
@@ -68,4 +69,17 @@ export function blurMenusAfterChange(): () => void {
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('change', onChange, true);
   };
+}
+
+/**
+ * An arrow key's step for a slider whose position `x` gives a value kept rounded (`round`: a log
+ * scale over whole Hz, say): the slider's own `step` that way, or, when that rounds back to the
+ * value it has (fine steps at the low end of a log scale), the position of the next rounded value,
+ * `unit` on (`toSlider`), so a key press always moves it. Gives the new position.
+ */
+export function roundedKeyStep(x: number, dir: 1 | -1, step: number, round: (x: number) => number, toSlider: (v: number) => number, unit: number): number {
+  const now = round(x);
+  if (round(x + dir * step) !== now) return x + dir * step;
+  const k = 1 / unit;
+  return toSlider(Math.round((now + dir * unit) * k) / k);
 }

@@ -56,13 +56,18 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
 
   /**
    * Follow the pointer until it's let go. `move` gives the change to make, or null when the pointer
-   * hasn't moved it anywhere new; the undo step is made with the first change (a click changes nothing).
+   * hasn't moved it anywhere new; the undo step is made with the first change. A click (a wobble
+   * under 3 px) changes nothing: the marker or point isn't snapped to where the pointer is.
    */
   const drag = (e: React.PointerEvent, move: (ev: PointerEvent) => (() => void) | null, checkpoint = true) => {
     e.preventDefault();
     e.stopPropagation();
     let recorded = !checkpoint;
+    let moved = false;
+    const { clientX, clientY } = e;
     const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - clientX) < 3 && Math.abs(ev.clientY - clientY) < 3) return;
+      moved = true;
       const change = move(ev);
       if (!change) return;
       if (!recorded) {

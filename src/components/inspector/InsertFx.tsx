@@ -53,9 +53,11 @@ interface SliderProps {
   automated?: React.ReactNode;
   /** Can't be moved (not just dimmed): for a panel whose Off has no settings, where a move would switch it on */
   locked?: boolean;
+  /** An arrow key's step, for a value rounded before it's kept (see UndoableRange) */
+  keyStep?: (value: number, dir: 1 | -1) => number;
 }
 
-export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated, locked }) => (
+export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated, locked, keyStep }) => (
   <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} title={automated ? AUTOMATED_TIP : undefined}>
     <span className="w-16 text-forge-muted uppercase">{label}</span>
     <UndoableRange
@@ -64,6 +66,7 @@ export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, 
       step={step}
       value={value}
       onValue={onChange}
+      keyStep={keyStep}
       resetValue={reset}
       disabled={!!automated || !!locked}
       className="flex-1 min-w-0 cursor-pointer disabled:cursor-default h-1.5"

@@ -158,6 +158,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
           <input
             value={pad.name}
             onFocus={() => s.beginEdit()}
+            onBlur={() => s.endEdit()}
             onChange={(e) => setRack({ pads: rack.pads.map((p, j) => (j === selected ? typedName(p, e.target.value.slice(0, 40)) : p)) }, false)}
             className="flex-1 min-w-0 h-6 bg-forge-panel border border-forge-border rounded px-1.5 text-xs text-forge-text"
             aria-label="Pad name"
