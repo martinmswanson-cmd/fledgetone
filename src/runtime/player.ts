@@ -26,6 +26,7 @@ import { AdaptiveMusic } from '../gameKit/adaptive-music.js';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
 import { preloadFamily } from '../audio/plugins/builtinHost';
 import { songPlugins } from '../audio/runtimePlugins';
+import { songFileNames } from '../store/ownFiles';
 
 export { AdaptiveMusic };
 
@@ -60,6 +61,9 @@ function songOf(p: ProjectSnapshot): GameKitSong {
     costumes: p.costumes ?? [],
     gameParams: p.gameParams ?? [],
     stateOptions: p.stateOptions ?? {},
+    // (The sounds by the names the song carries, as a share link asks)
+    fileNameOf: songFileNames(p.sounds),
+    ...(p.fileMarks ? { fileMarks: p.fileMarks } : {}),
   };
 }
 

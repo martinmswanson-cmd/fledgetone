@@ -1,5 +1,7 @@
 import { masterFxOf, useTimelineStore } from '../../store/timelineStore';
 import type { GameKitSong } from '../../audio/gameKit';
+import { soundFileName } from '../../audio/soundLibrary';
+import { FILE_MARKS } from '../../store/ownFiles';
 
 /** The song as the game kit needs it, from the store now. */
 export function gameKitSong(): GameKitSong {
@@ -24,6 +26,9 @@ export function gameKitSong(): GameKitSong {
     costumes: s.costumes,
     gameParams: s.gameParams,
     stateOptions: s.stateOptions,
+    // (the sounds' file names, as a share link asks: the store's song has no embedded sounds of its own)
+    fileNameOf: soundFileName,
+    ...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),
   };
 }
 

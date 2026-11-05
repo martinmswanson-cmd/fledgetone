@@ -6,7 +6,7 @@ import { defaultTrackFx } from './timelineTypes';
 import type { Track, WamPlugin } from './timelineTypes';
 import { linkUserTable, normalizeUserTable } from '../audio/plugins/userTable';
 import { referencedSoundIds } from './audioClips';
-import { withNeutralSoundIds, withoutFileNames } from './ownFiles';
+import { songFileNames, withFileMarks, withNeutralSoundIds, withoutFileNames } from './ownFiles';
 
 /**
  * A song inside a link: the project (without its sound files), packed tight, deflated and written
@@ -342,8 +342,9 @@ export async function songLink(project: ProjectSnapshot, base: string, fileNameO
   // The sounds' file names stay out too (the Sampler's, the Slicer's, the pads' and zones'), and
   // each sound's id, a hash of the file's bytes, is one that says nothing about the file (the
   // sounds don't come with the link, as the Share dialog says: whoever opens it sees them missing)
-  const embedded = new Map((project.sounds ?? []).map((s) => [s.id, s.name]));
-  const own = withoutFileNames({ ...project, masterFx, tracks }, (id) => fileNameOf?.(id) ?? embedded.get(id));
+  // (A song from before the marks gets them first when its sounds' names are known: the link then says so)
+  const nameOf = songFileNames(project.sounds, fileNameOf);
+  const own = withoutFileNames(withFileMarks({ ...project, masterFx, tracks }, nameOf), nameOf);
   const compact = shortIds(own);
   // (The receiver's copy is a song of their own: it gets its own id when it opens)
   // The reference video stays out too: it can't travel in a link, and its file name, size and

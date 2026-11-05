@@ -20,6 +20,12 @@ register(
 const { isShareHash, projectFromHash, songLink } = await import('../src/store/shareLink.ts');
 const { parseProject, PROJECT_FORMAT, PROJECT_VERSION, serializeProject } = await import('../src/store/project.ts');
 
+/** `song` as a file from before every name made from a file was marked has it (no `fileMarks`: checked against the sounds' file names). */
+const beforeMarks = (song) => {
+  const { fileMarks: _marked, ...data } = serializeProject(song);
+  return data;
+};
+
 const note = (id, n, at, duration = '8n', velocity = 0.8, expr) => ({ id, note: n, startOffset: at, duration, velocity, ...(expr ? { expr } : {}) });
 
 /** A small song touching what a link carries: effects, sends, notes (a triplet, one before the clip, one bent), a stinger, a costume and a transition pointing at ids. */
@@ -184,7 +190,7 @@ test("a link names no sound file and carries no sound's content hash: the sounds
       multi: { zones: [{ soundId: ZONE, name: 'my piano C4', root: 60, lo: 0, hi: 63, velLo: 1, velHi: 127 }, { soundId: ZONE, name: 'Soft piano', root: 72, lo: 64, hi: 127, velLo: 1, velHi: 127 }] },
     },
   ];
-  const song = parseProject({ ...serializeProject(SONG), tracks });
+  const song = parseProject({ ...beforeMarks(SONG), tracks });
   const link = await songLink(song, 'https://example.com/app', (id) => files[id]);
   const back = await projectFromHash(link.slice(link.indexOf('#')));
   const json = JSON.stringify(serializeProject(back));
@@ -213,7 +219,7 @@ test('an audio clip still named after its file is "Audio" in a link; one the per
     { id: 'c1', trackId: SONG.tracks[0].id, name: 'Voice memo 2026-10-02', startBar: 1, lengthBars: 1, notes: [], audio },
     { id: 'c2', trackId: SONG.tracks[0].id, name: 'Chorus vocal', startBar: 2, lengthBars: 1, notes: [], audio },
   ];
-  const song = parseProject({ ...serializeProject(SONG), tracks: [{ ...SONG.tracks[0], instrumentKey: 'audio' }], clips });
+  const song = parseProject({ ...beforeMarks(SONG), tracks: [{ ...SONG.tracks[0], instrumentKey: 'audio' }], clips });
   const back = await projectFromHash(await songLink(song, '', (id) => (id === HASH ? 'Voice memo 2026-10-02.m4a' : undefined)));
   assert.deepEqual(back.clips.map((c) => c.name), ['Audio', 'Chorus vocal']);
   assert.ok(back.clips.every((c) => c.audio && c.audio.soundId !== HASH));
@@ -304,7 +310,7 @@ test('a link carries none of the names the app made from files and folders, mark
 test("a song saved before the mark: edited clips and Stutter clips named after a file are found by the sounds' file names", async () => {
   const lib = { hOrig: 'Divorce lawyer call 2026-10-02.m4a', hRev: 'Divorce lawyer call 2026-10-02 (reversed).wav', hShift: 'Divorce lawyer call 2026-10-02 (+3 st).wav', hMang: 'Divorce lawyer call 2026-10-02 (mangled).wav', hSl: 'Therapy session.wav' };
   const song = parseProject({
-    ...serializeProject(SONG),
+    ...beforeMarks(SONG),
     tracks: [T('ta', 'Audio 1', 'audio'), T('ts', 'Slicer', 'slicer', { slicer: { soundId: 'hSl', name: 'Therapy session.wav', start: 0, end: 1, slices: [0, 0.5] } }), T('tc', 'Divorce lawyer call 2026-10-02 chops', 'multiSampler')],
     clips: [
       { id: 'c1', trackId: 'ta', name: 'Divorce lawyer call 2026-10-02', startBar: 2, lengthBars: 1, notes: [], audio: A('hRev', { reversedFrom: 'hOrig' }) },
@@ -376,7 +382,7 @@ test('each flow that names something after a file or folder marks it, and a type
   // Typed names: a track's and a clip's name fields, and a pad's
   has('src/store/timelineStore.ts', 'typedName(t, trimmed)', 'renameClip: (clipId, name) => set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? typedName(c, name) : c)) })),');
   // The web runtime kit goes through the same renaming as a link
-  has('src/audio/runtimeKit.ts', 'withoutFileNames(project, (id) => fileNames.get(id))');
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)');
 });
 
 test("a link leaves out a wavetable's name made from a clip named after a file, and the synth's, and a melody variation's and a reversed clip's", async () => {

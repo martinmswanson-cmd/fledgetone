@@ -25,7 +25,7 @@ import unityPlayer from '../gameKit/unity/AdaptiveMusic.cs?raw';
 import godotExample from '../gameKit/godot/music_example.gd?raw';
 import unityExample from '../gameKit/unity/AdaptiveMusicExample.cs?raw';
 import { maxOf } from '../support/minMax';
-import { sharedTrackName, withoutFileNames } from '../store/ownFiles';
+import { sharedTrackNames, type FileNameOf } from '../store/ownFiles';
 
 /**
  * The game kit: everything a game needs to play the song the way the Game preview does, in one
@@ -63,6 +63,13 @@ export interface GameKitSong {
   gameParams?: GameParam[];
   /** How each state plays (shuffled pieces, silences), by section marker id */
   stateOptions?: Record<string, StateOptions>;
+  /**
+   * Each sound's file name where it's known (the sound library's, the song's embedded sounds': see
+   * songFileNames), so a song from before the marks lists no track named after one in the manifest
+   */
+  fileNameOf: FileNameOf;
+  /** Every name made from a file is marked (ProjectSnapshot.fileMarks): absent in a song from before */
+  fileMarks?: number;
 }
 
 /** The stem that holds the tracks without a group: always at full level. */
@@ -178,8 +185,8 @@ export async function buildGameKitParts(
   // group the musician named "Main" from the tracks without one
   const stemFiles = uniqueKitNames(stemGroups.map((g) => g.name)).map(safe);
   // The tracks in each stem, as the manifest lists them: none named after the person's files or folders (see ownFiles.ts)
-  const sharedNames = new Map(withoutFileNames({ tracks: song.tracks, clips: song.clips }).tracks.map((t) => [t.id, t.name]));
-  const listed = (t: Track) => sharedNames.get(t.id) ?? sharedTrackName(t);
+  // (with the sounds' file names, as a share link asks, for a song from before the marks)
+  const listed = sharedTrackNames(song, song.fileNameOf);
   // Every file's name is chosen here, from the names already taken in its folder: a costume's
   // state can't be another state's file ("Boss (Night)"), nor two sounds' variations one file
   const fileName = kitFiles();

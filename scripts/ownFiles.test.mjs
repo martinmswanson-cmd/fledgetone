@@ -343,7 +343,9 @@ test('melody variations and reversed clips named after a marked track or clip ar
   // The same song saved before the mark: the names made from the folder's are found from the track's
   const unmarked = JSON.parse(JSON.stringify(marked), (k, v) => (k === 'nameFromFile' ? undefined : v));
   unmarked.tracks[0].multi = { zones: [{ soundId: 'h2', name: 'C4', root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 };
-  const old = withoutFileNames(unmarked, (id) => ({ h2: 'C4.wav', h1: 'Family photos kit 1 (reversed).wav' })[id]);
+  // (A kit the app named after a folder has the folder's sounds on its pads)
+  unmarked.tracks[2].rack = { pads: [pad('Kick', 'h3')] };
+  const old = withoutFileNames(unmarked, (id) => ({ h2: 'C4.wav', h3: 'Kick.wav', h1: 'Family photos kit 1 (reversed).wav' })[id]);
   assert.deepEqual(old.tracks.map((t) => t.name), ['Sounds', 'Sounds', 'Kit', 'Audio']);
   assert.deepEqual(old.clips.map((c) => c.name), ['Pattern', 'Pattern', 'Pattern', 'Audio']);
   assert.ok(!/Grandpa|Family/.test(JSON.stringify(old)));
@@ -360,7 +362,7 @@ test("a song from before the mark: a sample pack's kits, one-shots, loops and in
     tracks: [
       T('k', 'Smith family photos kit', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1')] } }),
       T('k2', 'Smith family photos kit 2', 'drumRack'),
-      T('o', 'Smith family photos one-shots', 'drumRack'),
+      T('o', 'Smith family photos one-shots', 'drumRack', { rack: { pads: [pad('Kick 01', 'h1')] } }),
       T('l', 'Smith family photos loops', 'audio'),
       T('m', 'JDoe private piano', 'multiSampler', { multi: { zones: [zone('h2', 'C4', 60), zone('h3', 'E4', 64)], attack: 0, release: 0.3 } }),
       // A rack of the folder's sounds named as the folder is (it had "kit" in it)
@@ -405,5 +407,177 @@ test('every flow that makes a name from another carries its mark', () => {
   has('src/store/timelineStore.ts', 'plugin: { id: uid(\'plugin\'), url, name, ...mark,');
   has('src/store/smartActions.ts', 'const named = fileMade(clip.nameFromFile);', '{ name, ...named, startBar: clip.startBar, lengthBars: clip.lengthBars, notes }, fileMade(track.nameFromFile));', 'placeClip(track.id, at, clip.lengthBars, notes, name, named);', 'const id = s.addTrack(instrument, name, named);');
   has('src/store/reverseActions.ts', '...fileMade(only && (sourceTrack ? sourceTrack.nameFromFile : only.nameFromFile)),', '...fileMade(only?.nameFromFile),');
-  has('src/audio/gameKit.ts', 'withoutFileNames({ tracks: song.tracks, clips: song.clips })');
+  // Every flow that sends a song out asks for the sounds' file names (a song from before the marks needs them)
+  has('src/audio/gameKit.ts', 'fileNameOf: FileNameOf;', 'const listed = sharedTrackNames(song, song.fileNameOf);');
+  has('src/components/timeline/gameKitSong.ts', 'fileNameOf: soundFileName,');
+  has('src/runtime/player.ts', 'fileNameOf: songFileNames(p.sounds),');
+  has('src/store/shareLink.ts', 'const nameOf = songFileNames(project.sounds, fileNameOf);', 'withoutFileNames(withFileMarks({ ...project, masterFx, tracks }, nameOf), nameOf)');
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)');
+  for (const path of ['src/components/timeline/ShareDialog.tsx', 'src/pocket/PocketShare.tsx']) has(path, ', soundFileName)');
+  // ...and no call leaves them out
+  const calls = (text) => [...text.matchAll(/withoutFileNames\(/g)].map((m) => {
+    let depth = 0;
+    for (let i = m.index + 'withoutFileNames'.length; i < text.length; i++) {
+      if (text[i] === '(' || text[i] === '{' || text[i] === '[') depth++;
+      if (text[i] === ')' || text[i] === '}' || text[i] === ']') depth--;
+      if (depth === 0) return text.slice(m.index, i + 1);
+    }
+    return '';
+  });
+  for (const path of ['src/audio/gameKit.ts', 'src/audio/runtimeKit.ts', 'src/store/shareLink.ts', 'src/store/ownFiles.ts']) {
+    for (const call of calls(src(path))) {
+      if (call.startsWith('withoutFileNames(song: T')) continue;
+      let depth = 0;
+      const top = [...call.slice('withoutFileNames('.length, -1)].filter((ch) => ((depth += '({['.includes(ch) ? 1 : ')}]'.includes(ch) ? -1 : 0), depth === 0 && ch === ',')).length;
+      assert.ok(top >= 1, `${path}: ${call} has no file names`);
+    }
+  }
+  // The store: a new song is marked, an opened one checked, and both go out saying so
+  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const p = withFileMarks(opened, soundFileName);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
+  has('src/components/timeline/gameKitSong.ts', '...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),');
+});
+
+// ---------- The game kit, and songs saved since the marks ----------
+
+const { sharedTrackNames, withFileMarks, songFileNames, FILE_MARKS } = await import('../src/store/ownFiles.ts');
+
+/** A song from before the mark, as the game kit gets it from the store: no marks, the sounds' names in the library. */
+const zone = (soundId, name, root) => ({ soundId, name, root, lo: 0, hi: 127, velLo: 1, velHi: 127 });
+const BEFORE = {
+  name: 'Song',
+  tracks: [
+    T('b', 'Grandma voicemail (bounce)', 'audio', { stemGroup: 'Voice' }),
+    T('s', 'Grandma voicemail stutter', 'audio', { stemGroup: 'Voice' }),
+    T('v', 'Grandma voicemail 1 (variation)', 'rhodes'),
+    T('m', 'Grandpa keys', 'multiSampler', { multi: { zones: [zone('z1', 'Grandpa keys C4', 60), zone('z2', 'Grandpa keys E4', 64)], attack: 0, release: 0.3 } }),
+    T('r', 'Wedding', 'drumRack', { rack: { pads: [pad('Kick 01', 'p1'), pad('Snare 01', 'p2')] } }),
+    T('l', 'Lead', 'rhodes'),
+  ],
+  clips: [C('c1', 'b', 'Grandma voicemail', { audio: audio('h1') }), C('c2', 'l', 'Lead 1')],
+};
+const BEFORE_FILES = { h1: 'Grandma voicemail.wav', z1: 'Grandpa keys C4.wav', z2: 'Grandpa keys E4.wav', p1: 'Kick 01.wav', p2: 'Snare 01.wav' };
+
+test("the game kit lists a song from before the mark's tracks with the sounds' file names, as a share link names them", () => {
+  const fileNameOf = (id) => BEFORE_FILES[id];
+  // (The game kit's song from the store: the library's names; it has its own `fileNameOf`)
+  const song = { ...BEFORE, fileNameOf };
+  const listed = sharedTrackNames(song, song.fileNameOf);
+  const names = song.tracks.map(listed);
+  assert.deepEqual(names, ['Audio', 'Audio', 'Track', 'Sounds', 'Kit', 'Lead']);
+  // The same names as the link's
+  assert.deepEqual(names, withoutFileNames(BEFORE, fileNameOf).tracks.map((t) => t.name));
+  assert.ok(!/Grandma|Grandpa|Wedding/.test(JSON.stringify(names)));
+  // (Without the file names, as it was asked before, they'd go out as they are)
+  assert.ok(/Grandma voicemail \(bounce\)/.test(JSON.stringify(BEFORE.tracks.map(sharedTrackNames(BEFORE, () => undefined)))));
+  // The song's own embedded sounds are asked too
+  const embedded = songFileNames([{ id: 'h1', name: 'Grandma voicemail.wav' }], () => undefined);
+  assert.equal(embedded('h1'), 'Grandma voicemail.wav');
+  assert.equal(songFileNames([{ id: 'h1', name: 'x.wav' }], (id) => (id === 'h1' ? 'y.wav' : undefined))('h1'), 'y.wav');
+});
+
+/** Names people type for a kit or loops, in a song with sounds dropped and the pads renamed by typing, and mic takes. */
+const TYPED_KITS = {
+  name: 'Song',
+  tracks: [
+    T('a', 'My drum kit', 'drumRack', { rack: { pads: [pad('Kick', 'h1'), pad('Snare', 'h2')] } }),
+    T('b', 'Acoustic drum kit', 'drumRack', { rack: { pads: [pad('Kick', 'h1')] } }),
+    T('c', 'Live drum kit', 'drumRack', { rack: { pads: [pad('Kick', 'h1')] } }),
+    T('d', "Dad's kit", 'drumRack', { rack: { pads: [pad('Kick', 'h1')] } }),
+    T('e', 'Breakbeat loops', 'audio'),
+    T('f', 'Night loops', 'audio'),
+    T('g', 'Ghost kit', 'drumRack', { rack: { pads: [pad('Kick'), pad('Snare')] } }),
+    T('h', 'Bass 2', 'slapBass'),
+  ],
+  clips: [C('c1', 'f', 'Take 1', { audio: audio('m1') }), C('c2', 'e', 'Break', { audio: audio('l1') }), C('c3', 'h', 'Bass 2 1')],
+};
+const TYPED_FILES = { h1: 'kick.wav', h2: 'snare.wav', m1: 'Mic take 1.wav', l1: 'amen break.wav' };
+
+test('a song saved since the marks is judged by them alone: names people type for a kit or loops are kept', () => {
+  const song = { ...TYPED_KITS, fileMarks: FILE_MARKS };
+  for (const fileNameOf of [(id) => TYPED_FILES[id], undefined]) {
+    const out = withoutFileNames(song, fileNameOf);
+    assert.deepEqual(out.tracks.map((t) => t.name), song.tracks.map((t) => t.name));
+    assert.equal(out.clips, song.clips);
+  }
+  // Its marks still go
+  const marked = { ...song, tracks: [...song.tracks, T('x', 'Smith family kit', 'drumRack', { nameFromFile: true })], clips: [...song.clips, C('c4', 'x', 'Smith family kit 1', { nameFromFile: true })] };
+  const out = withoutFileNames(marked, (id) => TYPED_FILES[id]);
+  assert.equal(out.tracks.at(-1).name, 'Kit');
+  assert.equal(out.clips.at(-1).name, 'Pattern');
+});
+
+test('a song from before the marks: a kit by its name needs sounds from files on its pads, a set of loops clips from files, not mic takes', () => {
+  const out = withoutFileNames(TYPED_KITS, (id) => TYPED_FILES[id]);
+  // (privacy first: a kit of dropped sounds named "X kit" may be a folder's)
+  assert.deepEqual(out.tracks.map((t) => t.name), ['Kit', 'Kit', 'Kit', 'Kit', 'Audio', 'Night loops', 'Ghost kit', 'Bass 2']);
+  assert.deepEqual(out.clips.map((c) => c.name), ['Take 1', 'Break', 'Bass 2 1']);
+  // A set of loops whose sounds aren't known may be a folder's too
+  assert.equal(withoutFileNames(TYPED_KITS).tracks[5].name, 'Audio');
+});
+
+test('a song from before the marks gets them once its sounds are known: it goes out the same, and names typed after are kept', () => {
+  const fileNameOf = (id) => BEFORE_FILES[id];
+  const marked = withFileMarks(BEFORE, fileNameOf);
+  assert.equal(marked.fileMarks, FILE_MARKS);
+  // What the old check found is marked, and nothing else
+  assert.deepEqual(marked.tracks.map((t) => !!t.nameFromFile), [true, true, true, true, true, false]);
+  assert.deepEqual(marked.tracks[3].multi.zones.map((z) => !!z.nameFromFile), [true, true]);
+  assert.deepEqual(marked.tracks[4].rack.pads.map((p) => !!p.nameFromFile), [true, true]);
+  assert.deepEqual(marked.clips.map((c) => !!c.nameFromFile), [true, false]);
+  // The names themselves are as they were (only marked)
+  assert.deepEqual(marked.tracks.map((t) => t.name), BEFORE.tracks.map((t) => t.name));
+  // Going out, it's named as the old check names it, with or without the file names
+  const old = JSON.stringify(withoutFileNames(BEFORE, fileNameOf));
+  for (const f of [fileNameOf, undefined]) assert.equal(JSON.stringify(withoutFileNames(marked, f), (k, v) => (k === 'fileMarks' ? undefined : v)), old);
+  // A name the person types after is theirs
+  const typed = { ...marked, tracks: [...marked.tracks, ...TYPED_KITS.tracks.slice(0, 6)], clips: [...marked.clips, ...TYPED_KITS.clips] };
+  const out = withoutFileNames(typed, (id) => ({ ...BEFORE_FILES, ...TYPED_FILES })[id]);
+  assert.deepEqual(out.tracks.slice(6).map((t) => t.name), ['My drum kit', 'Acoustic drum kit', 'Live drum kit', "Dad's kit", 'Breakbeat loops', 'Night loops']);
+  // Not every sound's name known (a sound not in this browser): it stays an old song, checked the old way
+  assert.equal(withFileMarks(BEFORE, (id) => (id === 'p2' ? undefined : BEFORE_FILES[id])), BEFORE);
+  // ...its embedded sounds count (a saved file carries them)
+  const withSounds = { ...BEFORE, sounds: Object.entries(BEFORE_FILES).map(([id, name]) => ({ id, name })) };
+  assert.equal(withFileMarks(withSounds).fileMarks, FILE_MARKS);
+  // A song already marked comes back as it was
+  assert.equal(withFileMarks(marked, fileNameOf), marked);
+});
+
+test('the mark that a song is marked is saved, opened, kept by the browser and the command line, and a link carries it', async () => {
+  const fileTrack = (t) => ({ color: '#fff', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, reverbSend: 0, delaySend: 0, ...t });
+  const file = (song, extra = {}) => ({ format: PROJECT_FORMAT, version: PROJECT_VERSION, name: song.name, bpm: 120, tracks: song.tracks.map(fileTrack), clips: song.clips, ...extra });
+  const { packedProject, unpackProject } = await import('../src/store/project.ts');
+  const { songLink, projectFromHash } = await import('../src/store/shareLink.ts');
+  // A song saved since: the mark goes through a file, the browser's copy and a link
+  const since = parseProject(file(TYPED_KITS, { fileMarks: 1 }));
+  assert.equal(since.fileMarks, 1);
+  assert.equal(parseProject(JSON.parse(JSON.stringify(serializeProject(since)))).fileMarks, 1);
+  assert.equal(unpackProject(packedProject(since)).fileMarks, 1);
+  const link = await projectFromHash(await songLink(since, '', (id) => TYPED_FILES[id]));
+  assert.equal(link.fileMarks, 1);
+  assert.deepEqual(link.tracks.map((t) => t.name), since.tracks.map((t) => t.name));
+  assert.ok(link.tracks.length >= 6);
+  // (A newer file's number is read as this one)
+  assert.equal(parseProject(file(TYPED_KITS, { fileMarks: 2 })).fileMarks, 1);
+  assert.ok(!('fileMarks' in parseProject(file(TYPED_KITS, { fileMarks: 'yes' }))));
+  // A song from before, saved with its sounds (Save embeds them): saved marked, and opens so
+  const sounds = Object.entries(BEFORE_FILES).map(([id, name]) => ({ id, name, type: 'audio/wav', size: 4, seconds: 1, data: 'AAAA' }));
+  const before = parseProject(file(BEFORE));
+  assert.ok(!('fileMarks' in before));
+  const saved = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...before, sounds }))));
+  assert.equal(saved.fileMarks, 1);
+  assert.equal(saved.tracks[0].nameFromFile, true);
+  const named = withoutFileNames(saved);
+  assert.ok(!/Grandma|Grandpa|Wedding/.test(JSON.stringify([named.tracks, named.clips])));
+  // ...without them (the browser's copy, its sounds in the library): still a song from before, not marked by halves
+  const kept = unpackProject(packedProject(before));
+  assert.ok(!('fileMarks' in kept));
+  assert.ok(!kept.tracks.some((t) => t.nameFromFile));
+  // A link from it: renamed as before, and marked when the sounds' names are known
+  const back = await projectFromHash(await songLink(before, '', (id) => BEFORE_FILES[id]));
+  assert.equal(back.fileMarks, 1);
+  assert.ok(!/Grandma|Grandpa|Wedding/.test(JSON.stringify(back)));
+  const blind = await projectFromHash(await songLink(before, ''));
+  assert.ok(!('fileMarks' in blind));
+  // A song with no sounds of its own is marked as it's saved (nothing to check: a new song, a starter)
+  assert.equal(serializeProject(parseProject(file({ name: 'S', tracks: [T('l', 'Lead', 'rhodes')], clips: [] }))).fileMarks, 1);
 });
