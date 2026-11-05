@@ -16,9 +16,10 @@ export const notReserved = (name: string) => name.replace(RESERVED, '$1_');
 /**
  * `name` with no control characters (a tab, an escape, NUL: Windows refuses them in a file name
  * and a zip reader stops a name at NUL) and no invisible marks that turn text round or hide in it.
- * Each control character is a "-"; the joiner inside emoji is kept.
+ * Each control character is a "-"; what a word or an emoji needs is kept: the joiner and the
+ * non-joiner, and the tag characters that spell out a flag such as Wales's.
  */
-export const noControls = (name: string) => name.replace(/\p{Cc}+/gu, '-').replace(/(?!\u200D)\p{Cf}/gu, '');
+export const noControls = (name: string) => name.replace(/\p{Cc}+/gu, '-').replace(/(?![\u200C\u200D\u{E0020}-\u{E007F}])\p{Cf}/gu, '');
 
 /**
  * The most a file or folder name made from a name may take, in UTF-8 bytes. Most file systems

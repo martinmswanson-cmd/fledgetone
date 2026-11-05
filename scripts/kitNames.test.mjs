@@ -212,3 +212,11 @@ test('a name read from a song file is kept on one line; a fine one is unchanged'
   assert.equal(oneLineName('Night\u202Eexe'), 'Nightexe');
   for (const n of ['Plaza night', '  My song ', 'Café', '\u{1F468}\u200D\u{1F3A4} set', 'a\u200Cb']) assert.equal(oneLineName(n), n);
 });
+
+test("names keep what words and flags need: the joiners and a flag's tag characters", () => {
+  const wales = '\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}';
+  const persian = 'می‌خواهم';
+  assert.equal(noControls(`${wales} ${persian}`), `${wales} ${persian}`);
+  // (a mark that turns text round still goes)
+  assert.equal(noControls('a‮b'), 'ab');
+});
