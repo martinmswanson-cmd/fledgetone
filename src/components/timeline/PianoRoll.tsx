@@ -34,7 +34,7 @@ import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useLivePlayhead } from '../../store/playheadClock';
 import { allOrNothing, editStep, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
-import { isPlainMeter, measureAt, spanMeterLines, tempoAt } from '../../audio/tempoMap';
+import { addMeasures, isPlainMeter, measureAt, spanMeterLines, tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
@@ -848,7 +848,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'scoop': return scoop(target, barSeconds);
         case 'dive': return diveNotes(target);
         case 'unbend': return target.map((n) => withSlide(n, 0));
-        case 'shapeDynamics': return shapeDynamics(target);
+        case 'shapeDynamics': {
+          // A phrase of non-stop notes is two of the song's measures (six beats in 3/4)
+          const map = songMeterOf(store);
+          return isPlainMeter(map) ? shapeDynamics(target) : shapeDynamics(target, (from) => addMeasures(clip.startBar + from, 2, map) - clip.startBar);
+        }
         default: return target;
       }
     })();

@@ -162,6 +162,12 @@ export interface RiffOptions {
   center?: number;
   /** The lowest and highest notes the instrument plays */
   range?: readonly [number, number];
+  /**
+   * The song's measures under the clip, from its start (see clipMeasures): the riff's call and
+   * answer each take one, its rhythm cut or carried on to the measure's length (three beats in
+   * 3/4). Absent: bars of four beats from the clip's start.
+   */
+  measures?: ReadonlyArray<{ start: number; length: number }>;
 }
 
 /** The key's notes (MIDI) from `lo` to `hi`. */
@@ -173,7 +179,8 @@ function scaleNotes(key: SongKey, lo: number, hi: number): number[] {
 
 /**
  * A riff in the key, `lengthBars` long: a one-bar rhythm, played as call (bar 1) and answer (bar
- * 2, its end varied), the phrase repeating with a new ending each time it comes back. Strong beats
+ * 2, its end varied), the phrase repeating with a new ending each time it comes back. A bar is a
+ * measure of the song's (`measures`), so in 3/4 the rhythm is three beats long. Strong beats
  * land on a tone of the chord sounding there (its root, for a bass line); the notes between step
  * through the scale. The same seed always gives the same riff; another seed, another riff.
  */
@@ -188,7 +195,8 @@ export function riff(key: SongKey, opts: RiffOptions, newId: () => string): Note
   if (!pool.length) return [];
   const home = degreeChord(key, { degree: 0 });
   const chordAt = (t: number) => opts.chords?.find((c) => t >= c.at - EPS && t < c.end - EPS)?.pcs ?? home;
-  const bars = Math.max(1, Math.ceil(opts.lengthBars - EPS));
+  const measures = opts.measures?.length ? opts.measures : Array.from({ length: Math.max(1, Math.ceil(opts.lengthBars - EPS)) }, (_, i) => ({ start: i, length: 1 }));
+  const bars = measures.length;
   const rhythmsOf = RHYTHMS[style];
   const motif = rhythmsOf[Math.floor(random() * rhythmsOf.length)];
   const answer = rhythmsOf[Math.floor(random() * rhythmsOf.length)];
@@ -215,16 +223,19 @@ export function riff(key: SongKey, opts: RiffOptions, newId: () => string): Note
   for (let b = 0; b < bars; b++) {
     const phraseBar = b % 2;
     const rhythm = phraseBar === 0 ? motif : b === bars - 1 || b % 4 === 3 ? answer : motif;
+    // The measure's 16ths (16 in 4/4, 12 in 3/4); a longer one plays the rhythm's start again
+    const { start: at, length: measure } = measures[b];
+    const steps = Math.max(1, Math.round(measure * 16));
     // The call starts on the chord's root (bass) or a chord tone near the middle
-    let idx = pool.indexOf(nearestIn(center, chordAt(b).slice(0, style === 'bass' ? 1 : 3)));
-    const onsets = [...rhythm].flatMap((ch, s) => (ch === 'x' ? [s] : []));
+    let idx = pool.indexOf(nearestIn(center, chordAt(Math.max(0, at)).slice(0, style === 'bass' ? 1 : 3)));
+    const onsets = Array.from({ length: steps }, (_, s) => s).filter((s) => rhythm[s % 16] === 'x');
     onsets.forEach((s, k) => {
-      const t = b + s / 16;
-      if (t >= opts.lengthBars - EPS) return;
+      const t = at + s / 16;
+      if (t < -EPS || t >= opts.lengthBars - EPS) return;
       const strong = s % 4 === 0;
       if (k > 0) {
         // The answer bar takes its own path after its first half
-        const move = phraseBar === 1 && s >= 8 ? (random() < 0.5 ? 1 : -1) * (random() < 0.7 ? 1 : 2) : moves[s];
+        const move = phraseBar === 1 && s >= steps / 2 ? (random() < 0.5 ? 1 : -1) * (random() < 0.7 ? 1 : 2) : moves[s % 16];
         idx = Math.max(0, Math.min(pool.length - 1, idx + move));
         // Bounce back off the ends of the range
         if (idx === 0 || idx === pool.length - 1) idx = Math.max(0, Math.min(pool.length - 1, idx - Math.sign(move) * 2));
@@ -236,7 +247,7 @@ export function riff(key: SongKey, opts: RiffOptions, newId: () => string): Note
         idx = pool.indexOf(midi);
       }
       // How long: a pluck is short; a lead or a bass holds to the next note (a lead's last a little longer)
-      const next = onsets[k + 1] !== undefined ? onsets[k + 1] : 16;
+      const next = onsets[k + 1] !== undefined ? onsets[k + 1] : steps;
       const gap = (next - s) / 16;
       const length = style === 'pluck' ? Math.min(gap, 1 / 16) : style === 'bass' ? Math.max(1 / 32, gap - 1 / 64) : gap;
       out.push({

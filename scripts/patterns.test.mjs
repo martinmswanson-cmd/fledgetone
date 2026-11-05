@@ -3,6 +3,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // The app imports its own modules without the .ts extension (Vite resolves them); do the same here
 register(
@@ -18,6 +19,7 @@ register(
 );
 const p = await import('../src/store/patterns.ts');
 const t = await import('../src/store/chordTools.ts');
+const tempoMap = await import('../src/audio/tempoMap.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
 
@@ -152,4 +154,55 @@ test('linked clips back from browser storage share their notes again, so undoing
   // Clips whose notes really differ stay apart
   const other = [clip('a', 1, notes, { pattern: 'p' }), clip('b', 2, [note('D4')], { pattern: 'p' })];
   assert.equal(p.shareLinkedContent(other), other);
+});
+
+test('riffs in 3/4 and 7/8: call and answer each a measure of the song, a bass note on every downbeat', () => {
+  const TM = tempoMap;
+  const key = keyOf(9, 'minor');
+  for (const map of [{ base: { num: 3, den: 4 }, points: [] }, { base: { num: 7, den: 8 }, points: [] }]) {
+    const m = TM.measureBars(map.base);
+    const len = 4 * m;
+    for (let seed = 1; seed <= 20; seed++) {
+      let n = 0;
+      const out = t.riff(key, { style: 'bass', lengthBars: len, seed, measures: TM.clipMeasures(1, len, map) }, () => `r${n++}`);
+      const at = (x) => TM.measureAt(1 + x.startOffset + 1e-9, map);
+      // Every bass rhythm opens on beat one: each of the four measures has its downbeat
+      for (let k = 1; k <= 4; k++) assert.ok(out.some((x) => at(x).measure === k && Math.abs(1 + x.startOffset - at(x).start) < 1e-9), `${map.base.num}/${map.base.den} seed ${seed} m${k}`);
+      for (const x of out) {
+        assert.ok(x.startOffset >= 0 && x.startOffset < len - 1e-9);
+        assert.ok(x.startOffset + durationToBars(x.duration) <= len + 1e-9, 'nothing rings past the clip');
+      }
+      // The call comes back the same on the third measure as on the first (in 16ths from each bar line)
+      const steps = (k) => out.filter((x) => at(x).measure === k).map((x) => Math.round((1 + x.startOffset - at(x).start) * 16));
+      assert.deepEqual(steps(3), steps(1));
+    }
+  }
+  // A clip starting part-way into a measure: the riff keeps to the bar lines, none before the clip
+  const THREE = { base: { num: 3, den: 4 }, points: [] };
+  let n = 0;
+  const mid = t.riff(key, { style: 'bass', lengthBars: 1.5, seed: 3, measures: TM.clipMeasures(1.25, 1.5, THREE) }, () => `r${n++}`);
+  assert.ok(mid.every((x) => x.startOffset >= 0));
+  assert.ok(mid.some((x) => Math.abs(x.startOffset - 0.5) < 1e-9), 'the downbeat of measure 2 (bar 1.75)');
+});
+
+test('riffs in 4/4: the notes they always were, the measures passed or not', () => {
+  const TM = tempoMap;
+  const FOUR = { base: { num: 4, den: 4 }, points: [] };
+  const key = keyOf(9, 'minor');
+  const ids = () => {
+    let n = 0;
+    return () => `n${n++}`;
+  };
+  const all = (measuresFor) => ['pluck', 'lead', 'bass'].flatMap((style) => [1, 2, 3, 4, 5].map((seed) => t.riff(key, { style, lengthBars: 4, seed, ...(measuresFor ? { measures: measuresFor(4) } : {}) }, ids())));
+  const fnv = (v) => {
+    const s = JSON.stringify(v);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+    return h.toString(16);
+  };
+  assert.equal(fnv(all()), '2a07e5e3');
+  assert.equal(fnv(all((len) => TM.clipMeasures(1, len, FOUR))), '2a07e5e3');
+  assert.equal(fnv(all((len) => TM.clipMeasures(2.5, len, FOUR))), '2a07e5e3');
+  // The piano roll passes the song's measures
+  assert.match(readFileSync(new URL('../src/components/timeline/ChordRiffBar.tsx', import.meta.url), 'utf8'), /measures = clipMeasures\(clip\.startBar, clip\.lengthBars, songMeterOf\(/);
 });

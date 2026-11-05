@@ -4,7 +4,7 @@ import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
 import { NOTE_NAMES } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
-import { addMeasures } from '../audio/tempoMap';
+import { addMeasures, isPlainMeter, measureCount, measuresBetween } from '../audio/tempoMap';
 import type { MeterMap } from '../audio/tempoMap';
 
 /**
@@ -229,11 +229,33 @@ const note = (newId: () => string, midi: number, at: number, bars: number, veloc
 /**
  * A chord sequence (pitch classes, root first) as notes, `chordBars` each, voiced smoothly, in a
  * style. With `spans`, chord i plays from spans[i].start for spans[i].length (bars from the clip's
- * start): a measure each in a song not in 4/4.
+ * start): a measure each in a song not in 4/4. With `meter` (the song's meter map and where the
+ * clip starts), in a song not in 4/4 the pulse, stabs and arpeggio start again on every bar line
+ * as the song counts them, and the pulse leans on each one; without it, or in plain 4/4, they run
+ * on from the chord's start, the pulse leaning on every whole note, as before.
  */
-export function chordNotesFor(chords: readonly number[][], chordBars: number, style: ChordStyle, newId: () => string, spans?: ReadonlyArray<{ start: number; length: number }>): NoteEvent[] {
+export function chordNotesFor(
+  chords: readonly number[][],
+  chordBars: number,
+  style: ChordStyle,
+  newId: () => string,
+  spans?: ReadonlyArray<{ start: number; length: number }>,
+  meter?: { map: MeterMap; atBar: number }
+): NoteEvent[] {
   const out: NoteEvent[] = [];
   let prev: number[] | null = null;
+  const counted = meter && !isPlainMeter(meter.map) ? meter : null;
+  /**
+   * The stretches of a chord the rhythm restarts in: in a song not in 4/4 each measure it plays
+   * across (so in 7/8 the pulse and the stabs start again on every bar line); otherwise the whole
+   * chord, the rhythm running on from its start as it always did.
+   */
+  const pieces = (start: number, length: number): Array<{ at: number; end: number }> => {
+    if (!counted) return [{ at: start, end: start + length }];
+    const cuts = measuresBetween(counted.atBar + start + EPS, counted.atBar + start + length - EPS, counted.map).map((m) => m.bar - counted.atBar);
+    const edges = [start, ...cuts, start + length];
+    return edges.slice(0, -1).map((at, k) => ({ at, end: edges[k + 1] }));
+  };
   chords.forEach((pcs, i) => {
     const voiced = voiceLead(pcs, prev);
     prev = voiced;
@@ -241,14 +263,22 @@ export function chordNotesFor(chords: readonly number[][], chordBars: number, st
     const length = spans?.[i]?.length ?? chordBars;
     if (style === 'sustain') {
       for (const m of voiced) out.push(note(newId, m, start, length, 0.7));
-    } else if (style === 'pulse') {
-      for (let t = 0; t < length - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.22, t % 1 === 0 ? 0.78 : 0.62));
-    } else if (style === 'offbeat') {
-      for (let t = 0.125; t < length - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, start + t, 0.1, 0.72));
-    } else {
-      const up = [...voiced, voiced[0] + 12];
-      let k = 0;
-      for (let t = 0; t < length - EPS; t += 1 / 16, k++) out.push(note(newId, up[k % up.length], start + t, 1 / 16, k % 4 === 0 ? 0.75 : 0.6));
+      return;
+    }
+    const up = [...voiced, voiced[0] + 12];
+    let k = 0;
+    for (const piece of pieces(start, length)) {
+      const span = piece.end - piece.at;
+      // (A note never rings past its measure's end: the last eighth of a 7/8 measure is short)
+      const len = (t: number, bars: number) => (counted ? Math.min(bars, (span - t) * 0.88) : bars);
+      if (style === 'pulse') {
+        // Leaning on the chord's first beat and each bar line (in plain 4/4: every whole note)
+        for (let t = 0; t < span - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, piece.at + t, len(t, 0.22), (counted ? t < EPS : t % 1 === 0) ? 0.78 : 0.62));
+      } else if (style === 'offbeat') {
+        for (let t = 0.125; t < span - EPS; t += 0.25) for (const m of voiced) out.push(note(newId, m, piece.at + t, len(t, 0.1), 0.72));
+      } else {
+        for (let t = 0, q = 0; t < span - EPS; t += 1 / 16, k++, q++) out.push(note(newId, up[k % up.length], piece.at + t, 1 / 16, q % 4 === 0 ? 0.75 : 0.6));
+      }
     }
   });
   return out;
@@ -263,6 +293,18 @@ export function chordSpans(atBar: number, count: number, chordBars: number, map:
   const at = (i: number) => addMeasures(atBar, i * chordBars, map) - atBar;
   const spans = Array.from({ length: count }, (_, i) => ({ start: at(i), length: at(i + 1) - at(i) }));
   return { spans, length: at(count) };
+}
+
+/**
+ * Where each chord goes under a clip at `atBar`, `lengthBars` long, a chord every `chordBars`
+ * measures (as the ruler counts them): one span each from the clip's start, as many as cover the
+ * clip, the last stopping at its end.
+ */
+export function clipChordSpans(atBar: number, lengthBars: number, chordBars: number, map: MeterMap): Array<{ start: number; length: number }> {
+  const count = Math.max(1, Math.ceil(measureCount(atBar, atBar + lengthBars, map) / chordBars - 1e-6));
+  return chordSpans(atBar, count, chordBars, map)
+    .spans.filter((sp) => sp.start < lengthBars - 1e-6)
+    .map((sp) => (sp.start + sp.length > lengthBars + 1e-6 ? { start: sp.start, length: lengthBars - sp.start } : sp));
 }
 
 /** A progression's chords in `key`, as pitch classes (root first). */
@@ -298,16 +340,19 @@ export interface MelodyNote {
 /**
  * Chords that fit a melody, one every `chordBars`: each stretch's notes vote for the chords they
  * belong to (long notes and notes on the beat count more, notes that clash count against), and the
- * chords are chained so they move the way songs usually do (best overall path, Viterbi).
+ * chords are chained so they move the way songs usually do (best overall path, Viterbi). With
+ * `spans` (bars from the melody's start, see chordSpans), one chord for each span instead: a
+ * measure each, as the song counts them, in a song not in 4/4.
  */
-export function harmonize(melody: readonly MelodyNote[], key: SongKey, lengthBars: number, chordBars = 1): { chords: number[][]; degrees: Degree[] } {
+export function harmonize(melody: readonly MelodyNote[], key: SongKey, lengthBars: number, chordBars = 1, spans?: ReadonlyArray<{ start: number; length: number }>): { chords: number[][]; degrees: Degree[] } {
   const cands = candidates(key);
   const sets = cands.map((d) => degreeChord(key, d));
-  const steps = Math.max(1, Math.ceil(lengthBars / chordBars - EPS));
+  const steps = spans?.length ? spans.length : Math.max(1, Math.ceil(lengthBars / chordBars - EPS));
   const fit: number[][] = [];
   for (let i = 0; i < steps; i++) {
-    const from = i * chordBars;
-    const to = from + chordBars;
+    const from = spans?.length ? spans[i].start : i * chordBars;
+    const span = spans?.length ? spans[i].length : chordBars;
+    const to = from + span;
     fit.push(
       sets.map((set) => {
         let s = 0;
@@ -315,7 +360,7 @@ export function harmonize(melody: readonly MelodyNote[], key: SongKey, lengthBar
           const overlap = Math.min(to, n.at + n.bars) - Math.max(from, n.at);
           if (overlap <= EPS) continue;
           const beat = Math.abs((n.at - from) * 4 - Math.round((n.at - from) * 4)) < 1e-3;
-          const strong = n.at >= from - EPS && (Math.abs(n.at - from) < EPS || Math.abs(n.at - from - chordBars / 2) < EPS);
+          const strong = n.at >= from - EPS && (Math.abs(n.at - from) < EPS || Math.abs(n.at - from - span / 2) < EPS);
           const w = Math.min(1, overlap * 4) * (strong ? 1.6 : beat ? 1.15 : 0.8);
           const p = pc(n.midi);
           s += set.includes(p) ? w * (p === set[0] ? 1.25 : 1) : -0.7 * w;
@@ -413,9 +458,10 @@ export const BASS_STYLES: ReadonlyArray<{ id: BassStyle; name: string }> = [
 
 /**
  * A bass line under a chord part: each chord's root (the chords are where notes start together),
- * low down, in a style. `low` is the lowest note the bass goes to (MIDI).
+ * low down, in a style. `low` is the lowest note the bass goes to (MIDI); `measure` a measure's
+ * length in bars (0.75 in 3/4), for the syncopated style's pattern in each measure of a chord.
  */
-export function bassFromChords(chordNotes: readonly NoteEvent[], lengthBars: number, style: BassStyle, newId: () => string, low = 33): NoteEvent[] {
+export function bassFromChords(chordNotes: readonly NoteEvent[], lengthBars: number, style: BassStyle, newId: () => string, low = 33, measure = 1): NoteEvent[] {
   const groups = new Map<number, number[]>();
   for (const n of chordNotes) {
     if (n.startOffset < -EPS || n.startOffset >= lengthBars - EPS) continue;
@@ -441,8 +487,8 @@ export function bassFromChords(chordNotes: readonly NoteEvent[], lengthBars: num
     else if (style === 'eighths') for (let t = 0; t < span - EPS; t += 0.125) out.push(note(newId, m, c.at + t, 0.11, t % 0.25 === 0 ? 0.85 : 0.7));
     else if (style === 'octaves') for (let t = 0, k = 0; t < span - EPS; t += 0.125, k++) out.push(note(newId, k % 2 ? m + 12 : m, c.at + t, 0.11, k % 2 ? 0.7 : 0.85));
     else {
-      // Dotted-8th push: on 1, the "a" of 2 and the "&" of 3, in each bar of the chord
-      for (const t of [0, 0.375, 0.625]) for (let b = 0; b < span - EPS; b += 1) if (b + t < span - EPS) out.push(note(newId, t === 0.625 ? m + 7 : m, c.at + b + t, t === 0 ? 0.3 : 0.2, t === 0 ? 0.88 : 0.74));
+      // Dotted-8th push: on 1, the "a" of 2 and the "&" of 3, in each measure of the chord
+      for (const t of [0, 0.375, 0.625]) for (let b = 0; b < span - EPS; b += measure) if (t < measure - EPS && b + t < span - EPS) out.push(note(newId, t === 0.625 ? m + 7 : m, c.at + b + t, t === 0 ? 0.3 : 0.2, t === 0 ? 0.88 : 0.74));
     }
   });
   return out;
@@ -611,10 +657,12 @@ export function accompany(chordNotes: readonly NoteEvent[], lengthBars: number, 
     }
   });
   if (style === 'drone') {
+    // Struck again every two measures (two bars of 4/4, six beats in 3/4)
     const r = 36 + pc(changes[0].root - 36);
-    for (let t = 0; t < lengthBars - EPS; t += 2) {
-      add(r, t, 2, 0.5);
-      add(r + 7, t, 2, 0.42);
+    const every = 2 * measure;
+    for (let t = 0; t < lengthBars - EPS; t += every) {
+      add(r, t, every, 0.5);
+      add(r + 7, t, every, 0.42);
     }
   }
   return out.sort((a, b) => a.startOffset - b.startOffset);

@@ -480,6 +480,18 @@ export function fromMeasureBeatLength(from: number, measures: number, beats: num
 /** True when the meter map is plain 4/4 throughout. */
 export const isPlainMeter = (map: MeterMap) => isFourFour(map);
 
+/**
+ * The measures a clip at `from`, `length` bars long, plays across, for the tools that write a
+ * pattern a measure at a time: each one's start in bars from the clip's start (the first can be
+ * before 0 when the clip starts part-way into a measure), its length and its meter. In plain 4/4
+ * a whole note each from the clip's start, as many as the clip needs (the last may run past it).
+ */
+export function clipMeasures(from: number, length: number, map: MeterMap): Array<{ start: number; length: number; meter: Meter }> {
+  if (isFourFour(map) || from < 1) return Array.from({ length: Math.max(1, Math.ceil(length - EPS)) }, (_, i) => ({ start: i, length: 1, meter: FOUR_FOUR }));
+  const out = measuresBetween(measureAt(from, map).start, from + Math.max(length, EPS), map).map((m) => ({ start: m.bar - from, length: measureBars(m.meter), meter: m.meter }));
+  return out.length ? out : [{ start: 0, length: measureBars(meterAt(from, map)), meter: meterAt(from, map) }];
+}
+
 /** The beats (in bars) of every measure in [from, to), for drawing grids: the measure starts flagged. */
 export function beatsBetween(from: number, to: number, map: MeterMap): Array<{ bar: number; downbeat: boolean }> {
   const out: Array<{ bar: number; downbeat: boolean }> = [];

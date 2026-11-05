@@ -16,13 +16,17 @@ const PHRASE_GAP = 1 / 8;
 /** Non-stop notes make a new phrase every this many bars */
 const PHRASE_MAX = 2;
 
-export function shapeDynamics(notes: NoteEvent[]): NoteEvent[] {
+/**
+ * `phraseEnd` says where non-stop notes from a phrase's start (bars from the clip's start) begin a
+ * new one: two of the song's measures on (six beats in 3/4). Absent: two bars of four beats.
+ */
+export function shapeDynamics(notes: NoteEvent[], phraseEnd: (from: number) => number = (from) => from + PHRASE_MAX): NoteEvent[] {
   if (notes.length < 3) return notes;
   const sorted = [...notes].sort((a, b) => a.startOffset - b.startOffset);
   // Phrases of note groups (a chord is one group)
   const phrases: NoteEvent[][][] = [];
   let phrase: NoteEvent[][] = [];
-  let phraseStart = 0;
+  let phraseUntil = Infinity;
   let lastEnd = -Infinity;
   for (const n of sorted) {
     const group = phrase[phrase.length - 1];
@@ -31,11 +35,11 @@ export function shapeDynamics(notes: NoteEvent[]): NoteEvent[] {
       lastEnd = Math.max(lastEnd, n.startOffset + durationToBars(n.duration));
       continue;
     }
-    if (phrase.length && (n.startOffset - lastEnd >= PHRASE_GAP - 1e-6 || n.startOffset - phraseStart >= PHRASE_MAX - 1e-6)) {
+    if (phrase.length && (n.startOffset - lastEnd >= PHRASE_GAP - 1e-6 || n.startOffset >= phraseUntil - 1e-6)) {
       phrases.push(phrase);
       phrase = [];
     }
-    if (!phrase.length) phraseStart = n.startOffset;
+    if (!phrase.length) phraseUntil = phraseEnd(n.startOffset);
     phrase.push([n]);
     lastEnd = Math.max(lastEnd, n.startOffset + durationToBars(n.duration));
   }

@@ -7,7 +7,8 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Link2, Unlink } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
+import { clipMeasures } from '../../audio/tempoMap';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { uid } from '../../store/timelineTypes';
 import { SCALES, type Scale } from '../../store/noteTools';
@@ -124,7 +125,9 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
     const seed = riffSeeds.get(clip.id) ?? 1;
     riffSeeds.set(clip.id, seed + 1);
     const chords = chordsUnder(clip);
-    const out = riff(key, { style: riffStyle, lengthBars: clip.lengthBars, seed, chords, range: [lo, hi] }, () => uid('note'));
+    // A riff bar is a measure of the song's (three beats in 3/4)
+    const measures = clipMeasures(clip.startBar, clip.lengthBars, songMeterOf(useTimelineStore.getState()));
+    const out = riff(key, { style: riffStyle, lengthBars: clip.lengthBars, seed, chords, range: [lo, hi], measures }, () => uid('note'));
     if (!out.length) {
       showToast("This instrument's range has no room for a riff in the key.");
       return;

@@ -12,7 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useSongMeter, useTimelineStore } from '../store/timelineStore';
 import { formatBarRange } from '../store/timelineTypes';
-import { isPlainMeter } from '../audio/tempoMap';
+import { isPlainMeter, measureAt, meterAt } from '../audio/tempoMap';
 import { notAutosavedWords } from '../store/autosaveWords';
 import { sayWhatWasLeftOut } from '../store/reopenLastSong';
 import { clearPreviousSession } from '../store/project';
@@ -325,7 +325,7 @@ const ChordsSheet: React.FC = () => {
     // A chord a bar (a measure as the ruler counts them) in a section of 4 bars or more, two in one of 8 or more
     const { chordBars, count, spans } = sectionChordPlan(sec.from, sec.to, meter);
     const all = Array.from({ length: count }, (_, k) => chords[k % chords.length]);
-    const notes = fitToInstrument(chordNotesFor(all, chordBars, style, pocketNoteId, spans), track.instrumentKey);
+    const notes = fitToInstrument(chordNotesFor(all, chordBars, style, pocketNoteId, spans, { map: meter, atBar: sec.from }), track.instrumentKey);
     editCell(track.id, sec, () => notes);
     close();
   };
@@ -352,9 +352,11 @@ const nextDrumSeed = () => (drumSeed = (drumSeed * 7919 + 104729) % 1000003);
 
 const DrummerSheet: React.FC = () => {
   const { track, sec } = useSelection();
-  const meter = useTimelineStore((s) => s.meter);
+  const map = useSongMeter();
   if (!track || !sec) return null;
   const write = (style: DrumStyle) => {
+    // (The time signature the section starts in: a song can change it part-way)
+    const meter = meterAt(sec.from, map);
     const len = sec.to - sec.from;
     const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
     const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
@@ -403,7 +405,11 @@ const FeelSheet: React.FC = () => {
 
 const FillSheet: React.FC = () => {
   const { track, sec } = useSelection();
+  const map = useSongMeter();
   if (!track || !sec) return null;
+  // (A bar in the section's last measure: in plain 4/4 its middle, as before; otherwise its start,
+  // as a 3/8 measure is shorter than half a bar)
+  const lastBar = isPlainMeter(map) ? sec.to - 0.5 : measureAt(sec.to - 1e-6, map).start;
   return (
     <Sheet title={`A fill at the end of ${sec.letter}`} onClose={close}>
       {FILLS.map((f) => (
@@ -414,7 +420,7 @@ const FillSheet: React.FC = () => {
             inOneStep(() => {
               const id = cellClip(track.id, sec, true);
               // (The middle of the section's last bar: the fill goes at that bar's end)
-              if (id) fillClipBar(id, sec.to - 0.5, f.id);
+              if (id) fillClipBar(id, lastBar, f.id);
             });
             close();
           }}
