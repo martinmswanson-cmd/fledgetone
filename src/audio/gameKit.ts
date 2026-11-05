@@ -25,6 +25,7 @@ import unityPlayer from '../gameKit/unity/AdaptiveMusic.cs?raw';
 import godotExample from '../gameKit/godot/music_example.gd?raw';
 import unityExample from '../gameKit/unity/AdaptiveMusicExample.cs?raw';
 import { maxOf } from '../support/minMax';
+import { sharedTrackName } from '../store/ownFiles';
 
 /**
  * The game kit: everything a game needs to play the song the way the Game preview does, in one
@@ -227,7 +228,7 @@ export async function buildGameKitParts(
       for (const [k, stem] of r.stems.entries()) {
         const stemFile = `stems/${stateFiles[i]}/${fileName(`stems/${stateFiles[i]}`, stemFiles[k])}.wav`;
         files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
-        stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
+        stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map(sharedTrackName) });
       }
     }
     // The state in each costume: the same bars, other instruments (and maybe another tempo)

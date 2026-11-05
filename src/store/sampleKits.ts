@@ -51,6 +51,7 @@ export function normalizeRack(raw: unknown): DrumRack | undefined {
     if (!isObj(p)) return d;
     return {
       name: typeof p.name === 'string' && p.name.trim() ? p.name.slice(0, 40) : d.name,
+      ...(p.nameFromFile === true ? { nameFromFile: true as const } : {}),
       ...(typeof p.soundId === 'string' && p.soundId ? { soundId: p.soundId } : {}),
       gain: num(p.gain, 0, RACK_GAIN_MIN, RACK_GAIN_MAX),
       pan: num(p.pan, 0, -1, 1),
@@ -118,7 +119,7 @@ export function velocityRank(name: string): number {
  * the keys from halfway to the root below to halfway to the root above, the lowest down to MIDI
  * 21 and the highest up to 108.
  */
-export function mapZones(sounds: ReadonlyArray<{ soundId: string; name: string; root: number }>): MultiZone[] {
+export function mapZones(sounds: ReadonlyArray<{ soundId: string; name: string; nameFromFile?: true; root: number }>): MultiZone[] {
   const roots = [...new Set(sounds.map((s) => Math.round(s.root)))].sort((a, b) => a - b);
   const zones: MultiZone[] = [];
   roots.forEach((root, i) => {
@@ -129,7 +130,7 @@ export function mapZones(sounds: ReadonlyArray<{ soundId: string; name: string; 
     layers.forEach(({ s }, k) => {
       const velLo = Math.round((k * 127) / layers.length) + 1;
       const velHi = Math.round(((k + 1) * 127) / layers.length);
-      zones.push({ soundId: s.soundId, name: s.name, root, lo, hi, velLo, velHi });
+      zones.push({ soundId: s.soundId, name: s.name, ...(s.nameFromFile ? { nameFromFile: true as const } : {}), root, lo, hi, velLo, velHi });
     });
   });
   return zones;
@@ -167,7 +168,7 @@ export function normalizeMulti(raw: unknown): MultiSample | undefined {
       const hi = Math.round(num(z.hi, 127, lo, 127));
       const velLo = Math.round(num(z.velLo, 1, 1, 127));
       const velHi = Math.round(num(z.velHi, 127, velLo, 127));
-      return { soundId: z.soundId as string, name: typeof z.name === 'string' ? z.name.slice(0, 80) : 'Sound', root, lo, hi, velLo, velHi };
+      return { soundId: z.soundId as string, name: typeof z.name === 'string' ? z.name.slice(0, 80) : 'Sound', ...(z.nameFromFile === true ? { nameFromFile: true as const } : {}), root, lo, hi, velLo, velHi };
     });
   return { zones, attack: num(raw.attack, 0.002, 0, 2), release: num(raw.release, 0.3, 0.005, 10) };
 }

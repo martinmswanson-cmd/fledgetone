@@ -457,13 +457,13 @@ export function rememberTag(tag: ProducerTag | null): void {
 const RATE = 44100;
 
 /** Keep a recording (or an imported file's sound) as the tag: silence trimmed off both ends, faded, stored in the library. */
-export async function saveTag(channels: Float32Array[], sampleRate: number, name: string): Promise<ProducerTag> {
+export async function saveTag(channels: Float32Array[], sampleRate: number, name: string, fromFile = false): Promise<ProducerTag> {
   const [a, b] = trimSilence(channels, sampleRate);
   if (b <= a) throw new Error('the recording is silent');
   const kept = channels.map((c) => c.slice(a, b));
   fadeEdges(kept, sampleRate);
   const meta = await importSoundFile(new Blob([encodeChannels(kept, sampleRate, 24)], { type: 'audio/wav' }), `${name.replace(/\.[a-z0-9]+$/i, '')} (tag).wav`);
-  const tag: ProducerTag = { soundId: meta.id, name: name.replace(/\.[a-z0-9]+$/i, ''), seconds: meta.seconds };
+  const tag: ProducerTag = { soundId: meta.id, name: name.replace(/\.[a-z0-9]+$/i, ''), ...(fromFile ? { nameFromFile: true as const } : {}), seconds: meta.seconds };
   rememberTag(tag);
   return tag;
 }
@@ -472,7 +472,7 @@ export async function saveTag(channels: Float32Array[], sampleRate: number, name
 export async function importTag(file: File): Promise<ProducerTag> {
   const meta = await importSoundFile(file, file.name);
   const buffer = await decodeSound(meta.id, RATE);
-  return saveTag(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)), RATE, file.name);
+  return saveTag(Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c)), RATE, file.name, true);
 }
 
 /**
@@ -506,7 +506,7 @@ export function placeTag(from: number, every: number): string {
     for (const bar of bars) {
       const len = tagLength(bar);
       if (taken.some((c) => c.startBar < bar + len - EPS && c.startBar + c.lengthBars > bar + EPS)) continue;
-      clips.push({ id: uid('clip'), trackId, name: tag.name, startBar: bar, lengthBars: len, notes: [], isSelected: false, audio: { soundId: tag.soundId, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 } });
+      clips.push({ id: uid('clip'), trackId, name: tag.name, ...(tag.nameFromFile ? { nameFromFile: true as const } : {}), startBar: bar, lengthBars: len, notes: [], isSelected: false, audio: { soundId: tag.soundId, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 } });
     }
     count = clips.length;
     useTimelineStore.setState((st) => ({

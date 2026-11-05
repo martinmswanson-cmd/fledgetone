@@ -17,6 +17,7 @@ import { soundEnvelope } from '../audio/slicerTools';
 import { PLAYBACK_DB } from './freezeActions';
 import { chopStarts, chopsToRack } from './sampleFlip';
 import { BOUNCE_TRACK_NAME, choosePadTarget, fillPad, padFromClip, padLevel, type PadSound, type PadTarget } from './bounceToPad';
+import { fileMade } from './ownFiles';
 
 /** A bounce under way: how far along (0 to 1), and what of. Null when none is. */
 export const usePadBounce = create<{ fraction: number | null; label: string }>(() => ({ fraction: null, label: '' }));
@@ -32,6 +33,8 @@ export interface BounceRequest {
   trackId?: string;
   /** The sound's and pad's name */
   name: string;
+  /** `name` was made from a file's (see ownFiles.ts): a track's that was */
+  nameFromFile?: true;
   /** The track (and pad) to put it on; absent: the first empty pad, or a new track */
   target?: { trackId?: string | null; pad?: number };
 }
@@ -130,7 +133,7 @@ export async function bounceRangeToPad(req: BounceRequest): Promise<PadPlaced | 
     if (songGeneration() !== song) return null; // another song opened while it rendered
     const target = choosePadTarget(useTimelineStore.getState().tracks, req.target);
     // (no room for a new track: a toast said so)
-    return placeOnPad(target, { soundId: meta.id, name: req.name, gainDb: level.gainDb }, BOUNCE_TRACK_NAME) || null;
+    return placeOnPad(target, { soundId: meta.id, name: req.name, ...fileMade(req.nameFromFile), gainDb: level.gainDb }, BOUNCE_TRACK_NAME) || null;
   } finally {
     usePadBounce.setState({ fraction: null, label: '' });
   }
@@ -181,7 +184,7 @@ export async function chopClipToPads(clipId: string, count = 8): Promise<{ track
   // The take's clip gain on every chop
   const pads = rack.pads.map((p) => (p.soundId ? { ...p, gain: Math.round(part.gainDb * 100) / 100 } : p));
   const st = useTimelineStore.getState();
-  const id = st.addTrack('drumRack', `${clip.name} chops`.slice(0, 40));
+  const id = st.addTrack('drumRack', `${clip.name} chops`.slice(0, 40), fileMade(clip.nameFromFile));
   // (no room for a track: nothing done, a toast says so)
   if (!useTimelineStore.getState().tracks.some((t) => t.id === id)) return false;
   useTimelineStore.getState().setTrackRack(id, { pads }, false);

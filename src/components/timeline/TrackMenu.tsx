@@ -16,6 +16,7 @@ import { bounceTrack, canFreeze, freezeTrack, notFrozenMessage, unfreezeTrack, u
 import { showToast } from './toastStore';
 import { bounceName } from '../../store/bounceToPad';
 import { bounceRangeToPad, placedMessage, usePadBounce } from '../../store/bounceToPadActions';
+import { fileMade } from '../../store/ownFiles';
 
 /**
  * The tracks a "new bus" takes: the ones with clips selected, if this track is one of them, else
@@ -187,7 +188,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
         const { inBar, outBar } = useTimelineStore.getState().loopRegion;
         const name = bounceName(inBar, outBar, undefined, track.name, songMeterOf(useTimelineStore.getState()));
         showToast(`Bouncing ${name}…`);
-        bounceRangeToPad({ from: inBar, to: outBar, trackId: track.id, name }).then(
+        bounceRangeToPad({ from: inBar, to: outBar, trackId: track.id, name, ...fileMade(track.nameFromFile) }).then(
           (placed) => placed && showToast(placedMessage(`"${name}"`, placed)),
           (err) => showToast(`Couldn't bounce ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
         );

@@ -21,6 +21,7 @@ import { SoundLibraryFooter } from './SoundLibraryFooter';
 import { BassCutToggle } from '../timeline/SampleInfo';
 import { slicePattern } from '../../store/resample';
 import { uid } from '../../store/timelineTypes';
+import { withName } from '../../store/ownFiles';
 
 const WAVE_H = 72;
 /** Closest two slice starts can be dragged, in seconds. */
@@ -77,7 +78,8 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
     setError(null);
     try {
       const meta = await importSoundFile(file, file.name);
-      const fresh = slicerFor(meta);
+      // (Named after the file: see ownFiles.ts)
+      const fresh = { ...slicerFor(meta), nameFromFile: true as const };
       // A new sound keeps the modes but is cut afresh
       set(slicer ? resliced({ ...fresh, mode: slicer.mode, count: slicer.count, sensitivity: slicer.sensitivity, pitch: slicer.pitch }) : fresh);
     } catch (err) {
@@ -273,7 +275,7 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
                   const seed = Math.floor(Math.random() * 1e9);
                   const notes = slicePattern(kind, slicer.slices.length, 1, length, seed).map((n) => ({ ...n, id: uid('note') }));
                   // (One undo step with the new clip)
-                  useTimelineStore.setState((x) => ({ clips: x.clips.map((c) => (c.id === clipId ? { ...c, name: `${slicer.name} ${kind}`, notes } : c)) }));
+                  useTimelineStore.setState((x) => ({ clips: x.clips.map((c) => (c.id === clipId ? { ...withName(c, `${slicer.name} ${kind}`, slicer.nameFromFile), notes } : c)) }));
                 }}
               >
                 {kind === 'stutter' ? 'Stutter' : 'Shuffle'}

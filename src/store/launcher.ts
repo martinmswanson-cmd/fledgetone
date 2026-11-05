@@ -9,6 +9,7 @@ import type { Segment } from './launcherView';
 import { getScheduledPositionBar } from '../audio/transport';
 import { measureAt } from '../audio/tempoMap';
 import { maxOf, minOf } from '../support/minMax';
+import { fileMade } from './ownFiles';
 
 /**
  * The clip launcher: a grid of clips, a column per track and a row per scene, to play loops live
@@ -138,11 +139,13 @@ export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip |
   const to = maxOf(clips.map((c) => c.startBar + c.lengthBars));
   const audio = clips.find((c) => c.audio);
   // An audio slot plays one sound: the first
-  if (audio) return { name: name ?? audio.name, lengthBars: audio.lengthBars, notes: [], audio: audio.audio, ...(audio.wobble ? { wobble: audio.wobble } : {}) };
+  // (Named after a clip whose name was made from a file's, it is too: see ownFiles.ts)
+  if (audio) return { name: name ?? audio.name, ...fileMade(name === undefined && audio.nameFromFile), lengthBars: audio.lengthBars, notes: [], audio: audio.audio, ...(audio.wobble ? { wobble: audio.wobble } : {}) };
   const notes = clips.flatMap((c) => c.notes.filter((n) => n.startOffset >= -EPS && n.startOffset < c.lengthBars - EPS).map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset + c.startBar - from })));
   const one = clips.length === 1 ? clips[0] : null;
   return {
     name: name ?? clips[0].name,
+    ...fileMade(name === undefined && clips[0].nameFromFile),
     lengthBars: Math.max(1 / 16, to - from),
     notes,
     ...(clips[0].wobble ? { wobble: clips[0].wobble } : {}),

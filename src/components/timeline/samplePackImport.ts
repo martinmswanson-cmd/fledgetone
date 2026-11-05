@@ -6,7 +6,8 @@
 import { allOrNothing, useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, SoundMeta } from '../../store/timelineTypes';
 import { defaultMulti, defaultRack, mapZones } from '../../store/sampleKits';
-import { baseName, packName, planPack, type PackPlan } from '../../store/samplePack';
+import { baseName, PACK_NAME, packName, planPack, type PackPlan } from '../../store/samplePack';
+import { fileMade, withName } from '../../store/ownFiles';
 import { RACK_PADS } from '../../store/timelineTypes';
 import { importSoundFile, MAX_SOUND_BYTES, SoundError } from '../../audio/soundLibrary';
 import { showToast } from './toastStore';
@@ -47,7 +48,8 @@ function rackOf(kit: PackPlan['kits'][number], loaded: Map<number, SoundMeta>): 
     pads: rack.pads.map((pad, i) => {
       const p = kit.pads[i];
       const sound = p ? loaded.get(p.file) : undefined;
-      return sound && p ? { ...pad, soundId: sound.id, name: p.name } : pad;
+      // (Named after its file: see ownFiles.ts)
+      return sound && p ? { ...withName(pad, p.name, true), soundId: sound.id } : pad;
     }),
   };
 }
@@ -84,6 +86,8 @@ export async function importSamplePack(files: readonly PathFile[]): Promise<void
   const loaded = await loadSounds(files, wanted, failed);
   const s = useTimelineStore.getState();
   const name = packName(files.map((f) => ({ path: f.path, size: f.file.size })));
+  // Tracks named after the pack's folders (see ownFiles.ts): every one but a pack with no folder of its own
+  const fromFolder = fileMade(name !== PACK_NAME);
   let kits = 0;
   let instruments = 0;
   const shots = plan.oneShots.filter((i) => loaded.has(i));
@@ -94,17 +98,17 @@ export async function importSamplePack(files: readonly PathFile[]): Promise<void
     for (const kit of plan.kits) {
       const rack = rackOf(kit, loaded);
       if (!rack.pads.some((p) => p.soundId)) continue;
-      const id = s.addTrack('drumRack', kit.name);
+      const id = s.addTrack('drumRack', kit.name, fromFolder);
       useTimelineStore.getState().setTrackRack(id, rack, false);
       kits++;
     }
     for (const inst of plan.instruments) {
       const sounds = inst.files.flatMap((f) => {
         const meta = loaded.get(f.file);
-        return meta ? [{ soundId: meta.id, name: baseName(files[f.file].path), root: f.root }] : [];
+        return meta ? [{ soundId: meta.id, name: baseName(files[f.file].path), nameFromFile: true as const, root: f.root }] : [];
       });
       if (sounds.length < 2) continue;
-      const id = s.addTrack('multiSampler', inst.name);
+      const id = s.addTrack('multiSampler', inst.name, fileMade(inst.name !== PACK_NAME));
       useTimelineStore.getState().setTrackMulti(id, { ...defaultMulti(), zones: mapZones(sounds) }, false);
       instruments++;
     }
@@ -112,7 +116,7 @@ export async function importSamplePack(files: readonly PathFile[]): Promise<void
     for (let k = 0; k * RACK_PADS < shots.length; k++) {
       const part = shots.slice(k * RACK_PADS, (k + 1) * RACK_PADS);
       const rack = rackOf({ name: '', pads: part.map((file) => ({ file, name: baseName(files[file].path).slice(0, 40) })) }, loaded);
-      const id = s.addTrack('drumRack', `${name} one-shots${k ? ` ${k + 1}` : ''}`.slice(0, 40));
+      const id = s.addTrack('drumRack', `${name} one-shots${k ? ` ${k + 1}` : ''}`.slice(0, 40), fromFolder);
       useTimelineStore.getState().setTrackRack(id, rack, false);
     }
     // Loops: end to end on an Audio track, muted so they don't play over the song
@@ -124,7 +128,7 @@ export async function importSamplePack(files: readonly PathFile[]): Promise<void
       if (message) showToast(message);
       else if (id) {
         loopCount = st.clips.filter((c) => c.trackId === id).length;
-        useTimelineStore.setState({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, name: `${name} loops`.slice(0, 40), isMuted: true } : t)) });
+        useTimelineStore.setState({ tracks: st.tracks.map((t) => (t.id === id ? { ...withName(t, `${name} loops`.slice(0, 40), name !== PACK_NAME), isMuted: true } : t)) });
       }
     }
   });
@@ -156,7 +160,7 @@ export async function kitFromFolder(files: readonly PathFile[], current: DrumRac
   const loaded = await loadSounds(files, kit.pads.flatMap((p) => (p ? [p.file] : [])), failed);
   const rack = rackOf(kit, loaded);
   // Pads the kit has no sound for keep what they had
-  const merged = { pads: rack.pads.map((p, i) => (p.soundId ? { ...current.pads[i], soundId: p.soundId, name: p.name } : current.pads[i])) };
+  const merged = { pads: rack.pads.map((p, i) => (p.soundId ? { ...withName(current.pads[i], p.name, true), soundId: p.soundId } : current.pads[i])) };
   const count = rack.pads.filter((p) => p.soundId).length;
   showToast(`Loaded ${plural(count, 'pad')} from the folder.${leftOut({ ...plan, kits: [kit], instruments: [], loops: [], oneShots: [] }, failed)}`);
   return merged;

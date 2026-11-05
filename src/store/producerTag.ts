@@ -21,6 +21,8 @@ export interface ProducerTag {
   /** The sound's id in the sound library */
   soundId: string;
   name: string;
+  /** `name` is an imported file's (see ownFiles.ts) */
+  nameFromFile?: true;
   seconds: number;
 }
 
@@ -30,7 +32,7 @@ export function parseTag(raw: string | null | undefined): ProducerTag | null {
   try {
     const v = JSON.parse(raw) as Partial<ProducerTag>;
     if (typeof v.soundId !== 'string' || !v.soundId || typeof v.seconds !== 'number' || !(v.seconds > 0)) return null;
-    return { soundId: v.soundId, name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 80) : 'Tag', seconds: v.seconds };
+    return { soundId: v.soundId, name: typeof v.name === 'string' && v.name.trim() ? v.name.trim().slice(0, 80) : 'Tag', ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}), seconds: v.seconds };
   } catch {
     return null;
   }

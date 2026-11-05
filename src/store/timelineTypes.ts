@@ -684,6 +684,8 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
 export interface Track {
   id: string;
   name: string;
+  /** Its name was made from a file's or folder's name (see ownFiles.ts): a plain one goes in its place wherever the song leaves the machine; the person's own typing clears it */
+  nameFromFile?: true;
   color: string;
   instrumentKey: InstrumentKey;
   isMuted: boolean;
@@ -764,7 +766,7 @@ export interface Track {
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */
-export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression' | 'stepLanes'>>;
+export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression' | 'stepLanes' | 'nameFromFile'>>;
 
 /** A track's clip in the clip launcher, in scene (row) `scene` (0 is the first). */
 export interface LauncherSlot {
@@ -1003,6 +1005,8 @@ export interface ClipAudio {
 /** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */
 export interface RackPad {
   name: string;
+  /** Its name was made from a file's or folder's name (see ownFiles.ts): a plain one goes in its place wherever the song leaves the machine; the person's own typing clears it */
+  nameFromFile?: true;
   /** Its sound in the sound library (absent: an empty pad) */
   soundId?: string;
   /** Level, dB (-60 to +12) */
@@ -1041,6 +1045,8 @@ export const RACK_BASE_NOTE = 36;
 export interface MultiZone {
   soundId: string;
   name: string;
+  /** Its name was made from a file's or folder's name (see ownFiles.ts): a plain one goes in its place wherever the song leaves the machine; the person's own typing clears it */
+  nameFromFile?: true;
   /** The key (MIDI) it plays at its own pitch */
   root: number;
   /** The keys it plays on (MIDI, inclusive) */
@@ -1095,6 +1101,8 @@ export interface SlicerSettings {
   soundId: string;
   /** File name, for display */
   name: string;
+  /** Its name was made from a file's or folder's name (see ownFiles.ts): a plain one goes in its place wherever the song leaves the machine; the person's own typing clears it */
+  nameFromFile?: true;
   /** The part of the sound that is sliced, in seconds */
   start: number;
   end: number;
@@ -1155,6 +1163,8 @@ export interface Clip {
   id: string;
   trackId: string;
   name: string;
+  /** Its name was made from a file's or folder's name (see ownFiles.ts): a plain one goes in its place wherever the song leaves the machine; the person's own typing clears it */
+  nameFromFile?: true;
   /** 1-based bar position (1.0 = start of song) */
   startBar: number;
   lengthBars: number;

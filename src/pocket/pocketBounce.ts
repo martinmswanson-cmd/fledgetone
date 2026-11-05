@@ -11,6 +11,7 @@ import { showToast } from '../components/timeline/toastStore';
 import type { PocketSection } from './pocketSections';
 import { usePocket } from './pocketStore';
 import { resample } from '../store/resampleActions';
+import { fileMade } from '../store/ownFiles';
 
 /**
  * Bounce a section (the whole mix, or only `trackId`) onto a pad: `target`'s, else the first
@@ -20,7 +21,7 @@ export async function bounceSection(sec: PocketSection, trackId?: string, target
   const only = trackId ? useTimelineStore.getState().tracks.find((t) => t.id === trackId) : undefined;
   const name = bounceName(sec.from, sec.to, `${sec.name} (${sec.letter})`, only?.name);
   try {
-    const placed = await bounceRangeToPad({ from: sec.from, to: sec.to, trackId, name, target });
+    const placed = await bounceRangeToPad({ from: sec.from, to: sec.to, trackId, name, ...fileMade(only?.nameFromFile), target });
     if (placed) {
       showToast(placedMessage(`"${name}"`, placed));
       // Its pads open on the new sound

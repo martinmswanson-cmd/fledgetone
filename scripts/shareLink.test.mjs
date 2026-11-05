@@ -3,6 +3,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // The app imports its own modules without the .ts extension (Vite resolves them); do the same here
 register(
@@ -239,4 +240,141 @@ test('a song name is kept to one line of at most 80 characters', () => {
   const p = parseProject(serializeProject({ ...SONG, name: `Summer beat"? Press OK.${' '.repeat(4000)}It replaces what's on the timeline` }));
   assert.ok(p.name.length <= 80);
   assert.equal(parseProject(serializeProject({ ...SONG, name: 'Night drive' })).name, 'Night drive');
+});
+
+// ---------- Names the app made from files and folders (marked nameFromFile, see ownFiles.ts) ----------
+
+const T = (id, name, instrumentKey, extra = {}) => ({ id, name, color: '#f59e0b', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, reverbSend: 0, delaySend: 0, ...extra });
+const A = (soundId, extra = {}) => ({ soundId, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0, ...extra });
+const P = (name, soundId, extra = {}) => ({ name, ...(soundId ? { soundId } : {}), gain: 0, pan: 0, pitch: 0, decay: 0, lowpass: 20000, highpass: 20, drive: 0, choke: 0, ...extra });
+const OWN_NAMES = /Divorce|Therapy|girlfriend|Ex voice|Snare 1|Rhodes/;
+
+/** A song as the app makes it now: each flow's names, marked where they're made. The library keeps the first name the kick's bytes came under. */
+const MARKED_SONG = () =>
+  parseProject({
+    ...serializeProject(SONG),
+    tracks: [
+      T('ta', 'Audio 1', 'audio'),
+      T('ts', 'Slicer', 'slicer', { slicer: { soundId: 'hSl', name: 'Therapy session.wav', nameFromFile: true, start: 0, end: 1, slices: [0, 0.5], mode: 'equal', count: 4 } }),
+      // Sample pack import: named after the dropped folder; a pad whose bytes the library has under another name
+      T('tk', 'Ex-girlfriend voice notes kit', 'drumRack', { nameFromFile: true, rack: { pads: [P('Ex voice kick', 'hOrig', { nameFromFile: true }), P('Snare 1', 'hSn', { nameFromFile: true })] } }),
+      T('to', 'Ex-girlfriend voice notes one-shots', 'drumRack', { nameFromFile: true }),
+      T('tl', 'Ex-girlfriend voice notes loops', 'audio', { nameFromFile: true }),
+      T('tm', 'Rhodes', 'multiSampler', { nameFromFile: true, multi: { zones: [{ soundId: 'hRh', name: 'Rhodes C3', nameFromFile: true, root: 48, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } }),
+      // Voice chop and vocal double
+      T('tc', 'Divorce lawyer call chops', 'multiSampler', { nameFromFile: true, multi: { zones: [{ soundId: 'hCh', name: 'Divorce lawyer call chop 1 C4', nameFromFile: true, root: 60, lo: 0, hi: 127, velLo: 1, velHi: 127 }], attack: 0, release: 0.3 } }),
+      T('td', 'Audio 1 double', 'audio'),
+    ],
+    clips: [
+      // Dropped, then reversed, moved, mangled and tuned (each keeps the clip, its name and its mark)
+      { id: 'c0', trackId: 'ta', name: 'Divorce lawyer call', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [], audio: A('hOrig') },
+      { id: 'c1', trackId: 'ta', name: 'Divorce lawyer call', nameFromFile: true, startBar: 2, lengthBars: 1, notes: [], audio: A('hRev', { reversedFrom: 'hOrig' }) },
+      { id: 'c2', trackId: 'ta', name: 'Divorce lawyer call', nameFromFile: true, startBar: 3, lengthBars: 1, notes: [], audio: A('hShift', { shiftedFrom: 'hOrig', shift: 3, shiftVersion: 2 }) },
+      { id: 'c3', trackId: 'ta', name: 'Divorce lawyer call', nameFromFile: true, startBar: 4, lengthBars: 1, notes: [], audio: A('hMang', { mangled: { from: 'hOrig', offset: 0, bars: 1, steps: ['x'] } }) },
+      { id: 'c4', trackId: 'ta', name: 'Divorce lawyer call', nameFromFile: true, startBar: 5, lengthBars: 1, notes: [], audio: A('hTune', { tunedFrom: 'hOrig' }) },
+      // Stutter and Shuffle on the Slicer, a voice chop's clip, a double, a loop from the pack
+      { id: 'c5', trackId: 'ts', name: 'Therapy session.wav stutter', nameFromFile: true, startBar: 1, lengthBars: 2, notes: [{ id: 'n', note: 'C3', startOffset: 0, duration: '16n', velocity: 0.8 }] },
+      { id: 'c6', trackId: 'ts', name: 'Therapy session.wav shuffle', nameFromFile: true, startBar: 3, lengthBars: 2, notes: [] },
+      { id: 'c7', trackId: 'tc', name: 'Divorce lawyer call chops', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [] },
+      { id: 'c8', trackId: 'td', name: 'Divorce lawyer call double', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [], audio: A('hDbl') },
+      { id: 'c9', trackId: 'tl', name: 'Ex voice loop 90', nameFromFile: true, startBar: 1, lengthBars: 1, notes: [], audio: A('hLoop') },
+      // Typed by the person
+      { id: 'c10', trackId: 'ta', name: 'Verse', startBar: 6, lengthBars: 1, notes: [], audio: A('hOrig') },
+    ],
+  });
+
+test('a link carries none of the names the app made from files and folders, marked where it made them; typed ones it keeps', async () => {
+  // (Even with no file name known to check against: the marks are enough)
+  for (const fileNameOf of [undefined, () => 'Something else.wav']) {
+    const back = await projectFromHash(await songLink(MARKED_SONG(), '', fileNameOf));
+    const json = JSON.stringify(serializeProject(back));
+    assert.ok(!OWN_NAMES.test(json), json.match(OWN_NAMES)?.[0]);
+    assert.ok(!json.includes('nameFromFile'));
+    assert.deepEqual(back.tracks.map((t) => t.name), ['Audio 1', 'Slicer', 'Kit', 'Kit', 'Audio', 'Sounds', 'Sounds', 'Audio 1 double']);
+    assert.deepEqual(back.clips.map((c) => c.name), ['Audio', 'Audio', 'Audio', 'Audio', 'Audio', 'Pattern', 'Pattern', 'Pattern', 'Audio', 'Audio', 'Verse']);
+    assert.deepEqual(back.tracks[2].rack.pads.slice(0, 2).map((p) => p.name), ['Pad 1', 'Pad 2']);
+    assert.equal(back.tracks[1].slicer.name, 'Sound');
+    assert.equal(back.tracks[5].multi.zones[0].name, 'Sound 1');
+    // The music is the same
+    assert.equal(back.clips[5].notes.length, 1);
+    assert.equal(back.clips[2].audio.shift, 3);
+  }
+});
+
+test("a song saved before the mark: edited clips and Stutter clips named after a file are found by the sounds' file names", async () => {
+  const lib = { hOrig: 'Divorce lawyer call 2026-10-02.m4a', hRev: 'Divorce lawyer call 2026-10-02 (reversed).wav', hShift: 'Divorce lawyer call 2026-10-02 (+3 st).wav', hMang: 'Divorce lawyer call 2026-10-02 (mangled).wav', hSl: 'Therapy session.wav' };
+  const song = parseProject({
+    ...serializeProject(SONG),
+    tracks: [T('ta', 'Audio 1', 'audio'), T('ts', 'Slicer', 'slicer', { slicer: { soundId: 'hSl', name: 'Therapy session.wav', start: 0, end: 1, slices: [0, 0.5] } }), T('tc', 'Divorce lawyer call 2026-10-02 chops', 'multiSampler')],
+    clips: [
+      { id: 'c1', trackId: 'ta', name: 'Divorce lawyer call 2026-10-02', startBar: 2, lengthBars: 1, notes: [], audio: A('hRev', { reversedFrom: 'hOrig' }) },
+      { id: 'c2', trackId: 'ta', name: 'Divorce lawyer call 2026-10-02', startBar: 3, lengthBars: 1, notes: [], audio: A('hShift', { shiftedFrom: 'hOrig', shift: 3 }) },
+      { id: 'c3', trackId: 'ta', name: 'Divorce lawyer call 2026-10-02', startBar: 4, lengthBars: 1, notes: [], audio: A('hMang', { mangled: { from: 'hOrig', offset: 0, bars: 1, steps: ['x'] } }) },
+      { id: 'c4', trackId: 'ts', name: 'Therapy session.wav stutter', startBar: 1, lengthBars: 2, notes: [] },
+      { id: 'c5', trackId: 'ts', name: 'My stutter', startBar: 3, lengthBars: 2, notes: [] },
+    ],
+  });
+  const back = await projectFromHash(await songLink(song, '', (id) => lib[id]));
+  assert.ok(!/Divorce|Therapy/.test(JSON.stringify(serializeProject(back))));
+  assert.deepEqual(back.clips.map((c) => c.name), ['Audio', 'Audio', 'Audio', 'Pattern', 'My stutter']);
+  assert.equal(back.tracks[2].name, 'Sounds');
+});
+
+test('a typed name clears the mark and goes into the link as typed; saved and opened, the marks stay', async () => {
+  const { typedName } = await import('../src/store/ownFiles.ts');
+  const song = MARKED_SONG();
+  const renamed = { ...song, tracks: song.tracks.map((t) => (t.id === 'tk' ? typedName(t, 'Ex kit') : t)), clips: song.clips.map((c) => (c.id === 'c1' ? typedName(c, 'Divorce lawyer call') : c)) };
+  const back = await projectFromHash(await songLink(renamed, ''));
+  assert.equal(back.tracks[2].name, 'Ex kit');
+  assert.equal(back.clips[1].name, 'Divorce lawyer call');
+  assert.equal(back.clips[0].name, 'Audio');
+  // Save and open: every mark is where it was, and the link from the opened song is the same
+  const opened = parseProject(JSON.parse(JSON.stringify(serializeProject(renamed))));
+  assert.deepEqual(opened.tracks.map((t) => !!t.nameFromFile), renamed.tracks.map((t) => !!t.nameFromFile));
+  assert.deepEqual(opened.clips.map((c) => !!c.nameFromFile), renamed.clips.map((c) => !!c.nameFromFile));
+  assert.equal(opened.tracks[2].nameFromFile, undefined);
+  assert.equal(opened.tracks[1].slicer.nameFromFile, true);
+  assert.equal(opened.tracks[2].rack.pads[0].nameFromFile, true);
+  assert.equal(await songLink(opened, ''), await songLink(renamed, ''));
+});
+
+test('a song with sounds but no name made from a file makes the same link with or without the file names to check', async () => {
+  const song = parseProject({
+    ...serializeProject(SONG),
+    tracks: [T('ta', 'Vox', 'audio'), T('tk', 'Drums', 'drumRack', { rack: { pads: [P('Kick', 'h1'), P('Snare')] } })],
+    clips: [{ id: 'c1', trackId: 'ta', name: 'Chorus vocal', startBar: 1, lengthBars: 1, notes: [], audio: A('h2') }, { id: 'c2', trackId: 'tk', name: 'Beat chops', startBar: 1, lengthBars: 1, notes: [] }],
+  });
+  const files = { h1: 'kick from my desktop.wav', h2: 'Voice memo.m4a' };
+  assert.equal(await songLink(song, '', (id) => files[id]), await songLink(song, ''));
+  const back = await projectFromHash(await songLink(song, '', (id) => files[id]));
+  assert.deepEqual(back.clips.map((c) => c.name), ['Chorus vocal', 'Beat chops']);
+});
+
+test('each flow that names something after a file or folder marks it, and a typed name clears the mark', () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const has = (path, ...snippets) => {
+    const text = src(path);
+    for (const s of snippets) assert.ok(text.includes(s), `${path}: ${s}`);
+  };
+  // Dropped and recorded sounds (and Variations) become clips named after their sound's file
+  has('src/store/timelineStore.ts', 'name: clipNameFromFile(sound.name),\n          // (Named after its sound\'s file: see ownFiles.ts)\n          nameFromFile: true,');
+  // Edits change the clip's sound, never its name or mark (reverse, pitch move, mangle, tune)
+  for (const [path, call] of [['src/audio/audioEdits.ts', 'setClipAudio(clip.id, { soundId: sound.id, reversedFrom'], ['src/store/flipActions.ts', 'setClipAudio(clipId, { soundId: sound.id, shiftedFrom'], ['src/components/timeline/TuneDialog.tsx', 'setClipAudio(clip.id, { soundId: sound.id, tunedFrom'], ['src/store/mangleActions.ts', 'return { ...c, lengthBars, audio: next };']]) has(path, call);
+  // Names made from another's carry its mark
+  has('src/store/timelineStore.ts', 'name: `${clip.name} chops`,\n        ...fileMade(clip.nameFromFile),', 'name: `${track.name} ${count}`,\n        ...fileMade(track.nameFromFile),');
+  has('src/components/inspector/SlicerPanel.tsx', "const fresh = { ...slicerFor(meta), nameFromFile: true as const };", 'withName(c, `${slicer.name} ${kind}`, slicer.nameFromFile)');
+  has('src/components/timeline/samplePackImport.ts', "s.addTrack('drumRack', kit.name, fromFolder)", "s.addTrack('multiSampler', inst.name, fileMade(inst.name !== PACK_NAME))", 'one-shots${k ? ` ${k + 1}` : \'\'}`.slice(0, 40), fromFolder)', 'withName(t, `${name} loops`.slice(0, 40), name !== PACK_NAME)', 'withName(pad, p.name, true)', 'nameFromFile: true as const, root: f.root');
+  has('src/components/inspector/SampleKitPanels.tsx', 'withName(p, fileBase(sound.name).slice(0, 40), true)', "name: fileBase(m.name), nameFromFile: true as const", 'typedName(p, e.target.value.slice(0, 40))');
+  has('src/store/voiceChopActions.ts', 'name, nameFromFile: true, root: k.root', "`${clip.name} chops`.slice(0, 40), fileMade(clip.nameFromFile)");
+  has('src/store/vocalActions.ts', 'name: `${from.name} double`,\n    ...fileMade(from.nameFromFile),', 'const copy: Clip = { ...still,');
+  has('src/store/bounceToPadActions.ts', "`${clip.name} chops`.slice(0, 40), fileMade(clip.nameFromFile)");
+  has('src/store/flipActions.ts', "`${req.name} chops`.slice(0, 40), fileMade(req.nameFromFile)");
+  has('src/components/timeline/ChopSampleDialog.tsx', 'const named = fileMade(clip.name ? clip.nameFromFile : !!meta);', 'chopToRack({ soundId, name, ...named,', 'chopClipToSlicer(clipId, { soundId, name, ...named,');
+  has('src/store/freezeActions.ts', "`${source.name} (bounce)`, fileMade(source.nameFromFile)");
+  has('src/store/resampleActions.ts', "st.addTrack('audio', `${short} print`, named)", "st.addTrack('slicer', `${short} chops`, named)");
+  has('src/store/arrangeActions.ts', 'RATE, file.name, true);', 'name: tag.name, ...(tag.nameFromFile ?');
+  // Typed names: a track's and a clip's name fields, and a pad's
+  has('src/store/timelineStore.ts', 'typedName(t, trimmed)', 'renameClip: (clipId, name) => set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? typedName(c, name) : c)) })),');
+  // The web runtime kit goes through the same renaming as a link
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(project, (id) => fileNames.get(id))');
 });

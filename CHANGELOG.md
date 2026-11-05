@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Share links and web kits leave out names made from your files and folders**: a clip still named after its file once you reversed, moved, mangled or tuned it, a Slicer's Stutter and Shuffle clips, a sample pack's tracks named after its folders, its pads and zones, voice chops and doubles all kept those names in a share link or a web runtime kit. The studio now notes each name it makes from a file or folder, and those get plain ones ("Audio", "Kit", "Pad 1", "Sound 1") when the song leaves your machine. A name you type is kept, and nothing changes in the studio itself.
 - **A share link never carries a sound file**: a Sampler sound still held inside an older song file (when it couldn't be moved into your sounds) went into the song's share link whole. It now stays out, as every other sound does: whoever opens the link sees it missing.
 - **A shared song's name can't hide the "replace your song" warning**: the question before a shared song replaces your work now says that first, and a song's name is kept to one line of at most 80 characters, so a long name can't push the warning off the screen.
 - **Toms and chip kicks no longer click**: since the last change to how notes start, every tom and Chip Drums kick (and, more faintly, the other drum kits' kicks) began with a click, and a Chip Drums kick due just after you pressed Stop could still sound for an instant. Each hit now starts cleanly at the start of its wave, and a hit still to come when you press Stop stays silent.

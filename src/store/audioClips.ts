@@ -311,6 +311,7 @@ export function normalizeSlicer(raw: unknown): SlicerSettings | undefined {
   return {
     soundId: raw.soundId,
     name: typeof raw.name === 'string' ? raw.name : 'Sound',
+    ...(raw.nameFromFile === true ? { nameFromFile: true as const } : {}),
     start,
     end,
     slices,
