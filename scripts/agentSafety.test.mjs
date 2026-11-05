@@ -247,3 +247,175 @@ test('unmuting a track a solo keeps silent is a note, not a warning', () => {
   assert.deepEqual(out.warnings, []);
   assert.deepEqual(out.notes, ['This unmutes "Keys", but it stays silent: other tracks are soloed.']);
 });
+
+// ---- Round 30: inserts that held a track down, notes played harder, sends, the OTT, and false cautions ----
+
+const ap = (song, ops) => {
+  const out = applyOps(song, { opsVersion: 1, ops }, { idBase: 'sg-' + Math.random().toString(36).slice(2, 7) });
+  assert.ok(out.ok, JSON.stringify(out.errors));
+  return out.song;
+};
+
+test('a Filter, compressor or Gate that held a track down, switched off, opened or eased, is a warning', () => {
+  const K = base().tracks[0].id;
+  const filt = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, type: 'lowpass', cutoff: 80, slope: 24 } }]);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: false } }], filt), /^This switches off the Filter on "Keys": it held it down, and around [\d.]+ (Hz|kHz) it comes up by \d+(\.\d)? dB\. Turn your speakers down before you listen\.$/);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'filter', settings: { cutoff: 20000 } }], filt), /^On "Keys", the Filter lets much more through: around/);
+  assert.match(warningsFor([{ op: 'set_automation', trackId: K, param: 'filterCutoff', points: [{ bar: 1, value: 1 }] }], filt), /^On "Keys", the Filter lets much more through from bar 1: around/);
+  // A cutoff lane that held it shut from bar 9, redrawn open there
+  const swept = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, type: 'lowpass', cutoff: 20000, slope: 24 } }, { op: 'set_automation', trackId: K, param: 'filterCutoff', points: [{ bar: 1, value: 1 }, { bar: 9, value: 1 }, { bar: 9, value: 0.05 }, { bar: 64, value: 0.05 }] }]);
+  assert.match(warningsFor([{ op: 'set_automation', trackId: K, param: 'filterCutoff', points: [{ bar: 1, value: 1 }, { bar: 64, value: 1 }] }], swept), /the Filter lets much more through from bar 9/);
+  // A resonance peak raised
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, resonance: 15, cutoff: 800 } }], ap(base(), [{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, cutoff: 800 } }])), /On "Keys", the Filter peaks: around 800 Hz it comes up by \d+(\.\d)? dB/);
+  // Closing a filter, or one that hardly held anything back, says nothing
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: K, insert: 'filter', settings: { cutoff: 60 } }], filt), '');
+  const lowCut = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, type: 'highpass', cutoff: 20, slope: 12 } }]);
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: false } }], lowCut), '');
+
+  const comp = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { on: true, threshold: -60, ratio: 20, makeup: 0 } }]);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { on: false } }], comp), /^This switches off the compressor on "Keys": it held it down, and it comes up much louder\. Turn your speakers down before you listen\.$/);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { threshold: 0 } }], comp), /^On "Keys", the compressor holds it down much less: it comes up much louder\./);
+  assert.match(warningsFor([{ op: 'set_automation', trackId: K, param: 'fx:compressor.threshold', points: [{ bar: 1, value: 1 }] }], comp), /^On "Keys", the compressor holds it down much less from bar 1: it comes up much louder\./);
+  // The compressor as it comes (threshold -20, ratio 4, makeup 3) switched off: hardly held down
+  const plainComp = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { on: true } }]);
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { on: false } }], plainComp), '');
+
+  const gate = ap(base(), [{ op: 'set_insert', trackId: K, insert: 'gate', settings: { on: true, depth: 1, length: 0.1 } }]);
+  assert.match(warningsFor([{ op: 'set_insert', trackId: K, insert: 'gate', settings: { on: false } }], gate), /^This switches off the Gate on "Keys": it held it down, and it comes up by about 10 dB\. Turn your speakers down before you listen\.$/);
+  assert.match(warningsFor([{ op: 'set_automation', trackId: K, param: 'fx:gate.length', points: [{ bar: 1, value: 1 }] }], gate), /^On "Keys", the Gate chops it much less from bar 1: it comes up by about \d+(\.\d)? dB\./);
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: K, insert: 'gate', settings: { length: 0.2 } }], gate), '');
+});
+
+test('notes played much harder, the same notes stacked, or copies of a clip piled on a bar, are a warning', () => {
+  const clip = base().clips[0];
+  const soft = ap(base(), [{ op: 'change_notes', clipId: clip.id, notes: clip.notes.map((n) => ({ id: n.id, velocity: 0.05 })) }]);
+  assert.match(warningsFor([{ op: 'change_notes', clipId: clip.id, notes: clip.notes.map((n) => ({ id: n.id, velocity: 1 })) }], soft), /^On "Keys", the notes play much harder \(louder notes, or more of them at once\) from bar 1: it comes up by about 26 dB\. Turn your speakers down before you listen\.$/);
+  const stack = Array.from({ length: 40 }, () => ({ pitch: 'C4', start: 0, length: 1, velocity: 1 }));
+  assert.match(warningsFor([{ op: 'add_notes', clipId: clip.id, notes: stack }]), /On "Keys", the notes play much harder .* from bar 1: it comes up by about 1\d(\.\d)? dB/);
+  assert.match(warningsFor(Array.from({ length: 12 }, () => ({ op: 'duplicate_clip', clipId: clip.id, toBar: clip.startBar }))), /On "Keys", the notes play much harder .*: it comes up by about 11(\.\d)? dB/);
+  // The starter's own velocities raised to the top: under 6 dB (measured +4.6 LU), so nothing
+  assert.equal(warningsFor([{ op: 'change_notes', clipId: clip.id, notes: clip.notes.map((n) => ({ id: n.id, velocity: 1 })) }]), '');
+  // A copy of the clip in bars it was silent in, or a few notes added, say nothing
+  assert.equal(warningsFor([{ op: 'duplicate_clip', clipId: clip.id, toBar: 200 }]), '');
+  assert.equal(warningsFor([{ op: 'add_notes', clipId: clip.id, notes: [{ pitch: 'C5', start: 0, length: 0.25, velocity: 0.8 }] }]), '');
+});
+
+test('a send pushed over full level is a warning: the reverb at 300%', () => {
+  const K = base().tracks[0].id;
+  assert.match(warningsFor([{ op: 'set_track', trackId: K, reverbSend: 3 }]), /^On "Keys", the reverb send goes up to 300%: the reverb comes out much louder\. Turn your speakers down before you listen\.$/);
+  // Up to full level (measured +3 LU for the delay), or a send lane (never over full), say nothing
+  assert.equal(warningsFor([{ op: 'set_track', trackId: K, delaySend: 1 }, { op: 'set_track', trackId: K, reverbSend: 1 }]), '');
+  const ret = ap(base(), [{ op: 'add_track', instrument: 'return', ref: 'R', name: 'Verb' }]);
+  const R = ret.tracks.at(-1).id;
+  assert.equal(warningsFor([{ op: 'set_automation', trackId: K, param: `send:${R}`, points: [{ bar: 1, value: 1 }] }], ret), '');
+  // A reverb send lane that held a 300% send down, taken away
+  const held = ap(base(), [{ op: 'set_track', trackId: K, reverbSend: 3 }, { op: 'set_automation', trackId: K, param: 'reverbSend', points: [{ bar: 1, value: 0.1 }] }]);
+  assert.match(warningsFor([{ op: 'remove_automation', trackId: K, param: 'reverbSend' }], held), /This takes away the reverb send automation on "Keys": it sends at 300% all along/);
+});
+
+test('the master OTT switched on, or pushed much harder, is a warning even without gain', () => {
+  const a = base();
+  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 1, inGain: 0, outGain: 0 } }]), /^This switches on the master OTT: the whole song gets louder\.$/);
+  const on = ap(a, [{ op: 'set_master', ott: { on: true, depth: 0.2 } }]);
+  assert.match(warningsFor([{ op: 'set_master', ott: { depth: 1 } }], on), /^The master OTT is pushed much harder \(20% to 100% depth\): the whole song gets louder\.$/);
+  assert.equal(warningsFor([{ op: 'set_master', ott: { depth: 0.4 } }], on), '');
+});
+
+test('no false cautions: a setting a lane plays over, a fader rise taken back, distance 0', () => {
+  const s = base();
+  const K = s.tracks[0].id;
+  const vlane = ap(s, [{ op: 'set_automation', trackId: K, param: 'volume', points: [{ bar: 1, value: 0.7 }] }]);
+  assert.equal(warningsFor([{ op: 'set_track', trackId: K, volumeDb: 6 }], vlane), '');
+  const eqlo = ap(s, [{ op: 'set_automation', trackId: K, param: 'eqLow', points: [{ bar: 1, value: 0.5 }] }]);
+  assert.equal(warningsFor([{ op: 'set_eq', trackId: K, low: 12 }], eqlo), '');
+  // (the bands without a lane still say so)
+  assert.equal(warningsFor([{ op: 'set_eq', trackId: K, low: 12, mid: 12, high: 12 }], eqlo), 'On "Keys", the EQ mid goes up by 12 dB.\nOn "Keys", the EQ high goes up by 12 dB.');
+  const mk = ap(s, [{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { on: true, makeup: 0 } }, { op: 'set_automation', trackId: K, param: 'fx:compressor.makeup', points: [{ bar: 1, value: 0 }] }]);
+  assert.equal(warningsFor([{ op: 'set_insert', trackId: K, insert: 'compressor', settings: { makeup: 18 } }], mk), '');
+  // Keys +12 with the master -12, or with the bus it plays into -12: no louder all the way out
+  const keys = s.tracks[0].volume;
+  assert.equal(warningsFor([{ op: 'set_track', trackId: K, volumeDb: keys + 12 }, { op: 'set_master', levelDb: s.master.level - 12 }]), '');
+  const bus = ap(s, [{ op: 'add_track', instrument: 'bus', ref: 'B', name: 'Grp' }, { op: 'set_track', trackId: K, output: '$B' }]);
+  assert.equal(warningsFor([{ op: 'set_track', trackId: K, volumeDb: keys + 12 }, { op: 'set_track', trackId: bus.tracks.at(-1).id, volumeDb: -12 }], bus), '');
+  // ...but one the master takes back only in part still says so
+  assert.match(warningsFor([{ op: 'set_track', trackId: K, volumeDb: keys + 12 }, { op: 'set_master', levelDb: s.master.level - 3 }]), /"Keys" goes up by 12 dB/);
+  const F = s.tracks[3].id;
+  const far = ap(s, [{ op: 'set_track', trackId: F, distance: 1 }]);
+  const near = applyOps(far, { opsVersion: 1, ops: [{ op: 'set_track', trackId: F, distance: 0 }] }, { idBase: 'sg-near' });
+  assert.deepEqual(near.warnings, []);
+  assert.equal(near.song.tracks[3].distance, undefined);
+});
+
+test("the reviewer's cases measured no louder say nothing", () => {
+  const s = base();
+  const K = s.tracks[0].id;
+  const clip = s.clips[0];
+  const quiet = [
+    [[{ op: 'set_track', trackId: K, volumeDb: 6 }, { op: 'set_track', trackId: K, volumeDb: -11.5 }]],
+    [[{ op: 'set_track', trackId: K, delaySend: 1 }]],
+    [[{ op: 'set_insert', trackId: K, insert: 'distortion', settings: { on: true, amount: 0.4 } }]],
+    [[{ op: 'set_master', glue: 'punchy' }]],
+    [[{ op: 'set_master', glue: 'off' }]],
+    [[{ op: 'set_master', glue: 'tight' }]],
+    [[{ op: 'set_master', width: { on: true, amount: 2 } }]],
+    [[{ op: 'set_insert', trackId: K, insert: 'lofi', settings: { on: false } }]],
+    [[{ op: 'set_automation', trackId: K, param: 'fx:lofi.mix', points: [{ bar: 1, value: 0 }] }]],
+    [[{ op: 'change_notes', clipId: clip.id, notes: clip.notes.map((n) => ({ id: n.id, velocity: 1 })) }]],
+    [[{ op: 'set_insert', trackId: K, insert: 'reverb', settings: { on: true, decay: 10, mix: 1 } }]],
+    [[{ op: 'set_insert', trackId: K, insert: 'echo', settings: { on: true, feedback: 0.79, mix: 1 } }]],
+    [[{ op: 'set_tempo', bpm: 41 }]],
+    [[{ op: 'set_track', trackId: K, mute: true }]],
+    [[{ op: 'set_insert', trackId: K, insert: 'pump', settings: { on: false } }], [{ op: 'set_insert', trackId: K, insert: 'pump', settings: { on: true, depth: 1, release: 600, trigger: 'kick' } }]],
+    [[{ op: 'set_automation', trackId: K, param: 'fx:pump.depth', points: [{ bar: 1, value: 0 }] }], [{ op: 'set_insert', trackId: K, insert: 'pump', settings: { on: true, depth: 1, release: 600, trigger: 'kick' } }]],
+    [[{ op: 'set_automation', trackId: K, param: 'volume', points: [{ bar: 1, value: 0.3, curve: 1 }, { bar: 5, value: 0.85 }] }], [{ op: 'set_automation', trackId: K, param: 'volume', points: [{ bar: 1, value: 0.3 }, { bar: 5, value: 0.85 }] }]],
+  ];
+  for (const [ops, setup] of quiet) assert.equal(warningsFor(ops, setup ? ap(s, setup) : s), '', JSON.stringify(ops[0]));
+});
+
+const { measuredRise, measuredCaution, auditionRise, MEASURED_JUMP_LU, MEASURED_PEAK_DB, SILENT_SONG_LUFS } = await import('../src/agent/safety.ts');
+const { barLoudness } = await import('../src/agent/listenReport.ts');
+
+test('the measured caution: Suggested much louder than the song in some bar, where the rules said nothing', () => {
+  assert.equal(MEASURED_JUMP_LU, 6);
+  assert.equal(MEASURED_PEAK_DB, 6);
+  const bars = (list) => list.map(([lufs, peak]) => ({ lufs, peak }));
+  const song = { lufs: -20, peak: -6 };
+  const before = bars([[-20, -6], [-20, -6], [-30, -12], [-20, -6]]);
+  // Bar 2 up 9 LU: from bar 2, up to 9 dB
+  const up = measuredRise(before, bars([[-20, -6], [-11, -4], [-30, -12], [-18, -6]]), song);
+  assert.deepEqual(up, { db: 9, bar: 2 });
+  assert.equal(measuredCaution(up, false), 'Suggested comes out up to 9 dB louder (from bar 2). Turn your speakers down before you listen.');
+  // Said nothing more when the rules already cautioned
+  assert.equal(measuredCaution(up, true), null);
+  // Up 6 LU, or a quiet bar brought up only to the song's own level: nothing
+  assert.equal(measuredRise(before, bars([[-14, -6], [-20, -6], [-20, -6], [-20, -6]]), song), null);
+  // The true peak up by more than 6 dB over the song's highest: a warning even at the same loudness
+  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, 1], [-20, -6]]), song), { db: 7, bar: 3 });
+  // A song silent all through is compared with a quiet mix's loudness
+  const silent = bars([[-Infinity, -Infinity], [-Infinity, -Infinity]]);
+  assert.equal(measuredRise(silent, bars([[-24, -10], [-24, -10]]), { lufs: -Infinity, peak: -Infinity }), null);
+  assert.deepEqual(measuredRise(silent, bars([[-24, -10], [SILENT_SONG_LUFS + 8, -1]]), { lufs: -Infinity, peak: -Infinity }), { db: 8, bar: 2 });
+  // Bars the suggestion adds past the song's end are measured against the song
+  assert.deepEqual(measuredRise(before, bars([[-20, -6], [-20, -6], [-30, -12], [-20, -6], [-10, -3]]), song), { db: 10, bar: 5 });
+  // In a song not in 4/4, the bar as the ruler numbers it
+  assert.match(measuredCaution({ db: 7.4, bar: 3 }, false, { base: { num: 3, den: 4 }, points: [] }), /^Suggested comes out up to 7 dB louder \(from bar \d+( beat [\d.]+)?\)\./);
+  // The before-and-after's own measure, where the sound check can't run
+  assert.deepEqual(auditionRise(8.2, 1, 9), { db: 8.2, bar: 9 });
+  assert.deepEqual(auditionRise(2, 7.5, 9), { db: 7.5, bar: 9 });
+  assert.equal(auditionRise(5, 5, 9), null);
+  assert.equal(auditionRise(Infinity, null, 9), null);
+});
+
+test("a bar's loudness from a render's gating blocks", () => {
+  // 100 ms hops: blocks centred at 0.2, 0.3, ... s; bar 1 is 0 to 1 s, bar 2 is 1 to 2 s
+  const blocks = Array.from({ length: 20 }, (_, i) => ((i + 2) * 0.1 < 1 ? 1e-2 : 1e-1));
+  const [b1, b2] = barLoudness(blocks, 0.1, [{ start: 0, end: 1 }, { start: 1, end: 2 }]);
+  assert.ok(Math.abs(b1 - (-0.691 - 20)) < 1e-9, String(b1));
+  assert.ok(Math.abs(b2 - (-0.691 - 10)) < 1e-9, String(b2));
+  // Gated as integrated loudness is: a near-silent stretch in a bar doesn't pull it down
+  const gaps = [1e-1, 1e-1, 1e-9, 1e-9, 1e-1, 1e-1, 1e-9, 1e-9];
+  assert.ok(Math.abs(barLoudness(gaps, 0.1, [{ start: 0, end: 1 }])[0] - (-0.691 - 10)) < 1e-9);
+  // A bar shorter than a hop reads the block nearest its middle; silence is -Infinity
+  assert.ok(Number.isFinite(barLoudness(blocks, 0.1, [{ start: 0.5, end: 0.55 }])[0]));
+  assert.equal(barLoudness([0, 0, 0], 0.1, [{ start: 0, end: 0.3 }])[0], -Infinity);
+});

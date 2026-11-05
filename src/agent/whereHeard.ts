@@ -24,6 +24,14 @@
  * fails ('failed'), and the card says it wasn't checked by sound; if its rules may count fewer bars
  * than the truth (a tail the studio doesn't know: Suggestion.sure), Accept always asks for its
  * second press (suggestionsStore.ts uncheckedTail).
+ *
+ * The same two renders are measured too, bar by bar (loudness from their gating blocks, and true
+ * peak): where Suggested comes out much louder than the song (safety.ts measuredRise) and the
+ * rules' cautions said nothing, the card gets a caution of its own (measuredCaution, withMeasured).
+ * It can come only once the check has run: not for a song too long to check (where the
+ * before-and-after's own measure stands in, songWatch.ts), not while the song plays, and not
+ * before the renders are done (the before-and-after turns a much louder Suggested down meanwhile:
+ * auditionPlayer.ts LOUDER_LIMIT_LU).
  */
 import { create } from 'zustand';
 import type { ProjectSnapshot } from '../store/project';
@@ -31,10 +39,13 @@ import { currentProject, useTimelineStore } from '../store/timelineStore';
 import { renderRange } from '../audio/listen';
 import { channelsOf } from '../audio/exportWav';
 import { barToSeconds } from '../audio/tempoMap';
-import { barDifferences, changedRegions, type BarSpan } from './listenReport';
+import { createLoudnessAnalyser, truePeakOf } from '../audio/loudness';
+import { barDifferences, barLoudness, changedRegions, type BarSpan } from './listenReport';
+import { measuredRise, type BarLevel, type MeasuredRise } from './safety';
+import { maxOf } from '../support/minMax';
 import { listenSnapshot } from './listenSnapshot';
 import { useAudition } from '../audio/auditionPlayer';
-import { announce, isOpen, measureEnd, tooLongWhy, updateSuggestion, useSuggestions, withSoundRegions, type NotFoundWhy, type Suggestion } from './suggestionsStore';
+import { announce, isOpen, measuredWarning, measureEnd, tooLongWhy, updateSuggestion, useSuggestions, withMeasured, withSoundRegions, type NotFoundWhy, type Suggestion } from './suggestionsStore';
 import type { BarRange } from './songDiff';
 
 export { MEASURE_MAX_SECONDS, MEASURE_RENDER_MAX_SECONDS, MEASURE_TAIL_SECONDS, MEASURE_UNSURE_TAIL_SECONDS, measureEnd, tooLongWhy } from './suggestionsStore';
@@ -64,9 +75,38 @@ function spansOf(song: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>, end: number
   return out;
 }
 
-type Found = { sound: BarRange[] } | { why: NotFoundWhy } | null;
+type Found = { sound: BarRange[]; rise: MeasuredRise | null } | { why: NotFoundWhy } | null;
 
-/** Render `before` and `s.song` whole and compare them (null: aborted). */
+/** A render's bars measured (loudness and true peak, `spans` where they lie in it), and the whole of it (its integrated loudness, its highest true peak). Rejects with the signal's reason if aborted. */
+async function levelsOf(audio: AudioBuffer, spans: readonly BarSpan[], signal: AbortSignal): Promise<{ bars: BarLevel[]; song: BarLevel }> {
+  const channels = channelsOf(audio).slice(0, 2);
+  const left = channels[0];
+  const right = channels[1] ?? new Float32Array(left.length);
+  const rate = audio.sampleRate;
+  const breathe = async () => {
+    await new Promise((r) => setTimeout(r, 0));
+    signal.throwIfAborted();
+  };
+  // (the true peak bar by bar below, so the analyser leaves it out)
+  const analyser = createLoudnessAnalyser(rate, undefined, undefined, false);
+  const hop = Math.round(rate / 10);
+  for (let i = 0; i < left.length; i += hop) {
+    const n = Math.min(hop, left.length - i);
+    analyser.feed(left.subarray(i, i + n), right.subarray(i, i + n), n);
+    if ((i / hop) % 50 === 49) await breathe();
+  }
+  const lufs = barLoudness(analyser.blocks(), hop / rate, spans);
+  const peaks: number[] = [];
+  for (let k = 0; k < spans.length; k++) {
+    const [from, to] = [spans[k].start, spans[k].end].map((t) => Math.min(left.length, Math.max(0, Math.round(t * rate))));
+    const p = to > from ? truePeakOf([left.subarray(from, to), right.subarray(from, to)]) : 0;
+    peaks.push(p > 0 ? 20 * Math.log10(p) : -Infinity);
+    if (k % 8 === 7) await breathe();
+  }
+  return { bars: lufs.map((l, k) => ({ lufs: l, peak: peaks[k] })), song: { lufs: analyser.read().integrated, peak: peaks.length ? maxOf(peaks) : -Infinity } };
+}
+
+/** Render `before` and `s.song` whole and compare them (null: aborted): where they differ, and how much louder Suggested comes out (null: not much, or it couldn't be measured). */
 async function measure(before: ProjectSnapshot, s: Suggestion, signal: AbortSignal, progress: (f: number) => void): Promise<Found> {
   const long = tooLongWhy(before, s);
   if (long) return { why: long };
@@ -77,7 +117,16 @@ async function measure(before: ProjectSnapshot, s: Suggestion, signal: AbortSign
     const b = await renderRange(listenSnapshot(s.song), 1, end, { signal, progress: (f) => progress(0.5 + f * 0.5) });
     if (signal.aborted) return null;
     const diffs = barDifferences(channelsOf(a), channelsOf(b), a.sampleRate, spansOf(before, end), spansOf(s.song, end));
-    return { sound: changedRegions(diffs, 1) };
+    // How loud each comes out, bar by bar (a measure that fails leaves where it's heard as found)
+    let rise: MeasuredRise | null = null;
+    try {
+      const [la, lb] = [await levelsOf(a, spansOf(before, end), signal), await levelsOf(b, spansOf(s.song, end), signal)];
+      rise = measuredRise(la.bars, lb.bars, la.song);
+    } catch (err) {
+      if (signal.aborted) return null;
+      console.warn('Measuring how loud a suggestion comes out failed:', err);
+    }
+    return { sound: changedRegions(diffs, 1), rise };
   } catch (err) {
     if (signal.aborted) return null;
     console.warn('Finding where a suggestion is heard failed:', err);
@@ -156,7 +205,11 @@ export function findWhere(id: string, before: ProjectSnapshot = currentProject()
     if (!found) return false;
     const now = useSuggestions.getState().suggestions.find((x) => x.id === id);
     if (!now || now.version !== version || now.stale || !isOpen(now)) return false;
-    updateSuggestion(id, (x) => ('sound' in found ? withSoundRegions(x, found.sound, before) : { ...x, foundWhy: found.why }));
+    updateSuggestion(id, (x) => ('sound' in found ? withMeasured(withSoundRegions(x, found.sound, before), found.rise, before) : { ...x, foundWhy: found.why }));
+    // (a caution it found is said, as the card shows it)
+    const said = useSuggestions.getState().suggestions.find((x) => x.id === id);
+    const caution = said && measuredWarning(said);
+    if (caution) announce(`A caution, found by sound: ${caution}`);
     return true;
   })();
   job = { id, version, controller, done, asked };

@@ -165,6 +165,8 @@ export interface ApplyResult {
   notes: string[];
   /** The warnings and notes with each name marked, for showing the names apart (names.ts nameParts). */
   marked: { warnings: string[]; notes: string[] };
+  /** Whether the level rules (safety.ts) said something: then a louder sound check says nothing more (measuredCaution). */
+  cautioned: boolean;
   /** What changed, in plain words, with the tracks, clips and bars it touches (see songDiff.ts). */
   diff: SongDiff;
   /** The ids the ops' `ref` names stand for. */
@@ -571,6 +573,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `${nm(track.name)} reverb send`);
         if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `${nm(track.name)} delay send`);
         if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `${nm(track.name)} distance`);
+        // (up front, 0, is how a saved song keeps it: with no distance at all)
+        if (next.distance === 0) delete next.distance;
         if (op.output !== undefined) {
           if (op.output === null) delete next.output;
           else {
@@ -1014,7 +1018,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   song = withFileValues(base, song, gated, warn);
 
   const notes: string[] = [];
-  for (const text of checkSafetyMarked(base, song, notes)) warn(text);
+  const cautions = checkSafetyMarked(base, song, notes);
+  for (const text of cautions) warn(text);
   const diff = diffSongs(base, song);
   return {
     ok: true,
@@ -1022,6 +1027,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
     warnings,
     notes,
     marked: { warnings, notes },
+    cautioned: cautions.length > 0,
     diff,
     refs: Object.fromEntries([...refs].map(([k, v]) => [k, v.id])),
     idBase,

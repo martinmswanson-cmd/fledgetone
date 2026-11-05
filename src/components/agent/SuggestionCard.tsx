@@ -28,7 +28,7 @@ import { useAudition, stopAudition, hearAudition } from '../../audio/auditionPla
 import { acceptSuggestion, dismissSuggestion } from '../../agent/accept';
 import { auditionCurrent, hearSuggestion } from '../../agent/songWatch';
 import { stopFinding, useFinding } from '../../agent/whereHeard';
-import { announce, ARMED_MS, CHECKING_NEXT, heardRegions, isArmed, isOpen, limitWords, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
+import { announce, ARMED_MS, CHECKING_NEXT, heardRegions, isArmed, isOpen, limitWords, measuredWarning, notFoundWords, rangesWords, UNCHECKED_WORDS, uncheckedTail, unheardWords, updateSuggestion, useSuggestions, wordMeter, type Suggestion } from '../../agent/suggestionsStore';
 import type { BarRange } from '../../agent/songDiff';
 import type { MeterMap } from '../../audio/tempoMap';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -90,6 +90,8 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
     return () => window.clearTimeout(t);
   }, [s.id, s.armed?.at]);
   const open = isOpen(s);
+  // (what its sound check found louder, where the rules said nothing: Suggestion.measured)
+  const measured = measuredWarning(s);
   // (each place its changes are heard, one after another, and the agent's focus with them if that fits: see hearingPlan)
   const range = s.audition;
   // (only the agent connected now can read what a message asks about)
@@ -166,13 +168,18 @@ export const SuggestionCard: React.FC<{ suggestion: Suggestion }> = ({ suggestio
           ))}
         </ul>
       </div>
-      {s.warnings.length > 0 && (
+      {(s.warnings.length > 0 || measured) && (
         <ul aria-label="Cautions" className="text-[12px] text-amber-300 space-y-0.5">
           {(s.marked?.warnings ?? s.warnings).map((w, i) => (
             <li key={i} className="break-words">
               <NamedText text={w} />
             </li>
           ))}
+          {measured && (
+            <li className="break-words" data-measured="">
+              {measured}
+            </li>
+          )}
         </ul>
       )}
       {s.notes.length > 0 && (
