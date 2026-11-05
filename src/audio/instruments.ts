@@ -118,7 +118,12 @@ export interface TrackInstrument {
    * bending as a whole.
    */
   noteVoice?: (note: PlayableNote, time: number) => VoiceControl | null;
-  releaseAll: () => void;
+  /**
+   * Stop and Pause: let every voice go. `heard` (Pause only) is the time on the audio clock being
+   * heard now, the output latency behind the clock: the pause keeps that place, so a kit's hits
+   * begun since then, not heard yet and to play again on Play, fade out instead of ringing on.
+   */
+  releaseAll: (heard?: number) => void;
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
   /**
@@ -246,8 +251,8 @@ interface DrumHits {
   snare: (time: number, velocity: number, ratio?: number) => void;
   hat: (open: boolean, time: number, velocity: number, ratio?: number) => void;
   cowbell: (time: number, velocity: number, ratio?: number) => void;
-  /** Stop: the hits handed out for later never sound */
-  releaseAll: () => void;
+  /** Stop: the hits handed out for later never sound (`heard`: see TrackInstrument.releaseAll) */
+  releaseAll: (heard?: number) => void;
 }
 
 /** Play one row of a kit at `time` (`ratio`: detune as a frequency ratio, 1 = none). */
@@ -323,9 +328,9 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
   return {
     play,
     noteOn: oneShot(play),
-    releaseAll: () => {
-      kit.releaseAll();
-      extras.releaseAll();
+    releaseAll: (heard) => {
+      kit.releaseAll(heard);
+      extras.releaseAll(heard);
     },
     ready: Promise.resolve(),
     dispose: () => {
@@ -382,9 +387,10 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
   return {
     play,
     noteOn: oneShot(play),
-    releaseAll: () => {
+    // (its recordings fade on Stop and Pause alike; the extras ring out)
+    releaseAll: (heard) => {
       kit.releaseAll();
-      extras.releaseAll();
+      extras.releaseAll(heard);
     },
     ready: kit.ready,
     // Every pitch the hits play at other than the recordings' own (the open hat's, a hit's starting bend)
@@ -720,8 +726,8 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
         }
       : {}),
     setSubLayer: sub.set,
-    releaseAll: () => {
-      inst.releaseAll();
+    releaseAll: (heard) => {
+      inst.releaseAll(heard);
       sub.releaseAll();
     },
     dispose: () => {

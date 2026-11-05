@@ -7,6 +7,13 @@
  */
 import type * as Tone from 'tone';
 
+/**
+ * Pause keeps the place being heard, which is the output latency behind the audio clock, so a hit
+ * that has started on the clock but not been heard yet would ring on through the pause and then
+ * play again, whole, on Play. Such a hit fades out over this long instead (a fade, not a cut).
+ */
+export const UNHEARD_FADE = 0.005;
+
 /** An envelope's level signal (Tone keeps it to itself). */
 export const envelopeSignal = (env: Tone.Envelope) => (env as unknown as { _sig: Tone.Signal<'normalRange'> })._sig;
 
@@ -37,7 +44,8 @@ export function letGoToneSynth(synth: ToneVoice, now: number): void {
  * The hits a drum kit's Tone synths have been handed for later (drum hits ring out on their own,
  * so Stop leaves a sounding one alone). `callOff(now)` cancels each synth's hits from the first one
  * still to come: the hit before it, if it's still ringing, is let go where that hit would have
- * cut it.
+ * cut it. `callOff(now, heard)` (Pause, `heard` the time being heard now) also fades out the hit
+ * a synth started at or after `heard`, which hasn't been heard yet and will play again on Play.
  */
 export function createComingHits(clock: () => number) {
   const coming = new Map<ToneVoice, number[]>();
@@ -48,18 +56,29 @@ export function createComingHits(clock: () => number) {
       const list = coming.get(synth);
       if (!list) coming.set(synth, [at]);
       else {
-        while (list.length && list[0] < now) list.shift();
+        // (the last one begun is kept: a pause may come before it's heard)
+        while (list.length > 1 && list[1] <= now) list.shift();
         list.push(at);
       }
     },
-    callOff(now: number): void {
+    callOff(now: number, heard?: number): void {
       for (const [synth, list] of coming) {
         const first = list.find((t) => t >= now);
+        const begun = list.filter((t) => t < now).pop();
+        const fade = heard !== undefined && begun !== undefined && begun >= heard;
+        if (fade) {
+          // Its loudness falls to 0 from where it is, the rest held (a hit to come never starts)
+          for (const env of envelopesOf(synth)) envelopeSignal(env).cancelAndHoldAtTime(now);
+          envelopeSignal(synth.envelope).linearRampToValueAtTime(0, now + UNHEARD_FADE);
+        } else {
+          if (first === undefined) continue;
+          for (const env of envelopesOf(synth)) envelopeSignal(env).cancelScheduledValues(first);
+        }
         if (first === undefined) continue;
-        for (const env of envelopesOf(synth)) envelopeSignal(env).cancelScheduledValues(first);
         // (its pitch sweep too: the last hit's tail keeps its pitch)
         synth.frequency?.cancelScheduledValues(first);
-        synth.triggerRelease(first);
+        // (once faded: a release begun during the fade would fall from there more slowly)
+        synth.triggerRelease(fade ? Math.max(first, now + UNHEARD_FADE) : first);
       }
       coming.clear();
     },

@@ -386,8 +386,8 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
       bellLow.triggerAttackRelease(540 * ratio, '16n', t, velocity);
       bellHigh.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
-    /** Stop: the hits still to come never sound (the ones ringing ring out) */
-    releaseAll: () => coming.callOff(kick.context.currentTime),
+    /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
+    releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),
     dispose: () => {
       [kick, snareTone, snareFilter, snareNoise, hatFilter, hat, bellFilter, bellLow, bellHigh].forEach((n) => n.dispose());
     },
