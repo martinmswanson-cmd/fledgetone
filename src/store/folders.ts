@@ -7,6 +7,14 @@ import type { Track, TrackFolder } from './timelineTypes';
  * together in the track list. No store or audio here, so Node can unit-test it.
  */
 
+/** The longest a folder's name may be (a saved song keeps no more: project.ts). */
+export const FOLDER_NAME_MAX = 60;
+
+/** A folder's name as given (typed, or from an agent): trimmed, and cut to FOLDER_NAME_MAX ('' if there's none). */
+export function folderName(name: string | undefined): string {
+  return (name ?? '').trim().slice(0, FOLDER_NAME_MAX).trim();
+}
+
 /** The folders in track order, each once, with how many tracks it has. */
 export function foldersOf(tracks: readonly Track[]): Array<TrackFolder & { count: number }> {
   const out: Array<TrackFolder & { count: number }> = [];
@@ -74,6 +82,8 @@ export function updateFolder(tracks: Track[], id: string, patch: Partial<Omit<Tr
   if (!current) return tracks;
   const folder: TrackFolder = { ...current, ...patch };
   if (!folder.collapsed) delete folder.collapsed;
+  // (A name as long as a saved song keeps; none: the one it has)
+  if (patch.name !== undefined) folder.name = folderName(patch.name) || current.name;
   // The same name, colour and folding (and, recolouring, its tracks already that colour): nothing
   // changes, so the store makes no undo step
   const same = (a: TrackFolder, b: TrackFolder) => a.name === b.name && a.color === b.color && !a.collapsed === !b.collapsed;

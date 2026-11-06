@@ -1,7 +1,8 @@
 // Unit tests for track folders (src/store/folders.ts). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-const { foldersOf, tidyFolders, groupTracks, ungroup, updateFolder, moveToFolder, moveTrack, trackRows } = await import('../src/store/folders.ts');
+const { foldersOf, tidyFolders, groupTracks, ungroup, updateFolder, moveToFolder, moveTrack, trackRows, folderName, FOLDER_NAME_MAX } = await import('../src/store/folders.ts');
+const { readFileSync } = await import('node:fs');
 
 const T = (id, folder) => ({ id, name: id, color: '#fff', ...(folder ? { folder } : {}) });
 const ids = (tracks) => tracks.map((t) => t.id + (t.folder ? `:${t.folder.id}` : '')).join(' ');
@@ -75,4 +76,27 @@ test('rows: a folder row before its tracks, which fold away', () => {
   assert.deepEqual(rows.map((r) => (r.kind === 'folder' ? `[${r.folder.name} ${r.members.length}]` : r.track.id)), ['x', '[Drums 2]', 'a', 'b']);
   const folded = trackRows([T('x'), T('a', { ...F, collapsed: true }), T('b', { ...F, collapsed: true })]);
   assert.deepEqual(folded.map((r) => (r.kind === 'folder' ? 'F' : r.track.id)), ['x', 'F']);
+});
+
+test("a folder's name is cut to what a saved song keeps (60), as it's given, not only on reopening", () => {
+  const long = 'Strings and pads for the slow middle part of the song, the bridge before the last chorus';
+  assert.equal(FOLDER_NAME_MAX, 60);
+  assert.equal(folderName(`  ${long}  `), long.slice(0, 60).trim());
+  assert.equal(folderName('  Drums  '), 'Drums');
+  assert.equal(folderName('   '), '');
+  assert.equal(folderName(undefined), '');
+  const tracks = [T('a', F), T('b', F)];
+  const out = updateFolder(tracks, 'f', { name: long });
+  assert.ok(out.every((t) => t.folder.name === long.slice(0, 60).trim()));
+  // An empty name keeps the one it has; the same one, cut, changes nothing
+  assert.equal(updateFolder(tracks, 'f', { name: '  ' }), tracks);
+  assert.equal(updateFolder(out, 'f', { name: long }), out);
+  // The store's New folder cuts it the same way, and the fields take no more
+  const store = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
+  assert.match(store, /name: folderName\(name\) \|\| `Folder /);
+  for (const f of ['FolderRow.tsx', 'TrackMenu.tsx']) {
+    const src = readFileSync(new URL(`../src/components/timeline/${f}`, import.meta.url), 'utf8');
+    const at = src.indexOf('aria-label="Folder name"');
+    assert.ok(at > 0 && src.slice(src.lastIndexOf('<input', at), at).includes('maxLength={FOLDER_NAME_MAX}'), f);
+  }
 });

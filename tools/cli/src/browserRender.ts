@@ -477,6 +477,8 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
     await closeBrowser(launched);
     await server.close();
     rmSync(tempDir, { recursive: true, force: true, maxRetries: 3 });
+    // (from here to the command's end nothing waits, and the command has a handler of its own
+    // till the process ends: fledgetone.ts, finish)
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
   }
@@ -573,7 +575,15 @@ function alive(pid: number): boolean {
 /** Close the browser; if it won't within 5 seconds, end its process (by its own id). */
 async function closeBrowser(launched: Pick<Launched, 'server'> & { browser?: PwBrowser } | null): Promise<void> {
   if (!launched) return;
-  const wait = (p: Promise<unknown>, ms: number) => Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
+  // (the timer is cleared once it's settled, or it would hold the finished command open for seconds)
+  const wait = async (p: Promise<unknown>, ms: number) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([p.catch(() => {}), new Promise((r) => (timer = setTimeout(r, ms)))]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   if (launched.browser) await wait(launched.browser.close(), 3000);
   await wait(launched.server.close(), 5000);
   const proc = launched.server.process();

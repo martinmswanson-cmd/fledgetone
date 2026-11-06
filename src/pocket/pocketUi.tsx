@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import { onBack } from '../native/backButton';
 import { useSliderUndo } from '../components/sliderUndo';
+import { useDialogFocus } from '../components/timeline/useDialogFocus';
 import { NOTE_CHANCES, chanceIdOf } from '../store/noteChance';
 import type { NoteEvent } from '../store/timelineTypes';
 
@@ -26,24 +27,24 @@ export const Card: React.FC<{ title?: React.ReactNode; right?: React.ReactNode; 
   </section>
 );
 
-/** A sheet over the bottom of the screen, closed by its X, the backdrop, Esc or the phone's Back. */
+/**
+ * A sheet over the bottom of the screen, closed by its X, the backdrop, Esc or the phone's Back.
+ * It's modal as the studio's dialogs are (useDialogFocus): it takes focus as it opens, Tab goes
+ * round inside it, and focus goes back to what opened it when it closes. The backdrop is for a
+ * finger only: out of the Tab order, and not read out as a second Close.
+ */
 export const Sheet: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => {
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', key);
-    const off = onBack(() => {
-      onClose();
-      return true;
-    });
-    return () => {
-      window.removeEventListener('keydown', key);
-      off();
-    };
-  }, [onClose]);
+  const sheet = useRef<HTMLDivElement>(null);
+  // (Esc, the focus and Tab)
+  useDialogFocus(sheet, onClose);
+  useEffect(() => onBack(() => {
+    onClose();
+    return true;
+  }), [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true" aria-label={title}>
-      <button type="button" aria-label="Close" className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative max-h-[85dvh] flex flex-col rounded-t-3xl border-t border-forge-border bg-forge-panel pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+      <button type="button" tabIndex={-1} aria-hidden="true" className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div ref={sheet} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className="relative max-h-[85dvh] flex flex-col rounded-t-3xl border-t border-forge-border bg-forge-panel pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] outline-none">
         <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-forge-border">
           <h2 className="flex-1 text-base font-semibold">{title}</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="w-11 h-11 -mr-2 flex items-center justify-center text-forge-muted">
