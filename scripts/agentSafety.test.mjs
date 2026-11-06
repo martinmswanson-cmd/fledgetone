@@ -740,3 +740,75 @@ test("the sub tilt's rise counts with the master's plain gains: one caution with
   // A Level rise taken back by a cut, the tilt up as well: its own caution says as much
   assert.deepEqual(run({ levelDb: -16, loud: { push: -4, subTilt: 4 } }).c, [{ text: 'The master Level goes up by 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
 });
+
+// ---- Round 36: a control switched on is weighed with the other master changes ----
+
+test('the clipper, the Loud master or the OTT switched on, taken back by the Level: a note (scan r36)', async () => {
+  const { safetyCautions, louderSaid } = await import('../src/agent/safety.ts');
+  const q = { ...base(), master: { ...base().master, level: -12, loud: undefined, clipper: undefined } };
+  const run = (set, from = q) => {
+    const notes = [];
+    const c = safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]), notes);
+    return { c, notes, said: louderSaid(c) };
+  };
+  const back = (what) => `${what}, but other master changes in this suggestion turn it back down.`;
+  // Switched on at drive 6 (ceiling 0 or -1) or push 6 with the Level -6: measured 0 LU, 0 dB true peak (it said "6 dB louder")
+  for (const [set, what] of [
+    [{ levelDb: -18, clipper: { on: true, drive: 6, ceiling: 0 } }, 'This switches on the master clipper at 6 dB of drive'],
+    [{ levelDb: -18, clipper: { on: true, drive: 6 } }, 'This switches on the master clipper at 6 dB of drive'],
+    [{ levelDb: -18, loud: { on: true, push: 6 } }, 'This switches on the Loud master, pushed 6 dB'],
+    [{ levelDb: -18, ott: { on: true, depth: 0, inGain: 0, outGain: 6 } }, 'This switches on the master OTT'],
+  ]) {
+    const r = run(set);
+    assert.deepEqual(r.c, [], what);
+    assert.equal(r.said, null);
+    assert.deepEqual(r.notes, [back(what)]);
+  }
+  // Taken back in part: the net, with its own words first
+  assert.deepEqual(run({ levelDb: -14, clipper: { on: true, drive: 6, ceiling: 0 } }).c, [
+    { text: 'This switches on the master clipper at 6 dB of drive, but other master changes in this suggestion turn part of it back down: together they make the song up to 4 dB louder. Turn your speakers down before you listen.', louder: 4 },
+  ]);
+  // Two switched on, one cut: both named
+  assert.deepEqual(run({ levelDb: -22, clipper: { on: true, drive: 5, ceiling: 0 }, loud: { on: true, push: 5 } }).notes, [
+    back('This switches on the Loud master, pushed 5 dB and this switches on the master clipper at 5 dB of drive').replace('turn it back', 'turn them back'),
+  ]);
+  // Alone, as before; with its sub tilt, what the lows come to (tilt 4, Level -2: up to 2 dB)
+  assert.deepEqual(run({ clipper: { on: true, drive: 6, ceiling: 0 } }).c, [{ text: 'This switches on the master clipper at 6 dB of drive: the song comes out up to 6 dB louder. Turn your speakers down before you listen.', louder: 6 }]);
+  const tilted = run({ levelDb: -14, loud: { on: true, push: 0, subTilt: 4 } });
+  assert.deepEqual(tilted.c, []);
+  assert.deepEqual(tilted.notes, ['This switches on the Loud master with its sub tilt up 4 dB, but other master changes in this suggestion turn most of it back down: together they make the song up to 2 dB louder.']);
+  // A control switched off is no cut: the Loud master switched off at push +6 doesn't fold the clipper switched on
+  const pushed = { ...q, master: { ...q.master, loud: { on: true, target: 'loud', push: 6, subTilt: 0 } } };
+  assert.deepEqual(run({ loud: { on: false }, clipper: { on: true, drive: 6, ceiling: 0 } }, pushed).c.map((c) => c.louder), [6]);
+});
+
+test('a change of the master glue style counts what it can add: Tight to Off says so, with other rises the sum (scan r36)', async () => {
+  const { safetyCautions, GLUE_RISE_DB } = await import('../src/agent/safety.ts');
+  const tight = { ...base(), master: { ...base().master, level: -20, glue: 'tight', loud: { on: true, target: 'loud', push: 0, subTilt: 0 } } };
+  const run = (set, from = tight) => {
+    const notes = [];
+    return { c: safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]), notes), notes };
+  };
+  // Measured (loudest bar or true peak, the most of six songs): never a cut, and no style to itself
+  for (const [from, to] of Object.entries(GLUE_RISE_DB).flatMap(([f, row]) => Object.keys(row).map((t) => [f, t]))) {
+    assert.ok(GLUE_RISE_DB[from][to] >= 0);
+    if (from === to) assert.equal(GLUE_RISE_DB[from][to], 0);
+  }
+  // Tight to Off alone: +3.8 dB true peak on a hot mix (it said nothing)
+  assert.deepEqual(run({ glue: 'off' }).c, [{ text: 'The master glue goes from Tight to Off: the peaks it held down come up by as much as 4 dB. Turn your speakers down before you listen.', louder: 4 }]);
+  // ...with the Level and the push up 2.5 each: +8.5 dB true peak (it said 5)
+  assert.deepEqual(run({ glue: 'off', levelDb: -17.5, loud: { push: 2.5 } }).c.map((c) => c.louder), [4, 9]);
+  // ...taken back by the Level: a note
+  assert.deepEqual(run({ glue: 'off', levelDb: -24 }).c, []);
+  assert.deepEqual(run({ glue: 'off', levelDb: -24 }).notes, ['The master glue goes from Tight to Off, but other master changes in this suggestion turn it back down.']);
+  // Gentle to Punchy with the Level +2.5 on a quiet song: +3.7 LU (it said nothing)
+  const gentle = { ...tight, master: { ...tight.master, glue: 'gentle' } };
+  assert.deepEqual(run({ glue: 'punchy', levelDb: -17.5 }, gentle).c, [{ text: 'Together these master changes make the song up to 4 dB louder. Turn your speakers down before you listen.', louder: 4 }]);
+  // A glue change alone under 3 dB, or with a rise that stays under 3 together: nothing
+  for (const glue of ['off', 'standard', 'punchy', 'tight']) assert.deepEqual(run({ glue }, gentle).c, [], glue);
+  assert.deepEqual(run({ glue: 'tight' }, { ...tight, master: { ...tight.master, glue: 'off' } }).c, []);
+  assert.deepEqual(run({ glue: 'standard', levelDb: -19 }, gentle).c, []);
+  // A glue change the other way never takes a rise back (Off to Tight is +2.3 LU on a quiet song)
+  const off = { ...tight, master: { ...tight.master, glue: 'off' } };
+  assert.deepEqual(run({ glue: 'tight', levelDb: -16 }, off).c.map((c) => c.louder), [4, 6.5]);
+});

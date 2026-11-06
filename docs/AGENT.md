@@ -404,7 +404,14 @@ takes back says what they come to together: no more than 3 dB, only a note, "The
 up by 4 dB, but other master changes in this suggestion turn it back down."; more, "..., but other
 master changes in this suggestion turn part of it back down: together they make the song up to 4
 dB louder. Turn your speakers down before you listen."; a cut counts only on a control that stays
-on, and a sub tilt raised with it counts against it), and the Loud master, the OTT or the
+on, and a sub tilt raised with it counts against it; the Loud master, the clipper or the OTT
+switched on is weighed the same way, so switching on the clipper at 6 dB of drive with the Level
+down 6 is only a note, "This switches on the master clipper at 6 dB of drive, but other master
+changes in this suggestion turn it back down."), a change of the glue style (counted with the
+rises above by the most it was measured to add across several songs, from 0.5 dB for Off to Gentle
+up to 4 dB for Tight to Off, and never as a cut; on its own more than 3 dB only from Tight to Off
+or Gentle: "The master glue goes from Tight to Off: the peaks it held down come up by as much as 4
+dB. Turn your speakers down before you listen."), and the Loud master, the OTT or the
 clipper switched off where it held the song down by more than 3 dB ("Switching off the Loud master
 takes away its 12 dB cut: the song comes out 12 dB louder. Turn your speakers down before you
 listen."; the clipper's ceiling: "the peaks it held down come up by as much as N dB").
