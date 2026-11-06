@@ -900,3 +900,15 @@ test('a Filter switched to a resonant high-pass says where it lets more through 
   const gentle = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: bass.id, insert: 'filter', settings: { on: true, type: 'highpass', cutoff: 279, resonance: 0.7 } }] }, {});
   assert.doesNotMatch(checkSafety(a, gentle.song).join(' | '), /peaks/);
 });
+
+test('a resonant Filter swept by a cutoff lane says it peaks where the largest rise is, not at another bar\'s peak (scan r39)', () => {
+  const a = base();
+  const bass = a.tracks.find((t) => t.name === 'Bass');
+  for (const slope of [12, 24]) {
+    const flat = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: bass.id, insert: 'filter', settings: { on: true, type: 'lowpass', slope, cutoff: 1000, resonance: Math.SQRT1_2 } }] }, {}).song;
+    const r = applyOps(flat, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: bass.id, insert: 'filter', settings: { resonance: 10 } }, { op: 'set_automation', trackId: bass.id, param: 'filterCutoff', points: [{ bar: 1, value: 0.1 }, { bar: 9, value: 1 }] }] }, {});
+    const said = checkSafety(flat, r.song).filter((w) => /Filter/.test(w)).join(' | ');
+    assert.match(said, /On "Bass", the Filter peaks from bar 1: around [\d.]+ kHz it comes up by [\d.]+ dB\./, `${slope}: ${said}`);
+    assert.doesNotMatch(said, /and it peaks around/);
+  }
+});

@@ -470,7 +470,15 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         if (isDrumKind(track.instrumentKey) || isFxKind(track.instrumentKey) || isDropKind(track.instrumentKey))
           throw new OpFail(`${at}.clipId`, `${nm(track.name)} plays a drum, effect or move on each note, not a pitch: change the notes' pitch with change_notes instead`);
         if (!Number.isInteger(op.semitones) || Math.abs(op.semitones) > 48) throw new OpFail(`${at}.semitones`, 'expected a whole number of semitones, -48 to 48');
-        const ids = op.noteIds ? new Set(op.noteIds.map((id) => byAgentId(clip.notes, id)?.id ?? id)) : null;
+        const ids = op.noteIds
+          ? new Set(
+              op.noteIds.map((id, i) => {
+                const note = byAgentId(clip.notes, id);
+                if (!note) throw new OpFail(`${at}.noteIds[${i}]`, `clip ${nm(clip.name)} has no note ${quoted(id)}`);
+                return note.id;
+              }),
+            )
+          : null;
         const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
         let held = 0;
         const notes = clip.notes.map((n) => {

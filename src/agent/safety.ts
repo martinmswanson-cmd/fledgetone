@@ -445,18 +445,22 @@ function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track
     if (insert === 'filter') {
       // The response, at the frequencies where a song's level lives and at the cutoffs themselves
       const at = filterDb;
-      let best = { rise: 0, hz: 1000, after: 0, bar: 1 };
-      // (Its own resonant peak, wherever that is: a pass-through's ripple far from the cutoff is no peak)
-      let peak = { db: 0, hz: 1000 };
+      // (With the largest rise, that bar's own resonant peak, wherever that is: a pass-through's ripple
+      // far from the cutoff is no peak; a lane moves the peak, so it's the one at that bar, not another's)
+      let best = { rise: 0, hz: 1000, after: 0, bar: 1, peak: { db: 0, hz: 1000 } };
       for (const s of along) {
         const cutoffs = [s.then, s.now].flatMap((f) => (f ? [Number(f.cutoff)] : [])).filter((hz) => hz >= 40 && hz <= 16000);
+        let here: { rise: number; hz: number; after: number } | null = null;
+        let barPeak = { db: 0, hz: 1000 };
         for (const hz of [...PEQ_FREQS, ...cutoffs]) {
           const after = at(s.now, hz);
           const rise = after - at(s.then, hz);
-          if (rise > best.rise + 1e-9) best = { rise, hz, after, bar: s.bar };
-          if (after > peak.db + 1e-9) peak = { db: after, hz };
+          if (rise > (here?.rise ?? best.rise) + 1e-9) here = { rise, hz, after };
+          if (after > barPeak.db + 1e-9) barPeak = { db: after, hz };
         }
+        if (here) best = { ...here, bar: s.bar, peak: barPeak };
       }
+      const peak = best.peak;
       if (best.rise <= TRACK_JUMP_DB + 1e-9) continue;
       const first = along.find((s) => [...PEQ_FREQS].some((hz) => at(s.now, hz) - at(s.then, hz) > TRACK_JUMP_DB + 1e-9))?.bar ?? best.bar;
       if (off) out.push(lv(`This switches off the Filter on ${n}: it held it down, and around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
