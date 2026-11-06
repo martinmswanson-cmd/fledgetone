@@ -34,7 +34,7 @@ import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useLivePlayhead } from '../../store/playheadClock';
 import { allOrNothing, editStep, songMeterOf, songTempo, useSongMeter, useTimelineStore } from '../../store/timelineStore';
-import { addMeasures, isPlainMeter, measureAt, spanMeterLines, tempoAt } from '../../audio/tempoMap';
+import { addMeasures, gridFitsMeasures, isPlainMeter, measureAt, meterGridLine, meterGridLines, spanMeterLines, tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
@@ -216,6 +216,21 @@ const MeterGridLines = React.memo(function MeterGridLines({ lines, pxPerBar, wid
     <svg data-meter-grid="" className="absolute top-0 left-0 pointer-events-none" width={width} height={height} shapeRendering="crispEdges" aria-hidden="true">
       <path d={weak} stroke="rgba(255,255,255,0.12)" />
       <path d={strong} stroke="rgba(255,255,255,0.28)" />
+    </svg>
+  );
+});
+
+/**
+ * Thin grid lines drawn one by one (`at`, bars from the clip start), where the grid counts from
+ * each measure's start rather than evenly from bar 1 (a triplet grid in 7/8). `from`..`height` is
+ * how far down they reach.
+ */
+const GridTicks = React.memo(function GridTicks({ at, pxPerBar, width, height, from = 0, color }: { at: number[]; pxPerBar: number; width: number; height: number; from?: number; color: string }) {
+  let d = '';
+  for (const a of at) d += `M${Math.floor(a * pxPerBar) + 0.5} ${from}V${height}`;
+  return (
+    <svg data-grid-ticks="" className="absolute top-0 left-0 pointer-events-none" width={width} height={height} shapeRendering="crispEdges" aria-hidden="true">
+      <path d={d} stroke={color} />
     </svg>
   );
 });
@@ -473,8 +488,18 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     return marks;
   }, [clipUnits, totalUnits, meterLines, clip.lengthBars, unitW]);
   const gridW = totalUnits * unitW;
-  /** The nearest grid line to `u` (units from the clip start). */
-  const snapUnits = (u: number) => Math.round((u + clipUnits) / gridUnits) * gridUnits - clipUnits;
+  /**
+   * The grid line nearest `u` (units from the clip start), or at or before it ('floor'), or at or
+   * after it ('ceil'). It counts from bar 1, or, where the song's measures don't all start on the
+   * grid (a quarter grid in 7/8), from the start of the measure holding `u` (tempoMap meterGridLine).
+   */
+  const gridFits = gridFitsMeasures(gridUnits / UNITS_PER_BAR, meterMap);
+  const gridLine = (u: number, mode: 'round' | 'floor' | 'ceil' = 'round') => {
+    if (!gridFits) return Math.round((meterGridLine(clip.startBar + u / UNITS_PER_BAR, gridUnits / UNITS_PER_BAR, meterMap, mode) - clip.startBar) * UNITS_PER_BAR);
+    const k = (u + clipUnits) / gridUnits;
+    return (mode === 'round' ? Math.round(k) : mode === 'floor' ? Math.floor(k) : Math.ceil(k - 1e-9)) * gridUnits - clipUnits;
+  };
+  const snapUnits = (u: number) => gridLine(u);
   /**
    * Thin lines every `period` units, counted from bar 1, as a CSS background. A repeating
    * gradient rather than tiles, which would drift where a period isn't a whole number of pixels.
@@ -485,6 +510,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   };
   /** Triplet and 1/32 grids get their own lines; coarser ones keep the 16th lines. */
   const lineUnits = gridUnits % UNITS_PER_16TH === 0 ? UNITS_PER_16TH : gridUnits;
+  /** Those lines one by one, from each measure's start, where they don't fit the song's measures evenly from bar 1 */
+  const fineLines = useMemo(
+    () => (gridFitsMeasures(lineUnits / UNITS_PER_BAR, meterMap) ? null : meterGridLines(clip.startBar, clip.startBar + clip.lengthBars, lineUnits / UNITS_PER_BAR, meterMap).map((b) => b - clip.startBar)),
+    [lineUnits, meterMap, clip.startBar, clip.lengthBars]
+  );
   const gridH = rows.length * rowH;
 
   const visibleNotes = useMemo(
@@ -662,7 +692,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const p = local(e.clientX, e.clientY);
     const row = rows[p.row];
     if (!row) return setHoverCell(null);
-    const unit = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+    const unit = Math.max(0, gridLine(p.units, 'floor'));
     if (unit >= totalUnits) return setHoverCell(null);
     const len = stepping ? Math.min(gridUnits, totalUnits - unit) : Math.min(lengthUnits, totalUnits - unit);
     const at = stepping ? [p.row] : drawPitches(row.note).map((n) => rowIndexOf(rows, n)).filter((i) => i >= 0);
@@ -695,7 +725,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         // grid line past it (never shorter than a grid step)
         if (!primary || Math.abs(pulled) < gridUnits / 2) return;
         const start = unitsOf(primary.startOffset);
-        const end = Math.ceil((p.units + clipUnits) / gridUnits - 1e-9) * gridUnits - clipUnits;
+        const end = gridLine(p.units, 'ceil');
         const len = Math.max(gridUnits, Math.min(totalUnits - start, end - start));
         if (len === stretched) return;
         stretched = len;
@@ -825,8 +855,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const out = (() => {
       if (typeof tool === 'function') return tool(target, newId);
       switch (tool) {
-        case 'quantize': return quantize(target, grid, clip.startBar - 1, 1, false, bars);
-        case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true, bars);
+        case 'quantize': return quantize(target, grid, clip.startBar - 1, 1, false, bars, songMeterOf(store));
+        case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true, bars, songMeterOf(store));
         case 'humanize': return humanize(target, bars);
         case 'strumDown': return strum(target, bars, 1 / 96, true);
         case 'strumUp': return strum(target, bars, 1 / 96, false);
@@ -882,7 +912,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const p = local(e.clientX, e.clientY);
       const row = rows[p.row];
       if (!row) return;
-      const cell = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+      const cell = Math.max(0, gridLine(p.units, 'floor'));
       const inCell = currentNotes().filter((n) => n.note === row.note && unitsOf(n.startOffset) >= cell - 1e-6 && unitsOf(n.startOffset) < cell + gridUnits - 1e-6);
       const store = useTimelineStore.getState();
       if (inCell.length) {
@@ -930,7 +960,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const row = rows[p.row];
     if (!row) return;
     // The grid line at or before the click
-    const start = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+    const start = Math.max(0, gridLine(p.units, 'floor'));
     const len = Math.min(lengthUnits, totalUnits - start);
     const at = { startOffset: start / UNITS_PER_BAR, duration: barsToDuration(len / UNITS_PER_BAR), velocity };
     const pitches = drawPitches(row.note);
@@ -1415,12 +1445,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               style={{
                 width: gridW,
                 // Ticks along the bottom at the grid's spacing
-                backgroundImage: lines(lineUnits, 'rgba(255,255,255,0.18)'),
+                backgroundImage: fineLines ? 'none' : lines(lineUnits, 'rgba(255,255,255,0.18)'),
                 backgroundSize: '100% 4px',
                 backgroundPosition: 'left bottom',
                 backgroundRepeat: 'no-repeat',
               }}
             >
+              {fineLines && <GridTicks at={fineLines} pxPerBar={UNITS_PER_BAR * unitW} width={gridW} height={RULER_H} from={RULER_H - 4} color="rgba(255,255,255,0.18)" />}
               {beatMarks.map(({ at, bar, beat }) => (
                 <span
                   key={at}
@@ -1505,7 +1536,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 style={{
                   // Bar, beat and grid lines, lined up with the song, not the clip start
                   backgroundImage: meterLines
-                    ? lines(lineUnits, 'rgba(255,255,255,0.05)')
+                    ? fineLines
+                      ? 'none'
+                      : lines(lineUnits, 'rgba(255,255,255,0.05)')
                     : [
                         lines(UNITS_PER_BAR, 'rgba(255,255,255,0.28)'),
                         lines(UNITS_PER_BEAT, 'rgba(255,255,255,0.12)'),
@@ -1513,6 +1546,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                       ].join(', '),
                 }}
               />
+              {fineLines && <GridTicks at={fineLines} pxPerBar={UNITS_PER_BAR * unitW} width={gridW} height={gridH} color="rgba(255,255,255,0.05)" />}
               {meterLines && <MeterGridLines lines={meterLines} pxPerBar={UNITS_PER_BAR * unitW} width={gridW} height={gridH} />}
 
               {visibleNotes.map((n) => {

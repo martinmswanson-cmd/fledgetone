@@ -129,7 +129,7 @@ const RulerUnitsToggle: React.FC = () => {
 };
 
 /**
- * Premiere-style arrangement timeline: toolbar, ruler with loop brackets,
+ * The arrangement timeline: toolbar, ruler with loop brackets,
  * sticky track headers, clip lanes and a playhead spanning every lane.
  */
 /** A track's row (header and lane), skipped while it's scrolled out of sight (see offscreen.ts). */
@@ -541,7 +541,7 @@ export const Timeline: React.FC = () => {
 
         <EmptySongPrompt />
 
-        {/* DaVinci Fairlight Track Inspector & FX Rack */}
+        {/* Track Inspector & FX Rack */}
         <TrackInspector />
       </div>
 

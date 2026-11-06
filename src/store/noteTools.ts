@@ -1,6 +1,7 @@
 import type { NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { maxOf, minOf } from '../support/minMax';
+import { gridFitsMeasures, meterGridLine, type MeterMap } from '../audio/tempoMap';
 
 /**
  * The piano roll's composing helpers, on plain note lists: scales (which rows are in key, and
@@ -144,10 +145,16 @@ const clampStart = (bars: number, clipBars: number) => Math.max(0, Math.min(clip
  * would land on or past the clip's end (`clipBars`), where it wouldn't play, goes to the grid line before it.
  * A note already outside the clip (trimmed out of it) is left where it is, so it stays silent.
  */
-export function quantize(notes: NoteEvent[], gridBars: number, clipStartBars: number, strength = 1, ends = false, clipBars = Infinity): NoteEvent[] {
-  // The grid is the song's, so measure from bar 1 (the clip may start mid-bar)
-  const snap = (x: number) => Math.round((x + clipStartBars) / gridBars) * gridBars - clipStartBars;
-  const lastLine = Math.ceil((clipBars + clipStartBars) / gridBars - 1 - 1e-9) * gridBars - clipStartBars;
+export function quantize(notes: NoteEvent[], gridBars: number, clipStartBars: number, strength = 1, ends = false, clipBars = Infinity, meter?: MeterMap): NoteEvent[] {
+  // The grid is the song's, so measure from bar 1 (the clip may start mid-bar). In a meter whose
+  // measures don't all start on the grid (a quarter grid in 7/8), it counts from each measure's start.
+  const fromBar1 = !meter || gridFitsMeasures(gridBars, meter);
+  const snap = fromBar1
+    ? (x: number) => Math.round((x + clipStartBars) / gridBars) * gridBars - clipStartBars
+    : (x: number) => meterGridLine(x + clipStartBars + 1, gridBars, meter!) - clipStartBars - 1;
+  const lastLine = fromBar1
+    ? Math.ceil((clipBars + clipStartBars) / gridBars - 1 - 1e-9) * gridBars - clipStartBars
+    : Number.isFinite(clipBars) ? meterGridLine(clipBars + clipStartBars + 1 - 1e-6, gridBars, meter!, 'floor') - clipStartBars - 1 : Infinity;
   return notes.map((n) => {
     if (n.startOffset < -EPS || n.startOffset >= clipBars - EPS) return n;
     let start = n.startOffset + (snap(n.startOffset) - n.startOffset) * strength;

@@ -477,6 +477,48 @@ export function fromMeasureBeatLength(from: number, measures: number, beats: num
   return at + (beats + hundredths / 100) / meter.den - from;
 }
 
+const onStep = (x: number, step: number) => Math.abs(x / step - Math.round(x / step)) < 1e-6;
+
+/** True when every measure of the map starts on a line of a `step`-bar grid counted from bar 1 (any grid up to a quarter in 4/4 or 3/4). */
+export function gridFitsMeasures(step: number, map: MeterMap): boolean {
+  return meterSections(map).every((s) => onStep(s.bar - 1, step) && onStep(measureBars(s.meter), step));
+}
+
+/**
+ * The line of a `step`-bar grid nearest `bar` ('round'), at or before it ('floor') or at or after
+ * it ('ceil'). The grid counts from the start of the measure holding `bar`, and every measure start
+ * is a line too, so in 7/8 a quarter grid still has a line on each downbeat. Where every measure
+ * starts on the grid from bar 1 (4/4, 3/4, 6/8 with grids up to a quarter) this is the same as
+ * counting from bar 1, to the last bit.
+ */
+export function meterGridLine(bar: number, step: number, map: MeterMap, mode: 'round' | 'floor' | 'ceil' = 'round'): number {
+  if (!(step > 0)) return bar;
+  if (gridFitsMeasures(step, map)) {
+    const k = (bar - 1) / step;
+    const n = mode === 'round' ? Math.round(k) : mode === 'floor' ? Math.floor(k + 1e-9) : Math.ceil(k - 1e-9);
+    return n * step + 1;
+  }
+  const m = measureAt(bar, map);
+  const end = m.start + m.length;
+  const down = m.start + Math.floor((bar - m.start) / step + 1e-9) * step;
+  const up = Math.min(end, m.start + Math.ceil((bar - m.start) / step - 1e-9) * step);
+  if (mode === 'floor') return down;
+  if (mode === 'ceil') return up;
+  return bar - down < up - bar ? down : up;
+}
+
+/** The lines of a `step`-bar grid (as meterGridLine counts them) in [from, to). */
+export function meterGridLines(from: number, to: number, step: number, map: MeterMap): number[] {
+  const out: number[] = [];
+  if (!(step > 0)) return out;
+  for (let at = meterGridLine(from, step, map, 'ceil'); at < to - 1e-9 && out.length < 100000; ) {
+    out.push(at);
+    const next = meterGridLine(at + 1e-6, step, map, 'ceil');
+    at = next > at + 1e-9 ? next : at + step;
+  }
+  return out;
+}
+
 /** True when the meter map is plain 4/4 throughout. */
 export const isPlainMeter = (map: MeterMap) => isFourFour(map);
 

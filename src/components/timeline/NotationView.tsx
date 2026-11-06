@@ -217,7 +217,7 @@ export const NotationView: React.FC<{ clip: Clip; track: Track; scale?: Scale | 
     a.download = `${safeFileName(`${s.projectName || 'Untitled'} ${clip.name}`)}.musicxml`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast('MusicXML saved: open it in a notation program (MuseScore, Sibelius, Dorico...)');
+    showToast('MusicXML saved: open it in a notation program, which reads it as a score');
   };
   const print = () => {
     const svg = ref.current?.querySelector('[data-score] svg');

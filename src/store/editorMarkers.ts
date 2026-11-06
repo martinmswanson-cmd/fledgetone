@@ -2,9 +2,8 @@ import { formatFrameTimecode, isDropFrame, labelCountToFrame, nominalFps, second
 import { maxOf } from '../support/minMax';
 
 /**
- * Markers for video editing software: the song's markers as files Premiere Pro (FCP 7 XML),
- * DaVinci Resolve (an EDL of timeline markers), Final Cut Pro (FCPXML) and spreadsheets (CSV)
- * import, so the editor sees the section names and hit points on their own timeline. No browser
+ * Markers for video editing software: the song's markers as files video editors import (an
+ * FCP 7 XML sequence, an EDL of timeline markers, an FCPXML project) and spreadsheets (CSV), so the editor sees the section names and hit points on their own timeline. No browser
  * or store here, so Node can unit-test it.
  */
 
@@ -18,14 +17,14 @@ export interface EditorMarkerOptions {
   title: string;
   fps: number;
   dropFrame: boolean;
-  /** Where the editor's timeline starts: 0 or 1 hour (Resolve's default is 01:00:00:00) */
+  /** Where the editor's timeline starts: 0 or 1 hour (some editors start at 01:00:00:00) */
   startHour: 0 | 1;
 }
 
 export const EDITOR_FORMATS = [
-  { id: 'premiere', label: 'Premiere Pro (.xml)', ext: 'xml' },
-  { id: 'resolve', label: 'DaVinci Resolve (.edl)', ext: 'edl' },
-  { id: 'fcpx', label: 'Final Cut Pro (.fcpxml)', ext: 'fcpxml' },
+  { id: 'premiere', label: 'XML sequence (.xml)', ext: 'xml' },
+  { id: 'resolve', label: 'Edit decision list (.edl)', ext: 'edl' },
+  { id: 'fcpx', label: 'XML project (.fcpxml)', ext: 'fcpxml' },
   { id: 'csv', label: 'Spreadsheet (.csv)', ext: 'csv' },
 ] as const;
 export type EditorFormat = (typeof EDITOR_FORMATS)[number]['id'];
@@ -38,7 +37,7 @@ const startFrame = (o: EditorMarkerOptions) => labelCountToFrame(o.startHour * 3
 /** The timecode of a point `seconds` into the timeline. */
 const timecodeAt = (seconds: number, o: EditorMarkerOptions) => formatFrameTimecode(startFrame(o) + secondsToFrames(seconds, o.fps), o.fps, o.dropFrame);
 
-/** The EDL DaVinci Resolve reads as timeline markers (Timeline › Import › Timeline Markers from EDL). */
+/** An EDL that editors read as timeline markers (Timeline › Import › Timeline Markers from EDL). */
 export function resolveEdl(markers: readonly EditorMarker[], o: EditorMarkerOptions): string {
   const lines = [`TITLE: ${o.title.replace(/[\r\n]+/g, ' ')}`, `FCM: ${isDropFrame(o.fps, o.dropFrame) ? 'DROP FRAME' : 'NON-DROP FRAME'}`, ''];
   markers.forEach((m, i) => {
@@ -51,7 +50,7 @@ export function resolveEdl(markers: readonly EditorMarker[], o: EditorMarkerOpti
   return lines.join('\r\n');
 }
 
-/** An FCP 7 XML sequence carrying the markers, which Premiere Pro imports (File › Import). */
+/** An FCP 7 XML sequence carrying the markers, which video editors import (File › Import). */
 export function premiereXml(markers: readonly EditorMarker[], o: EditorMarkerOptions, lengthSeconds: number): string {
   const timebase = nominalFps(o.fps);
   const ntsc = timebase !== o.fps ? 'TRUE' : 'FALSE';
@@ -90,7 +89,7 @@ function fcpTime(seconds: number, fps: number): string {
   return n !== fps ? `${frames * 1001}/${n * 1000}s` : `${frames}/${n}s`;
 }
 
-/** An FCPXML project whose timeline carries the markers, for Final Cut Pro (File › Import › XML). */
+/** An FCPXML project whose timeline carries the markers (File › Import › XML). */
 export function finalCutXml(markers: readonly EditorMarker[], o: EditorMarkerOptions, lengthSeconds: number): string {
   const n = nominalFps(o.fps);
   const frameDuration = n !== o.fps ? `1001/${n * 1000}s` : `1/${n}s`;

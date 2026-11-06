@@ -123,7 +123,7 @@ const TOOLS: Item[] = [
   { title: 'Find cuts in the video', keywords: 'scene cut cuts detection shots edit video hit points', detail: 'A hit point on every hard cut (the scissors on the video lane).', run: async () => ((await press('[aria-label="Find cuts in the video"]')) ? undefined : NO_VIDEO) },
   { title: 'Duck others under this track (dialogue / SFX proxy)', keywords: 'duck ducking sidechain proxy dialogue voiceover vo sfx sound effects lower music bed', detail: 'Every other track dips wherever this one sounds.', run: trackPanel('Duck others under this') },
   { title: 'Dip under dialogue', keywords: 'dialogue dialog voice speech duck ducking dip lower music under talking video', detail: 'Turn the music down wherever people talk in the video.', run: async () => ((await press('[aria-label="Dip the music under the video\'s dialogue"]')) ? undefined : NO_VIDEO) },
-  { title: 'Export markers for Premiere, Resolve, Final Cut', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Video tab (and the Markers list).', run: () => {
+  { title: 'Export markers for video editors', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Video tab (and the Markers list).', run: () => {
     ui().openDock('video');
     if (!timeline().markers.length) return 'Add markers (M) or hit points (Shift+M) first.';
     void reveal('[aria-label="Export the markers for video editing software"]');

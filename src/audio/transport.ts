@@ -246,7 +246,7 @@ export function seekTransport(bar: number): void {
   applyTempoAt(liveTransport, liveTempo, bar, heading && (pending !== null || playing) ? heading.at : liveContext.now());
 }
 
-/** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
+/** Format as Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
 export function formatBarsBeats(bar: number): string {
   // Counted in the song's meter: measure, beat (a quarter in 4/4, an eighth in 6/8), hundredths
   const { measure, beat, hundredths } = toMeasureBeat(bar, songMeter);

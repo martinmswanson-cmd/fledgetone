@@ -155,7 +155,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
             <p className="text-[11px]">
               {link.length.toLocaleString()} characters.
-              {link.length > LONG_LINK && ` That's too long for a Discord message (2,000) and some other chat apps: there, send the MP3 or the project file instead.`}
+              {link.length > LONG_LINK && ` That's too long for some chat apps (many cut a message off at 2,000): there, send the MP3 or the project file instead.`}
             </p>
           </>
         ) : linkError ? (
@@ -176,7 +176,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="flex items-center gap-1.5 text-forge-text font-semibold">
           <FileAudio className="w-4 h-4 text-emerald-400" /> The song as an MP3
         </div>
-        <p>The whole song, mixed. On a phone or a computer that can, this opens your share menu (messages, email, Discord…); otherwise it downloads.</p>
+        <p>The whole song, mixed. On a phone or a computer that can, this opens your share menu (messages, email, chat apps…); otherwise it downloads.</p>
         <button type="button" className={button} disabled={!!busy || !hasMusic} onClick={() => void shareAudio()}>
           {busy === 'audio' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
           {busy === 'audio' ? 'Making the MP3…' : 'Share MP3'}

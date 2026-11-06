@@ -1,5 +1,5 @@
 /**
- * The drawer's pads and steps, for the selected cell. Drum pads are laid out like an MPC (kick,
+ * The drawer's pads and steps, for the selected cell. Drum pads are laid out like a pad sampler's (kick,
  * snare, clap and hat along the bottom, under the thumb; a Drum Rack's pad 1 to 4 there, its empty
  * pads opening the Pads tool to fill them); note pads are the song's key over six
  * rows, low notes at the bottom; chord pads are the key's chords. With Rec on while the song plays
@@ -138,7 +138,7 @@ function flash(el: HTMLElement): void {
 /** The swing amounts the Swing button steps through. */
 const SWINGS = [0, 0.15, 0.3, 0.5];
 
-/** Pads in the MPC's order: the first row along the bottom (a short last row filled out with gaps, so the rows line up). */
+/** Pads in a pad sampler's order: the first row along the bottom (a short last row filled out with gaps, so the rows line up). */
 const padOrder = <T,>(items: readonly T[], perRow = 4): Array<T | null> => {
   const rows: Array<Array<T | null>> = [];
   for (let i = 0; i < items.length; i += perRow) rows.push(items.slice(i, i + perRow));
