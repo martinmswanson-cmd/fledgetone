@@ -92,6 +92,26 @@ export function soundFileNames(id: string): string[] | undefined {
   return names.length ? names : undefined;
 }
 
+/**
+ * Settles once the library has read what it keeps of each of these sounds (its meta, so its file
+ * name) or found it isn't kept here: what an old song opened waits for before its names made from a
+ * file are all known (timelineStore loadProject). `stop` says to give up waiting (another song opened).
+ */
+export function soundNamesRead(ids: readonly string[], stop: () => boolean): Promise<void> {
+  const read = () => {
+    const { metas, status } = useSoundLibrary.getState();
+    return ids.every((id) => metas[id] !== undefined || (status[id] !== undefined && status[id] !== 'loading'));
+  };
+  if (stop() || read()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsubscribe = useSoundLibrary.subscribe(() => {
+      if (!stop() && !read()) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+}
+
 // ---------- IndexedDB ----------
 
 const DB_NAME = 'bos-beat-box';

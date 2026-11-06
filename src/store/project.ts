@@ -30,7 +30,7 @@ import { normalizeUserTable } from '../audio/plugins/userTable';
 import { isPrototypeName, withSafeIds } from './ownKey';
 import { cutToBytes, noControls, notReserved, oneLineName, textName } from './kitNames';
 import { capSong, overWords, type OverCaps } from './songCaps';
-import { FILE_MARKS, withFileMarks } from './ownFiles';
+import { FILE_MARKS, withFileMarks, type FileNameOf } from './ownFiles';
 
 /**
  * Project file format (.fledgetone.json) and browser autosave.
@@ -207,9 +207,15 @@ function masterForFile({ level, ...rest }: MasterSettings): Omit<MasterSettings,
   return level ? { ...rest, level } : rest;
 }
 
-export function serializeProject(song: ProjectSnapshot): ProjectData {
+/**
+ * `song` as a file has it. `known` is every other name each sound's file is known by (the sound
+ * library's, and those a song opened in this page carried: soundFileNames), for one from before the
+ * marks: what makes it a song with them is checked against them all, not only the names the file
+ * embeds, or a name made from one of the others would stay unmarked in a file judged by its marks.
+ */
+export function serializeProject(song: ProjectSnapshot, known?: FileNameOf): ProjectData {
   // A song from before the marks gets them here when its sounds go with it (Save embeds them)
-  const p = withFileMarks(song);
+  const p = withFileMarks(song, known);
   return {
     format: PROJECT_FORMAT,
     version: PROJECT_VERSION,

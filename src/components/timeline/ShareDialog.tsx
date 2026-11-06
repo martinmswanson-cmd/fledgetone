@@ -116,7 +116,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       await captureWamStates();
       const p = currentProject();
       const sounds = await embedSounds(referencedSoundIds(p));
-      const json = JSON.stringify(serializeProject({ ...p, sounds }), null, 2);
+      const json = JSON.stringify(serializeProject({ ...p, sounds }, soundFileNames), null, 2);
       const file = new File([json], `${safeFileName(p.name)}.fledgetone.json`, { type: 'application/json' });
       const how = await shareOrDownload(file, p.name);
       if (how !== 'cancelled') showToast(how === 'shared' ? `Shared ${file.name}` : `Downloaded ${file.name}`);
