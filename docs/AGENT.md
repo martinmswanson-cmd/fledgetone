@@ -371,7 +371,9 @@ parametric EQ cut eased or taken away, a parametric EQ or multiband compressor t
 switched off, or its fader, buses and the master together, a volume lane counted where there is
 one; a fader, EQ band or makeup that a lane plays over isn't counted, nor a fader rise that its
 buses or the master take back), a Filter, compressor or Gate that held it down switched off,
-opened up or eased (the Filter compared by what it lets through, the compressor and the Gate by
+opened up or eased (the Filter compared by what it lets through: a low-pass or high-pass can peak
+at its cutoff with the resonance, a band-pass never lifts anything, 0 dB at its centre and less
+either side however high its resonance; the compressor and the Gate by
 how far they hold the track down, their lanes too), its notes played much harder (velocities
 raised, the same notes stacked, copies of a clip piled on one bar: by how hard its notes play at
 once, bar by bar), a send pushed over full level (the reverb send goes up to 300%), a track
@@ -387,10 +389,19 @@ tilt for the lows: "This switches on the Loud master, pushed 11 dB: the song com
 louder. Turn your speakers down before you listen."), the clipper switched on with more than 3 dB
 of drive ("This switches on the master clipper at 11 dB of drive: the song comes out up to 11 dB
 louder. ..."; either with less is only a note, "it plays no louder" or "it plays up to N dB
-louder"), the OTT switched on so that it lifts the song more than 3 dB (about 6.7 dB at full depth,
-plus its gains: at depth 0 only its gains count, a cut by its in gain in full; at depth its upward
-compression lifts back up to 55% of that cut at full depth, so it counts for less), the OTT pushed
-much harder while it was on, the Loud master's push or sub tilt, the OTT's gains or the clipper's
+louder"), the OTT switched on so that its quietest bars can come up more than 3 dB ("This switches
+on the master OTT at 100% depth: its quiet parts come up by as much as 14.3 dB. Turn your speakers
+down before you listen."; less, at any depth above 0, is a note: "This switches on the master OTT
+at 25% depth: its quiet parts come up by as much as 1.8 dB."). How much it lifts is read from how
+quietly the song is fed into it, with no listen needed: the faders of the tracks heard (with their
+buses) summed; at 0 dB or more it can lift a bar about 7.2 dB at full depth, and 1 dB more for each
+dB under that, up to the 24 dB the OTT can lift at most (the Ambient starter, its faders summing to
+-7 dB, is lifted 13.6 dB in a bar, measured, and is said as 14.3). Its depth scales that, its out
+gain counts in full, its in gain counts for less at depth (its compression lifts back up to 60% of
+a cut and takes off at least 30% of a rise at full depth; at depth 0 only its gains count, and in
+full), and the OTT pushed much harder while it was on is said the same way ("The master OTT is pushed
+much harder (30% to 100% depth): its quiet parts come up by as much as 10 dB. ..."), the Loud
+master's push or sub tilt, the OTT's gains or the clipper's
 drive up by more than 3 dB, the clipper's ceiling raised so its peaks come up more than 3 dB (driven
 harder as well, one warning with the larger of the two: "The master clipper is driven 5 dB harder
 and its ceiling goes up from -12 to 0 dB: the song comes out up to 11 dB louder. Turn your speakers

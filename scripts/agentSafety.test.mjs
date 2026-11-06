@@ -319,20 +319,20 @@ test('a send pushed over full level is a warning: the reverb at 300%', () => {
 
 test('the master OTT switched on, or pushed much harder, is a warning even without gain', () => {
   const a = base();
-  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 1, inGain: 0, outGain: 0 } }]), /^This switches on the master OTT: the whole song gets louder\.$/);
+  assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 1, inGain: 0, outGain: 0 } }]), 'This switches on the master OTT at 100% depth: its quiet parts come up by as much as 7.2 dB. Turn your speakers down before you listen.');
   const on = ap(a, [{ op: 'set_master', ott: { on: true, depth: 0.2 } }]);
-  assert.match(warningsFor([{ op: 'set_master', ott: { depth: 1 } }], on), /^The master OTT is pushed much harder \(20% to 100% depth\): the whole song gets louder\.$/);
+  assert.equal(warningsFor([{ op: 'set_master', ott: { depth: 1 } }], on), 'The master OTT is pushed much harder (20% to 100% depth): its quiet parts come up by as much as 5.8 dB. Turn your speakers down before you listen.');
   assert.equal(warningsFor([{ op: 'set_master', ott: { depth: 0.4 } }], on), '');
 });
 
 test('the master OTT switched on at depth 0 (or hardly any) lifts nothing: no caution; its gains still count (scan r31)', () => {
   // Each band's gain goes with the depth (ott.ts): at depth 0 the OTT passes the song through, but for its gains
-  assert.equal(OTT_FULL_LIFT_DB, 6.7);
+  assert.equal(OTT_FULL_LIFT_DB, 7.2);
   assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0 } }]), '');
   assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0.4, inGain: 0, outGain: 0 } }]), '');
   assert.equal(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0, inGain: -12, outGain: 3 } }]), '');
-  // 6.7 x 0.5 = 3.35 dB, over the master's 3: a caution
-  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0.5, inGain: 0, outGain: 0 } }]), /^This switches on the master OTT: the whole song gets louder\.$/);
+  // 7.2 x 0.5 = 3.6 dB, over the master's 3: a caution
+  assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0.5, inGain: 0, outGain: 0 } }]), /^This switches on the master OTT at 50% depth: its quiet parts come up by as much as 3\.6 dB\./);
   // At depth 0 its gains alone lift it: out +2 and in +2 is 4 dB
   assert.match(warningsFor([{ op: 'set_master', ott: { on: true, depth: 0, inGain: 2, outGain: 2 } }]), /^This switches on the master OTT/);
 });
@@ -606,7 +606,7 @@ test('the clipper driven harder with its ceiling raised: one caution with the la
 
 test('the OTT in gain cut counts: switched on at depth 0 with in -6 and out +4 is no caution, and leaves the sound check its say (scan r33)', async () => {
   const { safetyCautions, louderSaid, measuredCaution, OTT_IN_EASE } = await import('../src/agent/safety.ts');
-  assert.equal(OTT_IN_EASE, 0.55);
+  assert.equal(OTT_IN_EASE, 0.6);
   const q = { ...base(), master: { ...base().master, level: -14 } };
   const run = (ott, from = q) => {
     const notes = [];
@@ -622,11 +622,11 @@ test('the OTT in gain cut counts: switched on at depth 0 with in -6 and out +4 i
   assert.deepEqual(run({ on: true, depth: 0, inGain: -12, outGain: 4 }).c, []);
   assert.deepEqual(run({ on: true, depth: 0.4, inGain: -6, outGain: 3 }).c, []);
   // At full depth its upward compression lifts much of the cut back: in -12, out +4 is still a caution
-  // (measured: up to 3.6 LU in a bar; said 5.3), and at depth 1 with no gain, 6.7
+  // (measured: up to 3.6 LU in a bar; said 7.2 - 12 x 0.4 + 4 = 6.4), and at depth 1 with no gain, 7.2
   const full = run({ on: true, depth: 1, inGain: -12, outGain: 4 }).c;
-  assert.deepEqual(full.map((c) => c.text), ['This switches on the master OTT: the whole song gets louder.']);
-  assert.ok(Math.abs(full[0].louder - 5.3) < 1e-9);
-  assert.equal(run({ on: true, depth: 1, inGain: 0, outGain: 0 }).c[0].louder, 6.7);
+  assert.deepEqual(full.map((c) => c.text), ['This switches on the master OTT at 100% depth: its quiet parts come up by as much as 6.4 dB. Turn your speakers down before you listen.']);
+  assert.ok(Math.abs(full[0].louder - 6.4) < 1e-9);
+  assert.equal(run({ on: true, depth: 1, inGain: 0, outGain: 0 }).c[0].louder, 7.2);
   // While it's on, the same: in 0 to -6 with out 0 to +4 at depth 0 (measured -2 LU) is no caution
   const on0 = ap(q, [{ op: 'set_master', ott: { on: true, depth: 0, inGain: 0, outGain: 0 } }]);
   assert.deepEqual(run({ inGain: -6, outGain: 4 }, on0).c, []);
@@ -811,4 +811,81 @@ test('a change of the master glue style counts what it can add: Tight to Off say
   // A glue change the other way never takes a rise back (Off to Tight is +2.3 LU on a quiet song)
   const off = { ...tight, master: { ...tight.master, glue: 'off' } };
   assert.deepEqual(run({ glue: 'tight', levelDb: -16 }, off).c.map((c) => c.louder), [4, 6.5]);
+});
+
+// ---- Round 37: the OTT's lift goes with how quietly the song is fed into it; a band-pass is never a boost ----
+
+test('the master OTT switched on: what its quiet parts can come up by goes with how quietly the song is fed into it (scan r37)', async () => {
+  const { safetyCautions, louderSaid, ottLiftDb, OTT_LIFT_MAX_DB } = await import('../src/agent/safety.ts');
+  const run = (from, set) => {
+    const notes = [];
+    const c = safetyCautions(from, ap(from, [{ op: 'set_master', ...set }]), notes);
+    return { c, notes, said: louderSaid(c) };
+  };
+  // Lo-Fi (faders summing to 0.3 dB): 7.2 at full depth (measured +7.0 LU in its loudest-rising bar)
+  const lofi = base();
+  assert.ok(Math.abs(ottLiftDb(lofi) - 7.2) < 1e-9);
+  // Ambient (faders summing to -7.1 dB): 14.3 (measured +13.6 LU in a bar, +8.6 whole; it said 6.7)
+  const amb = createStarter('ambient');
+  assert.equal(Math.round(ottLiftDb(amb) * 10) / 10, 14.3);
+  assert.deepEqual(run(amb, { ott: { on: true, depth: 1 } }).c.map((c) => c.text), ['This switches on the master OTT at 100% depth: its quiet parts come up by as much as 14.3 dB. Turn your speakers down before you listen.']);
+  // Its depth scales it (measured +5.1 LU at 0.4, it said nothing), its out gain is a plain gain (depth 1, out -4: +9.6 LU, it said nothing)
+  assert.deepEqual(run(amb, { ott: { on: true, depth: 0.4 } }).c.map((c) => c.louder.toFixed(1)), ['5.7']);
+  assert.deepEqual(run(amb, { ott: { on: true, depth: 1, outGain: -4 } }).c.map((c) => c.louder.toFixed(1)), ['10.3']);
+  // The Level down 4 with it is weighed against it, and leaves a caution (measured +9.6 LU in a bar; it made it a note of 2.7)
+  const lv4 = run(amb, { levelDb: amb.master.level - 4, ott: { on: true, depth: 1 } });
+  assert.deepEqual(lv4.c.map((c) => c.text), ['This switches on the master OTT at 100% depth, but other master changes in this suggestion turn part of it back down: together they make the song up to 10.3 dB louder. Turn your speakers down before you listen.']);
+  assert.deepEqual(lv4.notes, []);
+  // Quieter still, more: its faders 10 dB down (measured +19.5 LU), never more than the OTT can lift
+  const quiet = { ...amb, tracks: amb.tracks.map((t) => ({ ...t, volume: t.volume - 10 })) };
+  assert.equal(Math.round(ottLiftDb(quiet) * 10) / 10, 24);
+  assert.equal(ottLiftDb({ ...amb, tracks: amb.tracks.map((t) => ({ ...t, volume: -60 })) }), OTT_LIFT_MAX_DB);
+  // A muted track isn't fed into it, nor one without clips
+  const muted = { ...lofi, tracks: lofi.tracks.map((t, i) => (i === 4 ? t : { ...t, isMuted: true })) };
+  assert.ok(ottLiftDb(muted) > ottLiftDb(lofi) + 10);
+  // Any depth, even under the line, is at least a note (Lo-Fi at depth 0.25: +1.6 LU)
+  const quarter = run(lofi, { ott: { on: true, depth: 0.25 } });
+  assert.deepEqual(quarter.c, []);
+  assert.deepEqual(quarter.notes, ['This switches on the master OTT at 25% depth: its quiet parts come up by as much as 1.8 dB.']);
+  assert.deepEqual(run(lofi, { ott: { on: true, depth: 0.5, inGain: -6 } }).notes, ['This switches on the master OTT at 50% depth: it brings the quiet parts up, and its gains keep the song no louder.']);
+  // ...at depth 0, only its gains
+  assert.deepEqual(run(lofi, { ott: { on: true, depth: 0 } }).notes, []);
+  // An in gain raised at depth is eased a little (Lo-Fi, depth 1, in +6: +10.1 LU; said 7.2 + 6 x 0.7)
+  assert.deepEqual(run(lofi, { ott: { on: true, depth: 1, inGain: 6 } }).c.map((c) => c.louder.toFixed(1)), ['11.4']);
+  // Pushed harder while on, by the same lift: Ambient 0.3 to 1 is 10 dB, Lo-Fi 0.2 to 0.6 is 2.9, nothing
+  const ambOn = ap(amb, [{ op: 'set_master', ott: { on: true, depth: 0.3 } }]);
+  assert.deepEqual(run(ambOn, { ott: { depth: 1 } }).c.map((c) => c.text), ['The master OTT is pushed much harder (30% to 100% depth): its quiet parts come up by as much as 10 dB. Turn your speakers down before you listen.']);
+  const lofiOn = ap(lofi, [{ op: 'set_master', ott: { on: true, depth: 0.2 } }]);
+  assert.deepEqual(run(lofiOn, { ott: { depth: 0.6 } }).c, []);
+});
+
+test('a band-pass Filter is no boost: 0 dB at its centre whatever its resonance; taken away, what it held down comes back (scan r37)', async () => {
+  const { safetyCautions, louderSaid } = await import('../src/agent/safety.ts');
+  const { plainNames } = await import('../src/agent/names.ts');
+  const amb = createStarter('ambient');
+  const K = amb.tracks[2].id;
+  const filter = (settings, from = amb) => {
+    const c = safetyCautions(from, ap(from, [{ op: 'set_insert', trackId: K, insert: 'filter', settings }]));
+    return { c, said: louderSaid(c) };
+  };
+  // Switched on at 800 Hz, Q 12 (it said "comes up by 86.3 dB"; measured -3.7 LU) or Q 4 at 12 dB per octave (it said 24.1; -2.7 LU): nothing
+  for (const settings of [{ on: true, type: 'bandpass', cutoff: 800, resonance: 12 }, { on: true, type: 'bandpass', cutoff: 800, resonance: 4, slope: 12 }, { on: true, type: 'bandpass', cutoff: 100, resonance: 18 }]) {
+    const r = filter(settings);
+    assert.deepEqual(r.c, [], JSON.stringify(settings));
+    assert.equal(r.said, null);
+  }
+  // Beside the OTT switched on, the OTT's caution alone, so it says what was measured (+13.6 LU in a bar)
+  const both = safetyCautions(amb, ap(amb, [{ op: 'set_master', ott: { on: true, depth: 1 } }, { op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, type: 'bandpass', cutoff: 800, resonance: 12 } }]));
+  assert.deepEqual(both.map((c) => c.louder.toFixed(1)), ['14.3']);
+  // A narrow band-pass switched off: what it held down comes back, by no more than it took off
+  const narrow = ap(amb, [{ op: 'set_insert', trackId: K, insert: 'filter', settings: { on: true, type: 'bandpass', cutoff: 800, resonance: 12 } }]);
+  const off = filter({ on: false }, narrow).c;
+  assert.equal(off.length, 1);
+  assert.match(plainNames(off[0].text), /^This switches off the Filter on "Kalimba": it held it down, and around .* it comes up by [\d.]+ dB\. Turn your speakers down before you listen\.$/);
+  assert.ok(off[0].louder > 6 && off[0].louder <= 60);
+  // ...widened (resonance 12 to 0.7): it lets much more through, never a peak
+  const wide = filter({ resonance: 0.7 }, narrow).c;
+  assert.match(plainNames(wide[0].text), /^On "Kalimba", the Filter lets much more through: around/);
+  // A resonant low-pass still peaks (Q 12 at 24 dB per octave: about 21.6 dB, as the second stage plays)
+  assert.match(plainNames(filter({ on: true, type: 'lowpass', cutoff: 800, resonance: 12 }).c[0].text), /^On "Kalimba", the Filter peaks: around 800 Hz it comes up by 2\d\.\d dB\./);
 });

@@ -14,8 +14,9 @@
  * or moved; the master Level, the Loud master's push or the OTT's gains up by more than
  * MASTER_JUMP_DB, the Loud master or the clipper switched on so they add more than MASTER_JUMP_DB
  * (the Loud master's push and sub tilt, the clipper's drive: less is only a note), the OTT
- * switched on so it lifts the song by more than MASTER_JUMP_DB (OTT_FULL_LIFT_DB at full depth,
- * a cut by its in gain eased by its depth: OTT_IN_EASE), the OTT pushed much harder while on, the
+ * switched on so its quietest bars can come up by more than MASTER_JUMP_DB (ottLiftDb at full
+ * depth, more the quieter the song is fed into it; a change of its in gain eased by its depth:
+ * OTT_IN_EASE, OTT_IN_RISE_EASE; less is only a note), the OTT pushed much harder while on, the
  * Loud master, the OTT or the clipper switched off where it held the song down (a negative push,
  * tilt or gain; the clipper's ceiling), the Loud master's sub tilt or the clipper's ceiling raised
  * (driven harder too: one caution, the larger rise), and small rises on several of the master's
@@ -48,10 +49,25 @@ export const DRIVE_JUMP = 0.4;
 /** A delay fed back this much or more gets a warning: its echoes take a long time to die away. */
 export const FEEDBACK_HIGH = 0.8;
 /**
- * How much the master OTT lifts a song switched on at full depth with no gain, dB (+6.7 LU
- * measured): each band's gain goes with its depth (ott.ts), so at depth 0 it lifts only by its gains.
+ * How much the master OTT can lift a song's quietest bar switched on at full depth with no gain,
+ * dB, when the song is fed into it at OTT_LIFT_KNEE_DB or more (ottLiftDb): each band's gain goes
+ * with its depth (ott.ts), so at depth 0 it lifts only by its gains. Measured on every starter as
+ * it is, hotter, quieter and with one track alone: up to +7.1 LU in a bar (Lo-Fi 7.0 to 7.1,
+ * Latin 6.3, Eastern 6.5, Tavern 5.5, Plaza 3.7; +8.6 on the Ambient starter fed 10 dB hotter).
  */
-export const OTT_FULL_LIFT_DB = 6.7;
+export const OTT_FULL_LIFT_DB = 7.2;
+/** The OTT lifts a song fed in quieter than this (its faders' sum, ottLiftDb) by more, dB. */
+export const OTT_LIFT_KNEE_DB = 0;
+/**
+ * How much more the OTT at full depth lifts a quiet bar for each dB the song is fed in under
+ * OTT_LIFT_KNEE_DB, dB: its upward compression lifts what sits under its threshold by 0.75 dB a
+ * dB, and the quiet bars of a quiet song sit further under it. Measured: the Ambient starter
+ * (faders summing to -7 dB) +13.6 LU in a bar, 10 dB quieter (-17) +19.5, the Lo-Fi rain pad alone
+ * (-26) +23.1, the Latin starter 12 dB quieter (-7) +9.7; the most of all, a dB a dB.
+ */
+export const OTT_LIFT_PER_DB = 1;
+/** The most the OTT lifts any band at full depth, dB (ott.ts MAX_UP_DB): the lift is never counted for more. */
+export const OTT_LIFT_MAX_DB = 24;
 /**
  * How much louder a change of the master glue style (from, to) can make the song, dB: the most
  * measured, loudest bar or true peak, on the Lo-Fi starter as it is, a hotter mix of it and one
@@ -72,11 +88,19 @@ const GLUE_NAMES: Record<GlueStyle, string> = { off: 'Off', gentle: 'Gentle', st
  * How much of a cut by the master OTT's in gain its upward compression lifts back at full depth, at
  * the least (it goes with the depth: at depth 0 the in gain is a plain gain). Measured with cuts of
  * 6 and 12 dB at depth 0.5 and 1, on a quiet and a louder mix: 8 to 28% of the cut lifted back at
- * depth 0.5, 25 to 55% at depth 1. The most of those, so a cut is never counted for more than it takes off.
+ * depth 0.5, 25 to 55% at depth 1; on the starters (6 dB at depth 1), 25 to 57%, the most on the
+ * quiet Ambient one. The most of those, so a cut is never counted for more than it takes off.
  */
-export const OTT_IN_EASE = 0.55;
-/** What a change of the OTT's in gain does to the song at a depth, dB: a rise in full, a cut eased by the depth (OTT_IN_EASE). */
-const ottIn = (change: number, depth: number) => (change < 0 ? change * (1 - OTT_IN_EASE * Math.max(0, Math.min(1, depth))) : change);
+export const OTT_IN_EASE = 0.6;
+/**
+ * How much of a rise of the master OTT's in gain its compression takes off at full depth, at the
+ * most (it goes with the depth: at depth 0 the in gain is a plain gain). Measured, 6 dB up at depth
+ * 1 on the starters and their quieter and one-track mixes: 1.3 to 4.1 dB of it came through, 32
+ * to 78% taken off. The least of those, so a rise is never counted for less than it adds.
+ */
+export const OTT_IN_RISE_EASE = 0.3;
+/** What a change of the OTT's in gain does to the song at a depth, dB: a rise eased a little by the depth (OTT_IN_RISE_EASE), a cut more (OTT_IN_EASE). */
+const ottIn = (change: number, depth: number) => change * (1 - (change < 0 ? OTT_IN_EASE : OTT_IN_RISE_EASE) * Math.max(0, Math.min(1, depth)));
 
 /**
  * One caution, in plain words, and whether it warns about level (it comes out louder): `louder`,
@@ -287,6 +311,21 @@ function pathDb(t: Track, tracks: readonly Track[]): number {
   return levelOf(t) + busChain(t, tracks).reduce((sum, b) => sum + levelOf(b), 0);
 }
 
+/**
+ * How much the master OTT at full depth can lift the song's quietest bar, dB, from how loud the
+ * song is fed into it, read without a listen: the sum (in power) of the levels along the way out
+ * of the tracks heard that have clips (pathDb; a song with none as one fed in at nothing).
+ * OTT_FULL_LIFT_DB fed in at OTT_LIFT_KNEE_DB or more, OTT_LIFT_PER_DB more for each dB under it,
+ * at most OTT_LIFT_MAX_DB. Its depth scales it (measured: in step with the depth, 0.25 to 1).
+ */
+export function ottLiftDb(song: ProjectSnapshot): number {
+  const heard = audibleIds(song.tracks);
+  const playing = new Set(song.clips.map((c) => c.trackId));
+  const power = song.tracks.filter((t) => !isMixTrack(t) && heard.has(t.id) && playing.has(t.id)).reduce((sum, t) => sum + 10 ** (pathDb(t, song.tracks) / 10), 0);
+  const fed = power > 0 ? 10 * Math.log10(power) : -Infinity;
+  return Math.min(OTT_LIFT_MAX_DB, OTT_FULL_LIFT_DB + OTT_LIFT_PER_DB * Math.max(0, OTT_LIFT_KNEE_DB - fed));
+}
+
 /** The lanes that drive each setting of the inserts that can hold a track down (the Filter, the compressor, the Gate). */
 const INSERT_LANES = {
   filter: { cutoff: 'filterCutoff', resonance: 'filterResonance' },
@@ -327,17 +366,45 @@ function insertAlong(was: Track | undefined, t: Track, insert: HoldInsert, track
 /** The Filter's first stage at 24 dB per octave: a 4th-order Butterworth pair's first Q (lightFx.ts createLightFilter). */
 const BUTTERWORTH_Q1 = 1 / (2 * Math.cos(Math.PI / 8));
 /**
- * The Filter as parametric EQ bands, as it plays (lightFx.ts createLightFilter): a low-pass as a
- * high cut, a high-pass as a low cut, a band-pass as both; at 24 dB per octave two stages, the
- * first a Butterworth one and the second carrying the resonance.
+ * The Filter's low-pass or high-pass as parametric EQ bands, as it plays (lightFx.ts
+ * createLightFilter): a low-pass as a high cut, a high-pass as a low cut; at 24 dB per octave two
+ * stages, the first a Butterworth one and the second carrying the resonance. (A band-pass is no
+ * cut and no boost: bandpassDb.)
  */
 function filterBands(f: Settings): PeqBand[] {
-  if (!f) return [];
+  if (!f || (f.type !== 'lowpass' && f.type !== 'highpass')) return [];
   const cutoff = Number(f.cutoff);
   const q = Number(f.resonance);
-  const qs = f.type !== 'bandpass' && Number(f.slope) === 24 ? [BUTTERWORTH_Q1, q / BUTTERWORTH_Q1] : Number(f.slope) === 24 ? [q, q] : [q];
-  const types: Array<PeqBand['type']> = f.type === 'lowpass' ? ['highcut'] : f.type === 'highpass' ? ['lowcut'] : ['lowcut', 'highcut'];
-  return qs.flatMap((stageQ) => types.map((type) => ({ on: true, type, freq: cutoff, gain: 0, q: stageQ })));
+  const qs = Number(f.slope) === 24 ? [BUTTERWORTH_Q1, q / BUTTERWORTH_Q1] : [q];
+  return qs.map((stageQ) => ({ on: true, type: f.type === 'lowpass' ? 'highcut' : 'lowcut', freq: cutoff, gain: 0, q: stageQ }));
+}
+/** The sample rate the Filter's response is worked out at (as the parametric EQ's, peq.ts). */
+const FILTER_RATE = 48000;
+/**
+ * The Filter's band-pass at `hz`, dB, as it plays (lightFx.ts createLightFilter): Web Audio's
+ * band-pass biquad, 0 dB at its centre and less on either side (about 1/sqrt(1 + Q^2 (f/f0 -
+ * f0/f)^2) a stage), never a boost however high the resonance (its Q); at 24 dB per octave two
+ * such stages, both at the resonance.
+ */
+function bandpassDb(f: Settings, hz: number): number {
+  if (!f) return 0;
+  const f0 = Math.min(Number(f.cutoff), FILTER_RATE / 2 - 1);
+  const q = Math.max(1e-4, Number(f.resonance));
+  const w0 = (2 * Math.PI * f0) / FILTER_RATE;
+  const alpha = Math.sin(w0) / (2 * q);
+  const [b0, b2, a0, a1, a2] = [alpha, -alpha, 1 + alpha, -2 * Math.cos(w0), 1 - alpha];
+  const w = (2 * Math.PI * Math.min(hz, FILTER_RATE / 2)) / FILTER_RATE;
+  const num = [b0 + b2 * Math.cos(2 * w), -b2 * Math.sin(2 * w)];
+  const den = [a0 + a1 * Math.cos(w) + a2 * Math.cos(2 * w), -(a1 * Math.sin(w) + a2 * Math.sin(2 * w))];
+  const stage = Math.min(0, 10 * Math.log10(Math.max(1e-30, (num[0] ** 2 + num[1] ** 2) / Math.max(1e-30, den[0] ** 2 + den[1] ** 2))));
+  return Number(f.slope) === 24 ? 2 * stage : stage;
+}
+/** The Filter's response at `hz`, dB (0 while it's off or absent; a cut this deep as PEQ_FLOOR_DB). */
+function filterDb(f: Settings, hz: number): number {
+  if (!f) return 0;
+  if (f.type === 'bandpass') return Math.max(PEQ_FLOOR_DB, bandpassDb(f, hz));
+  const bands = filterBands(f);
+  return bands.length ? Math.max(PEQ_FLOOR_DB, peqDb(bands, hz)) : 0;
 }
 /** The level a compressor's held-down track is estimated at, dBFS: what it takes off is worked out for a track this loud. */
 const NOMINAL_LEVEL_DB = -12;
@@ -375,10 +442,7 @@ function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track
     const from = (bar: number) => (lanes ? ` from ${positionWords(bar, meter)}` : '');
     if (insert === 'filter') {
       // The response, at the frequencies where a song's level lives and at the cutoffs themselves
-      const at = (f: Settings, hz: number) => {
-        const bands = filterBands(f);
-        return bands.length ? Math.max(PEQ_FLOOR_DB, peqDb(bands, hz)) : 0;
-      };
+      const at = filterDb;
       let best = { rise: 0, hz: 1000, after: 0, bar: 1 };
       for (const s of along) {
         const cutoffs = [s.then, s.now].flatMap((f) => (f ? [Number(f.cutoff)] : [])).filter((hz) => hz >= 40 && hz <= 16000);
@@ -666,17 +730,25 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
   }
   // The OTT: its out gain is a plain gain; its in gain too at depth 0, but at depth its upward
   // compression lifts back part of a cut (ottIn); and switched on it lifts the quiet parts of the
-  // whole song by its depth (OTT_FULL_LIFT_DB at full depth; at depth 0 it leaves the bands alone, ott.ts)
+  // whole song by its depth (ottLiftDb at full depth, more the quieter the song is fed into it; at
+  // depth 0 it leaves the bands alone, ott.ts)
   const gainIn = (m: typeof a) => (m.ott.on ? m.ott.inGain : 0);
   const gainOut = (m: typeof a) => (m.ott.on ? m.ott.outGain : 0);
-  // (switched on: by how much it lifts the song, its gains and its depth together)
-  const lift = b.ott.outGain + ottIn(b.ott.inGain, b.ott.depth) + OTT_FULL_LIFT_DB * b.ott.depth;
+  const ottFull = ottLiftDb(after);
+  // (switched on: by how much it can lift the song's quietest bar, its gains and its depth together)
+  const lift = b.ott.outGain + ottIn(b.ott.inGain, b.ott.depth) + ottFull * b.ott.depth;
   // Its gains' rise (switched off: 0): the out gain's, and the in gain's (a cut eased or taken away
   // counts in full: at depth 0 it's a plain gain, switched off at -12 in, +12 LU measured)
   const ottUp = gainOut(b) - gainOut(a) + ottIn(gainIn(b) - gainIn(a), Math.max(a.ott.on ? a.ott.depth : 0, b.ott.on ? b.ott.depth : 0));
-  if (b.ott.on && !a.ott.on && lift > MASTER_JUMP_DB + 1e-9) plainLv('This switches on the master OTT', lift, ': the whole song gets louder.');
-  // (only while it was on: a depth stored while it was off isn't what played)
-  else if (a.ott.on && b.ott.on && b.ott.depth - a.ott.depth > DRIVE_JUMP + 1e-9) out.push(lv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth): the whole song gets louder.`));
+  // (pushed harder while on: what its quiet parts come up by; only while it was on, a depth stored
+  // while it was off isn't what played)
+  const deeper = a.ott.on && b.ott.on ? Math.max(0, ottFull * (b.ott.depth - a.ott.depth)) : 0;
+  const ottAt = `This switches on the master OTT${b.ott.depth > 1e-9 ? ` at ${pct(b.ott.depth)} depth` : ''}`;
+  if (b.ott.on && !a.ott.on) {
+    if (lift > MASTER_JUMP_DB + 1e-9) plainLv(ottAt, lift, b.ott.depth > 1e-9 ? `: its quiet parts come up by as much as ${r1(lift)} dB.${turnDown}` : `: the song comes out up to ${r1(lift)} dB louder.${turnDown}`);
+    // (any depth lifts the quiet parts: at least a note)
+    else if (b.ott.depth > 1e-9) notes?.push(lift > 0.05 ? `${ottAt}: its quiet parts come up by as much as ${r1(lift)} dB.` : `${ottAt}: it brings the quiet parts up, and its gains keep the song no louder.`);
+  } else if (deeper > MASTER_JUMP_DB + 1e-9) plainLv(`The master OTT is pushed much harder (${pct(a.ott.depth)} to ${pct(b.ott.depth)} depth)`, deeper, `: its quiet parts come up by as much as ${r1(deeper)} dB.${turnDown}`);
   if (a.ott.on && !b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) out.push(lv(`Switching off the master OTT takes away its ${r1(ottUp)} dB cut: the song comes out ${a.ott.depth > 1e-9 ? 'up to ' : ''}${r1(ottUp)} dB louder. Turn your speakers down before you listen.`, ottUp));
   else if (a.ott.on && b.ott.on && ottUp > MASTER_JUMP_DB + 1e-9) plainLv(`The master OTT's gain goes up by ${r1(ottUp)} dB`, ottUp);
   // The clipper: its drive is a plain gain into it, its ceiling holds the peaks down (the limiter
@@ -715,7 +787,7 @@ export function safetyCautions(before: ProjectSnapshot, after: ProjectSnapshot, 
   // already says as much. A cut counts only on a control that stays on (one switched off takes its
   // clipper or compression away with it), the OTT's depth eased lowers only its quiet parts, so it
   // takes nothing off, and a glue change never counts as a cut
-  const ottAll = b.ott.on && !a.ott.on ? lift : a.ott.on && b.ott.on ? ottUp + Math.max(0, OTT_FULL_LIFT_DB * (b.ott.depth - a.ott.depth)) : Math.max(0, ottUp);
+  const ottAll = b.ott.on && !a.ott.on ? lift : a.ott.on && b.ott.on ? ottUp + deeper : Math.max(0, ottUp);
   const pushAll = a.loud?.on && b.loud?.on ? pushUp : Math.max(0, pushUp);
   const driveAll = a.clipper?.on && b.clipper?.on ? driveOf(b) - driveOf(a) : Math.max(0, driveOf(b) - driveOf(a));
   const gains = [b.level - a.level, pushAll, driveAll, ottAll, glueUp];
