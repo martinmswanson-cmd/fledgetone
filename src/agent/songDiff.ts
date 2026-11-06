@@ -110,7 +110,32 @@ export const EFFECT_TAIL_SECONDS = 1.5;
 
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
-const db = (v: number) => `${v > 0 ? '+' : ''}${r1(v)} dB`;
+/** `v` to `places` decimals. */
+const rd = (v: number, places: number) => Math.round(v * 10 ** places) / 10 ** places;
+const db = (v: number, places = 1) => `${rd(v, places) > 0 ? '+' : ''}${rd(v, places)} dB`;
+/**
+ * The decimals a change from `a` to `b` is worded with: one, or two (then three) where one would
+ * read the same before and after (a real change never reads as none); null when even three would,
+ * and the sentence says "very slightly" with no numbers to compare.
+ */
+function placesFor<T>(words: (v: T, places: number) => string, a: T, b: T): number | null {
+  for (const p of [1, 2, 3]) if (words(a, p) !== words(b, p)) return p;
+  return null;
+}
+/** How much a level changed, dB, at `places` decimals: never "0" for a real change ("less than 0.01"). */
+const dbBy = (v: number, places: number) => (rd(v, places) === 0 ? `less than ${10 ** -places}` : String(rd(v, places)));
+/** "Turns "Keys" up by 0.04 dB (-11.5 dB to -11.46 dB)", "Turns the master Level down very slightly (about +3.5 dB)". */
+function levelSentence(what: string, a: number, b: number): string {
+  const way = b > a ? 'up' : 'down';
+  const p = placesFor(db, a, b);
+  return p === null ? `Turns ${what} ${way} very slightly (about ${db(b)}).` : `Turns ${what} ${way} by ${dbBy(Math.abs(b - a), p)} dB (${db(a, p)} to ${db(b, p)}).`;
+}
+/** "from 30% to 30.04%" (in `unit` after each), or " very slightly (about 30%)" where they'd read the same. */
+function fromTo(a: number, b: number, unit = ''): string {
+  const num = (v: number, p: number) => `${rd(v, p)}${unit}`;
+  const p = placesFor(num, a, b);
+  return p === null ? ` very slightly (about ${num(b, 1)})` : ` from ${num(a, p)} to ${num(b, p)}`;
+}
 /**
  * The song's time signatures while diffSongs words its sentences, when they aren't plain 4/4
  * throughout (null: they are, and a bar is a measure): its bars are then named as the ruler numbers
@@ -124,22 +149,22 @@ export const wordMeter = (song: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>):
 };
 const bars = (from: number, to: number) => barWords({ fromBar: from, toBar: to }, sentenceMeter);
 /** "bar 7.5", or in a song not in 4/4 (`meter`, see wordMeter), the measure (and beat) the ruler shows there: "bar 9", "bar 9 beat 2". */
-export const positionWords = (bar: number, meter: MeterMap | null): string => {
-  if (!meter) return `bar ${r1(bar)}`;
+export const positionWords = (bar: number, meter: MeterMap | null, places = 1): string => {
+  if (!meter) return `bar ${rd(bar, places)}`;
   const m = toMeasureBeat(bar, meter);
   return m.beat === 1 && m.hundredths === 0 ? `bar ${m.measure}` : `bar ${m.measure} beat ${r1(m.beat + m.hundredths / 100)}`;
 };
 /** A length: "4 bars", or in a song not in 4/4 (`meter`: where a bar isn't a measure) in quarter notes. */
-export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null): string => {
-  const n = lengthNumber(meter ? lengthBars * 4 : lengthBars);
+export const lengthWordsIn = (lengthBars: number, meter: MeterMap | null, places = 1): string => {
+  const n = lengthNumber(meter ? lengthBars * 4 : lengthBars, places);
   const word = meter ? 'quarter note' : 'bar';
   return `${n} ${word}${n === '1' ? '' : 's'}`;
 };
 /** A length's number to 1 decimal, but never 0 for a length that isn't (two figures then: 0.004). */
-const lengthNumber = (v: number): string => (r1(v) === 0 && v > 0 ? String(Number(v.toPrecision(2))) : String(r1(v)));
-const barAt = (bar: number): string => positionWords(bar, sentenceMeter);
+const lengthNumber = (v: number, places = 1): string => (rd(v, places) === 0 && v > 0 ? String(Number(v.toPrecision(2))) : String(rd(v, places)));
+const barAt = (bar: number, places = 1): string => positionWords(bar, sentenceMeter, places);
 /** A clip's length (see lengthWordsIn). */
-const lengthWords = (lengthBars: number): string => lengthWordsIn(lengthBars, sentenceMeter);
+const lengthWords = (lengthBars: number, places = 1): string => lengthWordsIn(lengthBars, sentenceMeter, places);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const same = (a: unknown, b: unknown) => a === b || stableJson(a) === stableJson(b);
 const noteEnd = (n: NoteEvent) => n.startOffset + durationToBars(n.duration);
@@ -184,7 +209,7 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   let tempoChanged = false;
   if (before.bpm !== after.bpm) {
     tempoChanged = true;
-    add({ text: `Changes the tempo from ${r1(before.bpm)} to ${r1(after.bpm)} BPM.`, hear: 'song' });
+    add({ text: `Changes the tempo${fromTo(before.bpm, after.bpm)} BPM.`, hear: 'song' });
   }
   const bPoints = before.tempoPoints ?? [];
   const aPoints = after.tempoPoints ?? [];
@@ -667,7 +692,7 @@ export function auditionRange(range: BarRange | null, song: Pick<ProjectSnapshot
 
 function diffMaster(a: MasterSettings | undefined, b: MasterSettings | undefined, add: (c: SongChange) => void) {
   if (!a || !b || same(a, b)) return;
-  if (a.level !== b.level) add({ text: `Turns the master Level ${b.level > a.level ? 'up' : 'down'} by ${r1(Math.abs(b.level - a.level))} dB (${db(a.level)} to ${db(b.level)}).` });
+  if (a.level !== b.level) add({ text: levelSentence('the master Level', a.level, b.level) });
   if (a.glue !== b.glue) add({ text: `Sets the master compressor to ${valueWord('glue', b.glue) ?? 'another style'}.` });
   const part = (label: string, x: unknown, y: unknown) => {
     const on = (v: unknown) => !!(v as { on?: boolean } | undefined)?.on;
@@ -717,16 +742,27 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   const at = { trackId: b.id, hear: 'track' as HearWhere };
   if (a.name !== b.name) add({ text: `Renames the track ${nm(a.name)} to ${nm(b.name)}.`, trackId: b.id, hear: 'silent' });
   if (a.instrumentKey !== b.instrumentKey) add({ text: `${n} plays ${INSTRUMENTS[b.instrumentKey]?.name ?? b.instrumentKey} instead of ${INSTRUMENTS[a.instrumentKey]?.name ?? a.instrumentKey}.`, ...at });
-  if (a.volume !== b.volume) add({ text: `Turns ${n} ${b.volume > a.volume ? 'up' : 'down'} by ${r1(Math.abs(b.volume - a.volume))} dB (${db(a.volume)} to ${db(b.volume)}).`, ...at });
-  if (a.pan !== b.pan) add({ text: `Pans ${n} to ${formatPan(b.pan)} (was ${formatPan(a.pan)}).`, ...at });
+  if (a.volume !== b.volume) add({ text: levelSentence(n, a.volume, b.volume), ...at });
+  // (the pan as the mixer shows it, in whole steps: a move inside one is "very slightly")
+  if (a.pan !== b.pan)
+    add({ text: formatPan(a.pan) === formatPan(b.pan) ? `Pans ${n} very slightly to the ${b.pan > a.pan ? 'right' : 'left'} (about ${formatPan(b.pan)}).` : `Pans ${n} to ${formatPan(b.pan)} (was ${formatPan(a.pan)}).`, ...at });
   if (a.isMuted !== b.isMuted) add({ text: `${b.isMuted ? 'Mutes' : 'Unmutes'} ${n}.`, ...at });
   if (a.isSoloed !== b.isSoloed) add({ text: `${b.isSoloed ? 'Solos' : 'Unsolos'} ${n}.`, trackId: b.id, hear: 'song' });
-  if (a.reverbSend !== b.reverbSend) add({ text: `Changes the reverb send of ${n} from ${r1(a.reverbSend * 100)}% to ${r1(b.reverbSend * 100)}%.`, ...at });
-  if (a.delaySend !== b.delaySend) add({ text: `Changes the delay send of ${n} from ${r1(a.delaySend * 100)}% to ${r1(b.delaySend * 100)}%.`, ...at });
-  if ((a.distance ?? 0) !== (b.distance ?? 0)) add({ text: `Moves ${n} ${(b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer'} on the stage (distance ${r1(a.distance ?? 0)} to ${r1(b.distance ?? 0)}).`, ...at });
+  if (a.reverbSend !== b.reverbSend) add({ text: `Changes the reverb send of ${n}${fromTo(a.reverbSend * 100, b.reverbSend * 100, '%')}.`, ...at });
+  if (a.delaySend !== b.delaySend) add({ text: `Changes the delay send of ${n}${fromTo(a.delaySend * 100, b.delaySend * 100, '%')}.`, ...at });
+  if ((a.distance ?? 0) !== (b.distance ?? 0)) {
+    const p = placesFor((v: number, places) => String(rd(v, places)), a.distance ?? 0, b.distance ?? 0);
+    const way = (b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer';
+    add({ text: p === null ? `Moves ${n} very slightly ${way} on the stage (distance about ${r1(b.distance ?? 0)}).` : `Moves ${n} ${way} on the stage (distance ${rd(a.distance ?? 0, p)} to ${rd(b.distance ?? 0, p)}).`, ...at });
+  }
   if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? (tracks.find((t) => t.id === b.output) ? nm(tracks.find((t) => t.id === b.output)!.name) : 'a bus') : 'the master'}.`, ...at });
   if (!same(a.eq, b.eq)) {
-    const parts = (['low', 'mid', 'high'] as const).filter((k) => a.eq[k] !== b.eq[k]).map((k) => `${k} ${db(b.eq[k])}`);
+    // (each band as it's set now, to the decimals that tell it from before: never "+0 dB" for a real change)
+    const band = (k: 'low' | 'mid' | 'high') => {
+      const p = placesFor(db, a.eq[k], b.eq[k]);
+      return p === null ? `${k} ${b.eq[k] > a.eq[k] ? 'up' : 'down'} very slightly` : `${k} ${db(b.eq[k], p)}`;
+    };
+    const parts = (['low', 'mid', 'high'] as const).filter((k) => a.eq[k] !== b.eq[k]).map(band);
     add({ text: `Sets the EQ of ${n}: ${parts.join(', ')}.`, ...at });
   }
   if (!same(a.fx, b.fx)) {
@@ -805,10 +841,16 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     alsoTracks.set(moved, [a.trackId]);
     add(moved);
   }
-  if (Math.abs(a.startBar - b.startBar) > 1e-9)
-    add({ text: `Moves the clip ${n} from ${barAt(a.startBar)} to ${barAt(b.startBar)}.`, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
-  if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9)
-    add({ text: `Makes the clip ${n} ${lengthWords(b.lengthBars)} long (was ${lengthWords(a.lengthBars)}).`, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
+  if (Math.abs(a.startBar - b.startBar) > 1e-9) {
+    const p = placesFor(barAt, a.startBar, b.startBar);
+    const text = p === null ? `Moves the clip ${n} very slightly ${b.startBar > a.startBar ? 'later' : 'earlier'} (about ${barAt(b.startBar)}).` : `Moves the clip ${n} from ${barAt(a.startBar, p)} to ${barAt(b.startBar, p)}.`;
+    add({ text, ...at, fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
+  }
+  if (Math.abs(a.lengthBars - b.lengthBars) > 1e-9) {
+    const p = placesFor(lengthWords, a.lengthBars, b.lengthBars);
+    const text = p === null ? `Makes the clip ${n} very slightly ${b.lengthBars > a.lengthBars ? 'longer' : 'shorter'} (about ${lengthWords(b.lengthBars)}).` : `Makes the clip ${n} ${lengthWords(b.lengthBars, p)} long (was ${lengthWords(a.lengthBars, p)}).`;
+    add({ text, ...at, fromBar: Math.min(a.startBar, b.startBar) + Math.min(a.lengthBars, b.lengthBars), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
+  }
   if (a.name !== b.name) add({ text: `Renames the clip ${nm(a.name)} to ${n}.`, ...at, hear: 'silent' });
   // (notes as they play: their curves cut to their lengths, see noteExpression.ts fitNoteCurves,
   // so a curve cut at a note's end, as a saved file keeps it, is no change)

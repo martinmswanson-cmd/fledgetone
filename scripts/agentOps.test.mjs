@@ -457,3 +457,18 @@ test('set_master warns whenever a number given is not what was kept: a Loud crun
   const ott = run(base(), [{ op: 'set_master', ott: { depth: 3 } }]);
   assert.deepEqual(ott.warnings.filter((w) => /depth/i.test(w)).length, 1, JSON.stringify(ott.warnings));
 });
+
+test('transpose_notes refuses a note id the clip does not have, as remove_notes does (scan r39)', () => {
+  const s = base();
+  const clip = s.clips.find((c) => c.id === KEYS_CLIP);
+  const known = clip.notes[0].id;
+  for (const noteIds of [['note-typo'], [known, 'note-typo']]) {
+    const out = applyOps(s, { opsVersion: 1, ops: [{ op: 'transpose_notes', clipId: KEYS_CLIP, semitones: 2, noteIds }] }, {});
+    assert.equal(out.ok, false);
+    assert.equal(out.errors[0].path, `ops[0].noteIds[${noteIds.length - 1}]`);
+    assert.match(out.errors[0].message, /^clip ".*" has no note "note-typo"$/);
+  }
+  const ok = applyOps(s, { opsVersion: 1, ops: [{ op: 'transpose_notes', clipId: KEYS_CLIP, semitones: 2, noteIds: [known] }] }, {});
+  assert.ok(ok.ok);
+  assert.notEqual(ok.song.clips.find((c) => c.id === KEYS_CLIP).notes[0].note, clip.notes[0].note);
+});

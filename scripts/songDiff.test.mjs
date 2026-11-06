@@ -843,3 +843,26 @@ test('What changes says settings as the studio does: a Pump\'s track by its name
   assert.match(texts(dd).join('\n'), /Changes the designed drum sounds of "Drums"\./);
   assert.ok(dd.regions.length > 0);
 });
+
+test('a small real change never reads as no change: more decimals, or "very slightly" (scan r39)', () => {
+  const a = base();
+  const k = a.tracks[0];
+  const c = a.clips.find((x) => x.trackId === k.id);
+  const one = (b) => texts(diffSongs(a, b)).join('\n');
+  const tr = (patch) => ({ ...a, tracks: a.tracks.map((t, i) => (i === 0 ? { ...t, ...patch } : t)) });
+  const cl = (patch) => ({ ...a, clips: a.clips.map((x) => (x.id === c.id ? { ...x, ...patch } : x)) });
+  assert.equal(one(tr({ volume: k.volume + 0.04 })), 'Turns "Keys" up by 0.04 dB (-11.5 dB to -11.46 dB).');
+  assert.equal(one(tr({ volume: k.volume - 0.3 })), 'Turns "Keys" down by 0.3 dB (-11.5 dB to -11.8 dB).');
+  assert.equal(one(tr({ volume: k.volume + 0.00001 })), 'Turns "Keys" up very slightly (about -11.5 dB).');
+  assert.equal(one({ ...a, bpm: a.bpm + 0.04 }), `Changes the tempo from ${a.bpm} to ${a.bpm + 0.04} BPM.`);
+  assert.equal(one({ ...a, master: { ...a.master, level: a.master.level + 0.04 } }), 'Turns the master Level up by 0.04 dB (+3.5 dB to +3.54 dB).');
+  assert.equal(one(tr({ eq: { ...k.eq, low: 0.04 } })), 'Sets the EQ of "Keys": low +0.04 dB.');
+  assert.equal(one(tr({ eq: { ...k.eq, low: 0.00001 } })), 'Sets the EQ of "Keys": low up very slightly.');
+  assert.equal(one(tr({ reverbSend: k.reverbSend + 0.0004 })), 'Changes the reverb send of "Keys" from 30% to 30.04%.');
+  assert.equal(one(tr({ pan: 0.004 })), 'Pans "Keys" very slightly to the right (about C).');
+  assert.equal(one(tr({ pan: -0.3 })), 'Pans "Keys" to L30 (was C).');
+  assert.equal(one(cl({ startBar: c.startBar + 0.01 })), 'Moves the clip "Chords" from bar 1 to bar 1.01.');
+  assert.equal(one(cl({ startBar: c.startBar + 0.0001 })), 'Moves the clip "Chords" very slightly later (about bar 1).');
+  assert.match(one(cl({ lengthBars: c.lengthBars + 0.01 })), /^Makes the clip "Chords" 16\.01 bars long \(was 16 bars\)\./);
+  for (const t of [one(tr({ volume: k.volume + 0.004 })), one({ ...a, master: { ...a.master, level: a.master.level - 0.0001 } })]) assert.doesNotMatch(t, /by 0 dB|from (\S+) to \1\b|\+0 dB/, t);
+});
