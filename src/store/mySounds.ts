@@ -13,6 +13,7 @@ import { currentInstrumentKey, INSTRUMENTS, isAudioKind } from '../audio/instrum
 import { parseEmbeddedSounds, referencedSoundIds } from './audioClips';
 import { isMixTrack } from './buses';
 import { parseTrack } from './project';
+import { cutToBytes, cutToChars, noControls, notReserved } from './kitNames';
 import { withSafeIds } from './ownKey';
 import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, type FileMade } from './ownFiles';
 import type { EmbeddedSound, Track, WamPlugin } from './timelineTypes';
@@ -176,11 +177,17 @@ export function soundFile(sound: MySound, recordings: EmbeddedSound[]): MySounds
   return { format: MY_SOUNDS_FORMAT, version: 1, favourites: [], sounds: [sound], recordings };
 }
 
-/** A sound file's name: the sound's, with only the characters every system takes ("Wobble bass.fledgetone-sound.json"). */
+/**
+ * A sound file's name: the sound's, with only the characters every system takes ("Wobble bass.fledgetone-sound.json"),
+ * by the rule a project file's name keeps (safeFileName): line breaks a space, other control
+ * characters a "-", no invisible marks that turn the text round or hide in it ("Bass\u202Egpj.exe"
+ * is "Bassgpj.exe"), no name Windows keeps for a device ("aux.mid" is "aux_.mid"), and cut at a
+ * whole character.
+ */
 export function soundFileName(name: string): string {
-  const plain = [...name].map((c) => (c < ' ' || '\\/:*?"<>|'.includes(c) ? ' ' : c)).join('');
-  const safe = plain.replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 60).trim();
-  return `${safe || 'sound'}.fledgetone-sound.json`;
+  const plain = noControls(name.replace(/[\r\n\t\v\f\u0085\u2028\u2029]/g, ' ')).replace(/[\\/:*?"<>|]/g, ' ');
+  const short = cutToBytes(cutToChars(plain.replace(/\s+/g, ' ').trim().replace(/^\.+/, ''), 60), 180).trim();
+  return `${notReserved(short) || 'sound'}.fledgetone-sound.json`;
 }
 
 /** The recordings a sound plays (a Sampler's, a Drum Rack's...), by their library ids. */
