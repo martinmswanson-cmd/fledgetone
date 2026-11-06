@@ -472,3 +472,88 @@ test('transpose_notes refuses a note id the clip does not have, as remove_notes 
   assert.ok(ok.ok);
   assert.notEqual(ok.song.clips.find((c) => c.id === KEYS_CLIP).notes[0].note, clip.notes[0].note);
 });
+
+test('cautions never echo a number in computer notation: one too large or too small to read is said in words (scan r40)', async () => {
+  const { plainGiven, givenWords } = await import('../src/agent/ops.ts');
+  assert.equal(plainGiven(20), '20');
+  assert.equal(plainGiven(-0.25), '-0.25');
+  assert.equal(plainGiven(0), '0');
+  assert.equal(plainGiven(1e21), null);
+  assert.equal(plainGiven(-1e21), null);
+  assert.equal(plainGiven(1e-12), null);
+  assert.equal(givenWords('"Keys" volume', 20, 'dB'), '"Keys" volume 20 dB');
+  assert.equal(givenWords('"Keys" volume', -1e21, 'dB'), '"Keys" volume, given as a very large negative number,');
+  const meter78 = { ...base(), meter: { num: 7, den: 8 } };
+  const cases = [
+    [base(), { op: 'set_track', trackId: KEYS, volumeDb: 1e21 }, '"Keys" volume, given as a very large number, is out of range: set to 6 dB (-60 to 6).'],
+    [base(), { op: 'set_track', trackId: KEYS, volumeDb: -1e21 }, '"Keys" volume, given as a very large negative number, is out of range: set to -60 dB (-60 to 6).'],
+    [base(), { op: 'set_tempo', bpm: 1e-12 }, 'A tempo given as a very small number is out of range: set to 40 (40 to 240).'],
+    [base(), { op: 'set_tempo', bpm: 1e21 }, 'A tempo given as a very large number is out of range: set to 240 (40 to 240).'],
+    [base(), { op: 'add_tempo_change', bar: 1e21, bpm: 100 }, 'A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 400, its last bar.'],
+    [meter78, { op: 'add_tempo_change', bar: 1e21, bpm: 100 }, 'A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 457, its last bar.'],
+    [base(), { op: 'add_clip', trackId: BASS, startBar: 1e21, lengthBars: 2 }, 'A bar given as a very large number is past the end of the timeline: put at bar 399.'],
+    [meter78, { op: 'add_clip', trackId: BASS, startBar: 1e21, lengthBars: 2 }, 'A bar given as a very large number is past the end of the timeline: put at bar 455 beat 7.'],
+    [base(), { op: 'add_clip', trackId: BASS, startBar: 3, lengthBars: 1e21 }, 'A clip given a very large length would run past the end of the timeline (bar 401): made 400 bars.'],
+    [base(), { op: 'set_automation', trackId: KEYS, param: 'volume', points: [{ bar: 1e21, value: 0.5 }] }, '"Keys" automation point 1 at a bar given as a very large number is off the timeline: put at bar 401.'],
+    [base(), { op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { cutoff: 1e21 } }, '"Keys" Filter cutoff, given as a very large number, is out of range: set to 20000.'],
+    [base(), { op: 'set_master', ott: { depth: 1e21 } }, 'The master OTT depth, given as a very large number, is out of range: set to 1.'],
+    [base(), { op: 'add_marker', name: 'End', bar: 1e21 }, 'A bar given as a very large number is past the end of the timeline: put at bar 401.'],
+  ];
+  for (const [song, op, warned] of cases) {
+    const out = mustApply(song, [op]);
+    assert.ok(out.warnings.includes(warned), `${JSON.stringify(op)}\n${JSON.stringify(out.warnings)}`);
+    assert.doesNotMatch(out.warnings.join(' '), /\de[+-]\d/);
+  }
+  // A plain number out of range: as it was given
+  assert.ok(mustApply(base(), [{ op: 'set_track', trackId: KEYS, volumeDb: 20 }]).warnings.includes('"Keys" volume 20 dB is out of range: set to 6 dB (-60 to 6).'));
+});
+
+test('a tempo change at or before bar 1 goes just after the start, said plainly, the caution naming the place the card does (scan r40)', () => {
+  const meter78 = { ...base(), meter: { num: 7, den: 8 } };
+  const words = (song, bar) => {
+    const out = mustApply(song, [{ op: 'add_tempo_change', bar, bpm: 100 }]);
+    return { warn: out.warnings[0], card: out.diff.changes.map((c) => c.text)[0] };
+  };
+  const at1 = words(base(), 1);
+  assert.equal(at1.warn, "A tempo change can't go at the very start of the song: the start always plays the song's starting tempo, so the change goes just after it, at bar 1.1.");
+  assert.equal(at1.card, 'Adds a tempo change to 100 BPM at bar 1.1.');
+  const before = words(base(), -1e21);
+  assert.equal(before.warn, "A tempo change before bar 1 is off the timeline: the start always plays the song's starting tempo, so the change goes just after it, at bar 1.1.");
+  const in78 = words(meter78, 0.5);
+  assert.equal(in78.warn, "A tempo change before bar 1 is off the timeline: the start always plays the song's starting tempo, so the change goes just after it, at bar 1 beat 1.5.");
+  assert.equal(in78.card, 'Adds a tempo change to 100 BPM at bar 1 beat 1.5.');
+  assert.equal(words(meter78, 1).warn, "A tempo change can't go at the very start of the song: the start always plays the song's starting tempo, so the change goes just after it, at bar 1 beat 1.5.");
+  // Where the caution says the change goes, the card says too
+  for (const [song, bar] of [[base(), 1], [base(), 0.2], [meter78, 0.5], [base(), 1e21], [meter78, 900]]) {
+    const w = words(song, bar);
+    const place = / at (bar [\d.]+(?: beat [\d.]+)?)\.$/.exec(w.card)[1];
+    assert.ok(w.warn.includes(`at ${place}`), `${w.warn}\n${w.card}`);
+  }
+});
+
+test('a clip never starts after the last bar: one caution naming where it really lands, as a saved song keeps it (scan r40)', async () => {
+  const { TOTAL_BARS } = await import('../src/store/timelineTypes.ts');
+  for (const [ops, startBar] of [
+    [[{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS + 1, lengthBars: 0.25 }], TOTAL_BARS],
+    [[{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS + 0.5, lengthBars: 0.25 }], TOTAL_BARS],
+    [[{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS + 0.75, lengthBars: 0.0625 }], TOTAL_BARS],
+    [[{ op: 'resize_clip', clipId: KEYS_CLIP, lengthBars: 0.5 }, { op: 'move_clip', clipId: KEYS_CLIP, toBar: TOTAL_BARS + 0.5 }], TOTAL_BARS],
+  ]) {
+    const out = mustApply(base(), ops);
+    // (one caution, never a second one saying the saved song brought the start into range)
+    assert.deepEqual(out.warnings.filter((w) => !/shorter than/.test(w)), [`A clip can't start after bar ${TOTAL_BARS}, the timeline's last bar: moved to bar ${TOTAL_BARS}.`], JSON.stringify(ops));
+    assert.equal(out.song.clips.find((c) => c.id === (ops[0].clipId ?? out.song.clips.at(-1).id)).startBar, startBar);
+    assert.ok(parseProject(serializeProject(out.song)).clips.every((c) => c.startBar <= TOTAL_BARS));
+  }
+  // A copy one bar long or less, past the last bar: moved to it
+  const short = mustApply(base(), [{ op: 'resize_clip', clipId: BASS_CLIP, lengthBars: 1 }, { op: 'duplicate_clip', clipId: BASS_CLIP, toBar: TOTAL_BARS + 0.5 }]);
+  assert.deepEqual(short.warnings.filter((w) => /start/.test(w)), [`A clip can't start after bar ${TOTAL_BARS}, the timeline's last bar: moved to bar ${TOTAL_BARS}.`]);
+  assert.equal(short.song.clips.at(-1).startBar, TOTAL_BARS);
+  // A longer one past the last bar is put where it fits before the end
+  const long = mustApply(base(), [{ op: 'duplicate_clip', clipId: BASS_CLIP, toBar: TOTAL_BARS + 0.5 }]);
+  const len = base().clips.find((c) => c.id === BASS_CLIP).lengthBars;
+  assert.deepEqual(long.warnings, [`A clip starting at bar ${TOTAL_BARS + 0.5} wouldn't fit before the end of the timeline: moved to bar ${TOTAL_BARS + 1 - len}.`]);
+  // One that starts inside the timeline but wouldn't fit before its end: as before
+  const fit = mustApply(base(), [{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS - 1, lengthBars: 4 }]);
+  assert.deepEqual(fit.warnings, [`A clip starting at bar ${TOTAL_BARS - 1} wouldn't fit before the end of the timeline: moved to bar ${TOTAL_BARS - 3}.`]);
+});
