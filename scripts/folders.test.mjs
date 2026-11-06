@@ -1,7 +1,25 @@
 // Unit tests for track folders (src/store/folders.ts). Run with `npm test`.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-const { foldersOf, tidyFolders, groupTracks, ungroup, updateFolder, moveToFolder, moveTrack, trackRows, folderName, FOLDER_NAME_MAX } = await import('../src/store/folders.ts');
+
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+const { foldersOf, tidyFolders, groupTracks, ungroup, updateFolder, moveToFolder, moveTrack, trackRows, folderName, FOLDER_NAME_MAX, isTrackColor, trackColor, DEFAULT_TRACK_COLOR } = await import('../src/store/folders.ts');
+const { parseProject, parseTrack, PROJECT_FORMAT, PROJECT_VERSION } = await import('../src/store/project.ts');
+const { projectFromHash, songLink } = await import('../src/store/shareLink.ts');
+const { TRACK_COLORS } = await import('../src/store/timelineTypes.ts');
+const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
 const { readFileSync } = await import('node:fs');
 
 const T = (id, folder) => ({ id, name: id, color: '#fff', ...(folder ? { folder } : {}) });
@@ -98,5 +116,85 @@ test("a folder's name is cut to what a saved song keeps (60), as it's given, not
     const src = readFileSync(new URL(`../src/components/timeline/${f}`, import.meta.url), 'utf8');
     const at = src.indexOf('aria-label="Folder name"');
     assert.ok(at > 0 && src.slice(src.lastIndexOf('<input', at), at).includes('maxLength={FOLDER_NAME_MAX}'), f);
+  }
+});
+
+/** Colours that aren't a plain hex colour: as CSS they'd fetch something, run something or read something. */
+const HOSTILE = [
+  'url(http://127.0.0.1:5921/beacon)',
+  'URL( "https://example.com/x.png" )',
+  'red url(//example.com/x)',
+  '#fff url(http://example.com/x)',
+  'image-set("http://example.com/x" 1x)',
+  'expression(alert(1))',
+  'var(--x)',
+  'rgb(1 2 3) ; background-image: url(x)',
+  'red',
+  '#ggg',
+  '#12345',
+  '#1234567',
+  '#123456789',
+  ' #fff',
+  '#fff\n',
+  '#' + 'a'.repeat(10000),
+  'x'.repeat(100000),
+  '',
+  12,
+  null,
+  {},
+];
+
+test('a track or folder colour is a hex colour only, and every colour the app gives is one', () => {
+  for (const c of ['#fff', '#FFF', '#a855f7', '#A855F7cc', DEFAULT_TRACK_COLOR]) assert.ok(isTrackColor(c), c);
+  for (const c of HOSTILE) {
+    assert.ok(!isTrackColor(c), String(c).slice(0, 40));
+    assert.equal(trackColor(c), DEFAULT_TRACK_COLOR);
+  }
+  for (const c of TRACK_COLORS) assert.ok(isTrackColor(c), c);
+  for (const [key, meta] of Object.entries(INSTRUMENTS)) assert.ok(isTrackColor(meta.color), `${key}: ${meta.color}`);
+});
+
+const fileTrack = (extra) => ({ id: 't1', name: 'Bass', instrumentKey: 'piano', ...extra });
+const fileSong = (tracks) => ({ format: PROJECT_FORMAT, version: PROJECT_VERSION, name: 'Colours', bpm: 120, tracks, clips: [] });
+
+test('a colour from a file, a link or a shared sound that is not a hex colour opens as the default', async () => {
+  for (const c of HOSTILE) {
+    const t = parseTrack(fileTrack({ color: c, folder: { id: 'f', name: 'Drums', color: c } }));
+    assert.equal(t.color, DEFAULT_TRACK_COLOR);
+    assert.equal(t.folder.color, DEFAULT_TRACK_COLOR);
+  }
+  const fine = parseTrack(fileTrack({ color: '#a855f7', folder: { id: 'f', name: 'Drums', color: '#22c55e' } }));
+  assert.equal(fine.color, '#a855f7');
+  assert.equal(fine.folder.color, '#22c55e');
+  // A link carries the song as a file does
+  const song = parseProject(fileSong([fileTrack({ color: '#ef4444', folder: { id: 'f', name: 'Drums', color: '#3b82f6' } })]));
+  const back = await projectFromHash(new URL(await songLink(song, 'https://example.com/app')).hash);
+  assert.equal(back.tracks[0].color, '#ef4444');
+  assert.equal(back.tracks[0].folder.color, '#3b82f6');
+});
+
+test('setting a colour that is not a hex colour changes nothing', () => {
+  const tracks = [T('a', F), T('b', F)];
+  for (const c of HOSTILE) assert.equal(updateFolder(tracks, 'f', { color: c }, true), tracks);
+  const renamed = updateFolder(tracks, 'f', { name: 'Kit', color: 'url(x)' }, true);
+  assert.ok(renamed.every((t) => t.folder.name === 'Kit' && t.folder.color === '#f00' && t.color === '#fff'));
+  const store = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
+  assert.match(store, /setTrackColor: \(trackId, color\) => \{\n\s+if \(isTrackColor\(color\)\)/);
+});
+
+test("a folder's name from a file is on one line, trimmed and cut at a whole character, as a link's is", async () => {
+  assert.equal(folderName(' '.repeat(60) + 'Drums'), 'Drums');
+  assert.equal(folderName('Dr\nums\u0007\u202E'), 'Dr ums');
+  const emoji = 'a'.repeat(59) + '\u{1F941}';
+  assert.equal(folderName(emoji), emoji);
+  const cut = folderName('a'.repeat(59) + '\u{1F941}\u{1F941}');
+  assert.equal(cut, emoji);
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(folderName('a'.repeat(59) + '\u{1F941}x')));
+  const names = [' '.repeat(60) + 'Drums', 'Dr\nums', '\u0000\u0007', 'a'.repeat(59) + '\u{1F941}\u{1F941}', '   '];
+  for (const name of names) {
+    const fromFile = parseProject(fileSong([fileTrack({ folder: { id: 'f', name, color: '#3b82f6' } })]));
+    const fromLink = await projectFromHash(new URL(await songLink(fromFile, 'https://example.com/app')).hash);
+    assert.equal(fromFile.tracks[0].folder.name, folderName(name) || 'Folder', JSON.stringify(name));
+    assert.equal(fromLink.tracks[0].folder.name, fromFile.tracks[0].folder.name, JSON.stringify(name));
   }
 });
