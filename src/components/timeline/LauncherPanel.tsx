@@ -7,7 +7,7 @@ import { Play, Square, Undo2, LayoutList, Send, ListPlus, X } from 'lucide-react
 import { useLivePlayhead } from '../../store/playheadClock';
 import { songMeterOf, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { formatBarPosition, formatBarSpan } from '../../store/timelineTypes';
-import { isPlainMeter, type MeterMap } from '../../audio/tempoMap';
+import type { MeterMap } from '../../audio/tempoMap';
 import { isMixTrack } from '../../store/buses';
 import { useLauncher, launcherActive, slotAt } from '../../store/launcherView';
 import {
@@ -28,9 +28,11 @@ import {
 import { getAudiblePositionBar } from '../../audio/transport';
 import { showToast } from './toastStore';
 
-/** Where a stretch written to the arrangement runs, numbered as the ruler numbers the bars ("1 to 9"; by measure in a song not in 4/4). */
-const writtenSpan = (from: number, to: number, meter: MeterMap) =>
-  isPlainMeter(meter) ? `${Math.round(from)} to ${Math.round(to * 4) / 4}` : `${formatBarPosition(from, meter)} to ${formatBarPosition(to, meter)}`;
+/**
+ * Where a stretch written to the arrangement runs, numbered as the ruler numbers the bars ("1 to 9";
+ * "1.75 to 5" when launched on a beat; by measure in a song not in 4/4).
+ */
+const writtenSpan = (from: number, to: number, meter: MeterMap) => `${formatBarPosition(from, meter)} to ${formatBarPosition(to, meter)}`;
 
 /** Where the music is, about 20 times a second while it plays (the playhead's bar while stopped). */
 function useHeardBar(): number {
@@ -201,7 +203,8 @@ export const LauncherPanel: React.FC = () => {
                       },
                       onDrop: (e: React.DragEvent) => {
                         e.preventDefault();
-                        if (drag && moveSlot(drag.trackId, drag.scene, t.id, scene, e.altKey) === false) showToast("That clip can't go there: audio clips go on Audio tracks, notes on instruments");
+                        // (Back on its own cell: nothing to do, and nothing to say)
+                        if (drag && !(drag.trackId === t.id && drag.scene === scene) && moveSlot(drag.trackId, drag.scene, t.id, scene, e.altKey) === false) showToast("That clip can't go there: audio clips go on Audio tracks, notes on instruments");
                         setDrag(null);
                       },
                     };

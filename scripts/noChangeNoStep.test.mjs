@@ -124,3 +124,27 @@ test("Pocket's fill goes in the section's last measure, however short the measur
   assert.match(src('src/pocket/PocketSheets.tsx'), /const lastBar = isPlainMeter\(map\) \? sec\.to - 0\.5 : measureAt\(sec\.to - 1e-6, map\)\.start/);
   assert.match(src('src/pocket/PocketSheets.tsx'), /fillClipBar\(id, lastBar, f\.id\)/);
 });
+
+test('picking the sound a track plays already, or learning a knob mapped to that setting already, makes no undo step', () => {
+  const store = src('src/store/timelineStore.ts');
+  const sound = store.slice(store.indexOf('    setTrackSound: (id, sound) => {'), store.indexOf('    addSoundTrack: (sound) => {'));
+  assert.match(sound, /if \(!next\.plugin && !next\.pluginFx\?\.length && sameFields\(next, current\)\) return;\s*set\(/);
+  const midi = store.slice(store.indexOf('    mapMidi: (trackId, cc, param) =>'), store.indexOf('    unmapMidi: (trackId, cc) =>'));
+  assert.match(midi, /m\.cc === t\.midiMap!\[i\]\.cc && m\.param === t\.midiMap!\[i\]\.param/);
+  assert.match(midi, /if \(tracks\.every\(\(t, i\) => t === s\.tracks\[i\]\)\) return s;\s*return \{ tracks, \.\.\.pushPast\(s\) \};/);
+});
+
+test('Auto-assign puts every track in its stem group as one undo step', () => {
+  const panel = src('src/components/timeline/IntensityPanel.tsx');
+  const auto = panel.slice(panel.indexOf('const autoAssign = () => {'), panel.indexOf('return (', panel.indexOf('const autoAssign = () => {')));
+  assert.match(auto, /if \(!moves\.length\) return;\s*st\(\)\.checkpoint\(\);\s*for \(const \[id, group\] of moves\) st\(\)\.setTrackStemGroup\(id, group, false\);/);
+  assert.equal(auto.match(/setTrackStemGroup/g).length, 1);
+  assert.match(src('src/store/timelineStore.ts'), /setTrackStemGroup: \(trackId, group, record = true\) => \{[\s\S]{0,400}?\n        record\n      \);/);
+});
+
+test("the launcher: a clip dropped back on its own cell does nothing and says nothing, and Write to arrangement names a start on a beat as it is", () => {
+  const panel = src('src/components/timeline/LauncherPanel.tsx');
+  assert.match(panel, /if \(drag && !\(drag\.trackId === t\.id && drag\.scene === scene\) && moveSlot\(/);
+  assert.match(panel, /const writtenSpan = \(from: number, to: number, meter: MeterMap\) => `\$\{formatBarPosition\(from, meter\)\} to \$\{formatBarPosition\(to, meter\)\}`;/);
+  assert.doesNotMatch(panel, /Math\.round\(from\)/);
+});
