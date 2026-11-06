@@ -93,10 +93,10 @@ function lastStart(source: States): number {
  * Before a Tone synth's note at `start` (before triggerAttack): when its oscillator is stopped,
  * its pitch is set a render block early, so the note starts on its own pitch wherever in the
  * block it lands. A MembraneSynth (a kick's drop), a MetalSynth (a hat) and an FMSynth also start
- * their oscillators a block early, held at 0 Hz from a block before that until `start` (where Tone
- * sets the note's pitch), so the note starts on time and at the start of its wave wherever it
- * lands (its envelope is silent until `start`). A note that starts while the oscillator still
- * sounds (legato, a ringing tail) is left as it was.
+ * their oscillators a block early, held at 0 Hz from a block before that until `start` (where
+ * the note's pitch is set, before they start), so the note starts on time and at the start of its
+ * wave wherever it lands (its envelope is silent until `start`). A note that starts while the
+ * oscillator still sounds (legato, a ringing tail) is left as it was.
  *
  * Returns when the note is to start: `start`, unless the audio clock moved on past it while the
  * oscillators were started early (the main thread held up for a moment, live), when Tone moves
@@ -123,9 +123,13 @@ export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: n
   const room = synth.context.isOffline ? 0 : EARLY_ROOM;
   const inTime = () => ahead > synth.context.currentTime + room;
   if (from !== null && from < ahead && inTime()) {
-    // (At 0 Hz until the note, where Tone sets its pitch: the wave waits at its start and begins
+    // (At 0 Hz until the note, where its pitch is set: the wave waits at its start and begins
     // there, as one started at the note would, so the envelope opening onto it can't click)
     early.pitch.setValueAtTime(0, from);
+    // (The note's own pitch at its start set here too, before any oscillator starts: Tone sets it
+    // again only after starting them, and should the clock move on in between, what's already
+    // rendered would play at 0 Hz, silent. Tone's later one repeats it)
+    early.pitch.setValueAtTime(early.hz, start);
     let at = start;
     for (const source of early.sources) {
       // (One the clock has caught up with starts with the note instead)
@@ -136,6 +140,8 @@ export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: n
     }
     // (The clock moved past the note while it was being started: it starts now, not in the past)
     if (!synth.context.isOffline && !(at > synth.context.currentTime)) at = synth.context.currentTime + 1 / synth.context.sampleRate;
+    // (Moved up: its pitch at the note's new start too, ahead of Tone's)
+    if (at !== start) early.pitch.setValueAtTime(early.hz, at);
     return at;
   }
   // (Too close to now, or to the last note, for two blocks: the pitch is still set early, the

@@ -159,3 +159,54 @@ test('the clock already past the note when its early start is done: it starts no
   const at = pitchAhead(synth, 'E4', 1.005);
   assert.ok(at > context.currentTime, `${at} is after the clock ${context.currentTime}`);
 });
+
+test('an early start also sets the note\'s own pitch at its start, right after the 0 Hz hold (scan r39)', () => {
+  // (Tone sets it again later in the note, after its oscillators start: should the clock move on
+  // before that, what's already rendered must not be left at 0 Hz)
+  const { synth, pitch } = fakeFm();
+  const start = 1.005;
+  let seen = null;
+  const outer = synth.oscillator;
+  const outerStart = outer.start.bind(outer);
+  outer.start = (time) => {
+    seen = pitch.map((p) => [...p]);
+    outerStart(time);
+  };
+  assert.equal(pitchAhead(synth, 'E4', start), start);
+  assert.equal(pitch[0][0], 0);
+  assert.ok(pitch[0][1] < start - BLOCK, 'held from before the oscillators start');
+  assert.deepEqual(seen, [pitch[0], [329.63, start]], 'the pitch at the start is set before any oscillator starts');
+  assert.deepEqual(pitch, [pitch[0], [329.63, start]], 'exactly at the start, so the wave still begins there');
+});
+
+test('the note moved up past the clock: its pitch is set at the moved-up start too (scan r39)', () => {
+  const { synth, context, pitch } = fakeFm();
+  const outer = synth.oscillator;
+  const outerStart = outer.start.bind(outer);
+  outer.start = (time) => {
+    outerStart(time);
+    context.currentTime = 1.02;
+  };
+  const at = pitchAhead(synth, 'E4', 1.005);
+  assert.ok(at > context.currentTime);
+  assert.deepEqual(pitch.slice(1), [[329.63, 1.005], [329.63, at]]);
+});
+
+test('a one-shot start whose gain is set as the clock steps on past it: a later stop or restart leaves that gain alone (scan r39)', async () => {
+  await import('../src/audio/toneFixes.ts');
+  const proto = Object.getPrototypeOf(Tone.ToneBufferSource.prototype);
+  const context = { currentTime: 0.999 };
+  const set = [];
+  const source = Object.create(proto);
+  Object.assign(source, {
+    context,
+    _startTime: -1,
+    _fadeIn: 0,
+    toSeconds: (t) => t,
+    // (The browser moves a gain set in the past up to the clock: here the clock steps on as it's set)
+    _gainNode: { gain: { setValueAtTime: (v, t) => { context.currentTime = 1.01; set.push([v, Math.max(t, context.currentTime)]); } } },
+  });
+  source._startGain(1);
+  // Tone's stop and restart cancel from just after the start it noted: that must come after the gain set
+  assert.ok(source._startTime >= set[0][1], `${source._startTime} is at or after the gain set at ${set[0][1]}`);
+});

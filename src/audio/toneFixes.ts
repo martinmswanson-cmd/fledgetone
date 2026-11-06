@@ -182,3 +182,26 @@ noiseProto._start = function (time) {
 export function seedToneNoise(noise: Tone.Noise, key: number): void {
   (noise as unknown as NoiseInside).noiseKey = key;
 }
+
+/**
+ * A Tone one-shot source (the node behind every oscillator and sample start) sets its gain to 1
+ * at its start, and notes the start as no earlier than the clock, so that cancelling its stop
+ * later (a restart, or any stop: Tone cancels from just after the start) leaves that alone. But
+ * the browser moves a gain set in the past up to the clock as it's set, and the clock can step on
+ * between Tone reading it and setting the gain (a busy main thread, live): the gain was then set
+ * after the start Tone noted, the next stop or restart cancelled it, and the whole note played at
+ * a gain of 0, silent (now and then a hi-hat, snare or kick hit played by hand under load). The
+ * start is noted no earlier than the clock once the gain is set. (An export's clock waits for its
+ * notes, so nothing changes there.)
+ */
+interface OneShotInside {
+  context: Tone.BaseContext;
+  _startTime: number;
+}
+const oneShotProto = Object.getPrototypeOf(Tone.ToneBufferSource.prototype) as { _startGain: (this: OneShotInside, time: number, gain?: number) => unknown };
+const startGain = oneShotProto._startGain;
+oneShotProto._startGain = function (time, gain) {
+  const result = startGain.call(this, time, gain);
+  this._startTime = Math.max(this._startTime, this.context.currentTime);
+  return result;
+};
