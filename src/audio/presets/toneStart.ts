@@ -82,7 +82,11 @@ const EARLY_ROOM = 0.001;
 /** Where `source`'s last start is set (Tone moves a start that's already past up to now). */
 function lastStart(source: States): number {
   const last = source._state?.get(Infinity);
-  return last && last.state === 'started' ? last.time : -Infinity;
+  let t = last && last.state === 'started' ? last.time : -Infinity;
+  // (An OmniOscillator's or FMOscillator's own oscillators clamp their start to the clock again: it can have moved on in between)
+  const parts = source as unknown as { _oscillator?: States; _carrier?: States; _modulator?: States };
+  for (const inner of [parts._oscillator, parts._carrier, parts._modulator]) if (inner && inner !== source && inner._state) t = Math.max(t, lastStart(inner));
+  return t;
 }
 
 /**
@@ -130,6 +134,8 @@ export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: n
       const landed = lastStart(source);
       if (!(landed < start)) at = Math.max(at, landed + 1 / synth.context.sampleRate);
     }
+    // (The clock moved past the note while it was being started: it starts now, not in the past)
+    if (!synth.context.isOffline && !(at > synth.context.currentTime)) at = synth.context.currentTime + 1 / synth.context.sampleRate;
     return at;
   }
   // (Too close to now, or to the last note, for two blocks: the pitch is still set early, the

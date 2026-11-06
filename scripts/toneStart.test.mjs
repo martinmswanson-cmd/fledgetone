@@ -126,3 +126,36 @@ test('refused twice: the pitch is still set (never left at 0 Hz) and the error p
   }));
   assert.deepEqual(pitch[pitch.length - 1][0], 329.63);
 });
+
+test('the clock stepping between an oscillator and its own inner oscillator: the note comes after the inner start, so nothing is left running (scan r38)', () => {
+  const { synth, context } = fakeFm();
+  // (An OmniOscillator: its own Oscillator clamps the start to the clock again, after a step)
+  const inner = fakeSource(context);
+  const outer = synth.oscillator;
+  const outerStart = outer.start.bind(outer);
+  outer._oscillator = inner;
+  outer.start = (time) => {
+    outerStart(time);
+    context.currentTime += 0.00871;
+    inner.start(time);
+  };
+  const start = 1.005;
+  const at = pitchAhead(synth, 'E4', start);
+  const innerLanded = inner.events[0].time;
+  assert.ok(innerLanded >= start, 'the inner start was moved past the note');
+  assert.ok(at > innerLanded, `the note starts after the inner start (${at} vs ${innerLanded})`);
+  // Tone's own start at the note's time goes through on the inner one too (no restart that cancels its only start)
+  inner.start(at);
+});
+
+test('the clock already past the note when its early start is done: it starts now, not in the past (scan r38)', () => {
+  const { synth, context } = fakeFm();
+  const outer = synth.oscillator;
+  const outerStart = outer.start.bind(outer);
+  outer.start = (time) => {
+    outerStart(time);
+    context.currentTime = 1.02;
+  };
+  const at = pitchAhead(synth, 'E4', 1.005);
+  assert.ok(at > context.currentTime, `${at} is after the clock ${context.currentTime}`);
+});
