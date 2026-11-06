@@ -1,4 +1,4 @@
-import { clipNameFromFile } from './audioClips';
+import { clipNameFromFile, referencedSoundIds } from './audioClips';
 import type { Clip, InstrumentKey, LauncherSlot, Track } from './timelineTypes';
 
 /**
@@ -38,7 +38,13 @@ export const FILE_MARKS = 1;
  * two (a song's file carries the name they had where it was made, this browser's library the one
  * they were loaded here as).
  */
-export type FileNameOf = (soundId: string) => string | readonly string[] | undefined;
+export type FileNameOf = ((soundId: string) => string | readonly string[] | undefined) & {
+  /**
+   * Where some sounds' names may still be on their way (the sound library's, read from storage
+   * after a song opens): settles once those of `ids` are all read, true, or after a while, false.
+   */
+  namesRead?: (ids: readonly string[]) => Promise<boolean>;
+};
 
 /** Every file name `fileNameOf` knows for the sound `id` (none when it knows none). */
 export function fileNamesOf(fileNameOf: FileNameOf, id: string): string[] {
@@ -54,10 +60,14 @@ export function fileNamesOf(fileNameOf: FileNameOf, id: string): string[] {
 export function songFileNames(sounds: ReadonlyArray<{ id: string; name: string }> | undefined, known?: FileNameOf): FileNameOf {
   const embedded = new Map<string, string[]>();
   for (const s of sounds ?? []) embedded.set(s.id, [...(embedded.get(s.id) ?? []), s.name]);
-  return (id) => {
+  const nameOf: FileNameOf = (id) => {
     const names = [...new Set([...(known ? fileNamesOf(known, id) : []), ...(embedded.get(id) ?? [])])];
     return names.length ? names : undefined;
   };
+  // (Still waiting where `known` is: a sound the song embeds is known either way)
+  const read = known?.namesRead;
+  if (read) nameOf.namesRead = (ids) => read(ids.filter((id) => !embedded.has(id)));
+  return nameOf;
 }
 
 /** The mark for a name made from a file or folder (`made`), or none: spread it into the item. */
@@ -359,6 +369,54 @@ export function withFileMarks<T extends { tracks: Track[]; clips: Clip[]; fileMa
   const nameOf = songFileNames(song.sounds, fileNameOf);
   if (namingSounds(song).some((id) => !fileNamesOf(nameOf, id).length)) return song;
   return { ...withOldMarks(song, nameOf), fileMarks: FILE_MARKS };
+}
+
+/**
+ * `song` with every name that may be made from a sound whose file names aren't known
+ * (`fileNameOf` knows none yet) marked, as well as each the old-song check finds: an audio clip
+ * (in the timeline or the clip launcher), a pad, a zone or the Slicer's sound playing one, and in
+ * a song from before the marks each name made from those ("X 2", "X chops"). What goes out while
+ * those names are still being read: it hides more rather than let one through.
+ */
+export function withUnknownSoundsMarked<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number }>(song: T, fileNameOf: FileNameOf): T {
+  const unknown = (id: string | undefined) => id !== undefined && !fileNamesOf(fileNameOf, id).length;
+  const clipUnknown = (c: Pick<Clip, 'audio' | 'nameFromFile'>) => !c.nameFromFile && !!c.audio && clipSounds(c.audio).some(unknown);
+  const sound = <X extends FileMade & { soundId?: string }>(x: X): X => (!x.nameFromFile && unknown(x.soundId) ? { ...x, nameFromFile: true } : x);
+  // (First what the names known find, a track named after a folder among them: once its clips
+  // carry marks it would be taken for one named since the marks)
+  const known = withOldMarks(song, fileNameOf);
+  const clips = known.clips.some(clipUnknown) ? known.clips.map((c) => (clipUnknown(c) ? { ...c, nameFromFile: true as const } : c)) : known.clips;
+  const tracks = known.tracks.map((t): Track => {
+    const slots = t.slots?.some((x) => clipUnknown(x.clip));
+    const pads = t.rack?.pads.some((p) => sound(p) !== p);
+    const zones = t.multi?.zones.some((z) => sound(z) !== z);
+    const slicer = !!t.slicer && sound(t.slicer) !== t.slicer;
+    if (!slots && !pads && !zones && !slicer) return t;
+    return {
+      ...t,
+      ...(slots ? { slots: t.slots!.map((x) => (clipUnknown(x.clip) ? { ...x, clip: { ...x.clip, nameFromFile: true as const } } : x)) } : {}),
+      ...(pads ? { rack: { ...t.rack!, pads: t.rack!.pads.map(sound) } } : {}),
+      ...(zones ? { multi: { ...t.multi!, zones: t.multi!.zones.map(sound) } } : {}),
+      ...(slicer ? { slicer: sound(t.slicer!) } : {}),
+    };
+  });
+  if (clips === known.clips && tracks.every((t, i) => t === known.tracks[i])) return known;
+  // (And a name made from one of those: in a song with the marks, its marks alone are judged)
+  return withOldMarks({ ...known, tracks, clips }, fileNameOf);
+}
+
+/**
+ * `song` once its sounds' file names are read, where `fileNameOf` may still be reading some (the
+ * sound library's, just after a song opens): as it is when they all are, or after a while with
+ * every name that may be made from one still unknown marked (withUnknownSoundsMarked). What a
+ * share link, the web runtime kit and the game kit wait for before they work out names.
+ */
+export async function withNamesRead<T extends { tracks: Track[]; clips: Clip[]; fileMarks?: number }>(song: T, fileNameOf: FileNameOf | undefined): Promise<T> {
+  const read = fileNameOf?.namesRead;
+  if (!fileNameOf || !read) return song;
+  const ids = referencedSoundIds(song).filter((id) => !fileNamesOf(fileNameOf, id).length);
+  if (!ids.length || (await read(ids))) return song;
+  return withUnknownSoundsMarked(song, fileNameOf);
 }
 
 /** A saved sound (My sounds, a sound file) as soundWithFileMarks reads it. */

@@ -38,6 +38,8 @@ export const PocketShare: React.FC = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const loud = useTimelineStore((s) => s.master.loud);
   const [picked, setPicked] = useState<string | null>(null);
+  // (A link waits for the sounds' names just after a song opens: see songLink)
+  const [linking, setLinking] = useState(false);
   const target = picked ?? (loud?.on ? loud.target : DEFAULT_TARGET);
 
   const exportMp3 = async () => {
@@ -66,9 +68,15 @@ export const PocketShare: React.FC = () => {
   };
 
   const shareLink = async () => {
-    await captureWamStates();
-    // (From the app, the link opens fledgetone.com: the app's own address is on this phone only)
-    const url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileNames);
+    setLinking(true);
+    let url: string;
+    try {
+      await captureWamStates();
+      // (From the app, the link opens fledgetone.com: the app's own address is on this phone only)
+      url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileNames);
+    } finally {
+      setLinking(false);
+    }
     if (await shareSheet({ url, title: currentProject().name })) return;
     try {
       await navigator.clipboard.writeText(url);
@@ -97,8 +105,8 @@ export const PocketShare: React.FC = () => {
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {busy ?? 'Export an MP3'}
           </button>
-          <button type="button" className={`${pill} w-full`} onClick={() => void shareLink()}>
-            <Link2 className="w-4 h-4" /> Share a link to the song
+          <button type="button" className={`${pill} w-full`} onClick={() => void shareLink()} disabled={linking}>
+            {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />} {linking ? 'Getting the link ready…' : 'Share a link to the song'}
           </button>
           <p className="text-[11px] text-forge-muted">A link opens the song in Fledgetone, on a phone or a computer, to listen to and change. Recorded sounds aren't in links: save the file for those.</p>
         </div>

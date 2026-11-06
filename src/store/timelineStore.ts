@@ -127,7 +127,7 @@ import {
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
-import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, type FileMade, type FileNameOf } from './ownFiles';
+import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, withUnknownSoundsMarked, type FileMade, type FileNameOf } from './ownFiles';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
@@ -1092,6 +1092,12 @@ let songCount = 0;
  * notes it first and stops if it changed, rather than landing on the wrong song.
  */
 export const songGeneration = (): number => songCount;
+/**
+ * The open song's sounds' file names as opening it asked for them (its file's embedded sounds' and
+ * the library's), and whether some are still being read (a song from before the marks, just
+ * opened): what copying its clips checks their names against (copySelectedClips).
+ */
+let openNames: { song: number; nameOf: FileNameOf; reading: boolean } = { song: 0, nameOf: soundFileNames, reading: false };
 
 /** The session the Restore banner offers: the last one at startup, or the song that New, Open or a link replaced. */
 export const useLastSession = create<{ session: SavedSession | null }>(() => ({ session: preservePreviousSession() }));
@@ -1696,6 +1702,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
    */
   const markWhenNamesRead = (song: number, ids: readonly string[], nameOf: FileNameOf) =>
     soundNamesRead(ids, () => songCount !== song || get().fileMarks).then(() => {
+      if (openNames.song === song) openNames = { ...openNames, reading: false };
       if (songCount !== song || get().fileMarks) return;
       const marked = <E extends { tracks: Track[]; clips: Clip[] }>(e: E): E => {
         const m = withOldMarks({ tracks: e.tracks, clips: e.clips }, nameOf);
@@ -1706,9 +1713,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const now = marked({ tracks: s.tracks, clips: s.clips });
       const all = !!withFileMarks<{ tracks: Track[]; clips: Clip[]; fileMarks?: number }>({ tracks: now.tracks, clips: now.clips }, nameOf).fileMarks;
       const checkpoint = pendingCheckpoint && marked(pendingCheckpoint);
+      // (Clips copied or cut from it meanwhile too: pasted into a song with the marks, theirs are all that's judged)
+      const clipboard = s.clipboard.length ? withOldMarks({ tracks: s.tracks, clips: s.clipboard }, nameOf).clips : s.clipboard;
       set({
         ...(now.tracks !== s.tracks ? { tracks: now.tracks } : {}),
         ...(now.clips !== s.clips ? { clips: now.clips } : {}),
+        ...(clipboard !== s.clipboard ? { clipboard } : {}),
         fileMarks: all,
         past: s.past.map(marked),
         future: s.future.map(marked),
@@ -3391,8 +3401,13 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     copySelectedClips: () => {
       const { tracks, bpm, fileMarks } = get();
       // From a song without the marks, each clip's name the old check takes for a file's is marked
-      // as it's copied: pasted into a song with them, its marks alone are what's judged (ownFiles.ts)
-      const clips = fileMarks ? get().clips : withOldMarks({ tracks, clips: get().clips }, soundFileNames).clips;
+      // as it's copied: pasted into a song with them, its marks alone are what's judged (ownFiles.ts).
+      // Checked against the names opening it knew (its file's sounds' and the library's), and while
+      // those are still being read, a clip playing a sound whose names aren't yet known is taken for
+      // one named after its file (and so is a name made from it)
+      const open = openNames.song === songCount ? openNames : { nameOf: songFileNames(undefined, soundFileNames), reading: false };
+      const song = { tracks, clips: get().clips };
+      const clips = fileMarks ? song.clips : (open.reading ? withUnknownSoundsMarked(song, open.nameOf) : withOldMarks(song, open.nameOf)).clips;
       const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
       const origin = minOf(selected.map((c) => c.startBar));
@@ -3568,6 +3583,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         keepVersion(replaced, 'replaced');
       }
       songCount++;
+      openNames = { song: songCount, nameOf, reading: !p.fileMarks };
       // What the old song was heard at says nothing of this one (the export dialog's level note)
       resetHeardLoudness();
       replacedListeners.forEach((l) => l());

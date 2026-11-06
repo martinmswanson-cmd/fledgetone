@@ -408,11 +408,11 @@ test('every flow that makes a name from another carries its mark', () => {
   has('src/store/smartActions.ts', 'const named = fileMade(clip.nameFromFile);', '{ name, ...named, startBar: clip.startBar, lengthBars: clip.lengthBars, notes }, fileMade(track.nameFromFile));', 'placeClip(track.id, at, clip.lengthBars, notes, name, named);', 'const id = s.addTrack(instrument, name, named);');
   has('src/store/reverseActions.ts', '...fileMade(only && (sourceTrack ? sourceTrack.nameFromFile : only.nameFromFile)),', '...fileMade(only?.nameFromFile),');
   // Every flow that sends a song out asks for the sounds' file names (a song from before the marks needs them)
-  has('src/audio/gameKit.ts', 'fileNameOf: FileNameOf;', 'const listed = sharedTrackNames(song, song.fileNameOf);');
+  has('src/audio/gameKit.ts', 'fileNameOf: FileNameOf;', 'const listed = sharedTrackNames(await withNamesRead(song, song.fileNameOf), song.fileNameOf);');
   has('src/components/timeline/gameKitSong.ts', 'fileNameOf: soundFileNames,');
   has('src/runtime/player.ts', 'fileNameOf: songFileNames(p.sounds),');
-  has('src/store/shareLink.ts', 'const nameOf = songFileNames(project.sounds, fileNameOf);', 'withoutFileNames(withFileMarks({ ...project, masterFx, tracks }, nameOf), nameOf)');
-  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)', 'songFileNames([...(project.sounds ?? []), ...embedded], soundFileNames)');
+  has('src/store/shareLink.ts', 'const nameOf = songFileNames(project.sounds, fileNameOf);', 'withoutFileNames(withFileMarks(read, nameOf), nameOf)');
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(read, fileNameOf), fileNameOf)', 'songFileNames([...(project.sounds ?? []), ...embedded], soundFileNames)');
   for (const path of ['src/components/timeline/ShareDialog.tsx', 'src/pocket/PocketShare.tsx']) has(path, ', soundFileNames)');
   // ...and no call leaves them out
   const calls = (text) => [...text.matchAll(/withoutFileNames\(/g)].map((m) => {
@@ -753,7 +753,7 @@ test('opening a song keeps the library\'s name for a sound it has, and knows the
   const store = src('src/store/timelineStore.ts');
   assert.ok(!/soundWithFileMarks\(sound, soundFileName\)|withOldMarks\([^)]*\), soundFileName\)|withFileMarks\(opened, soundFileName\)/.test(store));
   assert.equal(store.match(/soundWithFileMarks\(sound, soundFileNames\)/g).length, 2);
-  assert.ok(store.includes('withOldMarks({ tracks, clips: get().clips }, soundFileNames)'));
+  assert.ok(store.includes('withOldMarks(song, open.nameOf)'));
 });
 
 // ---------- An old song opened before every sound's file name is known ----------
@@ -816,4 +816,101 @@ test("the store marks an old song again once the library has read its sounds, un
   assert.ok(src('src/audio/soundLibrary.ts').includes('export function soundNamesRead(ids: readonly string[], stop: () => boolean): Promise<void>'));
   assert.ok(src('src/components/timeline/projectFile.ts').includes('serializeProject({ ...project, sounds, video: await video }, soundFileNames)'));
   assert.ok(src('src/components/timeline/ShareDialog.tsx').includes('serializeProject({ ...p, sounds }, soundFileNames)'));
+});
+
+// ---------- What goes out while an old song's sounds' names are still being read ----------
+
+const { withUnknownSoundsMarked, withNamesRead } = await import('../src/store/ownFiles.ts');
+
+// An old song (no marks) playing z, which this browser keeps as "Secret memo.wav", and k, "Kick.wav"
+const MEMO = {
+  name: 'Memo song',
+  tracks: [T('a', 'Voice', 'audio'), T('n', 'Keys', 'rhodes'), T('r', 'Rack', 'drumRack', { rack: { pads: [pad('Secret memo', 'z'), pad('Snare'), pad('Kick', 'k')] } })],
+  clips: [
+    C('c1', 'a', 'Secret memo', { audio: audio('z') }),
+    C('c2', 'a', 'Secret memo 2', { audio: audio('z') }),
+    C('c3', 'a', 'Secret memo chops', { audio: audio('z') }),
+    C('c4', 'n', 'Secret memo harmony'),
+    C('c5', 'a', 'Kick', { audio: audio('k') }),
+    C('c6', 'n', 'My chorus'),
+  ],
+};
+const MEMO_NAMES = (id) => ({ z: 'Secret memo.wav', k: 'Kick.wav' })[id];
+const KICK_ONLY = (id) => (id === 'k' ? 'Kick.wav' : undefined);
+
+test("names still being read: a clip playing a sound whose names aren't known, and a name made from it, are marked; the rest as the names known say", () => {
+  const marked = withUnknownSoundsMarked(MEMO, KICK_ONLY);
+  assert.deepEqual(marked.clips.map((c) => !!c.nameFromFile), [true, true, true, true, true, false]);
+  assert.deepEqual(marked.clips.map((c) => c.name), MEMO.clips.map((c) => c.name));
+  // (the pad playing z too; a pad with no sound and the typed track names stay)
+  assert.deepEqual(marked.tracks[2].rack.pads.map((p) => !!p.nameFromFile), [true, false, true]);
+  assert.deepEqual(marked.tracks.map((t) => !!t.nameFromFile), [false, false, false]);
+  // (the old check alone, with z's names unread, finds only what's named after Kick.wav)
+  assert.deepEqual(withOldMarks(MEMO, KICK_ONLY).clips.map((c) => !!c.nameFromFile), [false, false, false, false, true, false]);
+  // Copied, then pasted into a song with the marks: judged by the marks alone, nothing of the memo goes out
+  const flagged = { fileMarks: FILE_MARKS, tracks: MEMO.tracks.slice(0, 2), clips: marked.clips.slice(0, 4) };
+  assert.ok(!/Secret/.test(JSON.stringify(withoutFileNames(flagged, () => undefined).clips)));
+  // A song with the marks: only the clips and pads playing a sound with no known names, no old check
+  const since = withUnknownSoundsMarked({ ...MEMO, fileMarks: FILE_MARKS }, KICK_ONLY);
+  assert.deepEqual(since.clips.map((c) => !!c.nameFromFile), [true, true, true, false, false, false]);
+  // Every name known: as the old check marks it
+  assert.deepEqual(withUnknownSoundsMarked(MEMO, MEMO_NAMES).clips, withOldMarks(MEMO, MEMO_NAMES).clips);
+});
+
+test('a share link, the runtime kit and the game kit wait for the names still being read, and hide what they never get', async () => {
+  const { songLink, projectFromHash } = await import('../src/store/shareLink.ts');
+  const clipNames = async (song, nameOf) => (await projectFromHash(await songLink(song, '', nameOf))).clips.map((c) => c.name);
+  // The library still reading z's meta: its names arrive a moment later, and the link waits for them
+  let known = KICK_ONLY;
+  const reading = Object.assign((id) => known(id), {
+    namesRead: (ids) => new Promise((resolve) => setTimeout(() => ((known = MEMO_NAMES), resolve(ids.every((id) => !!MEMO_NAMES(id)))), 20)),
+  });
+  assert.deepEqual(await clipNames(MEMO, reading), ['Audio', 'Audio', 'Audio', 'Pattern', 'Audio', 'My chorus']);
+  // (Before, the names known when it was made: the memo's went out)
+  assert.ok((await clipNames(MEMO, KICK_ONLY)).includes('Secret memo 2'));
+  // Never read (the wait runs out): every name that may come from z goes
+  const never = Object.assign(KICK_ONLY, { namesRead: async () => false });
+  const out = await clipNames(MEMO, never);
+  assert.deepEqual(out, ['Audio', 'Audio', 'Audio', 'Pattern', 'Audio', 'My chorus']);
+  // withNamesRead: as it is when every name is read (or nothing waits), marked when the wait runs out
+  assert.equal(await withNamesRead(MEMO, Object.assign((id) => MEMO_NAMES(id), { namesRead: async () => true })), MEMO);
+  assert.equal(await withNamesRead(MEMO, (id) => KICK_ONLY(id)), MEMO);
+  assert.equal(await withNamesRead(MEMO, undefined), MEMO);
+  const waited = [];
+  const asked = Object.assign((id) => KICK_ONLY(id), { namesRead: async (ids) => (waited.push(...ids), false) });
+  assert.deepEqual((await withNamesRead(MEMO, asked)).clips.map((c) => !!c.nameFromFile), [true, true, true, true, true, false]);
+  assert.deepEqual(waited, ['z']);
+  // The game kit's list of tracks: an "X loops" track still goes when its clips' sound is never read
+  const loops = { tracks: [T('l', 'Secret memo loops', 'audio')], clips: [C('c1', 'l', 'Secret memo', { audio: audio('z') })] };
+  assert.deepEqual(loops.tracks.map(sharedTrackNames(await withNamesRead(loops, never), never)), ['Audio']);
+  // songFileNames waits where the library does, but not for a sound the song embeds
+  const ids = [];
+  const embedded = songFileNames([{ id: 'z', name: 'Secret memo.wav' }], Object.assign(() => undefined, { namesRead: async (x) => (ids.push(...x), true) }));
+  assert.equal(await embedded.namesRead(['z', 'k']), true);
+  assert.deepEqual(ids, ['k']);
+  assert.equal(songFileNames(undefined, () => undefined).namesRead, undefined);
+  // Every way out asks: the link (Share dialog, Pocket) with the library's lookup, which waits; the kits
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  assert.ok(src('src/store/shareLink.ts').includes('const read = await withNamesRead({ ...project, masterFx, tracks }, nameOf);'));
+  assert.ok(src('src/audio/runtimeKit.ts').includes('const read = await withNamesRead(project, fileNameOf);'));
+  assert.ok(src('src/audio/gameKit.ts').includes('sharedTrackNames(await withNamesRead(song, song.fileNameOf), song.fileNameOf)'));
+  assert.ok(src('src/audio/soundLibrary.ts').includes('soundFileNames.namesRead = (ids: readonly string[]) => soundNamesReadWithin(ids);'));
+  for (const f of ['src/components/timeline/ShareDialog.tsx', 'src/pocket/PocketShare.tsx']) assert.ok(/songLink\([^;]*soundFileNames\)/.test(src(f)), f);
+  assert.ok(src('src/components/timeline/gameKitSong.ts').includes('fileNameOf: soundFileNames,'));
+});
+
+test("the store marks the clipboard too once an old song's names are read, and copying while they're read marks what it can't check", () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const store = src('src/store/timelineStore.ts');
+  for (const s of [
+    'const clipboard = s.clipboard.length ? withOldMarks({ tracks: s.tracks, clips: s.clipboard }, nameOf).clips : s.clipboard;',
+    '...(clipboard !== s.clipboard ? { clipboard } : {}),',
+    'openNames = { song: songCount, nameOf, reading: !p.fileMarks };',
+    'if (openNames.song === song) openNames = { ...openNames, reading: false };',
+    '(open.reading ? withUnknownSoundsMarked(song, open.nameOf) : withOldMarks(song, open.nameOf)).clips',
+  ]) assert.ok(store.includes(s), s);
+  // What markWhenNamesRead does to a clipboard cut from the song before its names were read
+  const cut = MEMO.clips.slice(0, 4);
+  const clipboard = withOldMarks({ tracks: MEMO.tracks, clips: cut }, MEMO_NAMES).clips;
+  assert.deepEqual(clipboard.map((c) => !!c.nameFromFile), [true, true, true, true]);
 });
