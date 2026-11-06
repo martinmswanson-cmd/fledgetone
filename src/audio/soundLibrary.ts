@@ -112,6 +112,32 @@ export function soundNamesRead(ids: readonly string[], stop: () => boolean): Pro
   });
 }
 
+/** How long what goes out (a share link, a kit) waits for the sounds' names before it hides what it can't check. */
+export const NAMES_WAIT_MS = 3000;
+
+/**
+ * Whether the library reads what it keeps of each of these sounds (as soundNamesRead) within `ms`:
+ * true once it has, false if it hasn't by then.
+ */
+export function soundNamesReadWithin(ids: readonly string[], ms = NAMES_WAIT_MS): Promise<boolean> {
+  let late = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const read = soundNamesRead(ids, () => late).then(() => {
+    clearTimeout(timer);
+    return !late;
+  });
+  const timedOut = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      late = true;
+      resolve(false);
+    }, ms);
+  });
+  return Promise.race([read, timedOut]);
+}
+
+// What goes out with soundFileNames waits for the names still being read (ownFiles.ts withNamesRead)
+soundFileNames.namesRead = (ids: readonly string[]) => soundNamesReadWithin(ids);
+
 // ---------- IndexedDB ----------
 
 const DB_NAME = 'bos-beat-box';

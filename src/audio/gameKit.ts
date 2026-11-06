@@ -25,7 +25,7 @@ import unityPlayer from '../gameKit/unity/AdaptiveMusic.cs?raw';
 import godotExample from '../gameKit/godot/music_example.gd?raw';
 import unityExample from '../gameKit/unity/AdaptiveMusicExample.cs?raw';
 import { maxOf } from '../support/minMax';
-import { sharedTrackNames, type FileNameOf } from '../store/ownFiles';
+import { sharedTrackNames, withNamesRead, type FileNameOf } from '../store/ownFiles';
 
 /**
  * The game kit: everything a game needs to play the song the way the Game preview does, in one
@@ -186,7 +186,8 @@ export async function buildGameKitParts(
   const stemFiles = uniqueKitNames(stemGroups.map((g) => g.name)).map(safe);
   // The tracks in each stem, as the manifest lists them: none named after the person's files or folders (see ownFiles.ts)
   // (with the sounds' file names, as a share link asks, for a song from before the marks)
-  const listed = sharedTrackNames(song, song.fileNameOf);
+  // (once the names still being read are, just after a song opens: past a while, what can't be checked goes)
+  const listed = sharedTrackNames(await withNamesRead(song, song.fileNameOf), song.fileNameOf);
   // Every file's name is chosen here, from the names already taken in its folder: a costume's
   // state can't be another state's file ("Boss (Night)"), nor two sounds' variations one file
   const fileName = kitFiles();

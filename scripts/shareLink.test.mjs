@@ -382,7 +382,7 @@ test('each flow that names something after a file or folder marks it, and a type
   // Typed names: a track's and a clip's name fields, and a pad's
   has('src/store/timelineStore.ts', 'typedName(t, trimmed)', 'renameClip: (clipId, name) => set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? typedName(c, name) : c)) })),');
   // The web runtime kit goes through the same renaming as a link
-  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf)');
+  has('src/audio/runtimeKit.ts', 'withoutFileNames(withFileMarks(read, fileNameOf), fileNameOf)');
 });
 
 test("a link leaves out a wavetable's name made from a clip named after a file, and the synth's, and a melody variation's and a reversed clip's", async () => {

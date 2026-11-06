@@ -5,7 +5,7 @@ import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLic
 import { embedSounds, soundFileNames } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
-import { songFileNames, withFileMarks, withoutFileNames } from '../store/ownFiles';
+import { songFileNames, withFileMarks, withNamesRead, withoutFileNames } from '../store/ownFiles';
 import type { EmbeddedSound } from '../store/timelineTypes';
 import { songSections, stateNames } from '../store/cutToLength';
 import { FOUR_FOUR } from './tempoMap';
@@ -57,7 +57,9 @@ export async function buildRuntimeKit(project: ProjectSnapshot, opts: { withGpl?
   const fileNameOf = songFileNames([...(project.sounds ?? []), ...embedded], soundFileNames);
   const sounds = embedded.map((s, i) => ({ id: s.id, name: `Sound ${i + 1}`, type: s.type, seconds: s.seconds, data: s.data })) as EmbeddedSound[];
   const songFile = `${safe(project.name)}.json`;
-  const song = JSON.stringify(serializeProject({ ...withoutFileNames(withFileMarks(project, fileNameOf), fileNameOf), sounds, video: undefined, songId: undefined }));
+  // (once the names still being read are, just after a song opens: past a while, what can't be checked goes)
+  const read = await withNamesRead(project, fileNameOf);
+  const song = JSON.stringify(serializeProject({ ...withoutFileNames(withFileMarks(read, fileNameOf), fileNameOf), sounds, video: undefined, songId: undefined }));
   // The states as the player will name them (a song without markers has 8-bar ones, "Bars 1-8"...)
   const states = stateNames(songSections(project.clips, project.markers ?? [], { base: project.meter ?? FOUR_FOUR, points: project.meterPoints ?? [] }));
   const first = states[0] ?? 'Start';
