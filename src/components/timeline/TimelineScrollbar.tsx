@@ -28,7 +28,7 @@ interface TimelineScrollbarProps {
 }
 
 /**
- * Premiere-style horizontal slider under the lanes. The track is an overview of the whole
+ * The horizontal slider under the lanes. The track is an overview of the whole
  * song (clips, loop region, playhead); the thumb is the visible window.
  * Drag the thumb to scroll, click the track to jump there, drag a thumb edge to zoom.
  */

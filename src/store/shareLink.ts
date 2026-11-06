@@ -24,7 +24,7 @@ const OLD_PREFIX = '#song=';
 /** Whether `hash` (location.hash) holds a song. */
 export const isShareHash = (hash: string) => hash.startsWith(SHARE_PREFIX) || hash.startsWith(OLD_PREFIX);
 
-/** Links past this many characters don't fit in a Discord message (and some other chat apps cut them off). */
+/** Links past this many characters don't fit in a message in some chat apps (they cut them off). */
 export const LONG_LINK = 2000;
 
 const toBase64Url = (bytes: Uint8Array): string => {

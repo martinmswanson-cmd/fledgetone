@@ -5,7 +5,7 @@
  */
 import type { ClipFeel } from './grooveFeels';
 import type { DrumDesign } from './drumDesign';
-import { barToSeconds, isPlainMeter, measureAt, measuresAfter, measureStart, nearestMeasureStart, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
+import { barToSeconds, gridFitsMeasures, isPlainMeter, measureAt, measuresAfter, measureStart, meterGridLine, nearestMeasureStart, secondsToBar, toMeasureBeat, type Meter, type MeterMap, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import type { RoomStyle } from '../audio/effects/roomIR';
@@ -1341,6 +1341,9 @@ export interface GridTiming {
   fps: number;
   /** Tempo changes, so frame snapping steps through time along them */
   tempoPoints?: readonly TempoPoint[];
+  /** The song's time signature (and its changes), so a note grid counts from each measure's start where it has to (7/8) */
+  meter?: Meter;
+  meterPoints?: readonly MeterPoint[];
 }
 
 export interface LoopRegion {
@@ -1426,6 +1429,12 @@ export function snapBar(bar: number, grid: SnapGrid, timing: GridTiming): number
   }
   const step = snapStepBars(grid, timing);
   if (!step) return bar;
+  // A note grid counts from the start of the measure the position is in, where the song's
+  // measures don't all start on it (a quarter grid in 7/8); elsewhere from bar 1, as always
+  if (grid !== 'frame' && timing.meter) {
+    const map = { base: timing.meter, points: timing.meterPoints ?? [] };
+    if (!gridFitsMeasures(step, map)) return meterGridLine(bar, step, map);
+  }
   return Math.round((bar - 1) / step) * step + 1;
 }
 

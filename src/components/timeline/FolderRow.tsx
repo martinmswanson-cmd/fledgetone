@@ -1,11 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, Folder, FolderOpen, X } from 'lucide-react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Track, TrackFolder } from '../../store/timelineTypes';
 import { TRACK_COLORS } from '../../store/timelineTypes';
 import { HEADER_WIDTH } from './layout';
 import { FOLDER_ROW_HEIGHT } from './rows';
-import { useMenuDismiss } from './menuHooks';
 
 /**
  * A folder's row in the timeline: fold it away, rename and recolour it, mute or solo all its
@@ -17,6 +17,7 @@ export const FolderRow: React.FC<{ folder: TrackFolder; members: Track[] }> = ({
   const clips = useTimelineStore((s) => s.clips);
   const [renaming, setRenaming] = useState(false);
   const [colors, setColors] = useState(false);
+  const colorButton = useRef<HTMLButtonElement>(null);
   const s = useTimelineStore.getState();
   const allMuted = members.every((t) => t.isMuted);
   const allSoloed = members.every((t) => t.isSoloed);
@@ -39,12 +40,19 @@ export const FolderRow: React.FC<{ folder: TrackFolder; members: Track[] }> = ({
         >
           {folder.collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
-        <div className="relative">
-          <button type="button" onClick={() => setColors((v) => !v)} title="Folder colour" aria-label={`${folder.name} colour`} className="flex items-center">
-            {folder.collapsed ? <Folder className="w-3.5 h-3.5" style={{ color: folder.color }} /> : <FolderOpen className="w-3.5 h-3.5" style={{ color: folder.color }} />}
-          </button>
-          {colors && <ColorPicker current={folder.color} onPick={(c) => s.setFolder(folder.id, { color: c }, true)} onClose={() => setColors(false)} note="Colours its tracks too" />}
-        </div>
+        <button
+          ref={colorButton}
+          type="button"
+          onClick={() => setColors((v) => !v)}
+          title="Folder colour"
+          aria-label={`${folder.name} colour`}
+          aria-haspopup="dialog"
+          aria-expanded={colors}
+          className="flex items-center"
+        >
+          {folder.collapsed ? <Folder className="w-3.5 h-3.5" style={{ color: folder.color }} /> : <FolderOpen className="w-3.5 h-3.5" style={{ color: folder.color }} />}
+        </button>
+        {colors && <ColorPicker anchor={colorButton} current={folder.color} onPick={(c) => s.setFolder(folder.id, { color: c }, true)} onClose={() => setColors(false)} note="Colours its tracks too" />}
         {renaming ? (
           <input
             autoFocus
@@ -109,28 +117,104 @@ export const FolderRow: React.FC<{ folder: TrackFolder; members: Track[] }> = ({
   );
 };
 
-/** A row of colour swatches in a small popover. */
-export const ColorPicker: React.FC<{ current: string; onPick: (color: string) => void; onClose: () => void; note?: string }> = ({ current, onPick, onClose, note }) => {
+const COLS = 6;
+
+/**
+ * A grid of colour swatches in a small popover by its button (`anchor`). It floats above the
+ * timeline (portalled to the page body: the sticky track and folder headers below can't cover it),
+ * opens with the current colour focused, moves with the arrow keys, and closes on a pick, Esc
+ * (focus goes back to the button), a click elsewhere or scrolling.
+ */
+export const ColorPicker: React.FC<{ anchor: React.RefObject<HTMLElement | null>; current: string; onPick: (color: string) => void; onClose: () => void; note?: string }> = ({ anchor, current, onPick, onClose, note }) => {
   const ref = useRef<HTMLDivElement>(null);
-  useMenuDismiss(ref, onClose);
-  return (
-    <div ref={ref} className="absolute z-50 top-6 left-0 p-2 rounded-md border border-forge-borderLight bg-forge-panelLight shadow-2xl w-44" role="dialog" aria-label="Colour" onClick={(e) => e.stopPropagation()}>
+  const close = useRef(onClose);
+  useLayoutEffect(() => {
+    close.current = onClose;
+  });
+  const finish = (refocus: boolean) => {
+    close.current();
+    if (refocus) anchor.current?.focus();
+  };
+  // By the button, kept on screen
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const r = anchor.current?.getBoundingClientRect();
+    if (!el || !r) return;
+    const below = r.bottom + 4 + el.offsetHeight <= window.innerHeight - 8;
+    el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8))}px`;
+    el.style.top = `${below ? r.bottom + 4 : Math.max(8, r.top - 4 - el.offsetHeight)}px`;
+  });
+  useEffect(() => {
+    (ref.current?.querySelector('[aria-pressed="true"]') as HTMLElement | null)?.focus();
+    const inside = (t: EventTarget | null) => !!t && (ref.current?.contains(t as Node) || anchor.current?.contains(t as Node));
+    const onDown = (e: PointerEvent) => {
+      if (!inside(e.target)) close.current();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // (Esc closes just the picker, not the piano roll or the clip selection too)
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      close.current();
+      anchor.current?.focus();
+    };
+    const onScroll = (e: Event) => {
+      if (!ref.current?.contains(e.target as Node)) close.current();
+    };
+    const onResize = () => close.current();
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [anchor]);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const swatches = [...(ref.current?.querySelectorAll<HTMLButtonElement>('button[data-swatch]') ?? [])];
+    const at = swatches.indexOf(document.activeElement as HTMLButtonElement);
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: COLS, ArrowUp: -COLS }[e.key];
+    if (step !== undefined && at >= 0) {
+      e.preventDefault();
+      swatches[(at + step + swatches.length) % swatches.length]?.focus();
+    } else if (e.key === 'Tab') {
+      // Tabbing out of the picker closes it, back on its button (it lives at the end of the page)
+      e.preventDefault();
+      finish(true);
+    }
+  };
+  return createPortal(
+    <div
+      ref={ref}
+      className="fixed z-50 p-2 rounded-md border border-forge-borderLight bg-forge-panelLight shadow-2xl w-44"
+      style={{ left: 0, top: 0 }}
+      role="dialog"
+      aria-label="Colour"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={onKeyDown}
+    >
       <div className="grid grid-cols-6 gap-1">
         {TRACK_COLORS.map((c) => (
           <button
             key={c}
             type="button"
+            data-swatch=""
             onClick={() => {
               onPick(c);
-              onClose();
+              finish(true);
             }}
-            className={`w-5 h-5 rounded ${c === current ? 'ring-2 ring-white' : 'hover:ring-1 hover:ring-white/60'}`}
+            className={`w-5 h-5 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${c === current ? 'ring-2 ring-white' : 'hover:ring-1 hover:ring-white/60'}`}
             style={{ background: c }}
             aria-label={`Colour ${c}`}
+            aria-pressed={c === current}
           />
         ))}
       </div>
       {note && <p className="mt-1.5 text-[10px] text-forge-muted">{note}</p>}
-    </div>
+    </div>,
+    document.body
   );
 };

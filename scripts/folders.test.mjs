@@ -35,6 +35,25 @@ test('renaming, recolouring and folding reach every member', () => {
   assert.equal(updateFolder(tracks, 'nope', { name: 'x' }), tracks);
 });
 
+test('a change to what the folder already is changes nothing (so the store makes no undo step)', () => {
+  const tracks = [T('a', F), T('b', F)];
+  // Same colour, but its tracks aren't that colour yet: a real change
+  const recoloured = updateFolder(tracks, 'f', { color: '#f00' }, true);
+  assert.notEqual(recoloured, tracks);
+  assert.deepEqual(recoloured.map((t) => t.color), ['#f00', '#f00']);
+  // Again: nothing to change
+  assert.equal(updateFolder(recoloured, 'f', { color: '#f00' }, true), recoloured);
+  assert.equal(updateFolder(tracks, 'f', { color: '#f00' }), tracks);
+  assert.equal(updateFolder(tracks, 'f', { name: 'Drums' }), tracks);
+  assert.equal(updateFolder(tracks, 'f', { collapsed: false }), tracks);
+  const folded = updateFolder(tracks, 'f', { collapsed: true });
+  assert.notEqual(folded, tracks);
+  assert.equal(updateFolder(folded, 'f', { collapsed: true }), folded);
+  // A member's colour changed on its own: recolouring with the folder's colour brings it back
+  const odd = [T('a', F), { ...T('b', F), color: '#00f' }];
+  assert.deepEqual(updateFolder(odd, 'f', { color: '#f00' }, true).map((t) => t.color), ['#f00', '#f00']);
+});
+
 test('moving into and out of a folder', () => {
   const tracks = [T('a', F), T('b', F), T('c'), T('d')];
   assert.equal(ids(moveToFolder(tracks, 'd', 'f')), 'a:f b:f d:f c');

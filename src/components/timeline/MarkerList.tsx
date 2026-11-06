@@ -233,7 +233,7 @@ export const ExportForEditors: React.FC = () => {
         ))}
       </ActionSelect>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-        <label className="flex items-center gap-1" title="DaVinci Resolve timelines usually start at 01:00:00:00">
+        <label className="flex items-center gap-1" title="Some video editors start their timelines at 01:00:00:00">
           <input type="checkbox" checked={startHour === 1} onChange={(e) => setStartHour(e.target.checked ? 1 : 0)} />
           Timeline starts at 01:00:00:00
         </label>

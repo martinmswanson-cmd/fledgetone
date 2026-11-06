@@ -729,7 +729,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               value: 'video',
               label: 'Video (MP4)',
               disabled: !videoOk || game,
-              title: !videoOk ? "This browser can't make videos: use Chrome or Edge" : game ? 'Choose Whole song or Loop region for a video' : 'The song with a visualizer, for YouTube and socials',
+              title: !videoOk ? "This browser can't make videos: use Chrome or Edge" : game ? 'Choose Whole song or Loop region for a video' : 'The song with a visualizer, for video sites and socials',
             },
           ]}
         />
@@ -786,8 +786,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               value={settings.shape}
               onChange={(value) => update({ shape: value })}
               options={[
-                { value: 'wide', label: 'Widescreen 16:9', title: '1920×1080: YouTube, a game trailer, a website' },
-                { value: 'tall', label: 'Portrait 9:16', title: '1080×1920: TikTok, YouTube Shorts, Instagram Reels' },
+                { value: 'wide', label: 'Widescreen 16:9', title: '1920×1080: video sites, a game trailer, a website' },
+                { value: 'tall', label: 'Portrait 9:16', title: '1080×1920: short vertical videos on phone video apps' },
               ]}
             />
             <Segmented<VideoFps>
@@ -809,7 +809,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 {settings.picture === 'showcase'
                   ? 'the notes of every track on a piano roll that scrolls past the playhead, each lighting up as it plays, the tracks playing'
                   : 'a spectrum that moves with the music'}
-                , the whole song's waveform with a playhead, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'TikTok, Shorts and Reels' : 'YouTube, socials or a game\'s trailer'}. It's drawn faster than real time.
+                , the whole song's waveform with a playhead, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
               </p>
             )}
             {!(refVideo && useFootage) && (
@@ -910,7 +910,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
                 Match a loudness target
-                <span className="block text-forge-muted">YouTube plays at -14 LUFS: matching it means your video isn't turned down.</span>
+                <span className="block text-forge-muted">Video sites play at about -14 LUFS: matching it means your video isn't turned down.</span>
               </span>
             </label>
             {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}

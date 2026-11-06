@@ -297,13 +297,13 @@ const SHOWCASE: Lesson = {
     },
     {
       title: 'Open the showcase export',
-      body: 'Open the **File** menu and click **Showcase video (YouTube, TikTok)…**. Export opens set to a video of the notes playing.',
+      body: 'Open the **File** menu and click **Showcase video (for video sites)…**. Export opens set to a video of the notes playing.',
       target: () => (ui().dialog === 'export' ? EXPORT_DIALOG : '#menu-file'),
-      task: { hint: 'File › Showcase video (YouTube, TikTok)…', done: showcaseOpen },
+      task: { hint: 'File › Showcase video (for video sites)…', done: showcaseOpen },
     },
     {
       title: 'Make it tall',
-      body: 'Under the export choices, click **Portrait 9:16** for a phone-shaped video. **Widescreen 16:9** is for YouTube and websites.',
+      body: 'Under the export choices, click **Portrait 9:16** for a phone-shaped video. **Widescreen 16:9** is for video sites and websites.',
       target: `${EXPORT_DIALOG} [role="group"][aria-label="Shape"]`,
       task: { hint: 'Click Portrait 9:16', done: () => pressedIn('Shape').startsWith('Portrait') },
     },

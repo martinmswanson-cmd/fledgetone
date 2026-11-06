@@ -123,7 +123,7 @@ const MENUS: MenuDef[] = [
       { label: 'Open a sound file…', run: () => pickSoundFile(tl().selectedTrackId ?? undefined), title: 'Put a shared sound on the selected track (it goes into My sounds too)' },
       { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
       {
-        label: 'Showcase video (YouTube, TikTok)…',
+        label: 'Showcase video (for video sites)…',
         run: () => void import('../timeline/ExportDialog').then(({ presetShowcaseExport }) => {
           presetShowcaseExport('wide');
           ui().setDialog('export');
@@ -460,7 +460,7 @@ const MENUS: MenuDef[] = [
       ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),
       { label: 'Pocket, the phone version', run: () => chooseInterface('pocket'), title: 'Switch to Fledgetone Pocket: the whole song on one screen, with pads, steps and a piano roll made for a phone. The same song opens in both' },
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
-      { label: 'Source code', run: () => window.open('https://github.com/martinmswanson-cmd/fledgetone', '_blank', 'noopener'), title: "Fledgetone is free software under the GNU GPL, version 3: its code on GitHub" },
+      { label: 'Source code', run: () => window.open('https://github.com/martinmswanson-cmd/fledgetone', '_blank', 'noopener'), title: "Fledgetone is free software under the GNU GPL, version 3: its code is online" },
       { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
       { label: 'Terms of use', run: () => ui().setDialog('terms') },
     ],

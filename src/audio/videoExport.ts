@@ -8,17 +8,17 @@ import { BLIND_TRIM_DB, holdDecodedPeak, streamingTruePeak, type HeldReport } fr
 import { LIMITER_CEILING_DBTP } from './effects/limiter';
 
 /**
- * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,
+ * A song as an MP4 video, for video sites, socials or a game's trailer: the rendered mix as its sound,
  * and a visualizer as its picture (the project's name, a spectrum that moves with the music, the
  * whole song's waveform with a playhead, the section it's in, the time). Encoded faster than real
  * time with the browser's own encoders (WebCodecs) and put into an MP4 by Mediabunny.
  *
  * H.264 video and AAC sound play everywhere; browsers without those encoders (Chromium builds
  * without the licensed codecs, Firefox on some systems) fall back to VP9 or AV1 video and Opus
- * sound, which browsers, VLC and YouTube play but some older players don't. The sound is encoded
+ * sound, which browsers, most players and video sites play but some older players don't. The sound is encoded
  * first, decoded again and measured, and turned down by anything its peaks overshot (decodedPeak.ts).
  *
- * Two shapes: widescreen (1920×1080, YouTube) and portrait (1080×1920, TikTok, Shorts, Reels), at
+ * Two shapes: widescreen (1920×1080, video sites) and portrait (1080×1920, phone video apps), at
  * 30 or 60 frames a second (60: the scrolling notes move smoothly). Either picture is drawn in
  * design units (1280×720 or 720×1280) on a canvas scaled to the video.
  *
@@ -411,7 +411,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
     // Where things go: the title at the top, the picture in the middle, the waveform and time at the
     // bottom, and the mark under them. What's left out gives its room to the picture (a portrait
-    // video keeps its top clear anyway: TikTok and Reels put their tabs there)
+    // video keeps its top clear anyway: phone video apps put their tabs there)
     const marks = opts.marks ?? DEFAULT_VIDEO_MARKS;
     const heading = marks.title || marks.subtitle;
     const footer = marks.sections || marks.time;

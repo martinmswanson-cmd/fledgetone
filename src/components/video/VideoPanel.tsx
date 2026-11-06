@@ -130,7 +130,7 @@ export const VideoPanel: React.FC = () => {
       </Card>
 
       <Card title="Back to the edit" label="Export for editors">
-        {markers.length ? <ExportForEditors /> : <p className="text-[11px]">Add markers (M) or hit points to export them for Premiere, Resolve or Final Cut.</p>}
+        {markers.length ? <ExportForEditors /> : <p className="text-[11px]">Add markers (M) or hit points to export them for video editors.</p>}
         <button type="button" className={BUTTON} onClick={() => useUiStore.getState().setDialog('export')} title="Render the music, or the music on the video as an MP4">
           {video ? <Film className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />} {video ? 'Export music onto the video' : 'Export the music'}
         </button>

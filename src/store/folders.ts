@@ -74,6 +74,11 @@ export function updateFolder(tracks: Track[], id: string, patch: Partial<Omit<Tr
   if (!current) return tracks;
   const folder: TrackFolder = { ...current, ...patch };
   if (!folder.collapsed) delete folder.collapsed;
+  // The same name, colour and folding (and, recolouring, its tracks already that colour): nothing
+  // changes, so the store makes no undo step
+  const same = (a: TrackFolder, b: TrackFolder) => a.name === b.name && a.color === b.color && !a.collapsed === !b.collapsed;
+  const recolors = recolor && !!patch.color && tracks.some((t) => t.folder?.id === id && t.color !== patch.color);
+  if (!recolors && tracks.every((t) => t.folder?.id !== id || same(t.folder, folder))) return tracks;
   return tracks.map((t) => (t.folder?.id === id ? { ...t, folder, ...(recolor && patch.color ? { color: patch.color } : {}) } : t));
 }
 

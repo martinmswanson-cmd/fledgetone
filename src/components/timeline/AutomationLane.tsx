@@ -3,6 +3,7 @@
  * points and curves, and clicking, dragging and deleting them.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, AutomationPoint, Track } from '../../store/timelineTypes';
 import { snapBar, TOTAL_BARS } from '../../store/timelineTypes';
@@ -470,7 +471,8 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
           </div>
         )}
       </div>
-      {menu && <AutomationMenu menu={menu} onClose={closeMenu} />}
+      {/* (On the page body, so no row's sticky header can cover it) */}
+      {menu && createPortal(<AutomationMenu menu={menu} onClose={closeMenu} />, document.body)}
     </>
   );
 };

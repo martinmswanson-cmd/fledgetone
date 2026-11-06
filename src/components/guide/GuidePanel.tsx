@@ -5,7 +5,7 @@ import { renderBlocks, sectionOf, splitSections } from './markdown';
 
 /**
  * The user guide, shown in the app. Its text is GUIDE.md at the repository root, so the same
- * guide reads on GitHub and here. Sections are listed on the left; Esc or the backdrop closes it.
+ * guide reads in the repository and here. Sections are listed on the left; Esc or the backdrop closes it.
  * Given `markdown` and a `title`, it shows that document instead (What's new: CHANGELOG.md).
  */
 export const GuidePanel: React.FC<{ onClose: () => void; section?: string; markdown?: string; title?: string }> = ({ onClose, section: startAt, markdown = guideMarkdown, title = 'Guide' }) => {
