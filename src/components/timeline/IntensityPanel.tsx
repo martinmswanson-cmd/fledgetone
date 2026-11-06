@@ -113,6 +113,7 @@ export const IntensityPanel: React.FC = () => {
 
   const autoAssign = () => {
     // By what each track plays: drums are Percussion, effects Tension, leads Climax, the rest Ambient
+    const moves: Array<[string, string]> = [];
     tracks.forEach((t) => {
       // (The Drop pad has no sound of its own to put in a stem)
       if (isDropKind(t.instrumentKey)) return;
@@ -124,8 +125,12 @@ export const IntensityPanel: React.FC = () => {
           : /lead|supersaw|brass|choir/i.test(t.instrumentKey) || /lead/i.test(t.name)
             ? 'Climax'
             : 'Ambient';
-      st().setTrackStemGroup(t.id, group);
+      if ((t.stemGroup ?? '') !== group) moves.push([t.id, group]);
     });
+    // One undo step for the whole press, not one per track
+    if (!moves.length) return;
+    st().checkpoint();
+    for (const [id, group] of moves) st().setTrackStemGroup(id, group, false);
   };
 
   return (

@@ -41,6 +41,19 @@ export async function exportMySounds(): Promise<void> {
 /** What a message adds when sounds didn't fit in My sounds ('' when they all did). */
 const noRoom = (full: number) => (full ? ` My sounds is full (${MAX_SOUNDS} sounds), so ${plural(full, 'sound')} ${full === 1 ? 'wasn’t' : 'weren’t'} added: delete some you don't need, then open the file again.` : '');
 
+/**
+ * What a file added, for a message: "Added 2 sounds and 1 favourite", "Updated 2 sounds" (the
+ * favourites counted are the ones new here, and a count of none is left out).
+ */
+function importedNote(done: { added: number; replaced: number; starred: number }): string {
+  const added = [done.added ? plural(done.added, 'sound') : '', done.starred ? plural(done.starred, 'favourite') : ''].filter(Boolean).join(' and ');
+  const updated = done.replaced ? plural(done.replaced, 'sound') : '';
+  if (added && updated) return `Added ${added}, updated ${updated}`;
+  if (added) return `Added ${added}`;
+  if (updated) return `Updated ${updated}`;
+  return 'Nothing new';
+}
+
 /** Add a My sounds file's sounds and stars to this browser's. Returns what happened, for a message. */
 export async function importMySoundsFile(file: File): Promise<string> {
   try {
@@ -48,7 +61,7 @@ export async function importMySoundsFile(file: File): Promise<string> {
     if (recordings.length) await importEmbeddedSounds(recordings);
     const done = useMySounds.getState().importSounds(sounds, favourites);
     if (!done) return "The browser wouldn't keep them (its storage is full or blocked).";
-    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} and ${plural(favourites.length, 'favourite')} from ${file.name}.${noRoom(done.full)}`;
+    return `${importedNote(done)} from ${file.name}.${noRoom(done.full)}`;
   } catch (err) {
     const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
     return `Couldn't open ${file.name}: ${reason}`;
@@ -104,7 +117,7 @@ export async function openSoundFile(file: File, trackId?: string): Promise<strin
       return `${track.name} plays "${sounds[0].name}" now${done && !done.full ? ', and it’s in My sounds' : ''} (Undo puts the old sound back).${done ? noRoom(done.full) : ''}`;
     }
     if (!done) return "The browser wouldn't keep them (its storage is full or blocked).";
-    return `Added ${plural(done.added, 'sound')}${done.replaced ? `, updated ${done.replaced}` : ''} to My sounds from ${file.name}.${noRoom(done.full)}`;
+    return `${importedNote(done)} in My sounds from ${file.name}.${noRoom(done.full)}`;
   } catch (err) {
     const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
     return `Couldn't open ${file.name}: ${reason}`;

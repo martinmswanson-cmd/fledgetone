@@ -211,6 +211,9 @@ export function mergeSounds(mine: readonly MySound[], sounds: readonly MySound[]
   return { sounds: out, added, replaced, full };
 }
 
+/** The name saveSound keeps a sound under: the one typed, trimmed to 60, or the instrument's when none was. */
+export const savedSoundName = (rawName: string, track: Pick<Track, 'instrumentKey'>): string => rawName.trim().slice(0, 60) || INSTRUMENTS[track.instrumentKey].name;
+
 interface MySoundsState {
   favourites: InstrumentKey[];
   sounds: MySound[];
@@ -223,7 +226,7 @@ interface MySoundsState {
   removeSound: (id: string) => void;
   renameSound: (id: string, name: string) => void;
   /** Add a file's sounds and stars to this browser's (see mergeSounds); false if the browser wouldn't keep them. */
-  importSounds: (sounds: readonly MySound[], favourites: readonly InstrumentKey[]) => { added: number; replaced: number; full: number } | false;
+  importSounds: (sounds: readonly MySound[], favourites: readonly InstrumentKey[]) => { added: number; replaced: number; full: number; starred: number } | false;
 }
 
 export const useMySounds = create<MySoundsState>((set, get) => ({
@@ -236,7 +239,7 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
     set({ favourites });
   },
   saveSound: (rawName, track, songMarked = false) => {
-    const name = rawName.trim().slice(0, 60) || INSTRUMENTS[track.instrumentKey].name;
+    const name = savedSoundName(rawName, track);
     // (The track's own name left as it was offered, made from a file's: still made from it)
     const made = !!track.nameFromFile && name === track.name.trim().slice(0, 60);
     const settings = soundOf(track);
@@ -258,11 +261,13 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
   },
   importSounds: (incoming, stars) => {
     const merged = mergeSounds(get().sounds, incoming);
-    const favourites = [...get().favourites, ...stars.filter((k) => !get().favourites.includes(k))];
+    const newStars = stars.filter((k, i) => !get().favourites.includes(k) && stars.indexOf(k) === i);
+    const favourites = [...get().favourites, ...newStars];
     if (!writeJson(MY_SOUNDS_KEY, merged.sounds)) return false;
     writeJson(FAVOURITE_INSTRUMENTS_KEY, favourites);
     set({ sounds: merged.sounds, favourites });
-    return { added: merged.added, replaced: merged.replaced, full: merged.full };
+    // (`starred`: the favourites that are new here, not the file's count)
+    return { added: merged.added, replaced: merged.replaced, full: merged.full, starred: newStars.length };
   },
   renameSound: (id, rawName) => {
     const name = rawName.trim().slice(0, 60);
