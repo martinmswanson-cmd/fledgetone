@@ -6,7 +6,7 @@
  *   - three short alerts in the song's key and tempo (a follow, a subscribe, a big moment): the
  *     song's own stingers when it has some
  *   - a whoosh for a scene transition
- *   - a README saying what each file is for and how to use it in OBS and the like
+ *   - a README saying what each file is for and how to use it in streaming software
  * Which bars make each piece is planned in store/channelKit.ts. Everything is a WAV at 48 kHz (what
  * streaming software and video runs at), 24-bit; the loops carry their loop points. The music is
  * turned up or down to the loudness target by one gain for every piece (worked out on Starting
@@ -129,7 +129,7 @@ everything sounds like it belongs together. Every file is a WAV at 48 kHz.
 ${list}
 
 Using it
-  Streams (OBS, Streamlabs and the like): add a loop to a scene as a Media Source with "Loop"
+  Streams: in your streaming software, add a loop to a scene as a media source with looping
   on (the loops repeat with no gap). Alerts go in your alert service's sound settings. The whoosh
   works as the sound of a Stinger transition between scenes.
 

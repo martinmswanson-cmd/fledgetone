@@ -7,11 +7,11 @@ import React, { useMemo, useState } from 'react';
 import { Link2 } from 'lucide-react';
 import { patternLabelOf } from '../../store/patterns';
 import { TOTAL_BARS, useTimelineStore, songMeterOf, songTempo, useSongMeter } from '../../store/timelineStore';
-import { isPlainMeter, stepMeasure, tempoAt } from '../../audio/tempoMap';
+import { isPlainMeter, meterGridStep, stepMeasure, tempoAt } from '../../audio/tempoMap';
 import { formatBarsBeats } from '../../audio/transport';
 import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
-import { DEFAULT_WOBBLE, durationToBars, formatBarCount, formatBarPosition, formatBarSpan, minClipLength, snapBar } from '../../store/timelineTypes';
+import { DEFAULT_WOBBLE, durationToBars, formatBarCount, formatBarPosition, formatBarSpan, minClipLength, snapBar, snapStepBars } from '../../store/timelineTypes';
 import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { canMoveClipBetween, DROP_ROWS, FX_ROWS, INSTRUMENTS, isDrumKind, isDropKind, isRackKind, isFxKind } from '../../audio/instrumentCatalog';
@@ -467,7 +467,9 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       const step = e.shiftKey ? 1 : minClipLength(s.snapGrid, s);
       // (Shift: a bar, as the ruler counts them, to the next or previous bar line)
       const map = songMeterOf(s);
-      const moved = e.shiftKey && !isPlainMeter(map) ? stepMeasure(clip.startBar, dir < 0 ? -1 : 1, map) : snapBar(clip.startBar + dir * step, s.snapGrid, s);
+      // (A grid the measures don't all start on, a quarter in 7/8: to the next line along, downbeats included)
+      const along = e.shiftKey || s.snapGrid === 'frame' ? null : meterGridStep(clip.startBar, snapStepBars(s.snapGrid, s), map, dir);
+      const moved = e.shiftKey && !isPlainMeter(map) ? stepMeasure(clip.startBar, dir < 0 ? -1 : 1, map) : (along ?? snapBar(clip.startBar + dir * step, s.snapGrid, s));
       const delta = Math.abs(moved - clip.startBar) > 1e-9 ? moved - clip.startBar : dir * step;
       const moving = clip.isSelected ? s.clips.filter((c) => c.isSelected) : [clip];
       const from = minOf(moving.map((c) => c.startBar));

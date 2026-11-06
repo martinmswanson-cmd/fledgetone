@@ -18,7 +18,7 @@ register(
 );
 const tm = await import('../src/audio/tempoMap.ts');
 const { quantize } = await import('../src/store/noteTools.ts');
-const { snapBar } = await import('../src/store/timelineTypes.ts');
+const { snapBar, durationToBars } = await import('../src/store/timelineTypes.ts');
 const { STEPS_PER_WHOLE } = await import('../src/pocket/pocketGrid.ts');
 
 const meter = (num, den, points = []) => ({ base: { num, den }, points });
@@ -113,4 +113,33 @@ test('studio and Pocket agree: Pocket\'s 16th steps from a section start are stu
     // Pocket's ruler counts each measure's beats from its downbeat: the studio's grid has every downbeat
     for (const { bar, downbeat } of tm.beatsBetween(from, from + 4 * (7 / 8), map)) if (downbeat) near(tm.meterGridLine(bar + 0.01, 1 / 4, map), bar);
   }
+});
+
+test('the arrow keys step to every grid line in 7/8 and 5/8, downbeats included, and keep whole steps in 4/4', () => {
+  for (const [num, den] of [[7, 8], [5, 8]]) {
+    const map = meter(num, den);
+    const lines = tm.meterGridLines(1, 6, 1 / 4, map);
+    for (let i = 0; i + 1 < lines.length; i++) {
+      near(tm.meterGridStep(lines[i], 1 / 4, map, 1), lines[i + 1]);
+      near(tm.meterGridStep(lines[i + 1], 1 / 4, map, -1), lines[i]);
+    }
+    // From off the grid: the next line along either way, never past it
+    near(tm.meterGridStep(1 + num / den - 0.01, 1 / 4, map, 1), 1 + num / den);
+    near(tm.meterGridStep(1 + num / den + 0.01, 1 / 4, map, -1), 1 + num / den);
+  }
+  for (const [num, den] of [[4, 4], [3, 4], [6, 8]]) for (const g of GRIDS) if (tm.gridFitsMeasures(g, meter(num, den))) assert.equal(tm.meterGridStep(1.3, g, meter(num, den), 1), null);
+});
+
+test('Quantize ends puts the ends on the grid in 7/8: the last, short step of a measure ends on the downbeat', () => {
+  const map = meter(7, 8);
+  const notes = [N('a', 0.74), { ...N('b', 0.26), duration: '4n' }, { ...N('c', 0.1), duration: '32n' }];
+  const lines = tm.meterGridLines(1, 3, 1 / 4, map).map((l) => l - 1);
+  const ends = quantize(notes, 1 / 4, 0, 1, true, 1.75, map).map((n) => n.startOffset + durationToBars(n.duration));
+  for (const e of ends) assert.ok(lines.some((l) => Math.abs(l - e) < 1e-9), `end ${e} on the grid`);
+  near(ends[0], 0.875);
+  // At least one step: a short note still ends on the next line after its start
+  near(ends[2], 0.25);
+  // 4/4: as before
+  const q44 = quantize(notes, 1 / 4, 0, 1, true, 2, meter(4, 4));
+  assert.deepEqual(q44, quantize(notes, 1 / 4, 0, 1, true, 2));
 });

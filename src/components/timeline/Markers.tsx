@@ -6,9 +6,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, LockOpen, Pencil, Trash2 } from 'lucide-react';
 import { TOTAL_BARS, useTimelineStore, songMeterOf, songTempo, useSongTempo } from '../../store/timelineStore';
-import { isPlainMeter, stepMeasure } from '../../audio/tempoMap';
+import { isPlainMeter, meterGridStep, stepMeasure } from '../../audio/tempoMap';
 import type { Marker } from '../../store/timelineTypes';
-import { minClipLength, snapBar } from '../../store/timelineTypes';
+import { minClipLength, snapBar, snapStepBars } from '../../store/timelineTypes';
 import { MARKER_NAME_MAX } from '../../store/markers';
 import { formatBarsBeats, formatSmpte } from '../../audio/transport';
 import { barFromClientX } from './Playhead';
@@ -115,7 +115,9 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
       const dir = e.key === 'ArrowLeft' ? -1 : 1;
       // (Shift: a bar, as the ruler counts them, to the next or previous bar line)
       const map = songMeterOf(s);
-      const to = e.shiftKey && !isPlainMeter(map) ? stepMeasure(marker.bar, dir, map) : marker.bar + (e.shiftKey ? 1 : minClipLength(s.snapGrid, s)) * dir;
+      // (A grid the measures don't all start on, a quarter in 7/8: to the next line along, downbeats included)
+      const along = e.shiftKey || s.snapGrid === 'frame' ? null : meterGridStep(marker.bar, snapStepBars(s.snapGrid, s), map, dir);
+      const to = e.shiftKey && !isPlainMeter(map) ? stepMeasure(marker.bar, dir, map) : (along ?? marker.bar + (e.shiftKey ? 1 : minClipLength(s.snapGrid, s)) * dir);
       const bar = Math.max(1, Math.min(TOTAL_BARS + 1, to));
       if (bar !== marker.bar) {
         s.checkpoint();
