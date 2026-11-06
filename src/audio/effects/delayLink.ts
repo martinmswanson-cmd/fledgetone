@@ -14,6 +14,12 @@
  * between the two (see rewire in trackStrip.ts). The old paths are taken apart once their fades
  * have played. In an export nothing plays while the graph is set up, so there the link is joined
  * (or rebuilt) directly, with no gain.
+ *
+ * A new target (a track sent to another bus, or back to the master when its bus is deleted) is
+ * crossfaded the same way: a path of the same delay, joined to the new target silent, fades in over
+ * RETARGET_FADE as the paths into the old one fade out, and those are taken apart once that has
+ * played. Switched outright, the level stepped in one sample: a track out of a bus at -20 dB jumped
+ * 20 dB, a click as large as any the music makes.
  */
 import * as Tone from 'tone';
 import { glideAt, planGlide, type Glide } from '../delayGlide';
@@ -28,7 +34,11 @@ export interface DelayLink {
    * first Play, the track early by a few ms and bending back over a second.
    */
   set: (seconds: number, glide?: boolean) => void;
-  /** Play into `to` instead (null: into nothing, as a sleeping strip). Switched at once, as a re-routing always was. */
+  /**
+   * Play into `to` instead (null: into nothing, as a sleeping strip). Live, from one target to
+   * another, crossfaded over RETARGET_FADE (see the top); to or from nothing (a strip going to sleep
+   * or waking, when nothing on it can be heard), at once.
+   */
   retarget: (to: Tone.InputNode | null) => void;
   dispose: () => void;
 }
@@ -36,6 +46,23 @@ export interface DelayLink {
 /** How long after a change the crossfade starts (all its fades are set by then), and how long it takes. */
 const LEAD = 0.02;
 const FADE = 0.01;
+/** A new target's crossfade: long enough that even a jump of 60 dB in level is a smooth swell. */
+export const RETARGET_FADE = 0.02;
+
+/** 0 to 1 along a raised cosine: no corner where it starts or ends. */
+export const smoothStep = (k: number): number => (1 - Math.cos(Math.PI * Math.max(0, Math.min(1, k)))) / 2;
+
+/**
+ * A fade from `from` to `to` along smoothStep, as a value curve. A retarget's fade can be a swell
+ * of 60 dB: a straight one bends the waveform sharply where it starts and stops (four times the
+ * second difference a low sine has of its own), the S-curve not at all. The old path's and the new
+ * one's add up to the same level all the way.
+ */
+export function smoothCurve(from: number, to: number, points = 64): Float32Array {
+  const curve = new Float32Array(points);
+  for (let i = 0; i < points; i++) curve[i] = from + (to - from) * smoothStep(i / (points - 1));
+  return curve;
+}
 
 /** Two channels always, as fixedDelay says. */
 function twoChannels(node: DelayNode): void {
@@ -88,8 +115,10 @@ interface Path {
   glide?: Glide;
   gain: GainNode | null;
   delay: DelayNode | null;
-  /** Its last fade: from `from` at `start` to `to` at `end` (audio clock). */
-  fade: { from: number; to: number; start: number; end: number };
+  /** Where it plays into. */
+  target: Tone.InputNode | null;
+  /** Its last fade: from `from` at `start` to `to` at `end` (audio clock), straight or `smooth` (see smoothCurve). */
+  fade: { from: number; to: number; start: number; end: number; smooth?: boolean };
 }
 
 /** `from` into `to`, held back by `seconds` (see above). */
@@ -105,11 +134,11 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
   /** The path's last node, which plays into the target. */
   const end = (p: Path): Node => p.delay ?? p.gain ?? from;
   const join = (p: Path) => {
-    if (target) Tone.connect(end(p), target);
+    if (p.target) Tone.connect(end(p), p.target);
   };
   const part = (p: Path) => {
     try {
-      if (target) Tone.disconnect(end(p), target);
+      if (p.target) Tone.disconnect(end(p), p.target);
     } catch {
       // Not joined
     }
@@ -119,7 +148,7 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
     if (gain) gain.gain.value = level;
     const delay = glide ? glidingDelay(raw, glide) : s > 0 ? fixedDelay(raw, s) : null;
     if (gain && delay) gain.connect(delay);
-    const p: Path = { seconds: s, glide, gain, delay, fade: { from: level, to: level, start: 0, end: 0 } };
+    const p: Path = { seconds: s, glide, gain, delay, target, fade: { from: level, to: level, start: 0, end: 0 } };
     join(p);
     // Fed last, so nothing reaches the target before the path is whole
     if (gain) Tone.connect(from, gain);
@@ -129,22 +158,29 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
   const drop = (p: Path) => {
     part(p);
     try {
-      Tone.disconnect(from, p.gain ?? p.delay ?? (target as Node));
+      Tone.disconnect(from, p.gain ?? p.delay ?? (p.target as Node));
     } catch {
       // Already apart
     }
     p.gain?.disconnect();
     p.delay?.disconnect();
   };
-  /** Fade a path to `level` over FADE from `at`, from wherever its earlier fades have it then. */
-  const fadeTo = (p: Path, level: number, at: number) => {
-    const { from: a, to: b, start, end: stop } = p.fade;
-    const held = at >= stop ? b : at <= start ? a : a + ((b - a) * (at - start)) / (stop - start);
+  /**
+   * Fade a path to `level` over `fade` from `at`, from wherever its earlier fades have it then.
+   * `smooth`: along an S-curve rather than straight (a retarget's, see smoothCurve).
+   */
+  const fadeTo = (p: Path, level: number, at: number, fade = FADE, smooth = false) => {
+    const { from: a, to: b, start, end: stop, smooth: wasSmooth } = p.fade;
+    const k = at >= stop ? 1 : at <= start ? 0 : (at - start) / (stop - start);
+    const held = a + (b - a) * (wasSmooth ? smoothStep(k) : k);
     const param = p.gain!.gain;
     param.cancelAndHoldAtTime(at);
-    param.setValueAtTime(held, at);
-    param.linearRampToValueAtTime(level, at + FADE);
-    p.fade = { from: held, to: level, start: at, end: at + FADE };
+    if (smooth && held !== level) param.setValueCurveAtTime(smoothCurve(held, level), at, fade);
+    else {
+      param.setValueAtTime(held, at);
+      param.linearRampToValueAtTime(level, at + fade);
+    }
+    p.fade = { from: held, to: level, start: at, end: at + fade, smooth };
   };
   /** Take apart the paths that have faded out, once the audio clock has played their fades. */
   const tidy = () => {
@@ -159,11 +195,11 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
   };
 
   /** Crossfade from every path to `fresh` (added last), and take the old ones apart after. */
-  const takeOver = (fresh: Path, at: number) => {
+  const takeOver = (fresh: Path, at: number, fade = FADE, smooth = false) => {
     paths.push(fresh);
-    for (const p of paths) fadeTo(p, p === fresh ? 1 : 0, at);
+    for (const p of paths) fadeTo(p, p === fresh ? 1 : 0, at, fade, smooth);
     window.clearTimeout(timer);
-    timer = window.setTimeout(tidy, (at + FADE - raw.currentTime) * 1000 + 50);
+    timer = window.setTimeout(tidy, (at + fade - raw.currentTime) * 1000 + 50);
   };
   /** Once a glide is there, a plain path of its length takes over (the same sound, so seamless). */
   const settle = () => {
@@ -202,9 +238,22 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
     },
     retarget: (next) => {
       if (next === target) return;
-      paths.forEach(part);
+      if (!live || !target || !next) {
+        paths.forEach(part);
+        target = next;
+        paths.forEach((p) => {
+          p.target = next;
+          join(p);
+        });
+        return;
+      }
+      // A path into the new target as the current one is (a gliding one glides on the same plan),
+      // fed for a while before it's heard so its delay line holds the sound by then
+      const current = paths[paths.length - 1];
+      const held = current.glide ? Math.max(current.glide.from, current.glide.to) : current.seconds;
+      const at = raw.currentTime + Math.max(LEAD, held + 0.005);
       target = next;
-      paths.forEach(join);
+      takeOver(make(current.seconds, 0, current.glide), at, RETARGET_FADE, true);
     },
     dispose: () => {
       window.clearTimeout(timer);

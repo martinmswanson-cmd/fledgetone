@@ -61,7 +61,7 @@ All the calls: `load(baseUrl)`, `play(state)`, `setState(state, unit?)` (unit: `
 `setCostume(name, seconds?)`, `costumeNames`, `setEffect(name, seconds?)`, `setFilter(hz, seconds?)`,
 `setReverb(amount, seconds?)`, `setParameter(name, value, seconds?)`, `getParameter(name)`,
 `parameterNames`, `playSfx(name, { volume, pitch, when }?)`, `stopSfx(name?, fade?)`, `sfxNames`,
-`setVolume(volume, seconds?)`, `setSfxVolume(volume, seconds?)`, `stop()`, `dispose()`.
+`setVolume(volume, seconds?)`, `setSfxVolume(volume, seconds?)`, `stop(fade?)`, `dispose(fade?)` (fades out over `fade` seconds, 0.05 by default, then lets go).
 See `adaptive-music.d.ts` for the types.
 
 ## Godot 4

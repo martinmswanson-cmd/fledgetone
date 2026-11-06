@@ -669,12 +669,39 @@ export class AdaptiveMusic {
     this.current = null;
   }
 
-  /** Stop everything and take the player's sound out of the mix for good (it can't be used after). */
-  dispose() {
-    this.stop();
-    this.stopSfx();
+  /**
+   * Stop everything and take the player's sound out of the mix for good (it can't be used after).
+   * The music and sound effects fade out over `fade` seconds first (default 0.05; cut off
+   * mid-waveform they would click), and are taken out once that has played.
+   */
+  dispose(fade = 0.05) {
+    if (this.disposed) return;
+    this.disposed = true;
+    // (Nothing to fade where the clock isn't running: an offline render, a suspended context)
+    const running = this.ctx.state === 'running' && !('startRendering' in this.ctx);
+    const f = running ? Math.max(0, fade) : 0;
+    this.stop(f);
+    this.stopSfx(undefined, f);
     clearTimeout(this.timer);
-    this.out.disconnect();
-    this.sfxOut.disconnect();
+    const done = () => {
+      this.out.disconnect();
+      this.sfxOut.disconnect();
+    };
+    if (f <= 0) {
+      done();
+      return;
+    }
+    const t = this.ctx.currentTime;
+    for (const node of [this.out, this.sfxOut]) {
+      const gain = node.gain;
+      // From wherever it is then (a setVolume under way included)
+      if (gain.cancelAndHoldAtTime) gain.cancelAndHoldAtTime(t);
+      else {
+        gain.cancelScheduledValues(t);
+        gain.setValueAtTime(gain.value, t);
+      }
+      gain.linearRampToValueAtTime(0, t + f);
+    }
+    setTimeout(done, (f + 0.05) * 1000);
   }
 }

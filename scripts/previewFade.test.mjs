@@ -41,6 +41,7 @@ function fakeContext() {
       gain: param(`${id}.gain`),
       frequency: param(`${id}.frequency`),
       Q: param(`${id}.Q`),
+      playbackRate: param(`${id}.playbackRate`),
       buffer: null,
       loop: false,
       start: (...a) => ctx.log.push([id, 'start', ...a]),
@@ -103,6 +104,52 @@ test('the game kit player fades its music out when asked (and stops at once by d
     if (fade) assert.ok(Math.abs(ramp[3] - 3.04) < 1e-9, 'faded to silence by then');
     else assert.equal(ramp, undefined);
   }
+});
+
+test('the game kit player fades out before it lets go when disposed (cut off at once, it clicked)', async () => {
+  const state = { name: 'Run', file: 'Run.wav', bars: 4, seconds: 8, bpm: 120, timeSignature: [4, 4], beatsPerBar: 4, beatSeconds: 0.5, stems: [] };
+  const manifest = { bpm: 120, beatsPerBar: 4, beatSeconds: 0.5, states: [state], stingers: [], transitions: [], intensity: { default: 1, groups: [] }, sfx: [{ name: 'hit', files: ['Run.wav'], loop: true }] };
+  for (const fade of [undefined, 0.04, 0]) {
+    const ctx = fakeContext();
+    ctx.currentTime = 0;
+    const music = new AdaptiveMusic(ctx);
+    music.loadFrom(manifest, new Map([['Run.wav', ctx.createBuffer(2, 8 * 8000)]]));
+    music.play('Run');
+    music.playSfx('hit');
+    ctx.currentTime = 3;
+    ctx.log.length = 0;
+    if (fade === undefined) music.dispose();
+    else music.dispose(fade);
+    const f = fade ?? 0.05;
+    const outs = [music.out.id, music.sfxOut.id];
+    const disconnected = () => ctx.log.filter((e) => e[1] === 'disconnect' && outs.includes(e[0])).length;
+    for (const s of ctx.log.filter((e) => e[1] === 'stop')) assert.ok(s[2] >= 3 + f - 1e-9, `stopped at ${s[2]}, before the fade ends`);
+    if (f === 0) {
+      assert.equal(disconnected(), 2, 'no fade asked: out at once');
+      continue;
+    }
+    for (const id of outs) {
+      const ramp = ctx.log.find((e) => e[0] === `${id}.gain` && e[1] === 'linearRampToValueAtTime');
+      assert.deepEqual(ramp.slice(2), [0, 3 + f], 'faded to silence');
+    }
+    assert.equal(disconnected(), 0, 'still in the mix while it fades');
+    await new Promise((r) => setTimeout(r, (f + 0.1) * 1000));
+    assert.equal(disconnected(), 2, 'out of the mix once the fade has played');
+    music.dispose();
+    assert.equal(disconnected(), 2, 'disposed twice: once');
+  }
+  // A clock that isn't running has nothing to fade: out at once
+  const ctx = fakeContext();
+  ctx.state = 'suspended';
+  const music = new AdaptiveMusic(ctx);
+  music.dispose();
+  assert.equal(ctx.log.filter((e) => e[1] === 'disconnect' && [music.out.id, music.sfxOut.id].includes(e[0])).length, 2);
+});
+
+test('closing a game preview fades its music out before letting go', () => {
+  const read = (p) => readFileSync(new URL(`../src/${p}`, import.meta.url), 'utf8');
+  assert.match(read('components/game/GameTryOut.tsx'), /music\.current\?\.dispose\(PREVIEW_FADE_SECONDS\)/);
+  assert.match(read('components/timeline/GameMatrix.tsx'), /player\.current\?\.dispose\(PREVIEW_FADE_SECONDS\)/);
 });
 
 test('each preview another one starting stops fades out (no cut mid-waveform)', () => {
