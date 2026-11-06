@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Share closes when another song opens under it**: with the Share window open, dropping a project file or pasting a shared link opened another song, but the window kept the first song's link and shared it under the new song's name. It now closes with a note, so you share the song you meant to.
 - **A drum or synth hit played as the audio clock steps no longer leaves a sound running**: when the clock moved on inside a hit's start, part of the instrument (most often the hi-hat) could be left playing under it for good, so later hits came out louder, cancelled or clicked until the track was rebuilt. Every part of the hit now starts after the moment it was really given, and a hit whose time has already passed starts now.
 - **The agent's Filter caution names the real peak**: switching a low-pass to a resonant high-pass said the Filter "peaks" high up where it only lets more through, and never said where it really rings. It now says where it lets much more through and, when it rings, where its peak is and how far above the rest.
 - **Pocket's Share a link shares the song you pressed it for**: if another song opened while the link was getting ready, the share sheet went out under the newly opened song's name with the first song's link. Now nothing is shared in that case, and a note asks you to press Share again.

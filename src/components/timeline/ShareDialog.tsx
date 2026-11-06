@@ -3,7 +3,7 @@
  * file with its sounds, handed to the device's share sheet where the browser has one and
  * downloaded otherwise.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, Copy, FileAudio, FileJson, Link2, Loader2, Share2 } from 'lucide-react';
 import { currentProject, songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { safeFileName, serializeProject } from '../../store/project';
@@ -49,6 +49,16 @@ const button =
  */
 export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const projectName = useTimelineStore((s) => s.projectName);
+  // (The song the window was opened for: another opened under it, by a file dropped or a link pasted, closes it, so a link,
+  // title or list of one song is never shared as another's)
+  const songId = useTimelineStore((s) => s.songId);
+  const openedFor = useRef(songId);
+  useEffect(() => {
+    if (songId !== openedFor.current) {
+      showToast('Another song opened, so Share closed: open it again to share this one');
+      onClose();
+    }
+  }, [songId, onClose]);
   const [link, setLink] = useState<string | null>(null);
   const [linkError, setLinkError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -70,7 +80,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   }, []);
 
   const copy = async () => {
-    if (!link) return;
+    if (!link || useTimelineStore.getState().songId !== openedFor.current) return;
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
@@ -81,7 +91,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   };
 
   const shareLink = async () => {
-    if (!link) return;
+    if (!link || useTimelineStore.getState().songId !== openedFor.current) return;
     try {
       await navigator.share({ title: projectName, text: `${projectName}, made with Fledgetone`, url: link });
     } catch {
