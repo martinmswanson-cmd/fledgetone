@@ -14,6 +14,7 @@ import { setMetronomeOn, setMetronomeVolume } from './metronome';
 import { useMidiStore, ALL_INPUTS, midiConnectedBefore } from '../store/midiStore';
 import type { MidiInputInfo } from '../store/midiStore';
 import { useTimelineStore } from '../store/timelineStore';
+import { shortestNoteSeconds } from '../store/recording';
 import { handleMidiCc } from '../store/midiLearn';
 import type { Track } from '../store/timelineTypes';
 import { RACK_BASE_NOTE, RACK_PADS } from '../store/timelineTypes';
@@ -119,6 +120,16 @@ function startNote(instrument: TrackInstrument, note: { note: string; duration: 
   return () => {};
 }
 
+/**
+ * `off`, for a key struck at `struck`, never let go sooner than the shortest note a take keeps (a
+ * 32nd at the tempo): a quick tap, let go in the same step of the audio clock it was struck in,
+ * would otherwise end before it began and be silent, while the take keeps it as a 32nd.
+ */
+function heldAtLeast(off: NoteOff, struck: number): NoteOff {
+  const until = struck + shortestNoteSeconds(liveTransport.bpm.value);
+  return (at) => off(Math.max(at, until));
+}
+
 function endNote(midi: number, at: number): void {
   holding.delete(midi);
   const off = held.get(midi);
@@ -186,10 +197,10 @@ export function playMidi(message: MidiMessage, heard: number): void {
           safely(() => {
             const voice = instrument.noteVoice!(note, now);
             mpeNotes.set(message.channel!, { note: message.note, voice });
-            held.set(message.note, (at) => voice?.off(at));
+            held.set(message.note, heldAtLeast((at) => voice?.off(at), now));
           });
         } else {
-          safely(() => held.set(message.note, startNote(instrument, note, now)));
+          safely(() => held.set(message.note, heldAtLeast(startNote(instrument, note, now), now)));
           if (mpe) mpeNotes.set(message.channel!, { note: message.note, voice: null });
         }
       }
