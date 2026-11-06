@@ -257,6 +257,24 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const round = (v: number, places = 6) => Math.round(v * 10 ** places) / 10 ** places;
+/**
+ * A number an agent gave, as a warning echoes it: as it reads plainly ("20", "-0.25", to 4
+ * decimals), or, when it's too large or too small for that (it would show as "1e+21"), null.
+ */
+export const plainGiven = (v: number): string | null => {
+  const r = round(v, 4);
+  return !Number.isFinite(v) || Math.abs(v) >= 1e9 || (v !== 0 && r === 0) ? null : String(r);
+};
+/** How a number too large or too small to read plainly (plainGiven) is worded: "a very large number", "a very small number". */
+const sizeWords = (v: number) => (Math.abs(v) >= 1 ? `a very large ${v < 0 ? 'negative ' : ''}number` : 'a very small number');
+/**
+ * `what` with the number an agent gave for it, as a warning says it: ""Keys" volume 20 dB", or for
+ * a number too large or too small to read plainly, ""Keys" volume, given as a very large number,".
+ */
+export const givenWords = (what: string, v: number, unit = ''): string => {
+  const plain = plainGiven(v);
+  return plain === null ? `${what}, given as ${sizeWords(v)},` : `${what} ${plain}${unit ? ` ${unit}` : ''}`;
+};
 /** A length in bars as a note duration ("0.25m"). */
 const lengthText = (bars: number) => `${round(bars)}m`;
 
@@ -377,6 +395,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   const meter = wordMeter(base);
   const at4 = (bar: number, exact: string) => (meter ? positionWords(bar, meter) : `bar ${exact}`);
   const len4 = (bars: number, exact: string) => (meter ? lengthWordsIn(bars, meter) : `${exact} bar${exact === '1' ? '' : 's'}`);
+  /** A place an agent gave, as a warning says it: "bar 500", or "a bar given as a very large number" (see givenWords). */
+  const atGiven = (bar: number) => (plainGiven(bar) === null ? `a bar given as ${sizeWords(bar)}` : at4(bar, String(bar)));
+  const tempoGiven = (bpm: number) => (plainGiven(bpm) === null ? `A tempo given as ${sizeWords(bpm)}` : `A tempo of ${plainGiven(bpm)} BPM`);
   const shortest = meter ? 'a sixteenth note' : '1/16 bar';
   const refs = new Map<string, { kind: 'track' | 'clip' | 'marker' | 'tempo'; id: string }>();
   let addedNotes = 0;
@@ -498,7 +519,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const track = trackRef(op.trackId, `${at}.trackId`);
         clipHolder(track, `${at}.trackId`);
         const lengthBars = readClipLength(op.lengthBars, `${at}.lengthBars`);
-        const startBar = readBar(op.startBar, `${at}.startBar`, TOTAL_BARS + 1 - lengthBars);
+        const startBar = readBar(op.startBar, `${at}.startBar`, lastStart(lengthBars));
         const count = w.clips.filter((c) => c.trackId === track.id).length + 1;
         const clip: Clip = {
           id: uid('clip'),
@@ -526,7 +547,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of ${nm(from.name)} (${INSTRUMENTS[from.instrumentKey].name}) can't play on ${nm(to.name)} (${INSTRUMENTS[to.instrumentKey].name})`);
           trackId = to.id;
         }
-        const startBar = op.toBar === undefined ? clip.startBar : readBar(op.toBar, `${at}.toBar`, TOTAL_BARS + 1 - clip.lengthBars);
+        const startBar = op.toBar === undefined ? clip.startBar : readBar(op.toBar, `${at}.toBar`, lastStart(clip.lengthBars));
         replaceClip(clip, { ...clip, startBar, trackId });
         return;
       }
@@ -552,7 +573,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (!canMoveClipBetween(from.instrumentKey, to.instrumentKey)) throw new OpFail(`${at}.trackId`, `a clip of ${nm(from.name)} can't play on ${nm(to.name)}`);
           trackId = to.id;
         }
-        const startBar = readBar(op.toBar, `${at}.toBar`, TOTAL_BARS + 1 - clip.lengthBars);
+        const startBar = readBar(op.toBar, `${at}.toBar`, lastStart(clip.lengthBars));
         let copy: Clip;
         if (op.linked) {
           // As "Duplicate linked": the original joins a pattern (its own, or a new one) and the copy shares its content
@@ -633,7 +654,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
         for (const [k, v] of Object.entries(settings)) {
-          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(out[k] as number, 4)}.`);
+          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9) warn(`${givenWords(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}`, v)} is out of range: set to ${round(out[k] as number, 4)}.`);
           // (what the agent wrote is never echoed: it could read as the app's own words)
           if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k], k)}).`);
         }
@@ -679,7 +700,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           // (the track's name marked as the agent's, the point counted from 1, its place as the ruler numbers it)
           const point = `${nm(track.name)} automation point ${i + 1}`;
           const bar = clamp(raw.bar, 1, TOTAL_BARS + 1);
-          if (bar !== raw.bar) warn(`${point} at ${raw.bar < 1 ? 'a bar before bar 1' : at4(raw.bar, String(raw.bar))} is off the timeline: put at ${at4(bar, String(bar))}.`);
+          if (bar !== raw.bar) warn(`${point} at ${raw.bar < 1 ? 'a bar before bar 1' : atGiven(raw.bar)} is off the timeline: put at ${at4(bar, String(bar))}.`);
           const value = clamped(raw.value, 0, 1, `${point} value`);
           const curve = raw.curve === undefined ? undefined : clamped(raw.curve, -1, 1, `${point} curve`);
           return curve ? { bar, value, curve } : { bar, value };
@@ -708,7 +729,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       }
       case 'set_tempo': {
         const bpm = clampBpm(op.bpm);
-        if (Math.abs(bpm - op.bpm) > 0.005) warn(`A tempo of ${op.bpm} BPM is out of range: set to ${bpm} (40 to 240).`);
+        if (Math.abs(bpm - op.bpm) > 0.005) warn(`${tempoGiven(op.bpm)} is out of range: set to ${bpm} (40 to 240).`);
         // A new tempo-change list too, so undoing the Accept brings the old tempo back (the store's
         // undo restores the starting tempo only along with a changed list)
         retempo(bpm, [...w.tempoPoints]);
@@ -716,9 +737,17 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       }
       case 'add_tempo_change': {
         const at1 = clamp(op.bar, 1 + 1 / 16, TOTAL_BARS);
-        if (Math.abs(at1 - op.bar) > EPS) warn(`A tempo change at ${at4(op.bar, String(op.bar))} is off the timeline: put at ${at4(at1, String(round(at1, 4)))}.`);
+        if (Math.abs(at1 - op.bar) > EPS) {
+          // (the place it goes named as the card names it: positionWords, as songDiff's sentences do)
+          const put = positionWords(at1, meter);
+          if (op.bar > TOTAL_BARS) warn(`A tempo change at ${atGiven(op.bar)} is past the end of the timeline: put at ${put}, its last bar.`);
+          else
+            warn(
+              `${op.bar < 1 - EPS ? 'A tempo change before bar 1 is off the timeline' : "A tempo change can't go at the very start of the song"}: the start always plays the song's starting tempo, so the change goes just after it, at ${put}.`,
+            );
+        }
         const bpm = clampBpm(op.bpm);
-        if (Math.abs(bpm - op.bpm) > 0.005) warn(`A tempo of ${op.bpm} BPM is out of range: set to ${bpm} (40 to 240).`);
+        if (Math.abs(bpm - op.bpm) > 0.005) warn(`${tempoGiven(op.bpm)} is out of range: set to ${bpm} (40 to 240).`);
         const id = uid('tempo');
         retempo(w.bpm, sortedPoints([...w.tempoPoints.filter((p) => Math.abs(p.bar - at1) > 1e-6), { id, bar: at1, bpm, ramp: op.ramp === true }]));
         remember(op.ref, 'tempo', id);
@@ -793,7 +822,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           for (const [k, v] of Object.entries(given)) {
             // (A setting left out of the kept settings is at its default: the Loud master's crunch at 0, split off)
             const kept = got[k] !== undefined ? got[k] : key === 'loud' ? ({ crunch: 0, split: false } as Record<string, unknown>)[k] : undefined;
-            if (typeof v === 'number' && typeof kept === 'number' && Math.abs(kept - v) > 1e-9) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'} ${v} is out of range: set to ${round(kept, 4)}.`);
+            if (typeof v === 'number' && typeof kept === 'number' && Math.abs(kept - v) > 1e-9) warn(`${givenWords(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}`, v)} is out of range: set to ${round(kept, 4)}.`);
             if (typeof v === 'string' && got[k] !== v) warn(`The master ${masterPartLabel(key)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords((m[key] as unknown as Record<string, unknown> | undefined)?.[k], got[k], k)}).`);
           }
         }
@@ -949,19 +978,28 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       return MIN_LENGTH;
     }
     if (value > max + EPS) {
-      warn(`A clip ${len4(value, String(value))} long would run past the end of the timeline (${at4(TOTAL_BARS + 1, String(TOTAL_BARS + 1))}): made ${len4(max, String(round(max, 4)))}.`);
+      warn(`${plainGiven(value) === null ? `A clip given ${sizeWords(value).replace('number', 'length')}` : `A clip ${len4(value, String(value))} long`} would run past the end of the timeline (${at4(TOTAL_BARS + 1, String(TOTAL_BARS + 1))}): made ${len4(max, String(round(max, 4)))}.`);
       return max;
     }
     return value;
   }
 
-  /** A position up to `max` (a clip's start: the last place it fits before the end of the timeline). */
+  /**
+   * Where a clip `lengthBars` long can start at the latest: where it fits before the end of the
+   * timeline, and never after its last bar (as a saved song keeps a clip's start: project.ts).
+   */
+  function lastStart(lengthBars: number): number {
+    return Math.min(TOTAL_BARS, TOTAL_BARS + 1 - lengthBars);
+  }
+
+  /** A position up to `max` (a clip's start: the last place it can start, lastStart). */
   function readBar(value: number, path: string, max: number): number {
     if (value < 1 - EPS) throw new OpFail(path, 'song positions start at bar 1');
     if (value > max + EPS) {
-      // (inside the timeline, but what starts there wouldn't fit before its end)
-      if (value <= TOTAL_BARS + 1 + EPS) warn(`A clip starting at ${at4(value, String(value))} wouldn't fit before the end of the timeline: moved to ${at4(max, String(round(max, 4)))}.`);
-      else warn(`${upper(at4(value, String(value)))} is past the end of the timeline: put at ${at4(max, String(round(max, 4)))}.`);
+      const to = at4(max, String(round(max, 4)));
+      // (inside the timeline, but a clip can't start there: past its last bar, or too late to fit before its end)
+      if (value <= TOTAL_BARS + 1 + EPS) warn(value > TOTAL_BARS + EPS && max > TOTAL_BARS - EPS ? `A clip can't start after ${at4(TOTAL_BARS, String(TOTAL_BARS))}, the timeline's last bar: moved to ${to}.` : `A clip starting at ${at4(value, String(value))} wouldn't fit before the end of the timeline: moved to ${to}.`);
+      else warn(`${upper(atGiven(value))} is past the end of the timeline: put at ${to}.`);
       return max;
     }
     return value;
@@ -977,7 +1015,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
 
   function clamped(value: number, lo: number, hi: number, what: string, unit = ''): number {
     const v = clamp(value, lo, hi);
-    if (v !== value) warn(`${what} ${value}${unit ? ` ${unit}` : ''} is out of range: set to ${v}${unit ? ` ${unit}` : ''} (${lo} to ${hi}).`);
+    if (v !== value) warn(`${givenWords(what, value, unit)} is out of range: set to ${v}${unit ? ` ${unit}` : ''} (${lo} to ${hi}).`);
     return v;
   }
 

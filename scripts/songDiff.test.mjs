@@ -866,3 +866,57 @@ test('a small real change never reads as no change: more decimals, or "very slig
   assert.match(one(cl({ lengthBars: c.lengthBars + 0.01 })), /^Makes the clip "Chords" 16\.01 bars long \(was 16 bars\)\./);
   for (const t of [one(tr({ volume: k.volume + 0.004 })), one({ ...a, master: { ...a.master, level: a.master.level - 0.0001 } })]) assert.doesNotMatch(t, /by 0 dB|from (\S+) to \1\b|\+0 dB/, t);
 });
+
+test('a small marker move names two different places; figures round a half away from zero, as the mixer does, and add up (scan r40)', () => {
+  const a = base();
+  const k = a.tracks[0];
+  const m = a.markers[1];
+  const one = (b) => texts(diffSongs(a, b)).join('\n');
+  const tr = (patch) => ({ ...a, tracks: a.tracks.map((t, i) => (i === 0 ? { ...t, ...patch } : t)) });
+  const mk = (bar) => ({ ...a, markers: a.markers.map((x) => (x.id === m.id ? { ...x, bar } : x)) });
+  assert.equal(one(mk(m.bar + 0.001)), `Moves the marker "Groove" from bar ${m.bar} to bar ${m.bar + 0.001}.`);
+  assert.equal(one(mk(m.bar + 0.0004)), `Moves the marker "Groove" very slightly later (about bar ${m.bar}).`);
+  assert.equal(one(mk(m.bar - 0.0004)), `Moves the marker "Groove" very slightly earlier (about bar ${m.bar}).`);
+  assert.equal(one(mk(m.bar + 2)), `Moves the marker "Groove" from bar ${m.bar} to bar ${m.bar + 2}.`);
+  // (-14.25 is -14.3, never -14.2, and the change is the difference of the two as worded)
+  assert.equal(one(tr({ volume: -14.25 })), 'Turns "Keys" down by 2.8 dB (-11.5 dB to -14.3 dB).');
+  assert.equal(one(tr({ volume: -11.25 })), 'Turns "Keys" up by 0.2 dB (-11.5 dB to -11.3 dB).');
+  assert.equal(one({ ...a, master: { ...a.master, level: -0.25 } }), 'Turns the master Level down by 3.8 dB (+3.5 dB to -0.3 dB).');
+  assert.equal(one(tr({ eq: { ...k.eq, low: -2.25 } })), 'Sets the EQ of "Keys": low -2.3 dB.');
+  assert.equal(one(tr({ eq: { ...k.eq, low: 2.25 } })), 'Sets the EQ of "Keys": low +2.3 dB.');
+  // Every level sentence adds up: the change is the end minus the start, as worded
+  for (const [from, to] of [[-11.46, -14.24], [-11.5, -14.25], [3.5, -0.25], [-0.05, 0.05], [0, -60], [-11.54, -11.46]]) {
+    const b = { ...a, tracks: a.tracks.map((x, i) => (i === 0 ? { ...x, volume: to } : x)) };
+    const s0 = { ...a, tracks: a.tracks.map((x, i) => (i === 0 ? { ...x, volume: from } : x)) };
+    const words = texts(diffSongs(s0, b)).join('\n');
+    const got = /(up|down) by ([\d.]+) dB \(([-+\d.]+) dB to ([-+\d.]+) dB\)/.exec(words);
+    assert.ok(got, words);
+    const [, way, by, x, y] = got;
+    assert.equal(Math.abs(Number(y) - Number(x)).toFixed(3), Number(by).toFixed(3), words);
+    assert.equal(way, to > from ? 'up' : 'down', words);
+    assert.equal(Number(x), Number(from.toFixed(by.split('.')[1]?.length ?? 0)), words);
+  }
+});
+
+test('a change to a master part that is switched off is listed, as a track insert\'s is; a default one put in is no change (scan r40)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const a = base();
+  assert.equal(a.master.ott.on, false);
+  const run = (ops) => applyOps(a, { opsVersion: 1, ops }, { idBase: 'sg-m' });
+  const ott = run([{ op: 'set_master', ott: { depth: 0.9 } }]);
+  assert.deepEqual(texts(ott.diff), ['Changes the master OTT (switched off): depth 0.5 to 0.9.']);
+  assert.equal(ott.diff.masterChanged, true);
+  const loud = run([{ op: 'set_master', loud: { crunch: 0.5 } }]);
+  assert.deepEqual(texts(loud.diff), ['Changes the master Loud (switched off): crunch 0 to 0.5.']);
+  assert.equal(loud.diff.masterChanged, true);
+  const width = { ...a, master: { ...a.master, width: { ...a.master.width, on: false } } };
+  const wider = diffSongs(width, { ...width, master: { ...width.master, width: { ...width.master.width, amount: 1.5 } } });
+  assert.match(texts(wider).join('\n'), /^Changes the master stereo width \(switched off\): .*1\.05 to 1\.5\.$/);
+  assert.equal(wider.masterChanged, true);
+  // A clipper put in at its defaults, switched off, sounds and shows as none did: nothing to accept
+  const clip = run([{ op: 'set_master', clipper: {} }]);
+  assert.deepEqual(texts(clip.diff), []);
+  assert.equal(clip.diff.masterChanged, false);
+  // Switched on from none: its settings alone, as before
+  assert.match(texts(run([{ op: 'set_master', clipper: { on: true, drive: 6 } }]).diff).join('\n'), /^Turns on the master clipper \(/);
+});

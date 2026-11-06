@@ -23,8 +23,9 @@
  */
 import type { ProjectSnapshot } from '../store/project';
 import type { AutomationLane, Clip, MasterSettings, NoteEvent, Track } from '../store/timelineTypes';
-import { DEFAULT_MASTER_FX, durationToBars, PUMP_RELEASE_MAX, pumpFollowsDrums } from '../store/timelineTypes';
+import { DEFAULT_MASTER_FX, defaultLoud, durationToBars, PUMP_RELEASE_MAX, pumpFollowsDrums } from '../store/timelineTypes';
 import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
+import { defaultClipper } from '../audio/effects/clipper';
 import { formatPan, specOf } from '../audio/automation';
 import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, toMeasureBeat, type MeterMap, type TempoPoint } from '../audio/tempoMap';
 import { clipSoundEnd, RELEASE_ALLOWANCE_SECONDS, releaseSeconds, soundingNotes } from '../audio/auditionMath';
@@ -109,9 +110,12 @@ export const AUDITION_MAX_BARS = 16;
 export const EFFECT_TAIL_SECONDS = 1.5;
 
 
-const r1 = (v: number) => Math.round(v * 10) / 10;
-/** `v` to `places` decimals. */
-const rd = (v: number, places: number) => Math.round(v * 10 ** places) / 10 ** places;
+/**
+ * `v` to `places` decimals, a half away from zero as the mixer's numbers are (toFixed): -14.25 is
+ * -14.3, never -14.2.
+ */
+const rd = (v: number, places: number) => Number(v.toFixed(places)) || 0;
+const r1 = (v: number) => rd(v, 1);
 const db = (v: number, places = 1) => `${rd(v, places) > 0 ? '+' : ''}${rd(v, places)} dB`;
 /**
  * The decimals a change from `a` to `b` is worded with: one, or two (then three) where one would
@@ -122,13 +126,15 @@ function placesFor<T>(words: (v: T, places: number) => string, a: T, b: T): numb
   for (const p of [1, 2, 3]) if (words(a, p) !== words(b, p)) return p;
   return null;
 }
-/** How much a level changed, dB, at `places` decimals: never "0" for a real change ("less than 0.01"). */
-const dbBy = (v: number, places: number) => (rd(v, places) === 0 ? `less than ${10 ** -places}` : String(rd(v, places)));
-/** "Turns "Keys" up by 0.04 dB (-11.5 dB to -11.46 dB)", "Turns the master Level down very slightly (about +3.5 dB)". */
+/**
+ * "Turns "Keys" up by 0.04 dB (-11.5 dB to -11.46 dB)", "Turns the master Level down very slightly
+ * (about +3.5 dB)". The change is the difference of the two levels as worded, so the figures add up
+ * (never "down by 2.8 dB (-11.5 dB to -14.2 dB)").
+ */
 function levelSentence(what: string, a: number, b: number): string {
   const way = b > a ? 'up' : 'down';
   const p = placesFor(db, a, b);
-  return p === null ? `Turns ${what} ${way} very slightly (about ${db(b)}).` : `Turns ${what} ${way} by ${dbBy(Math.abs(b - a), p)} dB (${db(a, p)} to ${db(b, p)}).`;
+  return p === null ? `Turns ${what} ${way} very slightly (about ${db(b)}).` : `Turns ${what} ${way} by ${rd(Math.abs(rd(b, p) - rd(a, p)), p)} dB (${db(a, p)} to ${db(b, p)}).`;
 }
 /** "from 30% to 30.04%" (in `unit` after each), or " very slightly (about 30%)" where they'd read the same. */
 function fromTo(a: number, b: number, unit = ''): string {
@@ -285,7 +291,12 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
       if (old.name !== m.name) add({ text: `Renames the marker ${nm(old.name)} to ${nm(m.name)}.`, markerId: m.id, hear: 'silent' });
       // A tempo change moves a marker held to its time by itself: only a move beyond that is the suggestion's
       const retimed = old.anchor === 'time' ? secondsToBar(old.seconds, { bpm: after.bpm, points: after.tempoPoints ?? [] }) : old.bar;
-      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) add({ text: `Moves the marker ${nm(m.name)} from ${barAt(old.bar)} to ${barAt(m.bar)}.`, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
+      if (Math.abs(old.bar - m.bar) > 1e-6 && Math.abs(retimed - m.bar) > 1e-6) {
+        // (more decimals where one would read the same before and after, as a clip's move: never "from bar 5 to bar 5")
+        const p = placesFor(barAt, old.bar, m.bar);
+        const text = p === null ? `Moves the marker ${nm(m.name)} very slightly ${m.bar > old.bar ? 'later' : 'earlier'} (about ${barAt(m.bar)}).` : `Moves the marker ${nm(m.name)} from ${barAt(old.bar, p)} to ${barAt(m.bar, p)}.`;
+        add({ text, markerId: m.id, fromBar: Math.min(old.bar, m.bar), toBar: Math.max(old.bar, m.bar) + 1, hear: 'silent' });
+      }
     }
   }
   for (const m of bm) if (!markersAfter.has(m.id)) add({ text: `Removes the marker ${nm(m.name)} (${barAt(m.bar)}).`, markerId: m.id, hear: 'silent' });
@@ -694,17 +705,21 @@ function diffMaster(a: MasterSettings | undefined, b: MasterSettings | undefined
   if (!a || !b || same(a, b)) return;
   if (a.level !== b.level) add({ text: levelSentence('the master Level', a.level, b.level) });
   if (a.glue !== b.glue) add({ text: `Sets the master compressor to ${valueWord('glue', b.glue) ?? 'another style'}.` });
-  const part = (label: string, x: unknown, y: unknown) => {
+  // (a part the song doesn't have yet is at its default, as the mixer shows it (`fill`): a default
+  // one put in, switched off, is no change)
+  const part = (label: string, x: unknown, y: unknown, fill: (v: unknown) => unknown = (v) => v) => {
     const on = (v: unknown) => !!(v as { on?: boolean } | undefined)?.on;
-    if (same(x, y)) return;
+    if (same(fill(x), fill(y))) return;
     // (switched on: with what it's set to, as a track's insert is)
     if (on(x) !== on(y)) add({ text: `Turns ${on(y) ? 'on' : 'off'} the master ${label}${on(y) ? ` (${settingChanges(x, y) || 'as it was set'})` : ''}.` });
-    else if (on(y)) add({ text: `Changes the master ${label} (${settingChanges(x, y)}).` });
+    else if (on(y)) add({ text: `Changes the master ${label} (${settingChanges(fill(x), fill(y)) || 'its settings'}).` });
+    // (switched off, as a track's insert is: still a change Accept makes, so the card lists it)
+    else add({ text: `Changes the master ${label} (switched off): ${settingChanges(fill(x), fill(y)) || 'its settings'}.` });
   };
   part('OTT', a.ott, b.ott);
   part('stereo width', a.width, b.width);
-  part('Loud', a.loud, b.loud);
-  part('clipper', a.clipper, b.clipper);
+  part('Loud', a.loud, b.loud, (v) => ({ crunch: 0, split: false, ...defaultLoud(), ...(v as MasterSettings['loud']) }));
+  part('clipper', a.clipper, b.clipper, (v) => v ?? defaultClipper());
   if (!!a.monoLow !== !!b.monoLow) add({ text: `${b.monoLow ? 'Keeps' : 'Stops keeping'} the master's low end in the middle.` });
 }
 
