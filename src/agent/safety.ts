@@ -42,6 +42,8 @@ import { LIMITER_CEILING_DBTP } from '../audio/effects/limiter';
 
 /** A track raised by more than this many dB gets a warning. */
 export const TRACK_JUMP_DB = 6;
+/** A Filter's response above flat by more than this is a resonant peak (less is passband ripple) */
+const FILTER_PEAK_DB = 0.5;
 /** The master raised by more than this many dB gets a warning. */
 export const MASTER_JUMP_DB = 3;
 /** A drive (Distortion amount, Saturation) raised by more than this gets a warning. */
@@ -444,18 +446,22 @@ function insertCautions(was: Track | undefined, t: Track, tracks: readonly Track
       // The response, at the frequencies where a song's level lives and at the cutoffs themselves
       const at = filterDb;
       let best = { rise: 0, hz: 1000, after: 0, bar: 1 };
+      // (Its own resonant peak, wherever that is: a pass-through's ripple far from the cutoff is no peak)
+      let peak = { db: 0, hz: 1000 };
       for (const s of along) {
         const cutoffs = [s.then, s.now].flatMap((f) => (f ? [Number(f.cutoff)] : [])).filter((hz) => hz >= 40 && hz <= 16000);
         for (const hz of [...PEQ_FREQS, ...cutoffs]) {
           const after = at(s.now, hz);
           const rise = after - at(s.then, hz);
           if (rise > best.rise + 1e-9) best = { rise, hz, after, bar: s.bar };
+          if (after > peak.db + 1e-9) peak = { db: after, hz };
         }
       }
       if (best.rise <= TRACK_JUMP_DB + 1e-9) continue;
       const first = along.find((s) => [...PEQ_FREQS].some((hz) => at(s.now, hz) - at(s.then, hz) > TRACK_JUMP_DB + 1e-9))?.bar ?? best.bar;
       if (off) out.push(lv(`This switches off the Filter on ${n}: it held it down, and around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
-      else if (best.after > 1e-6) out.push(lv(`On ${n}, the Filter peaks${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
+      else if (peak.db > FILTER_PEAK_DB && Math.abs(Math.log2(peak.hz / best.hz)) < 1 / 3) out.push(lv(`On ${n}, the Filter peaks${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
+      else if (peak.db > FILTER_PEAK_DB) out.push(lv(`On ${n}, the Filter lets much more through${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB, and it peaks around ${formatHz(peak.hz)}, ${r1(peak.db)} dB above the rest. Turn your speakers down before you listen.`, best.rise));
       else out.push(lv(`On ${n}, the Filter lets much more through${from(first)}: around ${formatHz(best.hz)} it comes up by ${r1(best.rise)} dB. Turn your speakers down before you listen.`, best.rise));
       continue;
     }

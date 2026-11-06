@@ -889,3 +889,14 @@ test('a band-pass Filter is no boost: 0 dB at its centre whatever its resonance;
   // A resonant low-pass still peaks (Q 12 at 24 dB per octave: about 21.6 dB, as the second stage plays)
   assert.match(plainNames(filter({ on: true, type: 'lowpass', cutoff: 800, resonance: 12 }).c[0].text), /^On "Kalimba", the Filter peaks: around 800 Hz it comes up by 2\d\.\d dB\./);
 });
+
+test('a Filter switched to a resonant high-pass says where it lets more through and where it peaks, not that it peaks at a ripple (scan r38)', () => {
+  const a = base();
+  const bass = a.tracks.find((t) => t.name === 'Bass');
+  const r = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: bass.id, insert: 'filter', settings: { on: true, type: 'highpass', cutoff: 279, resonance: 14.5 } }] }, {});
+  const said = checkSafety(a, r.song).join(' | ');
+  assert.doesNotMatch(said, /Filter peaks: around 10/);
+  assert.match(said, /Filter lets much more through: around [\d.]+ kHz it comes up by [\d.]+ dB, and it peaks around 2\d\d Hz/);
+  const gentle = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: bass.id, insert: 'filter', settings: { on: true, type: 'highpass', cutoff: 279, resonance: 0.7 } }] }, {});
+  assert.doesNotMatch(checkSafety(a, gentle.song).join(' | '), /peaks/);
+});
