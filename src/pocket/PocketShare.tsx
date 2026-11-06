@@ -69,15 +69,24 @@ export const PocketShare: React.FC = () => {
 
   const shareLink = async () => {
     setLinking(true);
+    // (The song pressed for: another opened while the link gets ready isn't shared under this one's name)
+    const pressedFor = useTimelineStore.getState().songId;
     let url: string;
+    let title: string;
     try {
       await captureWamStates();
+      const project = currentProject();
+      title = project.name;
       // (From the app, the link opens fledgetone.com: the app's own address is on this phone only)
-      url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileNames);
+      url = await songLink(project, isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`, soundFileNames);
     } finally {
       setLinking(false);
     }
-    if (await shareSheet({ url, title: currentProject().name })) return;
+    if (useTimelineStore.getState().songId !== pressedFor) {
+      showToast('Another song opened: press Share again to share this one');
+      return;
+    }
+    if (await shareSheet({ url, title })) return;
     try {
       await navigator.clipboard.writeText(url);
       showToast('Link copied: anyone who opens it hears this song');
