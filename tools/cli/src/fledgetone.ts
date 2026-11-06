@@ -258,15 +258,28 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
+/**
+ * The command has returned: the process ends with its exit code, once what it printed is out.
+ * It ends itself rather than winding down on its own, as that unhooks Ctrl+C a moment before the
+ * end, and a Ctrl+C then (say, just after "Stopped.") would kill it by the signal. A Ctrl+C
+ * meanwhile ends it the same way.
+ */
+function finish(code: number): void {
+  process.exitCode = code;
+  const end = () => process.exit(code);
+  process.on('SIGINT', end);
+  process.on('SIGTERM', end);
+  const flushed = (s: NodeJS.WriteStream) => new Promise<void>((done) => (s.writableEnded || s.destroyed ? done() : s.write('', () => done())));
+  void Promise.all([flushed(process.stdout), flushed(process.stderr)]).then(end);
+}
+
 main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code;
-  },
+  (code) => finish(code),
   (err: unknown) => {
     const code = (err as { code?: unknown } | null)?.code;
     const usage = err instanceof cmd.UsageError || (typeof code === 'string' && code.startsWith('ERR_PARSE_ARGS'));
     const message = (err instanceof Error && err.message) || String(err) || 'something went wrong';
     printErr(`fledgetone: ${message}${usage ? '\nfledgetone --help lists the commands.' : ''}`);
-    process.exitCode = 2;
+    finish(2);
   }
 );

@@ -18,6 +18,7 @@ import type { FrameRate } from './timelineTypes';
 import { currentInstrumentKey, isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { breakLoops } from './buses';
+import { FOLDER_NAME_MAX } from './folders';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseGameSfx, type GameSfx } from './gameSfx';
@@ -426,7 +427,7 @@ export function parseTrack(raw: unknown): Track {
       ? {
           folder: {
             id: v.folder.id,
-            name: isStr(v.folder.name) && v.folder.name.trim() ? v.folder.name.slice(0, 60) : 'Folder',
+            name: isStr(v.folder.name) && v.folder.name.trim() ? v.folder.name.slice(0, FOLDER_NAME_MAX) : 'Folder',
             color: isStr(v.folder.color) ? v.folder.color : '#9ca3af',
             ...(v.folder.collapsed === true ? { collapsed: true } : {}),
           },

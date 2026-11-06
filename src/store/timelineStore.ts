@@ -88,7 +88,7 @@ import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFr
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
-import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
+import { folderName, foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
 import { ANY_STATE, sameRule, transitionKey } from './transitions';
 import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
@@ -2423,7 +2423,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const ids = new Set(trackIds.filter((id) => s.tracks.some((t) => t.id === id)));
       if (!ids.size) return null;
       const first = s.tracks.find((t) => ids.has(t.id))!;
-      const folder: TrackFolder = { id: uid('folder'), name: name?.trim() || `Folder ${foldersOf(s.tracks).length + 1}`, color: first.color };
+      const folder: TrackFolder = { id: uid('folder'), name: folderName(name) || `Folder ${foldersOf(s.tracks).length + 1}`, color: first.color };
       set({ tracks: groupTracks(s.tracks, ids, folder), ...pushPast(s) });
       return folder.id;
     },

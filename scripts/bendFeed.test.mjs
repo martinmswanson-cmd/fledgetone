@@ -444,6 +444,21 @@ test('long dense bent notes begun one after another under each other: the same, 
   assert.ok(given < (24 / 0.004) * 3, `${given} given`);
 });
 
+/**
+ * The processor time `fn` took, in ms (user and system, from process.cpuUsage). The bounds on
+ * time below are on this, not the clock: the work is a few tens of ms and grows with the notes
+ * (twice the notes, about twice the time), but with the machine busy (npm test runs the files
+ * side by side) the clock time came to 5 to 12 times the processor time, past 300 ms, with nothing
+ * slower here. Processor time is what this work costs whatever else runs, and a slowdown that
+ * grows with the notes squared still takes it far past 300 ms.
+ */
+const cpuMs = (fn) => {
+  const c0 = process.cpuUsage();
+  fn();
+  const c = process.cpuUsage(c0);
+  return (c.user + c.system) / 1000;
+};
+
 test('long bent notes over each other: what is given at a time is what plays meanwhile', () => {
   const zig = Array.from({ length: 256 }, (_, i) => ({ at: i === 255 ? 400 : (i * 400) / 256, value: i % 2 ? 2 : -2 }));
   // Twenty begun together (each a step every 4 ms), and a thousand sliding a tone each way: one chord, sent as one
@@ -457,8 +472,7 @@ test('long bent notes over each other: what is given at a time is what plays mea
       ahead = Math.max(ahead, time - clock.currentTime);
     });
     const curves = [];
-    const t0 = performance.now();
-    w.batch(0.1, () => {
+    const took = cpuMs(() => w.batch(0.1, () => {
       for (let k = 0; k < count; k++) {
         // 400 bars at 240 bpm
         const c = steppedCurve(noteStepper({ bend }, 400, 0.004), 0.1, 1);
@@ -467,17 +481,15 @@ test('long bent notes over each other: what is given at a time is what plays mea
         w.send(0, 400.1);
         curves.push(c);
       }
-    }, true);
-    const took = performance.now() - t0;
-    assert.ok(took < 300, `${count}: ${Math.round(took)} ms to start them`);
+    }, true));
+    assert.ok(took < 300, `${count}: ${Math.round(took)} ms (processor time) to start them`);
     assert.ok(given <= FEED_AHEAD / 0.004 + 4, `${count}: ${given} given at once`);
     // Each time round, to a couple of seconds ahead, as many as may be given (the steps all at the same times: a few)
     for (let now = FEED_EVERY; now < 5; now += FEED_EVERY) {
       clock.currentTime = now;
       const before = given;
-      const t1 = performance.now();
-      w.feed();
-      assert.ok(performance.now() - t1 < 300, `${count}: ${Math.round(performance.now() - t1)} ms at ${now}`);
+      const fed = cpuMs(() => w.feed());
+      assert.ok(fed < 300, `${count}: ${Math.round(fed)} ms (processor time) at ${now}`);
       assert.ok(given - before <= GIVE_BURST + FEED_START / 0.004 + 4, `${count}: ${given - before} given at ${now}`);
     }
     assert.ok(ahead > FEED_AHEAD - (bend === zig ? FEED_EVERY : 1.1), `${count}: given ${ahead} s ahead`);

@@ -8,7 +8,7 @@ import { busTargets, isBus, isMixTrack, loopingBuses, sendTargets } from '../../
 import { songMeterOf, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { TRACK_COLORS } from '../../store/timelineTypes';
-import { foldersOf } from '../../store/folders';
+import { FOLDER_NAME_MAX, foldersOf } from '../../store/folders';
 import { MenuItem } from './ClipContextMenu';
 import type { MenuItemProps } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
@@ -227,7 +227,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
             onClose();
           }}
         >
-          <input name="name" autoFocus placeholder={`Folder ${foldersOf(tracks).length + 1}`} className="flex-1 min-w-0 h-7 bg-forge-bg border border-forge-border rounded px-1.5 text-forge-text focus:outline-none focus:border-cyan-500" aria-label="Folder name" />
+          <input name="name" autoFocus maxLength={FOLDER_NAME_MAX} placeholder={`Folder ${foldersOf(tracks).length + 1}`} className="flex-1 min-w-0 h-7 bg-forge-bg border border-forge-border rounded px-1.5 text-forge-text focus:outline-none focus:border-cyan-500" aria-label="Folder name" />
           <button type="submit" className="h-7 px-2 rounded border border-cyan-400/60 text-cyan-100">
             OK
           </button>

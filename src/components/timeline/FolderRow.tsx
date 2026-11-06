@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, X } from 'lucide-react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Track, TrackFolder } from '../../store/timelineTypes';
 import { TRACK_COLORS } from '../../store/timelineTypes';
+import { FOLDER_NAME_MAX } from '../../store/folders';
 import { HEADER_WIDTH } from './layout';
 import { FOLDER_ROW_HEIGHT } from './rows';
 
@@ -57,6 +58,7 @@ export const FolderRow: React.FC<{ folder: TrackFolder; members: Track[] }> = ({
           <input
             autoFocus
             defaultValue={folder.name}
+            maxLength={FOLDER_NAME_MAX}
             onFocus={(e) => e.currentTarget.select()}
             onBlur={(e) => {
               const name = e.currentTarget.value.trim();
