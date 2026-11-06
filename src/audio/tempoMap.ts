@@ -507,6 +507,17 @@ export function meterGridLine(bar: number, step: number, map: MeterMap, mode: 'r
   return bar - down < up - bar ? down : up;
 }
 
+/**
+ * The line of a `step`-bar grid (as meterGridLine counts them) just past `bar` going forward
+ * (dir 1) or back (dir -1), for the arrow keys: in 7/8 a quarter grid from the measure's last
+ * eighth goes on to the next downbeat, not past it. Null where every measure starts on the grid
+ * (4/4, 3/4 …): there the arrows keep moving whole grid steps, as they always have.
+ */
+export function meterGridStep(bar: number, step: number, map: MeterMap, dir: 1 | -1): number | null {
+  if (!(step > 0) || gridFitsMeasures(step, map)) return null;
+  return meterGridLine(bar + dir * 1e-6, step, map, dir > 0 ? 'ceil' : 'floor');
+}
+
 /** The lines of a `step`-bar grid (as meterGridLine counts them) in [from, to). */
 export function meterGridLines(from: number, to: number, step: number, map: MeterMap): number[] {
   const out: number[] = [];

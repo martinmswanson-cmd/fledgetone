@@ -500,6 +500,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     return (mode === 'round' ? Math.round(k) : mode === 'floor' ? Math.floor(k) : Math.ceil(k - 1e-9)) * gridUnits - clipUnits;
   };
   const snapUnits = (u: number) => gridLine(u);
+  /** Where the GRID step starting at the line `cell` ends: in 7/8 a quarter grid's last step in a measure is an eighth, up to the downbeat. */
+  const cellEnd = (cell: number) => (gridFits ? cell + gridUnits : Math.min(cell + gridUnits, gridLine(cell + 1e-3, 'ceil')));
   /**
    * Thin lines every `period` units, counted from bar 1, as a CSS background. A repeating
    * gradient rather than tiles, which would drift where a period isn't a whole number of pixels.
@@ -694,7 +696,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     if (!row) return setHoverCell(null);
     const unit = Math.max(0, gridLine(p.units, 'floor'));
     if (unit >= totalUnits) return setHoverCell(null);
-    const len = stepping ? Math.min(gridUnits, totalUnits - unit) : Math.min(lengthUnits, totalUnits - unit);
+    const len = stepping ? Math.min(cellEnd(unit) - unit, totalUnits - unit) : Math.min(lengthUnits, totalUnits - unit);
     const at = stepping ? [p.row] : drawPitches(row.note).map((n) => rowIndexOf(rows, n)).filter((i) => i >= 0);
     setHoverCell((h) => (h && h.row === p.row && h.unit === unit && h.len === len && h.rows.join() === at.join() ? h : { row: p.row, unit, len, rows: at }));
   };
@@ -913,7 +915,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const row = rows[p.row];
       if (!row) return;
       const cell = Math.max(0, gridLine(p.units, 'floor'));
-      const inCell = currentNotes().filter((n) => n.note === row.note && unitsOf(n.startOffset) >= cell - 1e-6 && unitsOf(n.startOffset) < cell + gridUnits - 1e-6);
+      const end = cellEnd(cell);
+      const inCell = currentNotes().filter((n) => n.note === row.note && unitsOf(n.startOffset) >= cell - 1e-6 && unitsOf(n.startOffset) < end - 1e-6);
       const store = useTimelineStore.getState();
       if (inCell.length) {
         store.deleteNotes(clip.id, new Set(inCell.map((n) => n.id)));
@@ -922,7 +925,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       }
       if (cell >= totalUnits) return;
       // Shift: an accent
-      const note = { note: row.note, startOffset: cell / UNITS_PER_BAR, duration: barsToDuration(gridUnits / UNITS_PER_BAR), velocity: e.shiftKey ? 1 : velocity };
+      const note = { note: row.note, startOffset: cell / UNITS_PER_BAR, duration: barsToDuration((end - cell) / UNITS_PER_BAR), velocity: e.shiftKey ? 1 : velocity };
       store.addNotes(clip.id, [note]);
       void preview(clip.trackId, [{ ...note, duration: '16n' }]);
       return;
@@ -1116,10 +1119,17 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const delta = arrows[e.key];
       if (!delta) return;
       handled();
-      const [dUnits, dRows] = delta;
       const notes = currentNotes();
       // (Notes an undo took away can still be in the selection: with none of it left, there's nothing to move, and no undo step)
       if (!notes.some((n) => selected.has(n.id))) return;
+      let [dUnits] = delta;
+      const dRows = delta[1];
+      if (dUnits && !gridFits) {
+        // A grid the measures don't all start on (a quarter in 7/8): the earliest selected note goes to
+        // the next line along, downbeats included, and the rest move with it
+        const first = minOf(notes.filter((n) => selected.has(n.id)).map((n) => unitsOf(n.startOffset)));
+        dUnits = gridLine(first + (dUnits > 0 ? 1e-3 : -1e-3), dUnits > 0 ? 'ceil' : 'floor') - first;
+      }
       // The selection moves one grid step as a block: at the clip's edge it stays put rather than bunching up
       const outside = (n: NoteEvent) => {
         const u = unitsOf(n.startOffset) + dUnits;
@@ -1139,7 +1149,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, clip.startBar, clip.lengthBars, namedRows]);
+  }, [selected, visibleNotes, gridUnits, gridFits, meterMap, rows, totalUnits, clip.id, clip.startBar, clip.lengthBars, namedRows]);
 
   // Velocity slider edits the selection when there is one, else sets the velocity for new notes
   const selectedVelocity = (() => {

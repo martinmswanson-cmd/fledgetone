@@ -159,7 +159,12 @@ export function quantize(notes: NoteEvent[], gridBars: number, clipStartBars: nu
     if (n.startOffset < -EPS || n.startOffset >= clipBars - EPS) return n;
     let start = n.startOffset + (snap(n.startOffset) - n.startOffset) * strength;
     if (start > clipBars - EPS) start = n.startOffset + (lastLine - n.startOffset) * strength;
-    const len = ends ? Math.max(gridBars, Math.round(lengthOf(n) / gridBars) * gridBars) : lengthOf(n);
+    // (Ends where the measures don't all start on the grid: the line nearest the end, at least the next one after the start)
+    const len = !ends
+      ? lengthOf(n)
+      : fromBar1
+        ? Math.max(gridBars, Math.round(lengthOf(n) / gridBars) * gridBars)
+        : Math.max(meterGridLine(start + clipStartBars + 1 + 1e-6, gridBars, meter!, 'ceil'), meterGridLine(start + lengthOf(n) + clipStartBars + 1, gridBars, meter!)) - clipStartBars - 1 - start;
     return { ...n, startOffset: Math.max(0, start), duration: ends ? barsToDuration(len) : n.duration };
   });
 }

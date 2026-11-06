@@ -1056,7 +1056,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       </Section>}
 
       {status.error && <p className="text-red-400">Export failed: {status.error}</p>}
-      {videoOut && <p>Video sound is 48 kHz. Where the browser has them (Chrome and Edge on Windows and Mac), the video is H.264 with AAC sound, which plays everywhere; otherwise VP9 or AV1 with Opus, which browsers, VLC and YouTube play.</p>}
+      {videoOut && <p>Video sound is 48 kHz. Where the browser has them (Chrome and Edge on Windows and Mac), the video is H.264 with AAC sound, which plays everywhere; otherwise VP9 or AV1 with Opus, which browsers and most video players and video sites play.</p>}
       {status.note && <p className="text-amber-300">{status.note}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-3 border-t border-forge-border">

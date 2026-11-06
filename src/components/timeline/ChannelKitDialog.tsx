@@ -97,7 +97,7 @@ export const ChannelKitDialog: React.FC<{ onClose: () => void }> = ({ onClose })
     <Modal title="Channel kit" onClose={onClose}>
       <p>
         Music for the start, the breaks and the end of your streams and videos, all from this song, in one .zip: an intro and an outro, loops for your stream's screens, alerts and a
-        transition whoosh. The loops repeat with no gap (in OBS, a Media Source with Loop on).
+        transition whoosh. The loops repeat with no gap (in streaming software, a media source with looping on).
       </p>
       {pieces.length ? (
         <ul className="flex flex-col gap-1.5" data-testid="channel-kit-pieces">
