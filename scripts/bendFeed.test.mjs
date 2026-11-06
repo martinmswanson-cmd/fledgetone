@@ -206,10 +206,9 @@ test("a take folder's switches between takes are capped on opening, and an edit 
   assert.ok(p.clips[0].comp.length <= SONG_CAPS.comps);
   assert.equal(p.unread?.over?.comps, 500);
   assert.match(overWords({ comps: 500 }), /500 switches between takes over the most a song opens with \(4,096 switches between takes in a clip\)/);
-  // A million open quickly
-  const t = performance.now();
-  parseProject(takeSong(1_000_000));
-  assert.ok(performance.now() - t < 3000);
+  // A million open quickly: by processor time (cpuMs, below), as the clock time under a busy
+  // machine (npm test runs the files side by side) went past the limit with nothing slower here
+  assert.ok(cpuMs(() => parseProject(takeSong(1_000_000))) < 3000);
   const small = { tracks: [], clips: [{ notes: [], takes: [{}, {}], comp: new Array(SONG_CAPS.comps).fill(0) }] };
   const more = { tracks: [], clips: [{ notes: [], takes: [{}, {}], comp: new Array(SONG_CAPS.comps + 1).fill(0) }] };
   assert.deepEqual(editPastCaps(small, more), ['comps']);
@@ -452,12 +451,12 @@ test('long dense bent notes begun one after another under each other: the same, 
  * slower here. Processor time is what this work costs whatever else runs, and a slowdown that
  * grows with the notes squared still takes it far past 300 ms.
  */
-const cpuMs = (fn) => {
+function cpuMs(fn) {
   const c0 = process.cpuUsage();
   fn();
   const c = process.cpuUsage(c0);
   return (c.user + c.system) / 1000;
-};
+}
 
 test('long bent notes over each other: what is given at a time is what plays meanwhile', () => {
   const zig = Array.from({ length: 256 }, (_, i) => ({ at: i === 255 ? 400 : (i * 400) / 256, value: i % 2 ? 2 : -2 }));
