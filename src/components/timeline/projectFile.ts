@@ -1,7 +1,7 @@
 import { currentProject, onProjectReplaced, songGeneration, useTimelineStore } from '../../store/timelineStore';
 import { parseProject, safeFileName, serializeProject, unreadWords } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
-import { embedSounds } from '../../audio/soundLibrary';
+import { embedSounds, soundFileNames } from '../../audio/soundLibrary';
 import { saveBlobFile } from '../../audio/exportWav';
 import { isNativeApp } from '../../native/nativeApp';
 import { showToast } from './toastStore';
@@ -74,7 +74,7 @@ async function projectBlob(song: number): Promise<{ blob: Blob; missing: number 
   const ids = referencedSoundIds(project);
   const sounds = await embedSounds(ids);
   // (Sounds this browser no longer has, freed or lost: the file opens without them, so Save says so)
-  return { blob: new Blob([JSON.stringify(serializeProject({ ...project, sounds, video: await video }), null, 2)], { type: 'application/json' }), missing: ids.length - sounds.length };
+  return { blob: new Blob([JSON.stringify(serializeProject({ ...project, sounds, video: await video }, soundFileNames), null, 2)], { type: 'application/json' }), missing: ids.length - sounds.length };
 }
 
 /** What a save message adds when sounds couldn't go in the file ('' when they all did). */

@@ -433,7 +433,7 @@ test('every flow that makes a name from another carries its mark', () => {
     }
   }
   // The store: a new song is marked, an opened one checked, and both go out saying so
-  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const p = withFileMarks(opened, soundFileNames);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
+  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const nameOf = songFileNames(opened.sounds, soundFileNames);', 'const p = withFileMarks(withOldMarks(opened, nameOf), nameOf);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
   has('src/components/timeline/gameKitSong.ts', '...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),');
 });
 
@@ -754,4 +754,66 @@ test('opening a song keeps the library\'s name for a sound it has, and knows the
   assert.ok(!/soundWithFileMarks\(sound, soundFileName\)|withOldMarks\([^)]*\), soundFileName\)|withFileMarks\(opened, soundFileName\)/.test(store));
   assert.equal(store.match(/soundWithFileMarks\(sound, soundFileNames\)/g).length, 2);
   assert.ok(store.includes('withOldMarks({ tracks, clips: get().clips }, soundFileNames)'));
+});
+
+// ---------- An old song opened before every sound's file name is known ----------
+
+test("an old song opened before its sounds' names are all read: what's found is marked at once, the rest later, and Save asks every name", async () => {
+  // Embeds x1 as "Doctor letter.wav" (this browser keeps it as "Kick.wav") and plays z1, which it doesn't embed
+  const opened = { ...TWO, clips: [...TWO.clips, C('c4', 'a', 'Beat', { audio: audio('z1') })], sounds: TWO_SOUNDS };
+  const notYet = () => undefined; // the library hasn't read its metas (a fresh page)
+  const read = (id) => ({ x1: 'Kick.wav', z1: 'Z.wav' })[id];
+  // Opening it (loadProject): the flag waits for z1, but the names made from the file's own name are marked now
+  const nameOf = songFileNames(opened.sounds, notYet);
+  const p = withFileMarks(withOldMarks(opened, nameOf), nameOf);
+  assert.ok(!p.fileMarks);
+  assert.deepEqual(p.clips.map((c) => !!c.nameFromFile), [true, true, false, false]);
+  assert.equal(p.tracks[1].nameFromFile, true);
+  // (Before: nothing was marked, and the file's name for x1 went when the song closed)
+  assert.equal(withFileMarks(opened, notYet), opened);
+  // The autosave (no sounds) and a reload keep the marks, and the library's names complete them
+  const { packedProject, unpackProject } = await import('../src/store/project.ts');
+  const kept = unpackProject(packedProject(p));
+  assert.ok(!kept.fileMarks);
+  const reopened = withFileMarks(kept, read);
+  assert.equal(reopened.fileMarks, FILE_MARKS);
+  assert.deepEqual(withoutFileNames(reopened, read).clips.map((c) => c.name), [...GONE[2], 'Beat']);
+  // (Before: reopened flagged with the file's own name unmarked, and it went out)
+  const { sounds: _gone, ...unmarked } = opened;
+  assert.equal(withoutFileNames(withFileMarks(unpackProject(packedProject(unmarked)), read), read).clips[0].name, 'Doctor letter');
+  // Once the library has read them (markWhenNamesRead): marked against every name, and flagged
+  const later = songFileNames(opened.sounds, read);
+  const all = withFileMarks(withOldMarks(p, later), later);
+  assert.equal(all.fileMarks, FILE_MARKS);
+  assert.deepEqual(NAMES(withoutFileNames(all)), [GONE[0], GONE[1], [...GONE[2], 'Beat']]);
+  // Save of the song as opened (unmarked), the library's names embedded: asking only those leaves the
+  // file's own name unmarked in a flagged file; asking every name the page knows doesn't
+  const sounds = [{ ...TWO_SOUNDS[0], name: 'Kick.wav' }, { ...TWO_SOUNDS[0], id: 'z1', name: 'Z.wav' }];
+  const both = (id) => (id === 'x1' ? ['Kick.wav', 'Doctor letter.wav'] : read(id));
+  const plain = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...TWO, clips: opened.clips, sounds }))));
+  assert.equal(plain.fileMarks, 1);
+  assert.equal(withoutFileNames(plain).clips[0].name, 'Doctor letter');
+  const saved = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...TWO, clips: opened.clips, sounds }, both))));
+  assert.equal(saved.fileMarks, 1);
+  assert.deepEqual(NAMES(withoutFileNames(saved)), [GONE[0], GONE[1], [...GONE[2], 'Beat']]);
+});
+
+test("the store marks an old song again once the library has read its sounds, undo steps too, and Save asks every name", () => {
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const store = src('src/store/timelineStore.ts');
+  for (const s of [
+    'if (!p.fileMarks) void asked.then(() => markWhenNamesRead(song, referencedSoundIds(p), nameOf));',
+    'soundNamesRead(ids, () => songCount !== song || get().fileMarks)',
+    'past: s.past.map(marked),',
+    'future: s.future.map(marked),',
+    'pendingCheckpoint = checkpoint;',
+    'state.fileMarks === prev.fileMarks',
+  ]) assert.ok(store.includes(s), s);
+  // (Opening a song starts its undo history afresh)
+  const at = store.indexOf('loadProject: (opened: ProjectSnapshot) => {');
+  const load = store.slice(at, store.indexOf('insertPatternClip: (trackId', at));
+  assert.ok(load.includes('past: [],') && load.includes('future: [],'));
+  assert.ok(src('src/audio/soundLibrary.ts').includes('export function soundNamesRead(ids: readonly string[], stop: () => boolean): Promise<void>'));
+  assert.ok(src('src/components/timeline/projectFile.ts').includes('serializeProject({ ...project, sounds, video: await video }, soundFileNames)'));
+  assert.ok(src('src/components/timeline/ShareDialog.tsx').includes('serializeProject({ ...p, sounds }, soundFileNames)'));
 });

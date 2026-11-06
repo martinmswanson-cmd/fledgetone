@@ -108,7 +108,7 @@ import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
-import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileNames, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
+import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileNames, soundNamesRead, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
@@ -127,7 +127,7 @@ import {
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
-import { FILE_MARKS, fileMade, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, type FileMade } from './ownFiles';
+import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, type FileMade, type FileNameOf } from './ownFiles';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
@@ -1657,8 +1657,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
    * every sound it refers to is decoded, and a Sampler from before the library (its sound carried as
    * a data: URL on the track) is moved into the library and the track pointed at it instead, so
    * the autosave stops carrying the file. Nothing here is an edit of the user's, so no history.
+   * Settles once the library has been asked about every sound (each one's meta on its way).
    */
-  const prepareSounds = (p: ProjectSnapshot) => {
+  const prepareSounds = (p: ProjectSnapshot): Promise<void> => {
     // Copies held for want of storage (soundLibrary.ts) of songs no longer open go: only this one's,
     // the replaced one's (the Restore banner brings it back) and the clipboard's stay
     const last = useLastSession.getState().session?.project;
@@ -1667,8 +1668,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const ensureAll = () => {
       for (const id of referencedSoundIds(p)) ensureSound(id);
     };
-    if (p.sounds?.length) void importEmbeddedSounds(p.sounds).then(ensureAll, ensureAll);
-    else ensureAll();
+    const asked = p.sounds?.length ? importEmbeddedSounds(p.sounds).then(ensureAll, ensureAll) : Promise.resolve(ensureAll());
     for (const t of p.tracks) {
       const sample = t.sample;
       if (!sample?.dataUrl || sample.soundId) continue;
@@ -1683,7 +1683,39 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         () => {} // unreadable, or storage blocked: it goes on playing (and being saved) as a data: URL
       );
     }
+    return asked;
   };
+
+  /**
+   * The open song (one from before the marks, opened as song number `song`) with each name the
+   * old-song check now finds marked, once its sounds' file names are all read (`nameOf`, the
+   * library's and the song file's), and `fileMarks` set if every one is known: what opening it
+   * marked with the names known then stays, and these are added. Not an edit of the user's, so no
+   * undo step: the steps already there (and one being made) are marked the same way, so Undo never
+   * brings back a name unmarked in a song judged by its marks alone.
+   */
+  const markWhenNamesRead = (song: number, ids: readonly string[], nameOf: FileNameOf) =>
+    soundNamesRead(ids, () => songCount !== song || get().fileMarks).then(() => {
+      if (songCount !== song || get().fileMarks) return;
+      const marked = <E extends { tracks: Track[]; clips: Clip[] }>(e: E): E => {
+        const m = withOldMarks({ tracks: e.tracks, clips: e.clips }, nameOf);
+        const tracks = m.tracks.every((t, i) => t === e.tracks[i]) ? e.tracks : m.tracks;
+        return tracks === e.tracks && m.clips === e.clips ? e : { ...e, tracks, clips: m.clips };
+      };
+      const s = get();
+      const now = marked({ tracks: s.tracks, clips: s.clips });
+      const all = !!withFileMarks<{ tracks: Track[]; clips: Clip[]; fileMarks?: number }>({ tracks: now.tracks, clips: now.clips }, nameOf).fileMarks;
+      const checkpoint = pendingCheckpoint && marked(pendingCheckpoint);
+      set({
+        ...(now.tracks !== s.tracks ? { tracks: now.tracks } : {}),
+        ...(now.clips !== s.clips ? { clips: now.clips } : {}),
+        fileMarks: all,
+        past: s.past.map(marked),
+        future: s.future.map(marked),
+      });
+      // (Putting the undo steps back drops one being made: it's kept, marked too)
+      pendingCheckpoint = checkpoint;
+    });
 
   /** When the frame loop last set the store's playheadPosition (see playheadClock.ts). */
   let storeMovedAt = 0;
@@ -3520,8 +3552,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     loadProject: (opened: ProjectSnapshot) => {
       // A song from before the marks gets them now, if its sounds' file names are known (the file's
-      // embedded sounds', the library's): see withFileMarks. Otherwise it stays an old song.
-      const p = withFileMarks(opened, soundFileNames);
+      // embedded sounds', the library's): see withFileMarks. Otherwise it stays an old song, with
+      // the names made from the file names known now marked already (only ever hiding more): the
+      // file's own names for its sounds are known only while it's open, and the autosave and Save
+      // keep these marks. The rest are marked once the library has read its sounds (markWhenNamesRead).
+      const nameOf = songFileNames(opened.sounds, soundFileNames);
+      const p = withFileMarks(withOldMarks(opened, nameOf), nameOf);
       // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
       // (with the plugins' latest settings: they otherwise reach the tracks every few seconds)
       captureWamStatesNow();
@@ -3606,7 +3642,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         ...viewShowing(get(), p.loopRegion.inBar, true),
       });
       applyMasterFx();
-      prepareSounds(p);
+      const asked = prepareSounds(p);
+      const song = songCount;
+      if (!p.fileMarks) void asked.then(() => markWhenNamesRead(song, referencedSoundIds(p), nameOf));
       applyMaster();
       // Its reference video, from this browser or from the file itself
       if (p.video) void useVideoStore.getState().restore(p.video);
@@ -4028,7 +4066,8 @@ export function connectAutosave(): () => void {
       state.stateOptions === prev.stateOptions &&
       state.transitions === prev.transitions &&
       state.intensity === prev.intensity &&
-      state.intensityCurves === prev.intensityCurves
+      state.intensityCurves === prev.intensityCurves &&
+      state.fileMarks === prev.fileMarks
     ) {
       return;
     }
