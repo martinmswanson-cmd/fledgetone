@@ -139,6 +139,22 @@ test("a sound file is named after the sound, with only the characters every syst
   assert.equal(soundFileName('x'.repeat(100)), `${'x'.repeat(60)}.fledgetone-sound.json`);
 });
 
+test("a sound file's name keeps the rule a project file's has: no hidden marks, controls or device names", () => {
+  assert.equal(soundFileName('Bass\u202Egpj.exe'), 'Bassgpj.exe.fledgetone-sound.json');
+  assert.equal(soundFileName('a\u2066b\u2069c\u200Bd'), 'abcd.fledgetone-sound.json');
+  assert.equal(soundFileName('a\u007Fb\u0085c'), 'a-b c.fledgetone-sound.json');
+  assert.equal(soundFileName('one\ntwo\tthree'), 'one two three.fledgetone-sound.json');
+  assert.equal(soundFileName('CON'), 'CON_.fledgetone-sound.json');
+  assert.equal(soundFileName('aux.mid'), 'aux_.mid.fledgetone-sound.json');
+  assert.equal(soundFileName('  nul  '), 'nul_.fledgetone-sound.json');
+  assert.equal(soundFileName('..con'), 'con_.fledgetone-sound.json');
+  // Cut at a whole character: never half an emoji
+  const name = soundFileName('a'.repeat(59) + '\u{1F941}\u{1F941}');
+  assert.equal(name, `${'a'.repeat(59)}\u{1F941}.fledgetone-sound.json`);
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(soundFileName('\u{1F941}'.repeat(80))));
+  assert.ok(new TextEncoder().encode(soundFileName('\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}'.repeat(60))).length < 255);
+});
+
 test('My sounds never lets a sound go to make room: past the most it holds, new ones are counted as left out', () => {
   const mine = Array.from({ length: MAX_SOUNDS - 1 }, (_, i) => ({ id: `m${i}`, name: `Sound ${i}`, settings: soundOf(track('t', 'piano')) }));
   const incoming = ['Sound 3', 'New A', 'New B', 'New C'].map((name, i) => ({ id: `f${i}`, name, settings: soundOf(track('t', 'piano')) }));

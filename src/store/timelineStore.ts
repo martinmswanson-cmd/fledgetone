@@ -88,7 +88,7 @@ import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFr
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
-import { folderName, foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
+import { folderName, foldersOf, groupTracks, isTrackColor, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
 import { ANY_STATE, sameRule, transitionKey } from './transitions';
 import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
@@ -2455,7 +2455,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         return tracks === s.tracks ? s : { tracks, ...pushPast(s) };
       }),
 
-    setTrackColor: (trackId, color) => updateTrack(trackId, () => ({ color }), true),
+    // (A hex colour only, as the picker gives: see isTrackColor)
+    setTrackColor: (trackId, color) => {
+      if (isTrackColor(color)) updateTrack(trackId, () => ({ color }), true);
+    },
 
     renameTrack: (trackId, name) => {
       const trimmed = name.trim().slice(0, 40);

@@ -1,4 +1,5 @@
 import type { Track, TrackFolder } from './timelineTypes';
+import { cutToChars, oneLineName } from './kitNames';
 
 /**
  * Track folders: a group of tracks shown together under a folder row that names and colours them,
@@ -10,10 +11,26 @@ import type { Track, TrackFolder } from './timelineTypes';
 /** The longest a folder's name may be (a saved song keeps no more: project.ts). */
 export const FOLDER_NAME_MAX = 60;
 
-/** A folder's name as given (typed, or from an agent): trimmed, and cut to FOLDER_NAME_MAX ('' if there's none). */
+/**
+ * A folder's name as given (typed, from an agent or read from a file): on one line (oneLineName),
+ * trimmed, and cut to FOLDER_NAME_MAX at a whole character, never half an emoji ('' if there's none).
+ */
 export function folderName(name: string | undefined): string {
-  return (name ?? '').trim().slice(0, FOLDER_NAME_MAX).trim();
+  return cutToChars(oneLineName(name ?? '').trim(), FOLDER_NAME_MAX).trim();
 }
+
+/** The colour a track or folder has when it's given none it can show (the last of TRACK_COLORS). */
+export const DEFAULT_TRACK_COLOR = '#9ca3af';
+
+/**
+ * A colour a track or folder may have: a hex colour (#rgb, #rrggbb or #rrggbbaa), as every colour
+ * the app gives is. Anything else from a file, a link or a shared sound ("url(...)" would have the
+ * browser fetch it when the song opens) is not one.
+ */
+export const isTrackColor = (color: unknown): color is string => typeof color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color);
+
+/** `color` if it's one a track or folder may have (isTrackColor), else DEFAULT_TRACK_COLOR. */
+export const trackColor = (color: unknown): string => (isTrackColor(color) ? color : DEFAULT_TRACK_COLOR);
 
 /** The folders in track order, each once, with how many tracks it has. */
 export function foldersOf(tracks: readonly Track[]): Array<TrackFolder & { count: number }> {
@@ -77,9 +94,12 @@ export function ungroup(tracks: Track[], id: string): Track[] {
 }
 
 /** Change a folder's name, colour or folding (every member). `recolor` gives the members its colour too. */
-export function updateFolder(tracks: Track[], id: string, patch: Partial<Omit<TrackFolder, 'id'>>, recolor = false): Track[] {
+export function updateFolder(tracks: Track[], id: string, given: Partial<Omit<TrackFolder, 'id'>>, recolor = false): Track[] {
   const current = tracks.find((t) => t.folder?.id === id)?.folder;
   if (!current) return tracks;
+  // (A colour it can't have is left out: the folder keeps its own)
+  const { color, ...rest } = given;
+  const patch: Partial<Omit<TrackFolder, 'id'>> = isTrackColor(color) ? given : rest;
   const folder: TrackFolder = { ...current, ...patch };
   if (!folder.collapsed) delete folder.collapsed;
   // (A name as long as a saved song keeps; none: the one it has)
