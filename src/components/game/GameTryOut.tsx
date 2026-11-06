@@ -194,7 +194,8 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     return () => {
       cancelled = true;
       stop.abort();
-      music.current?.dispose();
+      // Faded out, then taken out of the mix (disposed at once, the music stopped dead: a click)
+      music.current?.dispose(PREVIEW_FADE_SECONDS);
       music.current = null;
       musicReady.current = false;
     };

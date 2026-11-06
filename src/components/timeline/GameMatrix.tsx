@@ -234,7 +234,9 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     })();
     return () => {
       cancelled = true;
-      player.current?.stop(PREVIEW_FADE_SECONDS);
+      // Faded out, then taken out of the mix (just stopped, every audition left its nodes behind)
+      player.current?.dispose(PREVIEW_FADE_SECONDS);
+      player.current = null;
     };
   }, [onClose, claim]);
 

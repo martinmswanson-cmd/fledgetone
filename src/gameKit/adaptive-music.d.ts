@@ -40,6 +40,9 @@ export class AdaptiveMusic {
   setVolume(volume: number, seconds?: number): void;
   /** Stop the music, at once or fading out over `fade` seconds (default 0). */
   stop(fade?: number): void;
-  /** Stop everything and take the player's sound out of the mix for good (it can't be used after). */
-  dispose(): void;
+  /**
+   * Stop everything and take the player's sound out of the mix for good (it can't be used after),
+   * fading it out over `fade` seconds first (default 0.05) so it doesn't click.
+   */
+  dispose(fade?: number): void;
 }

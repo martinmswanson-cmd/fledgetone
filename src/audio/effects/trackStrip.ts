@@ -212,6 +212,8 @@ function blockRateDelay(node: DelayNode): void {
 const SWITCH_LEAD = 0.02;
 /** The crossfade from the old chain of inserts to the new one. */
 const SWITCH_FADE = 0.01;
+/** A send's level change, and the crossfade from a send to its replacement (taken from the other side of the fader, say). */
+const SEND_FADE = 0.03;
 /**
  * How long a fresh Compressor takes to sound as it will: a browser compressor passes nothing for
  * its 6 ms look-ahead and then brings its gain up from nothing over about 0.2 s.
@@ -330,7 +332,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
   /** Sends to return tracks, by return id (see setSends) */
   const sends = new Map<
     string,
-    { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void }; out: DelayLink }
+    { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void; cut: () => void }; out: DelayLink }
   >();
   /** Delay compensation (see setAlignment): the tail's delay line in the chain, and the sends' delays by return id, in seconds */
   let tailDelay: { input: DelayNode; output: DelayNode; seconds: number; glide?: Glide; dispose: () => void } | null = null;
@@ -383,7 +385,23 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
       want = need;
       sync(ramp);
     };
-    return Object.assign(set, { forget: () => linkSyncs.delete(sync) });
+    return Object.assign(set, {
+      forget: () => linkSyncs.delete(sync),
+      // Taken apart for good (a send let go, once it has faded out). Left joined, the track went
+      // on feeding the send's gain, which kept it alive: one more node for every switch of a send
+      // between before and after the fader
+      cut: () => {
+        window.clearTimeout(timer);
+        want = false;
+        if (!joined) return;
+        try {
+          Tone.disconnect(from, to);
+        } catch {
+          // Already apart
+        }
+        joined = false;
+      },
+    });
   };
   const reverbLink = sendLink(duck, reverbSend);
   const delayLink = sendLink(duck, delaySend);
@@ -867,16 +885,29 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
     },
     setSends: (list, muted) => {
       const wanted = new Set(list.map((x) => x.id));
+      // Every fade here starts at the same moment, read once: the audio clock can move on between
+      // two reads, and a send fading in a block after its replacement fades out dipped (or doubled)
+      // for that long. (A look-ahead from now, as any change is, and never inside the writers' margin.)
+      const at = Math.max(now(), raw.currentTime + 0.03);
+      /** A send's level to `to` over SEND_FADE from `at` (a writer of a node just made: at once, before it sounds). */
+      const fade = (w: ParamWriter, to: number) => {
+        if (w.fresh) return w.set(to, SEND_FADE);
+        const start = w.cut(at);
+        const from = w.valueAt(start);
+        if (Math.abs(from - to) <= 1e-6 * Math.max(1, Math.abs(to))) return;
+        w.curve(new Float32Array([from, to]), start, SEND_FADE);
+      };
       /** Faded out, then let go */
       const letGo = (id: string, send: NonNullable<ReturnType<typeof sends.get>>) => {
-        send.writer.set(0, 0.03);
+        fade(send.writer, 0);
         send.link.forget();
         sends.delete(id);
         // (The fade starts a look-ahead from now, up to 0.4 s: gone only once it has played)
         window.setTimeout(() => {
+          send.link.cut();
           send.out.dispose();
           send.gain.dispose();
-        }, (now() + 0.03 - raw.currentTime) * 1000 + 120);
+        }, (at + SEND_FADE - raw.currentTime) * 1000 + 120);
         version++;
       };
       for (const [id, send] of sends) if (!wanted.has(id)) letGo(id, send);
@@ -892,13 +923,17 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
           const gain = new Tone.Gain(0);
           const out = createDelayLink(gain, want.target, (sendDelays[want.id] ?? 0) / raw.sampleRate);
           send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre, link: sendLink(want.pre ? merge : duck, gain), out };
+          // Live, it starts silent and fades in on the clock the old one fades out on (the
+          // look-ahead from now): a fresh writer's first level is set at once, and the new send
+          // played at full level beside the old one for that look-ahead, up to 0.4 s, doubled
+          if (barrier) send.writer.jump(0, 0);
           sends.set(want.id, send);
           version++;
         }
         const lane = owned.has(`send:${want.id}` as AutomationParam);
         const level = want.pre && muted ? 0 : Math.max(0, Math.min(1, want.level));
-        if (!lane) send.writer.set(level, 0.02);
-        send.link(lane || level > 0, 0.02);
+        if (!lane) fade(send.writer, level);
+        send.link(lane || level > 0, SEND_FADE);
       }
     },
     setAlignment: (delays, glide = true) => {
