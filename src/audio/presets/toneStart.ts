@@ -74,6 +74,18 @@ function earlyStartOf(synth: NoteSynth, note: Tone.Unit.Frequency): EarlyStart |
 }
 
 /**
+ * How much room the live clock must leave before an early start. It moves in steps of 8 to 12 ms
+ * (whole render callbacks), so a start taken too near it can find the clock already past.
+ */
+const EARLY_ROOM = 0.001;
+
+/** Where `source`'s last start is set (Tone moves a start that's already past up to now). */
+function lastStart(source: States): number {
+  const last = source._state?.get(Infinity);
+  return last && last.state === 'started' ? last.time : -Infinity;
+}
+
+/**
  * Before a Tone synth's note at `start` (before triggerAttack): when its oscillator is stopped,
  * its pitch is set a render block early, so the note starts on its own pitch wherever in the
  * block it lands. A MembraneSynth (a kick's drop), a MetalSynth (a hat) and an FMSynth also start
@@ -81,13 +93,18 @@ function earlyStartOf(synth: NoteSynth, note: Tone.Unit.Frequency): EarlyStart |
  * sets the note's pitch), so the note starts on time and at the start of its wave wherever it
  * lands (its envelope is silent until `start`). A note that starts while the oscillator still
  * sounds (legato, a ringing tail) is left as it was.
+ *
+ * Returns when the note is to start: `start`, unless the audio clock moved on past it while the
+ * oscillators were started early (the main thread held up for a moment, live), when Tone moves
+ * their start up to the clock. The note then starts just after them (a note can't start an
+ * oscillator again at the moment it already starts), late by the hold-up but on its own pitch.
  */
-export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): void {
+export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): number {
   const early = earlyStartOf(synth, note);
   if (!early) {
     const from = silentFrom(sourceOf(synth), start, synth.context, 1);
     if (from !== null) synth.frequency.setValueAtTime(synth.toFrequency(note), from);
-    return;
+    return start;
   }
   // Every one of them silent from then (an FMSynth's modulator stops before its carrier); one
   // ending a moment before the note gets only its pitch early
@@ -97,15 +114,59 @@ export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: n
   };
   const from = quietFrom(2);
   const ahead = start - RENDER_BLOCK / synth.context.sampleRate;
-  if (from !== null && from < ahead) {
+  // (The clock read again just before each start: live, it can have moved on since `from`. An
+  // export's clock waits for its notes)
+  const room = synth.context.isOffline ? 0 : EARLY_ROOM;
+  const inTime = () => ahead > synth.context.currentTime + room;
+  if (from !== null && from < ahead && inTime()) {
     // (At 0 Hz until the note, where Tone sets its pitch: the wave waits at its start and begins
     // there, as one started at the note would, so the envelope opening onto it can't click)
     early.pitch.setValueAtTime(0, from);
-    for (const source of early.sources) source.start(ahead);
-    return;
+    let at = start;
+    for (const source of early.sources) {
+      // (One the clock has caught up with starts with the note instead)
+      if (!inTime()) continue;
+      source.start(ahead);
+      const landed = lastStart(source);
+      if (!(landed < start)) at = Math.max(at, landed + 1 / synth.context.sampleRate);
+    }
+    return at;
   }
   // (Too close to now, or to the last note, for two blocks: the pitch is still set early, the
   // oscillators left to start with the note)
   const near = from ?? quietFrom(1);
   if (near !== null) early.pitch.setValueAtTime(early.hz, near);
+  return start;
+}
+
+/**
+ * A Tone synth's note at `start`, its pitch set ahead (see pitchAhead): `attack` triggers it at
+ * the time it's given, and the note's start comes back. Should Tone refuse the start (it won't
+ * start an oscillator again at or before the moment its last start is set, which the audio clock
+ * moving on at the wrong moment could still bring about), the note is struck again just after
+ * every start already set, so it's never left silent at the 0 Hz the early start holds (the
+ * first try's envelope, which opened, is taken over by the second: one note, struck once).
+ */
+export function attackAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number, attack: (time: number) => void): number {
+  const at = pitchAhead(synth, note, start);
+  try {
+    attack(at);
+    return at;
+  } catch {
+    const frame = 1 / synth.context.sampleRate;
+    const sources = earlyStartOf(synth, note)?.sources ?? [];
+    const one = sourceOf(synth);
+    let latest = Math.max(at, synth.context.currentTime);
+    for (const source of one ? [...sources, one] : sources) latest = Math.max(latest, lastStart(source));
+    const after = latest + frame;
+    try {
+      attack(after);
+    } catch (err) {
+      // (Still refused: at least not held at 0 Hz)
+      const early = earlyStartOf(synth, note);
+      if (early) early.pitch.setValueAtTime(early.hz, after);
+      throw err;
+    }
+    return after;
+  }
 }

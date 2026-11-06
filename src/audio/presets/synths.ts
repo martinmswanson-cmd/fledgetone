@@ -15,7 +15,7 @@ import { seedToneNoise } from '../toneFixes';
 import type { GlideRef } from '../instruments';
 import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
 import { createBendFeed } from '../bendFeed';
-import { pitchAhead, type NoteSynth } from './toneStart';
+import { attackAhead, type NoteSynth } from './toneStart';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -37,10 +37,7 @@ function heldNote(synth: HeldSynth & { context: Tone.BaseContext }, safeTime: (t
   return {
     /** (Returns when it starts) */
     attack: (note: string, time: number, velocity: number) => {
-      const at = safeTime(time);
-      pitchAhead(synth, note, at);
-      synth.triggerAttack(note, at, velocity);
-      return at;
+      return attackAhead(synth, note, safeTime(time), (at) => synth.triggerAttack(note, at, velocity));
     },
     release: (time: number) => synth.triggerRelease(time),
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => feed.bend(cents, time, cut),
@@ -147,8 +144,7 @@ const JOIN_HOLD = 0.0005;
 export function playMono(synth: Tone.MonoSynth, note: string, duration: Tone.Unit.Time, start: number, velocity: number, joinedEnd: number | null) {
   if (joinedEnd === null) {
     // (Its pitch set a moment ahead when it starts from silence: see toneStart.ts)
-    pitchAhead(synth, note, start);
-    synth.triggerAttackRelease(note, duration, start, velocity);
+    attackAhead(synth, note, start, (at) => synth.triggerAttackRelease(note, duration, at, velocity));
     return;
   }
   const hold = Math.min(start, joinedEnd) - JOIN_HOLD;
@@ -256,9 +252,8 @@ export function create808(output: Tone.InputNode, modern = false) {
         synth.oscillator.restart(start);
         synth.triggerRelease(end);
       } else {
-        pitchAhead(synth, note, start);
-        synth.triggerAttack(note, start, velocity);
-        synth.triggerRelease(end);
+        const at = attackAhead(synth, note, start, (t) => synth.triggerAttack(note, t, velocity));
+        synth.triggerRelease(end + at - start);
       }
       soundingUntil = end;
     },
@@ -358,17 +353,13 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   return {
     kick: (time: number, velocity: number, ratio = 1) => {
       const t = kickTime(time);
-      coming.add(kick, t);
-      pitchAhead(kick, 27.5 * ratio, t);
-      kick.triggerAttackRelease(27.5 * ratio, '8n', t, velocity);
+      coming.add(kick, attackAhead(kick, 27.5 * ratio, t, (at) => kick.triggerAttackRelease(27.5 * ratio, '8n', at, velocity)));
     },
     snare: (time: number, velocity: number, ratio = 1) => {
       const t = snareTime(time);
       coming.add(snareNoise, t);
-      coming.add(snareTone, t);
       snareNoise.triggerAttackRelease('16n', t, velocity);
-      pitchAhead(snareTone, 185 * ratio, t);
-      snareTone.triggerAttackRelease(185 * ratio, '32n', t, velocity * 0.8);
+      coming.add(snareTone, attackAhead(snareTone, 185 * ratio, t, (at) => snareTone.triggerAttackRelease(185 * ratio, '32n', at, velocity * 0.8)));
     },
     hat: (open: boolean, time: number, velocity: number) => {
       const t = hatTime(time);
@@ -379,12 +370,8 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
     },
     cowbell: (time: number, velocity: number, ratio = 1) => {
       const t = bellTime(time);
-      coming.add(bellLow, t);
-      coming.add(bellHigh, t);
-      pitchAhead(bellLow, 540 * ratio, t);
-      pitchAhead(bellHigh, 800 * ratio, t);
-      bellLow.triggerAttackRelease(540 * ratio, '16n', t, velocity);
-      bellHigh.triggerAttackRelease(800 * ratio, '16n', t, velocity);
+      coming.add(bellLow, attackAhead(bellLow, 540 * ratio, t, (at) => bellLow.triggerAttackRelease(540 * ratio, '16n', at, velocity)));
+      coming.add(bellHigh, attackAhead(bellHigh, 800 * ratio, t, (at) => bellHigh.triggerAttackRelease(800 * ratio, '16n', at, velocity)));
     },
     /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
     releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),
