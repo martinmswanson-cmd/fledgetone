@@ -16,7 +16,7 @@ register(
   }
 }`)
 );
-const { createTake, quantizeTakeClip, normalizeRecordOptions, DEFAULT_RECORD_OPTIONS, QUANTIZE_TICKS } = await import('../src/store/recording.ts');
+const { createTake, quantizeTakeClip, normalizeRecordOptions, DEFAULT_RECORD_OPTIONS, QUANTIZE_TICKS, earlyNoteSeconds, noteStartInTake, shortestNoteSeconds } = await import('../src/store/recording.ts');
 const { durationToBars } = await import('../src/store/timelineTypes.ts');
 
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} is not within ${tol} of ${b}`);
@@ -312,6 +312,40 @@ test('punch: only notes started in the range are kept, and the clip is the range
   assert.deepEqual(clip.notes.map((n) => [n.note, n.startOffset]), [['D4', 0.5]]);
   near(durationToBars(clip.notes[0].duration), 0.5, 1e-6);
   assert.equal(createTake(1).finish(2, at(2), BPM, { punch: { inBar: 2, outBar: 3 } }), null);
+});
+
+test('punch: a note a moment before the punch in is its first note, moved to it; one well before is not kept', () => {
+  const take = createTake(1);
+  // 3 ms early for the punch in at bar 2 (at 120 BPM a bar is 2 s), let go 0.25 s later
+  take.noteOn(60, 'C4', 0.8, 2 - 0.003 / 2, at(2) - 0.003);
+  take.noteOff(60, at(2) + 0.247);
+  // 50 ms early (more than the 40 ms kept): in bar 1, outside the punch
+  take.noteOn(62, 'D4', 0.8, 2 - 0.05 / 2, at(2) - 0.05);
+  take.noteOff(62, at(2) - 0.01);
+  const clip = take.finish(4, at(4), BPM, { punch: { inBar: 2, outBar: 3 } });
+  assert.equal(clip.startBar, 2);
+  assert.deepEqual(clip.notes.map((n) => [n.note, n.startOffset]), [['C4', 0]]);
+  // It ends where it was let go: 0.247 s after the punch in, an 8th at 120 BPM (to the nearest tick)
+  near(durationToBars(clip.notes[0].duration), 0.125, 1 / 192);
+});
+
+test('the count-in: a note a moment early for the first downbeat starts the take; one played in the count-in is not kept', () => {
+  // A 32nd at 120 BPM is 62.5 ms: the take keeps none shorter, and a live tap sounds at least that long
+  near(shortestNoteSeconds(120), 0.0625);
+  near(shortestNoteSeconds(240), 0.03125);
+  assert.equal(shortestNoteSeconds(NaN), shortestNoteSeconds(120));
+  // Early by up to a 32nd, at most 40 ms
+  near(earlyNoteSeconds(120), 0.04);
+  near(earlyNoteSeconds(300), 0.025);
+  const start = 12;
+  assert.equal(noteStartInTake(start + 0.2, start, 120), start + 0.2);
+  assert.equal(noteStartInTake(start, start, 120), start);
+  assert.equal(noteStartInTake(start - 0.0005, start, 120), start);
+  assert.equal(noteStartInTake(start - 0.0019, start, 120), start);
+  assert.equal(noteStartInTake(start - 0.039, start, 120), start);
+  assert.equal(noteStartInTake(start - 0.05, start, 120), null);
+  assert.equal(noteStartInTake(start - 0.03, start, 300), null);
+  assert.equal(noteStartInTake(start - 1, start, 120), null);
 });
 
 test('takes: a note played just before the wrap is heard stays in its pass', () => {
