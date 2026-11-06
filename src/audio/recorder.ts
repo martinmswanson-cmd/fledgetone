@@ -3,7 +3,7 @@ import { liveMix } from './engine';
 import { ticksToBar } from './transport';
 import type { MidiMessage } from './midi';
 import { midiNoteName } from './midi';
-import { createTake } from '../store/recording';
+import { createTake, noteStartInTake } from '../store/recording';
 import type { FinishOptions, Take, TakeClip } from '../store/recording';
 
 /**
@@ -16,7 +16,7 @@ import type { FinishOptions, Take, TakeClip } from '../store/recording';
 interface ActiveTake {
   trackId: string;
   take: Take;
-  /** Audio time the Transport starts (notes heard before it, during a count-in, aren't kept). */
+  /** Audio time the Transport starts (notes heard before it, during a count-in, aren't kept, but for one a moment early: see noteStartInTake). */
   startAudio: number;
   stopListening: () => void;
 }
@@ -66,11 +66,14 @@ export function recordMidi(message: MidiMessage, heard: number): void {
   if (!active) return;
   const { take, startAudio } = active;
   switch (message.kind) {
-    case 'noteOn':
-      // Played during the count-in: before the music, so nowhere to put it
-      if (heard < startAudio) return;
-      take.noteOn(message.note, message.name ?? midiNoteName(message.note), message.velocity, transportBarAt(heard), heard);
+    case 'noteOn': {
+      // Played during the count-in: before the music, so nowhere to put it. One a moment early
+      // (aimed at the first downbeat) is the take's first note, at its start; it ends where let go
+      const at = noteStartInTake(heard, startAudio, transport().bpm.getValueAtTime(startAudio));
+      if (at === null) return;
+      take.noteOn(message.note, message.name ?? midiNoteName(message.note), message.velocity, at > heard ? take.startBar : transportBarAt(heard), at);
       break;
+    }
     case 'noteOff':
       take.noteOff(message.note, Math.max(heard, startAudio));
       break;

@@ -108,6 +108,33 @@ interface TakeNote {
 
 /** The shortest note a take keeps: a 32nd, the finest grid the piano roll shows. */
 const MIN_NOTE_BARS = 1 / 32;
+
+/** A usable tempo (a garbled one counts as 120 BPM). */
+const tempoOr120 = (bpm: number) => (Number.isFinite(bpm) && bpm > 0 ? bpm : 120);
+
+/**
+ * Seconds of the shortest note a take keeps, at `bpm`. A key let go sooner still sounds this long
+ * live (liveInput.ts), so what's heard is what the take, and the export, plays.
+ */
+export const shortestNoteSeconds = (bpm: number): number => (MIN_NOTE_BARS * 240) / tempoOr120(bpm);
+
+/**
+ * How early (seconds) a note can be played before a take starts and still be its first note, put
+ * at the start: a 32nd at `bpm`, at most 40 ms. A note aimed at the first downbeat after the
+ * count-in (or at a punch-in) is often a few ms early; one played sooner than this is in the
+ * count-in (50 ms early is a 40th of a bar at 120 BPM: a note of its own), and isn't kept.
+ */
+export const earlyNoteSeconds = (bpm: number): number => Math.min(0.04, shortestNoteSeconds(bpm));
+
+/**
+ * Where a note heard at `heard` starts in a take that starts at `startAudio` (audio seconds, the
+ * tempo there `bpm`): as heard, or at the start for one a moment early (see earlyNoteSeconds).
+ * Null for one played in the count-in, which isn't kept.
+ */
+export function noteStartInTake(heard: number, startAudio: number, bpm: number): number | null {
+  if (heard >= startAudio) return heard;
+  return startAudio - heard <= earlyNoteSeconds(bpm) ? startAudio : null;
+}
 const EPS = 1e-6;
 
 /**
@@ -224,8 +251,15 @@ export function createTake(startBar: number): Take {
       for (const n of sustained.values()) close(n, seconds);
       sustained.clear();
       const punch = options.punch && options.punch.outBar > options.punch.inBar + EPS ? options.punch : null;
-      // Punching, only what starts inside the range is kept
-      const kept = punch ? notes.filter((n) => n.bar >= punch.inBar - EPS && n.bar < punch.outBar - EPS) : notes;
+      // Punching, only what starts inside the range is kept, and what starts a moment before the
+      // punch in (see earlyNoteSeconds), moved to it: it still ends where it was let go
+      const inTempo = punch ? tempoAt(punch.inBar, tempo) : 0;
+      const earlyBars = punch ? (earlyNoteSeconds(inTempo) * inTempo) / 240 : 0;
+      const kept = punch
+        ? notes
+            .filter((n) => n.bar >= punch.inBar - earlyBars - EPS && n.bar < punch.outBar - EPS)
+            .map((n) => (n.bar >= punch.inBar ? n : { ...n, bar: punch.inBar, start: n.start + ((punch.inBar - n.bar) * 240) / tempoAt(n.bar, tempo) }))
+        : notes;
       if (kept.length === 0) return null;
       // Held this many seconds, at the tempo where the note started (and, punching, no further than the punch out)
       const lengthOf = (n: TakeNote) => {
