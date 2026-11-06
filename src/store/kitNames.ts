@@ -138,7 +138,7 @@ export function oneLineName(name: string): string {
 export const TEXT_NAME_MAX = 80;
 
 /** `text` cut to at most `max` characters as people see them (never half an emoji). */
-function cutToChars(text: string, max: number): string {
+export function cutToChars(text: string, max: number): string {
   if (text.length <= max) return text;
   let out = '';
   let count = 0;

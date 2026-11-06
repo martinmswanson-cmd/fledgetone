@@ -18,7 +18,7 @@ import type { FrameRate } from './timelineTypes';
 import { currentInstrumentKey, isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { breakLoops } from './buses';
-import { FOLDER_NAME_MAX } from './folders';
+import { folderName, trackColor } from './folders';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseGameSfx, type GameSfx } from './gameSfx';
@@ -362,7 +362,8 @@ export function parseTrack(raw: unknown): Track {
     name: v.name,
     // Optional: its name was made from a file's or folder's (see ownFiles.ts)
     ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}),
-    color: isStr(v.color) ? v.color : '#9ca3af',
+    // (A hex colour only: anything else is shown as a CSS value, and "url(...)" would be fetched)
+    color: trackColor(v.color),
     instrumentKey: v.instrumentKey as InstrumentKey,
     isMuted: v.isMuted === true,
     isSoloed: v.isSoloed === true,
@@ -427,8 +428,9 @@ export function parseTrack(raw: unknown): Track {
       ? {
           folder: {
             id: v.folder.id,
-            name: isStr(v.folder.name) && v.folder.name.trim() ? v.folder.name.slice(0, FOLDER_NAME_MAX) : 'Folder',
-            color: isStr(v.folder.color) ? v.folder.color : '#9ca3af',
+            // (cleaned as a typed name is, so a file and a link agree)
+            name: (isStr(v.folder.name) && folderName(v.folder.name)) || 'Folder',
+            color: trackColor(v.folder.color),
             ...(v.folder.collapsed === true ? { collapsed: true } : {}),
           },
         }
