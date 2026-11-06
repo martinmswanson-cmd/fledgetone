@@ -152,7 +152,7 @@ import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tid
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
-import { addTake, applyComp, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
+import { addTake, applyComp, compSegments, flattenTakes, keepNoteEdits, notesForLength, notesForStart, removeTake, sameComp, setCompRange, splitTakes, trimTakes } from './takes';
 import { meterChangeMoveTo, scaledTempos, tempoChangeMoveTo } from './tempoMoves';
 import { clampBpm, insertedMeasureBars, isPlainMeter, measureAt, measureBars, measureStart, measuresBetween, meterAt, nearestMeasureStart, secondsBetween, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
@@ -2271,7 +2271,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip?.takes?.length) return s;
         const kept = keepNoteEdits(clip);
-        const next = applyComp({ ...kept, comp: setCompRange(kept, from, to, take) }, () => uid('note'));
+        const comp = setCompRange(kept, from, to, take);
+        // The take already plays there (and the notes weren't edited): nothing to undo, the notes keep their ids
+        if (kept === clip && sameComp(comp, compSegments(clip))) return s;
+        const next = applyComp({ ...kept, comp }, () => uid('note'));
         return { clips: s.clips.map((c) => (c === clip ? next : c)), ...pushPast(s) };
       }),
 
