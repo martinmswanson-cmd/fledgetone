@@ -315,6 +315,18 @@ function restoreStepPlugins(step: HistoryEntry, tracks: Track[]): void {
 /** History patch that records the current state as the one to return to on undo (and, for a ripple edit, what it moved). */
 const pushPast = (s: TimelineState, ripple?: RippleMove) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), withRipple(historyEntry(s), ripple)], future: [] });
 
+/** The same value, whatever order their fields are in (undefined fields left out, as in a saved song). */
+const sameFields = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((x, i) => sameFields(x, (b as unknown[])[i]));
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  const ka = Object.keys(ra).filter((k) => ra[k] !== undefined);
+  const kb = Object.keys(rb).filter((k) => rb[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => Object.hasOwn(rb, k) && sameFields(ra[k], rb[k]));
+};
+
 /** Where undoing (or redoing) a ripple step puts the loop and the playhead: see RippleMove. */
 function rippleSpot(s: TimelineState, move: RippleMove, undo: boolean): { loopRegion: LoopRegion; playhead: number } {
   const from = undo ? move.after : move.before;
@@ -792,8 +804,8 @@ interface TimelineState {
   setIntensityCurve: (group: string, curve: IntensityCurve, record?: boolean) => void;
   /** Make a track a dialogue / SFX proxy the others duck under by `depth` dB, or not (null); one undo step */
   setTrackDuckProxy: (trackId: string, depth: number | null, record?: boolean) => void;
-  /** Put a track in a stem group (or none, with an empty name); one undo step */
-  setTrackStemGroup: (trackId: string, group: string) => void;
+  /** Put a track in a stem group (or none, with an empty name); `record`: one undo step (Auto-assign checkpoint()s once and passes false) */
+  setTrackStemGroup: (trackId: string, group: string, record?: boolean) => void;
   /** Transitions into game states, by section marker id ('cut' is left out) */
   transitions: Record<string, TransitionRule>;
   /** Set the rule from one state to another (marker ids; ANY_STATE as `from` for any), or remove it with null */
@@ -2204,11 +2216,14 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const tracks = s.tracks.map((t) => {
           const kept = (t.midiMap ?? []).filter((m) => m.cc !== cc && !(t.id === trackId && m.param === param));
           const midiMap = t.id === trackId ? [...kept, { cc, param }] : kept;
-          if (midiMap.length === (t.midiMap?.length ?? 0) && midiMap.every((m, i) => m === t.midiMap![i])) return t;
+          // (By knob and setting: the one mapped to them already is a new object, the same mapping)
+          if (midiMap.length === (t.midiMap?.length ?? 0) && midiMap.every((m, i) => m.cc === t.midiMap![i].cc && m.param === t.midiMap![i].param)) return t;
           const next: Track = { ...t, midiMap };
           if (!midiMap.length) delete next.midiMap;
           return next;
         });
+        // (Learnt again as it was: no empty undo step, and Redo kept)
+        if (tracks.every((t, i) => t === s.tracks[i])) return s;
         return { tracks, ...pushPast(s) };
       }),
 
@@ -2554,6 +2569,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (isDropKind(sound.settings.instrumentKey) !== isDropKind(current.instrumentKey) && get().clips.some((c) => c.trackId === id)) return;
       // (Its names made from a file marked, the track's too: one saved before the marks has none, see ownFiles.ts)
       const marked = soundWithFileMarks(sound, soundFileNames);
+      const next = withName(withSound(current, marked.settings), marked.name, !!marked.nameFromFile);
+      // (The sound it plays already: no empty undo step, and Redo kept. A plugin is built anew, with a new id, so it always changes)
+      if (!next.plugin && !next.pluginFx?.length && sameFields(next, current)) return;
       set((s) => ({
         tracks: s.tracks.map((t) => (t.id === id ? withName(withSound(t, marked.settings), marked.name, !!marked.nameFromFile) : t)),
         ...pushPast(s),
@@ -3082,7 +3100,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     setIntensityCurve: (group, curve, record = true) => set((s) => ({ intensityCurves: { ...s.intensityCurves, [group]: curve }, ...(record ? pushPast(s) : {}) })),
     setTrackDuckProxy: (trackId, depth, record = true) =>
       updateTrack(trackId, () => ({ duckProxy: depth === null ? undefined : { depth: Math.max(1, Math.min(30, depth)) } }), record),
-    setTrackStemGroup: (trackId, group) => {
+    setTrackStemGroup: (trackId, group, record = true) => {
       const name = group.trim().slice(0, 40);
       const track = get().tracks.find((t) => t.id === trackId);
       if (!track || (track.stemGroup ?? '') === name) return;
@@ -3092,7 +3110,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           const { stemGroup: _old, ...rest } = t;
           return name ? { ...rest, stemGroup: name } : { ...rest, stemGroup: undefined };
         },
-        true
+        record
       );
       // A new group starts from its default curve, kept with the project so it can be shaped
       if (name && !Object.hasOwn(get().intensityCurves, name)) set((s) => ({ intensityCurves: { ...s.intensityCurves, [name]: defaultCurve(name) } }));

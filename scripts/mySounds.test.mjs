@@ -3,6 +3,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 register(
   'data:text/javascript,' +
@@ -18,7 +19,7 @@ register(
 // A stand-in for the browser's storage
 const stored = new Map();
 globalThis.localStorage = { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, String(v)), removeItem: (k) => stored.delete(k) };
-const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MAX_SOUNDS, MY_SOUNDS_FORMAT, soundFile, soundFileName, soundRecordingIds } = await import('../src/store/mySounds.ts');
+const { soundOf, withSound, parseSound, savedSoundName, useMySounds, parseMySoundsFile, mergeSounds, MAX_SOUNDS, MY_SOUNDS_FORMAT, soundFile, soundFileName, soundRecordingIds } = await import('../src/store/mySounds.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 const { presetPatch, SYNTH_PRESETS } = await import('../src/store/synthPatch.ts');
 
@@ -173,4 +174,32 @@ test('saving a new sound into a full My sounds says so and keeps every sound (on
   assert.equal(useMySounds.getState().saveSound('Sound 0', track('a', 'realCello')), 'replaced');
   assert.equal(useMySounds.getState().sounds.length, MAX_SOUNDS);
   useMySounds.setState({ sounds: [] });
+});
+
+test('a sound saved with no name, or a long one, is kept under the name the message gives: the instrument, or the first 60 characters', () => {
+  useMySounds.setState({ sounds: [] });
+  assert.equal(useMySounds.getState().saveSound('  ', track('a', 'realCello')), 'saved');
+  assert.equal(savedSoundName('  ', track('a', 'realCello')), useMySounds.getState().sounds[0].name);
+  assert.notEqual(useMySounds.getState().sounds[0].name, 'a');
+  const long = 'X'.repeat(70);
+  useMySounds.getState().saveSound(long, track('b', 'realCello'));
+  assert.equal(savedSoundName(long, track('b', 'realCello')), 'X'.repeat(60));
+  assert.equal(useMySounds.getState().sounds[1].name, 'X'.repeat(60));
+  // (The message says that name, not the typed one or the track's)
+  assert.match(readFileSync(new URL('../src/components/inspector/TrackInspector.tsx', import.meta.url), 'utf8'), /'Saved'\} "\$\{savedSoundName\(name, track\)\}"/);
+  useMySounds.setState({ sounds: [] });
+});
+
+test('opening a My sounds file again counts the favourites it added (none the second time), and the message leaves a count of none out', () => {
+  useMySounds.setState({ sounds: [], favourites: ['piano'] });
+  const file = [{ id: 'f1', name: 'Pad', settings: soundOf(track('t', 'piano')) }];
+  const first = useMySounds.getState().importSounds(file, ['piano', 'realCello', 'realCello']);
+  assert.deepEqual(first, { added: 1, replaced: 0, full: 0, starred: 1 });
+  assert.deepEqual(useMySounds.getState().favourites, ['piano', 'realCello']);
+  const again = useMySounds.getState().importSounds(file, ['piano', 'realCello']);
+  assert.deepEqual(again, { added: 0, replaced: 1, full: 0, starred: 0 });
+  const words = readFileSync(new URL('../src/components/mySoundsFile.ts', import.meta.url), 'utf8');
+  assert.match(words, /done\.starred \? plural\(done\.starred, 'favourite'\) : ''/);
+  assert.doesNotMatch(words, /plural\(favourites\.length, 'favourite'\)\} from/);
+  useMySounds.setState({ sounds: [], favourites: [] });
 });
