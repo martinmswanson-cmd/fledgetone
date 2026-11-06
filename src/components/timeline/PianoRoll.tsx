@@ -573,8 +573,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const pianoHover = usePianoPanel((s) => (s.noteEntry && s.open ? s.hoverMidi : null));
   /** The cursor, in units from the clip's start: it starts after the clip's last note */
   const [entryAt, setEntryAt] = useState(() => Math.min(totalUnits, clip.notes.reduce((end, n) => Math.max(end, unitsOf(n.startOffset) + noteUnits(n)), 0)));
-  const entryRef = useRef({ at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits });
-  entryRef.current = { at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits };
+  const entryRef = useRef({ at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits, gridFits, gridLine });
+  entryRef.current = { at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits, gridFits, gridLine };
+  /** Where the cursor goes from `at`, a step on (`dir` 1) or back (-1): by the note length when that's the
+   *  longer step, else to the next grid line (in a meter the grid doesn't fit, the measure's downbeat counts) */
+  const entryStep = (at: number, dir: 1 | -1) => {
+    const { step, length, gridFits: fits, gridLine: line } = entryRef.current;
+    if (step === length || fits) return at + dir * step;
+    return dir > 0 ? line(at + 1e-3, 'ceil') : line(at - 1e-3, 'floor');
+  };
   /** The steps entered, newest last, for Backspace to take out again */
   const entered = useRef<Array<{ at: number; ids: string[] }>>([]);
   /** Scroll the grid (not the page) so `selector`'s element shows, clear of the keys and the ruler (`across`: sideways only) */
@@ -661,7 +668,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         if (ids[0]) requestAnimationFrame(() => keepInView(`[data-note-id="${ids[0]}"]`));
       } else {
         if (!held.delete(n.midi) || held.size > 0 || !chord) return;
-        setEntryAt(chord.at + entryRef.current.step);
+        setEntryAt(entryStep(chord.at, 1));
         chord = null;
       }
     });
@@ -1084,10 +1091,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       }
       // Note entry, with nothing selected: the arrows move the cursor (→ leaves a gap), Backspace takes the last step out
       if (noteEntryRef.current && !mod && selected.size === 0) {
-        const { step, totalUnits: end } = entryRef.current;
+        const { totalUnits: end } = entryRef.current;
         if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
           handled();
-          setEntryAt((at) => Math.max(0, Math.min(end, at + (e.key === 'ArrowRight' ? step : -step))));
+          setEntryAt((at) => Math.max(0, Math.min(end, entryStep(at, e.key === 'ArrowRight' ? 1 : -1))));
           return;
         }
         if (e.key === 'Backspace') {

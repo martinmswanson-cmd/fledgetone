@@ -132,6 +132,11 @@ export function setCompRange(clip: Pick<Clip, 'takes' | 'comp' | 'lengthBars'>, 
   return compSegments({ ...clip, comp: next });
 }
 
+/** Whether two comps play the same takes over the same stretches. */
+export function sameComp(a: CompSegment[], b: CompSegment[]): boolean {
+  return a.length === b.length && a.every((s, i) => s.take === b[i].take && Math.abs(s.at - b[i].at) < EPS);
+}
+
 /** A new take added to the folder (made one from the clip's own content if it isn't one yet), comped in whole. */
 export function addTake(clip: Clip, take: ClipTake): Clip {
   const takes: ClipTake[] = clip.takes?.length

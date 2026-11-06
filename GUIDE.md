@@ -972,7 +972,7 @@ The **Launcher** tab of the dock is a grid of loops: a column for every track an
 - **Fill the grid**: **Scenes from song** turns each section of the song (between its markers, or every 4 or 8 bars) into a scene. **Send selected clips** (or right-click clips, **Send to launcher**) puts the selected clips into each track's first empty slot. Drag a clip to another slot to move it, Alt-drag to copy it, and hover it for **×** to delete it.
 - **Launch a scene** with the ▶ at the start of its row: every track plays its clip in that row, and a track with nothing there stops.
 - **Stop** a track with the ■ in its column header (or click an empty slot); **Stop all** stops every clip. **Back to arrangement** lets every track play its arrangement again from the next bar line.
-- **Launch on**: launches land on the next beat, half bar, bar (the usual), 2 bars or 4 bars.
+- **Launch on**: launches land on the next beat, 2 beats, bar (the usual), 2 bars or 4 bars.
 - With nothing playing, launching starts playback from the bar the playhead is in. While the launcher is in use the song doesn't loop. Stopping playback ends the session, and the song plays its arrangement again.
 - **Write to arrangement** writes what you played, from your first launch to where you stopped, into the timeline (one Undo step): where a track played a slot, copies of its clip; where it was stopped, nothing. So you can jam a song together and then edit it.
 - The launcher's clips are saved with the project and undo like everything else. Moving the playhead back before your first launch plays the arrangement until it gets there.

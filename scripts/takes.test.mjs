@@ -2,6 +2,7 @@
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 // The app imports its own modules without the .ts extension (Vite resolves them); do the same here
 register(
@@ -46,6 +47,22 @@ test('comping a stretch from another take', () => {
   assert.deepEqual(applied.notes.map((n) => n.startOffset), [0.5, 1, 2, 2.5, 3.5]);
   // Comping the rest back to the same take merges the segments
   assert.deepEqual(t.setCompRange({ ...c, comp }, 0, 4, 1), [{ at: 0, take: 1 }]);
+});
+
+test('comping a take where it already plays is no change: no undo step, the notes keep their ids', () => {
+  const c = folder();
+  const comp = t.setCompRange(c, 1, 2.5, 0);
+  const comped = t.applyComp({ ...c, comp }, () => 'x');
+  // The whole clip to the take that plays it, a stretch inside one take's segment to that take: the same comp
+  assert.ok(t.sameComp(t.setCompRange(c, 0, 4, 1), t.compSegments(c)));
+  assert.ok(t.sameComp(t.setCompRange(comped, 1.25, 2, 0), t.compSegments(comped)));
+  assert.ok(!t.sameComp(t.setCompRange(comped, 0, 4, 0), t.compSegments(comped)));
+  assert.ok(!t.sameComp(t.setCompRange(comped, 2, 3, 0), t.compSegments(comped)));
+  // Unedited, the folder is kept as it is (what the store checks before making a step)
+  assert.equal(t.keepNoteEdits(comped), comped);
+  const store = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
+  const setTakeComp = store.slice(store.indexOf('setTakeComp: (clipId, '), store.indexOf('deleteTake: (clipId, '));
+  assert.match(setTakeComp, /if \(kept === clip && sameComp\(comp, compSegments\(clip\)\)\) return s;/);
 });
 
 test('adding and removing takes', () => {
