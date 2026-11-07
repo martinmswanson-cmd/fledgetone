@@ -5,7 +5,7 @@
  * together, with nothing else done between, are the same step; choosing a preset is a step of
  * its own. The new settings are read onto the track a moment later, so a save or a redo has them.
  */
-import type { BuiltinControls } from '../audio/plugins/builtinHost';
+import type { BuiltinControls, BuiltinParam } from '../audio/plugins/builtinHost';
 import { captureWamStateNow, pluginIdOfControls } from '../audio/wamHost';
 import { useTimelineStore } from './timelineStore';
 import { TABLE_CAP, USER_TABLE_INDEX, type UserTable } from '../audio/plugins/userTable';
@@ -49,8 +49,17 @@ export function editPluginParam(controls: BuiltinControls, index: number, value:
   if (pluginId) readSoon(pluginId);
 }
 
-/** Set several parameters of a live built-in plugin at once (Reset all), as one undo step of its own. */
+/**
+ * What Reset all sets: each parameter not at its default, back to it. One an automation lane holds
+ * is left out (the lane has it, so setting it would change nothing).
+ */
+export function resetAllMoves(params: ReadonlyArray<Pick<BuiltinParam, 'value' | 'defaultValue' | 'held'>>): Array<readonly [index: number, value: number]> {
+  return params.flatMap((p, i) => (p.held || p.value === p.defaultValue ? [] : [[i, p.defaultValue] as const]));
+}
+
+/** Set several parameters of a live built-in plugin at once (Reset all), as one undo step of its own (none if there are none). */
 export function editPluginParams(controls: BuiltinControls, values: ReadonlyArray<readonly [index: number, value: number]>, pluginId = pluginIdOfControls(controls)): void {
+  if (!values.length) return;
   if (pluginId) {
     last = null;
     begin(pluginId, 'all');
