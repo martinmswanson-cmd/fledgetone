@@ -1,6 +1,6 @@
 /**
- * Turning a built-in plugin's knobs as undoable edits (Fledge Synth's panel in the studio, its
- * Sound tool in Pocket). The first move of a gesture makes an undo step holding the plugin's
+ * Turning a built-in plugin's knobs as undoable edits (its window in the studio, Fledge Synth's
+ * panel included, and the Sound tool in Pocket). The first move of a gesture makes an undo step holding the plugin's
  * settings before it (checkpointPlugin in timelineStore.ts); moves of the same control close
  * together, with nothing else done between, are the same step; choosing a preset is a step of
  * its own. The new settings are read onto the track a moment later, so a save or a redo has them.
@@ -46,6 +46,18 @@ function readSoon(pluginId: string): void {
 export function editPluginParam(controls: BuiltinControls, index: number, value: number, pluginId = pluginIdOfControls(controls), control = String(index)): void {
   if (pluginId) begin(pluginId, control);
   controls.set(index, value);
+  if (pluginId) readSoon(pluginId);
+}
+
+/** Set several parameters of a live built-in plugin at once (Reset all), as one undo step of its own. */
+export function editPluginParams(controls: BuiltinControls, values: ReadonlyArray<readonly [index: number, value: number]>, pluginId = pluginIdOfControls(controls)): void {
+  if (pluginId) {
+    last = null;
+    begin(pluginId, 'all');
+    // (The next turn of a knob is a step of its own)
+    last = null;
+  }
+  for (const [index, value] of values) controls.set(index, value);
   if (pluginId) readSoon(pluginId);
 }
 

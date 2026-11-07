@@ -25,6 +25,9 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
   // Where the drag started and the point then: the point moves by as much as the pointer has (a
   // press near a point that doesn't move leaves it where it is, not under the pointer)
   const grab = useRef<{ from: [number, number]; point: [number, number] } | null>(null);
+  // The point the last press on empty space added, and when: a double-click there is one new point
+  // in one step (as in the Duck shape), not a point added and taken away again
+  const added = useRef<{ point: [number, number]; at: number } | null>(null);
   const toX = (x: number) => PAD + x * (W - 2 * PAD);
   const toY = (y: number) => H - PAD - y * (H - 2 * PAD);
   const fromEvent = (e: React.PointerEvent): [number, number] => {
@@ -63,6 +66,7 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
             const p = fromEvent(e);
             const next = [...curve, p].sort((a, b) => a[0] - b[0]) as IntensityCurve;
             save(next);
+            added.current = { point: p, at: e.timeStamp };
             grab.current = { from: p, point: p };
             setDrag(next.indexOf(p));
           }
@@ -90,6 +94,10 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
         onPointerUp={() => setDrag(null)}
         onDoubleClick={(e) => {
           const i = near(e as unknown as React.PointerEvent);
+          const a = added.current;
+          added.current = null;
+          // (The point this double-click's first press added stays: that was its one step)
+          if (i >= 0 && a && e.timeStamp - a.at < 1000 && curve[i][0] === a.point[0] && curve[i][1] === a.point[1]) return;
           if (i >= 0 && curve.length > 1) save(curve.filter((_, k) => k !== i));
         }}
       >

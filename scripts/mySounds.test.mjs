@@ -23,7 +23,7 @@ const { soundOf, withSound, parseSound, savedSoundName, useMySounds, parseMySoun
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 const { presetPatch, SYNTH_PRESETS } = await import('../src/store/synthPatch.ts');
 
-const track = (id, instrumentKey, extra = {}) => ({ id, name: id, color: '#fff', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0, ...extra });
+const track = (id, instrumentKey, extra = {}) => ({ id, name: id, color: '#ffffff', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0, ...extra });
 
 test("a saved sound keeps the instrument's settings but not the track's level, pan, routing or name", () => {
   const synth = presetPatch(SYNTH_PRESETS[1].id);
