@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { RotateCcw } from 'lucide-react';
 import { setBuiltinGui, type BuiltinControls } from '../../audio/plugins/builtinHost';
 import { FledgeSynthPanel } from './FledgeSynthPanel';
+import { editPluginParam, editPluginParams, editPluginProgram } from '../../store/pluginEdits';
 
 /**
  * The window of a built-in plugin (see builtinHost.ts): what it does, and a slider for each of
@@ -46,7 +47,7 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
           <span className="w-[96px]">Preset</span>
           <select
             value={controls.program()}
-            onChange={(e) => void controls.setProgram(Number(e.target.value))}
+            onChange={(e) => void editPluginProgram(controls, Number(e.target.value))}
             aria-label="Preset"
             className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
           >
@@ -83,8 +84,9 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
             value={p.value}
             aria-label={p.name}
             disabled={p.held}
-            onChange={(e) => controls.set(i, Number(e.target.value))}
-            onDoubleClick={() => controls.set(i, p.defaultValue)}
+            // (Every move of one drag is one undo step, the double-click that puts it back too: see pluginEdits.ts)
+            onChange={(e) => editPluginParam(controls, i, Number(e.target.value))}
+            onDoubleClick={() => p.value !== p.defaultValue && editPluginParam(controls, i, p.defaultValue)}
             className="accent-fuchsia-400 w-full"
           />
           <span className="font-mono text-[10px] text-right text-forge-muted truncate">{tidyValue(p.text)}</span>
@@ -93,7 +95,10 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
       {params.length > 0 && (
         <button
           type="button"
-          onClick={() => params.forEach((p, i) => controls.set(i, p.defaultValue))}
+          onClick={() => {
+            const back = params.flatMap((p, i) => (p.value === p.defaultValue ? [] : [[i, p.defaultValue] as const]));
+            if (back.length) editPluginParams(controls, back);
+          }}
           className="self-start h-6 px-2 flex items-center gap-1 rounded border border-forge-border text-[10px] text-forge-muted hover:text-forge-text"
         >
           <RotateCcw className="w-3 h-3" /> Reset all

@@ -22,9 +22,9 @@ const { TRACK_COLORS } = await import('../src/store/timelineTypes.ts');
 const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
 const { readFileSync } = await import('node:fs');
 
-const T = (id, folder) => ({ id, name: id, color: '#fff', ...(folder ? { folder } : {}) });
+const T = (id, folder) => ({ id, name: id, color: '#ffffff', ...(folder ? { folder } : {}) });
 const ids = (tracks) => tracks.map((t) => t.id + (t.folder ? `:${t.folder.id}` : '')).join(' ');
-const F = { id: 'f', name: 'Drums', color: '#f00' };
+const F = { id: 'f', name: 'Drums', color: '#ff0000' };
 
 test('grouping puts the tracks together, where the first one was', () => {
   const tracks = [T('a'), T('b'), T('c'), T('d')];
@@ -45,9 +45,9 @@ test('tidy keeps members together and sharing one folder', () => {
 
 test('renaming, recolouring and folding reach every member', () => {
   const tracks = [T('a', F), T('b', F), T('c')];
-  const out = updateFolder(tracks, 'f', { color: '#0f0' }, true);
-  assert.deepEqual(out.map((t) => t.color), ['#0f0', '#0f0', '#fff']);
-  assert.ok(out.slice(0, 2).every((t) => t.folder.color === '#0f0'));
+  const out = updateFolder(tracks, 'f', { color: '#00ff00' }, true);
+  assert.deepEqual(out.map((t) => t.color), ['#00ff00', '#00ff00', '#ffffff']);
+  assert.ok(out.slice(0, 2).every((t) => t.folder.color === '#00ff00'));
   const folded = updateFolder(tracks, 'f', { collapsed: true });
   assert.equal(folded[0].folder.collapsed, true);
   assert.equal('collapsed' in updateFolder(folded, 'f', { collapsed: false })[0].folder, false);
@@ -57,20 +57,20 @@ test('renaming, recolouring and folding reach every member', () => {
 test('a change to what the folder already is changes nothing (so the store makes no undo step)', () => {
   const tracks = [T('a', F), T('b', F)];
   // Same colour, but its tracks aren't that colour yet: a real change
-  const recoloured = updateFolder(tracks, 'f', { color: '#f00' }, true);
+  const recoloured = updateFolder(tracks, 'f', { color: '#ff0000' }, true);
   assert.notEqual(recoloured, tracks);
-  assert.deepEqual(recoloured.map((t) => t.color), ['#f00', '#f00']);
+  assert.deepEqual(recoloured.map((t) => t.color), ['#ff0000', '#ff0000']);
   // Again: nothing to change
-  assert.equal(updateFolder(recoloured, 'f', { color: '#f00' }, true), recoloured);
-  assert.equal(updateFolder(tracks, 'f', { color: '#f00' }), tracks);
+  assert.equal(updateFolder(recoloured, 'f', { color: '#ff0000' }, true), recoloured);
+  assert.equal(updateFolder(tracks, 'f', { color: '#ff0000' }), tracks);
   assert.equal(updateFolder(tracks, 'f', { name: 'Drums' }), tracks);
   assert.equal(updateFolder(tracks, 'f', { collapsed: false }), tracks);
   const folded = updateFolder(tracks, 'f', { collapsed: true });
   assert.notEqual(folded, tracks);
   assert.equal(updateFolder(folded, 'f', { collapsed: true }), folded);
   // A member's colour changed on its own: recolouring with the folder's colour brings it back
-  const odd = [T('a', F), { ...T('b', F), color: '#00f' }];
-  assert.deepEqual(updateFolder(odd, 'f', { color: '#f00' }, true).map((t) => t.color), ['#f00', '#f00']);
+  const odd = [T('a', F), { ...T('b', F), color: '#0000ff' }];
+  assert.deepEqual(updateFolder(odd, 'f', { color: '#ff0000' }, true).map((t) => t.color), ['#ff0000', '#ff0000']);
 });
 
 test('moving into and out of a folder', () => {
@@ -154,6 +154,17 @@ test('a track or folder colour is a hex colour only, and every colour the app gi
   for (const [key, meta] of Object.entries(INSTRUMENTS)) assert.ok(isTrackColor(meta.color), `${key}: ${meta.color}`);
 });
 
+test('every colour kept is lowercase #rrggbb, so the studio can add its own alpha to it', () => {
+  const six = /^#[0-9a-f]{6}$/;
+  assert.equal(trackColor('#fff'), '#ffffff');
+  assert.equal(trackColor('#F0a'), '#ff00aa');
+  assert.equal(trackColor('#A855F7'), '#a855f7');
+  assert.equal(trackColor('#A855F7cc'), '#a855f7');
+  assert.equal(trackColor('#a855f700'), '#a855f7');
+  for (const c of [...TRACK_COLORS, ...Object.values(INSTRUMENTS).map((m) => m.color), DEFAULT_TRACK_COLOR]) assert.match(trackColor(c), six, c);
+  for (const c of HOSTILE) assert.match(trackColor(c), six);
+});
+
 const fileTrack = (extra) => ({ id: 't1', name: 'Bass', instrumentKey: 'piano', ...extra });
 const fileSong = (tracks) => ({ format: PROJECT_FORMAT, version: PROJECT_VERSION, name: 'Colours', bpm: 120, tracks, clips: [] });
 
@@ -173,11 +184,23 @@ test('a colour from a file, a link or a shared sound that is not a hex colour op
   assert.equal(back.tracks[0].folder.color, '#3b82f6');
 });
 
+test('a short or see-through colour from a file, a link or the folder menu is kept as six digits', () => {
+  const t = parseTrack(fileTrack({ color: '#F0A', folder: { id: 'f', name: 'Drums', color: '#22C55E80' } }));
+  assert.equal(t.color, '#ff00aa');
+  assert.equal(t.folder.color, '#22c55e');
+  const tracks = [T('a', F), T('b', F)];
+  const out = updateFolder(tracks, 'f', { color: '#00FF0080' }, true);
+  assert.ok(out.every((x) => x.folder.color === '#00ff00' && x.color === '#00ff00'));
+  // (The same colour spelled another way is no change)
+  const same = [T('a', { ...F, color: '#00ff00' })].map((x) => ({ ...x, color: '#00ff00' }));
+  assert.equal(updateFolder(same, 'f', { color: '#0F0' }, true), same);
+});
+
 test('setting a colour that is not a hex colour changes nothing', () => {
   const tracks = [T('a', F), T('b', F)];
   for (const c of HOSTILE) assert.equal(updateFolder(tracks, 'f', { color: c }, true), tracks);
   const renamed = updateFolder(tracks, 'f', { name: 'Kit', color: 'url(x)' }, true);
-  assert.ok(renamed.every((t) => t.folder.name === 'Kit' && t.folder.color === '#f00' && t.color === '#fff'));
+  assert.ok(renamed.every((t) => t.folder.name === 'Kit' && t.folder.color === '#ff0000' && t.color === '#ffffff'));
   const store = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
   assert.match(store, /setTrackColor: \(trackId, color\) => \{\n\s+if \(isTrackColor\(color\)\)/);
 });
