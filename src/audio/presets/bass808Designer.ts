@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createOsc, createOscAhead, createVoiceSet, noteFrequency, slidePitch } from './native';
+import { connectOut, createBus, createFilter, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, slidePitch, strikeLive } from './native';
 import type { NativeVoice, PitchGlide } from './native';
 import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
@@ -98,13 +98,20 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     for (const [t, cents] of bends.after(from + v.lead, v.stopAt + v.lead)) v.osc.detune.setTargetAtTime(cents, Math.max(raw.currentTime, t - v.lead), 0.006);
   };
 
-  const playNote = (n: PlayableNote, time: number): Voice808 | undefined => {
+  /** What a note changes that a strike again puts back first: the note sounding, and how the last one got to its pitch. */
+  const putBack = () => {
+    const was = { current, slid };
+    return () => {
+      ({ current, slid } = was);
+    };
+  };
+
+  const playNote = (n: PlayableNote, start: number): Voice808 | undefined => {
     const s = settings;
     const note = tuneNote(n.note, s);
     const freq = noteFrequency(note);
     const length = bus.toSeconds(n.duration);
     if (!Number.isFinite(length) || !(freq > 0)) return;
-    const start = notLate(bus.context, time);
     const end = start + Math.max(0.01, length);
 
     // A note starting before the sounding one ends doesn't hit again: the sounding one slides to
@@ -134,8 +141,10 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     const lead = start - wanted >= raw.currentTime ? wanted : 0;
     const from = start - lead;
     const until = end - lead;
-    // The previous note (ringing on after its end) gives way quickly: one 808 at a time
-    if (current && current.stopAt > from) voices.release(current, from, 0.015);
+    // The previous note (ringing on after its end) gives way quickly: one 808 at a time (once
+    // this one is found in time: a strike let go leaves it sounding, see strikeLive)
+    const before = current;
+    if (before && before.stopAt > from) onceStruck(() => voices.release(before, from, 0.015));
 
     // A punch starts a block early, so its drop starts on time (silent until `from`: see createOscAhead)
     const osc = s.punch > 0 ? createOscAhead(raw, 'sine', freq * 2 ** (s.punch / 12), from, bends.at(start)) : createOsc(raw, 'sine', freq, from, bends.at(start));
@@ -177,7 +186,7 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
         nodes.push(grit, low, high);
       }
     }
-    amp.connect(input);
+    connectOut(amp, input);
     // Silent (60 dB down) once it has died away or been let go, whichever is first
     const stopAt = Math.min(until + RELEASE * 1.5, from + ATTACK + s.decay * 1.05 + 0.01);
     const top = s.punch > 0 ? freq * 2 ** (s.punch / 12) : freq;
@@ -196,7 +205,9 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
       // One note at a time: the loudest of a chord
       const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
       try {
-        const v = playNote(n, time);
+        // (Live, struck again should the page be held up while it's built: see strikeLive. A slide
+        // adds no voice, so it's never struck again.)
+        const v = strikeLive(bus.context, time, (start) => playNote(n, start), putBack());
         if (v) v.heldBy = undefined;
       } catch (err) {
         console.warn('Skipped a note:', err);
@@ -204,12 +215,12 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
     },
     /** A key held on a MIDI keyboard: it sounds until let go (or has died away). */
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: HELD_NOTE }, time);
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: HELD_NOTE }, start), putBack());
       const key = {};
       if (voice) voice.heldBy = key;
       return (at: number) => {
         if (!voice || current !== voice || voice.heldBy !== key) return;
-        const t = Math.max(raw.currentTime, notLate(bus.context, at) - voice.lead);
+        const t = Math.max(raw.currentTime, movedRelease(voice, notLate(bus.context, at)) - voice.lead);
         voices.release(voice, t, RELEASE);
         voice.end = t;
       };

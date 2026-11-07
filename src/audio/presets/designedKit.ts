@@ -1,6 +1,5 @@
 import * as Tone from 'tone';
-import { notLate } from './monotonic';
-import { createBus, createVoiceSet } from './native';
+import { connectOut, createBus, createVoiceSet, onceStruck, strikeLive } from './native';
 import type { NativeVoice } from './native';
 import { renderDrumSound, renderDrumStereo } from '../drumSynth';
 import { noiseKey } from '../seededNoise';
@@ -67,16 +66,20 @@ export function createDesignedKit(output: Tone.InputNode, design: DrumDesign | u
     return buffer;
   };
 
-  /** Play `row` at `time`: `velocity` 0 to 1, `ratio` its pitch as a playback rate (1: as designed). */
+  /**
+   * Play `row` at `time`: `velocity` 0 to 1, `ratio` its pitch as a playback rate (1: as designed).
+   * Live, struck again should the page be held up while it's built (see strikeLive): a hit starts
+   * at full level, so one built after the sound passed its start was cut short or not heard at all.
+   */
   const hit = (row: DesignRow, time: number, velocity: number, ratio = 1) => {
+    const buffer = bufferFor(row);
+    strikeLive(bus.context, time, (start) => strike(row, buffer, start, velocity, ratio));
+  };
+  const strike = (row: DesignRow, buffer: AudioBuffer, start: number, velocity: number, ratio: number) => {
     // On a whole sample: Chrome starts a buffer between samples by interpolating it, which dulls a
     // hat or a snare's noise by several dB (and a hit would differ with where it fell)
-    const t = Math.round(notLate(bus.context, time) * raw.sampleRate) / raw.sampleRate;
-    const buffer = bufferFor(row);
-    if (row === 'closedHat' || row === 'openHat') {
-      for (const v of hats) if (v.stopAt > t) voices.release(v, t, CHOKE);
-      hats = hats.filter((v) => v.stopAt > t);
-    }
+    const t = Math.round(start * raw.sampleRate) / raw.sampleRate;
+    const hat = row === 'closedHat' || row === 'openHat';
     const src = raw.createBufferSource();
     src.buffer = buffer;
     src.playbackRate.value = Math.max(0.25, Math.min(4, ratio));
@@ -84,11 +87,17 @@ export function createDesignedKit(output: Tone.InputNode, design: DrumDesign | u
     // Softer hits are quieter, a little more than in proportion (between the synthesized kits' and the recorded ones')
     amp.gain.value = Math.max(0, Math.min(1, velocity)) ** 1.5;
     src.connect(amp);
-    amp.connect(input);
+    connectOut(amp, input);
     src.start(t);
     const voice: NativeVoice = { start: t, stopAt: t + buffer.duration / src.playbackRate.value + 0.005, sources: [src], nodes: [src, amp], amp };
     voices.add(voice);
-    if (row === 'openHat' || row === 'closedHat') hats.push(voice);
+    // A hat chokes the open hat still ringing (once this one is found in time)
+    if (hat)
+      onceStruck(() => {
+        for (const v of hats) if (v.stopAt > t) voices.release(v, t, CHOKE);
+        hats = hats.filter((v) => v.stopAt > t);
+        hats.push(voice);
+      });
   };
 
   // Live, render the kit's sounds in the moments the page is idle, so the first hits don't wait for them

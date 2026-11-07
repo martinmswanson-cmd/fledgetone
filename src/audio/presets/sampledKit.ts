@@ -2,8 +2,7 @@ import * as Tone from 'tone';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
 import { copySetFor, loadSamplesAt, noteJitter, recordedDuration, recordingWish } from '../samplers/samplerManager';
-import { notLate } from './monotonic';
-import { createBus, createVoiceSet } from './native';
+import { connectOut, createBus, createVoiceSet, strikeLive } from './native';
 import { alwaysStereo } from '../nativeNodes';
 
 /**
@@ -104,27 +103,29 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const picked = pick(note, velocity);
     if (!picked) return false;
     const { buffer } = picked;
-    const t = notLate(bus.context, time);
-    const src = raw.createBufferSource();
-    // As recorded: not detuned (that resampled every hit and dulled the cymbals); the takes in
-    // turn and the level below keep a repeated hit from sounding like a machine. A hit at another
-    // pitch (an open hat's) plays its copy at that pitch where it's made, at a rate of 1
-    const rate = opts.rate ?? 1;
-    const copy = rate !== 1 ? copies.find(buffer, recordingWish(buffer, rate, raw)) : undefined;
-    src.buffer = copy?.buffer ?? buffer;
-    src.playbackRate.value = copy ? 1 : rate;
-    const amp = raw.createGain();
-    // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom),
-    // and no two quite alike, as a drummer never strikes the same spot twice: up to ±0.8 dB, the
-    // same for the same hit every time it plays
-    amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
-    // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
-    const length = Math.min(opts.seconds ?? Infinity, copy ? recordedDuration(copy.buffer) : recordedDuration(buffer) / rate);
-    if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);
-    src.connect(amp);
-    amp.connect(input);
-    src.start(t);
-    voices.add({ start: t, stopAt: t + length + 0.01, sources: [src], nodes: [src, amp], amp });
+    // (Live, struck again should the page be held up while it's built: see strikeLive)
+    strikeLive(bus.context, time, (t) => {
+      const src = raw.createBufferSource();
+      // As recorded: not detuned (that resampled every hit and dulled the cymbals); the takes in
+      // turn and the level below keep a repeated hit from sounding like a machine. A hit at another
+      // pitch (an open hat's) plays its copy at that pitch where it's made, at a rate of 1
+      const rate = opts.rate ?? 1;
+      const copy = rate !== 1 ? copies.find(buffer, recordingWish(buffer, rate, raw)) : undefined;
+      src.buffer = copy?.buffer ?? buffer;
+      src.playbackRate.value = copy ? 1 : rate;
+      const amp = raw.createGain();
+      // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom),
+      // and no two quite alike, as a drummer never strikes the same spot twice: up to ±0.8 dB, the
+      // same for the same hit every time it plays
+      amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
+      // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
+      const length = Math.min(opts.seconds ?? Infinity, copy ? recordedDuration(copy.buffer) : recordedDuration(buffer) / rate);
+      if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);
+      src.connect(amp);
+      connectOut(amp, input);
+      src.start(t);
+      voices.add({ start: t, stopAt: t + length + 0.01, sources: [src], nodes: [src, amp], amp });
+    });
     return true;
   };
 

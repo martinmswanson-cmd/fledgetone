@@ -3,7 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { FX_NOTES } from '../instrumentCatalog';
 import { notLate } from './monotonic';
-import { createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, strikeLive } from './native';
+import { connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, strikeLive } from './native';
 import type { NativeVoice } from './native';
 import { noiseKey } from '../seededNoise';
 
@@ -182,7 +182,7 @@ export function createFx(output: Tone.InputNode, seed = 0) {
     if (!Number.isFinite(length)) return; // garbled by hand-editing: skip it
     // Above zero: the swells are exponential ramps, which can't start or end at 0
     const voice = hit(raw, start, Math.max(MIN_LENGTH, length), Math.max(0.01, n.velocity), noiseKey(seed, n.note));
-    voice.amp.connect(input);
+    connectOut(voice.amp, input);
     const added = { ...voice, start };
     voices.add(added);
     return added;

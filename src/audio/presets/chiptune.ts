@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, releaseConstant, releaseTail, strikeLive } from './native';
+import { connectOut, createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, releaseConstant, releaseTail, strikeLive } from './native';
 import { noiseKey } from '../seededNoise';
 import { HELD_NOTE } from './edmSynths';
 
@@ -84,7 +84,7 @@ function createGatedSynth(output: Tone.InputNode, wave: (raw: BaseAudioContext) 
       sources.push(lfo);
     }
     osc.connect(amp);
-    amp.connect(tone);
+    connectOut(amp, tone);
     const voice = { start, stopAt: end + releaseTail(opts.release), sources, nodes, amp };
     voices.add(voice);
     return voice;
@@ -148,69 +148,70 @@ export function createChipDrums(output: Tone.InputNode, seed = 0) {
     voices.add({ start, stopAt: start + seconds, sources, nodes, amp });
   };
 
-  const kick = (time: number, velocity: number) => {
-    const t = notLate(bus.context, time);
-    // A square sweeping down fast, then the triangle's thump
-    // (Started a block early, so the sweep starts on time: silent until the hit)
-    const sq = createOscAhead(raw, 'square', 300, t);
-    sq.frequency.exponentialRampToValueAtTime(45, t + 0.08);
-    const amp = raw.createGain();
-    amp.gain.value = 0;
-    amp.gain.setValueAtTime(0.55 * velocity, t);
-    amp.gain.setTargetAtTime(0, t + 0.02, 0.05);
-    const lp = createFilter(raw, 'lowpass', 1800, 0.7);
-    sq.connect(lp);
-    lp.connect(amp);
-    amp.connect(input);
-    hit([sq], [sq, lp, amp], amp, t, 0.4);
-  };
+  // (Live, each hit struck again should the page be held up while it's built: see strikeLive)
+  const kick = (time: number, velocity: number) =>
+    strikeLive(bus.context, time, (t) => {
+      // A square sweeping down fast, then the triangle's thump
+      // (Started a block early, so the sweep starts on time: silent until the hit)
+      const sq = createOscAhead(raw, 'square', 300, t);
+      sq.frequency.exponentialRampToValueAtTime(45, t + 0.08);
+      const amp = raw.createGain();
+      amp.gain.value = 0;
+      amp.gain.setValueAtTime(0.55 * velocity, t);
+      amp.gain.setTargetAtTime(0, t + 0.02, 0.05);
+      const lp = createFilter(raw, 'lowpass', 1800, 0.7);
+      sq.connect(lp);
+      lp.connect(amp);
+      connectOut(amp, input);
+      hit([sq], [sq, lp, amp], amp, t, 0.4);
+    });
 
-  const snare = (time: number, velocity: number) => {
-    const t = notLate(bus.context, time);
-    const noise = createNoise(raw, t, noiseKey(seed, 'snare'));
-    const hp = createFilter(raw, 'highpass', 1200, 0.7);
-    const amp = raw.createGain();
-    amp.gain.setValueAtTime(0.5 * velocity, t);
-    amp.gain.setTargetAtTime(0, t + 0.01, 0.045);
-    const tone = createOscAhead(raw, 'square', 220, t);
-    tone.frequency.exponentialRampToValueAtTime(140, t + 0.05);
-    const toneAmp = raw.createGain();
-    toneAmp.gain.value = 0;
-    toneAmp.gain.setValueAtTime(0.18 * velocity, t);
-    toneAmp.gain.setTargetAtTime(0, t, 0.025);
-    noise.connect(hp);
-    hp.connect(amp);
-    tone.connect(toneAmp);
-    amp.connect(input);
-    toneAmp.connect(input);
-    hit([noise, tone], [noise, hp, amp, tone, toneAmp], amp, t, 0.35);
-  };
+  const snare = (time: number, velocity: number) =>
+    strikeLive(bus.context, time, (t) => {
+      const noise = createNoise(raw, t, noiseKey(seed, 'snare'));
+      const hp = createFilter(raw, 'highpass', 1200, 0.7);
+      const amp = raw.createGain();
+      amp.gain.setValueAtTime(0.5 * velocity, t);
+      amp.gain.setTargetAtTime(0, t + 0.01, 0.045);
+      const tone = createOscAhead(raw, 'square', 220, t);
+      tone.frequency.exponentialRampToValueAtTime(140, t + 0.05);
+      const toneAmp = raw.createGain();
+      toneAmp.gain.value = 0;
+      toneAmp.gain.setValueAtTime(0.18 * velocity, t);
+      toneAmp.gain.setTargetAtTime(0, t, 0.025);
+      noise.connect(hp);
+      hp.connect(amp);
+      tone.connect(toneAmp);
+      connectOut(amp, input);
+      connectOut(toneAmp, input);
+      hit([noise, tone], [noise, hp, amp, tone, toneAmp], amp, t, 0.35);
+    });
 
-  const hat = (open: boolean, time: number, velocity: number) => {
-    const t = notLate(bus.context, time);
-    const src = open ? metallicNoise(raw, t, 2.2) : createNoise(raw, t, noiseKey(seed, 'hat'));
-    const hp = createFilter(raw, 'highpass', open ? 5000 : 7500, 0.7);
-    const amp = raw.createGain();
-    amp.gain.setValueAtTime((open ? 0.22 : 0.3) * velocity, t);
-    amp.gain.setTargetAtTime(0, t + 0.005, open ? 0.09 : 0.012);
-    src.connect(hp);
-    hp.connect(amp);
-    amp.connect(input);
-    hit([src], [src, hp, amp], amp, t, open ? 0.6 : 0.12);
-  };
+  const hat = (open: boolean, time: number, velocity: number) =>
+    strikeLive(bus.context, time, (t) => {
+      const src = open ? metallicNoise(raw, t, 2.2) : createNoise(raw, t, noiseKey(seed, 'hat'));
+      const hp = createFilter(raw, 'highpass', open ? 5000 : 7500, 0.7);
+      const amp = raw.createGain();
+      amp.gain.setValueAtTime((open ? 0.22 : 0.3) * velocity, t);
+      amp.gain.setTargetAtTime(0, t + 0.005, open ? 0.09 : 0.012);
+      src.connect(hp);
+      hp.connect(amp);
+      connectOut(amp, input);
+      hit([src], [src, hp, amp], amp, t, open ? 0.6 : 0.12);
+    });
 
-  const cowbell = (time: number, velocity: number) => {
-    const t = notLate(bus.context, time);
-    const src = metallicNoise(raw, t, 0.9);
-    const bp = createFilter(raw, 'bandpass', 900, 3);
-    const amp = raw.createGain();
-    amp.gain.setValueAtTime(0.35 * velocity, t);
-    amp.gain.setTargetAtTime(0, t + 0.01, 0.06);
-    src.connect(bp);
-    bp.connect(amp);
-    amp.connect(input);
-    hit([src], [src, bp, amp], amp, t, 0.4);
-  };
+  const cowbell = (time: number, velocity: number) =>
+    strikeLive(bus.context, time, (t) => {
+      const src = metallicNoise(raw, t, 0.9);
+      const bp = createFilter(raw, 'bandpass', 900, 3);
+      const amp = raw.createGain();
+      amp.gain.setValueAtTime(0.35 * velocity, t);
+      amp.gain.setTargetAtTime(0, t + 0.01, 0.06);
+      src.connect(bp);
+      bp.connect(amp);
+      connectOut(amp, input);
+      hit([src], [src, bp, amp], amp, t, 0.4);
+    });
 
   return {
     kick,

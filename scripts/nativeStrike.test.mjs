@@ -1,6 +1,6 @@
 // Live notes of the synths and kits made of plain Web Audio nodes (src/audio/presets/native.ts, monotonic.ts):
 // set no sooner than a render callback past the clock, struck again when the page is held up while one
-// is built, and exports left exactly as they were. Also the wave normalizers kept ready (KNOWN_NORMALIZERS).
+// is built (a strike found late never heard), and exports left exactly as they were. Also the wave normalizers kept ready (KNOWN_NORMALIZERS).
 // Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -59,8 +59,14 @@ function fakeVoice(start) {
     cancelScheduledValues: (t) => events.push(['cancel', t]),
   };
   const stops = [];
+  const out = [];
+  const made = { events, stops, out, disconnected: false };
   const source = { stop: (t) => stops.push(t), onended: null, disconnect() {} };
-  return { voice: { start, stopAt: start + 1, sources: [source], nodes: [source], amp: { gain, disconnect() {} } }, events, stops };
+  // (Its output: what it was connected to)
+  const node = { connect: (to) => out.push(to), disconnect: () => (made.disconnected = true) };
+  made.node = node;
+  made.voice = { start, stopAt: start + 1, sources: [source], nodes: [source, node], amp: { gain, disconnect() {} } };
+  return made;
 }
 
 /** A native instrument's note, built at `start` into a voice set; `hold` (seconds) holds the page up while it's built. */
@@ -69,6 +75,7 @@ function fakeInstrument(context, holdUps = []) {
   const built = [];
   const build = (start) => {
     const made = fakeVoice(start);
+    N.connectOut(made.node, 'bus');
     // (The page held up: the clock moves on while the note is set)
     context.rawContext.currentTime += holdUps[built.length] ?? 0;
     set.add(made.voice);
@@ -87,7 +94,7 @@ test('a native note built in time is struck once, a callback past the clock (sca
   assert.deepEqual(voice.moved, { asked: 1, at: 1 + ROOM });
 });
 
-test('the page held up past the note while it is built: struck again a callback past the clock, the first strike faded from there (scan r41)', () => {
+test('the page held up past the note while it is built: struck again a callback past the clock, the first strike never heard (scan r41, r42)', () => {
   const context = fakeContext();
   const { built, build } = fakeInstrument(context, [0.02]);
   let putBack = 0;
@@ -97,14 +104,71 @@ test('the page held up past the note while it is built: struck again a callback 
   const again = 1.02 + ROOM;
   assert.equal(voice.start, again);
   assert.equal(voice, built[1].voice);
-  // The first fades out from where the second begins (no cut), and stops once faded
-  const fade = built[0].events.slice(built[0].events.findIndex((e) => e[0] === 'hold'));
-  assert.deepEqual(fade[0], ['hold', again]);
-  assert.equal(fade[1][0], 'target');
-  assert.equal(fade[1][1], 0);
-  assert.equal(fade[1][2], again);
-  assert.ok(built[0].stops.at(-1) > again && built[0].stops.at(-1) < again + 0.05);
+  // The first was never connected to where it sounds (its envelopes, set late, would jump to the
+  // peak: a burst and a click), and its sources were stopped at once; the second was connected
+  assert.deepEqual(built[0].out, []);
+  assert.deepEqual(built[0].stops.at(-1), undefined);
+  assert.equal(built[0].stops.length, 2);
+  assert.ok(built[0].disconnected);
+  assert.deepEqual(built[1].out, ['bus']);
   assert.deepEqual(voice.moved, { asked: 1, at: again });
+});
+
+test('a strike is connected only once it is found in time, never while it is built; an export connects at once (scan r42)', () => {
+  const context = fakeContext();
+  const set = N.createVoiceSet(context.rawContext);
+  let during;
+  const made = fakeVoice(0);
+  N.strikeLive(context, 1, (start) => {
+    made.voice.start = start;
+    N.connectOut(made.node, 'bus');
+    set.add(made.voice);
+    during = [...made.out];
+    return made.voice;
+  });
+  assert.deepEqual(during, []);
+  assert.deepEqual(made.out, ['bus']);
+  // Offline: connected as it is built (the export is built exactly as before)
+  const offline = fakeContext({ offline: true });
+  const off = fakeVoice(0);
+  N.strikeLive(offline, 1, () => {
+    N.connectOut(off.node, 'bus');
+    during = [...off.out];
+  });
+  assert.deepEqual(during, ['bus']);
+});
+
+test('what a note does to others (the note before giving way) waits until it is found in time, and is not done by a strike let go (scan r42)', () => {
+  const context = fakeContext();
+  const set = N.createVoiceSet(context.rawContext);
+  const gaveWay = [];
+  let builds = 0;
+  N.strikeLive(context, 1, (start) => {
+    builds++;
+    const { voice } = fakeVoice(start);
+    N.onceStruck(() => gaveWay.push(start));
+    if (builds === 1) context.rawContext.currentTime += 0.02;
+    set.add(voice);
+    return voice;
+  });
+  assert.equal(builds, 2);
+  assert.deepEqual(gaveWay, [1.02 + ROOM]);
+  // Outside a strike: at once
+  let now = 0;
+  N.onceStruck(() => now++);
+  assert.equal(now, 1);
+});
+
+test('a note found late at its third strike too is let go unheard, not played as a burst (scan r42)', () => {
+  const context = fakeContext();
+  const { built, build } = fakeInstrument(context, [0.02, 0.02, 0.02]);
+  const dropped = N.struckAgain.dropped;
+  let putBack = 0;
+  N.strikeLive(context, 1, build, () => putBack++);
+  assert.equal(built.length, 3);
+  assert.equal(putBack, 3);
+  assert.equal(N.struckAgain.dropped, dropped + 1);
+  for (const b of built) assert.deepEqual(b.out, []);
 });
 
 test('a native note is struck three times at most, however long the page is held up (scan r41)', () => {
