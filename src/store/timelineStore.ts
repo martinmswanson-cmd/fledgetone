@@ -99,14 +99,13 @@ import { autosaveRemovedBy, autosaveWrittenBy, hasWork, markOpening, newSongId, 
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
-import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { makeTrack } from './trackFactory';
 import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundFileNames, soundNamesRead, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
@@ -882,8 +881,6 @@ interface TimelineState {
   // Creating and editing clips
   /** Add an empty clip (undoable) and return its id. */
   createEmptyClip: (trackId: string, atBar: number, lengthBars: number) => string | null;
-  /** Drop a deck sound or pattern on a track: into the clip under `bar`, else as a new clip (undoable). */
-  dropOnTrack: (trackId: string, bar: number, payload: DragPayload) => void;
   renameClip: (clipId: string, name: string) => void;
   /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
@@ -923,9 +920,6 @@ interface TimelineState {
   punch: { enabled: boolean; inBar: number; outBar: number };
   setPunch: (patch: Partial<{ enabled: boolean; inBar: number; outBar: number }>) => void;
 
-  /** Instrument currently being dragged from the sound deck (lanes highlight to match). */
-  draggingInstrument: InstrumentKey | null;
-  setDraggingInstrument: (instrument: InstrumentKey | null) => void;
   /** Tracks the clips being dragged could move to (those lanes highlight), null when not dragging clips. */
   clipDragTargets: ReadonlySet<string> | null;
   setClipDragTargets: (trackIds: ReadonlySet<string> | null) => void;
@@ -3727,38 +3721,6 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       return clip.id;
     },
 
-    dropOnTrack: (trackId, bar, payload) => {
-      const s = get();
-      const track = s.tracks.find((t) => t.id === trackId);
-      if (!track || !compatibleInstruments(payload.instrument, track.instrumentKey)) return;
-
-      if (payload.kind === 'pattern') {
-        s.insertPatternClip(trackId, payload.patternId, bar);
-        return;
-      }
-
-      const notes = payload.notes.map((note) => ({ note, duration: payload.duration, velocity: payload.velocity }));
-      const host = s.clips.find(
-        (c) => c.trackId === trackId && bar >= c.startBar - EPS && bar < c.startBar + c.lengthBars - EPS
-      );
-      if (host) {
-        const offset = bar - host.startBar;
-        s.addNotes(host.id, notes.map((n) => ({ ...n, startOffset: offset })));
-        s.selectClip(host.id, false);
-        return;
-      }
-      // Empty space: a new one-bar clip starting at the drop point, so later drops land inside it
-      const clipId = s.createEmptyClip(trackId, bar, 1);
-      if (!clipId) return;
-      set((st) => ({
-        clips: st.clips.map((c) =>
-          c.id === clipId
-            ? { ...withName(c, payload.label), notes: notes.map((n) => ({ ...n, id: uid('note'), startOffset: 0 })) }
-            : c
-        ),
-      }));
-    },
-
     // Low-level, as typed: the name field checkpoint()s once when it's focused
     renameClip: (clipId, name) => set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? typedName(c, name) : c)) })),
 
@@ -3839,8 +3801,6 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         return { punch: { enabled: next.enabled, inBar, outBar } };
       }),
 
-    draggingInstrument: null,
-    setDraggingInstrument: (instrument) => set({ draggingInstrument: instrument }),
     clipDragTargets: null,
     setClipDragTargets: (trackIds) => set({ clipDragTargets: trackIds }),
 
