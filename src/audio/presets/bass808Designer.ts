@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { notLate } from './monotonic';
-import { connectOut, createBus, createFilter, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, slidePitch, strikeLive } from './native';
+import { connectOut, createBus, createFilter, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, roomAhead, slidePitch, strikeLive } from './native';
 import type { NativeVoice, PitchGlide } from './native';
 import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
@@ -22,8 +22,8 @@ import type { NoteSlide } from '../legato';
  * a hit is at its dirtiest at the start and cleans up as it dies away, as a driven 808 does.
  *
  * A 4x oversampled shaper delays what passes through it by SHAPER_FRAMES; both paths go through
- * one, so they stay in line, and the whole note starts that much earlier instead (when it isn't
- * too close to now), so it lands on the beat.
+ * one, so they stay in line, and the whole note starts that much earlier instead (when there's room
+ * for it: live, no sooner than a render callback past the clock, see roomAhead), so it lands on the beat.
  */
 
 /** Samples a WaveShaperNode oversampling 4x delays its sound by (measured in Chrome; Firefox's is similar). */
@@ -138,7 +138,8 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
 
     const shaped = s.drive > 0 || s.top > 0;
     const wanted = shaped ? SHAPER_FRAMES / raw.sampleRate : 0;
-    const lead = start - wanted >= raw.currentTime ? wanted : 0;
+    // (A note played now has no room for it: it sounds the shaper's delay later instead)
+    const lead = roomAhead(bus.context, start, wanted) ? wanted : 0;
     const from = start - lead;
     const until = end - lead;
     // The previous note (ringing on after its end) gives way quickly: one 808 at a time (once

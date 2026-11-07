@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { builtinWave, connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, phasedSaw, releaseConstant, releaseTail, scaledWave, strikeLive } from './native';
+import { builtinWave, connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, phasedSaw, releaseConstant, releaseTail, roomAhead, scaledWave, strikeLive } from './native';
 import { noteJitter } from '../samplers/samplerManager';
 import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
@@ -185,9 +185,10 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     // the envelopes after it were voiced on that: where a shaper oversamples less (or not at all),
     // the envelopes, filter sweeps and LFOs after it start that much earlier instead, so the note
     // sounds the same, only that much sooner (no longer late by the shaper's delay). A note too
-    // close to now for its envelopes to start earlier keeps 4x.
+    // close to now for its envelopes to start earlier (live, no sooner than a render callback past
+    // the clock: see roomAhead) keeps 4x.
     const lessOf = (o: OverSampleType) => (SHAPER_LATENCY['4x'] - SHAPER_LATENCY[o]) / raw.sampleRate;
-    const ahead = start - ((ladder ? lessOf(WARM_OVERSAMPLE) : 0) + (p.drive > 0 ? lessOf(driveOversampling(p.drive)) : 0)) >= raw.currentTime;
+    const ahead = roomAhead(bus.context, start, (ladder ? lessOf(WARM_OVERSAMPLE) : 0) + (p.drive > 0 ? lessOf(driveOversampling(p.drive)) : 0));
     const warmOversample: OverSampleType = ladder && ahead ? WARM_OVERSAMPLE : '4x';
     const driveOversample: OverSampleType = p.drive > 0 && ahead ? driveOversampling(p.drive) : '4x';
     // The filters come after the warm drive; the amp after both

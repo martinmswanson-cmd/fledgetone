@@ -3,7 +3,7 @@ import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
-import { ATTACK_TRIES } from '../soundLead';
+import { ATTACK_TRIES, attackRoom } from '../soundLead';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -300,6 +300,23 @@ export function strikeLive<T>(context: Tone.BaseContext, time: number | undefine
     struckAgain.count++;
     start = notLate(context, undefined);
   }
+}
+
+/**
+ * Whether a note starting at `start` can have parts begin `ahead` seconds before it (envelopes run
+ * ahead to make up for a shaper's delay: the 808 Designer's lead, the Synth Designer's early).
+ * Live, only if they'd still begin no sooner than a render callback past the clock, as notLate's
+ * start does (see soundLead.ts); in an export, no sooner than the clock, as ever. Any sooner and
+ * they fall inside the render callback that may already be playing: strikeLive's clock check is
+ * passed by that much less, so a note built while the page was busy (three render blocks of the
+ * clock) was found late at every strike and missed, and one that passed could be first heard after
+ * its attack, its decay then setting out from silence.
+ */
+export function roomAhead(context: Tone.BaseContext, start: number, ahead: number): boolean {
+  if (!(ahead > 0)) return true;
+  const raw = context.rawContext;
+  const soonest = context.isOffline ? raw.currentTime : attackRoom({ currentTime: raw.currentTime, sampleRate: raw.sampleRate, rawContext: raw });
+  return start - ahead >= soonest;
 }
 
 /**
