@@ -8,7 +8,8 @@
  * reading the clock and setting a note's envelope (a busy main thread). An envelope that reaches
  * the browser after the sound has passed its attack has its moments moved up to where the sound
  * is, at once, and then often never rises: silent, or 20 to 40 dB quiet. A callback's worth of room
- * past the clock covers a hold-up that long.
+ * past the clock covers a hold-up that long (less a block, for a note of plain nodes: its
+ * connection can be first played a block after it's made, see native.ts's inTimeToConnect).
  */
 
 /** How many times a note is struck at most (again only when the page was held up while setting it). */
