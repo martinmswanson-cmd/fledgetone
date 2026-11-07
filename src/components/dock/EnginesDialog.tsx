@@ -7,6 +7,7 @@ import { gameKitSong } from '../timeline/gameKitSong';
 import { downloadBlob, type SampleRate } from '../../audio/exportWav';
 import { songSections } from '../../store/cutToLength';
 import { showToast } from '../timeline/toastStore';
+import { safeFileName } from '../../store/project';
 
 /**
  * FMOD / Wwise package: the game music laid out for audio middleware (see enginePackage.ts): every
@@ -28,7 +29,7 @@ export const EnginesDialog: React.FC<{ onClose: () => void }> = ({ onClose }) =>
     setProgress('0%');
     try {
       const blob = await buildEnginePackage(gameKitSong(), target, (f, d) => setProgress(`${Math.round(f * 100)}% · ${d}`), rate);
-      const name = useTimelineStore.getState().projectName || 'Untitled';
+      const name = safeFileName(useTimelineStore.getState().projectName || 'Untitled');
       downloadBlob(blob, `${name} ${target === 'fmod' ? 'FMOD' : target === 'wwise' ? 'Wwise' : 'FMOD-Wwise'}.zip`);
       onClose();
     } catch (err) {

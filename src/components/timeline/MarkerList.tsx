@@ -14,6 +14,7 @@ import { EDITOR_FORMATS, editorMarkerFile, type EditorFormat } from '../../store
 import { downloadBlob } from '../../audio/exportWav';
 import { Popover } from '../Popover';
 import { ActionSelect } from '../actionSelect';
+import { safeFileName } from '../../store/project';
 
 /**
  * A marker's name, edited in place. What's typed applies as it's typed (the flag on the ruler
@@ -216,7 +217,7 @@ export const ExportForEditors: React.FC = () => {
       length
     );
     const ext = EDITOR_FORMATS.find((f) => f.id === format)!.ext;
-    downloadBlob(new Blob([text], { type: 'text/plain' }), `${s.projectName || 'Untitled'} markers.${ext}`);
+    downloadBlob(new Blob([text], { type: 'text/plain' }), `${safeFileName(s.projectName || 'Untitled')} markers.${ext}`);
   };
   return (
     <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
