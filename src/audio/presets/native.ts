@@ -2,6 +2,8 @@ import * as Tone from 'tone';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
 import { UNHEARD_FADE } from './toneStop';
+import { notLate } from './monotonic';
+import { ATTACK_TRIES } from '../soundLead';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -57,6 +59,10 @@ export interface NativeVoice {
   nodes: AudioNode[];
   /** Its loudness envelope, ramped down by releaseAll. */
   amp: GainNode;
+  /** Where it was asked to start and where it went, when strikeLive moved it later (live). */
+  moved?: { asked: number; at: number };
+  /** Seconds its envelopes begin before its start, if they do (the Synth Designer's, see SHAPER_LATENCY there). */
+  early?: number;
 }
 
 /**
@@ -99,9 +105,10 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
     v.amp.gain.cancelScheduledValues(now);
     v.amp.gain.setValueAtTime(0, now);
   };
-  return {
+  const set = {
     add(v: NativeVoice): void {
       voices.add(v);
+      struck?.push({ voice: v, fadeAt: (at) => set.release(v, at, STRUCK_AGAIN_FADE) });
       v.sources.forEach((s) => s.stop(v.stopAt));
       silenceAtStop(v);
       v.sources[0].onended = () => {
@@ -198,6 +205,71 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       voices.clear();
     },
   };
+  return set;
+}
+
+/** The voices strikeLive's note has added so far (each with how to fade it out), while it builds one. */
+type Struck = { voice: NativeVoice; fadeAt: (at: number) => void }[];
+let struck: Struck | null = null;
+/** Live notes struck again (see strikeLive): the page held up while building them. */
+export const struckAgain = { count: 0 };
+/** Seconds a note struck again fades its first strike out over (from where the second begins). */
+const STRUCK_AGAIN_FADE = 0.01;
+
+/**
+ * A live note (or hit) of plain Web Audio nodes, built by `build` from its start: notLate's, no
+ * sooner than a render callback past the clock (see soundLead.ts). The page can still be held up
+ * longer than that while it builds the note, and then its envelopes reach the browser after the
+ * sound has passed their start: they never rise (silent, or 20 to 40 dB quiet). So when the clock
+ * has got to the start by the time the note is built, it's struck again (built anew) a callback
+ * past the clock as it is then, three strikes at most, as Tone's synths are (see
+ * toneFixes.ts); the first strike fades out from where the second begins (10 ms), so whatever of
+ * it did sound gives way without a cut. `again` is called before each strike after the first, to
+ * put back what the first changed (the last note a mono voice slides from). Its voices remember
+ * how far they were moved, for their release (see movedRelease). An export (whose clock waits for
+ * its notes) builds every note once, where it was asked.
+ */
+export function strikeLive<T>(context: Tone.BaseContext, time: number | undefined, build: (start: number) => T, again?: () => void): T {
+  // (A note built inside another's strike is struck with it)
+  if (context.isOffline || struck) return build(notLate(context, time));
+  const raw = context.rawContext;
+  const asked = time ?? raw.currentTime;
+  let start = notLate(context, time);
+  let result: T;
+  let made: Struck = [];
+  for (let tries = 1; ; tries++) {
+    made = [];
+    struck = made;
+    try {
+      result = build(start);
+    } finally {
+      struck = null;
+    }
+    // (The clock, which steps on a block at a time as the blocks are rendered, not yet past the
+    // start, or an envelope's earlier start: the sound hadn't got there when the last of the note was set)
+    let earliest = start;
+    for (const { voice } of made) earliest = Math.min(earliest, voice.start - (voice.early ?? 0));
+    if (tries >= ATTACK_TRIES || !made.length || raw.currentTime < earliest) break;
+    const next = notLate(context, undefined);
+    struckAgain.count++;
+    for (const { fadeAt } of made) fadeAt(next);
+    again?.();
+    start = next;
+  }
+  if (start > asked) for (const { voice } of made) voice.moved = { asked, at: start };
+  return result;
+}
+
+/**
+ * When a key let go at `when` lets `voice` go: a release that would come before its moved start
+ * (see strikeLive), or within as long again after it, moves with it (so a quick tap still sounds
+ * as long as it was held); a later one is left where it is. As Tone's synths' releases (toneFixes.ts).
+ */
+export function movedRelease(voice: NativeVoice | undefined, when: number): number {
+  const moved = voice?.moved;
+  if (!moved) return when;
+  const delay = moved.at - moved.asked;
+  return when >= moved.asked && when < moved.at + delay ? when + delay : when;
 }
 
 /**
@@ -352,7 +424,7 @@ export function phasedSaws(raw: BaseAudioContext, phases: readonly number[]): Pe
 }
 
 /** A sawtooth's harmonics with its cycle shifted by `phase` (0-1). */
-function phasedSawSeries(phase: number): { real: Float32Array; imag: Float32Array } {
+export function phasedSawSeries(phase: number): { real: Float32Array; imag: Float32Array } {
   const real = new Float32Array(SAW_PARTIALS + 1);
   const imag = new Float32Array(SAW_PARTIALS + 1);
   const shift = phase * 2 * Math.PI;
@@ -375,42 +447,66 @@ export const phasedSaw = (raw: BaseAudioContext, phase: number, level: number): 
  */
 const waveTableSize = (rate: number) => (rate <= 24000 ? 2048 : rate <= 88200 ? 4096 : 16384);
 
+/**
+ * The normalizers (see waveNormalizer) of the waves every note of some synths starts from: the
+ * browser's four in its three table sizes, and the unison saws' (phasedSaw) at each of the Synth
+ * Designer's seven unison voices' phases. Worked out on the main thread, the bigger ones take
+ * 15 to 400 ms (a sawtooth at 44.1 kHz, 36 ms; four times that on a slow computer), which the
+ * first note to need one waited for: a Pluck's first note after the page loaded was silent, the
+ * Synth Designer's late and quiet. These are what waveNormalizer gives for them (checked by
+ * scripts/nativeStrike.test.mjs), so nothing a note or an export plays changes.
+ */
+const KNOWN_NORMALIZERS: Record<string, number> = {
+  'builtin:sine:2048|2048': 1, 'builtin:square:2048|2048': 0.8481907649443438, 'builtin:sawtooth:2048|2048': 0.848894256816183, 'builtin:triangle:2048|2048': 1.000395949147455,
+  'saw@0|2048': 0.8495989166130806, 'saw@0.618|2048': 0.8683998753302336, 'saw@0.236|2048': 0.8675691990683159, 'saw@0.8540000000000001|2048': 0.8495992195876465, 'saw@0.472|2048': 0.8692471643338691, 'saw@0.08999999999999986|2048': 0.8667552872001335, 'saw@0.7080000000000002|2048': 0.8496227993447771,
+  'builtin:sine:4096|4096': 1, 'builtin:square:4096|4096': 0.848190936655004, 'builtin:sawtooth:4096|4096': 0.8485424509977015, 'builtin:triangle:4096|4096': 1.0001979387790656,
+  'saw@0|4096': 0.8495989166130783, 'saw@0.618|4096': 0.8544345629463914, 'saw@0.236|4096': 0.8548933564794062, 'saw@0.8540000000000001|4096': 0.8495992195876442, 'saw@0.472|4096': 0.853995476348954, 'saw@0.08999999999999986|4096': 0.8553716874631527, 'saw@0.7080000000000002|4096': 0.8496227993447765,
+  'builtin:sine:16384|16384': 1, 'builtin:square:16384|16384': 0.8481909897890367, 'builtin:sawtooth:16384|16384': 0.8482788251732132, 'builtin:triangle:16384|16384': 1.0000494823683175,
+  'saw@0|16384': 0.8495989166130777, 'saw@0.618|16384': 0.8498220086204636, 'saw@0.236|16384': 0.8499376132657783, 'saw@0.8540000000000001|16384': 0.8495992195876517, 'saw@0.472|16384': 0.8497304424376024, 'saw@0.08999999999999986|16384': 0.8500774615669802, 'saw@0.7080000000000002|16384': 0.8496227993447838,
+};
 /** 1 / the peak of a wave's full-band table, as the browser normalizes it. Keyed by the wave's id and table size. */
-const normalizers = new Map<string, number>();
+const normalizers = new Map<string, number>(Object.entries(KNOWN_NORMALIZERS));
+/** The normalizer kept ready for wave `id` at table size `size`, if one is. */
+export const knownNormalizer = (id: string, size: number): number | undefined => KNOWN_NORMALIZERS[`${id}|${size}`];
 
 function normalizer(id: string, real: Float32Array, imag: Float32Array, size: number): number {
   const key = `${id}|${size}`;
   let scale = normalizers.get(key);
   if (scale === undefined) {
-    const partials = Math.min(real.length - 1, size / 2 - 1);
-    const table = new Float64Array(size);
-    for (let k = 1; k <= partials; k++) {
-      const a = real[k];
-      const b = imag[k];
-      if (!a && !b) continue;
-      // cos and sin of 2 pi k i / size, by turning a unit vector a step per sample (renormalized now and then)
-      const stepCos = Math.cos((2 * Math.PI * k) / size);
-      const stepSin = Math.sin((2 * Math.PI * k) / size);
-      let c = 1;
-      let s = 0;
-      for (let i = 0; i < size; i++) {
-        table[i] += a * c + b * s;
-        const turned = c * stepCos - s * stepSin;
-        s = s * stepCos + c * stepSin;
-        c = turned;
-        if ((i & 255) === 255) {
-          const r = Math.hypot(c, s);
-          c /= r;
-          s /= r;
-        }
-      }
-    }
-    let peak = 0;
-    for (let i = 0; i < size; i++) peak = Math.max(peak, Math.abs(table[i]));
-    scale = peak > 0 ? 1 / peak : 1;
+    scale = waveNormalizer(real, imag, size);
     normalizers.set(key, scale);
   }
   return scale;
+}
+
+/** 1 / the peak of the full-band table of size `size` of the wave of these harmonics. */
+export function waveNormalizer(real: Float32Array, imag: Float32Array, size: number): number {
+  const partials = Math.min(real.length - 1, size / 2 - 1);
+  const table = new Float64Array(size);
+  for (let k = 1; k <= partials; k++) {
+    const a = real[k];
+    const b = imag[k];
+    if (!a && !b) continue;
+    // cos and sin of 2 pi k i / size, by turning a unit vector a step per sample (renormalized now and then)
+    const stepCos = Math.cos((2 * Math.PI * k) / size);
+    const stepSin = Math.sin((2 * Math.PI * k) / size);
+    let c = 1;
+    let s = 0;
+    for (let i = 0; i < size; i++) {
+      table[i] += a * c + b * s;
+      const turned = c * stepCos - s * stepSin;
+      s = s * stepCos + c * stepSin;
+      c = turned;
+      if ((i & 255) === 255) {
+        const r = Math.hypot(c, s);
+        c /= r;
+        s /= r;
+      }
+    }
+  }
+  let peak = 0;
+  for (let i = 0; i < size; i++) peak = Math.max(peak, Math.abs(table[i]));
+  return peak > 0 ? 1 / peak : 1;
 }
 
 const scaledWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();
@@ -454,26 +550,25 @@ export function scaledWave(raw: BaseAudioContext, id: string, make: () => { real
  * The browser's own sine, square, sawtooth or triangle at `level` (see scaledWave): the same
  * series and number of harmonics as its built-in waves.
  */
-export function builtinWave(raw: BaseAudioContext, type: 'sine' | 'square' | 'sawtooth' | 'triangle', level: number, phase = 0): PeriodicWave {
+export function builtinWave(raw: BaseAudioContext, type: BuiltinType, level: number, phase = 0): PeriodicWave {
   const size = waveTableSize(raw.sampleRate);
-  return scaledWave(
-    raw,
-    `builtin:${type}:${size}`,
-    () => {
-      const n = size / 2;
-      const real = new Float32Array(n);
-      const imag = new Float32Array(n);
-      for (let k = 1; k < n; k++) {
-        if (type === 'sine') imag[k] = k === 1 ? 1 : 0;
-        else if (type === 'square') imag[k] = k % 2 ? 4 / (Math.PI * k) : 0;
-        else if (type === 'sawtooth') imag[k] = (k % 2 ? 2 : -2) / (Math.PI * k);
-        else imag[k] = k % 2 ? (8 / (Math.PI * k) ** 2) * ((k - 1) % 4 ? -1 : 1) : 0;
-      }
-      return { real, imag };
-    },
-    level,
-    phase
-  );
+  return scaledWave(raw, `builtin:${type}:${size}`, () => builtinSeries(type, size), level, phase);
+}
+
+type BuiltinType = 'sine' | 'square' | 'sawtooth' | 'triangle';
+
+/** The harmonics of the browser's own `type` in a table of `size`. */
+export function builtinSeries(type: BuiltinType, size: number): { real: Float32Array; imag: Float32Array } {
+  const n = size / 2;
+  const real = new Float32Array(n);
+  const imag = new Float32Array(n);
+  for (let k = 1; k < n; k++) {
+    if (type === 'sine') imag[k] = k === 1 ? 1 : 0;
+    else if (type === 'square') imag[k] = k % 2 ? 4 / (Math.PI * k) : 0;
+    else if (type === 'sawtooth') imag[k] = (k % 2 ? 2 : -2) / (Math.PI * k);
+    else imag[k] = k % 2 ? (8 / (Math.PI * k) ** 2) * ((k - 1) % 4 ? -1 : 1) : 0;
+  }
+  return { real, imag };
 }
 
 const leveledWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();

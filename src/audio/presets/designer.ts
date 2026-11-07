@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave } from './native';
+import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave, strikeLive } from './native';
 import { noteJitter } from '../samplers/samplerManager';
 import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
@@ -55,6 +55,24 @@ function waveOf(raw: BaseAudioContext, wave: OscWave): OscillatorType | Periodic
 function waveAt(raw: BaseAudioContext, wave: OscWave, level: number): PeriodicWave {
   if (wave !== 'pulse' && wave !== 'organ' && wave !== 'vowel') return builtinWave(raw, wave, level);
   return scaledWave(raw, `designer:${wave}`, () => tableSeries(wave), level);
+}
+
+/** Unison saws start at spread points of their cycle, as analog oscillators do (all in step, they sweep audibly as they drift apart). */
+const unisonPhase = (i: number) => (i * 0.618) % 1;
+/** The wave of unison voice `i` (of `count`) of an oscillator, its level built in. */
+function unisonWave(raw: BaseAudioContext, o: SynthPatch['osc1'], i: number, count: number): PeriodicWave {
+  const level = (o.level * 0.35) / Math.sqrt(count);
+  return count > 1 && o.wave === 'sawtooth' ? phasedSaw(raw, unisonPhase(i), level) : waveAt(raw, o.wave, level);
+}
+/**
+ * Build the waves `p`'s notes start from (each its first time costs the browser a few ms), so its
+ * first note doesn't wait for them.
+ */
+function buildWaves(raw: BaseAudioContext, p: SynthPatch): void {
+  const count = p.unison.voices;
+  for (const o of [p.osc1, p.osc2]) if (o.on && o.level > 0) for (let i = 0; i < count; i++) unisonWave(raw, o, i, count);
+  if ((p.fm ?? 0) > 0 && p.osc2.on && p.osc1.on) waveOf(raw, p.osc2.wave);
+  if (p.sub > 0) builtinWave(raw, 'sine', p.sub * 0.45);
 }
 
 /**
@@ -143,6 +161,17 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   // A synced rate follows the tempo of this context's Transport (the export's has its own)
   const lfoHz = (p: SynthPatch) => (p.lfo.sync === 'free' ? p.lfo.rate : 1 / (bus.toSeconds('4n') * SYNC_BEATS[p.lfo.sync]));
 
+  // (Its waves built now, not on the first note)
+  buildWaves(raw, patch);
+  let waveTimer = 0;
+  /** What a note changes that a strike again puts back first: the note a mono note slides from. */
+  const putBack = () => {
+    const was = { last, slid };
+    return () => {
+      ({ last, slid } = was);
+    };
+  };
+
   const playNote = (n: PlayableNote, start: number): DesignerVoice | undefined => {
     const p = patch;
     const length = bus.toSeconds(n.duration);
@@ -217,9 +246,6 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     // Analog drift: this note's oscillators each a few cents off from each other, the same every time it plays
     const drift = p.drift ?? 0;
     const wander = (salt: number) => (drift > 0 ? drift * 7 * noteJitter(n.note, start, salt) : 0);
-    // Unison saws start at spread points of their cycle, as analog oscillators do (all in step,
-    // they sweep audibly as they drift apart)
-    const phase = (i: number) => (i * 0.618) % 1;
     const osc1Index = oscs.length;
     let osc1Count = 0;
     for (const [which, o] of [[1, p.osc1], [2, p.osc2]] as const) {
@@ -227,11 +253,9 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
       if (!o.on || (o.level <= 0 && !(which === 2 && (p.fm ?? 0) > 0))) continue;
       if (o.level <= 0) continue;
       const hz = freq * 2 ** (o.octave + o.semi / 12);
-      const level = (o.level * 0.35) / Math.sqrt(count);
       for (let i = 0; i < count; i++) {
         const position = count === 1 ? 0 : (i / (count - 1)) * 2 - 1;
-        const wave = count > 1 && o.wave === 'sawtooth' ? phasedSaw(raw, phase(i), level) : waveAt(raw, o.wave, level);
-        addOsc(wave, hz, o.fine + position * p.unison.spread + wander(40 + which * 8 + i), position * p.unison.width);
+        addOsc(unisonWave(raw, o, i, count), hz, o.fine + position * p.unison.spread + wander(40 + which * 8 + i), position * p.unison.width);
         if (which === 1) osc1Count++;
       }
     }
@@ -344,21 +368,29 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
 
   return {
     slide: () => slid,
+    // (Live, struck again should the page be held up while it's built: see strikeLive. A mono
+    // note struck again slides from the note before it, not from its own first strike.)
     play: (notes: PlayableNote[], time: number) => {
-      const start = notLate(bus.context, time);
-      if (patch.mono) {
-        // One note at a time: the loudest of a chord
-        const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
-        safely(() => playNote(n, start));
-      } else {
-        for (const n of notes) safely(() => playNote(n, start));
-      }
+      strikeLive(
+        bus.context,
+        time,
+        (start) => {
+          if (patch.mono) {
+            // One note at a time: the loudest of a chord
+            const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
+            safely(() => playNote(n, start));
+          } else {
+            for (const n of notes) safely(() => playNote(n, start));
+          }
+        },
+        putBack()
+      );
     },
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: HELD_NOTE }, start), putBack());
       return (at: number) => {
         if (!voice) return;
-        const t = notLate(bus.context, at);
+        const t = movedRelease(voice, notLate(bus.context, at));
         voices.release(voice, Math.max(raw.currentTime, t - voice.early), voice.patch.amp.release);
         if (voice.patch.filter.envAmount !== 0) voice.filters.forEach((f) => releaseTo(f.detune, Math.max(raw.currentTime, t - voice.filterEarly), 0, voice.patch.filterEnv.release));
       };
@@ -376,10 +408,16 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     },
     setPatch: (next: SynthPatch | undefined) => {
       patch = next ?? defaultSynthPatch();
+      // (Once the knob has stopped moving: each level of a wave is a wave of its own)
+      if (typeof window !== 'undefined' && !bus.context.isOffline) {
+        window.clearTimeout(waveTimer);
+        waveTimer = window.setTimeout(() => buildWaves(raw, patch), 150);
+      }
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.05),
     dispose: () => {
       if (feeder !== -1) bus.context.clearInterval(feeder);
+      if (typeof window !== 'undefined') window.clearTimeout(waveTimer);
       voices.stopAll();
       bus.dispose();
     },
