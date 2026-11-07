@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave, strikeLive } from './native';
+import { builtinWave, connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, phasedSaw, releaseConstant, releaseTail, scaledWave, strikeLive } from './native';
 import { noteJitter } from '../samplers/samplerManager';
 import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
@@ -201,7 +201,9 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     // Mono: the previous note gives way, and this one slides from its pitch
     let glideFrom: number | null = null;
     if (p.mono && last && last.voice.stopAt > start) {
-      voices.release(last.voice, from, 0.015);
+      // (Once this note is found in time: a strike let go leaves it sounding, see strikeLive)
+      const before = last.voice;
+      onceStruck(() => voices.release(before, from, 0.015));
       if (p.glide > 0) glideFrom = last.freq;
     }
     slid = glideFrom !== null ? { seconds: p.glide, curve: 'ramp', from: glideFrom } : null;
@@ -347,13 +349,13 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
         trem.gain.value = 1 - p.lfo.depth / 2;
         lfo.connect(trem.gain);
         amp.connect(trem);
-        trem.connect(input);
+        connectOut(trem, input);
         nodes.push(trem);
       }
       sources.push(lfo);
       nodes.push(lfo);
     }
-    if (p.lfo.target !== 'amp' || p.lfo.depth <= 0) amp.connect(input);
+    if (p.lfo.target !== 'amp' || p.lfo.depth <= 0) connectOut(amp, input);
 
     // A note that dies away on its own (sustain 0) stops once it's 80 dB down, however long it's held
     const stopAt = Math.min(end + releaseTail(p.amp.release), p.amp.sustain > 0 ? Infinity : from + p.amp.attack + Math.max(0.001, p.amp.decay) * FADED);

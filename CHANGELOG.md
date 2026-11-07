@@ -6,6 +6,9 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A synth note played on a busy computer no longer starts with a burst or a click**: on the Pluck, Supersaw, Chip Lead, Chip Bass, FX and Synth Designer, a note the computer stalled while starting was struck again, but the first try was still heard for a moment, up to 14 dB too loud with a click (every time on the Chip Bass). A try that comes too late is now never heard; only the one in time sounds.
+- **808 Designer notes and synthesized drum hits played on a busy computer no longer go missing**: an 808 Designer note, or a hit of the Techno Kit and the other synthesized kits, the Designed Kit, the Chip Drums, the recorded kits or the extra drums (clap, toms, cymbals, cowbell), started while the computer stalled could come out silent. They are now struck again a moment later, like the synths.
+- **A gliding Synth Designer note played on a busy computer keeps its glide**: in one-note mode, a note struck again because the computer stalled let the note before it fade out early, leaving a short gap and no slide. The note before now gives way only to the try that sounds, so the glide is as smooth as ever.
 - **A clip pushed back to fit before the end of the timeline ends exactly at it**: rounding left it a hair past the end, which added a second, vague caution about its length to the plain one.
 - **The Filter slope given as a number is treated as the choice it is**: 12.00001 is 12 with no caution, and a number that is neither 12 nor 24 leaves the slope as it was, worded as not one of its choices, instead of switching it to 24 and calling it out of range.
 - **A value a hair past a limit of 0 reads as 0**: a send, distance, automation point, insert mix or master setting given as -0.00001 no longer gets an out-of-range caution that said nothing changed, and a very small negative number is said to be negative.

@@ -15,6 +15,7 @@ import {
   releaseConstant,
   releaseTail,
   strikeLive,
+  connectOut,
 } from './native';
 import { createMonoLows } from './widen';
 
@@ -98,7 +99,7 @@ export function createSupersaw(output: Tone.InputNode) {
     attackDecay(amp.gain, start, SUPERSAW_PEAK * SUPERSAW_LEVEL * n.velocity, 0.035, 0.4, 0.8);
     amp.gain.setTargetAtTime(0, end, releaseConstant(release));
     merger.connect(amp);
-    amp.connect(highpass);
+    connectOut(amp, highpass);
     const voice = { start, stopAt: end + releaseTail(release), sources, nodes: [...sources, merger, amp], amp };
     voices.add(voice);
     return voice;
@@ -158,7 +159,7 @@ export function createPluck(output: Tone.InputNode) {
     saw.connect(filter);
     square.connect(filter);
     filter.connect(amp);
-    amp.connect(input);
+    connectOut(amp, input);
     // Down 50 dB by twice the decay time
     const stopAt = Math.min(start + 0.003 + 2 * decay, end + releaseTail(release));
     const voice = { start, stopAt, sources: [saw, square], nodes: [saw, square, filter, amp], amp };
