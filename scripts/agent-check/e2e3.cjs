@@ -592,20 +592,34 @@ async function until(check, ms, what) {
       await page.mouse.move(box.x + 5, box.y - 200, { steps: 5 });
       await page.mouse.up();
       await page.waitForTimeout(200);
-      // (a label for the button, pressed: the click it passes on has no pointer behind it, as an assistive tool's)
+      // (Enter in a form's text box presses the form's default button: a trusted click with no
+      // pointer or key on the button, as an assistive tool's)
       await A((id) => {
         const b = document.querySelector(`[data-accept="${id}"]`);
-        b.id = 'e2e3-accept';
-        const l = document.createElement('label');
-        l.htmlFor = 'e2e3-accept';
-        l.id = 'e2e3-label';
-        l.textContent = 'press';
-        l.style.cssText = 'position:fixed;left:4px;top:4px;z-index:100;background:#000;color:#fff';
-        document.body.append(l);
+        b.dataset.e2eType = b.type;
+        b.type = 'submit';
+        b.setAttribute('form', 'e2e3-form');
+        const f = document.createElement('form');
+        f.id = 'e2e3-form';
+        f.addEventListener('submit', (e) => e.preventDefault());
+        const i = document.createElement('input');
+        i.id = 'e2e3-press';
+        i.style.cssText = 'position:fixed;left:4px;top:4px;z-index:100';
+        f.append(i);
+        document.body.append(f);
       }, s11.id);
-      await page.locator('#e2e3-label').click();
+      await page.locator('#e2e3-press').focus();
+      await page.keyboard.press('Enter');
       await page.waitForTimeout(200);
-      await A(() => document.getElementById('e2e3-label')?.remove());
+      await A((id) => {
+        document.getElementById('e2e3-form')?.remove();
+        const b = document.querySelector(`[data-accept="${id}"]`);
+        if (b) {
+          b.removeAttribute('form');
+          b.type = b.dataset.e2eType || 'button';
+          delete b.dataset.e2eType;
+        }
+      }, s11.id);
       const afterAbort = { armed: !!(await sg(s11.id)).armed, said: (await card(s11.id).locator('[data-card-status]').textContent()).trim() };
       step('10e a press dragged off Accept doesn\'t make the next (assistive) press do nothing', afterAbort.armed && /Accept without listening/.test(afterAbort.said), JSON.stringify(afterAbort));
 

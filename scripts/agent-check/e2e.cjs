@@ -620,25 +620,36 @@ async function until(check, ms, what) {
     const eighth = await suggest({ title: 'Clav a touch lower', explanation: '', ops: [{ op: 'set_track', trackId: ids.clav, volumeDb: -2 }] });
     const eighthCard = page.locator(`[data-suggestion="${eighth.id}"]`);
     await eighthCard.waitFor();
+    // (Enter in a form's text box presses the form's default button: a trusted click with no
+    // pointer or key on the button, as an assistive tool's. A label's click no longer does: the
+    // browser passes on the mouse's click, detail 1, to the button.)
     await A((sid) => {
       const b = document.querySelector(`[data-suggestion="${sid}"] [data-accept]`);
-      b.id = 'e2e-accept';
-      const l = document.createElement('label');
-      l.htmlFor = 'e2e-accept';
-      l.id = 'e2e-label';
-      l.textContent = 'press';
-      l.style.cssText = 'position:fixed;left:4px;top:4px;z-index:100;background:#000;color:#fff';
-      document.body.append(l);
+      b.dataset.e2eType = b.type;
+      b.type = 'submit';
+      b.setAttribute('form', 'e2e-form');
+      const f = document.createElement('form');
+      f.id = 'e2e-form';
+      f.addEventListener('submit', (e) => e.preventDefault());
+      const i = document.createElement('input');
+      i.id = 'e2e-press';
+      i.style.cssText = 'position:fixed;left:4px;top:4px;z-index:100';
+      f.append(i);
+      document.body.append(f);
     }, eighth.id);
-    await page.locator('#e2e-label').click();
+    const assistPress = async () => {
+      await page.locator('#e2e-press').focus();
+      await page.keyboard.press('Enter');
+    };
+    await assistPress();
     const firstAssist = { s: await sgOf(eighth.id), text: (await eighthCard.locator('[data-accept]').textContent()).trim() };
     await page.waitForTimeout(800);
-    await page.locator('#e2e-label').click();
+    await assistPress();
     await statusIs(eighth.id, 'accepted').catch(() => {});
     const afterAssist = await sgOf(eighth.id);
     await page.waitForTimeout(100);
     const focusAfter = await A(() => (document.activeElement === document.body ? 'body' : document.activeElement?.closest('[data-agent-panel]') ? 'panel' : document.activeElement?.tagName));
-    await A(() => document.getElementById('e2e-label')?.remove());
+    await A(() => document.getElementById('e2e-form')?.remove());
     step('9i assistive presses count (twice when not heard)', firstAssist.s.status === 'waiting' && firstAssist.text === 'Accept without listening' && afterAssist.status === 'accepted', `${firstAssist.text} → ${afterAssist.status}`);
     step('9i focus goes on after the card is answered', focusAfter !== 'body', focusAfter);
 
