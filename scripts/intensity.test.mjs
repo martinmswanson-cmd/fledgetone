@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { curveLevel, defaultCurve, trackIntensityLevel, parseCurves, groupsInUse } = await import('../src/store/intensity.ts');
+const { curveLevel, defaultCurve, trackIntensityLevel, parseCurves, groupsInUse, keepsAddedPoint } = await import('../src/store/intensity.ts');
 
 test('a curve gives straight lines between its points, flat beyond the ends', () => {
   const c = [[0.2, 0], [0.6, 1]];
@@ -42,4 +42,16 @@ test('tracks without a group play at full level; groups use their curve or the d
 test('curves from a file are cleaned up', () => {
   assert.deepEqual(parseCurves({ A: [[1, 2], [-1, 0.5], ['x', 1]], B: 'no', '': [[0, 1]] }), { A: [[0, 0.5], [1, 1]] });
   assert.deepEqual(groupsInUse([{ stemGroup: 'B' }, {}, { stemGroup: 'A' }, { stemGroup: 'B' }]), ['B', 'A']);
+});
+
+test("a double-click leaves the point only its own first press added", () => {
+  const p = [0.3, 0.2];
+  // Its first press (at 100) added it, the second (at 250) grabbed it: it stays, one step
+  assert.equal(keepsAddedPoint([100, 250], { point: p, at: 100 }, p), true);
+  // Added by a click at 100, then a double-click on it (presses at 800 and 950): it goes
+  assert.equal(keepsAddedPoint([800, 950], { point: p, at: 100 }, p), false);
+  // (Another point, or nothing added)
+  assert.equal(keepsAddedPoint([100, 250], { point: p, at: 100 }, [0.5, 1]), false);
+  assert.equal(keepsAddedPoint([100, 250], null, p), false);
+  assert.equal(keepsAddedPoint([250], { point: p, at: 250 }, p), false);
 });

@@ -271,6 +271,33 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.views();
   }
 
+  /**
+   * The plugin as it starts, with no preset file (an undo back to "(none)"): a new instance, so
+   * nothing of the patch it had stays. Its user table and tempo go on; the host sets the values.
+   */
+  fresh() {
+    const e = this.e;
+    try {
+      e.bb_destroy(this.h);
+    } catch (err) {
+      // (Started again below all the same)
+    }
+    this.presetData = null;
+    this.h = e.bb_create(this.index, sampleRate);
+    if (!this.h) {
+      this.alive = false;
+      this.release();
+      return;
+    }
+    this.n = e.bb_params(this.h);
+    this.findLimits();
+    this.enforceLimits();
+    this.programs = e.bb_programs ? e.bb_programs(this.h) : 0;
+    if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
+    if (this.bpm > 0 && e.bb_tempo) e.bb_tempo(this.h, this.bpm);
+    this.views();
+  }
+
   /** Fledge Synth's user table (fledge_table_buffer / fledge_table_set): "frames" cycles, or none (null) */
   loadTable(data, frames) {
     const e = this.e;
@@ -321,6 +348,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (d.type === 'load') {
       this.loadData(d.data);
       this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
+    } else if (d.type === 'fresh') {
+      // (It couldn't start again: silent from now on, its panel as it was)
+      const before = this.describe();
+      this.fresh();
+      this.port.postMessage({ type: 'params', id: -1, params: this.alive ? this.describe() : before, program: -1 });
     } else if (d.type === 'sync') {
       // Everything sent before this has arrived (an export waits for it before rendering on)
       this.port.postMessage({ type: 'synced', id: d.id });

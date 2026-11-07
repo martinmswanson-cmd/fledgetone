@@ -76,3 +76,13 @@ export function parseCurves(raw: unknown): Record<string, IntensityCurve> {
 
 /** The stem groups the tracks use, in track order. */
 export const groupsInUse = (tracks: ReadonlyArray<Pick<Track, 'stemGroup'>>): string[] => [...new Set(tracks.map((t) => t.stemGroup).filter((g): g is string => !!g))];
+
+/**
+ * Whether a double-click on `point` should leave it (the curve editor, IntensityPanel): it does
+ * when its own first press added it (that was the gesture's one step). `presses` are the times of
+ * the last two presses, the double-click's own; `added`, the point the last press on empty space
+ * added, and that press's time. A point added by an earlier click goes like any other.
+ */
+export function keepsAddedPoint(presses: readonly number[], added: { point: readonly [number, number]; at: number } | null, point: readonly [number, number]): boolean {
+  return !!added && presses.length > 1 && added.at === presses[presses.length - 2] && added.point[0] === point[0] && added.point[1] === point[1];
+}

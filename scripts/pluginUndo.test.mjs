@@ -26,7 +26,7 @@ globalThis.window = globalThis;
 globalThis.__captured = [];
 const store = { past: [], checkpointPlugin(id) { this.past.push({ plugins: [id] }); }, someOtherEdit() { this.past.push({}); } };
 globalThis.__store = store;
-const { editPluginParam, editPluginParams, editPluginProgram } = await import('../src/store/pluginEdits.ts');
+const { editPluginParam, editPluginParams, editPluginProgram, resetAllMoves } = await import('../src/store/pluginEdits.ts');
 
 const fake = () => {
   const values = [0, 0.5, 0.5, 0];
@@ -58,6 +58,23 @@ test('Reset all is one step, not one per slider, and the turn after it is its ow
   assert.deepEqual(c.values, [0, 0.5, 0.5, 0]);
   editPluginParam(c, 0, 0.4);
   assert.equal(store.past.length, 3);
+});
+
+test('Reset all leaves parameters a lane holds with it; with nothing else to move, it makes no step', () => {
+  store.past = [];
+  const c = fake();
+  const params = [
+    { value: 0.8, defaultValue: 0, held: true },
+    { value: 0.5, defaultValue: 0.5 },
+    { value: 0.2, defaultValue: 0.5 },
+    { value: 0, defaultValue: 0 },
+  ];
+  assert.deepEqual(resetAllMoves(params), [[2, 0.5]]);
+  params[2].value = 0.5;
+  assert.deepEqual(resetAllMoves(params), []);
+  editPluginParams(c, resetAllMoves(params));
+  assert.equal(store.past.length, 0, 'no empty undo step');
+  assert.deepEqual(c.values, [0, 0.5, 0.5, 0]);
 });
 
 test('a preset is a step of its own', async () => {
