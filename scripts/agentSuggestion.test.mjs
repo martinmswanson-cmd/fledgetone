@@ -61,3 +61,12 @@ test('a deleted track is named, from the names kept with the suggestion', () => 
   // Without the names it still says what kind of thing went, never an id
   assert.deepEqual(classifySuggestion({ touchedHashes: file.touchedHashes }, { song: gone }).changed, ['a track it changes is gone']);
 });
+
+test('a track that shares its name with another is named by its row too (scan r42)', () => {
+  const p0 = base();
+  const p = { ...p0, tracks: [...p0.tracks, { ...p0.tracks[0], id: 'track-twin' }] };
+  const ops = [{ op: 'set_track', trackId: 'track-twin', volumeDb: -10 }];
+  const made = { revision: 3, touchedHashes: touchedHashes(p, ops), touchedNames: touchedNames(p, ops) };
+  const edited = classifySuggestion(made, { revision: 4, song: withTrack(p, p.tracks.length - 1, { pan: 0.5 }) });
+  assert.deepEqual(edited, { status: 'out_of_date', changed: [`the track "Keys" (track ${p.tracks.length}) changed`] });
+});

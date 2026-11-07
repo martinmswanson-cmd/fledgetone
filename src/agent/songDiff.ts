@@ -204,9 +204,20 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
     if (c.clipId) touchedClips.add(c.clipId);
     if (c.markerId) touchedMarkers.add(c.markerId);
   };
-  const trackName = (id: string) => {
+  /**
+   * A track as a card names it: its name, and, when another track has the same name (before or after),
+   * its row number too, so two tracks named "Keys" read apart ("Keys" (track 3)). `also` is what a
+   * sentence puts in brackets after it, in the same brackets ("Keys" (track 3, bars 5-6)).
+   */
+  const trackLabel = (t: Track, also?: string): string => {
+    const shared = [before, after].some((s) => s.tracks.some((o) => o.id !== t.id && o.name === t.name));
+    const row = after.tracks.findIndex((x) => x.id === t.id);
+    const inside = [shared ? `track ${(row >= 0 ? row : before.tracks.findIndex((x) => x.id === t.id)) + 1}` : '', also ?? ''].filter(Boolean);
+    return inside.length ? `${nm(t.name)} (${inside.join(', ')})` : nm(t.name);
+  };
+  const trackName = (id: string, also?: string) => {
     const t = after.tracks.find((x) => x.id === id) ?? before.tracks.find((x) => x.id === id);
-    return t ? nm(t.name) : 'a track';
+    return t ? trackLabel(t, also) : also ? `a track (${also})` : 'a track';
   };
   /** Whether a track plays notes only on some passes, in either version (noteMemory.ts 'passes': its clips' runs of copies decide which). */
   const playsPasses = (id: string): boolean => [before, after].some((s) => s.clips.some((c) => c.trackId === id && !c.audio && clipHasConditions(c)));
@@ -255,28 +266,38 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   for (const t of after.tracks) {
     const old = tracksBefore.get(t.id);
     if (!old) {
-      add({ text: `Adds a track: ${nm(t.name)} (${INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey}).`, trackId: t.id, hear: 'track' });
+      add({ text: `Adds a track: ${trackLabel(t, INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey)}.`, trackId: t.id, hear: 'track' });
       continue;
     }
-    if (old !== t && !same(old, t)) diffTrack(old, t, after.tracks, add, trackName);
+    if (old !== t && !same(old, t)) diffTrack(old, t, after.tracks, add, trackName, trackLabel);
   }
-  for (const t of before.tracks) if (!tracksAfter.has(t.id)) add({ text: `Removes the track ${nm(t.name)} and its clips.`, trackId: t.id, hear: 'track' });
+  for (const t of before.tracks) if (!tracksAfter.has(t.id)) add({ text: `Removes the track ${trackLabel(t)} and its clips.`, trackId: t.id, hear: 'track' });
 
   // ---------- Clips ----------
   const clipsBefore = byId(before.clips);
   const clipsAfter = byId(after.clips);
-  const patternsBefore = new Set(before.clips.map((o) => o.pattern));
+  /**
+   * How a new clip that shares its notes with others (a linked copy) says so: linked to clips the song
+   * had, or, through a pattern this suggestion makes, to the other new clips (an original that joins a
+   * pattern is a clip the song had, so its copy reads as linked too).
+   */
+  const linkedWords = (c: Clip): string => {
+    if (!c.pattern) return '';
+    const others = after.clips.filter((o) => o.id !== c.id && o.pattern === c.pattern);
+    if (!others.length) return '';
+    return others.some((o) => clipsBefore.has(o.id)) ? ', linked to the clips it was copied from' : ', linked to its copies';
+  };
   for (const c of after.clips) {
     const old = clipsBefore.get(c.id);
     if (!old) {
-      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${c.pattern && patternsBefore.has(c.pattern) ? ', linked to the clips it was copied from' : ''}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
+      add({ text: `Adds the clip ${nm(c.name)} on ${trackName(c.trackId)} at ${bars(c.startBar, c.startBar + c.lengthBars)}${c.notes.length ? `, ${plural(c.notes.length, 'note')}` : ''}${linkedWords(c)}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
       continue;
     }
     if (old !== c) diffClip(old, c, trackName, add, playsPasses);
   }
   for (const c of before.clips) {
     if (!clipsAfter.has(c.id) && tracksAfter.has(c.trackId))
-      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId)} (${bars(c.startBar, c.startBar + c.lengthBars)}).`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
+      add({ text: `Removes the clip ${nm(c.name)} from ${trackName(c.trackId, bars(c.startBar, c.startBar + c.lengthBars))}.`, trackId: c.trackId, clipId: c.id, fromBar: c.startBar, toBar: clipSoundEnd(c), hear: hasLanes(c) ? 'track' : 'here' });
   }
 
   // ---------- Markers ----------
@@ -752,10 +773,10 @@ function settingChanges(x: unknown, y: unknown, trackName?: (id: string) => stri
   return out.slice(0, 4).join(', ') + (out.length > 4 ? `, and ${out.length - 4} more` : '');
 }
 
-function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void, trackName: (id: string) => string) {
-  const n = nm(b.name);
+function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void, trackName: (id: string) => string, trackLabel: (t: Track) => string) {
+  const n = trackLabel(b);
   const at = { trackId: b.id, hear: 'track' as HearWhere };
-  if (a.name !== b.name) add({ text: `Renames the track ${nm(a.name)} to ${nm(b.name)}.`, trackId: b.id, hear: 'silent' });
+  if (a.name !== b.name) add({ text: `Renames the track ${trackLabel(a)} to ${trackLabel(b)}.`, trackId: b.id, hear: 'silent' });
   if (a.instrumentKey !== b.instrumentKey) add({ text: `${n} plays ${INSTRUMENTS[b.instrumentKey]?.name ?? b.instrumentKey} instead of ${INSTRUMENTS[a.instrumentKey]?.name ?? a.instrumentKey}.`, ...at });
   if (a.volume !== b.volume) add({ text: levelSentence(n, a.volume, b.volume), ...at });
   // (the pan as the mixer shows it, in whole steps: a move inside one is "very slightly")
@@ -770,7 +791,7 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
     const way = (b.distance ?? 0) > (a.distance ?? 0) ? 'further back' : 'closer';
     add({ text: p === null ? `Moves ${n} very slightly ${way} on the stage (distance about ${r1(b.distance ?? 0)}).` : `Moves ${n} ${way} on the stage (distance ${rd(a.distance ?? 0, p)} to ${rd(b.distance ?? 0, p)}).`, ...at });
   }
-  if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? (tracks.find((t) => t.id === b.output) ? nm(tracks.find((t) => t.id === b.output)!.name) : 'a bus') : 'the master'}.`, ...at });
+  if ((a.output ?? null) !== (b.output ?? null)) add({ text: `${n} plays into ${b.output ? (tracks.some((t) => t.id === b.output) ? trackName(b.output) : 'a bus') : 'the master'}.`, ...at });
   if (!same(a.eq, b.eq)) {
     // (each band as it's set now, to the decimals that tell it from before: never "+0 dB" for a real change)
     const band = (k: 'low' | 'mid' | 'high') => {
@@ -793,7 +814,7 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
   }
   if (!same(a.synth, b.synth) && a.instrumentKey === b.instrumentKey) add({ text: `Gives ${n} a new synth sound.`, ...at });
   if (!same(a.drumDesign, b.drumDesign)) add({ text: `Changes the designed drum sounds of ${n}.`, ...at });
-  if (!same(a.automation, b.automation)) diffLanes(a, b, tracks, add);
+  if (!same(a.automation, b.automation)) diffLanes(a, b, tracks, add, trackLabel);
   if (!same(a.sends, b.sends)) add({ text: `Changes the sends of ${n} to the returns.`, ...at });
   const known = new Set(['name', 'instrumentKey', 'color', 'volume', 'pan', 'isMuted', 'isSoloed', 'reverbSend', 'delaySend', 'distance', 'output', 'eq', 'fx', 'synth', 'automation', 'sends', 'drumDesign']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
@@ -809,12 +830,12 @@ function diffTrack(a: Track, b: Track, tracks: readonly Track[], add: (c: SongCh
  * send's lane, an instrument's or an insert's the same: where the track and what it feeds sound).
  * fromBar and toBar stay the points' bars, for showing where the lane was drawn.
  */
-function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void) {
-  const n = nm(b.name);
+function diffLanes(a: Track, b: Track, tracks: readonly Track[], add: (c: SongChange) => void, trackLabel: (t: Track) => string) {
+  const n = trackLabel(b);
   // (a send's lane is named by its return, whose name an agent may have written: marked as a name)
   const label = (l: AutomationLane) => {
     const to = l.param.startsWith('send:') ? tracks.find((t) => t.id === l.param.slice(5)) : undefined;
-    return to ? `Send → ${nm(to.name)}` : specOf(l.param, b, tracks).label;
+    return to ? `Send → ${trackLabel(to)}` : specOf(l.param, b, tracks).label;
   };
   const span = (lanes: AutomationLane[]) => {
     const all = lanes.flatMap((l) => l.points.map((p) => p.bar));

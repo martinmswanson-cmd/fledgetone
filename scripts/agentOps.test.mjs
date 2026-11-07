@@ -614,3 +614,57 @@ test('in a song not in 4/4, the latest place a clip or tempo change can go is ne
   // In 4/4 the last bar is a bar: as before
   assert.deepEqual(mustApply(base(), [{ op: 'add_tempo_change', bar: 1e20, bpm: 120 }]).warnings, ['A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 400, its last bar.']);
 });
+
+test('a clip pushed back to fit before the end of the timeline ends exactly at it, with one plain caution (scan r42)', () => {
+  for (const meter of [undefined, { num: 3, den: 4 }, { num: 7, den: 8 }]) {
+    const s = meter ? { ...base(), meter } : base();
+    for (const len of [2.7, 1.123456]) {
+      const made = mustApply(s, [{ op: 'add_clip', trackId: BASS, startBar: 10, lengthBars: len }]);
+      const id = made.song.clips.at(-1).id;
+      for (const ops of [
+        [{ op: 'add_clip', trackId: BASS, startBar: 400.5, lengthBars: len }],
+        [{ op: 'move_clip', clipId: id, toBar: 450 }],
+        [{ op: 'duplicate_clip', clipId: id, toBar: 400.5 }],
+        [{ op: 'duplicate_clip', clipId: id, toBar: 400.5, linked: true }],
+      ]) {
+        const out = mustApply(made.song, ops);
+        assert.equal(out.warnings.length, 1, JSON.stringify([meter, len, ops, out.warnings]));
+        assert.doesNotMatch(out.warnings[0], /saved song can hold/);
+        const c = ops[0].op === 'move_clip' ? out.song.clips.find((x) => x.id === id) : out.song.clips.at(-1);
+        assert.equal(c.startBar + c.lengthBars, 401);
+        assert.ok(Math.abs(c.lengthBars - len) < 1e-9);
+      }
+    }
+  }
+});
+
+test('the Filter slope is a choice: a number that reads as one is it, any other leaves it as it was (scan r42)', () => {
+  const s = mustApply(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { on: true, slope: 12 } }]).song;
+  for (const [given, slope] of [[12.00001, 12], [11.99999, 12], [24.00001, 24], [24, 24]]) {
+    const out = mustApply(s, [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { slope: given } }]);
+    assert.deepEqual(out.warnings, [], String(given));
+    assert.equal(out.song.tracks[0].fx.filter.slope, slope);
+  }
+  for (const given of [13, 18, 6]) {
+    const out = mustApply(s, [{ op: 'set_insert', trackId: KEYS, insert: 'filter', settings: { slope: given, cutoff: 500 } }]);
+    assert.deepEqual(out.warnings, ['"Keys" Filter slope: the value given isn\'t one of its choices (left as it was).'], String(given));
+    assert.equal(out.song.tracks[0].fx.filter.slope, 12);
+    assert.equal(out.song.tracks[0].fx.filter.cutoff, 500);
+  }
+});
+
+test('a value a hair past a limit of 0 reads as 0: no caution; a very small negative number is said to be negative (scan r42)', () => {
+  for (const ops of [
+    [{ op: 'set_track', trackId: KEYS, delaySend: -0.00001, volumeDb: -12 }],
+    [{ op: 'set_track', trackId: KEYS, distance: -0.00001, volumeDb: -12 }],
+    [{ op: 'set_automation', trackId: KEYS, param: 'pan', points: [{ bar: 2, value: -0.00001 }, { bar: 3, value: 0.5 }] }],
+    [{ op: 'set_master', levelDb: 3, loud: { crunch: -0.00001 } }],
+    [{ op: 'set_insert', trackId: KEYS, insert: 'lofi', settings: { on: true, mix: -0.00001 } }],
+  ]) {
+    const out = mustApply(base(), ops);
+    assert.deepEqual(out.warnings.filter((w) => /out of range/.test(w)), [], JSON.stringify(ops));
+  }
+  // Out of range for real, too small to read plainly: said to be negative
+  const neg = mustApply(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'lofi', settings: { on: true, tone: -1e-7 } }]);
+  assert.deepEqual(neg.warnings, ['"Keys" Lo-fi tone, given as a very small negative number, is out of range: set to 1000.']);
+});
