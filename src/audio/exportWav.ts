@@ -414,6 +414,7 @@ function planRender(opts: RenderOptions, latency = 0, slack = 0): RenderPlan {
   // beat at 120 BPM and 44.1 kHz), and floating-point noise rounded each one to that frame or
   // the next, differently from one loop pass to another. At a whole-number tempo a note falls
   // a whole number of frames plus a fraction that is never 0.7, so moved by 0.3 none is on one.
+  // (A sound played from a buffer then starts on the next frame, its samples as they are: see wholeFrameStarts.ts.)
   const preroll = Math.round(PREROLL_SECONDS * sampleRate);
   const startAt = (preroll + 0.3) / sampleRate;
   // Where the range start comes out of the graph

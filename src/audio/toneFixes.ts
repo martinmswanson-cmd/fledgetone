@@ -184,8 +184,10 @@ soloDisposer.dispose = function () {
  * export of the same song. Its noise comes from a fixed seed here (seededNoise.ts), the way Tone
  * makes it, and each burst starts at a point picked by the noise's key (seedToneNoise; 0 if it has
  * none) and its start time: each hit still differs from the next, the same way every time.
- * The buffers are made at 44.1 kHz whatever the context, as Tone's are, so the first context to
- * play noise doesn't decide its samples.
+ * The buffers are made at each context's own rate, from the same seeds, so a burst plays its
+ * samples as they are (see wholeFrameStarts.ts) on a computer whose sound runs at 48 kHz too: made
+ * at 44.1 kHz for every context, the browser read them between their samples there, and the Groove
+ * Drum Kit's snare played 0.8 dB quieter (its noise 1.7 dB, a Drum Machine hat 2.2 dB) than exported.
  */
 interface NoiseInside {
   context: Tone.BaseContext;
@@ -201,21 +203,20 @@ interface NoiseInside {
   noiseKey?: number;
 }
 const TONE_NOISE_SECONDS = 5;
-const toneNoiseBuffers = new Map<NoiseColour, Tone.ToneAudioBuffer>();
-function toneNoiseBuffer(colour: NoiseColour): Tone.ToneAudioBuffer {
-  let buffer = toneNoiseBuffers.get(colour);
+const toneNoiseBuffers = new Map<string, Tone.ToneAudioBuffer>();
+function toneNoiseBuffer(colour: NoiseColour, rate: number): Tone.ToneAudioBuffer {
+  let buffer = toneNoiseBuffers.get(`${colour}@${rate}`);
   if (!buffer) {
-    const rate = 44100;
     const audio = new AudioBuffer({ numberOfChannels: 2, length: TONE_NOISE_SECONDS * rate, sampleRate: rate });
     for (let c = 0; c < 2; c++) audio.copyToChannel(toneNoiseChannel(colour, audio.length, 0x70e + c * 0x1000), c);
     buffer = new Tone.ToneAudioBuffer(audio);
-    toneNoiseBuffers.set(colour, buffer);
+    toneNoiseBuffers.set(`${colour}@${rate}`, buffer);
   }
   return buffer;
 }
 const noiseProto = Tone.Noise.prototype as unknown as { _start: (this: NoiseInside, time: Tone.Unit.Time) => void };
 noiseProto._start = function (time) {
-  const buffer = toneNoiseBuffer(this._type);
+  const buffer = toneNoiseBuffer(this._type, this.context.sampleRate);
   const at = this.toSeconds(time);
   this._source = new Tone.ToneBufferSource({
     url: buffer,
