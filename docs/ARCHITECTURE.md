@@ -132,8 +132,9 @@ one back with `set()`, and the same subscriptions bring the screen and the sound
 (zoom, scroll, the playhead, what's open) and the loop aren't in it, except that undoing an
 insert or delete of bars puts the loop and playhead back where they were. Plugins play on as they
 are through an undo (their settings are read back onto the tracks), except for a step that turned a
-built-in plugin's knobs (`checkpointPlugin`, via `store/pluginEdits.ts`: Fledge Synth's panel and
-Pocket's Sound tool), whose undo and redo put that plugin's settings back.
+built-in plugin's knobs (`checkpointPlugin`, via `store/pluginEdits.ts`: every built-in plugin's
+window, Fledge Synth's panel included, and Pocket's Sound tool), whose undo and redo put that
+plugin's settings back.
 
 ### Play is pressed
 
