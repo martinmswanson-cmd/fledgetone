@@ -29,8 +29,16 @@ export const DEFAULT_TRACK_COLOR = '#9ca3af';
  */
 export const isTrackColor = (color: unknown): color is string => typeof color === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color);
 
-/** `color` if it's one a track or folder may have (isTrackColor), else DEFAULT_TRACK_COLOR. */
-export const trackColor = (color: unknown): string => (isTrackColor(color) ? color : DEFAULT_TRACK_COLOR);
+/**
+ * `color` if it's one a track or folder may have (isTrackColor), else DEFAULT_TRACK_COLOR, always as
+ * lowercase #rrggbb: #rgb is spelled out and an alpha dropped, since the studio adds its own alpha
+ * to a track's colour (`${color}2e`), which only works on six digits.
+ */
+export function trackColor(color: unknown): string {
+  if (!isTrackColor(color)) return DEFAULT_TRACK_COLOR;
+  const hex = color.slice(1).toLowerCase();
+  return hex.length === 3 ? `#${[...hex].map((c) => c + c).join('')}` : `#${hex.slice(0, 6)}`;
+}
 
 /** The folders in track order, each once, with how many tracks it has. */
 export function foldersOf(tracks: readonly Track[]): Array<TrackFolder & { count: number }> {
@@ -99,7 +107,7 @@ export function updateFolder(tracks: Track[], id: string, given: Partial<Omit<Tr
   if (!current) return tracks;
   // (A colour it can't have is left out: the folder keeps its own)
   const { color, ...rest } = given;
-  const patch: Partial<Omit<TrackFolder, 'id'>> = isTrackColor(color) ? given : rest;
+  const patch: Partial<Omit<TrackFolder, 'id'>> = isTrackColor(color) ? { ...rest, color: trackColor(color) } : rest;
   const folder: TrackFolder = { ...current, ...patch };
   if (!folder.collapsed) delete folder.collapsed;
   // (A name as long as a saved song keeps; none: the one it has)
