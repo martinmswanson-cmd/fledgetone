@@ -206,6 +206,48 @@ test('a note whose envelopes begin before its start is struck again once the clo
   assert.equal(builds, 2);
 });
 
+test('live, envelopes run ahead of a note (for a shaper\'s delay) only from a render callback past the clock; an export runs them ahead from the clock (scan r42)', () => {
+  const context = fakeContext();
+  const shaper = 192 / SR;
+  // A note played now (the 808 Designer's, the Synth Designer's): no room, its envelope would be set
+  // inside the callback already playing
+  assert.equal(N.roomAhead(context, notLate(context), shaper), false);
+  assert.equal(N.roomAhead(context, 1 + ROOM + shaper - 1e-6, shaper), false);
+  // One asked for that much later has room (a song's notes, set well ahead)
+  assert.equal(N.roomAhead(context, 1 + ROOM + shaper + 1e-9, shaper), true);
+  assert.equal(N.roomAhead(context, 1.1, shaper), true);
+  // Nothing ahead: always
+  assert.equal(N.roomAhead(context, notLate(context), 0), true);
+  // An export: as before, from the clock (its notes 5 ms on have room)
+  const offline = fakeContext({ offline: true });
+  assert.equal(N.roomAhead(offline, notLate(offline), shaper), true);
+  assert.equal(N.roomAhead(offline, 1 + shaper, shaper), true);
+  assert.equal(N.roomAhead(offline, 1 + shaper - 1e-6, shaper), false);
+});
+
+test('a note set no sooner than a render callback past the clock survives a build of three render blocks; one set 192 frames sooner is found late every time and missed (scan r42)', () => {
+  // (The 808 Designer's note, built in three blocks of the clock at a time while the page is busy: with its
+  // envelope a shaper's delay ahead of its start it was struck three times and let go unheard)
+  const build = (ahead, roomFirst) => {
+    const context = fakeContext();
+    const set = N.createVoiceSet(context.rawContext);
+    let builds = 0;
+    const dropped = N.struckAgain.dropped;
+    N.strikeLive(context, 1, (start) => {
+      builds++;
+      const { voice } = fakeVoice(start);
+      voice.start = start - (!roomFirst || N.roomAhead(context, start, ahead) ? ahead : 0);
+      context.rawContext.currentTime += 3 * BLOCK;
+      set.add(voice);
+      return voice;
+    });
+    return { builds, missed: N.struckAgain.dropped - dropped };
+  };
+  assert.deepEqual(build(192 / SR, true), { builds: 1, missed: 0 });
+  // (What it did before: its envelope ahead regardless)
+  assert.deepEqual(build(192 / SR, false), { builds: 3, missed: 1 });
+});
+
 test('an export\'s native note is built once, where notLate puts it, and not marked moved (scan r41)', () => {
   const context = fakeContext({ offline: true });
   const { built, build } = fakeInstrument(context, [0.5]);
