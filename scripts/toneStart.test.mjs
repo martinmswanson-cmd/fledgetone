@@ -210,3 +210,148 @@ test('a one-shot start whose gain is set as the clock steps on past it: a later 
   // Tone's stop and restart cancel from just after the start it noted: that must come after the gain set
   assert.ok(source._startTime >= set[0][1], `${source._startTime} is at or after the gain set at ${set[0][1]}`);
 });
+
+/** A stand-in for a Tone envelope (Tone's own triggerAttack and triggerRelease run on it): its clock and the attacks and releases it sets. */
+async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0 } = {}) {
+  await import('../src/audio/toneFixes.ts');
+  const context = { currentTime: now, sampleRate: SR, isOffline: offline };
+  const attacks = [];
+  const releases = [];
+  const env = Object.create(Tone.Envelope.prototype);
+  const sig = {
+    getValueAtTime: () => 0,
+    // (an attack: linear; the clock may step on as it's set, the page held up)
+    linearRampTo: (v, ramp, t) => {
+      attacks.push(t);
+      context.currentTime += stepOnAttack(attacks.length);
+    },
+    exponentialApproachValueAtTime: () => {},
+    targetRampTo: (v, ramp, t) => releases.push(t),
+  };
+  Object.defineProperties(env, {
+    context: { value: context },
+    toSeconds: { value: (t) => t },
+    log: { value: () => {} },
+    _sig: { value: sig },
+  });
+  Object.assign(env, { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05, _attackCurve: 'linear', _decayCurve: 'exponential', _releaseCurve: 'exponential' });
+  return { env, context, attacks, releases, sig };
+}
+
+test('an envelope attack more than a render block past the clock keeps its time (scan r40)', async () => {
+  const { env, attacks } = await fakeEnvelope();
+  env.triggerAttack(1 + 2 * BLOCK);
+  assert.deepEqual(attacks, [1 + 2 * BLOCK]);
+});
+
+test('an envelope attack less than a block past the clock (the sound may already be past it) comes a block past the clock (scan r40)', async () => {
+  const { env, attacks } = await fakeEnvelope();
+  env.triggerAttack(1.001);
+  assert.equal(attacks.length, 1);
+  assert.ok(attacks[0] >= 1 + BLOCK && attacks[0] < 1 + BLOCK + 2 / SR, `${attacks[0]}`);
+});
+
+test('the clock moving on past an attack while it is set: struck again a block past the clock, and a release that would cut it moves with it (scan r40)', async () => {
+  const { env, attacks, releases, sig } = await fakeEnvelope({ stepOnAttack: (n) => (n === 1 ? 0.008 : 0) });
+  sig.getValueAtTime = () => 0.5;
+  env.triggerAttack(1.005);
+  assert.equal(attacks.length, 2);
+  assert.equal(attacks[0], 1.005);
+  assert.ok(attacks[1] >= 1.008 + BLOCK, `${attacks[1]}`);
+  // (A release 2 ms after the time asked, before the attack now is: still 2 ms after it)
+  env.triggerRelease(1.007);
+  assert.ok(Math.abs(releases[0] - (attacks[1] + 0.002)) < 1e-9, `${releases[0]}`);
+  // A release well after the attack (a key let go, a longer note) is left where it is
+  env.triggerRelease(1.035);
+  assert.equal(releases[1], 1.035);
+});
+
+test('an attack struck again at most three times, however long the page is held up (scan r40)', async () => {
+  const { env, attacks } = await fakeEnvelope({ stepOnAttack: () => 0.01 });
+  env.triggerAttack(1.005);
+  assert.equal(attacks.length, 3);
+});
+
+test('an export\'s envelope keeps every time it is given, even one at its clock (scan r40)', async () => {
+  const { env, attacks, releases } = await fakeEnvelope({ offline: true, stepOnAttack: () => 0.01 });
+  env.triggerAttack(1);
+  env.triggerRelease(1.03);
+  assert.deepEqual(attacks, [1]);
+  assert.deepEqual(releases, []);
+});
+
+/** A stand-in for a Tone synth (Tone's own triggerAttack runs on it) whose clock can step on between its envelope's attack and its source's start. */
+async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0 } = {}) {
+  const { env, context, attacks } = await fakeEnvelope({ offline });
+  const starts = [];
+  // (A drum's source is stopped at the end of its decay as it starts: its last start is still found)
+  const source = { _state: { getLastState: (state) => (state === 'started' && starts.length ? { time: starts[starts.length - 1] } : undefined) } };
+  // (how far the clock steps on before each source start: one hold-up, or one in each strike)
+  const steps = [].concat(stepBeforeSource);
+  const synth = Object.create(Tone.Synth.prototype);
+  Object.defineProperties(synth, {
+    context: { value: context },
+    toSeconds: { value: (t) => t },
+    log: { value: () => {} },
+    envelope: { value: env },
+    oscillator: { value: source },
+    setNote: { value: () => {} },
+    _triggerEnvelopeAttack: {
+      value: (time, velocity) => {
+        env.triggerAttack(time, velocity);
+        // (Tone moves a start that's already past up to the clock)
+        context.currentTime += steps.shift() ?? 0;
+        starts.push(Math.max(time, context.currentTime));
+      },
+    },
+  });
+  return { synth, context, attacks, starts };
+}
+
+test('a synth whose source starts in time after its envelope plays once, where it was asked (scan r40)', async () => {
+  const { synth, attacks, starts } = await fakeStrikeSynth();
+  synth.triggerAttack('C4', 1.01, 1);
+  assert.deepEqual(attacks, [1.01]);
+  assert.deepEqual(starts, [1.01]);
+});
+
+test('a synth whose source started well after its envelope\'s attack (the page held up in between) is struck again whole, a block past the clock (scan r40)', async () => {
+  const { synth, context, attacks, starts } = await fakeStrikeSynth({ stepBeforeSource: 0.1 });
+  synth.triggerAttack('C4', 1.01, 1);
+  assert.equal(attacks.length, 2);
+  assert.equal(starts.length, 2);
+  assert.ok(attacks[1] >= context.currentTime + BLOCK && starts[1] === attacks[1], `${attacks} ${starts}`);
+});
+
+test('an export\'s synth is never struck again (scan r40)', async () => {
+  const { synth, attacks } = await fakeStrikeSynth({ offline: true, stepBeforeSource: 0.1 });
+  synth.triggerAttack('C4', 1.01, 1);
+  assert.equal(attacks.length, 1);
+});
+
+test('a synth held up again while it is struck again is struck once more, three strikes at most (scan r40)', async () => {
+  const { synth, attacks, starts } = await fakeStrikeSynth({ stepBeforeSource: [0.1, 0.1, 0.1, 0.1] });
+  synth.triggerAttack('C4', 1.01, 1);
+  assert.equal(attacks.length, 3);
+  assert.equal(starts.length, 3);
+});
+
+test('the room kept ahead of the clock is a whole render callback, in blocks: 10 ms at 44.1 kHz is four (scan r40)', async () => {
+  const { soundLead } = await import('../src/audio/toneFixes.ts');
+  assert.equal(soundLead({ sampleRate: SR, rawContext: { baseLatency: 0.01 } }), (4 * 128) / SR);
+  assert.equal(soundLead({ sampleRate: 48000, rawContext: { baseLatency: 256 / 48000 } }), 256 / 48000);
+  // (None said, or none: a block)
+  assert.equal(soundLead({ sampleRate: SR }), BLOCK);
+  assert.equal(soundLead({ sampleRate: SR, rawContext: { baseLatency: 0 } }), BLOCK);
+  // (Never more than 0.1 s)
+  assert.equal(soundLead({ sampleRate: SR, rawContext: { baseLatency: 2 } }), 0.1);
+});
+
+test('a synth\'s note struck within a callback of the clock moves up whole, its source with its envelope (scan r40)', async () => {
+  const { synth, context, attacks, starts } = await fakeStrikeSynth();
+  context.rawContext = { baseLatency: 0.01 };
+  synth.triggerAttack('C4', 1.005, 1);
+  const room = 1 + (4 * 128 + 1) / SR;
+  assert.equal(attacks.length, 1);
+  assert.ok(Math.abs(attacks[0] - room) < 1e-12 && starts[0] === attacks[0], `${attacks} ${starts}`);
+});
