@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { own } from '../../store/ownKey';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from '../../audio/instrumentCatalog';
-import { curveLevel, defaultCurve, groupsInUse, STEM_GROUP_PRESETS, type IntensityCurve } from '../../store/intensity';
+import { curveLevel, defaultCurve, groupsInUse, keepsAddedPoint, STEM_GROUP_PRESETS, type IntensityCurve } from '../../store/intensity';
 import { svgPoint } from '../svgPoint';
 
 /**
@@ -28,6 +28,8 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
   // The point the last press on empty space added, and when: a double-click there is one new point
   // in one step (as in the Duck shape), not a point added and taken away again
   const added = useRef<{ point: [number, number]; at: number } | null>(null);
+  /** When the last two presses were: a double-click's first press is the earlier one */
+  const presses = useRef<number[]>([]);
   const toX = (x: number) => PAD + x * (W - 2 * PAD);
   const toY = (y: number) => H - PAD - y * (H - 2 * PAD);
   const fromEvent = (e: React.PointerEvent): [number, number] => {
@@ -54,6 +56,7 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
         role="img"
         aria-label={`${group} intensity curve`}
         onPointerDown={(e) => {
+          presses.current = [...presses.current.slice(-1), e.timeStamp];
           const i = near(e);
           if (i >= 0) {
             // One undo step for the whole drag, made when the point first moves
@@ -96,8 +99,9 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
           const i = near(e as unknown as React.PointerEvent);
           const a = added.current;
           added.current = null;
-          // (The point this double-click's first press added stays: that was its one step)
-          if (i >= 0 && a && e.timeStamp - a.at < 1000 && curve[i][0] === a.point[0] && curve[i][1] === a.point[1]) return;
+          // (The point this double-click's own first press added stays: that was its one step. One
+          // added by a click before it goes, as any other point does)
+          if (i >= 0 && keepsAddedPoint(presses.current, a, curve[i])) return;
           if (i >= 0 && curve.length > 1) save(curve.filter((_, k) => k !== i));
         }}
       >

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { RotateCcw } from 'lucide-react';
 import { setBuiltinGui, type BuiltinControls } from '../../audio/plugins/builtinHost';
 import { FledgeSynthPanel } from './FledgeSynthPanel';
-import { editPluginParam, editPluginParams, editPluginProgram } from '../../store/pluginEdits';
+import { editPluginParam, editPluginParams, editPluginProgram, resetAllMoves } from '../../store/pluginEdits';
 
 /**
  * The window of a built-in plugin (see builtinHost.ts): what it does, and a slider for each of
@@ -95,10 +95,8 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
       {params.length > 0 && (
         <button
           type="button"
-          onClick={() => {
-            const back = params.flatMap((p, i) => (p.value === p.defaultValue ? [] : [[i, p.defaultValue] as const]));
-            if (back.length) editPluginParams(controls, back);
-          }}
+          // (Parameters a lane holds stay with it: when nothing else is moved, no undo step)
+          onClick={() => editPluginParams(controls, resetAllMoves(params))}
           className="self-start h-6 px-2 flex items-center gap-1 rounded border border-forge-border text-[10px] text-forge-muted hover:text-forge-text"
         >
           <RotateCcw className="w-3 h-3" /> Reset all
