@@ -9,10 +9,12 @@ import {
   createFilter,
   createOsc,
   createVoiceSet,
+  movedRelease,
   noteFrequency,
   phasedSaws,
   releaseConstant,
   releaseTail,
+  strikeLive,
 } from './native';
 import { createMonoLows } from './widen';
 
@@ -76,6 +78,8 @@ export function createSupersaw(output: Tone.InputNode) {
   highpass.connect(lowpass);
   lowpass.connect(monoLows.input);
   const release = 1.5;
+  // (Its waves built now, not on the first note: see KNOWN_NORMALIZERS in native.ts)
+  phasedSaws(raw, SUPERSAW_PHASES);
 
   const playNote = (n: PlayableNote, start: number) => {
     const length = bus.toSeconds(n.duration);
@@ -101,15 +105,17 @@ export function createSupersaw(output: Tone.InputNode) {
   };
 
   return {
+    // (Live, struck again should the page be held up while it's built: see strikeLive)
     play: (notes: PlayableNote[], time: number) => {
-      const start = notLate(bus.context, time);
-      for (const n of notes) safely(() => playNote(n, start));
+      strikeLive(bus.context, time, (start) => {
+        for (const n of notes) safely(() => playNote(n, start));
+      });
     },
     // A key held on a MIDI keyboard: a long note, let go early with the synth's own release
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: HELD_NOTE }, start));
       return (at: number) => {
-        if (voice) voices.release(voice, notLate(bus.context, at), release);
+        if (voice) voices.release(voice, movedRelease(voice, notLate(bus.context, at)), release);
       };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.08),
@@ -130,15 +136,17 @@ export function createPluck(output: Tone.InputNode) {
   /** Seconds to fade 95% of the way out on its own. */
   const decay = 0.5;
   const release = 0.08;
+  // At half level each, built into their waves (no mixing gain node); built now, not on the first note
+  const sawWave = builtinWave(raw, 'sawtooth', 0.5);
+  const squareWave = builtinWave(raw, 'square', 0.5);
 
   const playNote = (n: PlayableNote, start: number) => {
     const length = bus.toSeconds(n.duration);
     const freq = noteFrequency(n.note);
     if (!Number.isFinite(length) || !(freq > 0)) return; // garbled by hand-editing: skip it
     const end = start + Math.max(0.005, length);
-    // At half level each, built into their waves (no mixing gain node)
-    const saw = createOsc(raw, builtinWave(raw, 'sawtooth', 0.5), freq, start);
-    const square = createOsc(raw, builtinWave(raw, 'square', 0.5), freq, start, 8);
+    const saw = createOsc(raw, sawWave, freq, start);
+    const square = createOsc(raw, squareWave, freq, start, 8);
     const filter = createFilter(raw, 'lowpass', freq, 4);
     // Bright on the attack (more so when played harder), closing within about a tenth of a second
     filter.frequency.setValueAtTime(Math.min(16000, freq * 16 + 3000 * n.velocity), start);
@@ -159,15 +167,17 @@ export function createPluck(output: Tone.InputNode) {
   };
 
   return {
+    // (Live, struck again should the page be held up while it's built: see strikeLive)
     play: (notes: PlayableNote[], time: number) => {
-      const start = notLate(bus.context, time);
-      for (const n of notes) safely(() => playNote(n, start));
+      strikeLive(bus.context, time, (start) => {
+        for (const n of notes) safely(() => playNote(n, start));
+      });
     },
     // A key held on a MIDI keyboard: the pluck dies away on its own, or sooner when let go
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: HELD_NOTE }, start));
       return (at: number) => {
-        if (voice) voices.release(voice, notLate(bus.context, at), release);
+        if (voice) voices.release(voice, movedRelease(voice, notLate(bus.context, at)), release);
       };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime),

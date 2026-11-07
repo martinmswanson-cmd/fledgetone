@@ -3,7 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { FX_NOTES } from '../instrumentCatalog';
 import { notLate } from './monotonic';
-import { createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet } from './native';
+import { createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, strikeLive } from './native';
 import type { NativeVoice } from './native';
 import { noiseKey } from '../seededNoise';
 
@@ -189,15 +189,17 @@ export function createFx(output: Tone.InputNode, seed = 0) {
   };
 
   return {
+    // (Live, struck again should the page be held up while it's built: see strikeLive)
     play: (notes: PlayableNote[], time: number) => {
-      const start = notLate(bus.context, time);
-      for (const n of notes) safely(() => playNote(n, start));
+      strikeLive(bus.context, time, (start) => {
+        for (const n of notes) safely(() => playNote(n, start));
+      });
     },
     // A key held on a MIDI keyboard plays a one-bar effect, faded out early if the key is let go first
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: '1m' }, notLate(bus.context, time));
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: '1m' }, start));
       return (at: number) => {
-        if (voice) voices.release(voice, notLate(bus.context, at), 0.1);
+        if (voice) voices.release(voice, movedRelease(voice, notLate(bus.context, at)), 0.1);
       };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.1),
