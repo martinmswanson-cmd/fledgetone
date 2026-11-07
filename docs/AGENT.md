@@ -364,7 +364,9 @@ op that makes something can name it with `ref`, and later ops in the same sugges
 pitch`, and nothing is applied (what an op gave is quoted back made plain and at most 40
 characters). The warnings and what changes, which the musician reads on the card, never quote
 text an op gave: a setting given a value that isn't one of its choices says so, "(left as it
-was)". **Values out of range** are brought into range with a warning
+was)" (the Filter's slope is a choice of 12 or 24 dB: a number that reads as one of them is that
+one, any other leaves it as it was). Two tracks with the same name are told apart by their row
+("Keys" (track 3)). **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, a
 parametric EQ cut eased or taken away, a parametric EQ or multiband compressor that held it down

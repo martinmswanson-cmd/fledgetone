@@ -183,7 +183,10 @@ function describeKey(song: ProjectSnapshot, key: string, names: Record<string, s
   const raw = nameOf(song, key) ?? names[key];
   const name = raw === undefined ? undefined : agentLine(raw, 64);
   const what = key.startsWith('clip:') ? 'clip' : key.startsWith('marker:') ? 'marker' : 'track';
-  if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${textName(name)}"` : `a ${what} it changes`;
+  // (a track named as another is, by its row too, so two tracks named "Keys" read apart, as on the card: songDiff.ts)
+  const track = key.startsWith('track:') || key.startsWith('kind:') ? byAgentId(song.tracks, key.slice(key.indexOf(':') + 1)) : undefined;
+  const row = track && song.tracks.some((t) => t !== track && t.name === track.name) ? ` (track ${song.tracks.indexOf(track) + 1})` : '';
+  if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${textName(name)}"${row}` : `a ${what} it changes`;
   if (key === 'markers') return 'the markers';
   if (key === 'tempo') return 'the tempo';
   if (key === 'master') return 'the master';
