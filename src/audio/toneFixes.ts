@@ -205,3 +205,150 @@ oneShotProto._startGain = function (time, gain) {
   this._startTime = Math.max(this._startTime, this.context.currentTime);
   return result;
 };
+
+/**
+ * The browser renders sound a render block (128 frames) at a time, a whole render callback's worth
+ * of blocks in one go (10 ms or so, the context's baseLatency), and the audio clock the page reads
+ * steps on a block at a time as it does. So the page can read the clock at the start of a callback
+ * the sound is already being made for, and a time up to a callback past what it read can be behind
+ * the sound by the time it's set. A Tone envelope whose attack (and the start of its decay, a
+ * millisecond on) reaches the browser once the sound has passed it has all those moments moved up
+ * to where the sound is, at once, and the note then often never rises: it only creeps towards the
+ * level it holds at (a drum's 0, a held note's sustain), silent or 20 to 40 dB quiet. A hit played
+ * by hand (5 ms past the clock, see monotonic.ts) did that now and then, more often on a busy
+ * computer, the page held up between reading the clock and setting the attack.
+ *
+ * Live, a Tone synth's note (every one-voice synth, a PolySynth's voices, the NoiseSynth) starts
+ * no sooner than a render callback past the clock as it is when it's struck, the whole note
+ * moved up together. Its envelopes' attacks are held to that too, as each is set; and when the
+ * clock has moved on past that while an attack was being set (the page held up part way), it's
+ * struck again a callback past the clock as it is then: a little late, but whole. A release that
+ * would come before a moved attack, or within as long again after it, moves with it (so it can't
+ * cut the attack off); a later one is left where it is. An export's clock waits for its notes, so
+ * nothing changes there.
+ */
+interface EnvelopeInside {
+  context: Tone.BaseContext;
+  toSeconds: (time?: Tone.Unit.Time) => number;
+  /** Where the last attack was asked for and where it went, when it was moved. */
+  _movedAttack?: { asked: number; at: number };
+  /** Where the last attack was set. */
+  _struckAt?: number;
+}
+const envelopeProto = Tone.Envelope.prototype as unknown as {
+  triggerAttack: (this: EnvelopeInside, time?: Tone.Unit.Time, velocity?: number) => unknown;
+  triggerRelease: (this: EnvelopeInside, time?: Tone.Unit.Time) => unknown;
+};
+const triggerAttack = envelopeProto.triggerAttack;
+const triggerRelease = envelopeProto.triggerRelease;
+/** How many times an attack is struck at most (again only when the page was held up while setting it). */
+const ATTACK_TRIES = 3;
+/** The most room kept, whatever the context says of its callbacks. */
+const MAX_LEAD = 0.1;
+
+/** How far ahead of the clock the page reads the sound can be: a render callback, in whole blocks (at least one). */
+export function soundLead(context: { sampleRate: number; rawContext?: unknown }): number {
+  const base = (context.rawContext as { baseLatency?: number } | undefined)?.baseLatency;
+  const blocks = Math.max(1, Math.ceil(((Number.isFinite(base) ? (base as number) : 0) * context.sampleRate) / 128 - 1e-6));
+  return Math.min((blocks * 128) / context.sampleRate, MAX_LEAD);
+}
+
+/** The earliest a note's attack can be set for and still reach the sound in time: a callback past the clock. */
+export function attackRoom(context: { currentTime: number; sampleRate: number; rawContext?: unknown }): number {
+  return context.currentTime + soundLead(context) + 1 / context.sampleRate;
+}
+
+envelopeProto.triggerAttack = function (time, velocity) {
+  if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
+  const asked = this.toSeconds(time);
+  let at = Math.max(asked, attackRoom(this.context));
+  let result = triggerAttack.call(this, at, velocity);
+  for (let tries = 1; tries < ATTACK_TRIES && attackRoom(this.context) > at; tries++) {
+    at = attackRoom(this.context);
+    result = triggerAttack.call(this, at, velocity);
+  }
+  this._movedAttack = at > asked ? { asked, at } : undefined;
+  this._struckAt = at;
+  return result;
+};
+
+envelopeProto.triggerRelease = function (time) {
+  const moved = this._movedAttack;
+  if (!moved || this.context.isOffline) return triggerRelease.call(this, time);
+  let when = this.toSeconds(time);
+  const delay = moved.at - moved.asked;
+  if (when >= moved.asked && when < moved.at + delay) when += delay;
+  return triggerRelease.call(this, when);
+};
+
+/**
+ * The same hold-up can come between a Tone synth's envelope and its sound source, which Tone
+ * starts just after it: Tone moves a start that's already past up to the clock, so the source then
+ * began after the attack had gone by on silence (and a drum's, stopped at the end of its decay,
+ * was cut off at once). Live, when a synth's source has started more than a block after its
+ * envelope's attack, the whole note is struck again a callback past the clock, sources and all
+ * (and again, up to three strikes in all, should the page be held up once more).
+ */
+interface StartsInside {
+  _state?: { getLastState: (state: 'started', time: number) => { time: number } | undefined };
+  _oscillator?: StartsInside;
+  _carrier?: StartsInside;
+  _modulator?: StartsInside;
+}
+/** Where `source`'s last start is set, even if a stop is set after it (and its own inner oscillator's, which Tone clamps to the clock again). */
+function latestStart(source: StartsInside | undefined): number {
+  let t = source?._state?.getLastState('started', Infinity)?.time ?? -Infinity;
+  for (const inner of [source?._oscillator, source?._carrier, source?._modulator]) if (inner && inner !== source && inner._state) t = Math.max(t, latestStart(inner));
+  return t;
+}
+interface SynthInside {
+  context: Tone.BaseContext;
+  toSeconds: (time?: Tone.Unit.Time) => number;
+  envelope?: EnvelopeInside;
+  filterEnvelope?: EnvelopeInside;
+  modulationEnvelope?: EnvelopeInside;
+  oscillator?: StartsInside;
+  modulation?: StartsInside;
+  noise?: StartsInside;
+  _oscillators?: StartsInside[];
+  _strikingAgain?: boolean;
+}
+type Strike = (this: SynthInside, ...args: unknown[]) => unknown;
+/** A synth's triggerAttack (its time argument `timeAt`): the whole note no sooner than a callback past the clock, and struck again when its source started after its envelope. */
+function strikeWhole(proto: { triggerAttack: Strike }, timeAt: number): void {
+  const strike = proto.triggerAttack;
+  proto.triggerAttack = function (...args) {
+    if (this.context.isOffline || this._strikingAgain) return strike.apply(this, args);
+    const asked = this.toSeconds(args[timeAt] as Tone.Unit.Time);
+    const first = [...args];
+    first[timeAt] = Math.max(asked, attackRoom(this.context));
+    this._strikingAgain = true;
+    let result: unknown;
+    try {
+      result = strike.apply(this, first);
+      // (Struck again until it comes whole: a page held up once is often held up again)
+      for (let tries = 1; tries < ATTACK_TRIES; tries++) {
+        const struck = this.envelope?._struckAt;
+        let started = -Infinity;
+        for (const source of [this.oscillator, this.modulation, this.noise, ...(this._oscillators ?? [])]) started = Math.max(started, latestStart(source));
+        if (struck === undefined || !(started > struck + 128 / this.context.sampleRate)) break;
+        const again = [...args];
+        again[timeAt] = attackRoom(this.context);
+        try {
+          strike.apply(this, again);
+        } catch {
+          // (Refused: the note as it came last)
+          break;
+        }
+      }
+    } finally {
+      this._strikingAgain = false;
+    }
+    // (Its release, if it would cut the attack where it went, moves with it: see the envelope's)
+    for (const env of [this.envelope, this.filterEnvelope, this.modulationEnvelope]) if (env?._struckAt !== undefined && env._struckAt > asked) env._movedAttack = { asked, at: env._struckAt };
+    return result;
+  };
+}
+// (Monophonic, which Tone keeps to itself: every one-voice synth but the NoiseSynth, a PolySynth's voices too)
+strikeWhole(Object.getPrototypeOf(Tone.Synth.prototype) as { triggerAttack: Strike }, 1);
+strikeWhole(Tone.NoiseSynth.prototype as unknown as { triggerAttack: Strike }, 0);
