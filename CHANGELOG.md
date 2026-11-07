@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **A note played a moment before a punch-in is judged in time, even where the tempo changes there**: with a slower tempo before the punch-in, notes played up to a quarter of a second early were moved onto it, and with a faster one, notes 20 ms early were lost. A note is now kept only when it's no more than a 32nd at the punch-in's tempo (and at most 40 ms) early.
 - The game-engine package and the markers file are named by the same file-name rule as every other download (no path characters, cut to a safe length).
 - **Suggestion cautions read plainly at the edges**: a value just past a limit (such as a volume of 6.00001 dB) no longer gets a caution saying it was set to the same 6 dB, places and lengths are no longer shown with every digit given (bar 399.1235, not 399.123456789), and in a song not in 4/4 the latest place a clip or tempo change can go is no longer called the last bar.
 - **A built-in plugin's sliders, presets and Reset all can be undone**: in a plugin's own window (other than Fledge Synth's, which already could), moving a slider, double-clicking it back, choosing a preset or pressing Reset all made no undo step, so Ctrl+Z took back the edit before instead. Each is now one step (a whole drag is one, and Reset all is one), and Undo puts the plugin's settings back.
