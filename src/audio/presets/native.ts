@@ -3,7 +3,7 @@ import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
-import { ATTACK_TRIES, attackRoom } from '../soundLead';
+import { ATTACK_TRIES, attackRoom, soundLead } from '../soundLead';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -254,17 +254,41 @@ export function onceStruck(then: () => void): void {
 }
 
 /**
+ * Whether a strike whose outputs are connected now, the clock reading `clock`, is first heard no
+ * later than `earliest` (its earliest start). The clock counts the render blocks done, but the
+ * next can already be under way as it's read, and a connection made then is first played from the
+ * block after it. A note found short of its start by less than a block was so first heard after
+ * it, its envelope setting out from silence: a Pluck came out silent or 20 dB quiet, one note in
+ * fifty while the page was held up four blocks building it. Measured live under load, a connection
+ * was never first played more than a block past the clock read just after it, so a block to spare
+ * is enough (connecting takes next to no time).
+ */
+export function inTimeToConnect(clock: number, sampleRate: number, earliest: number): boolean {
+  return clock + RENDER_BLOCK / sampleRate < earliest;
+}
+
+/**
+ * The extra room (past a render callback past the clock) a note's `tries`-th strike gets: none,
+ * but the last takes a callback more, so a page held up this long once more still lets it sound
+ * (a little later) instead of the note being missed.
+ */
+export function strikeRoom(context: { sampleRate: number; rawContext?: unknown }, tries: number): number {
+  return tries >= ATTACK_TRIES ? soundLead(context) : 0;
+}
+
+/**
  * A live note (or hit) of plain Web Audio nodes, built by `build` from its start: notLate's, no
  * sooner than a render callback past the clock (see soundLead.ts). The page can still be held up
  * longer than that while it builds the note, and then its envelopes reach the browser after the
  * sound has passed their start: they never rise (silent, or 20 to 40 dB quiet), or jump straight
  * to the peak. So each strike is silent until it's built: its outputs are connected (connectOut)
- * and what it does to other notes is done (onceStruck) only once the clock is found short of its
- * start. One the clock has got to is let go unheard and struck again (built anew) a callback past
- * the clock as it is then, three strikes at most, as Tone's synths are (see toneFixes.ts); a third
- * found late is let go too (the note is missed rather than heard as a burst). `again` is called
- * after each strike let go, to put back what it changed (the last note a mono voice slides from).
- * Its voices remember how far they were moved, for their release (see movedRelease). An export
+ * and what it does to other notes is done (onceStruck) only once the clock is found a render
+ * block short of its start (see inTimeToConnect). One without that is let go unheard and struck
+ * again (built anew) a callback past the clock as it is then, three strikes at most, as Tone's
+ * synths are (see toneFixes.ts), the third with a callback more room (strikeRoom); a third found
+ * late is let go too (the note is missed rather than heard as a burst). `again` is called after
+ * each strike let go, to put back what it changed (the last note a mono voice slides from). Its
+ * voices remember how far they were moved, for their release (see movedRelease). An export
  * (whose clock waits for its notes) builds every note once, where it was asked.
  */
 export function strikeLive<T>(context: Tone.BaseContext, time: number | undefined, build: (start: number) => T, again?: () => void): T {
@@ -282,11 +306,11 @@ export function strikeLive<T>(context: Tone.BaseContext, time: number | undefine
     } finally {
       struck = null;
     }
-    // (The clock, which steps on a block at a time as the blocks are rendered, not yet past the
-    // start, or an envelope's earlier start: the sound hadn't got there when the last of the note was set)
+    // (The clock, which steps on a block at a time as the blocks are rendered, a block short of the
+    // start, or of an envelope's earlier start: the sound won't have got there when its outputs are connected)
     let earliest = start;
     for (const { voice } of made.voices) earliest = Math.min(earliest, voice.start - (voice.early ?? 0));
-    if (!made.voices.length || raw.currentTime < earliest) {
+    if (!made.voices.length || inTimeToConnect(raw.currentTime, raw.sampleRate, earliest)) {
       for (const then of made.settle) then();
       if (start > asked) for (const { voice } of made.voices) voice.moved = { asked, at: start };
       return result;
@@ -298,7 +322,7 @@ export function strikeLive<T>(context: Tone.BaseContext, time: number | undefine
       return result;
     }
     struckAgain.count++;
-    start = notLate(context, undefined);
+    start = notLate(context, undefined) + strikeRoom(context, tries + 1);
   }
 }
 
