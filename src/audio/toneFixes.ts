@@ -6,6 +6,7 @@ import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseChannel } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
+import { ATTACK_TRIES, attackRoom, soundLead } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -215,7 +216,7 @@ oneShotProto._startGain = function (time, gain) {
  * millisecond on) reaches the browser once the sound has passed it has all those moments moved up
  * to where the sound is, at once, and the note then often never rises: it only creeps towards the
  * level it holds at (a drum's 0, a held note's sustain), silent or 20 to 40 dB quiet. A hit played
- * by hand (5 ms past the clock, see monotonic.ts) did that now and then, more often on a busy
+ * by hand (then 5 ms past the clock, see monotonic.ts) did that now and then, more often on a busy
  * computer, the page held up between reading the clock and setting the attack.
  *
  * Live, a Tone synth's note (every one-voice synth, a PolySynth's voices, the NoiseSynth) starts
@@ -241,22 +242,8 @@ const envelopeProto = Tone.Envelope.prototype as unknown as {
 };
 const triggerAttack = envelopeProto.triggerAttack;
 const triggerRelease = envelopeProto.triggerRelease;
-/** How many times an attack is struck at most (again only when the page was held up while setting it). */
-const ATTACK_TRIES = 3;
-/** The most room kept, whatever the context says of its callbacks. */
-const MAX_LEAD = 0.1;
-
-/** How far ahead of the clock the page reads the sound can be: a render callback, in whole blocks (at least one). */
-export function soundLead(context: { sampleRate: number; rawContext?: unknown }): number {
-  const base = (context.rawContext as { baseLatency?: number } | undefined)?.baseLatency;
-  const blocks = Math.max(1, Math.ceil(((Number.isFinite(base) ? (base as number) : 0) * context.sampleRate) / 128 - 1e-6));
-  return Math.min((blocks * 128) / context.sampleRate, MAX_LEAD);
-}
-
-/** The earliest a note's attack can be set for and still reach the sound in time: a callback past the clock. */
-export function attackRoom(context: { currentTime: number; sampleRate: number; rawContext?: unknown }): number {
-  return context.currentTime + soundLead(context) + 1 / context.sampleRate;
-}
+// (How far past the clock an attack must be set: shared with the synths of plain Web Audio nodes, see soundLead.ts)
+export { attackRoom, soundLead };
 
 envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);

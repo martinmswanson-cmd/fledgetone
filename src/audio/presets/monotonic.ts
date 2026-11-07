@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { attackRoom } from '../soundLead';
 
 /**
  * Monophonic Tone synths throw if triggered twice at the same instant ("Start time must be
@@ -11,6 +12,12 @@ import * as Tone from 'tone';
  * clock can advance between two such calls, so two late hits could still collapse onto one
  * instant. Moving any late (or nearly late) hit a few ms into the future means Tone never
  * has to clamp it. On-time hits are scheduled ~100 ms ahead and are unaffected.
+ *
+ * Live, a few ms isn't enough: the page can be held up between reading the clock and setting a
+ * note's envelope for longer than that, and an envelope set once the sound has passed its attack
+ * often never rises (a Pluck, a Synth Designer note: silent). Live, a note comes no sooner than a
+ * render callback past the clock (attackRoom, see soundLead.ts), as Tone's synths' do; an
+ * export's clock waits for its notes, so it keeps the few ms.
  */
 const LATE_MARGIN = 0.005;
 
@@ -30,7 +37,10 @@ export function notLate(context: Tone.BaseContext, time?: Tone.Unit.Time): numbe
   // The raw context's clock is where audio is actually being rendered. (An OfflineContext's
   // own currentTime is its scheduling clock, which sits right on each note's time and would
   // make every offline hit look late.)
-  return Math.max(requested, context.rawContext.currentTime + LATE_MARGIN);
+  const raw = context.rawContext;
+  const soonest = raw.currentTime + LATE_MARGIN;
+  if (context.isOffline) return Math.max(requested, soonest);
+  return Math.max(requested, soonest, attackRoom({ currentTime: raw.currentTime, sampleRate: raw.sampleRate, rawContext: raw }));
 }
 
 export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time) => number {

@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, noteFrequency, releaseConstant, releaseTail } from './native';
+import { createBus, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, releaseConstant, releaseTail, strikeLive } from './native';
 import { noiseKey } from '../seededNoise';
 import { HELD_NOTE } from './edmSynths';
 
@@ -91,14 +91,16 @@ function createGatedSynth(output: Tone.InputNode, wave: (raw: BaseAudioContext) 
   };
 
   return {
+    // (Live, struck again should the page be held up while it's built: see strikeLive)
     play: (notes: PlayableNote[], time: number) => {
-      const start = notLate(bus.context, time);
-      for (const n of notes) safely(() => playNote(n, start));
+      strikeLive(bus.context, time, (start) => {
+        for (const n of notes) safely(() => playNote(n, start));
+      });
     },
     hold: (note: PlayableNote, time: number) => {
-      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      const voice = strikeLive(bus.context, time, (start) => playNote({ ...note, duration: HELD_NOTE }, start));
       return (at: number) => {
-        if (voice) voices.release(voice, notLate(bus.context, at), opts.release);
+        if (voice) voices.release(voice, movedRelease(voice, notLate(bus.context, at)), opts.release);
       };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime),
