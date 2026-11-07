@@ -1,4 +1,4 @@
-import { isPlainMeter, measureAt, roundToMeasure, tempoAt, type MeterMap, type Tempo } from '../audio/tempoMap';
+import { isPlainMeter, measureAt, roundToMeasure, secondsBetween, tempoAt, type MeterMap, type Tempo } from '../audio/tempoMap';
 import type { Clip, ClipExpression, NoteEvent, NoteExpression } from './timelineTypes';
 import { tidyNoteLane } from './noteExpression';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
@@ -252,13 +252,14 @@ export function createTake(startBar: number): Take {
       sustained.clear();
       const punch = options.punch && options.punch.outBar > options.punch.inBar + EPS ? options.punch : null;
       // Punching, only what starts inside the range is kept, and what starts a moment before the
-      // punch in (see earlyNoteSeconds), moved to it: it still ends where it was let go
-      const inTempo = punch ? tempoAt(punch.inBar, tempo) : 0;
-      const earlyBars = punch ? (earlyNoteSeconds(inTempo) * inTempo) / 240 : 0;
+      // punch in (see earlyNoteSeconds), moved to it: it still ends where it was let go. The window
+      // is a 32nd at the tempo at the punch in, measured in seconds: the bars before it pass at
+      // whatever tempo plays there
+      const early = punch ? earlyNoteSeconds(tempoAt(punch.inBar, tempo)) : 0;
       const kept = punch
         ? notes
-            .filter((n) => n.bar >= punch.inBar - earlyBars - EPS && n.bar < punch.outBar - EPS)
-            .map((n) => (n.bar >= punch.inBar ? n : { ...n, bar: punch.inBar, start: n.start + ((punch.inBar - n.bar) * 240) / tempoAt(n.bar, tempo) }))
+            .filter((n) => n.bar < punch.outBar - EPS && (n.bar >= punch.inBar || secondsBetween(n.bar, punch.inBar, tempo) <= early + EPS))
+            .map((n) => (n.bar >= punch.inBar ? n : { ...n, bar: punch.inBar, start: n.start + secondsBetween(n.bar, punch.inBar, tempo) }))
         : notes;
       if (kept.length === 0) return null;
       // Held this many seconds, at the tempo where the note started (and, punching, no further than the punch out)
