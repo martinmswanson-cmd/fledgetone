@@ -10,7 +10,7 @@ import { showToast } from './toastStore';
  * (see soundLibrary.ts) and becomes a clip.
  */
 
-/** True while a desktop file drag is over the element (a deck pad drag carries no files). */
+/** True while a desktop file drag is over the element. */
 export const hasFiles = (e: React.DragEvent): boolean => Array.from(e.dataTransfer.types).includes('Files');
 
 /** Open the browser's file picker for sound files. Resolves with none if it was cancelled. */
