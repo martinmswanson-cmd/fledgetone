@@ -90,6 +90,56 @@ crossFadeProto.dispose = function () {
 };
 
 /**
+ * Tone.Oscillator (in every Tone synth: each note's oscillators, the hi-hat's six pairs, and the
+ * pulse, fat, AM and FM kinds made of it) makes a new browser oscillator at each start and
+ * connects its own pitch and detune to it, and never disconnects them: every oscillator that had
+ * ended stayed connected and was kept in memory for good, with its settings' history. A hi-hat
+ * left about ten behind each hit, so over a long session the page grew by tens of megabytes and
+ * each hit played by hand took longer to set (on a busy computer a second and more after a few
+ * thousand, some then late enough to play quiet). Once a browser oscillator has ended (it makes
+ * no sound after that), its pitch and detune are disconnected from it; one still sounding, even
+ * in its fade after a stop, keeps them. Exports sound the same.
+ */
+interface EndedInside {
+  addEventListener: (type: 'ended', listener: () => void, options?: { once?: boolean }) => void;
+}
+interface Disconnects {
+  disconnect: (destination: AudioParam) => unknown;
+}
+/** When `oscillator` (a browser oscillator) ends, disconnect each [source, its param] pair (each on its own: one already gone doesn't keep the rest). */
+export function disconnectWhenEnded(oscillator: EndedInside, links: ReadonlyArray<readonly [Disconnects, AudioParam]>): void {
+  oscillator.addEventListener(
+    'ended',
+    () => {
+      for (const [from, to] of links) {
+        try {
+          from.disconnect(to);
+        } catch {
+          // (Already disconnected, or the source disposed with its connections)
+        }
+      }
+    },
+    { once: true }
+  );
+}
+interface OscillatorInside {
+  frequency: Disconnects;
+  detune: Disconnects;
+  _oscillator: { _oscillator?: EndedInside & { frequency: AudioParam; detune: AudioParam } } | null;
+}
+const oscillatorProto = Tone.Oscillator.prototype as unknown as { _start: (this: OscillatorInside, time?: Tone.Unit.Time) => void };
+const startOscillator = oscillatorProto._start;
+oscillatorProto._start = function (time) {
+  startOscillator.call(this, time);
+  const browserOscillator = this._oscillator?._oscillator;
+  if (!browserOscillator) return;
+  disconnectWhenEnded(browserOscillator, [
+    [this.frequency, browserOscillator.frequency],
+    [this.detune, browserOscillator.detune],
+  ]);
+};
+
+/**
  * Tone.Solo silences the channels not soloed by setting their gain to 0 at once (and back to 1),
  * a click on every one of them that was sounding when a solo went on or off. It glides there
  * instead (see smoothParam.ts). A Solo just made isn't sounding yet, so it takes its gain at once.

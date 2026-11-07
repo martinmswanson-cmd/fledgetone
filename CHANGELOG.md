@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Hi-hats and other built-in synth notes no longer slow the page down over a long session**: every note's oscillators were kept in memory after they had finished, so a few thousand hits played by hand grew the page by tens of megabytes and made each new hit slower to start (on a busy computer, late and quiet now and then). Finished oscillators are now let go; nothing changes in how anything sounds, live or in exports.
 - **A clip pushed back to fit before the end of the timeline ends exactly at it**: rounding left it a hair past the end, which added a second, vague caution about its length to the plain one.
 - **The Filter slope given as a number is treated as the choice it is**: 12.00001 is 12 with no caution, and a number that is neither 12 nor 24 leaves the slope as it was, worded as not one of its choices, instead of switching it to 24 and calling it out of range.
 - **A value a hair past a limit of 0 reads as 0**: a send, distance, automation point, insert mix or master setting given as -0.00001 no longer gets an out-of-range caution that said nothing changed, and a very small negative number is said to be negative.
