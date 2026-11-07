@@ -920,3 +920,37 @@ test('a change to a master part that is switched off is listed, as a track inser
   // Switched on from none: its settings alone, as before
   assert.match(texts(run([{ op: 'set_master', clipper: { on: true, drive: 6 } }]).diff).join('\n'), /^Turns on the master clipper \(/);
 });
+
+test('a new clip that shares its notes with another reads as linked; a plain copy does not (scan r42)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const s = base();
+  const BASS = s.tracks[2].id;
+  const clip = s.clips.find((c) => c.trackId === BASS);
+  const out = applyOps(s, { opsVersion: 1, ops: [{ op: 'duplicate_clip', clipId: clip.id, toBar: 100, linked: true }, { op: 'duplicate_clip', clipId: clip.id, toBar: 120 }] }, { idBase: 'sg-t' });
+  assert.ok(out.ok);
+  const t = texts(out.diff);
+  assert.ok(t.some((x) => /at bars 100-111, 24 notes, linked to the clips it was copied from\.$/.test(x)), JSON.stringify(t));
+  assert.ok(t.some((x) => /at bars 120-131, 24 notes\.$/.test(x)), JSON.stringify(t));
+  // Two new clips linked to each other only
+  const two = applyOps(s, { opsVersion: 1, ops: [{ op: 'add_clip', trackId: BASS, startBar: 200, lengthBars: 1, ref: 'n' }, { op: 'duplicate_clip', clipId: '$n', toBar: 210, linked: true }] }, { idBase: 'sg-t' });
+  assert.ok(two.ok);
+  assert.deepEqual(texts(two.diff).filter((x) => /^Adds the clip/.test(x)).map((x) => x.endsWith(', linked to its copies.')), [true, true]);
+});
+
+test('two tracks with the same name are told apart by their row (scan r42)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const s0 = base();
+  const made = applyOps(s0, { opsVersion: 1, ops: [{ op: 'add_track', instrument: s0.tracks[0].instrumentKey, name: 'Keys', ref: 'k2' }, { op: 'add_clip', trackId: '$k2', startBar: 5, lengthBars: 2, name: 'Keys' }] }, { idBase: 'sg-t' });
+  assert.ok(made.ok);
+  const row = made.song.tracks.length;
+  assert.equal(texts(made.diff)[0], `Adds a track: "Keys" (track ${row}, Electric Piano (Real)).`);
+  const s = made.song;
+  const [k1, k2] = s.tracks.filter((t) => t.name === 'Keys');
+  const c2 = s.clips.find((c) => c.trackId === k2.id);
+  const moved = applyOps(s, { opsVersion: 1, ops: [{ op: 'move_clip', clipId: c2.id, trackId: k1.id }] }, { idBase: 'sg-u' });
+  assert.deepEqual(texts(moved.diff), [`Moves the clip "Keys" from "Keys" (track ${row}) to "Keys" (track 1).`]);
+  const gone = applyOps(s, { opsVersion: 1, ops: [{ op: 'remove_clip', clipId: c2.id }] }, { idBase: 'sg-u' });
+  assert.deepEqual(texts(gone.diff), [`Removes the clip "Keys" from "Keys" (track ${row}, bars 5-6).`]);
+  // A name no other track has: as before
+  assert.deepEqual(texts(applyOps(s, { opsVersion: 1, ops: [{ op: 'set_track', trackId: s.tracks[2].id, mute: true }] }, { idBase: 'sg-u' }).diff), ['Mutes "Bass".']);
+});
