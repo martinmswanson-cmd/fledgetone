@@ -406,6 +406,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       const saved = s as Partial<BuiltinState> | undefined;
       const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;
       if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) await setProgram(p);
+      // Settings with no preset file at all (an undo back to "(none)"): the plugin as it started, the patch gone
+      else if (files && program >= 0 && saved && Array.isArray(saved.values) && saved.preset === undefined) await startFresh();
       // (The user table as the settings have it: an undo can take one away or bring one back)
       const table = normalizeUserTable(saved?.table) ?? null;
       if (table?.data !== userTable?.data || table?.frames !== userTable?.frames) await setUserTable(table);
@@ -460,6 +462,16 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     await new Promise<void>((resolve) => {
       loaded.push(resolve);
       node.port.postMessage({ type: 'load', data }, [data]);
+    });
+  };
+  /** Back to no preset file (resolves once the plugin has started again without one). */
+  const startFresh = async () => {
+    if (destroyed) return;
+    program = -1;
+    changed();
+    await new Promise<void>((resolve) => {
+      loaded.push(resolve);
+      node.port.postMessage({ type: 'fresh' });
     });
   };
   /** Play `table` as the user table (null: none). False if it couldn't be read (nothing changes then). */
