@@ -33,6 +33,7 @@ import {
   defaultTrackFx,
   DEFAULT_MONO_LOW,
   DEFAULT_SATURATE,
+  FILTER_SLOPES,
   isAutomationParam,
   normalizeMasterSettings,
   normalizeTrackFx,
@@ -266,7 +267,7 @@ export const plainGiven = (v: number): string | null => {
   return !Number.isFinite(v) || Math.abs(v) >= 1e9 || (v !== 0 && r === 0) ? null : String(r);
 };
 /** How a number too large or too small to read plainly (plainGiven) is worded: "a very large number", "a very small number". */
-const sizeWords = (v: number) => (Math.abs(v) >= 1 ? `a very large ${v < 0 ? 'negative ' : ''}number` : 'a very small number');
+const sizeWords = (v: number) => `a very ${Math.abs(v) >= 1 ? 'large' : 'small'} ${v < 0 ? 'negative ' : ''}number`;
 /**
  * `what` with the number an agent gave for it, as a warning says it: ""Keys" volume 20 dB", or for
  * a number too large or too small to read plainly, ""Keys" volume, given as a very large number,".
@@ -277,11 +278,15 @@ export const givenWords = (what: string, v: number, unit = ''): string => {
 };
 /**
  * Whether a value given and the value set read the same once worded (givenWords): 6.00001 set to
- * 6 reads "6" both times, so a caution that it was out of range would contradict itself.
+ * 6 reads "6" both times, so a caution that it was out of range would contradict itself. A value
+ * that rounds (to 4 decimals) to the value set reads the same too: -0.00001 set to 0 is "0".
  */
-const readsSame = (given: number, set: number) => givenWords('', given) === givenWords('', set);
+const readsSame = (given: number, set: number) => round(given, 4) === round(set, 4) || givenWords('', given) === givenWords('', set);
 /** A length in bars as a note duration ("0.25m"). */
 const lengthText = (bars: number) => `${round(bars)}m`;
+
+/** Insert settings that are a choice of numbers, not a range (normalizeTrackFx puts any other number back to the usual choice). */
+const NUMBER_CHOICES: Partial<Record<InsertName, Record<string, readonly number[]>>> = { filter: { slope: FILTER_SLOPES } };
 
 /** Thrown inside applyOps to stop at the first op that can't be applied. */
 class OpFail extends Error {
@@ -535,7 +540,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           // (Named after a track named after a file, it is too: see ownFiles.ts)
           ...fileMade(op.name === undefined && track.nameFromFile),
           startBar,
-          lengthBars,
+          lengthBars: fitLength(startBar, lengthBars),
           notes: [],
           isSelected: false,
         };
@@ -555,7 +560,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           trackId = to.id;
         }
         const startBar = op.toBar === undefined ? clip.startBar : readBar(op.toBar, `${at}.toBar`, lastStart(clip.lengthBars));
-        replaceClip(clip, { ...clip, startBar, trackId });
+        replaceClip(clip, { ...clip, startBar, trackId, lengthBars: fitLength(startBar, clip.lengthBars) });
         return;
       }
       case 'resize_clip': {
@@ -587,9 +592,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           const pattern = clip.pattern ?? uid('pattern');
           const original = clip.pattern ? clip : { ...clip, pattern };
           replaceClip(clip, original);
-          copy = { ...original, id: uid('clip'), trackId, startBar, isSelected: false, pattern };
+          copy = { ...original, id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, clip.lengthBars), isSelected: false, pattern };
         } else {
-          copy = { ...unlinked(clip), id: uid('clip'), trackId, startBar, isSelected: false, notes: clip.notes.map((n) => ({ ...n, id: uid('note') })) };
+          copy = { ...unlinked(clip), id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, clip.lengthBars), isSelected: false, notes: clip.notes.map((n) => ({ ...n, id: uid('note') })) };
         }
         // A copy's notes are notes the suggestion adds (a linked copy plays them too)
         countNotes(clip.notes.length, `${at}.clipId`);
@@ -649,6 +654,19 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (want !== undefined && typeof v !== typeof want && !(Array.isArray(want) && Array.isArray(v))) throw new OpFail(`${at}.settings.${givenKey(k)}`, `expected ${typeof want === 'number' ? 'a number' : typeof want === 'boolean' ? 'true or false' : Array.isArray(want) ? 'a list' : 'text'}`);
         }
         const settings = { ...op.settings };
+        // A setting that is a choice of numbers (the Filter's slope, 12 or 24 dB): a number that reads as one
+        // of them is that choice; any other is kept as it was, as a choice of words is
+        const current = (track.fx[insert] as unknown as Record<string, unknown> | undefined) ?? defaults;
+        for (const [k, choices] of Object.entries(NUMBER_CHOICES[insert] ?? {})) {
+          const v = settings[k];
+          if (typeof v !== 'number') continue;
+          const pick = choices.find((c) => readsSame(v, c));
+          if (pick !== undefined) settings[k] = pick;
+          else {
+            delete settings[k];
+            warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (left as it was).`);
+          }
+        }
         if (insert === 'pump' && settings.source !== undefined) {
           if (typeof settings.source !== 'string') throw new OpFail(`${at}.settings.source`, 'expected the id of the track the Pump ducks to');
           const source = trackRef(settings.source, `${at}.settings.source`);
@@ -656,7 +674,6 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           // The id itself, never the "$ref" it was given as
           settings.source = source.id;
         }
-        const current = (track.fx[insert] as unknown as Record<string, unknown> | undefined) ?? defaults;
         const merged = { ...current, ...settings };
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
@@ -1000,6 +1017,14 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
    */
   function lastStart(lengthBars: number): number {
     return Math.min(TOTAL_BARS, TOTAL_BARS + 1 - lengthBars);
+  }
+
+  /**
+   * A clip's length where it starts, held to the end of the timeline as a saved song holds it (project.ts):
+   * a clip put at its last start (lastStart) ends exactly at the end, not a hair past it from rounding.
+   */
+  function fitLength(startBar: number, lengthBars: number): number {
+    return Math.min(lengthBars, TOTAL_BARS + 1 - startBar);
   }
 
   /** A position up to `max` (a clip's start: the last place it can start, lastStart). */
