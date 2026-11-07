@@ -329,6 +329,39 @@ test('punch: a note a moment before the punch in is its first note, moved to it;
   near(durationToBars(clip.notes[0].duration), 0.125, 1 / 192);
 });
 
+/** Which of the notes played `ms` early for a punch in at bar 2 are kept, with the tempo `before` up to bar 2 and `after` from it. */
+const keptEarly = (before, after, msList) => {
+  const tempo = { bpm: before, points: [{ id: 'p', bar: 2, bpm: after, ramp: false }] };
+  // bar 1 at t0; bar 2 one bar of `before` later; bars past it at `after`
+  const sec = (bar) => (bar <= 2 ? t0 + ((bar - 1) * 240) / before : t0 + 240 / before + ((bar - 2) * 240) / after);
+  return msList.map((ms) => {
+    const take = createTake(1);
+    const heard = sec(2) - ms / 1000;
+    take.noteOn(60, 'C4', 0.8, 2 - ((ms / 1000) * before) / 240, heard);
+    take.noteOff(60, heard + 0.2);
+    const clip = take.finish(4, sec(4), tempo, { punch: { inBar: 2, outBar: 3 } });
+    if (clip) {
+      assert.equal(clip.startBar, 2);
+      assert.deepEqual(clip.notes.map((n) => [n.note, n.startOffset]), [['C4', 0]]);
+      // still ends where it was let go: 0.2 s after it was struck, at the tempo from the punch in
+      near(durationToBars(clip.notes[0].duration), Math.max(1 / 32, ((0.2 - ms / 1000) * after) / 240), 1 / 192);
+    }
+    return clip ? 'kept' : 'dropped';
+  });
+};
+
+test('punch: the early window is measured in seconds when the tempo changes at the punch in', () => {
+  // Steady 120: up to 40 ms (a 32nd is 62.5 ms)
+  assert.deepEqual(keptEarly(120, 120, [5, 20, 35, 39, 41, 60, 100]), ['kept', 'kept', 'kept', 'kept', 'dropped', 'dropped', 'dropped']);
+  // Slower before (60 -> 240): a 32nd at 240 is 31.25 ms, not the far wider window the slow bars would give
+  assert.deepEqual(keptEarly(60, 240, [5, 20, 31, 32, 35, 60, 100]), ['kept', 'kept', 'kept', 'dropped', 'dropped', 'dropped', 'dropped']);
+  // Faster before (240 -> 60): the 40 ms cap holds, the window doesn't shrink with the fast bars
+  assert.deepEqual(keptEarly(240, 60, [5, 20, 35, 39, 41, 60]), ['kept', 'kept', 'kept', 'kept', 'dropped', 'dropped']);
+  // The cap at a slow punch in from a fast run-up, and a fast punch in from a slow run-up
+  assert.deepEqual(keptEarly(200, 40, [39, 41]), ['kept', 'dropped']);
+  assert.deepEqual(keptEarly(40, 200, [37, 38]), ['kept', 'dropped']);
+});
+
 test('the count-in: a note a moment early for the first downbeat starts the take; one played in the count-in is not kept', () => {
   // A 32nd at 120 BPM is 62.5 ms: the take keeps none shorter, and a live tap sounds at least that long
   near(shortestNoteSeconds(120), 0.0625);
