@@ -490,7 +490,7 @@ test('cautions never echo a number in computer notation: one too large or too sm
     [base(), { op: 'set_tempo', bpm: 1e-12 }, 'A tempo given as a very small number is out of range: set to 40 (40 to 240).'],
     [base(), { op: 'set_tempo', bpm: 1e21 }, 'A tempo given as a very large number is out of range: set to 240 (40 to 240).'],
     [base(), { op: 'add_tempo_change', bar: 1e21, bpm: 100 }, 'A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 400, its last bar.'],
-    [meter78, { op: 'add_tempo_change', bar: 1e21, bpm: 100 }, 'A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 457, its last bar.'],
+    [meter78, { op: 'add_tempo_change', bar: 1e21, bpm: 100 }, 'A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 457, the latest place a tempo change can go.'],
     [base(), { op: 'add_clip', trackId: BASS, startBar: 1e21, lengthBars: 2 }, 'A bar given as a very large number is past the end of the timeline: put at bar 399.'],
     [meter78, { op: 'add_clip', trackId: BASS, startBar: 1e21, lengthBars: 2 }, 'A bar given as a very large number is past the end of the timeline: put at bar 455 beat 7.'],
     [base(), { op: 'add_clip', trackId: BASS, startBar: 3, lengthBars: 1e21 }, 'A clip given a very large length would run past the end of the timeline (bar 401): made 400 bars.'],
@@ -556,4 +556,61 @@ test('a clip never starts after the last bar: one caution naming where it really
   // One that starts inside the timeline but wouldn't fit before its end: as before
   const fit = mustApply(base(), [{ op: 'add_clip', trackId: BASS, startBar: TOTAL_BARS - 1, lengthBars: 4 }]);
   assert.deepEqual(fit.warnings, [`A clip starting at bar ${TOTAL_BARS - 1} wouldn't fit before the end of the timeline: moved to bar ${TOTAL_BARS - 3}.`]);
+});
+
+test('a value just past a limit that reads as the limit gives no caution: it would contradict itself (scan r41)', () => {
+  for (const op of [
+    { op: 'set_track', trackId: KEYS, volumeDb: 6.00001 },
+    { op: 'set_track', trackId: KEYS, volumeDb: -60.00001 },
+    { op: 'set_track', trackId: KEYS, delaySend: 1.00003 },
+    { op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { on: true, mix: 1.00001 } },
+    { op: 'set_master', levelDb: 12.00001 },
+    { op: 'set_master', ott: { depth: 1.00001 } },
+    { op: 'set_automation', trackId: KEYS, param: 'volume', points: [{ bar: 2, value: 1.00001 }] },
+    { op: 'set_eq', trackId: KEYS, high: 12.00002 },
+  ]) {
+    const out = mustApply(base(), [op]);
+    assert.ok(!out.warnings.some((w) => /out of range/.test(w)), `${JSON.stringify(op)}\n${out.warnings.join('\n')}`);
+  }
+  // Still clamped
+  assert.equal(mustApply(base(), [{ op: 'set_track', trackId: KEYS, volumeDb: 6.00001 }]).song.tracks.find((t) => t.id === KEYS).volume, 6);
+  // One that reads differently from the limit: cautioned as before
+  assert.ok(mustApply(base(), [{ op: 'set_track', trackId: KEYS, volumeDb: 6.001 }]).warnings.includes('"Keys" volume 6.001 dB is out of range: set to 6 dB (-60 to 6).'));
+  assert.ok(mustApply(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { on: true, mix: 1.2 } }]).warnings.some((w) => /Chorus mix 1\.2 is out of range: set to 1\./.test(w)));
+});
+
+test('places and lengths in cautions are rounded as a given number is, never every digit; none when it reads as where it went (scan r41)', () => {
+  const warns = (ops) => mustApply(base(), ops).warnings;
+  assert.deepEqual(warns([{ op: 'add_clip', trackId: KEYS, startBar: 399.123456789, lengthBars: 2 }]), ["A clip starting at bar 399.1235 wouldn't fit before the end of the timeline: moved to bar 399."]);
+  assert.deepEqual(warns([{ op: 'add_clip', trackId: KEYS, startBar: 700.123456789, lengthBars: 2 }]), ['Bar 700.1235 is past the end of the timeline: put at bar 399.']);
+  assert.deepEqual(warns([{ op: 'add_clip', trackId: KEYS, startBar: 1, lengthBars: 400.123456789 }]), ['A clip 400.1235 bars long would run past the end of the timeline (bar 401): made 400 bars.']);
+  assert.deepEqual(warns([{ op: 'add_tempo_change', bar: 400.123456789, bpm: 100 }]), ['A tempo change at bar 400.1235 is past the end of the timeline: put at bar 400, its last bar.']);
+  assert.deepEqual(warns([{ op: 'set_automation', trackId: KEYS, param: 'volume', points: [{ bar: 401.123456789, value: 0.5 }] }]), ['"Keys" automation point 1 at bar 401.1235 is off the timeline: put at bar 401.']);
+  assert.deepEqual(warns([{ op: 'add_marker', bar: 401.123456789 }]), ['Bar 401.1235 is past the end of the timeline: put at bar 401.']);
+  // Reads as where it went: no caution, and still put there
+  for (const ops of [
+    [{ op: 'add_clip', trackId: KEYS, startBar: 399.00000001, lengthBars: 2 }],
+    [{ op: 'add_clip', trackId: KEYS, startBar: 1, lengthBars: 400.0000001 }],
+    [{ op: 'add_clip', trackId: KEYS, startBar: 400.00001, lengthBars: 0.25 }],
+    [{ op: 'add_tempo_change', bar: 400.00001, bpm: 100 }],
+    [{ op: 'set_automation', trackId: KEYS, param: 'volume', points: [{ bar: 401.00001, value: 0.5 }] }],
+    [{ op: 'add_marker', bar: 401.00001 }],
+  ]) {
+    const out = mustApply(base(), ops);
+    assert.deepEqual(out.warnings, [], JSON.stringify(ops));
+  }
+  assert.equal(mustApply(base(), [{ op: 'add_tempo_change', bar: 400.00001, bpm: 100 }]).song.tempoPoints.at(-1).bar, 400);
+  for (const w of [...warns([{ op: 'add_clip', trackId: KEYS, startBar: 399.123456789, lengthBars: 2 }]), ...warns([{ op: 'add_marker', bar: 401.123456789 }])]) assert.doesNotMatch(w, /\d\.\d{5,}/);
+});
+
+test('in a song not in 4/4, the latest place a clip or tempo change can go is never called the last bar (scan r41)', () => {
+  const s = { ...base(), meter: { num: 3, den: 4 }, meterPoints: [{ id: 'mp1', bar: 4, num: 7, den: 8 }] };
+  const warns = (ops) => mustApply(s, ops).warnings;
+  assert.deepEqual(warns([{ op: 'add_tempo_change', bar: 1e20, bpm: 120 }]), ['A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 457 beat 5, the latest place a tempo change can go.']);
+  assert.deepEqual(warns([{ op: 'add_clip', trackId: KEYS, startBar: 400.5, lengthBars: 0.25 }]), ["A clip can't start after bar 457 beat 5, the latest a clip can start: moved there."]);
+  for (const w of [...warns([{ op: 'add_tempo_change', bar: 1e20, bpm: 120 }]), ...warns([{ op: 'add_clip', trackId: KEYS, startBar: 400.5, lengthBars: 0.25 }])]) assert.doesNotMatch(w, /last bar/);
+  // A point given before bar 1 in such a song: still said plainly
+  assert.deepEqual(warns([{ op: 'set_automation', trackId: KEYS, param: 'volume', points: [{ bar: 0.5, value: 0.5 }] }]), ['"Keys" automation point 1 at a bar before bar 1 is off the timeline: put at bar 1.']);
+  // In 4/4 the last bar is a bar: as before
+  assert.deepEqual(mustApply(base(), [{ op: 'add_tempo_change', bar: 1e20, bpm: 120 }]).warnings, ['A tempo change at a bar given as a very large number is past the end of the timeline: put at bar 400, its last bar.']);
 });
