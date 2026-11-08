@@ -7,7 +7,7 @@
 import { isDropTrack } from '../store/dropMoves';
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
-import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
+import { applyTempoAt, barToSeconds, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument, VoiceControl } from './instruments';
@@ -20,6 +20,7 @@ import type { Clip, ClipGroove, DrumHit, InstrumentKey, LoopRegion, NoteEvent, T
 import { clipHasConditions, clipRuns, isConditional, notePlays, ownClipId, passOf, type ClipRun } from '../store/noteChance';
 import { INSTRUMENTS, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
+import { atSongPlace } from './songPlace';
 import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteStepper, type NoteStepper } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
@@ -1099,10 +1100,14 @@ export function createClipSchedule(
     windowFor(trackId, instrument).batch(time, play, bending > 0 && (sounding || bending > 1));
   };
 
-  const playGroup = (instrument: TrackInstrument, group: NoteGroup, time: number) => {
+  /**
+   * `place`: where `time` is in the song (seconds from bar 1, see songPlace.ts), for what's picked
+   * for each note by a hash: the same live and in an export, wherever playback began.
+   */
+  const playGroup = (instrument: TrackInstrument, group: NoteGroup, time: number, place: number) => {
     const f = feel.get(group.trackId);
     if (!f) {
-      playNotes(group.trackId, instrument, group.notes, time);
+      atSongPlace(time, place, () => playNotes(group.trackId, instrument, group.notes, time));
       return;
     }
     const drifted = (n: PlayableNote, seed: number) => {
@@ -1115,12 +1120,12 @@ export function createClipSchedule(
       // (A silent first note: the others keep their own velocities)
       const gain = group.notes[0].velocity > 0 ? first.note.velocity / group.notes[0].velocity : 1;
       const notes = group.notes.map((n, i) => (i === 0 ? first.note : { ...drifted(n, group.seeds[0]).note, velocity: Math.max(0.05, Math.min(1, n.velocity * gain)) }));
-      playNotes(group.trackId, instrument, notes, time + first.late);
+      atSongPlace(time + first.late, place + first.late, () => playNotes(group.trackId, instrument, notes, time + first.late));
       return;
     }
     group.notes.forEach((n, i) => {
       const d = drifted(n, group.seeds[i]);
-      playNotes(group.trackId, instrument, [d.note], time + d.late);
+      atSongPlace(time + d.late, place + d.late, () => playNotes(group.trackId, instrument, [d.note], time + d.late));
     });
   };
 
@@ -1174,12 +1179,16 @@ export function createClipSchedule(
       const loop = loopTicksOf();
       const left = loop && tick >= loop[0] && tick < loop[1] ? Math.round(secondsBetween(ticksToBar(tick), ticksToBar(loop[1]), tempoOf()) * ((transport.bpm.value * transport.PPQ) / 60) * 1e6) / 1e6 : Infinity;
       const ticksPerBar = transport.PPQ * 4;
+      // Where this tick is in the song (from bar 1, along the tempo map), for what's picked for its
+      // notes by a hash: the same on every pass, from wherever playback began, and in an export
+      const place = barToSeconds(ticksToBar(tick), tempoOf());
       const inPass = (notes: PlayableNote[]) => (left === Infinity || !notes.some((n) => durationToBars(n.duration) * ticksPerBar > left + 1e-6) ? notes : notes.map((n) => (durationToBars(n.duration) * ticksPerBar > left + 1e-6 ? { ...n, duration: `${Math.max(1, Math.round(left))}i` } : n)));
       for (const group of groups) {
         const { trackId, seeds, swung, pitch, cc } = group;
         if (pitch || cc) continue;
         const notes = inPass(group.notes);
-        const time = tickTime + lateOf(group);
+        const late = lateOf(group);
+        const time = tickTime + late;
         const instrument = instrumentFor(trackId);
         if (!instrument) continue;
         // Its first note after a jump that left a bent note's bend held: the song's bend here first
@@ -1188,8 +1197,8 @@ export function createClipSchedule(
         // One ringing on with its bend lets go of it (see backBefore)
         else if (instrument.bend) backBefore(trackId, instrument, tick, time);
         // (The song's own notes, live: not ones played from outside it, see onLiveNote)
-        if (live) songNotes(() => safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time)));
-        else safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
+        if (live) songNotes(() => safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time, place + late)));
+        else safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time, place + late));
       }
 
       if (onActivity) {

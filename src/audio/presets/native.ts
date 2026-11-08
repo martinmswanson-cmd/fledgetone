@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
+import { struckLater } from '../songPlace';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
 import { ATTACK_TRIES, attackRoom, soundLead } from '../soundLead';
@@ -288,8 +289,9 @@ export function strikeRoom(context: { sampleRate: number; rawContext?: unknown }
  * synths are (see toneFixes.ts), the third with a callback more room (strikeRoom); a third found
  * late is let go too (the note is missed rather than heard as a burst). `again` is called after
  * each strike let go, to put back what it changed (the last note a mono voice slides from). Its
- * voices remember how far they were moved, for their release (see movedRelease). An export
- * (whose clock waits for its notes) builds every note once, where it was asked.
+ * voices remember how far they were moved, for their release (see movedRelease); what's picked for
+ * it by a hash is picked from where it was asked (songPlace.ts struckLater). An export (whose
+ * clock waits for its notes) builds every note once, where it was asked.
  */
 export function strikeLive<T>(context: Tone.BaseContext, time: number | undefined, build: (start: number) => T, again?: () => void): T {
   // (A note built inside another's strike is struck with it)
@@ -302,7 +304,8 @@ export function strikeLive<T>(context: Tone.BaseContext, time: number | undefine
     const made: Strike = { voices: [], settle: [] };
     struck = made;
     try {
-      result = build(start);
+      const at = start;
+      result = struckLater(at - asked, () => build(at));
     } finally {
       struck = null;
     }

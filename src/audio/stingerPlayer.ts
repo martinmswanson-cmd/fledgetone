@@ -10,8 +10,9 @@ import { fitNotesToRange } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
 import { defaultTrackFx, durationToBars } from '../store/timelineTypes';
 import { maxOf, minOf } from '../support/minMax';
-import { getAudibleMoment, getLiveTempo, getSongMeter, ticksToBar } from './transport';
+import { barToSeconds, barToTicks, getAudibleMoment, getLiveTempo, getSongMeter, ticksToBar } from './transport';
 import { nextMeterLine, onMeterLine, secondsBetween } from './tempoMap';
+import { atSongPlace } from './songPlace';
 
 /**
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
@@ -114,6 +115,13 @@ function lengthAt(duration: string, bpm: number, lateBy = 0): string {
 
 /** Seconds of a note at `bpm` (for how long its instrument may sound) */
 const secondsOf = (n: Pick<NoteEvent, 'duration'>, bpm: number) => (durationToBars(n.duration) * 240) / bpm;
+
+/**
+ * Where a note `startOffset` bars in sits in its render (from bar 1 at `bpm`, on the tick it's
+ * scheduled on), as the scheduler works it out: what's picked for it by a hash (a hit's level, its
+ * noise: see songPlace.ts) is then the same in the preview and in the file.
+ */
+const placeIn = (startOffset: number, bpm: number) => barToSeconds(ticksToBar(barToTicks(1 + startOffset)), { bpm, points: [] });
 
 /** Notes handed out by handOut: called off with `cancel` (see there). */
 export interface HandedNotes {
@@ -219,7 +227,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
         const lateBy = now - at;
         if (lateBy > 0 && lateBy > lateAllowance()) continue;
         const playing = group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm, Math.max(0, lateBy)) }));
-        p.inst.play(playing, Math.max(at, now));
+        atSongPlace(at, placeIn(group[0].startOffset, bpm), () => p.inst.play(playing, Math.max(at, now)));
         handed = true;
       }
       if (i >= groups.length) return finish();
@@ -302,9 +310,11 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
     else byStart.set(n.startOffset, [n]);
   }
   for (const [at, group] of byStart)
-    p.inst.play(
-      group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
-      start + at * secondsPerBar
+    atSongPlace(start + at * secondsPerBar, placeIn(at, bpm), () =>
+      p.inst.play(
+        group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
+        start + at * secondsPerBar
+      )
     );
   p.busyUntil = Math.max(before, start + (notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0) + RING_ON);
   return start;

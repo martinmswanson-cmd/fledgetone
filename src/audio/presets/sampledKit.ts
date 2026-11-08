@@ -117,7 +117,7 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
       // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom),
       // and no two quite alike, as a drummer never strikes the same spot twice: up to ±0.8 dB, the
       // same for the same hit every time it plays
-      amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
+      amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, t, 37)) / 20);
       // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
       const length = Math.min(opts.seconds ?? Infinity, copy ? recordedDuration(copy.buffer) : recordedDuration(buffer) / rate);
       if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);

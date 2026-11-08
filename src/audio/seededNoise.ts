@@ -1,3 +1,4 @@
+import { placeOf } from './songPlace';
 import { hashSeed } from './human';
 import { resampleLoop } from './loopResample';
 
@@ -5,10 +6,12 @@ import { resampleLoop } from './loopResample';
  * Repeatable noise for the instruments, so a song renders the same sample for sample every time.
  * The noise buffers are filled from a fixed seed, and each noise burst starts at a point of its
  * looped buffer picked by a hash of its key (its track, what plays it: a drum row, a note, which
- * layer) and its time. Every burst still differs from the next, as a drum never sounds quite the
- * same twice; it just differs the same way on every play and in every export. (Before, the
- * buffers and starting points came from Math.random: two exports of a song with a riser or a
- * clap in it nulled to only about -17 dB.)
+ * layer) and its time: for a song's note, its place in the song (songPlace.ts), so it's the same
+ * burst live wherever playback began, on every pass of a loop and in every export. Every burst
+ * still differs from the next, as a drum never sounds quite the same twice; it just differs the
+ * same way on every play and in every export. (Before, the buffers and starting points came
+ * from Math.random: two exports of a song with a riser or a clap in it nulled to only about
+ * -17 dB.)
  */
 
 /** A seeded generator of numbers in [0, 1) (mulberry32). */
@@ -33,11 +36,12 @@ export function trackSeed(trackId: string | undefined): number {
 }
 
 /**
- * Where a burst of noise with `key` starting at `time` (seconds) begins in its looped buffer, as a
- * share of the buffer, in [0, 1). The time counts in microseconds, below any float noise in it.
+ * Where a burst of noise with `key` starting at `time` (audio time; hashed by its place in the
+ * song for a song's note, see placeOf) begins in its looped buffer, as a share of the buffer, in
+ * [0, 1). The time counts in microseconds, below any float noise in it.
  */
 export function noiseStart(key: number, time: number): number {
-  return seededRandom(hashSeed(`${key >>> 0}@${Math.round(time * 1e6)}`))();
+  return seededRandom(hashSeed(`${key >>> 0}@${Math.round(placeOf(time) * 1e6)}`))();
 }
 
 /** Fill `data` with white noise from `seed`, at `level` (peak). */
