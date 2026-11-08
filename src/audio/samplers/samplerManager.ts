@@ -26,6 +26,7 @@ import { stretchOutline } from './resampler';
 import { createBendTimeline } from '../bendTimeline';
 import { maxOf } from '../../support/minMax';
 import { keepOn } from '../keepOn';
+import { noteJitter } from '../songPlace';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -1455,16 +1456,8 @@ export function expressiveFor(def: InstrumentDef): Expressive | null {
 /** A note's level for `velocity` (0..1) on a dB curve `rangeDb` deep. */
 export const expressiveGain = (velocity: number, rangeDb: number) => (velocity <= 0 ? 0 : 10 ** ((-rangeDb * (1 - Math.min(1, velocity))) / 20));
 
-/** A number from -1 to 1 for a note at a moment (the same every time). */
-export function noteJitter(note: string, time: number, salt: number): number {
-  let h = 0x811c9dc5 ^ salt;
-  const text = `${note}@${Math.round(time * 1000)}`;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return ((h >>> 0) / 4294967295) * 2 - 1;
-}
+// (A number from -1 to 1 for a note at its place in the song: see songPlace.ts)
+export { noteJitter };
 
 /** Each held recording's seamless loop in seconds (SampleSource.loops), once loaded. */
 const loopsOf = new WeakMap<AudioBuffer, [number, number]>();

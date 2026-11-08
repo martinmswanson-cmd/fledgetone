@@ -36,12 +36,12 @@
  * Checked and held (each note's sound depends on nothing played before it, or only on the notes
  * cut above): the Human insert, a note's small level and timing differences, a section's spread
  * and the strum's small differences (hashed from the note and its place: human.ts noteSeed,
- * noteJitter); breath (from the note's own start); the designed synth's other voices and the
- * native synths (supersaw, pluck, chip: a voice each note, no limit); hats choking each other (a
- * hit cut short by another, within its own ring); drum noise (seeded by the hit's time); the
- * drummer styles, the chord and bass tools (they write notes, nothing at play time). A clip's swing
- * is decided over the whole clip, the song's swing in a clip with none of its own too (see
- * swingReadsClip).
+ * songPlace.ts noteJitter); breath (from the note's own start); the designed synth's other voices
+ * and the native synths (supersaw, pluck, chip: a voice each note, no limit); hats choking each
+ * other (a hit cut short by another, within its own ring); drum noise (seeded by the hit's place
+ * too: seededNoise.ts); the drummer styles, the chord and bass tools (they write notes, nothing at
+ * play time). A clip's swing is decided over the whole clip, the song's swing in a clip with none
+ * of its own too (see swingReadsClip).
  */
 import type { Clip, Track } from '../store/timelineTypes';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
