@@ -27,7 +27,10 @@ function toneWav(channels) {
   const h = Buffer.alloc(44);
   h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8); h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(channels, 22);
   h.writeUInt32LE(sr, 24); h.writeUInt32LE(sr * 2 * channels, 28); h.writeUInt16LE(2 * channels, 32); h.writeUInt16LE(16, 34); h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
-  return { id: `snd${channels}`, name: 'Tone', type: 'audio/wav', size: 44 + pcm.length, seconds: 1.5, data: Buffer.concat([h, pcm]).toString('base64') };
+  const bytes = Buffer.concat([h, pcm]);
+  // (under its own id, as the app files a sound: a file's sound under another id is moved to its own when opened)
+  const id = require('crypto').createHash('sha256').update(bytes).digest('hex').slice(0, 32);
+  return { id, name: 'Tone', type: 'audio/wav', size: bytes.length, seconds: 1.5, data: bytes.toString('base64') };
 }
 
 function song(sound, pan) {

@@ -20,6 +20,7 @@
  */
 import { parseProject, safeFileName, type ProjectSnapshot } from '../store/project';
 import { importEmbeddedSounds, withLibrarySamples } from '../audio/soundLibrary';
+import { withCheckedSounds } from '../audio/soundIds';
 import { DEFAULT_MASTER_FX, defaultMasterSettings, normalizeTrackFx } from '../store/timelineTypes';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
 import { preloadFamily } from '../audio/plugins/builtinHost';
@@ -127,7 +128,8 @@ export function release(id: string): void {
 /** The song from its JSON, with its plugins loaded and its sounds in place. */
 async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
   const raw = typeof projectJson === 'string' ? (JSON.parse(projectJson) as unknown) : projectJson;
-  const p = parseProject(raw);
+  // (each sound it carries checked against its id, and the song pointed at the right one: see checkSounds)
+  const p = await withCheckedSounds(parseProject(raw));
   const project: ProjectSnapshot = { ...p, tracks: p.tracks.map((t) => ({ ...t, fx: normalizeTrackFx(t.fx) })) };
   // Plugins from other sites (by their address) aren't run here: refused, rather than rendered silent
   const outside = outsidePlugins(project.tracks);

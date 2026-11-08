@@ -21,6 +21,7 @@
 import { parseProject, type ProjectSnapshot } from '../store/project';
 import { buildGameKitParts, type GameKitSong } from '../audio/gameKit';
 import { importEmbeddedSounds, withLibrarySamples } from '../audio/soundLibrary';
+import { withCheckedSounds } from '../audio/soundIds';
 import { normalizeTrackFx, DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import { AdaptiveMusic } from '../gameKit/adaptive-music.js';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
@@ -78,7 +79,8 @@ export async function loadSong(source: string | object, opts: LoadOptions = {}):
     if (!res.ok) throw new Error(`Couldn't load ${source}: ${res.status} ${res.statusText}`);
     raw = await res.json();
   }
-  const project = parseProject(raw);
+  // (each sound it carries checked against its id, and the song pointed at the right one: see checkSounds)
+  const project = await withCheckedSounds(parseProject(raw));
   // The plugins it plays, loaded first: one that can't be would leave its part silent
   const plugins = songPlugins(project.tracks, pluginFamilies());
   if (plugins.missing.length) throw new Error(`This player can't play ${plugins.missing.join(', ')} (not in the runtime)`);
