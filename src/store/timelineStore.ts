@@ -79,7 +79,7 @@ import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
-import { createStinger, fitNotesToRange } from './stingers';
+import { createStinger, stingerNotesOn } from './stingers';
 import { capsWords, editPastCaps, MAX_CLIP_NOTES, MAX_LANE_POINTS, pastCapsWords, SONG_CAPS, type CapKind } from './songCaps';
 import { showToast } from '../components/timeline/toastStore';
 import { livePlayhead, setLivePlayhead } from './playheadClock';
@@ -3243,7 +3243,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         startBar: at,
         lengthBars: stinger.lengthBars,
         isSelected: true,
-        notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range).map((n) => ({ ...n, id: uid('note') })),
+        notes: stingerNotesOn(stinger.notes, stinger.instrumentKey).map((n) => ({ ...n, id: uid('note') })),
       };
       if (hasRecordings(track.instrumentKey)) void loadQuick(track.instrumentKey).catch(() => {});
       set((st) => ({

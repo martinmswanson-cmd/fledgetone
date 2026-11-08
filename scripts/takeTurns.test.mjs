@@ -1,7 +1,8 @@
-// Which take a recorded instrument plays for a song's note (src/audio/takeTurns.ts, songPlace.ts songTurn): its
-// turn, counted from the song's start note by note and loudness by loudness, so it's the same live from wherever
-// playback began, after a pause, on every pass of a loop and in every export; and a steady pattern never plays the
-// same take twice running. Run with `npm test`.
+// Which take a recorded instrument plays for a song's note, and which way a guitar strums a song's chord
+// (src/audio/takeTurns.ts trackTakes): worked out from the song's start as the instrument plays the notes (only
+// the ones that play, each at the loudness it really plays at), so they're the same live from wherever playback
+// began, after a pause, on every pass of a loop and in every export, and a sound never plays the same recording
+// twice running where a kit counting its own hits from bar 1 never did. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,128 +19,258 @@ register(
 }`)
 );
 
-const { loudnessOf, songTurns, takeOf } = await import('../src/audio/takeTurns.ts');
-const { atSongPlace, songTurn, struckLater } = await import('../src/audio/songPlace.ts');
+const { humanVelocities, loudnessOf, recordedLoudness, sampledLoudnesses, takeOf, trackTakes } = await import('../src/audio/takeTurns.ts');
+const { drumHits } = await import('../src/audio/drumHits.ts');
+const { jitterAt, noteJitter, atSongPlace } = await import('../src/audio/songPlace.ts');
+const { noteDrift, noteSeed } = await import('../src/audio/human.ts');
+const { notePlays } = await import('../src/store/noteChance.ts');
+const { strumPlan, strumsDown } = await import('../src/audio/guitarStrum.ts');
+const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
+const { DRUM_NOTES } = await import('../src/store/drumNotes.ts');
 
-/** Transport ticks: 192 a quarter note */
+/** Transport ticks: 192 a quarter note; at 120 BPM a quarter is half a second */
 const Q = 192;
 const BAR = 4 * Q;
-/** A recorded kit's loudnesses (four, as the Studio and Session kits have) and a sampled instrument's (three) */
-const KIT = [0.3, 0.55, 0.8, 1];
-const SAMPLED = [0.35, 0.68, 1];
+const placeOfTick = (tick) => (tick / Q) * 0.5;
+const KITS = ['studioKit', 'sessionKit', 'brushKit', 'latinPercussion', 'percussionExtras'];
+/** A new recorded-kit track's Human insert (the kit's player feel) */
+const KIT_FEEL = { human: { on: true, timing: 0.06, dynamics: 0.2, pitch: 0 }, together: true };
 
-/** Hits of `note` every `step` ticks from `from`, over `bars` bars, at `velocity` (or a velocity per hit). */
-const every = (note, step, { from = 0, bars = 8, velocity = 0.7 } = {}) => {
+/** A track's song items: one group per tick of `notes` ({ tick, note, velocity, chance? }), its seeds as the scheduler makes them. */
+function items(notes, clipId = 'c') {
+  const byTick = new Map();
+  for (const n of notes) {
+    if (!byTick.has(n.tick)) byTick.set(n.tick, []);
+    byTick.get(n.tick).push(n);
+  }
+  return [...byTick.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([tick, ns]) => {
+      const conds = ns.some((n) => n.chance !== undefined) ? ns.map((n) => (n.chance !== undefined ? { chance: n.chance } : null)) : undefined;
+      return { tick, notes: ns.map((n) => ({ note: n.note, velocity: n.velocity, duration: '16n' })), seeds: ns.map((n) => noteSeed(clipId, n.note, tick)), ...(conds ? { conds, pass: 0 } : {}), place: placeOfTick(tick) };
+    });
+}
+
+/** Hits of `note` every `step` ticks from `from` over `bars` bars at `velocity` (or a velocity per tick). */
+const every = (note, step, { from = 0, bars = 8, velocity = 0.8, chance } = {}) => {
   const out = [];
-  for (let tick = from; tick < bars * BAR; tick += step) out.push({ tick, note, velocity: typeof velocity === 'function' ? velocity(tick) : velocity });
+  for (let tick = from; tick < bars * BAR; tick += step) out.push({ tick, note, velocity: typeof velocity === 'function' ? velocity(tick) : velocity, ...(chance !== undefined ? { chance } : {}) });
   return out;
 };
 
-/** The recording each hit plays (its note, loudness and take) with `takes` takes, and how many hits running play the same one. */
-function played(notes, tops, takes = 2) {
-  const turns = songTurns(notes, tops);
-  const order = notes.map((_, i) => i).sort((a, b) => notes[a].tick - notes[b].tick || a - b);
-  const byNote = new Map();
-  for (const i of order) {
-    const n = notes[i];
-    const rec = `${n.note}|${loudnessOf(n.velocity, tops)}|${takeOf(turns[i], takes)}`;
-    if (!byNote.has(n.note)) byNote.set(n.note, []);
-    byNote.get(n.note).push(rec);
-  }
-  let repeats = 0;
-  const used = new Set();
-  for (const recs of byNote.values()) {
-    recs.forEach((r, k) => {
-      used.add(r);
-      if (k > 0 && recs[k - 1] === r) repeats++;
-    });
-  }
-  return { turns, repeats, used };
+/**
+ * What a fresh recorded kit plays for the song from bar 1, written out the plain way: for each group the notes
+ * that play, their velocities under the Human insert, the hits the kit plays (an Expressive kit's own level in
+ * them), each hit's loudness, and a count per sound and loudness (the kit's own counter). Each hit with the take
+ * the song's turns give it (trackTakes), to check they agree.
+ */
+function kitPlays(key, expressive, feel, list) {
+  const tops = INSTRUMENTS[key].samples.layers;
+  const takes = trackTakes(key, expressive, feel, list);
+  const count = new Map();
+  const hits = [];
+  list.forEach((g, gi) => {
+    const kept = g.notes.map((_, i) => i).filter((i) => !g.conds?.[i] || notePlays(g.conds[i], g.seeds[i], g.pass));
+    if (!kept.length) return;
+    const notes = kept.map((i) => g.notes[i]);
+    const seeds = kept.map((i) => g.seeds[i]);
+    const velocities = feel ? humanVelocities({ notes, seeds }, feel) : notes.map((n) => n.velocity);
+    const place = feel ? g.place + noteDrift(seeds[0], feel.human).late : g.place;
+    for (const h of drumHits(notes.map((n, k) => ({ ...n, velocity: velocities[k] })), (row, salt) => jitterAt(row, place, salt), expressive, false)) {
+      const note = DRUM_NOTES[h.row];
+      const l = recordedLoudness(h.velocity, tops, tops.length, () => true);
+      const k = `${note}|${l}`;
+      const n = count.get(k) ?? 0;
+      count.set(k, n + 1);
+      const turns = takes[gi].turns[kept[h.index]];
+      hits.push({ note, place, rec: `${l}.${n % 2}`, song: turns ? `${l}.${takeOf(turns[l], 2)}` : 'none' });
+    }
+  });
+  return hits;
 }
 
-test('a steady pattern never plays the same take twice running, and plays every take', () => {
-  const patterns = {
-    '16ths': every('F#1', Q / 4),
-    // (swing moves a note's time, not its tick: a swung pattern counts as the straight one)
-    '8ths': every('F#1', Q / 2),
-    quarters: every('C1', Q),
-    'offbeat 8ths': every('F#1', Q, { from: Q / 2 }),
-    'half notes': every('D1', 2 * Q),
-    '8th triplets': every('F#1', Q / 3),
-    '32nd roll': every('D1', Q / 8, { bars: 1 }),
-  };
-  for (const [name, notes] of Object.entries(patterns)) {
-    for (const takes of [2, 3]) {
-      const { repeats, used } = played(notes, KIT, takes);
-      assert.equal(repeats, 0, `${name} with ${takes} takes`);
-      assert.equal(used.size, takes, `${name} plays all ${takes} takes`);
+/** Consecutive hits of one sound on the same recording */
+function repeats(hits) {
+  const last = new Map();
+  let n = 0;
+  for (const h of [...hits].sort((a, b) => a.place - b.place)) {
+    if (last.get(h.note) === h.song) n++;
+    last.set(h.note, h.song);
+  }
+  return n;
+}
+
+test("a new kit track's default feel (Expressive, the player feel, the piano roll's 0.8) never repeats a recording", () => {
+  // Hats in 8ths, kick and snare on the beats, at 0.8: a loudness edge of the four-loudness kits, where the
+  // Human drift and the kit's own level differences take hits either side of it
+  const notes = [...every('F#1', Q / 2), ...every('C1', 2 * Q), ...every('D1', 2 * Q, { from: Q })];
+  for (const key of KITS) {
+    const hits = kitPlays(key, true, KIT_FEEL, items(notes));
+    assert.equal(repeats(hits), 0, key);
+    // each hit plays the take a kit counting its own hits from bar 1 plays (what a whole-song export has)
+    for (const h of hits) assert.equal(h.song, h.rec, `${key} ${h.note} at ${h.place}`);
+    // both loudnesses either side of the edge are heard
+    assert.ok(new Set(hits.filter((h) => h.note === 'F#1').map((h) => h.rec.split('.')[0])).size >= 2, key);
+  }
+});
+
+test('every velocity, every Human dynamics up to its most, Expressive or not: no recording twice running', () => {
+  for (const key of KITS) {
+    for (const dynamics of [0, 0.2, 0.6, 1]) {
+      const feel = dynamics ? { human: { on: true, timing: dynamics / 2, dynamics, pitch: 0 }, together: true } : undefined;
+      for (const expressive of [true, false]) {
+        // bar b at 0.05 * (b + 1): 16th hats, quarter kicks, accented snare with ghost notes between, a 32nd roll
+        const notes = [];
+        for (let b = 0; b < 20; b++) {
+          const v = 0.05 * (b + 1);
+          for (let s = 0; s < 16; s++) notes.push({ tick: b * BAR + (s * Q) / 4, note: 'F#1', velocity: v });
+          for (let q = 0; q < 4; q++) notes.push({ tick: b * BAR + q * Q, note: 'C1', velocity: v });
+          for (let s = 0; s < 16; s++) notes.push({ tick: b * BAR + (s * Q) / 4, note: 'D1', velocity: s % 4 === 2 ? 0.95 : s % 2 ? Math.max(0.05, v * 0.35) : v });
+          for (let s = 24; s < 32; s++) notes.push({ tick: b * BAR + (s * Q) / 8, note: 'D2', velocity: v });
+        }
+        const hits = kitPlays(key, expressive, feel, items(notes));
+        assert.equal(repeats(hits), 0, `${key} dynamics ${dynamics} ${expressive ? 'Expressive' : 'plain'}`);
+        for (const h of hits) assert.equal(h.song, h.rec);
+      }
     }
   }
 });
 
-test('accents on another loudness between them leave each loudness playing its takes in turn', () => {
-  // 16th hats accented on the beat, a snare on 2 and 4, a kick on 1 and 3 (a written drum part)
-  const notes = [
-    ...every('F#1', Q / 4, { velocity: (t) => (t % Q === 0 ? 0.9 : 0.5) }),
-    ...every('D1', 2 * Q, { from: Q, velocity: 0.85 }),
-    ...every('C1', 2 * Q, { velocity: 0.9 }),
-  ];
-  const { turns, repeats, used } = played(notes, KIT);
-  assert.equal(repeats, 0);
-  // both takes of the soft hat and of the accent, the snare and the kick
-  assert.equal(used.size, 8);
-  // each loudness's hits alternate on their own (as a kit counting per row and loudness played them)
-  const soft = notes.map((n, i) => [n, turns[i]]).filter(([n]) => n.note === 'F#1' && n.velocity === 0.5);
-  soft.forEach(([, t], k) => assert.equal(t, k));
-});
-
-test('two notes played in turn each play their takes in turn (an octave line, a sampled instrument)', () => {
-  const notes = every('C3', Q, { velocity: 0.6 }).flatMap((n) => [n, { ...n, tick: n.tick + Q / 2, note: 'C4' }]);
-  const { repeats, used } = played(notes, SAMPLED);
-  assert.equal(repeats, 0);
-  assert.equal(used.size, 4);
-});
-
-test("a song's note's turn depends only on the song: the same wherever playback begins, after a pause, on every pass and in every export", () => {
-  // Two clips on a track, in either order: each note's turn is where it falls in the song
-  const a = every('F#1', Q / 2, { bars: 4 });
-  const b = every('F#1', Q / 2, { from: 4 * BAR, bars: 8 });
-  const both = songTurns([...a, ...b], KIT);
-  const swapped = songTurns([...b, ...a], KIT);
-  assert.deepEqual(swapped, [...both.slice(a.length), ...both.slice(0, a.length)]);
-  // A hit from bar 5 on (playback started there, a range export from there, after a pause there)
-  // has the turn it has in the whole song: the 32 hats before it count, played or not
-  assert.equal(both[a.length], 32);
-  assert.equal(takeOf(both[a.length], 2), 0);
-});
-
-test('a whole song from bar 1 plays the takes a kit counting its hits played (what an export of the whole song always had)', () => {
-  const notes = [...every('F#1', Q / 4, { velocity: (t) => (t % Q === 0 ? 0.9 : 0.5) }), ...every('D1', Q, { from: Q / 2, velocity: 0.8 }), { tick: 5 * Q, note: 'D1', velocity: 0.8 }];
-  const turns = songTurns(notes, KIT);
-  // The old way: a fresh kit counting each row's and loudness's hits as they play, in time order
-  const count = new Map();
-  const order = notes.map((_, i) => i).sort((x, y) => notes[x].tick - notes[y].tick || x - y);
-  for (const i of order) {
-    const k = `${notes[i].note}|${loudnessOf(notes[i].velocity, KIT)}`;
-    const n = count.get(k) ?? 0;
-    count.set(k, n + 1);
-    assert.equal(turns[i], n);
+test('notes on a chance count only where they play: the export pass decides them', () => {
+  const notes = every('F#1', Q / 2, { chance: 0.5 });
+  for (const feel of [undefined, KIT_FEEL]) {
+    const list = items(notes);
+    const hits = kitPlays('studioKit', true, feel, list);
+    assert.ok(hits.length > 10 && hits.length < notes.length);
+    assert.equal(repeats(hits), 0);
+    for (const h of hits) assert.equal(h.song, h.rec);
+    // a note that sits the export's pass out still has a turn (a live loop's later pass may play it): the
+    // take after the hits before it
+    const takes = trackTakes('studioKit', true, feel, list);
+    const out = list.flatMap((g, gi) => g.notes.map((_, i) => [g, i, takes[gi].turns[i]])).filter(([g, i]) => !notePlays(g.conds[i], g.seeds[i], 0));
+    assert.ok(out.length > 0 && out.every(([, , t]) => Array.isArray(t)));
   }
 });
 
-test('hits of one note at one tick (two clips) take their turns in the order given', () => {
-  assert.deepEqual(songTurns([{ tick: 0, note: 'C1', velocity: 0.9 }, { tick: 0, note: 'C1', velocity: 0.9 }, { tick: Q, note: 'C1', velocity: 0.9 }], KIT), [0, 1, 2]);
-  // a velocity past the loudest plays the loudest
-  assert.equal(loudnessOf(1.2, KIT), 3);
-  assert.equal(loudnessOf(0.3, KIT), 0);
-  assert.equal(loudnessOf(0.31, KIT), 1);
-  assert.equal(takeOf(5, 2), 1);
+test('a closed hat an open hat replaces is not counted; an open hat and its closed hat count on their own', () => {
+  const notes = [...every('F#1', Q / 4), ...every('A#1', Q, { from: Q / 2 })];
+  const hits = kitPlays('studioKit', false, undefined, items(notes));
+  assert.equal(hits.filter((h) => h.note === 'F#1').length, notes.length - notes.filter((n) => n.note === 'A#1').length * 2);
+  assert.equal(repeats(hits), 0);
+  for (const h of hits) assert.equal(h.song, h.rec);
 });
 
-test("a song's note carries its turn to the instrument; a note played by hand has none (it plays the next take)", () => {
-  const turns = new Map([['F#1', 7], ['C1', 2]]);
-  assert.equal(songTurn('F#1'), undefined);
-  const seen = atSongPlace(10, 2.5, () => [songTurn('F#1'), songTurn('C1'), songTurn('D1'), struckLater(0.02, () => songTurn('F#1')), atSongPlace(11, 3, () => songTurn('F#1'))], turns);
-  assert.deepEqual(seen, [7, 2, undefined, 7, undefined]);
-  assert.equal(songTurn('F#1'), undefined);
+test("a song's turns depend only on the song: a hit from bar 5 has the turn it has in the whole song", () => {
+  const notes = every('F#1', Q / 2, { bars: 12 });
+  const list = items(notes);
+  const whole = trackTakes('studioKit', true, KIT_FEEL, list);
+  // worked out again (as for a range export or playing from bar 5): the same
+  const again = trackTakes('studioKit', true, KIT_FEEL, list);
+  assert.deepEqual(again, whole);
+  // the 32 hats before bar 5 count, played or not
+  const at5 = list.findIndex((g) => g.tick === 4 * BAR);
+  assert.equal(at5, 32);
+  assert.equal(whole[at5].turns[0].reduce((a, b) => a + b, 0), 32);
+});
+
+test('a sampled note counts at every loudness it plays from: blended either side of an edge, or under the mod wheel', () => {
+  const tops = INSTRUMENTS.realUprightBass.samples.layers;
+  // near an edge both loudnesses play
+  assert.deepEqual(sampledLoudnesses(tops[1] + 0.01, tops, null), [1, 2]);
+  assert.deepEqual(sampledLoudnesses(0.1, tops, null), [0]);
+  // the mod wheel picks two loudnesses of its own
+  assert.deepEqual(sampledLoudnesses(0.1, tops, 1), [2, 3]);
+  // One note, its velocity drifting across an edge (the Human insert's dynamics at its most): at each
+  // loudness it plays from, its takes alternate
+  const human = { on: true, timing: 0.5, dynamics: 1, pitch: 0 };
+  const notes = every('C2', Q / 2, { velocity: 0.55 });
+  const list = items(notes);
+  const takes = trackTakes('realUprightBass', false, { human, together: false }, list);
+  const lastAt = new Map();
+  let blended = 0;
+  list.forEach((g, gi) => {
+    const v = humanVelocities(g, { human, together: false })[0];
+    const layers = sampledLoudnesses(v, tops, null);
+    if (layers.length > 1) blended++;
+    for (const l of layers) {
+      const take = takeOf(takes[gi].turns[0][l], 2);
+      assert.notEqual(lastAt.get(l), take, `loudness ${l} at tick ${g.tick}`);
+      lastAt.set(l, take);
+    }
+  });
+  assert.ok(blended > 5);
+  // the mod wheel's events (a clip's lane) pick the loudnesses until the clip's end hands back to velocity
+  const wheel = [{ tick: 0, wheel: { value: 0.9, end: false } }, ...items(every('C2', Q, { bars: 2, velocity: 0.2 })), { tick: 2 * BAR, wheel: { value: null, end: true } }, ...items(every('C2', Q, { from: 2 * BAR, bars: 3, velocity: 0.2 }))];
+  const w = trackTakes('realDoubleBass', false, undefined, wheel);
+  const under = w.filter((x, i) => x && wheel[i].tick < 2 * BAR).map((x) => x.turns[0]);
+  const after = w.filter((x, i) => x && wheel[i].tick >= 2 * BAR).map((x) => x.turns[0]);
+  // under the wheel the two loudest count; after it the softest (velocity 0.2)
+  assert.deepEqual(under.map((t) => [t[1], t[2]]), under.map((_, k) => [k, k]));
+  assert.deepEqual(after.map((t) => t[0]), after.map((_, k) => k));
+});
+
+test('two notes played in turn each play their takes in turn, and a chord plays at its loudest note', () => {
+  const notes = every('C3', Q, { velocity: 0.6 }).flatMap((n) => [n, { ...n, tick: n.tick + Q / 2, note: 'C4' }]);
+  const list = items(notes);
+  const t = trackTakes('realHarpsichord', false, undefined, list);
+  const c3 = list.flatMap((g, i) => (g.notes[0].note === 'C3' ? [takeOf(t[i].turns[0][0], 2)] : []));
+  assert.deepEqual(c3, c3.map((_, k) => k % 2));
+  // a chord's notes at 0.9, 0.3: both count at the loudness 0.9 plays at
+  const chord = trackTakes('realUprightBass', false, undefined, [{ tick: 0, notes: [{ note: 'C2', velocity: 0.9, duration: '8n' }, { note: 'G2', velocity: 0.3, duration: '8n' }], seeds: [1, 2], place: 0 }]);
+  assert.deepEqual(chord[0].turns.map((x) => x.join()), ['0,0,0,0', '0,0,0,0']);
+  const second = trackTakes('realUprightBass', false, undefined, [0, Q].map((tick) => ({ tick, notes: [{ note: 'G2', velocity: 0.9, duration: '8n' }, { note: 'G2', velocity: 0.3, duration: '8n' }], seeds: [1, 2], place: placeOfTick(tick) })));
+  // (the second chord's G2s: the loudness 0.9 plays at counted twice before them, the softest never)
+  assert.equal(second[1].turns[0][loudnessOf(0.9, INSTRUMENTS.realUprightBass.samples.layers)], 2);
+  assert.equal(second[1].turns[1][0], 0);
+});
+
+test("a guitar strums a song's chord by the song's strums before it, the same from wherever playback begins", () => {
+  // Chords on every 8th at 120 BPM (a quarter of a second apart): down, up, down, up from the song's start
+  const chord = (tick, extra = {}) => ['C3', 'E3', 'G3'].map((note) => ({ tick, note, velocity: 0.7, ...extra }));
+  const notes = [];
+  for (let tick = Q / 2; tick < 8 * BAR; tick += Q / 2) notes.push(...chord(tick));
+  const list = items(notes);
+  const t = trackTakes('realGuitar', false, undefined, list);
+  const dirs = t.map((x) => (x.down ? 'd' : 'u'));
+  assert.deepEqual(dirs, dirs.map((_, k) => (k % 2 ? 'u' : 'd')));
+  // bar 5's first chord follows the 31 before it: an upstroke, where a guitar starting there would go down
+  const at5 = list.findIndex((g) => g.tick === 4 * BAR);
+  assert.equal(t[at5].down, false);
+  // chords half a second apart or more all start down again
+  const slow = trackTakes('realGuitar', false, undefined, items(every('x', Q, { bars: 2 }).flatMap((n) => chord(n.tick))));
+  assert.ok(slow.every((x) => x.down === true));
+  // a single note isn't strummed and doesn't turn the hand
+  const mixed = items([...chord(0), { tick: Q / 2, note: 'C3', velocity: 0.7 }, ...chord(Q)]);
+  assert.deepEqual(trackTakes('realGuitar', false, undefined, mixed).map((x) => x.down), [true, false, true]);
+  // a chord that sits the export's pass out doesn't turn the hand either (counted, the third would go down)
+  const gated = items([...chord(0), ...chord(Q / 4, { chance: 0.01 }), ...chord(Q / 2)]);
+  assert.deepEqual(trackTakes('realGuitar', false, undefined, gated).map((x) => x.down), [true, false, false]);
+});
+
+test('a song chord is strummed the way it was given; a chord played by hand after the strum before it', () => {
+  // just after a downstroke: by hand, the hand comes back up (high to low)
+  const last = { at: 0, down: true };
+  assert.equal(strumsDown(last, 0.25), false);
+  assert.equal(strumsDown(last, 0.6), true);
+  assert.equal(strumsDown(null, 0.25), true);
+  const byHand = strumPlan([48, 52, 55], 0.25, 1, 0.7, last, 7);
+  assert.equal(byHand.strum.down, false);
+  assert.ok(byHand.notes[2].delay < byHand.notes[0].delay);
+  // a song's chord given as a downstroke plays low to high whatever was strummed before
+  const song = strumPlan([48, 52, 55], 0.25, 1, 0.7, last, 7, true);
+  assert.equal(song.strum.down, true);
+  assert.ok(song.notes[0].delay < song.notes[2].delay);
+});
+
+test("an Expressive kit's level differences are worked out ahead from a note's place as the kit picks them", () => {
+  // what the scheduler works out for a note's place (jitterAt) is what the kit hashes while it plays (noteJitter)
+  for (const place of [0, 0.5, 1.2345, 17.0625, 123.4567]) {
+    const live = atSongPlace(1000 + place, place, () => noteJitter('closedHat', 1000 + place, 5));
+    assert.equal(jitterAt('closedHat', place, 5), live);
+  }
+  // a loudness the row has no recording at: the nearest softer, else the nearest harder
+  assert.equal(recordedLoudness(0.9, [0.3, 0.55, 0.8, 1], 4, (l) => l !== 3), 2);
+  assert.equal(recordedLoudness(0.1, [0.3, 0.55, 0.8, 1], 4, (l) => l > 1), 2);
+  assert.equal(loudnessOf(1.2, [0.3, 0.55, 0.8, 1]), 3);
+  assert.equal(takeOf(5, 2), 1);
 });

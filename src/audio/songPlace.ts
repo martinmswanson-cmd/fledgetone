@@ -17,35 +17,26 @@
  * A note played by hand (a key, a pad, MIDI, note repeat, a preview) has no place in the song: it
  * keeps its time on the audio clock, so no two presses are quite alike, as a player's aren't.
  *
- * A recorded instrument's take is picked the same way: a song's note plays the take its turn gives
- * it (takeTurns.ts, handed in with its place), a note played by hand the instrument's next.
+ * A recorded instrument's take and a guitar's strum follow the song the same way: a song's note
+ * carries its turn and a chord its strum, worked out from the song's start (takeTurns.ts); a note
+ * played by hand plays the instrument's next take, and is strummed after the strum before it.
  */
 
-/** The song's note being played now: the audio time it was asked for, its place, and its notes' turns (see songTurn). */
-let playing: { at: number; place: number; turns?: ReadonlyMap<string, number> } | null = null;
+/** The song's note being played now: the audio time it was asked for, and its place. */
+let playing: { at: number; place: number } | null = null;
 
 /**
  * Play (build) a note of the song asked for audio time `at` whose place in the song is `place`
- * (seconds from bar 1), so what's hashed for it is picked by its place (see placeOf). `turns`: each
- * of its notes' turn, by the name it's played as (see takeTurns.ts), for an instrument with takes.
+ * (seconds from bar 1), so what's hashed for it is picked by its place (see placeOf).
  */
-export function atSongPlace<T>(at: number, place: number, play: () => T, turns?: ReadonlyMap<string, number>): T {
+export function atSongPlace<T>(at: number, place: number, play: () => T): T {
   const was = playing;
-  playing = turns ? { at, place, turns } : { at, place };
+  playing = { at, place };
   try {
     return play();
   } finally {
     playing = was;
   }
-}
-
-/**
- * The turn of `note` (by the name it's played as) while a song's note is played (atSongPlace): which
- * of its takes a recorded instrument plays (see takeTurns.ts). Undefined for a note played by hand,
- * which plays the instrument's next take.
- */
-export function songTurn(note: string): number | undefined {
-  return playing?.turns?.get(note);
 }
 
 /**
@@ -66,7 +57,7 @@ export function placeOf(time: number): number {
 export function struckLater<T>(by: number, build: () => T): T {
   if (!playing || !(by > 0)) return build();
   const was = playing;
-  playing = { ...was, at: was.at + by };
+  playing = { at: was.at + by, place: was.place };
   try {
     return build();
   } finally {
@@ -79,8 +70,17 @@ export function struckLater<T>(by: number, build: () => T): T {
  * `salt` picks which of a note's differences it is.
  */
 export function noteJitter(note: string, time: number, salt: number): number {
+  return jitterAt(note, placeOf(time), salt);
+}
+
+/**
+ * noteJitter for `note` at `place` in the song (seconds from bar 1): what the scheduler works out
+ * ahead for a song's note (an Expressive recorded kit's level picks the loudness, and so the take
+ * it's counted at: takeTurns.ts).
+ */
+export function jitterAt(note: string, place: number, salt: number): number {
   let h = 0x811c9dc5 ^ salt;
-  const text = `${note}@${Math.round(placeOf(time) * 1000)}`;
+  const text = `${note}@${Math.round(place * 1000)}`;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 0x01000193);

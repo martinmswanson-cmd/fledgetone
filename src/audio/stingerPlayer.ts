@@ -3,18 +3,17 @@ import { liveContext, liveTransport } from './liveContext';
 import { createInstrument, trackInstrumentOptions, type TrackInstrument } from './instruments';
 import { createTrackStrip, type TrackStrip } from './effects/trackStrip';
 import { scheduledInstrument, trackActivity } from './liveTracks';
-import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
+import type { InstrumentKey } from './instrumentCatalog';
 import { hasRecordings, loadSamplesForNotes, type RenderRecordings } from './samplers/samplerManager';
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
-import { fitNotesToRange } from '../store/stingers';
+import { stingerNotesOn } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
 import { defaultTrackFx, durationToBars } from '../store/timelineTypes';
 import { maxOf, minOf } from '../support/minMax';
 import { barToSeconds, barToTicks, getAudibleMoment, getLiveTempo, getSongMeter, ticksToBar } from './transport';
 import { nextMeterLine, onMeterLine, secondsBetween } from './tempoMap';
 import { atSongPlace, struckLater } from './songPlace';
-import { songTurns } from './takeTurns';
-import { playsTakesInTurn } from './noteMemory';
+import { clipTakes } from './scheduler';
 
 /**
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
@@ -126,25 +125,12 @@ const secondsOf = (n: Pick<NoteEvent, 'duration'>, bpm: number) => (durationToBa
 const placeIn = (startOffset: number, bpm: number) => barToSeconds(ticksToBar(barToTicks(1 + startOffset)), { bpm, points: [] });
 
 /**
- * Each of `notes`' turn on an instrument of `key` that plays takes in turn, as its render plays
- * them from bar 1 (see takeTurns.ts): the preview plays the takes the file has. Null for one without takes.
+ * Each of `notes`' takes on an instrument of `key` that plays takes in turn or strums, as its
+ * render plays them from bar 1 at `bpm` (see takeTurns.ts and renderStinger): the preview plays
+ * the takes and strums the file has. Empty for an instrument without.
  */
-function turnsIn(key: InstrumentKey, notes: readonly NoteEvent[]): Map<NoteEvent, number> | null {
-  if (!playsTakesInTurn(key)) return null;
-  const turns = songTurns(notes.map((n) => ({ tick: barToTicks(1 + n.startOffset), note: n.note, velocity: n.velocity })), INSTRUMENTS[key].samples?.layers ?? [1]);
-  return new Map(notes.map((n, i) => [n, turns[i]]));
-}
-
-/** A group of notes' turns by name (see turnsIn), for atSongPlace. */
-function turnsOf(group: readonly NoteEvent[], turns: Map<NoteEvent, number> | null): Map<string, number> | undefined {
-  if (!turns) return undefined;
-  const out = new Map<string, number>();
-  for (const n of group) {
-    const t = turns.get(n);
-    if (t !== undefined && !out.has(n.note)) out.set(n.note, t);
-  }
-  return out;
-}
+const takesIn = (key: InstrumentKey, notes: readonly NoteEvent[], bpm: number) =>
+  clipTakes(stingerTrack('stinger', key), { id: STINGER_CLIP, trackId: 'stinger', name: '', startBar: 1, lengthBars: Math.max(1 / 16, maxOf(notes.map((n) => n.startOffset + durationToBars(n.duration)))), isSelected: false, notes: [...notes] }, bpm);
 
 /** Notes handed out by handOut: called off with `cancel` (see there). */
 export interface HandedNotes {
@@ -239,7 +225,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     }
     const groups = [...byStart].sort((a, b) => a[0] - b[0]);
     const firstAt = groups.length ? groups[0][0] : Infinity;
-    const turns = turnsIn(key, notes);
+    const takes = takesIn(key, notes, bpm);
     let i = 0;
     const pump = () => {
       if (cancelled) return;
@@ -250,10 +236,10 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
         const [at, group] = groups[i];
         const lateBy = now - at;
         if (lateBy > 0 && lateBy > lateAllowance()) continue;
-        const playing = group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm, Math.max(0, lateBy)) }));
+        const playing = group.map((n) => ({ ...n, ...takes.get(n), duration: lengthAt(n.duration, bpm, Math.max(0, lateBy)) }));
         // (Handed out late, at once: picked from where it was asked for, as in the file, see struckLater)
         const when = Math.max(at, now);
-        atSongPlace(at, placeIn(group[0].startOffset, bpm), () => struckLater(when - at, () => p.inst.play(playing, when)), turnsOf(group, turns));
+        atSongPlace(at, placeIn(group[0].startOffset, bpm), () => struckLater(when - at, () => p.inst.play(playing, when)));
         handed = true;
       }
       if (i >= groups.length) return finish();
@@ -272,7 +258,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
  * plays out. Late (its instrument still loading), it all starts a moment later, as fireStinger does.
  */
 export function stingerAt(stinger: Stinger, at: number, bpm: number): HandedNotes {
-  return handOut(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range), at, bpm, 'wait');
+  return handOut(stinger.instrumentKey, stingerNotesOn(stinger.notes, stinger.instrumentKey), at, bpm, 'wait');
 }
 
 /**
@@ -316,7 +302,7 @@ function nextSongLine(unit: 'bar' | 'beat'): number {
  */
 export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: number, atTime?: number): Promise<number> {
   await initAudio();
-  const notes = fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range);
+  const notes = stingerNotesOn(stinger.notes, stinger.instrumentKey);
   if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, notes);
   const p = player(stinger.instrumentKey, liveContext.currentTime);
   // (lent while it gets ready: a switch handed out meanwhile takes another)
@@ -335,17 +321,13 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
     if (group) group.push(n);
     else byStart.set(n.startOffset, [n]);
   }
-  const turns = turnsIn(stinger.instrumentKey, notes);
+  const takes = takesIn(stinger.instrumentKey, notes, bpm);
   for (const [at, group] of byStart)
-    atSongPlace(
-      start + at * secondsPerBar,
-      placeIn(at, bpm),
-      () =>
-        p.inst.play(
-          group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
-          start + at * secondsPerBar
-        ),
-      turnsOf(group, turns)
+    atSongPlace(start + at * secondsPerBar, placeIn(at, bpm), () =>
+      p.inst.play(
+        group.map((n) => ({ ...n, ...takes.get(n), duration: lengthAt(n.duration, bpm) })),
+        start + at * secondsPerBar
+      )
     );
   p.busyUntil = Math.max(before, start + (notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0) + RING_ON);
   return start;
@@ -357,18 +339,21 @@ interface RenderContext {
   master: MasterSettings;
 }
 
+/** The id of the clip a stinger is rendered from (its notes' chance and drift go by it) */
+const STINGER_CLIP = 'stinger-clip';
+
 /** A stinger rendered on its own through the song's master section, ringing out, as a WAV. */
 export async function renderStinger(stinger: Stinger, song: RenderContext, sampleRate: SampleRate = 44100, recordings: RenderRecordings = 'file'): Promise<Blob> {
-  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
+  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, stingerNotesOn(stinger.notes, stinger.instrumentKey));
   const track = stingerTrack(stinger.name, stinger.instrumentKey);
   const clip: Clip = {
-    id: 'stinger-clip',
+    id: STINGER_CLIP,
     trackId: track.id,
     name: stinger.name,
     startBar: 1,
     lengthBars: stinger.lengthBars,
     isSelected: false,
-    notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range),
+    notes: stingerNotesOn(stinger.notes, stinger.instrumentKey),
   };
   const audio = await renderArrangement({
     tracks: [track],
