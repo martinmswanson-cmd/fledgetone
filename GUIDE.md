@@ -32,7 +32,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 - **Learn**: Tour & tutorials…, then the tour and each tutorial to start straight away (one you left part-way says *resume*; finished ones are ticked), and the Guide.
 - **Help**: Guide, Tour & tutorials, Search everything, Keyboard shortcuts, Install Fledgetone… (until it's installed, see Installing Fledgetone), Pocket, the phone version, Report a problem…, Source code, What's new, Terms of use.
 
-Hover across the bar while a menu is open to move between menus; the arrow keys work too, and `Esc` closes.
+Hover across the bar while a menu is open to move between menus; the arrow keys work too, and `Esc` closes. `Tab` off a menu's last item closes it and goes on; `Shift+Tab` off its first item closes it and goes back to its name in the bar.
 
 
 ### Tour and tutorials
@@ -1389,7 +1389,7 @@ In the game: `const music = await loadSong('./song.json', { onProgress })`, then
 
 ## Keyboard shortcuts
 
-Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. `Ctrl+K` (search) and `Ctrl+S` (save) work everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
+Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. A menu or small panel closes when `Tab` takes you out of it (`Shift+Tab` off its top goes back to the button that opened it), so the shortcuts work again straight away. `Ctrl+K` (search) and `Ctrl+S` (save) work everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
 
 ### Timeline
 
@@ -1442,7 +1442,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Shift / Ctrl / Cmd + click | Add to or remove from the selection |
 | Double-click empty lane (Selection tool) | New 1-bar clip |
 | Double-click a clip (Selection tool) | Edit its notes (with the Razor, right-click > Edit notes) |
-| `Tab` to a clip (one stop per track; `Ctrl+←` / `Ctrl+→` for the one before or after on the track) | `Enter` opens it, `Delete` deletes it, `←` / `→` move it a grid step (Shift: a bar), the menu key or `Shift+F10` opens its menu |
+| `Tab` to a clip (one stop per track; `Ctrl+←` / `Ctrl+→` for the one before or after on the track) | `Enter` opens it, `Delete` deletes it, `←` / `→` move it a grid step (Shift: a bar), the menu key or `Shift+F10` opens its menu (on its first item: `↑` / `↓` move, `Esc` closes it back on the clip) |
 | Double-click a VOL or PAN slider | Reset it |
 | Double-click the Swing slider | Set swing to 0% |
 

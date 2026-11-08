@@ -255,6 +255,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const keepSent = (fresh: BuiltinParam[]) => fresh.map((p, i) => (inFlight.get(i) ? { ...p, value: params[i]?.value ?? p.value } : p));
   let programs: string[] = [];
   let program = -1;
+  /**
+   * Built-in preset changes sent (a preset chosen, or none): each answer says the latest the
+   * processor had heard, and one from before the latest change says nothing about the preset (it
+   * would bring back an older one: a redo's answer arriving just after an undo)
+   */
+  let asked = 0;
   /** The user table it plays (kept with its settings) */
   let userTable: UserTable | null = tableData && savedTable ? savedTable : null;
   const listeners = new Set<() => void>();
@@ -299,7 +305,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         synced.get(d.id)?.();
         synced.delete(d.id);
       } else if (d.type === 'params') {
-        if (!files) program = d.program ?? -1;
+        if (!files && (d.asked ?? 0) === asked) program = d.program ?? -1;
         const reply = replies.get(d.id);
         replies.delete(d.id);
         if (reply) reply(d.params);
@@ -408,6 +414,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) await setProgram(p);
       // Settings with no preset file at all (an undo back to "(none)"): the plugin as it started, the patch gone
       else if (files && program >= 0 && saved && Array.isArray(saved.values) && saved.preset === undefined) await startFresh();
+      // Settings with no built-in preset (an undo back to Fledge Synth's "(your own sound)"): no preset,
+      // the values below as they were. Its presets are only values, so nothing starts again (that would cut the notes playing)
+      else if (!files && program >= 0 && saved && Array.isArray(saved.values) && saved.program === undefined) noProgram();
       // (The user table as the settings have it: an undo can take one away or bring one back)
       const table = normalizeUserTable(saved?.table) ?? null;
       if (table?.data !== userTable?.data || table?.frames !== userTable?.frames) await setUserTable(table);
@@ -453,7 +462,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     program = index;
     changed();
     if (!files) {
-      node.port.postMessage({ type: 'program', index });
+      node.port.postMessage({ type: 'program', index, asked: ++asked });
       return;
     }
     const data = await presetBytes(ref, files.names[index]);
@@ -463,6 +472,13 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       loaded.push(resolve);
       node.port.postMessage({ type: 'load', data }, [data]);
     });
+  };
+  /** Back to no built-in preset: only its name goes (the processor keeps it so), every parameter stays. */
+  const noProgram = () => {
+    if (destroyed) return;
+    program = -1;
+    changed();
+    node.port.postMessage({ type: 'noProgram', asked: ++asked });
   };
   /** Back to no preset file (resolves once the plugin has started again without one). */
   const startFresh = async () => {

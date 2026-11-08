@@ -23,6 +23,7 @@ import { formatBarPosition, formatBarRange } from '../../store/timelineTypes';
 import { measureStart, roundToMeasure } from '../../audio/tempoMap';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
+import { usePopupKeys } from '../popupKeys';
 import { APP_VERSION } from '../../version';
 import { LESSONS } from '../../tour/lessons';
 import { useTourStore } from '../../tour/tourStore';
@@ -467,12 +468,14 @@ const MENUS: MenuDef[] = [
   },
 ];
 
-const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; left: number; top: number }> = ({ menu, onClose, left, top }) => {
+const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; opener: () => HTMLElement | null | undefined; left: number; top: number }> = ({ menu, onClose, opener, left, top }) => {
   const ref = useRef<HTMLDivElement>(null);
   const items = menu.items();
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus({ preventScroll: true });
   }, []);
+  // Tab off its last item closes it, focus going on; Shift+Tab off its first, back on its button
+  usePopupKeys(ref, { onClose, opener, place: 'inline' });
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
@@ -529,7 +532,7 @@ export const MenuBar: React.FC = () => {
     setWhere(id && r ? { id, left: Math.max(0, Math.min(r.left, window.innerWidth - 280)), top: r.bottom + 2 } : null);
   }, []);
   const setOpen = place;
-  // A click outside, Esc or a resize closes the menu; scrolling the page carries it along with its button
+  // A click outside, Esc or a resize closes the menu (Tab out of it too: see MenuList); scrolling the page carries it along with its button
   useEffect(() => {
     if (!where) return;
     const onPointerDown = (e: PointerEvent) => {
@@ -603,7 +606,7 @@ export const MenuBar: React.FC = () => {
           {m.label}
         </button>
       ))}
-      {menu && where && <MenuList key={menu.id} menu={menu} onClose={close} left={where.left} top={where.top} />}
+      {menu && where && <MenuList key={menu.id} menu={menu} onClose={close} opener={() => buttons.current[menu.id]} left={where.left} top={where.top} />}
     </div>
   );
 };

@@ -7,10 +7,14 @@
  * Messages in (port): `events` (timed MIDI and parameter changes, as WAM events: applied at their
  * exact frame), `set` (a parameter now, from its panel), `clear` (drop pending events),
  * `describe` (send every parameter's name, value and text), `program` (choose a preset, which
- * sets the parameters), `load` (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
+ * sets the parameters), `noProgram` (no preset any more, the parameters left as they are: an undo
+ * back to Fledge Synth's "(your own sound)"; it says none until a preset is chosen again), `load`
+ * (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
  * `legacy` (an older saved sound with only its first `count` values went in: the plugin sets the
  * rest as it sounded then; answered with `params`), `table` (Fledge Synth's user table: `frames`
  * cycles of 2048 samples, or none; see userTable.ts), `destroy`.
+ * `program` and `noProgram` carry `asked`, the host's count of preset changes, which every `params`
+ * answer gives back: an answer from before the latest change says nothing about the preset.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made, `fault` (once) if it
  * blew up (see guard below).
@@ -150,6 +154,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // The guard: when it last started the plugin again, and whether it has said so
     this.resetAt = -Infinity;
     this.reported = false;
+    // No preset, whatever the plugin last had (see noProgram), and the host's latest preset change it has heard
+    this.noProgram = false;
+    this.asked = 0;
     try {
       this.fam = this.ownMemory ? null : familyOf(o.family, o.module);
       this.e = (this.fam || instantiate(o.family, o.module)).e;
@@ -315,7 +322,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
   }
 
   program() {
-    return this.programs ? this.e.bb_get_program(this.h) : -1;
+    return this.programs && !this.noProgram ? this.e.bb_get_program(this.h) : -1;
   }
 
   describe() {
@@ -340,11 +347,18 @@ class BuiltinPlugin extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'display', index: d.index, value: this.e.bb_get(this.h, d.index), text: readString(this.e, this.e.bb_param_display(this.h, d.index)) });
       }
     } else if (d.type === 'program') {
+      if (Number.isInteger(d.asked)) this.asked = d.asked;
       if (d.index >= 0 && d.index < this.programs) {
+        this.noProgram = false;
         this.e.bb_set_program(this.h, d.index);
         this.enforceLimits();
-        this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
+        this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program(), asked: this.asked });
       }
+    } else if (d.type === 'noProgram') {
+      // (Only the preset's name goes: the parameters, and a note playing, are untouched; the host
+      // sets the parameters next. Kept here, so no later answer, nor a start after a blow-up, puts it back)
+      if (Number.isInteger(d.asked)) this.asked = d.asked;
+      if (this.programs) this.noProgram = true;
     } else if (d.type === 'load') {
       this.loadData(d.data);
       this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
@@ -365,13 +379,13 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // (As at the start: an older saved sound with only its first "count" values just went in)
       if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);
       this.enforceLimits();
-      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
+      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program(), asked: this.asked });
     } else if (d.type === 'table') {
       this.loadTable(d.data, d.frames);
     } else if (d.type === 'describe') {
       // (Automation already due first: a sleeping track's queue still says what it plays now)
       this.dueAutomation();
-      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
+      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program(), asked: this.asked });
     } else if (d.type === 'destroy') {
       this.alive = false;
       this.events.length = 0;
