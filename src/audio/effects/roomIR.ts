@@ -272,25 +272,34 @@ export type RoomWish = { style: RoomStyle; decay: number; lowLevel?: number } | 
  * up the page: away from 44.1 kHz a long room takes longer to make than it did, being made there
  * and resampled. Each is kept until the returned function is called. At 44.1 kHz, nothing to do.
  */
-export async function prepareRooms(rate: number, wishes: readonly RoomWish[]): Promise<() => void> {
+export async function prepareRooms(rate: number, wishes: readonly RoomWish[], signal?: AbortSignal): Promise<() => void> {
   if (rate === ROOM_RATE) return () => {};
   const keys: string[] = [];
-  for (const wish of wishes) {
-    const key = wish === 'stage' ? stageKey(rate) : 'insert' in wish ? insertKey(wish.insert, rate) : roomKey(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6);
-    if (keys.includes(key)) continue;
-    keys.push(key);
-    held.set(key, (held.get(key) ?? 0) + 1);
-    if (wish === 'stage') await madeSoon(key, (piece) => stageSteps(rate, piece));
-    else if ('insert' in wish) await madeSoon(key, (piece) => insertSteps(wish.insert, rate, piece));
-    else await madeSoon(key, (piece) => roomSteps(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6, piece));
-  }
-  return () => {
+  const release = () => {
     for (const key of keys.splice(0)) {
       const n = (held.get(key) ?? 1) - 1;
       if (n > 0) held.set(key, n);
       else held.delete(key);
     }
   };
+  // (an export called off while its rooms are made lets go of the ones it holds: they'd stay for good)
+  try {
+    for (const wish of wishes) {
+      signal?.throwIfAborted();
+      const key = wish === 'stage' ? stageKey(rate) : 'insert' in wish ? insertKey(wish.insert, rate) : roomKey(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6);
+      if (keys.includes(key)) continue;
+      keys.push(key);
+      held.set(key, (held.get(key) ?? 0) + 1);
+      if (wish === 'stage') await madeSoon(key, (piece) => stageSteps(rate, piece));
+      else if ('insert' in wish) await madeSoon(key, (piece) => insertSteps(wish.insert, rate, piece));
+      else await madeSoon(key, (piece) => roomSteps(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6, piece));
+    }
+    signal?.throwIfAborted();
+  } catch (err) {
+    release();
+    throw err;
+  }
+  return release;
 }
 
 /**

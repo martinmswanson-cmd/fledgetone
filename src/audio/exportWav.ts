@@ -1253,12 +1253,12 @@ async function renderGraphHeld(
   const context = new Tone.OfflineContext(native);
   // The rooms its reverbs and instruments take, made first a little at a time (prepareRooms), so
   // building the graph, which takes them at once, doesn't hold up the page
-  const releaseRooms = await prepareRooms(sampleRate, roomWishes(tracks, masterFx));
-  signal?.throwIfAborted();
+  const releaseRooms = await prepareRooms(sampleRate, roomWishes(tracks, masterFx), signal);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
-  // The global context is this render's while its graph is built
+  // The global context is this render's while its graph is built (a cancel before then still lets go of the rooms)
   try {
+    signal?.throwIfAborted();
     graph = await withContext(context, () => buildGraph(context));
   } catch (err) {
     finishedSources.delete(context);

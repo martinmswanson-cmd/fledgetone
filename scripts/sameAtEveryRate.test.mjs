@@ -471,6 +471,22 @@ test("an export's rooms are made beforehand, a little at a time, and kept until 
   assert.equal(R.roomsMaking().length, 0);
 });
 
+test("an export called off while its rooms are made lets go of the ones it holds", async () => {
+  // Called off once the church is made, before the Reverb insert's room: the church isn't kept
+  const ctl = new AbortController();
+  const made = R.prepareRooms(96000, [{ style: 'church', decay: 11.85 }, { insert: 11.85 }], ctl.signal);
+  const church = await R.roomChannelsSoon('church', 11.85, 96000);
+  ctl.abort();
+  await assert.rejects(made);
+  for (let k = 0; k < 3; k++) R.roomChannels('hall', 4 + k, 96000);
+  assert.notEqual(R.roomChannels('church', 11.85, 96000), church, 'held on to after the export was called off');
+  // Called off before it starts: nothing held, nothing made
+  const off = new AbortController();
+  off.abort();
+  await assert.rejects(R.prepareRooms(96000, [{ style: 'church', decay: 11.75 }], off.signal));
+  assert.equal(R.roomsMaking().length, 0);
+});
+
 test('live, no room is made at once: the song reverb, a Reverb insert and the first rooms are made a little at a time, Play waits for them, and an export makes its rooms first', () => {
   const bus = source('effects/busEffects.ts');
   // The only room made at once is an export's (already made by then: prepareRooms)
