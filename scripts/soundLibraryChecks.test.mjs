@@ -260,3 +260,117 @@ test('a sound kept under its own id is still found and played as before', async 
   const [saved] = await L.embedSounds([id]);
   assert.deepEqual(Buffer.from(saved.data, 'base64'), quiet);
 });
+
+/** Run `fn` as a browser with no crypto (a page not served over https, such as the studio on a home network). */
+async function withoutCrypto(fn) {
+  const was = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', { value: undefined, configurable: true, writable: true });
+  try {
+    return await fn();
+  } finally {
+    Object.defineProperty(globalThis, 'crypto', was);
+  }
+}
+
+test('with no crypto, a sound kept right under its SHA-256 id plays and is saved, and its file loaded again finds it', async () => {
+  await withoutCrypto(async () => {
+    const quiet = wav('quiet', 336);
+    const id = shaId(quiet);
+    // (kept by a computer with crypto, or by this one before it lost it: as the library kept it then)
+    plant(id, quiet, 'My tone.wav');
+    L.ensureSound(id);
+    await settle();
+    assert.equal(peakDb(await L.decodeSound(id, 48000)), -24);
+    assert.equal(L.soundStatus(id), 'ready');
+    assert.equal(L.soundFileName(id), 'My tone.wav');
+    const [saved] = await L.embedSounds([id]);
+    assert.deepEqual(Buffer.from(saved.data, 'base64'), quiet);
+    // The same file loaded again goes under the same id: kept once, no copy under its FNV id
+    const meta = await L.importSoundFile(new Blob([quiet], { type: 'audio/wav' }), 'My tone again.wav');
+    assert.equal(meta.id, id);
+    assert.equal(meta.name, 'My tone.wav');
+    assert.equal((await kept(fnvId(quiet))).bytes, undefined);
+  });
+});
+
+test('with no crypto, a song made where there is keeps its SHA-256 ids, and new files still get the FNV form', async () => {
+  await withoutCrypto(async () => {
+    const quiet = wav('quiet', 337);
+    const moved = await L.importEmbeddedSounds([carried(shaId(quiet), quiet, 'Pad.wav')]);
+    assert.equal(moved.size, 0);
+    assert.deepEqual((await kept(shaId(quiet))).bytes, quiet);
+    assert.equal(peakDb(await L.decodeSound(shaId(quiet), 44100)), -24);
+    // A file this browser hasn't met: its FNV id, as every sound it kept before has; loaded again, the same one
+    const fresh = wav('quiet', 338);
+    const first = await L.importSoundFile(new Blob([fresh], { type: 'audio/wav' }), 'New.wav');
+    assert.equal(first.id, fnvId(fresh));
+    const again = await L.importSoundFile(new Blob([fresh], { type: 'audio/wav' }), 'New again.wav');
+    assert.equal(again.id, fnvId(fresh));
+    assert.equal((await kept(shaId(fresh))).bytes, undefined);
+  });
+});
+
+test('with no crypto, other bytes kept under a SHA-256 id before the check are put right by the file or the song', async () => {
+  await withoutCrypto(async () => {
+    const quiet = wav('quiet', 339);
+    const loud = wav('loud', 224);
+    const id = shaId(quiet);
+    plant(id, loud, 'Kick.wav');
+    // A song uses it: not in this browser
+    L.ensureSound(id);
+    await settle();
+    assert.equal(L.soundStatus(id), 'missing');
+    // Loading the right file puts its bytes there (the song's sound comes back), not under a new FNV id
+    const meta = await L.importSoundFile(new Blob([quiet], { type: 'audio/wav' }), 'My tone.wav');
+    assert.equal(meta.id, id);
+    assert.deepEqual((await kept(id)).bytes, quiet);
+    assert.equal(peakDb(await L.decodeSound(id, 48000)), -24);
+    // And opening a song that carries the right bytes does too
+    const other = wav('quiet', 340);
+    plant(shaId(other), loud, 'Kick.wav');
+    assert.equal((await L.importEmbeddedSounds([carried(shaId(other), other, 'Soft.wav')])).size, 0);
+    assert.deepEqual((await kept(shaId(other))).bytes, other);
+  });
+});
+
+test('other bytes kept under an id show no name or length of theirs: the sound reads as not in this browser', async () => {
+  const quiet = wav('quiet', 341);
+  const loud = wav('loud', 225);
+  const id = shaId(quiet);
+  plant(id, loud, 'Kick.wav');
+  L.ensureSound(id);
+  await settle();
+  assert.equal(L.soundStatus(id), 'missing');
+  assert.equal(L.soundFileName(id), undefined);
+  assert.equal(L.soundFileNames(id), undefined);
+  assert.equal(L.soundSeconds(id), undefined);
+  assert.equal(L.useSoundLibrary.getState().metas[id], undefined);
+  // (one kept right shows its name as before)
+  const right = wav('quiet', 342);
+  plant(shaId(right), right, 'Right.wav');
+  L.ensureSound(shaId(right));
+  await settle();
+  assert.equal(L.soundFileName(shaId(right)), 'Right.wav');
+});
+
+test("a sound's length is the decoded one when a file's figure is off; one within decoders' differences stays", async () => {
+  const quiet = wav('quiet', 343);
+  await L.importEmbeddedSounds([{ ...carried(shaId(quiet), quiet, 'Room.wav'), seconds: 7 }]);
+  await settle();
+  assert.equal(L.soundSeconds(shaId(quiet)), 0.1);
+  const near = wav('quiet', 344);
+  await L.importEmbeddedSounds([{ ...carried(shaId(near), near, 'Near.wav'), seconds: 0.13 }]);
+  await settle();
+  assert.equal(L.soundSeconds(shaId(near)), 0.13);
+  // Kept with a wrong length, then read after a reload, or found again by its file: the decoded length
+  const kept7 = wav('quiet', 345);
+  plant(shaId(kept7), kept7, 'Kept.wav');
+  stores.get('sound-meta').records.get(shaId(kept7)).seconds = 9;
+  L.ensureSound(shaId(kept7));
+  await settle();
+  assert.equal(L.soundSeconds(shaId(kept7)), 0.1);
+  const found = wav('quiet', 346);
+  plant(shaId(found), found, 'Found.wav');
+  stores.get('sound-meta').records.get(shaId(found)).seconds = 9;
+  assert.equal((await L.importSoundFile(new Blob([found], { type: 'audio/wav' }), 'Found again.wav')).seconds, 0.1);
+});

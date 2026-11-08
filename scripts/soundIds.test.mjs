@@ -19,7 +19,7 @@ register(
   }
 }`)
 );
-const { base64Bytes, carriedBytes, checkSounds, fnvSoundId, isCheckedSound, isFnvSoundId, isShaSoundId, isSoundOf, ownSoundId, shaSoundId, soundIdOf, withCheckedSounds } = await import('../src/audio/soundIds.ts');
+const { base64Bytes, carriedBytes, checkSounds, fnvSoundId, isCheckedSound, isFnvSoundId, isShaSoundId, isSoundOf, ownSoundId, sha256, shaSoundId, soundIdOf, withCheckedSounds } = await import('../src/audio/soundIds.ts');
 const { referencedSoundIds, withSoundsMoved } = await import('../src/store/audioClips.ts');
 const { parseProject } = await import('../src/store/project.ts');
 
@@ -59,6 +59,8 @@ test('ids are made as before: SHA-256 (first 128 bits) or, without crypto, the F
     assert.equal(await shaSoundId(b), sha(b));
     assert.equal(await fnvSoundId(b), oldFnv(b));
     assert.equal(await withoutCrypto(() => soundIdOf(b)), oldFnv(b));
+    // (where there's no crypto the SHA-256 form is still worked out, to check ids by: never to make them)
+    assert.equal(await withoutCrypto(() => shaSoundId(b)), sha(b));
   }
   assert.ok(isShaSoundId(sha(bytesOf(10))));
   assert.ok(isFnvSoundId(oldFnv(bytesOf(10))) && isFnvSoundId(oldFnv(bytesOf(0))));
@@ -73,9 +75,11 @@ test('bytes are checked against an id by the id\'s own form, never by what the b
   assert.equal(await isSoundOf(sha(mine), other), false);
   assert.equal(await isSoundOf(oldFnv(mine), mine), true);
   assert.equal(await isSoundOf(oldFnv(mine), other), false);
-  // An FNV id is checked by FNV even where there is crypto, and a SHA-256 one can't pass where there isn't
+  // An FNV id is checked by FNV even where there is crypto, and a SHA-256 one by SHA-256 where there isn't
   assert.equal(await withoutCrypto(() => isSoundOf(oldFnv(mine), mine)), true);
-  assert.equal(await withoutCrypto(() => isSoundOf(sha(mine), mine)), false);
+  assert.equal(await withoutCrypto(() => isSoundOf(sha(mine), mine)), true);
+  assert.equal(await withoutCrypto(() => isSoundOf(sha(mine), other)), false);
+  assert.equal(await withoutCrypto(() => isSoundOf(oldFnv(mine), other)), false);
   for (const id of ['snd1', 'x', sha(mine).toUpperCase()]) assert.equal(await isSoundOf(id, mine), false, id);
   // The id bytes go under: the given one when it names them, else this browser's own
   assert.equal(await ownSoundId(sha(mine), mine), sha(mine));
@@ -83,7 +87,65 @@ test('bytes are checked against an id by the id\'s own form, never by what the b
   assert.equal(await ownSoundId(sha(mine), other), sha(other));
   assert.equal(await ownSoundId(oldFnv(mine), other), sha(other));
   assert.equal(await ownSoundId('snd1', mine), sha(mine));
-  assert.equal(await withoutCrypto(() => ownSoundId(sha(mine), mine)), oldFnv(mine));
+  // Without crypto: a right SHA-256 id stays (a song from a computer with crypto keeps its ids), a wrong one goes to the FNV form
+  assert.equal(await withoutCrypto(() => ownSoundId(sha(mine), mine)), sha(mine));
+  assert.equal(await withoutCrypto(() => ownSoundId(sha(mine), other)), oldFnv(other));
+  assert.equal(await withoutCrypto(() => ownSoundId(oldFnv(mine), other)), oldFnv(other));
+  assert.equal(await withoutCrypto(() => ownSoundId('snd1', mine)), oldFnv(mine));
+});
+
+test('the SHA-256 worked out here gives the standard answers, and the same ids as the browser\'s own crypto', async () => {
+  const hex = async (b) => Buffer.from(await sha256(b)).toString('hex');
+  // FIPS 180-4 / NIST examples
+  assert.equal(await hex(Buffer.from('')), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  assert.equal(await hex(Buffer.from('abc')), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  assert.equal(await hex(Buffer.from('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq')), '248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1');
+  assert.equal(
+    await hex(Buffer.from('abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu')),
+    'cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1'
+  );
+  assert.equal(await hex(Buffer.alloc(1000000, 'a')), 'cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0');
+  // Every length around a block's end and the last block's room for the length, a slice's end, and a few MB
+  for (const n of [55, 56, 57, 63, 64, 65, 119, 120, 128, (1 << 20) - 1, 1 << 20, (1 << 20) + 1, 3 * (1 << 20) + 77]) {
+    const b = bytesOf(n, n + 3);
+    assert.equal(await hex(b), createHash('sha256').update(b).digest('hex'), `${n} bytes`);
+    // (the app's own id where there is crypto, as made in a secure page, and the one checked by where there isn't)
+    assert.equal(await withoutCrypto(() => shaSoundId(b)), await soundIdOf(b));
+  }
+  // A view into a bigger buffer is hashed as the bytes it shows
+  const whole = bytesOf(5000, 9);
+  assert.equal(await withoutCrypto(() => shaSoundId(new Uint8Array(whole.buffer, whole.byteOffset + 7, 3001))), sha(whole.subarray(7, 3008)));
+  // Ids the app made in a secure page (Chromium on localhost) for the quiet tone the checks use (330 Hz, 1 s, 16-bit)
+  const tone = Buffer.alloc(44 + 88200);
+  tone.write('RIFF', 0); tone.writeUInt32LE(36 + 88200, 4); tone.write('WAVE', 8); tone.write('fmt ', 12); tone.writeUInt32LE(16, 16); tone.writeUInt16LE(1, 20); tone.writeUInt16LE(1, 22);
+  tone.writeUInt32LE(44100, 24); tone.writeUInt32LE(88200, 28); tone.writeUInt16LE(2, 32); tone.writeUInt16LE(16, 34); tone.write('data', 36); tone.writeUInt32LE(88200, 40);
+  for (let i = 0; i < 44100; i++) tone.writeInt16LE(Math.round(0.063 * Math.sin((2 * Math.PI * 330 * i) / 44100) * 32767), 44 + i * 2);
+  assert.equal(await withoutCrypto(() => shaSoundId(tone)), '85b08bcb062a5d51de575bd1c66f2d0b');
+  assert.equal(await withoutCrypto(() => soundIdOf(tone)), 'fnva603901f41b11dbd158b4');
+});
+
+test('the SHA-256 worked out here lets the page have a turn between slices', async () => {
+  const big = bytesOf(4 * (1 << 20) + 5, 2);
+  let turns = 0;
+  let done = false;
+  const tick = () => {
+    if (done) return;
+    turns++;
+    const { port1, port2 } = new MessageChannel();
+    port1.onmessage = () => {
+      port1.close();
+      tick();
+    };
+    port2.postMessage(null);
+  };
+  const hashing = withoutCrypto(() => shaSoundId(big));
+  tick();
+  try {
+    assert.equal(await hashing, sha(big));
+  } finally {
+    done = true;
+  }
+  assert.ok(turns >= 3, `the page had ${turns} turns while 4 MB were hashed`);
 });
 
 test("a file's sounds checked: right ones as they are, others under their own ids (and where they moved), unreadable ones left out", async () => {
@@ -213,6 +275,11 @@ test('an opened song with a sound under another id plays the bytes it was sent w
   assert.equal(same.clips, right.clips);
   const none = parseProject({ format: 'fledgetone-project', version: 1, name: 'x', tracks: [], clips: [] });
   assert.equal(await withCheckedSounds(none), none);
+  // Where there's no crypto, a song made where there is opens with its ids as they are (the planted one still moves)
+  const rightHere = await withoutCrypto(() => withCheckedSounds(parseProject({ ...file, sounds: [carried(sha(quiet), quiet)] })));
+  assert.deepEqual(referencedSoundIds(rightHere), [sha(quiet)]);
+  const plantedHere = await withoutCrypto(() => withCheckedSounds(song));
+  assert.deepEqual(referencedSoundIds(plantedHere), [oldFnv(loud)]);
 });
 
 test("a reference video is kept where videos are, never under a sound's id", () => {

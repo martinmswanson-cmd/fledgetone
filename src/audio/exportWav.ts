@@ -1569,7 +1569,7 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
     } catch (err) {
       const name = useSoundLibrary.getState().metas[id]?.name;
       // (Why, in the app's words: the browser's own text put plainly, see exportFailure.ts)
-      throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${causeWords(err)}`, { cause: err });
+      throw new Error(`couldn't load the sound${name ? ` "${name}"` : ''} for ${label}. ${causeWords(err)}`, { cause: err });
     }
   }
 }

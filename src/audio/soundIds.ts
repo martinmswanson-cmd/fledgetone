@@ -7,6 +7,7 @@
  * A file from outside (a project, My sounds or "Share this sound" file) says which id each sound
  * it carries has. isSoundOf checks that against the bytes, by the form of the id itself (never by
  * what the browser happens to offer), before the bytes are kept or played under it: checkSounds.
+ * Every browser can check both forms: where there's no crypto, the SHA-256 is worked out here (sha256).
  */
 import { withSoundsMoved, type SoundHolders } from '../store/audioClips';
 import type { EmbeddedSound } from '../store/timelineTypes';
@@ -33,11 +34,93 @@ const nextTask = (): Promise<void> =>
 
 const view = (bytes: ArrayBuffer | Uint8Array): Uint8Array => (bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
 
-/** The SHA-256 form of the bytes' id, or undefined in a browser with no crypto. */
-export async function shaSoundId(bytes: ArrayBuffer | Uint8Array): Promise<string | undefined> {
+// ---------- SHA-256, for a browser with no crypto ----------
+
+/** SHA-256's round constants (FIPS 180-4, 4.2.2). */
+const K = new Int32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+/** Bytes put through SHA-256 at a time here, before the page gets a turn (a few milliseconds' work; a multiple of 64). */
+const SHA_SLICE = 1 << 20;
+
+/** SHA-256's compression of the 64-byte blocks of `d` from `from` to `to` into the state `h` (`w`: room for the message schedule). */
+function shaBlocks(h: Int32Array, w: Int32Array, d: DataView, from: number, to: number): void {
+  let h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3], h4 = h[4], h5 = h[5], h6 = h[6], h7 = h[7];
+  for (let p = from; p < to; p += 64) {
+    let a = h0, b = h1, c = h2, k = h3, e = h4, f = h5, g = h6, l = h7;
+    for (let i = 0; i < 64; i++) {
+      // (the message schedule worked out as the rounds go: a third quicker than beforehand, in V8)
+      let wi: number;
+      if (i < 16) wi = d.getInt32(p + i * 4);
+      else {
+        const x = w[i - 15];
+        const y = w[i - 2];
+        wi = (w[i - 16] + (((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3)) + w[i - 7] + (((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10))) | 0;
+      }
+      w[i] = wi;
+      const t1 = (l + (((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7))) + ((e & f) ^ (~e & g)) + K[i] + wi) | 0;
+      const t2 = ((((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10))) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      l = g;
+      g = f;
+      f = e;
+      e = (k + t1) | 0;
+      k = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) | 0;
+    }
+    h0 = (h0 + a) | 0;
+    h1 = (h1 + b) | 0;
+    h2 = (h2 + c) | 0;
+    h3 = (h3 + k) | 0;
+    h4 = (h4 + e) | 0;
+    h5 = (h5 + f) | 0;
+    h6 = (h6 + g) | 0;
+    h7 = (h7 + l) | 0;
+  }
+  h.set([h0, h1, h2, h3, h4, h5, h6, h7]);
+}
+
+/**
+ * The bytes' SHA-256 (all 32 bytes of it), worked out here (FIPS 180-4) a slice at a time, so a
+ * big file doesn't hold up the page: what a browser with no crypto checks a SHA-256 id with.
+ */
+export async function sha256(bytes: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  const data = view(bytes);
+  const h = new Int32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const w = new Int32Array(64);
+  const whole = data.length - (data.length % 64);
+  const words = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  for (let at = 0; at < whole; at += SHA_SLICE) {
+    if (at) await nextTask();
+    shaBlocks(h, w, words, at, Math.min(whole, at + SHA_SLICE));
+  }
+  // The last bytes, then 0x80, zeros and the length in bits (64 bits, high word first): one block or two
+  const rest = data.length - whole;
+  const tail = new Uint8Array(rest + 9 <= 64 ? 64 : 128);
+  tail.set(data.subarray(whole));
+  tail[rest] = 0x80;
+  const last = new DataView(tail.buffer);
+  last.setUint32(tail.length - 8, Math.floor(data.length / 0x20000000));
+  last.setUint32(tail.length - 4, (data.length * 8) >>> 0);
+  shaBlocks(h, w, last, 0, tail.length);
+  const out = new Uint8Array(32);
+  const digest = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) digest.setInt32(i * 4, h[i]);
+  return out;
+}
+
+/** Whether this browser has crypto (a page served over https, or on this computer): what makes SHA-256 ids. */
+const hasCrypto = (): boolean => !!globalThis.crypto?.subtle;
+
+/** The SHA-256 form of the bytes' id: by the browser's crypto, or, where there's none, by sha256 here. */
+export async function shaSoundId(bytes: ArrayBuffer | Uint8Array): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) return undefined;
-  const digest = new Uint8Array(await subtle.digest('SHA-256', view(bytes) as Uint8Array<ArrayBuffer>));
+  const digest = subtle ? new Uint8Array(await subtle.digest('SHA-256', view(bytes) as Uint8Array<ArrayBuffer>)) : await sha256(bytes);
   return Array.from(digest.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -57,15 +140,18 @@ export async function fnvSoundId(bytes: ArrayBuffer | Uint8Array): Promise<strin
   return `fnv${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}${data.length.toString(16)}`;
 }
 
-/** The id of a sound file's bytes, as this browser makes it: the SHA-256 form, or the FNV one where there's no crypto. */
+/**
+ * The id of a sound file's bytes, as this browser makes it: the SHA-256 form, or the FNV one where
+ * there's no crypto. (Not the SHA-256 worked out here: every sound such a browser already keeps is
+ * under its FNV id, and the same file loaded again has to come to the same id to find its copy.)
+ */
 export async function soundIdOf(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  return (await shaSoundId(bytes)) ?? fnvSoundId(bytes);
+  return hasCrypto() ? shaSoundId(bytes) : fnvSoundId(bytes);
 }
 
 /**
- * Whether `bytes` are the sound `id` names, checked by the id's own form: a SHA-256 id by SHA-256,
- * an FNV id by the FNV pair. Any other id names no bytes (false), and so does a SHA-256 id in a
- * browser with no crypto, where it can't be checked.
+ * Whether `bytes` are the sound `id` names, checked by the id's own form: a SHA-256 id by SHA-256
+ * (in any browser), an FNV id by the FNV pair. Any other id names no bytes (false).
  */
 export async function isSoundOf(id: string, bytes: ArrayBuffer | Uint8Array): Promise<boolean> {
   if (isShaSoundId(id)) return (await shaSoundId(bytes)) === id;
@@ -78,8 +164,15 @@ export async function isSoundOf(id: string, bytes: ArrayBuffer | Uint8Array): Pr
  * them (checked by its own form, as isSoundOf does), else the id this browser makes for them.
  */
 export async function ownSoundId(given: string, bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  if (isFnvSoundId(given) && (await fnvSoundId(bytes)) === given) return given;
-  // (a SHA-256 id is right when the bytes' own is the same; where there's no crypto it can't be, so they go under their FNV one)
+  // (each hash worked out once: the one that checks the given id is this browser's own, where it makes that form)
+  if (isShaSoundId(given)) {
+    const sha = await shaSoundId(bytes);
+    return sha === given ? given : hasCrypto() ? sha : fnvSoundId(bytes);
+  }
+  if (isFnvSoundId(given)) {
+    const fnv = await fnvSoundId(bytes);
+    return fnv === given ? given : hasCrypto() ? shaSoundId(bytes) : fnv;
+  }
   return soundIdOf(bytes);
 }
 

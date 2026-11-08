@@ -10,7 +10,7 @@ import { createPeaks, fillPeaks } from './waveform';
 import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
 import { DspDropped, runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
-import { carriedBytes, checkSounds, isCheckedSound, isSoundOf, soundIdOf } from './soundIds';
+import { carriedBytes, checkSounds, isCheckedSound, isShaSoundId, isSoundOf, shaSoundId, soundIdOf } from './soundIds';
 import type { Peaks } from './waveform';
 import type { ClipAudio, CustomSample, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
@@ -228,8 +228,9 @@ async function writeStoredSound(meta: SoundMeta, data: Blob): Promise<void> {
 /**
  * The bytes this browser keeps for sound `id`, if they are the ones the id names: undefined when
  * none are kept, or other bytes are (a file from before the app checked could put them there).
- * Those are never used: the sound reads as not in this browser until its own file is loaded or
- * opened again, which puts the right bytes in their place.
+ * Those are never used, nor the name and length kept with them (see ensureSound): the sound reads
+ * as not in this browser until its own file is loaded or opened again, which puts the right bytes
+ * in their place.
  */
 async function storedBytes(id: string): Promise<ArrayBuffer | undefined> {
   const data = await readStoredData(id);
@@ -239,6 +240,32 @@ async function storedBytes(id: string): Promise<ArrayBuffer | undefined> {
   if (!(await isSoundOf(id, bytes))) return undefined;
   storedChecked.add(id);
   return bytes;
+}
+
+/** Whether two files' bytes are the same, byte for byte. */
+function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const n = a.byteLength >> 2;
+  const x = new Int32Array(a, 0, n);
+  const y = new Int32Array(b, 0, n);
+  for (let i = 0; i < n; i++) if (x[i] !== y[i]) return false;
+  const p = new Uint8Array(a);
+  const q = new Uint8Array(b);
+  for (let i = n * 4; i < p.length; i++) if (p[i] !== q[i]) return false;
+  return true;
+}
+
+/**
+ * Whether this browser keeps exactly `data` under `id` (the file just loaded, whose own id that
+ * is): compared byte for byte rather than by hash, as other bytes can be made to fit an FNV id.
+ */
+async function keepsThese(id: string, data: Blob): Promise<boolean> {
+  const kept = await readStoredData(id);
+  if (!kept || kept.size !== data.size) return false;
+  const [a, b] = await Promise.all([kept.arrayBuffer(), data.arrayBuffer()]);
+  if (!sameBytes(a, b)) return false;
+  storedChecked.add(id);
+  return true;
 }
 
 /** Keep any other file in this browser under `key` (the reference video: see videoStore). */
@@ -405,13 +432,18 @@ export const decodedSound = (id: string, sampleRate: number): AudioBuffer | unde
  * so the sound is tried again once it has been loaded.
  */
 export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer> {
+  return decodeOnce(id, sampleRate);
+}
+
+/** decodeSound, from `given` (the sound's bytes, already read and checked) when it isn't decoded at that rate yet. */
+function decodeOnce(id: string, sampleRate: number, given?: ArrayBuffer): Promise<AudioBuffer> {
   const memory = memorySounds.get(id);
   if (memory) return memory.sampleRate === sampleRate ? Promise.resolve(memory) : Promise.reject(new SoundError('This sound is only kept at its own sample rate.'));
   const key = decodeKey(id, sampleRate);
   let promise = decoded.get(key);
   if (!promise) {
     promise = (async () => {
-      const bytes = await soundBytes(id);
+      const bytes = given ?? (await soundBytes(id));
       if (!bytes) {
         setStatus(id, 'missing');
         throw new SoundError('This sound is not in this browser any more.');
@@ -709,10 +741,26 @@ function measurePeaks(buffer: AudioBuffer, done: (peaks: Peaks) => void): void {
   idle(step);
 }
 
-/** Decode a sound for playback and measure its peaks; its status follows. */
-async function prepareSound(id: string): Promise<void> {
+/**
+ * How far the length a file gives a sound may be from what this browser decodes it to and still
+ * stand: browsers' decoders differ by a few hundredths of a second on compressed files.
+ */
+const LENGTH_SLACK_SECONDS = 0.1;
+
+/**
+ * A sound's length as decoded here, in place of the one its meta gives when that's further off
+ * than decoders differ (a file can say any length): what clip lengths and an export's ring-out read.
+ */
+function keepDecodedLength(id: string, buffer: AudioBuffer): void {
+  const meta = useSoundLibrary.getState().metas[id];
+  if (meta && !(Math.abs(meta.seconds - buffer.duration) <= LENGTH_SLACK_SECONDS)) setMeta({ ...meta, seconds: buffer.duration });
+}
+
+/** Decode a sound for playback (from `bytes`, when they're already read and checked) and measure its peaks; its status follows. */
+async function prepareSound(id: string, bytes?: ArrayBuffer): Promise<void> {
   try {
-    const buffer = await decodeSound(id, liveSampleRate());
+    const buffer = await decodeOnce(id, liveSampleRate(), bytes);
+    keepDecodedLength(id, buffer);
     if (useSoundLibrary.getState().peaks[id]) {
       setStatus(id, 'ready');
       return;
@@ -734,9 +782,14 @@ export function ensureSound(id: string): void {
   if (soundStatus(id) !== undefined) return;
   setStatus(id, 'loading');
   void (async () => {
+    let bytes: ArrayBuffer | undefined;
     try {
       const meta = await readStoredMeta(id);
-      if (!meta) {
+      // Its name and length show once its bytes are found to be the ones its id names (storedBytes):
+      // other bytes kept under it (a file from before the app checked could put them there) came
+      // with a name and length of their own, not this sound's. It reads as not in this browser.
+      bytes = meta && (await storedBytes(id));
+      if (!meta || !bytes) {
         setStatus(id, 'missing');
         return;
       }
@@ -745,25 +798,51 @@ export function ensureSound(id: string): void {
       setStatus(id, 'missing');
       return;
     }
-    await prepareSound(id);
+    await prepareSound(id, bytes);
   })();
 }
 
 // ---------- loading files ----------
 
+/** Whether this page has met sound `id` (a song uses it, or it was loaded or opened) or this browser keeps something under it. */
+async function metOrKept(id: string): Promise<boolean> {
+  const { metas, status } = useSoundLibrary.getState();
+  if (metas[id] || status[id] !== undefined || unstored.has(id)) return true;
+  try {
+    return !!(await readStoredMeta(id));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The id a loaded file's bytes go under: their own (soundIdOf). In a browser with no crypto that's
+ * their FNV id, as every sound it made before has, so the same file loaded again finds its copy.
+ * But when nothing is under that one and this page knows the bytes' SHA-256 id instead (a song
+ * made on a computer with crypto uses it, or this browser keeps something under it), they go
+ * under that: the song's sound comes back, it's kept once, and other bytes kept under it before
+ * the app checked are put right.
+ */
+async function loadedSoundId(bytes: ArrayBuffer): Promise<string> {
+  const own = await soundIdOf(bytes);
+  if (isShaSoundId(own) || (await metOrKept(own))) return own;
+  const sha = await shaSoundId(bytes);
+  return (await metOrKept(sha)) ? sha : own;
+}
+
 /**
  * Put a sound file into the library: checked for size, hashed, decoded (a file the browser can't
  * play is refused) and stored. The same bytes loaded again give the same id and are stored once.
- * They're stored whenever what this browser keeps under the id isn't them (nothing, or other
- * bytes a file put there before the app checked): the id is these bytes' own, so that is always right.
- * The meta describes the file; the caller names the clip or track.
+ * They're stored whenever what this browser keeps under the id isn't them, byte for byte (nothing,
+ * or other bytes a file put there before the app checked): the id is these bytes' own, so that is
+ * always right. The meta describes the file; the caller names the clip or track.
  */
 export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_SOUND_BYTES): Promise<SoundMeta> {
   if (file.size > maxBytes) {
     throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${maxBytes / 1048576} MB can be loaded, because each is kept in this browser and saved inside your project file: trim it, or save it as MP3 or OGG (a tenth of the size).`);
   }
   const bytes = await file.arrayBuffer();
-  const id = await soundIdOf(bytes);
+  const id = await loadedSoundId(bytes);
   const type = file.type || 'application/octet-stream';
   // Kept before decoding, which consumes the bytes
   const data = new Blob([bytes], { type });
@@ -778,7 +857,7 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
   let meta: SoundMeta;
   try {
     const stored = await readStoredMeta(id);
-    if (stored && (await storedBytes(id))) meta = known ?? stored;
+    if (stored && (await keepsThese(id, data))) meta = known ?? stored;
     else {
       // (Kept under the id the bytes' own hash gives: these are the bytes it names, whatever was there)
       meta = { id, name, type, size: data.size, seconds: buffer.duration };
@@ -794,6 +873,9 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
   decoded.set(decodeKey(id, sampleRate), Promise.resolve(buffer));
   decodedBuffers.set(decodeKey(id, sampleRate), buffer);
   setMeta(meta);
+  // (a length kept from a file that carried these bytes: as decoded, if it was off)
+  keepDecodedLength(id, buffer);
+  meta = useSoundLibrary.getState().metas[id] ?? meta;
   if (soundStatus(id) !== 'ready') {
     setStatus(id, 'loading');
     measurePeaks(buffer, (peaks) => {
