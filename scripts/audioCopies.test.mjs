@@ -2,8 +2,9 @@
 // changes: Duplicate, Repeat, Fill to loop Out, a mixed Duplicate linked, Paste (in the song or into
 // another) and both kinds of move keep the clip as long in seconds as it was (its bars follow the
 // tempo where it lands, along the tempo map where it plays across a change), and its comp keeps its
-// places in the sound (src/store/audioClips.ts audioClipAt / placedClip, used by the store and the
-// agent's ops). Clips that follow the tempo, and note clips, keep their bars. Run with `npm test`.
+// places in the sound (src/store/audioClips.ts audioClipAt / placedClip, used by the store; the
+// agent's ops can't change audio clips). Clips that follow the tempo, and note clips, keep their bars.
+// Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -114,7 +115,7 @@ test('a paste into another song keeps the seconds it had where it was copied (wa
   near(placedClip(clip(3, 2), 1, 120, 90, END).lengthBars, 1.5, 'plain tempos');
 });
 
-test('the store and the agent copy and move audio clips through these rules (Cut to length keeps its own)', () => {
+test('the store copies and moves audio clips through these rules (Cut to length keeps its own)', () => {
   const store = src('src/store/timelineStore.ts');
   const body = (name) => {
     const at = store.indexOf(`    ${name}: (`);
@@ -133,8 +134,4 @@ test('the store and the agent copy and move audio clips through these rules (Cut
   assert.match(store.slice(store.indexOf('    moveClip: (clipId, startBar)'), store.indexOf('    trimClipStart:')), /audioClipAt\(c, start, tempo, tempo, TOTAL_BARS \+ 1\)/);
   // Cut to length lays each section's own tempos under its copies and times them afterwards
   assert.match(body('cutToLength'), /copyClip\(part, cursor - sec\.from\)/);
-  const ops = src('src/agent/ops.ts');
-  const op = (name) => ops.slice(ops.indexOf(`case '${name}': {`), ops.indexOf('return;', ops.indexOf(`case '${name}': {`)));
-  assert.match(op('move_clip'), /audioClipAt\(clip, startBar, tempoOf\(w\), tempoOf\(w\)\)/);
-  assert.match(op('duplicate_clip'), /audioClipAt\(clip, startBar, tempoOf\(w\), tempoOf\(w\)\)/);
 });

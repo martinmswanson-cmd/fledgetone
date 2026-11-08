@@ -19,7 +19,7 @@
 import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../store/project';
 import { makeTrack } from '../store/trackFactory';
 import { syncPatterns, unlinked } from '../store/patterns';
-import { audioClipAt, retimeAudioClips } from '../store/audioClips';
+import { retimeAudioClips } from '../store/audioClips';
 import { cleanMarkerName, createMarker, MARKER_NAME_MAX, nextMarkerName, placeMarker, retimeMarkers } from '../store/markers';
 import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from '../store/buses';
 import { DRUM_NOTES } from '../store/drumNotes';
@@ -578,9 +578,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           trackId = to.id;
         }
         const startBar = op.toBar === undefined ? clip.startBar : readBar(op.toBar, `${at}.toBar`, lastStart(clip.lengthBars));
-        // (an audio clip playing at its own speed keeps its seconds where it lands, as a move in the studio)
-        const timed = startBar === clip.startBar ? { lengthBars: clip.lengthBars } : audioClipAt(clip, startBar, tempoOf(w), tempoOf(w));
-        replaceClip(clip, { ...clip, ...timed, startBar, trackId, lengthBars: fitLength(startBar, timed.lengthBars) });
+        replaceClip(clip, { ...clip, startBar, trackId, lengthBars: fitLength(startBar, clip.lengthBars) });
         return;
       }
       case 'resize_clip': {
@@ -606,17 +604,15 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           trackId = to.id;
         }
         const startBar = readBar(op.toBar, `${at}.toBar`, lastStart(clip.lengthBars));
-        // (an audio clip playing at its own speed is as long in seconds where its copy lands, as the studio's copies)
-        const timed = audioClipAt(clip, startBar, tempoOf(w), tempoOf(w));
         let copy: Clip;
         if (op.linked) {
           // As "Duplicate linked": the original joins a pattern (its own, or a new one) and the copy shares its content
           const pattern = clip.pattern ?? uid('pattern');
           const original = clip.pattern ? clip : { ...clip, pattern };
           replaceClip(clip, original);
-          copy = { ...original, ...timed, id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, timed.lengthBars), isSelected: false, pattern };
+          copy = { ...original, id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, clip.lengthBars), isSelected: false, pattern };
         } else {
-          copy = { ...unlinked(clip), ...timed, id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, timed.lengthBars), isSelected: false, notes: clip.notes.map((n) => ({ ...n, id: uid('note') })) };
+          copy = { ...unlinked(clip), id: uid('clip'), trackId, startBar, lengthBars: fitLength(startBar, clip.lengthBars), isSelected: false, notes: clip.notes.map((n) => ({ ...n, id: uid('note') })) };
         }
         // A copy's notes are notes the suggestion adds (a linked copy plays them too)
         countNotes(clip.notes.length, `${at}.clipId`);
