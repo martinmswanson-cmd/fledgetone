@@ -14,9 +14,9 @@ import { maxOf, minOf } from '../../support/minMax';
 
 /**
  * The ruler's top row: the song's tempo and time signature, and their changes along the way.
- * A faint line traces the tempo (glides show as slopes). Click a flag to edit it, drag one to move
- * it (a tempo change snaps to the grid, a time signature to measure starts), double-click the row
- * to add a tempo change there. The ruler's right-click menu adds either.
+ * A faint line traces the tempo (glides show as slopes). Click a flag (or Enter on it) to edit it,
+ * drag one to move it (a tempo change snaps to the grid, a time signature to measure starts),
+ * double-click the row to add a tempo change there. The ruler's right-click menu adds either.
  */
 
 type Editing = { kind: 'tempo' | 'meter'; id: string | null; x: number; y: number };
@@ -34,6 +34,10 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
   const { drawFrom, drawTo } = useDrawnStretch(totalWidth);
   const [editing, setEditing] = useState<Editing | null>(null);
   const close = useCallback(() => setEditing(null), []);
+  // Each flag's button, by kind and id: an editor goes back to (and Tab on from) its own flag. A
+  // click on a flag keeps focus where it was (the press may be a drag), so the editor is told
+  const flagEls = useRef(new Map<string, HTMLButtonElement>());
+  const flagKey = (kind: 'tempo' | 'meter', id: string | null) => `${kind}-${id ?? 'base'}`;
 
   // The tempo line, scaled between the slowest and fastest tempos in the song
   const all = [bpm, ...tempoPoints.map((p) => p.bpm)];
@@ -147,7 +151,17 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
                 } ${f.id ? 'cursor-grab' : 'cursor-pointer'}`}
                 title={f.title}
                 aria-label={f.title}
+                ref={(el) => {
+                  if (el) flagEls.current.set(flagKey(f.kind, f.id), el);
+                  else flagEls.current.delete(flagKey(f.kind, f.id));
+                }}
                 onPointerDown={(e) => startDrag(e, f.kind, f.id, f.bar)}
+                onClick={(e) => {
+                  // Enter or Space on the flag (the pointer's click opens it on release, see startDrag)
+                  if (e.detail !== 0) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setEditing({ kind: f.kind, id: f.id, x: r.left, y: r.bottom + 2 });
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -160,15 +174,15 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
           </div>
         );
       })}
-      {editing && createPortal(<TempoEditor editing={editing} onClose={close} />, document.body)}
+      {editing && createPortal(<TempoEditor editing={editing} onClose={close} opener={() => flagEls.current.get(flagKey(editing.kind, editing.id))} />, document.body)}
     </div>
   );
 });
 
-/** The little editor for a tempo or time signature flag. */
-function TempoEditor({ editing, onClose }: { editing: Editing; onClose: () => void }) {
+/** The little editor for a tempo or time signature flag (`opener`: the flag's button, for Tab and Shift+Tab out of it). */
+function TempoEditor({ editing, onClose, opener }: { editing: Editing; onClose: () => void; opener: () => HTMLElement | null | undefined }) {
   const ref = useRef<HTMLDivElement>(null);
-  useMenuDismiss(ref, onClose);
+  useMenuDismiss(ref, onClose, opener);
   useKeepOnScreen(ref, editing.x, editing.y);
   const bpm = useTimelineStore((st) => st.bpm);
   const meter = useTimelineStore((st) => st.meter);
@@ -259,7 +273,7 @@ function TempoEditor({ editing, onClose }: { editing: Editing; onClose: () => vo
     <div ref={ref} className={`${menuClass} !w-56 px-3 py-2 flex flex-col gap-2`} role="dialog" aria-label={meterPoint ? 'Time signature change' : 'Time signature'}>
       <div className="text-[10px] uppercase tracking-wider text-forge-muted">{meterPoint ? 'Time signature change' : 'Time signature (from bar 1)'}</div>
       <div className="flex items-center gap-1 text-forge-text">
-        <select value={current.num} onChange={(e) => setMeter({ num: Number(e.target.value), den: current.den })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="Beats per measure">
+        <select value={current.num} onChange={(e) => setMeter({ num: Number(e.target.value), den: current.den })} autoFocus className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="Beats per measure">
           {Array.from({ length: 16 }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
               {n}

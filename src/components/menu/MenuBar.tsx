@@ -502,6 +502,8 @@ const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; opener: () => HTM
             disabled={item.disabled}
             title={item.title}
             onClick={async () => {
+              // Focus back on the menu's button first: a dialog the item opens goes back there as it closes
+              opener()?.focus({ preventScroll: true });
               onClose();
               try {
                 say(await item.run());

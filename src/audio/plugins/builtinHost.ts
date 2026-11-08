@@ -149,6 +149,12 @@ export interface BuiltinControls {
   userTable: () => UserTable | null;
   /** Give it a user table, or take it away (null): resolves once it plays (false if it couldn't be read) */
   setUserTable: (table: UserTable | null) => Promise<boolean>;
+  /**
+   * Make a change of the whole sound inside `change` (several settings at once: Reset all, a user
+   * table and the oscillator playing it): with notes playing it fades out, changes and fades back
+   * in, so it neither clicks nor bursts (see processor.ts 'switch'). Presets and undo do it themselves.
+   */
+  switching: <T>(change: () => T | Promise<T>) => Promise<T>;
 }
 
 type GuiFactory = (controls: BuiltinControls) => { element: Element; destroy: () => void };
@@ -411,22 +417,48 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     setState: async (s: unknown) => {
       const saved = s as Partial<BuiltinState> | undefined;
       const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;
-      if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) await setProgram(p);
+      const choose = typeof p === 'number' && p >= 0 && p < programs.length && p !== program;
       // Settings with no preset file at all (an undo back to "(none)"): the plugin as it started, the patch gone
-      else if (files && program >= 0 && saved && Array.isArray(saved.values) && saved.preset === undefined) await startFresh();
+      const fresh = !choose && !!files && program >= 0 && !!saved && Array.isArray(saved.values) && saved.preset === undefined;
       // Settings with no built-in preset (an undo back to Fledge Synth's "(your own sound)"): no preset,
       // the values below as they were. Its presets are only values, so nothing starts again (that would cut the notes playing)
-      else if (!files && program >= 0 && saved && Array.isArray(saved.values) && saved.program === undefined) noProgram();
+      const none = !choose && !files && program >= 0 && !!saved && Array.isArray(saved.values) && saved.program === undefined;
       // (The user table as the settings have it: an undo can take one away or bring one back)
       const table = normalizeUserTable(saved?.table) ?? null;
-      if (table?.data !== userTable?.data || table?.frames !== userTable?.frames) await setUserTable(table);
+      const newTable = table?.data !== userTable?.data || table?.frames !== userTable?.frames;
       const values = valuesOf(s);
-      values?.forEach((v, i) => {
-        if (Number.isFinite(v) && params[i]) set(i, v);
-      });
-      // Saved before the plugin had all its parameters (an older version of it): the ones it
-      // didn't have are set as the sound was then, so it sounds as it did
-      if (values?.length && values.length < params.length) await legacy(values.length);
+      // (A preset file is downloaded before anything changes: the sound fades out only for the change itself)
+      const bytes = choose && files ? await presetBytes(ref, files.names[p]) : undefined;
+      if (destroyed) return;
+      const older = !!values?.length && values.length < params.length;
+      const setValues = () =>
+        values?.forEach((v, i) => {
+          if (Number.isFinite(v) && params[i]) set(i, v);
+        });
+      // (A preset file, starting again without one, a user table and an older sound's missing
+      // settings are waited for; anything else is sent at once, its switch ended with it)
+      const waits = (choose && !!files) || fresh || newTable || older;
+      const apply = !waits
+        ? () => {
+            if (choose) void setProgram(p);
+            else if (none) noProgram();
+            setValues();
+          }
+        : async () => {
+            if (choose) await setProgram(p, bytes);
+            else if (fresh) await startFresh();
+            else if (none) noProgram();
+            if (newTable) await setUserTable(table);
+            setValues();
+            // Saved before the plugin had all its parameters (an older version of it): the ones it
+            // didn't have are set as the sound was then, so it sounds as it did
+            if (older) await legacy(values!.length);
+          };
+      // More than one setting at once is a switch of the whole sound (a preset, an undo of one, of
+      // Reset all...): faded out and back in. An undo of one knob's turn moves it as the knob does
+      const moving = values?.filter((v, i) => Number.isFinite(v) && params[i] && !laneHeld.has(i) && within(i, Math.max(0, Math.min(1, v))) !== params[i].value).length ?? 0;
+      const whole = choose || fresh || newTable || moving > 1 || older;
+      await (whole ? switching(apply) : apply());
     },
     destroy: () => {
       if (destroyed) return;
@@ -456,22 +488,54 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     post(index, v);
     changed();
   };
-  /** Choose preset `index`: a built-in one at once, a file once it's downloaded (resolves then). */
-  const setProgram = async (index: number) => {
+  /**
+   * A change of the whole sound made in `change` (see BuiltinControls.switching): the processor
+   * fades out with notes playing, holds `change`'s messages until it's silent, and fades back in
+   * once 'switched' says it's made. Only in a context that's playing: one a script has paused (an
+   * offline render between its steps) would never reach the silence, and an export never
+   * switches. Nested, it's the outermost one.
+   */
+  let switchDepth = 0;
+  const switching = <T,>(change: () => T | Promise<T>): Promise<T> => {
+    const fade = switchDepth === 0 && !destroyed && ctx.state === 'running';
+    switchDepth++;
+    if (fade) node.port.postMessage({ type: 'switch' });
+    const done = () => {
+      switchDepth--;
+      if (fade && !destroyed) node.port.postMessage({ type: 'switched' });
+    };
+    let made: T | Promise<T>;
+    try {
+      made = change();
+    } catch (err) {
+      done();
+      return Promise.reject(err);
+    }
+    if (made instanceof Promise) return made.finally(done);
+    // Made at once: its end goes now, with its messages (an undo's own work after it, a busy
+    // page, mustn't hold the sound silent while the end waits its turn)
+    done();
+    return Promise.resolve(made);
+  };
+  /** Choose preset `index`: a built-in one at once, a file once it's downloaded (resolves then; `bytes`: downloaded already). */
+  const setProgram = async (index: number, bytes?: ArrayBuffer) => {
     if (destroyed || index < 0 || index >= programs.length) return;
     program = index;
     changed();
     if (!files) {
-      node.port.postMessage({ type: 'program', index, asked: ++asked });
+      await switching(() => node.port.postMessage({ type: 'program', index, asked: ++asked }));
       return;
     }
-    const data = await presetBytes(ref, files.names[index]);
+    const data = bytes ?? (await presetBytes(ref, files.names[index]));
     // (Another was chosen meanwhile: that one wins)
     if (destroyed || program !== index) return;
-    await new Promise<void>((resolve) => {
-      loaded.push(resolve);
-      node.port.postMessage({ type: 'load', data }, [data]);
-    });
+    await switching(
+      () =>
+        new Promise<void>((resolve) => {
+          loaded.push(resolve);
+          node.port.postMessage({ type: 'load', data }, [data]);
+        })
+    );
   };
   /** Back to no built-in preset: only its name goes (the processor keeps it so), every parameter stays. */
   const noProgram = () => {
@@ -485,10 +549,13 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     if (destroyed) return;
     program = -1;
     changed();
-    await new Promise<void>((resolve) => {
-      loaded.push(resolve);
-      node.port.postMessage({ type: 'fresh' });
-    });
+    await switching(
+      () =>
+        new Promise<void>((resolve) => {
+          loaded.push(resolve);
+          node.port.postMessage({ type: 'fresh' });
+        })
+    );
   };
   /** Play `table` as the user table (null: none). False if it couldn't be read (nothing changes then). */
   const setUserTable = async (table: UserTable | null): Promise<boolean> => {
@@ -497,7 +564,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     if (table && !data) return false;
     if (destroyed) return false;
     userTable = table;
-    node.port.postMessage({ type: 'table', data, frames: table && data ? Math.min(table.frames, data.length / USER_CYCLE) : 0 });
+    await switching(() => node.port.postMessage({ type: 'table', data, frames: table && data ? Math.min(table.frames, data.length / USER_CYCLE) : 0 }));
     changed();
     return true;
   };
@@ -540,6 +607,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     set,
     userTable: () => userTable,
     setUserTable,
+    switching,
     subscribe: (l) => {
       listeners.add(l);
       void refresh();

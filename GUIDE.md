@@ -713,7 +713,7 @@ Tools for making a beat from a sample: a loop or a recording of your own (or one
 - **▶ Hear**, beside the preset: plays a short phrase of the sound on this track, as it sounds now (its preset, macros, volume and effects): a low riff on a bass (its last two notes overlap, so a sound with glide slides), a short tune on a lead, an arpeggio on keys and plucks, two held chords on chords and pads, one long note on an effect. Press it again, or choose another preset, to stop it. Tick **Hear on change** to hear each preset as you choose it or step to it with **‹ ›** (this browser remembers it; it's off to start with). A muted track stays silent.
 - **Macros**: four knobs that each move several settings at once, named for what they do in the preset (on Wobble: **Speed up**, **Squelch** and **Grit**; on Growl: **Open**, **Growl** and **Grit**). Every Bass preset has three. Under each is what it moves; on your own sound, or a macro you've rerouted, the name is what it moves. Automate a macro to change a sound across a song with one lane.
 - **Wobble rate** (or **Pulse rate** for a gate or a pump, **Sweep rate** for a sweep that runs once per note), beside the macros when the sound has an LFO in time with the song: the wobble's speed as a note length (1/4, 1/8, triplets, dotted…), so it stays locked to the tempo. It's the same setting as that LFO's rate on the Modulation tab.
-- **Undo** takes back a turn of a knob or a change of preset, like any other edit (a drag is one step).
+- **Undo** takes back a turn of a knob or a change of preset, like any other edit (a drag is one step). Changing the preset (or undoing one) with notes held dips the sound for a moment while it changes, so it never clicks or jumps loud; the notes play on in the new sound.
 - **Knobs**: drag up or down (hold Shift for fine steps), or click one and use the arrow keys. Double-click a knob to put it back. Each shows its value under its name.
 
 **Sound** tab:
@@ -1389,7 +1389,7 @@ In the game: `const music = await loadSong('./song.json', { onProgress })`, then
 
 ## Keyboard shortcuts
 
-Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. A menu or small panel closes when `Tab` takes you out of it (`Shift+Tab` off its top goes back to the button that opened it), so the shortcuts work again straight away. `Ctrl+K` (search) and `Ctrl+S` (save) work everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
+Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. A menu or small panel closes when `Tab` takes you out of it (`Shift+Tab` off its top goes back to what opened it, a tempo flag you clicked included), so the shortcuts work again straight away. In a right-click menu, `↑` / `↓` move through its items (on the track menu, `←` / `→` move along its colours). `Ctrl+K` (search) and `Ctrl+S` (save) work everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
 
 ### Timeline
 

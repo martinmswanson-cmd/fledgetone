@@ -11,6 +11,12 @@
  * keyboard take focus on their first item, their items move with the arrow keys, and focus goes
  * back to where it was when they close. Nothing here acts on the pointer: the mouse works as it
  * always has (a click on a popup's own text, which moves focus nowhere, keeps it open).
+ *
+ * What opened a popup, when it isn't given: what was pressed to open it (its control, or the
+ * thing itself, a ruler or a lane, focused just for the moment), else what had focus. A press
+ * that keeps focus where it was (a tempo flag, which drags) still leaves its popup something to
+ * go back to and on from: otherwise Tab and Shift+Tab out of a popup moved to the end of the page
+ * or out of it, the popup staying open.
  */
 import { useEffect, useRef, type RefObject } from 'react';
 
@@ -19,9 +25,10 @@ export type PopupPlace = 'inline' | 'portal';
 
 /**
  * Where focus is, seen from an open popup: on its first or last stop (`only`: its one stop),
- * between them (`inside`), on the control that opened it (`opener`), or anywhere else (`outside`).
+ * between them (`inside`), on the control that opened it (`opener`), on nothing at all with that
+ * control known (`nowhere`: a click that took focus nowhere opened it), or anywhere else (`outside`).
  */
-export type FocusAt = 'first' | 'last' | 'only' | 'inside' | 'opener' | 'outside';
+export type FocusAt = 'first' | 'last' | 'only' | 'inside' | 'opener' | 'nowhere' | 'outside';
 
 /**
  * What a Tab does to an open popup: whether it closes (`close`), and where focus goes: `natural` lets
@@ -39,15 +46,20 @@ export interface TabMove {
  */
 export function tabMove(at: FocusAt, back: boolean, place: PopupPlace, hasOpener: boolean): TabMove | null {
   if (at === 'opener') return back ? { close: true, focus: 'natural' } : { close: false, focus: 'first' };
+  // (Focus on nothing: Tab goes into the popup, Shift+Tab back on what opened it)
+  if (at === 'nowhere') return back ? { close: true, focus: hasOpener ? 'opener' : 'natural' } : { close: false, focus: 'first' };
   if (at === 'outside') return { close: true, focus: 'natural' };
   if (back) return at === 'first' || at === 'only' ? { close: true, focus: hasOpener ? 'opener' : 'natural' } : null;
   if (at === 'last' || at === 'only') return { close: true, focus: place === 'portal' && hasOpener ? 'after-opener' : 'natural' };
   return null;
 }
 
-/** Where focus is, from how many of the popup's stops come before and after it (`inPopup`: it's inside the popup). */
-export function focusAt(inPopup: boolean, onOpener: boolean, before: number, after: number): FocusAt {
-  if (!inPopup) return onOpener ? 'opener' : 'outside';
+/**
+ * Where focus is, from how many of the popup's stops come before and after it (`inPopup`: it's
+ * inside the popup; `onNothing`: on no element, with what opened the popup known).
+ */
+export function focusAt(inPopup: boolean, onOpener: boolean, before: number, after: number, onNothing = false): FocusAt {
+  if (!inPopup) return onOpener ? 'opener' : onNothing ? 'nowhere' : 'outside';
   if (!before && !after) return 'only';
   return !before ? 'first' : !after ? 'last' : 'inside';
 }
@@ -59,21 +71,37 @@ export const KEY_OPEN_MS = 1000;
  * The last thing the user pressed: a key or the pointer (`kind`), and when (ms). A menu opening
  * within KEY_OPEN_MS of a key press, with no pointer press since, was opened from the keyboard.
  */
-export function createInputMemory() {
-  let last: { kind: 'key' | 'pointer'; at: number } | null = null;
+export function createInputMemory<T = unknown>() {
+  let last: { kind: 'key' | 'pointer'; at: number; target?: T } | null = null;
   return {
-    seen: (kind: 'key' | 'pointer', at: number) => {
-      last = { kind, at };
+    seen: (kind: 'key' | 'pointer', at: number, target?: T) => {
+      last = { kind, at, target };
     },
     fromKeys: (now: number) => !!last && last.kind === 'key' && now - last.at <= KEY_OPEN_MS,
+    /** What a press just now pressed (a popup opening now was opened by it), else nothing */
+    pressed: (now: number): T | undefined => (last && last.kind === 'pointer' && now - last.at <= KEY_OPEN_MS ? last.target : undefined),
   };
 }
 
-const inputs = createInputMemory();
+/**
+ * What a popup goes back to (see the top of this file), from what it was given (`given`; a
+ * function or ref that has none gives null), what was pressed to open it (`pressed`: its nearest
+ * control, or the pressed thing itself), and what had focus as it opened (`focused`). Each must
+ * still be in the page and outside the popup (`usable`).
+ */
+export function pickOpener<T>(
+  { given, pressedControl, pressedThing, focused }: { given?: T | null; pressedControl?: T | null; pressedThing?: T | null; focused?: T | null },
+  usable: (el: T) => boolean
+): { el: T; borrowed: boolean } | null {
+  for (const el of [given, pressedControl, focused]) if (el && usable(el)) return { el, borrowed: false };
+  return pressedThing && usable(pressedThing) ? { el: pressedThing, borrowed: true } : null;
+}
+
+const inputs = createInputMemory<Element>();
 if (typeof window !== 'undefined') {
   // (Capture: a handler that stops a key or a press still counts)
   window.addEventListener('keydown', (e) => !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key) && inputs.seen('key', performance.now()), true);
-  window.addEventListener('pointerdown', () => inputs.seen('pointer', performance.now()), true);
+  window.addEventListener('pointerdown', (e) => inputs.seen('pointer', performance.now(), e.target instanceof Element ? e.target : undefined), true);
 }
 
 const STOPS = 'a[href], area[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable]:not([contenteditable="false"])';
@@ -94,14 +122,71 @@ export function tabStops(box: Element): HTMLElement[] {
   return stops.filter((el) => !(el instanceof HTMLInputElement && el.type === 'radio' && el.name) || radios.get(el.name) === el);
 }
 
+/** The nearest control at or around `el` that focus can go to (a disabled one can't) */
+function controlAt(el: Element | undefined): HTMLElement | null {
+  const c = el?.closest<HTMLElement>(STOPS);
+  return c && !(c as HTMLButtonElement).disabled ? c : null;
+}
+
+/**
+ * Focus `el`, which may be no control at all (a ruler pressed to open its menu): it takes focus for
+ * the moment (tabindex -1, gone as focus leaves), so Tab goes on from its place in the page.
+ */
+function focusOn(el: HTMLElement, borrowed: boolean) {
+  if (borrowed && !el.hasAttribute('tabindex')) {
+    el.setAttribute('tabindex', '-1');
+    el.addEventListener('blur', () => el.removeAttribute('tabindex'), { once: true });
+  }
+  el.focus({ preventScroll: true });
+}
+
 /** Where focus (`active`) is, seen from the popup `box` opened by `opener`. */
 function whereIs(box: Element, opener: Element | null, active: Element | null): FocusAt {
   const inPopup = !!active && box.contains(active);
-  if (!inPopup || !active) return focusAt(false, !!active && !!opener?.contains(active), 0, 0);
+  if (!inPopup || !active) return focusAt(false, !!active && !!opener?.contains(active), 0, 0, !!opener && (!active || active === document.body));
   const stops = tabStops(box).filter((s) => s !== active);
   const before = stops.filter((s) => !s.contains(active) && active.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_PRECEDING).length;
   const after = stops.filter((s) => active.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING).length;
   return focusAt(true, false, before, after);
+}
+
+/**
+ * Where the arrow keys go in a menu: its items in rows (a group of them side by side, such as the
+ * track menu's colours, is one row; every other item is a row of its own). Up and Down move a row
+ * (onto a row's chosen item, else its first; round from the end), Left and Right along a row,
+ * Home and End to the first and last row. `rows`: each row's item count; `chosen`: each row's
+ * chosen item (-1: none). From item `item` of row `row`; null: the key isn't the menu's.
+ */
+export function menuArrow(rows: number[], chosen: number[], row: number, item: number, key: string): { row: number; item: number } | null {
+  const land = (r: number) => ({ row: r, item: chosen[r] >= 0 ? chosen[r] : 0 });
+  const n = rows.length;
+  if (!n) return null;
+  if (key === 'ArrowDown') return land((row + 1) % n);
+  if (key === 'ArrowUp') return land((row - 1 + n) % n);
+  if (key === 'Home') return land(0);
+  if (key === 'End') return land(n - 1);
+  if (key === 'ArrowRight' || key === 'ArrowLeft') return rows[row] > 1 ? { row, item: (item + (key === 'ArrowRight' ? 1 : -1) + rows[row]) % rows[row] } : null;
+  return null;
+}
+
+/** A menu's items (enabled, shown) in rows, as menuArrow takes them: a [role="group"] of items is one row. */
+function menuRows(box: Element): HTMLElement[][] {
+  const items = [...box.querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter((i) => !(i as HTMLButtonElement).disabled && i.getClientRects().length);
+  const rows: HTMLElement[][] = [];
+  let group: Element | null = null;
+  for (const i of items) {
+    const g = i.closest('[role="group"]');
+    if (g && box.contains(g) && g === group) rows[rows.length - 1].push(i);
+    else rows.push([i]);
+    group = g && box.contains(g) ? g : null;
+  }
+  return rows;
+}
+
+/** The item a menu opened from the keyboard starts on: its first plain item (not a colour or a check), else its first stop. */
+function firstItem(box: Element): HTMLElement | undefined {
+  const rows = menuRows(box);
+  return rows.find((r) => r.length === 1 && r[0].getAttribute('role') === 'menuitem')?.[0] ?? rows[0]?.[0] ?? tabStops(box)[0];
 }
 
 interface PopupKeysOptions {
@@ -109,7 +194,7 @@ interface PopupKeysOptions {
   open?: boolean;
   /** Close it */
   onClose: () => void;
-  /** The control that opened it; default: whatever had focus when it opened */
+  /** The control that opened it; default: what was pressed to open it, else whatever had focus when it opened (see pickOpener) */
   opener?: RefObject<HTMLElement | null> | (() => HTMLElement | null | undefined);
   place: PopupPlace;
   /**
@@ -123,11 +208,13 @@ interface PopupKeysOptions {
 export function usePopupKeys(ref: RefObject<HTMLElement | null>, { open = true, onClose, opener, place, menu = false }: PopupKeysOptions): void {
   // What had focus as it opened, and whether a key opened it (read on the first render, before anything in it takes focus)
   const focusedAtOpen = useRef<Element | null>(null);
+  const pressedAtOpen = useRef<Element | undefined>(undefined);
   const keyOpened = useRef(false);
   const wasOpen = useRef(false);
   if (open && !wasOpen.current && typeof document !== 'undefined') {
     focusedAtOpen.current = document.activeElement;
     keyOpened.current = inputs.fromKeys(performance.now());
+    pressedAtOpen.current = inputs.pressed(performance.now());
   }
   wasOpen.current = open;
   // (The latest of each, for the handlers set up once per opening)
@@ -139,13 +226,20 @@ export function usePopupKeys(ref: RefObject<HTMLElement | null>, { open = true, 
   useEffect(() => {
     const box = ref.current;
     if (!open || !box) return;
-    const openerNow = (): HTMLElement | null => {
+    const usable = (el: Element): boolean => el instanceof HTMLElement && el !== document.body && el.isConnected && !box.contains(el);
+    const found = () => {
       const given = latest.current.opener;
-      const el = typeof given === 'function' ? given() : given ? given.current : focusedAtOpen.current;
-      return el instanceof HTMLElement && el !== document.body && el.isConnected && !box.contains(el) ? el : null;
+      const pressed = pressedAtOpen.current;
+      const thing = pressed instanceof HTMLElement ? pressed : pressed?.parentElement;
+      return pickOpener<Element>(
+        { given: typeof given === 'function' ? given() : given?.current, pressedControl: controlAt(pressed), pressedThing: thing, focused: focusedAtOpen.current },
+        usable
+      ) as { el: HTMLElement; borrowed: boolean } | null;
     };
+    const openerNow = (): HTMLElement | null => found()?.el ?? null;
+    const backTo = (o: HTMLElement) => focusOn(o, !!found()?.borrowed);
     const close = () => latest.current.onClose();
-    if (menu && keyOpened.current && !box.contains(document.activeElement)) tabStops(box)[0]?.focus({ preventScroll: true });
+    if (menu && keyOpened.current && !box.contains(document.activeElement)) firstItem(box)?.focus({ preventScroll: true });
 
     // A Tab is moving focus on (as the browser takes it): the popup closes if it lands outside
     let tabbing = 0;
@@ -158,13 +252,22 @@ export function usePopupKeys(ref: RefObject<HTMLElement | null>, { open = true, 
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
-      if (menu && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && active && box.contains(active)) {
+      if (menu && active && box.contains(active) && ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
         // (Only from an item: a number box in the menu keeps its arrows)
-        const items = [...box.querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter((i) => !(i as HTMLButtonElement).disabled && i.getClientRects().length);
-        const at = items.indexOf(active as HTMLElement);
-        if (at < 0) return;
+        const rows = menuRows(box);
+        const row = rows.findIndex((r) => r.includes(active as HTMLElement));
+        if (row < 0) return;
+        const chosen = rows.map((r) => r.findIndex((i) => i.getAttribute('aria-checked') === 'true'));
+        const to = menuArrow(
+          rows.map((r) => r.length),
+          chosen,
+          row,
+          rows[row].indexOf(active as HTMLElement),
+          e.key
+        );
+        // (The page never scrolls under a menu: that would close it)
         e.preventDefault();
-        items[(at + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+        if (to) rows[to.row][to.item]?.focus();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -182,13 +285,17 @@ export function usePopupKeys(ref: RefObject<HTMLElement | null>, { open = true, 
         }
       } else if (move.focus === 'opener' && o) {
         e.preventDefault();
-        o.focus();
+        backTo(o);
         close();
         return;
       } else if (move.focus === 'after-opener' && o) {
-        // The browser's Tab goes on from the opener: to the stop after it
-        o.focus();
+        // To the stop after the opener, as the browser's Tab from it would go. (Found here: the
+        // browser's own Tab is lost when it starts from a select that closing the popup took away)
+        e.preventDefault();
+        const next = tabStops(document.body).find((stop) => !box.contains(stop) && stop !== o && !!(o.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING));
         close();
+        if (next) next.focus();
+        else backTo(o);
         return;
       }
       window.clearTimeout(tabbing);
@@ -203,7 +310,8 @@ export function usePopupKeys(ref: RefObject<HTMLElement | null>, { open = true, 
       // A menu the keyboard opened gives focus back as it closes, unless something else took it
       if (menu && keyOpened.current) {
         const now = document.activeElement;
-        if (!now || now === document.body || box.contains(now)) openerNow()?.focus({ preventScroll: true });
+        const o = !now || now === document.body || box.contains(now) ? found() : null;
+        if (o) focusOn(o.el, o.borrowed);
       }
     };
     // (Set up for each opening; the latest onClose and opener are read through `latest`)

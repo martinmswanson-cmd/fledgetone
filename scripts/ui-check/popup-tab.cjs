@@ -12,6 +12,9 @@
 //   - every popover on the main screen (Recording, MIDI input, Fit tempo, Loop range, Markers,
 //     Performance) and in the piano roll (Drum groove, Groove feel, Roll painter, when shown)
 //   - the right-click menus (a clip's, a marker's, a track's, the ruler's) and the tempo editor
+//     (opened with the keyboard, and by a click on its flag, which leaves focus where it was)
+//   - the track menu's arrow keys (its items, and along its row of colours)
+//   - "Try it in a game", a modal dialog: Tab stays inside it, Esc gives focus back
 //
 //   npx vite --port 5200                 (in another terminal; restart it after editing src/)
 //   node scripts/ui-check/popup-tab.cjs
@@ -349,7 +352,89 @@ const SONG = {
   if (await page.locator(TEMPO).count()) {
     await leave('tempo editor (Shift+F10)', shiftF10(TEMPO), false, null);
     await leave('tempo editor (Shift+F10)', shiftF10(TEMPO), true, opener(TEMPO));
+    // Opened the usual way, a click on the flag (whose press keeps focus where it was, as it may
+    // be a drag), and with Enter on it: Tab on to the stop after the flag, Shift+Tab back on it
+    const tempoNext = await after(TEMPO)();
+    await leave('tempo editor (click)', byMouse(TEMPO), false, async () => tempoNext);
+    await leave('tempo editor (click)', byMouse(TEMPO), true, opener(TEMPO));
+    await leave('tempo editor (Enter)', byKeys(TEMPO), false, async () => tempoNext);
+    await leave('tempo editor (Enter)', byKeys(TEMPO), true, opener(TEMPO));
+    const METER = 'button[title^="The song\'s time signature:"]';
+    const meterNext = await after(METER)();
+    await leave('time signature editor (click)', byMouse(METER), false, async () => meterNext);
+    await leave('time signature editor (click)', byMouse(METER), true, opener(METER));
   } else step("tempo editor: the song's tempo flag is on the screen", false);
+
+  // The track menu from the keyboard: it starts on an item (not a colour), the arrows go up and
+  // down its items and along its row of colours, the page never scrolls under it
+  {
+    await closeAll();
+    await page.locator(`${HEADER} button`).first().focus();
+    await key('Shift+F10');
+    await page.waitForTimeout(250);
+    const role = () => page.evaluate(() => document.activeElement?.getAttribute('role'));
+    let t = await state();
+    step('track menu (Shift+F10): focus on its first item, not a colour', t.inPopup && (await role()) === 'menuitem', JSON.stringify(t));
+    const first = t.focus;
+    const y0 = t.scrollY;
+    await key('ArrowDown');
+    await page.waitForTimeout(120);
+    t = await state();
+    step('track menu: ArrowDown moves to the next item, the menu stays', t.inPopup && t.focus !== first && t.popups.length === 1 && t.scrollY === y0, JSON.stringify(t));
+    await key('ArrowUp');
+    await key('ArrowUp');
+    await page.waitForTimeout(120);
+    t = await state();
+    step('track menu: ArrowUp from its first item goes to the colours', t.inPopup && (await role()) === 'menuitemradio' && t.scrollY === y0, JSON.stringify(t));
+    const colour = t.focus;
+    await key('ArrowRight');
+    await page.waitForTimeout(100);
+    t = await state();
+    step('track menu: ArrowRight goes along the colours', t.inPopup && (await role()) === 'menuitemradio' && t.focus !== colour && t.scrollY === y0, JSON.stringify(t));
+    await key('ArrowDown');
+    await page.waitForTimeout(100);
+    t = await state();
+    step('track menu: ArrowDown off the colours goes back to its first item', t.inPopup && t.focus === first, JSON.stringify(t));
+    await key('End');
+    await page.waitForTimeout(100);
+    t = await state();
+    step('track menu: End goes to its last item, the page stays', t.inPopup && t.scrollY === y0 && t.popups.length === 1, JSON.stringify(t));
+    await closeAll();
+  }
+
+  // "Try it in a game": a modal dialog (focus kept inside it, never on the dimmed page under it),
+  // closed with Esc, focus back on what opened it. (The rhythm game: headless Chromium has no WebGL)
+  {
+    await closeAll();
+    await page.evaluate(() => localStorage.setItem('fledgetone.tryOutGame', 'rhythm'));
+    await page.locator('#menu-game').focus();
+    await key('Enter');
+    await page.waitForTimeout(200);
+    for (let i = 0; i < 40; i++) {
+      if (/Try it in a game/.test(await page.evaluate(() => document.activeElement?.textContent || ''))) break;
+      await key('ArrowDown');
+    }
+    await key('Enter');
+    await page.waitForTimeout(800);
+    const game = () => page.evaluate(() => {
+      const d = [...document.querySelectorAll('[role="dialog"]')].find((x) => x.getAttribute('aria-label') === 'Try it in a game');
+      return d ? { modal: d.getAttribute('aria-modal'), inside: d.contains(document.activeElement) } : null;
+    });
+    const g = await game();
+    step('game overlay: a modal dialog with focus inside it', !!g && g.modal === 'true' && g.inside, JSON.stringify(g));
+    let left = 0;
+    for (const k of ['Tab', 'Shift+Tab'])
+      for (let i = 0; i < 25; i++) {
+        await key(k);
+        await page.waitForTimeout(30);
+        const now = await game();
+        if (!now || !now.inside) left++;
+      }
+    step('game overlay: 25 Tabs and 25 Shift+Tabs never leave it', left === 0, `${left} left it`);
+    await key('Escape');
+    await page.waitForTimeout(300);
+    step('game overlay: Esc closes it, focus back on the Game menu button', !(await game()) && (await same(await focused(), await page.locator('#menu-game').elementHandle())), JSON.stringify(await state()));
+  }
 
   // --- The piano roll's popovers (open the clip's editor first) ---
   await closeAll();
