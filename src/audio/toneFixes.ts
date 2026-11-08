@@ -6,7 +6,7 @@ import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseChannel } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
-import { ATTACK_TRIES, attackRoom, soundLead } from './soundLead';
+import { ATTACK_TRIES, AttackMoved, attackRoom, blockShort, envelopeExactness, exactlyAt, settledAt, soundLead } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -276,7 +276,12 @@ oneShotProto._startGain = function (time, gain) {
  * struck again a callback past the clock as it is then: a little late, but whole. A release that
  * would come before a moved attack, or within as long again after it, moves with it (so it can't
  * cut the attack off); a later one is left where it is. An export's clock waits for its notes, so
- * nothing changes there.
+ * nothing changes there. The envelopes of a note struck with strikeExactly (soundLead.ts) keep
+ * their time while the clock is still a block short of it, as they're set and once they're set
+ * (see blockShort), as a note of plain Web Audio nodes does: its oscillators wait for it there,
+ * and an attack struck again a moment later would set out a second time over them. Found
+ * otherwise before its first envelope is set, it throws AttackMoved instead (see toneStart.ts
+ * attackAhead).
  */
 interface EnvelopeInside {
   context: Tone.BaseContext;
@@ -298,9 +303,13 @@ export { attackRoom, soundLead };
 envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
   const asked = this.toSeconds(time);
-  let at = Math.max(asked, attackRoom(this.context));
+  const room = attackRoom(this.context);
+  const exact = envelopeExactness();
+  // (The first of a note struck exactly: where its strike would still settle it, or not at all)
+  if (exact === 'first' && settledAt(this.context, asked) > asked) throw new AttackMoved(settledAt(this.context, asked));
+  let at = exact !== 'no' && blockShort(this.context, asked) ? asked : Math.max(asked, room);
   let result = triggerAttack.call(this, at, velocity);
-  for (let tries = 1; tries < ATTACK_TRIES && attackRoom(this.context) > at; tries++) {
+  for (let tries = 1; tries < ATTACK_TRIES && attackRoom(this.context) > at && !(exact !== 'no' && blockShort(this.context, at)); tries++) {
     at = attackRoom(this.context);
     result = triggerAttack.call(this, at, velocity);
   }
@@ -358,7 +367,8 @@ function strikeWhole(proto: { triggerAttack: Strike }, timeAt: number): void {
     if (this.context.isOffline || this._strikingAgain) return strike.apply(this, args);
     const asked = this.toSeconds(args[timeAt] as Tone.Unit.Time);
     const first = [...args];
-    first[timeAt] = Math.max(asked, attackRoom(this.context));
+    // (One struck exactly is settled where it comes, and says so first: see strikeExactly)
+    first[timeAt] = exactlyAt(this.context, asked) ?? Math.max(asked, attackRoom(this.context));
     this._strikingAgain = true;
     let result: unknown;
     try {
