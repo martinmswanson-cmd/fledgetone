@@ -16,23 +16,36 @@
  *
  * A note played by hand (a key, a pad, MIDI, note repeat, a preview) has no place in the song: it
  * keeps its time on the audio clock, so no two presses are quite alike, as a player's aren't.
+ *
+ * A recorded instrument's take is picked the same way: a song's note plays the take its turn gives
+ * it (takeTurns.ts, handed in with its place), a note played by hand the instrument's next.
  */
 
-/** The song's note being played now: the audio time it was asked for, and its place. */
-let playing: { at: number; place: number } | null = null;
+/** The song's note being played now: the audio time it was asked for, its place, and its notes' turns (see songTurn). */
+let playing: { at: number; place: number; turns?: ReadonlyMap<string, number> } | null = null;
 
 /**
  * Play (build) a note of the song asked for audio time `at` whose place in the song is `place`
- * (seconds from bar 1), so what's hashed for it is picked by its place (see placeOf).
+ * (seconds from bar 1), so what's hashed for it is picked by its place (see placeOf). `turns`: each
+ * of its notes' turn, by the name it's played as (see takeTurns.ts), for an instrument with takes.
  */
-export function atSongPlace<T>(at: number, place: number, play: () => T): T {
+export function atSongPlace<T>(at: number, place: number, play: () => T, turns?: ReadonlyMap<string, number>): T {
   const was = playing;
-  playing = { at, place };
+  playing = turns ? { at, place, turns } : { at, place };
   try {
     return play();
   } finally {
     playing = was;
   }
+}
+
+/**
+ * The turn of `note` (by the name it's played as) while a song's note is played (atSongPlace): which
+ * of its takes a recorded instrument plays (see takeTurns.ts). Undefined for a note played by hand,
+ * which plays the instrument's next take.
+ */
+export function songTurn(note: string): number | undefined {
+  return playing?.turns?.get(note);
 }
 
 /**
@@ -46,13 +59,14 @@ export function placeOf(time: number): number {
 
 /**
  * Build a song's note that has been moved `by` seconds later than it was asked for (struck live
- * once the page had been held up past it: native.ts strikeLive), its times still counted from
- * where it was asked for, so it's picked as it would have been on time.
+ * once the page had been held up past it: native.ts strikeLive; a Tone synth's note or drum hit,
+ * toneFixes.ts and monotonic.ts; a stinger's note handed out late, stingerPlayer.ts), its times
+ * still counted from where it was asked for, so it's picked as it would have been on time.
  */
 export function struckLater<T>(by: number, build: () => T): T {
   if (!playing || !(by > 0)) return build();
   const was = playing;
-  playing = { at: was.at + by, place: was.place };
+  playing = { ...was, at: was.at + by };
   try {
     return build();
   } finally {

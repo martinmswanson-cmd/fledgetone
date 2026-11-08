@@ -12,7 +12,9 @@ import { defaultTrackFx, durationToBars } from '../store/timelineTypes';
 import { maxOf, minOf } from '../support/minMax';
 import { barToSeconds, barToTicks, getAudibleMoment, getLiveTempo, getSongMeter, ticksToBar } from './transport';
 import { nextMeterLine, onMeterLine, secondsBetween } from './tempoMap';
-import { atSongPlace } from './songPlace';
+import { atSongPlace, struckLater } from './songPlace';
+import { songTurns } from './takeTurns';
+import { playsTakesInTurn } from './noteMemory';
 
 /**
  * Stingers out loud: fired over the music in the Game preview, on the next beat or bar the way a
@@ -123,6 +125,27 @@ const secondsOf = (n: Pick<NoteEvent, 'duration'>, bpm: number) => (durationToBa
  */
 const placeIn = (startOffset: number, bpm: number) => barToSeconds(ticksToBar(barToTicks(1 + startOffset)), { bpm, points: [] });
 
+/**
+ * Each of `notes`' turn on an instrument of `key` that plays takes in turn, as its render plays
+ * them from bar 1 (see takeTurns.ts): the preview plays the takes the file has. Null for one without takes.
+ */
+function turnsIn(key: InstrumentKey, notes: readonly NoteEvent[]): Map<NoteEvent, number> | null {
+  if (!playsTakesInTurn(key)) return null;
+  const turns = songTurns(notes.map((n) => ({ tick: barToTicks(1 + n.startOffset), note: n.note, velocity: n.velocity })), INSTRUMENTS[key].samples?.layers ?? [1]);
+  return new Map(notes.map((n, i) => [n, turns[i]]));
+}
+
+/** A group of notes' turns by name (see turnsIn), for atSongPlace. */
+function turnsOf(group: readonly NoteEvent[], turns: Map<NoteEvent, number> | null): Map<string, number> | undefined {
+  if (!turns) return undefined;
+  const out = new Map<string, number>();
+  for (const n of group) {
+    const t = turns.get(n);
+    if (t !== undefined && !out.has(n.note)) out.set(n.note, t);
+  }
+  return out;
+}
+
 /** Notes handed out by handOut: called off with `cancel` (see there). */
 export interface HandedNotes {
   /** Call off the notes not handed out yet, and let go of the ones that were (see handOut). */
@@ -216,6 +239,7 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
     }
     const groups = [...byStart].sort((a, b) => a[0] - b[0]);
     const firstAt = groups.length ? groups[0][0] : Infinity;
+    const turns = turnsIn(key, notes);
     let i = 0;
     const pump = () => {
       if (cancelled) return;
@@ -227,7 +251,9 @@ export function handOut(key: InstrumentKey, notes: readonly NoteEvent[], start: 
         const lateBy = now - at;
         if (lateBy > 0 && lateBy > lateAllowance()) continue;
         const playing = group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm, Math.max(0, lateBy)) }));
-        atSongPlace(at, placeIn(group[0].startOffset, bpm), () => p.inst.play(playing, Math.max(at, now)));
+        // (Handed out late, at once: picked from where it was asked for, as in the file, see struckLater)
+        const when = Math.max(at, now);
+        atSongPlace(at, placeIn(group[0].startOffset, bpm), () => struckLater(when - at, () => p.inst.play(playing, when)), turnsOf(group, turns));
         handed = true;
       }
       if (i >= groups.length) return finish();
@@ -309,12 +335,17 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, bpm: 
     if (group) group.push(n);
     else byStart.set(n.startOffset, [n]);
   }
+  const turns = turnsIn(stinger.instrumentKey, notes);
   for (const [at, group] of byStart)
-    atSongPlace(start + at * secondsPerBar, placeIn(at, bpm), () =>
-      p.inst.play(
-        group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
-        start + at * secondsPerBar
-      )
+    atSongPlace(
+      start + at * secondsPerBar,
+      placeIn(at, bpm),
+      () =>
+        p.inst.play(
+          group.map((n) => ({ ...n, duration: lengthAt(n.duration, bpm) })),
+          start + at * secondsPerBar
+        ),
+      turnsOf(group, turns)
     );
   p.busyUntil = Math.max(before, start + (notes.length ? maxOf(notes.map((n) => n.startOffset * secondsPerBar + secondsOf(n, bpm))) : 0) + RING_ON);
   return start;

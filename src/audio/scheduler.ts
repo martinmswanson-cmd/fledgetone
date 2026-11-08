@@ -7,7 +7,7 @@
 import { isDropTrack } from '../store/dropMoves';
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
-import { applyTempoAt, barToSeconds, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
+import { applyTempoAt, barToSeconds, barToTicks, getLiveTempo, getSongMeter, noteLateness, scheduleTempo, setLiveTempo, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument, VoiceControl } from './instruments';
@@ -21,6 +21,8 @@ import { clipHasConditions, clipRuns, isConditional, notePlays, ownClipId, passO
 import { INSTRUMENTS, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
 import { atSongPlace } from './songPlace';
+import { songTurns, type TurnNote } from './takeTurns';
+import { playsTakesInTurn } from './noteMemory';
 import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteStepper, type NoteStepper } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
@@ -62,6 +64,8 @@ interface NoteGroup {
    */
   conds?: Array<Pick<NoteEvent, 'chance' | 'cond'> | null>;
   clipId?: string;
+  /** On a track whose instrument plays takes in turn: each note's turn, by its name (see takeTurns.ts) */
+  turns?: ReadonlyMap<string, number>;
 }
 
 /** A track's Human settings while they're on, and whether its notes can be detuned. */
@@ -70,6 +74,21 @@ interface HumanFeel {
   pitched: boolean;
   /** Notes that start together stay together (one drift for the group) */
   together: boolean;
+}
+
+/**
+ * The velocity each of a group's notes plays at under the Human insert `f`: each its own drift,
+ * or, together, the first note's drift for all (see playGroup). Also what a note's turn counts its
+ * loudness by (see takeTurns.ts), so a hit the insert takes into the next loudness takes its turn
+ * there.
+ */
+function humanVelocities(group: Pick<NoteGroup, 'notes' | 'seeds'>, f: HumanFeel): number[] {
+  const drifted = (n: PlayableNote, seed: number) => Math.max(0.05, Math.min(1, n.velocity * noteDrift(seed, f.human).gain));
+  if (!f.together) return group.notes.map((n, i) => drifted(n, group.seeds[i]));
+  const first = drifted(group.notes[0], group.seeds[0]);
+  // (A silent first note: the others keep their own velocities)
+  const gain = group.notes[0].velocity > 0 ? first / group.notes[0].velocity : 1;
+  return group.notes.map((n, i) => (i === 0 ? first : Math.max(0.05, Math.min(1, n.velocity * gain))));
 }
 
 /**
@@ -1107,25 +1126,35 @@ export function createClipSchedule(
   const playGroup = (instrument: TrackInstrument, group: NoteGroup, time: number, place: number) => {
     const f = feel.get(group.trackId);
     if (!f) {
-      atSongPlace(time, place, () => playNotes(group.trackId, instrument, group.notes, time));
+      atSongPlace(time, place, () => playNotes(group.trackId, instrument, group.notes, time), group.turns);
       return;
     }
-    const drifted = (n: PlayableNote, seed: number) => {
+    /** The notes' turns under the names they play as (the Human insert may detune them) */
+    const turnsAs = (played: readonly PlayableNote[], from: readonly PlayableNote[]) => {
+      const turns = group.turns;
+      if (!turns || played.every((n, i) => n.note === from[i].note)) return turns;
+      const out = new Map<string, number>();
+      played.forEach((n, i) => {
+        const t = turns.get(from[i].note);
+        if (t !== undefined && !out.has(n.note)) out.set(n.note, t);
+      });
+      return out;
+    };
+    const velocities = humanVelocities(group, f);
+    const drifted = (n: PlayableNote, seed: number, velocity: number) => {
       const drift = noteDrift(seed, f.human);
       const note = f.pitched ? detuned(n.note, drift.cents, (name) => Tone.Frequency(name).toFrequency()) : n.note;
-      return { note: { ...n, note, velocity: Math.max(0.05, Math.min(1, n.velocity * drift.gain)) }, late: drift.late };
+      return { note: { ...n, note, velocity }, late: drift.late };
     };
     if (f.together) {
-      const first = drifted(group.notes[0], group.seeds[0]);
-      // (A silent first note: the others keep their own velocities)
-      const gain = group.notes[0].velocity > 0 ? first.note.velocity / group.notes[0].velocity : 1;
-      const notes = group.notes.map((n, i) => (i === 0 ? first.note : { ...drifted(n, group.seeds[0]).note, velocity: Math.max(0.05, Math.min(1, n.velocity * gain)) }));
-      atSongPlace(time + first.late, place + first.late, () => playNotes(group.trackId, instrument, notes, time + first.late));
+      const first = drifted(group.notes[0], group.seeds[0], velocities[0]);
+      const notes = group.notes.map((n, i) => (i === 0 ? first.note : drifted(n, group.seeds[0], velocities[i]).note));
+      atSongPlace(time + first.late, place + first.late, () => playNotes(group.trackId, instrument, notes, time + first.late), turnsAs(notes, group.notes));
       return;
     }
     group.notes.forEach((n, i) => {
-      const d = drifted(n, group.seeds[i]);
-      atSongPlace(time + d.late, place + d.late, () => playNotes(group.trackId, instrument, [d.note], time + d.late));
+      const d = drifted(n, group.seeds[i], velocities[i]);
+      atSongPlace(time + d.late, place + d.late, () => playNotes(group.trackId, instrument, [d.note], time + d.late), turnsAs([d.note], [n]));
     });
   };
 
@@ -1143,10 +1172,11 @@ export function createClipSchedule(
       if (!all) return;
       // Notes that sit this pass out don't play, wake their track or pump anything
       const groups = all.some((g) => g.conds) ? all.map((g) => gate(g, tick)).filter((g): g is NoteGroup => !!g) : all;
-      const songLate = swingDelay(swing(), transport.bpm.value, transport.PPQ);
-      const bpm = transport.bpm.value;
-      const swingOf = (g: NoteGroup) => (!g.swung ? 0 : g.rowSwing ? swingDelay(g.rowSwing.swing, bpm, transport.PPQ, g.rowSwing.grid) : g.groove ? swingDelay(g.groove.swing, bpm, transport.PPQ, g.groove.grid) : songLate);
-      const lateOf = (g: NoteGroup) => (straight.has(g.trackId) ? 0 : swingOf(g) + (g.shift ? (g.shift * 15) / bpm : 0));
+      // How late swing and a row's shift play a note: by the tempo the map has at its tick, the same
+      // live and in every export, in a tempo glide too (see noteLateness)
+      const songSwing = swing();
+      const tempo = tempoOf();
+      const lateOf = (g: NoteGroup) => (straight.has(g.trackId) ? 0 : noteLateness(g, tick, songSwing, tempo, transport.PPQ));
       // Bends first, so notes starting on the same tick start bent; a clip's end before the
       // next clip's start, so the next clip's bend wins
       for (const ends of [true, false]) {
@@ -1197,8 +1227,9 @@ export function createClipSchedule(
         // One ringing on with its bend lets go of it (see backBefore)
         else if (instrument.bend) backBefore(trackId, instrument, tick, time);
         // (The song's own notes, live: not ones played from outside it, see onLiveNote)
-        if (live) songNotes(() => safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time, place + late)));
-        else safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time, place + late));
+        const played = { trackId, notes, seeds, swung, ...(group.turns ? { turns: group.turns } : {}) };
+        if (live) songNotes(() => safely(() => playGroup(instrument, played, time, place + late)));
+        else safely(() => playGroup(instrument, played, time, place + late));
       }
 
       if (onActivity) {
@@ -1233,6 +1264,9 @@ export function createClipSchedule(
       const nextByTick = new Map<number, NoteGroup[]>();
       const trackById = new Map(tracks.map((t) => [t.id, t]));
       const roleMemo = new Map<string, string>();
+      // The tracks whose instrument plays takes in turn, and their notes, for each note's turn (see takeTurns.ts)
+      const takers = new Map<string, { key: InstrumentKey; notes: TurnNote[]; groups: NoteGroup[] }>();
+      for (const t of tracks) if (playsTakesInTurn(t.instrumentKey)) takers.set(t.id, { key: t.instrumentKey, notes: [], groups: [] });
       for (const clip of clips) {
         if (!trackIds.has(clip.trackId)) continue;
         const prev = entries.get(clip.id);
@@ -1240,11 +1274,35 @@ export function createClipSchedule(
         const meter = role ? meterOf() : undefined;
         const entry = prev && prev.role === role && prev.meter === meter && sameNotes(prev.clip, clip) ? prev : newEntry(clip, role, meter);
         nextEntries.set(clip.id, entry);
+        const taker = takers.get(clip.trackId);
+        const human = taker ? feel.get(clip.trackId) : undefined;
         for (const [tick, group] of entry.groups) {
           const list = nextByTick.get(tick);
           if (list) list.push(group);
           else nextByTick.set(tick, [group]);
+          if (!taker) {
+            if (group.turns) group.turns = undefined;
+          } else if (!group.pitch && !group.cc && group.notes.length) {
+            // (each at the velocity it plays at: the Human insert's drift in it)
+            const velocities = human ? humanVelocities(group, human) : null;
+            group.notes.forEach((n, i) => {
+              // (a note begun again part way through, by a render, counts where it really begins)
+              const from = (n as { heldFrom?: number }).heldFrom;
+              taker.notes.push({ tick: from !== undefined ? barToTicks(from) : tick, note: n.note, velocity: velocities?.[i] ?? n.velocity });
+              taker.groups.push(group);
+            });
+          }
         }
+      }
+      for (const { key, notes, groups } of takers.values()) {
+        const turns = songTurns(notes, INSTRUMENTS[key]?.samples?.layers ?? [1]);
+        const of = new Map<NoteGroup, Map<string, number>>();
+        groups.forEach((g, i) => {
+          let m = of.get(g);
+          if (!m) of.set(g, (m = new Map()));
+          if (!m.has(notes[i].note)) m.set(notes[i].note, turns[i]);
+        });
+        for (const [g, m] of of) g.turns = m;
       }
       entries = nextEntries;
       byTick = nextByTick;

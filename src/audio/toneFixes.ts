@@ -6,6 +6,7 @@ import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
+import { struckLater } from './songPlace';
 import { ATTACK_TRIES, AttackMoved, attackRoom, blockShort, envelopeExactness, exactlyAt, settledAt, soundLead } from './soundLead';
 
 /**
@@ -233,6 +234,17 @@ noiseProto._start = function (time) {
   }).connect(this.output);
   this._source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
 };
+/**
+ * Tone starts a burst asked for a time the clock has passed at the clock (a live note set late):
+ * a song's note's burst is still picked from where it was asked for (songPlace.ts struckLater),
+ * as it is in an export, whose clock waits for its notes.
+ */
+const noiseStarter = Tone.Noise.prototype as unknown as { start: (this: NoiseInside, time?: Tone.Unit.Time, offset?: Tone.Unit.Time, duration?: Tone.Unit.Time) => unknown };
+const startNoise = noiseStarter.start;
+noiseStarter.start = function (time, offset, duration) {
+  if (time === undefined || this.context.isOffline) return startNoise.call(this, time, offset, duration);
+  return struckLater(this.context.currentTime - this.toSeconds(time), () => startNoise.call(this, time, offset, duration));
+};
 
 /** Give a Tone.Noise (a NoiseSynth's `noise`) its key (see noiseKey, from the track's seed and which drum), and its buffer now rather than at its first hit. */
 export function seedToneNoise(noise: Tone.Noise, key: number): void {
@@ -288,7 +300,8 @@ oneShotProto._startGain = function (time, gain) {
  * (see blockShort), as a note of plain Web Audio nodes does: its oscillators wait for it there,
  * and an attack struck again a moment later would set out a second time over them. Found
  * otherwise before its first envelope is set, it throws AttackMoved instead (see toneStart.ts
- * attackAhead).
+ * attackAhead). A song's note moved later this way is picked as it would have been on time (a
+ * NoiseSynth's burst from where it was asked for, as in an export: songPlace.ts struckLater).
  */
 interface EnvelopeInside {
   context: Tone.BaseContext;
@@ -378,8 +391,10 @@ function strikeWhole(proto: { triggerAttack: Strike }, timeAt: number): void {
     first[timeAt] = exactlyAt(this.context, asked) ?? Math.max(asked, attackRoom(this.context));
     this._strikingAgain = true;
     let result: unknown;
+    // (Moved later: picked from where it was asked for, see struckLater)
+    const strikeAt = (strikeArgs: unknown[]) => struckLater((strikeArgs[timeAt] as number) - asked, () => strike.apply(this, strikeArgs));
     try {
-      result = strike.apply(this, first);
+      result = strikeAt(first);
       // (Struck again until it comes whole: a page held up once is often held up again)
       for (let tries = 1; tries < ATTACK_TRIES; tries++) {
         const struck = this.envelope?._struckAt;
@@ -389,7 +404,7 @@ function strikeWhole(proto: { triggerAttack: Strike }, timeAt: number): void {
         const again = [...args];
         again[timeAt] = attackRoom(this.context);
         try {
-          strike.apply(this, again);
+          strikeAt(again);
         } catch {
           // (Refused: the note as it came last)
           break;

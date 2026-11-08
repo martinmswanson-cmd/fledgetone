@@ -26,7 +26,8 @@ import { stretchOutline } from './resampler';
 import { createBendTimeline } from '../bendTimeline';
 import { maxOf } from '../../support/minMax';
 import { keepOn } from '../keepOn';
-import { noteJitter } from '../songPlace';
+import { noteJitter, songTurn } from '../songPlace';
+import { loudnessOf, takeOf } from '../takeTurns';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -1467,27 +1468,28 @@ type Slot = Map<number, AudioBuffer>;
 
 /**
  * The recordings a voice plays: one slot, or one per loudness and take (SampleSource.layers), and
- * which slot plays a note at a velocity.
+ * which slot plays a note at a velocity. A loudness's takes play in turn: a song's note the take its
+ * `turn` gives it (see takeTurns.ts), a note played by hand (no turn) the loudness's next.
  */
 interface SlotBank {
   slots: Slot[];
-  pick: (velocity: number) => Slot;
+  pick: (velocity: number, turn?: number) => Slot;
   /** The recordings at loudness `layer` (0 softest; its takes in turn), and how many loudnesses there are */
-  layer?: (layer: number) => Slot;
+  layer?: (layer: number, turn?: number) => Slot;
   layers?: number;
   /**
    * Near the velocity where one loudness hands over to the next: the two recordings and how far
    * across (0 all the softer, 1 all the louder), so a velocity just either side of the boundary
    * doesn't jump from one recording's tone to the other's. Null away from a boundary.
    */
-  blend?: (velocity: number) => { low: Slot; high: Slot; x: number } | null;
+  blend?: (velocity: number, turn?: number) => { low: Slot; high: Slot; x: number } | null;
   /** The recordings loaded first when nothing is known of the song (see loadQuick), for a note whose own slot has nothing near */
   fallback?: Slot;
   /** False while some recordings are still to load (then a note plays the nearest loaded anywhere) */
   complete?: () => boolean;
   /** A note is playing whose own recordings may not be loaded yet: load them now (`wheel`: the mod wheel's dynamics it plays under) */
   want?: (midi: number, velocity: number, wheel?: number) => void;
-  /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
+  /** The sounds of keys being let go (ReleaseSounds), their takes in turn (a song's note's by its turn) */
   releases?: { slots: Slot[]; db: number; decay?: number };
   /** The slots by loudness (then take) and the loudnesses' velocity tops, for making ahead what notes will play (prepare) */
   byLayer?: Slot[][];
@@ -1776,6 +1778,8 @@ function samplerVoice(
     rise?: number;
     /** The (first) recording it plays, for its release sound's level */
     buffer: AudioBuffer;
+    /** A song's note's turn (see takeTurns.ts), for its release sound's take */
+    turn?: number;
     /**
      * Played under the mod wheel's dynamics: the next louder recording sounds with it, the two
      * mixed by `soft` and `loud` (see dynamicsMix), `low` the softer one's loudness.
@@ -1909,11 +1913,13 @@ function samplerVoice(
   const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0, mode?: 'legato' | 'short', scale = 1): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
+    // (A song's note plays the take its turn gives it, the same live and in every export: see takeTurns.ts)
+    const turn = songTurn(note);
     // Under the mod wheel: the recording at the wheel's loudness and the next louder one
     const span = (bank.layers ?? 1) - 1;
     const low = dyn !== null && bank.layer && span > 0 ? Math.min(span - 1, Math.floor(dyn * span)) : -1;
     // Off the mod wheel, a velocity near a loudness boundary blends the two recordings either side
-    const blend = low < 0 && bank.blend ? bank.blend(velocity) : null;
+    const blend = low < 0 && bank.blend ? bank.blend(velocity, turn) : null;
     // Still loading: the note's own recordings are asked for, and meanwhile it plays the nearest
     // one loaded, so it's never silent
     const loading = bank.complete ? !bank.complete() : false;
@@ -1930,9 +1936,9 @@ function samplerVoice(
       }
       return best;
     };
-    let found = low >= 0 ? near(bank.layer!(low)) : blend ? near(blend.low) : near(bank.pick(velocity));
+    let found = low >= 0 ? near(bank.layer!(low, turn)) : blend ? near(blend.low) : near(bank.pick(velocity, turn));
     if (!found) return null;
-    let upper = low >= 0 ? near(bank.layer!(low + 1)) : blend ? near(blend.high) : null;
+    let upper = low >= 0 ? near(bank.layer!(low + 1, turn)) : blend ? near(blend.high) : null;
     // Two loudnesses whose nearest recordings are of different notes (a set recorded sparsely)
     // aren't blended: a note's recordings are lined up with each other, not with a neighbour's, so
     // blended they could partly cancel. The nearer loudness plays alone.
@@ -2017,6 +2023,7 @@ function samplerVoice(
       s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendNow, releasedAt: Infinity, looping: one.end === Infinity, buffer: main.buffer };
     }
     s.rise = rise;
+    if (turn !== undefined) s.turn = turn;
     if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
     // The same string picked again as it was let go: no damping sound (see comingReleases)
     // (only one not yet begun, so nothing already sounding is cut off)
@@ -2127,7 +2134,7 @@ function samplerVoice(
   const releaseSound = (s: Sounding, at: number) => {
     const rel = bank.releases;
     if (!rel || at >= s.until - 0.05) return;
-    const slot = rel.slots[releaseTurn++ % rel.slots.length];
+    const slot = rel.slots[s.turn !== undefined ? takeOf(s.turn, rel.slots.length) : releaseTurn++ % rel.slots.length];
     const found = slot && nearest(slot, Math.round(midiOfNote(s.note)));
     if (!found) return;
     const held = Math.max(0, at - s.start);
@@ -2414,19 +2421,18 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   const options = { attack: 0.004, release: def.samples?.release ?? 1 };
   const layers = def.samples?.layers ?? [1];
   // One slot per loudness and take (layered names are note|layer|take): a note plays the slot for
-  // its velocity, its takes in turn
+  // its velocity, its takes in turn (a song's note by its turn, see takeTurns.ts)
   const bank: Slot[][] = layers.map(() => []);
   for (const name of Object.keys(def.samples?.samples ?? {})) {
     const [, l = '0', t = '0'] = name.split('|');
     while (bank[Number(l)].length <= Number(t)) bank[Number(l)].push(new Map());
   }
   if (!bank[0].length) bank[0].push(new Map());
-  const turn = layers.map(() => 0);
-  const pick = (velocity: number) => {
-    const found = layers.findIndex((top) => velocity <= top + 1e-6);
-    const l = found < 0 ? layers.length - 1 : found;
-    return bank[l][turn[l]++ % bank[l].length];
-  };
+  /** Each loudness's next take for a note played by hand */
+  const next = layers.map(() => 0);
+  /** Loudness `l`'s take for a song's note on `turn` (see takeTurns.ts), else its next */
+  const layer = (l: number, turn?: number) => bank[l][turn !== undefined ? takeOf(turn, bank[l].length) : next[l]++ % bank[l].length];
+  const pick = (velocity: number, turn?: number) => layer(loudnessOf(velocity, layers), turn);
   const releaseSlots: Slot[] = [];
   const fill = (name: string, buffer: Tone.ToneAudioBuffer) => {
     const audio = buffer.get();
@@ -2455,11 +2461,10 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   const rel = def.samples?.releases;
   // A note whose own loudness has nothing near plays the first-loaded one's
   const firstSlot = bank[quickLayer(layers.length)]?.[0];
-  const layer = (l: number) => bank[l][turn[l]++ % bank[l].length];
-  const blend = (velocity: number) => {
+  const blend = (velocity: number, turn?: number) => {
     for (let l = 0; l < layers.length - 1; l++) {
       const edge = layers[l];
-      if (Math.abs(velocity - edge) < BLEND_ZONE) return { low: layer(l), high: layer(l + 1), x: (velocity - (edge - BLEND_ZONE)) / (2 * BLEND_ZONE) };
+      if (Math.abs(velocity - edge) < BLEND_ZONE) return { low: layer(l, turn), high: layer(l + 1, turn), x: (velocity - (edge - BLEND_ZONE)) / (2 * BLEND_ZONE) };
     }
     return null;
   };

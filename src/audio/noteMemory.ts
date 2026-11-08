@@ -6,10 +6,10 @@
  *
  * What the instruments remember from one note to the next (checked against each player):
  * - takes: a recorded instrument with more than one take of a note at some loudness plays them in
- *   turn, one count per loudness shared by every pitch (samplerManager.ts createSamplerVoice; a
- *   recorded drum kit counts per row and loudness, presets/sampledKit.ts), and its key-release
- *   sounds the same way. One note more or less moves every later note on the track onto the other
- *   take, to the end of the song.
+ *   turn, a song's note by its turn: the notes of its name and loudness before it on the track,
+ *   counted from the song's start (takeTurns.ts; samplerManager.ts createSamplerVoice,
+ *   presets/sampledKit.ts), its key-release sound with it. One note more or less moves every later
+ *   note of that name and loudness on the track onto the other take, to the end of the song.
  * - strum: a guitar's (banjo's, mandolin's) chord is strummed down or up after the strum before it
  *   (guitarStrum.ts), so one chord more or less can turn every later strum round.
  * - passes: a note that plays only on some passes (noteChance.ts) counts its clip's place in the

@@ -39,6 +39,7 @@ import { createDesignedKit } from './presets/designedKit';
 import type { DrumDesign } from '../store/drumDesign';
 import { SYNTH_KIT_DESIGNS } from '../store/synthKits';
 import { trackSeed } from './seededNoise';
+import { songTurn } from './songPlace';
 import type { Bass808Settings } from '../store/bass808';
 import { tuneNote } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
@@ -377,7 +378,9 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
   });
   const player: DrumPlayer = (row, time, v, r = 1) => {
     const { note, rate } = hitOf(row, r);
-    const opts = row === 'closedHat' ? { seconds: 0.14, rate } : { rate };
+    // (A song's hit plays the take its row's turn gives it: see takeTurns.ts)
+    const turn = songTurn(DRUM_NOTES[row]);
+    const opts = row === 'closedHat' ? { seconds: 0.14, rate, turn } : { rate, turn };
     // Still downloading: nothing (rather than the extras standing in for every row)
     if (!kit.loaded()) return;
     if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v, r);

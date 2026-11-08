@@ -4,14 +4,16 @@ import type { InstrumentKey } from '../instrumentCatalog';
 import { copySetFor, loadSamplesAt, noteJitter, recordedDuration, recordingWish } from '../samplers/samplerManager';
 import { connectOut, createBus, createVoiceSet, strikeLive } from './native';
 import { alwaysStereo } from '../nativeNodes';
+import { takeOf } from '../takeTurns';
 
 /**
  * A recorded drum kit: the recordings of each drum row (see the catalog's `samples`, keyed by the
  * rows' note names), played as they are (an open hat a little lower, and a hit whose bend sets its
  * pitch, from a copy made at that pitch: see pitchedCopies.ts). A kit recorded at several loudnesses and
  * takes ("<note>|<layer>|<take>", see SampleSource.layers) plays the recording for each hit's
- * velocity, its takes in turn, as a drummer never hits the same way twice. Rows the kit has no
- * recording of are left to the synthesized extras (kitExtras.ts).
+ * velocity, its takes in turn, as a drummer never hits the same way twice: a song's hit the take its
+ * turn in the song gives it (takeTurns.ts), the same live and in every export; a hit played by hand
+ * the row's next. Rows the kit has no recording of are left to the synthesized extras (kitExtras.ts).
  *
  * The velocity sets a hit's level (velocity squared, as below) and the loudness picks its tone, so
  * each row's loudnesses are played back at one level: their recordings' own levels vary (a soft
@@ -60,6 +62,7 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   /** Each row's gain per loudness (see layerGains) */
   let gains: Record<string, number[]> = {};
   const tops = INSTRUMENTS[key].samples?.layers ?? [1];
+  /** Each row's and loudness's next take for a hit played by hand */
   const turns = new Map<string, number>();
   let loaded = false;
   const copies = copySetFor(raw);
@@ -79,8 +82,11 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   });
   ready.catch(() => {}); // the loading badge reports it
 
-  /** The recording for a hit on `note` at `velocity`: its loudness's, the next take of it, and its gain. */
-  const pick = (note: string, velocity: number): { buffer: AudioBuffer; gain: number } | undefined => {
+  /**
+   * The recording for a hit on `note` at `velocity`: its loudness's, the take of it its `turn` gives
+   * (a song's hit: see takeTurns.ts) or else the next, and its gain.
+   */
+  const pick = (note: string, velocity: number, turn?: number): { buffer: AudioBuffer; gain: number } | undefined => {
     const row = buffers[note];
     if (!row) return undefined;
     let l = tops.findIndex((top) => velocity <= top + 1e-6);
@@ -92,15 +98,16 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     if (!row[l]) for (l = wanted; l < row.length - 1 && !row[l]; l++);
     const takes = (row[l] ?? []).filter(Boolean);
     if (!takes.length) return undefined;
+    if (turn !== undefined) return { buffer: takes[takeOf(turn, takes.length)], gain: gains[note]?.[l] ?? 1 };
     const k = `${note}|${l}`;
-    const turn = turns.get(k) ?? 0;
-    turns.set(k, turn + 1);
-    return { buffer: takes[turn % takes.length], gain: gains[note]?.[l] ?? 1 };
+    const next = turns.get(k) ?? 0;
+    turns.set(k, next + 1);
+    return { buffer: takes[next % takes.length], gain: gains[note]?.[l] ?? 1 };
   };
 
-  /** Play the row's recording; false if the kit has none. */
-  const hit = (note: string, time: number, velocity: number, opts: { seconds?: number; rate?: number } = {}): boolean => {
-    const picked = pick(note, velocity);
+  /** Play the row's recording; false if the kit has none. `turn`: a song's hit's (see pick). */
+  const hit = (note: string, time: number, velocity: number, opts: { seconds?: number; rate?: number; turn?: number } = {}): boolean => {
+    const picked = pick(note, velocity, opts.turn);
     if (!picked) return false;
     const { buffer } = picked;
     // (Live, struck again should the page be held up while it's built: see strikeLive)
