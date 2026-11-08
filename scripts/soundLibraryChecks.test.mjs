@@ -374,3 +374,72 @@ test("a sound's length is the decoded one when a file's figure is off; one withi
   stores.get('sound-meta').records.get(shaId(found)).seconds = 9;
   assert.equal((await L.importSoundFile(new Blob([found], { type: 'audio/wav' }), 'Found again.wav')).seconds, 0.1);
 });
+
+test('other bytes kept before the check, being read while the right ones are written, are not passed as checked', async () => {
+  const quiet = wav('quiet', 347);
+  const loud = wav('loud', 226);
+  const id = shaId(quiet);
+  // The planted copy's bytes take their time to read the first time (a big file): the right ones
+  // are written meanwhile, by the song that carries them
+  let open;
+  const gate = new Promise((resolve) => (open = resolve));
+  let reads = 0;
+  class SlowBlob extends Blob {
+    arrayBuffer() {
+      return reads++ === 0 ? gate.then(() => super.arrayBuffer()) : super.arrayBuffer();
+    }
+  }
+  stores.get('sound-meta').records.set(id, { id, name: 'Kick.wav', type: 'audio/wav', size: loud.length, seconds: 0.1 });
+  stores.get('sound-data').records.set(id, new SlowBlob([loud], { type: 'audio/wav' }));
+  const during = L.decodeSound(id, 16000).then(peakDb, () => 'refused');
+  await settle();
+  assert.equal((await L.importEmbeddedSounds([carried(id, quiet, 'Soft tone.wav')])).size, 0);
+  open();
+  // The decode under way never plays the planted bytes, and the next one at that rate plays the right ones
+  assert.notEqual(await during, 0);
+  assert.equal(peakDb(await L.decodeSound(id, 16000)), -24);
+});
+
+test("a file loaded where a song knows its bytes by the other id form brings that song's sound back", async () => {
+  // With crypto: a song made in a browser without it uses the FNV id, and nothing is kept under the SHA-256 one
+  const quiet = wav('quiet', 348);
+  L.ensureSound(fnvId(quiet));
+  await settle();
+  assert.equal(L.soundStatus(fnvId(quiet)), 'missing');
+  const meta = await L.importSoundFile(new Blob([quiet], { type: 'audio/wav' }), 'Tone.wav');
+  assert.equal(meta.id, fnvId(quiet));
+  assert.deepEqual((await kept(fnvId(quiet))).bytes, quiet);
+  assert.equal((await kept(shaId(quiet))).bytes, undefined, 'kept once');
+  await settle();
+  assert.equal(L.soundStatus(fnvId(quiet)), 'ready');
+  // Both known (kept under one, a song uses the other): kept under both, so either plays
+  const both = wav('quiet', 349);
+  await L.importSoundFile(new Blob([both], { type: 'audio/wav' }), 'Both.wav');
+  L.ensureSound(fnvId(both));
+  await settle();
+  assert.equal(L.soundStatus(fnvId(both)), 'missing');
+  const again = await L.importSoundFile(new Blob([both], { type: 'audio/wav' }), 'Both again.wav');
+  assert.equal(again.id, shaId(both));
+  assert.deepEqual((await kept(fnvId(both))).bytes, both);
+  await settle();
+  assert.equal(L.soundStatus(fnvId(both)), 'ready');
+  assert.equal(peakDb(await L.decodeSound(fnvId(both), 48000)), -24);
+});
+
+test("with no crypto, a file kept under its FNV id and used by a song by its SHA-256 id plays under both", async () => {
+  await withoutCrypto(async () => {
+    const quiet = wav('quiet', 350);
+    const first = await L.importSoundFile(new Blob([quiet], { type: 'audio/wav' }), 'Tone.wav');
+    assert.equal(first.id, fnvId(quiet));
+    // A song made where there is crypto uses the SHA-256 id: not in this browser yet
+    L.ensureSound(shaId(quiet));
+    await settle();
+    assert.equal(L.soundStatus(shaId(quiet)), 'missing');
+    const again = await L.importSoundFile(new Blob([quiet], { type: 'audio/wav' }), 'Tone again.wav');
+    assert.equal(again.id, fnvId(quiet));
+    assert.deepEqual((await kept(shaId(quiet))).bytes, quiet);
+    await settle();
+    assert.equal(L.soundStatus(shaId(quiet)), 'ready');
+    assert.equal(peakDb(await L.decodeSound(shaId(quiet), 48000)), -24);
+  });
+});

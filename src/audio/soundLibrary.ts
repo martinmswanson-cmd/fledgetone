@@ -10,7 +10,7 @@ import { createPeaks, fillPeaks } from './waveform';
 import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
 import { DspDropped, runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
-import { carriedBytes, checkSounds, isCheckedSound, isShaSoundId, isSoundOf, shaSoundId, soundIdOf } from './soundIds';
+import { carriedBytes, checkSounds, fnvSoundId, isCheckedSound, isShaSoundId, isSoundOf, shaSoundId, soundIdOf } from './soundIds';
 import type { Peaks } from './waveform';
 import type { ClipAudio, CustomSample, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
@@ -233,10 +233,13 @@ async function writeStoredSound(meta: SoundMeta, data: Blob): Promise<void> {
  * in their place.
  */
 async function storedBytes(id: string): Promise<ArrayBuffer | undefined> {
+  // (whether they were checked is read before they are: a write of the right bytes can finish
+  // while other bytes kept before it are being read, and must not pass those as checked)
+  const checked = storedChecked.has(id);
   const data = await readStoredData(id);
   if (!data) return undefined;
   const bytes = await data.arrayBuffer();
-  if (storedChecked.has(id)) return bytes;
+  if (checked) return bytes;
   if (!(await isSoundOf(id, bytes))) return undefined;
   storedChecked.add(id);
   return bytes;
@@ -816,18 +819,20 @@ async function metOrKept(id: string): Promise<boolean> {
 }
 
 /**
- * The id a loaded file's bytes go under: their own (soundIdOf). In a browser with no crypto that's
- * their FNV id, as every sound it made before has, so the same file loaded again finds its copy.
- * But when nothing is under that one and this page knows the bytes' SHA-256 id instead (a song
- * made on a computer with crypto uses it, or this browser keeps something under it), they go
- * under that: the song's sound comes back, it's kept once, and other bytes kept under it before
- * the app checked are put right.
+ * The ids a loaded file's bytes go under. The first, its clip's, is their own (soundIdOf: in a
+ * browser with no crypto their FNV id, as every sound it made before has, so the same file loaded
+ * again finds its copy), unless nothing is under that one and this page knows them by their other
+ * form (a song made in a browser of the other kind uses it, or this browser keeps something under
+ * it): then that one, so the song's sound comes back and it's kept once. The rest are that other
+ * form when this page knows both: kept too, so a song using either plays. Either way other bytes
+ * kept under them before the app checked are put right.
  */
-async function loadedSoundId(bytes: ArrayBuffer): Promise<string> {
+async function loadedSoundIds(bytes: ArrayBuffer): Promise<[string, ...string[]]> {
   const own = await soundIdOf(bytes);
-  if (isShaSoundId(own) || (await metOrKept(own))) return own;
-  const sha = await shaSoundId(bytes);
-  return (await metOrKept(sha)) ? sha : own;
+  const other = isShaSoundId(own) ? await fnvSoundId(bytes) : await shaSoundId(bytes);
+  const [ownKnown, otherKnown] = [await metOrKept(own), await metOrKept(other)];
+  if (ownKnown) return otherKnown ? [own, other] : [own];
+  return otherKnown ? [other] : [own];
 }
 
 /**
@@ -842,7 +847,7 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
     throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${maxBytes / 1048576} MB can be loaded, because each is kept in this browser and saved inside your project file: trim it, or save it as MP3 or OGG (a tenth of the size).`);
   }
   const bytes = await file.arrayBuffer();
-  const id = await loadedSoundId(bytes);
+  const [id, ...alsoUnder] = await loadedSoundIds(bytes);
   const type = file.type || 'application/octet-stream';
   // Kept before decoding, which consumes the bytes
   const data = new Blob([bytes], { type });
@@ -853,13 +858,26 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
   } catch {
     throw new SoundError(`Couldn't read "${name}" as audio. Try a WAV, MP3, OGG, FLAC or M4A file.`);
   }
+  const meta = await keepLoaded(id, name, type, data, buffer, sampleRate);
+  for (const other of alsoUnder) {
+    try {
+      await keepLoaded(other, name, type, data, buffer, sampleRate);
+    } catch {
+      // (the clip's own id is kept: a song using the other one plays when storage lets it be kept too)
+    }
+  }
+  return meta;
+}
+
+/** A loaded file's bytes (`data`, decoded as `buffer`) kept under `id` and ready to play under it; its meta. */
+async function keepLoaded(id: string, name: string, type: string, data: Blob, buffer: AudioBuffer, sampleRate: number): Promise<SoundMeta> {
   const known = useSoundLibrary.getState().metas[id];
   let meta: SoundMeta;
   try {
     const stored = await readStoredMeta(id);
     if (stored && (await keepsThese(id, data))) meta = known ?? stored;
     else {
-      // (Kept under the id the bytes' own hash gives: these are the bytes it names, whatever was there)
+      // (Kept under an id the bytes' own hash gives: these are the bytes it names, whatever was there)
       meta = { id, name, type, size: data.size, seconds: buffer.duration };
       await writeStoredSound(meta, data);
     }
