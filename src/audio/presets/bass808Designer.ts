@@ -3,6 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { notLate } from './monotonic';
 import { connectOut, createBus, createFilter, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, roomAhead, slidePitch, strikeLive } from './native';
 import type { NativeVoice, PitchGlide } from './native';
+import { holdShaper, type HeldNodes } from '../shaperLag';
 import { HELD_NOTE } from './edmSynths';
 import { driveCurveFor, driveMakeup, type DriveCharacter } from '../driveCurves';
 import type { Bass808Settings } from '../../store/bass808';
@@ -23,7 +24,9 @@ import type { NoteSlide } from '../legato';
  *
  * A 4x oversampled shaper delays what passes through it by SHAPER_FRAMES; both paths go through
  * one, so they stay in line, and the whole note starts that much earlier instead (when there's room
- * for it: live, no sooner than a render callback past the clock, see roomAhead), so it lands on the beat.
+ * for it: live, no sooner than a render callback past the clock, see roomAhead), so it lands on the beat
+ * at every rate. A note with no room for it sounds as late as it would at 44.1 kHz (holdShaper, see
+ * shaperLag.ts), so the Sub enhancer's sine under it meets it as there.
  */
 
 /** Samples a WaveShaperNode oversampling 4x delays its sound by (measured in Chrome; Firefox's is similar). */
@@ -73,11 +76,12 @@ function curveOf(character: DriveCharacter | 'linear', drive: number, post: numb
   return curve;
 }
 
-function shaper(raw: BaseAudioContext, curve: Float32Array<ArrayBuffer>): WaveShaperNode {
+/** A 4x shaper: as late as at 44.1 kHz when `held` (see holdShaper), else as it is at this rate. */
+function shaper(raw: BaseAudioContext, curve: Float32Array<ArrayBuffer>, held: boolean): HeldNodes {
   const node = raw.createWaveShaper();
   node.curve = curve;
   node.oversample = '4x';
-  return node;
+  return held ? holdShaper(raw, node, '4x', 'none') : { input: node, output: node, nodes: [node], late: 0 };
 }
 
 export function createBass808Designer(output: Tone.InputNode, initial: Bass808Settings | undefined) {
@@ -166,25 +170,25 @@ export function createBass808Designer(output: Tone.InputNode, initial: Bass808Se
       env.connect(amp);
     } else {
       // The clean path: the drive's curve (or a straight line, to keep in step with the top layer)
-      const drive = shaper(raw, s.drive > 0 ? curveOf(s.character, s.drive, driveMakeup(s.character, s.drive)) : curveOf('linear', 0, 1));
-      env.connect(drive);
-      nodes.push(drive);
-      let tail: AudioNode = drive;
+      const drive = shaper(raw, s.drive > 0 ? curveOf(s.character, s.drive, driveMakeup(s.character, s.drive)) : curveOf('linear', 0, 1), lead === 0);
+      env.connect(drive.input);
+      nodes.push(...drive.nodes);
+      let tail: AudioNode = drive.output;
       if (s.drive > 0 && s.tone < 16000) {
         const tone = createFilter(raw, 'lowpass', s.tone, FLAT_Q);
-        drive.connect(tone);
+        drive.output.connect(tone);
         nodes.push(tone);
         tail = tone;
       }
       tail.connect(amp);
       if (s.top > 0) {
         // The top layer: harmonics only (the fundamental and the sub filtered out), darkened with the tone
-        const grit = shaper(raw, curveOf('tube', 1, s.top * TOP));
+        const grit = shaper(raw, curveOf('tube', 1, s.top * TOP), lead === 0);
         const low = createFilter(raw, 'highpass', 200, FLAT_Q);
         const high = createFilter(raw, 'lowpass', Math.min(4000, Math.max(900, s.tone)), FLAT_Q);
-        env.connect(grit);
-        grit.connect(low).connect(high).connect(amp);
-        nodes.push(grit, low, high);
+        env.connect(grit.input);
+        grit.output.connect(low).connect(high).connect(amp);
+        nodes.push(...grit.nodes, low, high);
       }
     }
     connectOut(amp, input);

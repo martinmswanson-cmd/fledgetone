@@ -24,7 +24,8 @@ import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds, designedDecay, ROOM_MAX_SECONDS } from './effects/busEffects';
-import { roomSeconds } from './effects/roomIR';
+import { prepareRooms, roomSeconds, STUDIO_DECAY, type RoomWish } from './effects/roomIR';
+import { insertRoomDecay } from './effects/spaceFx';
 import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
 import { releaseSeconds, soundingNotes } from './auditionMath';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
@@ -1250,6 +1251,10 @@ async function renderGraphHeld(
   exactSumsIn(native);
   endedOnTimeIn(native);
   const context = new Tone.OfflineContext(native);
+  // The rooms its reverbs and instruments take, made first a little at a time (prepareRooms), so
+  // building the graph, which takes them at once, doesn't hold up the page
+  const releaseRooms = await prepareRooms(sampleRate, roomWishes(tracks, masterFx));
+  signal?.throwIfAborted();
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
   // The global context is this render's while its graph is built
@@ -1258,6 +1263,8 @@ async function renderGraphHeld(
   } catch (err) {
     finishedSources.delete(context);
     throw err;
+  } finally {
+    releaseRooms();
   }
   // The sound comes out as late as the limiter actually in place makes it
   if (withMaster) plan = await settleLatency(plan, graph.lookahead);
@@ -1648,4 +1655,16 @@ export function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * The rooms a render's sound takes (see prepareRooms): the song reverb's designed room (unless a
+ * recorded room or the lush reverb plays instead), every Reverb insert's at its decay, and the
+ * guitars' studio room and the stage (a few milliseconds' work each, wanted by many instruments).
+ */
+function roomWishes(tracks: readonly Track[], masterFx: MasterFx): RoomWish[] {
+  const wishes: RoomWish[] = [{ style: 'studio', decay: STUDIO_DECAY }, 'stage'];
+  if (!masterFx.room && masterFx.roomStyle !== 'lush') wishes.push({ style: masterFx.roomStyle ?? 'hall', decay: designedDecay(masterFx.reverbDecay) });
+  for (const t of tracks) if (t.fx.reverb?.on) wishes.push({ insert: insertRoomDecay(t.fx.reverb.decay) });
+  return wishes;
 }

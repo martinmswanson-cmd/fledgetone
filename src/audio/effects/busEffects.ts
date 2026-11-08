@@ -167,13 +167,16 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
       convIn.gain.rampTo(dampingMakeup(hz), 0.05, at);
     }
   };
-  // The generated room (roomIR.ts): designed for its style. Made at once for an export and for
-  // the first sound; a change while the page plays is made a few milliseconds at a time (away from
-  // 44.1 kHz it's resampled from the 44.1 kHz room, up to a few tenths of a second's work), the
-  // room before playing on until it's ready
+  // The generated room (roomIR.ts): designed for its style. Made at once for an export (whose
+  // rooms are made beforehand a little at a time: prepareRooms in exportWav.ts); live, always a few
+  // milliseconds at a time (a long room takes a few tenths of a second to make, more away from
+  // 44.1 kHz, where it's resampled from the 44.1 kHz one), the room before (or the lush reverb)
+  // playing on until it's ready, and Play waiting for it (liveTracks.ts liveSoundsReady)
+  /** The roomToken a room being made is for: the lush reverb hands over to it once it's ready */
+  let roomComing = -1;
   const designed = (style: RoomStyle | undefined, decay: number) => {
     const rate = context.sampleRate;
-    const use = ([l, r]: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>]) => {
+    const playRoom = ([l, r]: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>]) => {
       setDamping(ROOM_STYLES[style ?? 'hall']?.damp ?? REVERB_DAMP_HZ);
       const buffer = context.createBuffer(2, l.length, rate);
       if (rate === ROOM_RATE) {
@@ -190,11 +193,15 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
       }
       setImpulse(buffer);
     };
-    // (Also at once while the lush reverb plays instead: the convolver isn't heard until it's ready)
-    if (context.isOffline || !room.convolver.buffer || lushOn || !convolverFed) return use(roomChannels(style ?? 'hall', designedDecay(decay), rate));
+    if (context.isOffline) return playRoom(roomChannels(style ?? 'hall', designedDecay(decay), rate));
     const token = roomToken;
+    roomComing = token;
     void roomChannelsSoon(style ?? 'hall', designedDecay(decay), rate).then((channels) => {
-      if (token === roomToken && !disposed) use(channels);
+      if (token !== roomToken || disposed) return;
+      roomComing = -1;
+      playRoom(channels);
+      // (The lush reverb played on while it was made)
+      setLush(wantsLush(current));
     });
   };
   // A recorded room: its impulse response (a sound in the library) goes into the convolver in
@@ -363,7 +370,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
         if (next.roomStyle !== before.roomStyle) rebuild();
         else rebuildSoon();
       }
-      setLush(wantsLush(next));
+      // (From the lush reverb to a room still being made: the lush plays on until it's ready)
+      if (!(lushOn && !wantsLush(next) && roomComing === roomToken)) setLush(wantsLush(next));
       if (lush) lush.parameters.get('decay')!.value = lushDecay(next.reverbDecay);
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);

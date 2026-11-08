@@ -16,7 +16,7 @@ import type { GlideRef } from '../instruments';
 import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
 import { createBendFeed } from '../bendFeed';
 import { attackAhead, type NoteSynth } from './toneStart';
-import { SHAPER_4X_FRAMES, shaperLag } from '../shaperLag';
+import { heldShaper } from '../shaperLag';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -193,33 +193,27 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   };
 }
 
-/** Tone.Distortion's inside: its shaper between effectSend and effectReturn, and the crossfade its dry part goes into (`a`). */
+/** Tone.Distortion's inside: its shaper, between effectSend and effectReturn. */
 interface DistortionInside {
   _shaper: Tone.WaveShaper;
   effectReturn: Tone.Gain;
-  _dryWet: Tone.CrossFade;
 }
 
 /**
- * Hold a Tone.Distortion's driven part back `driven` seconds, and its dry part `dry` (see
- * shaperLag.ts): the delays made, to be let go with it. Nothing for 0.
+ * A Tone.Distortion voiced at 44.1 kHz oversampling 4x, made as late at this context's rate as there
+ * (shaperLag.ts heldShaper): its oversampling here, and a delay after its shaper making up the rest
+ * (its dry part, if any, untouched). The delays made, to be let go with it; none at 44.1 kHz. A
+ * bass's gentle drive: below 44.1 kHz it may oversample less, down to none, with nothing heard folding back.
  */
-export function holdDriven(drive: Tone.Distortion, driven: number, dry = 0): Tone.Delay[] {
+export function holdDriven(drive: Tone.Distortion): Tone.Delay[] {
   const inside = drive as unknown as DistortionInside;
-  const held: Tone.Delay[] = [];
-  if (driven > 0) {
-    const late = new Tone.Delay(driven, driven);
-    inside._shaper.disconnect();
-    inside._shaper.chain(late, inside.effectReturn);
-    held.push(late);
-  }
-  if (dry > 0) {
-    const late = new Tone.Delay(dry, dry);
-    drive.input.disconnect(inside._dryWet.a);
-    drive.input.chain(late, inside._dryWet.a);
-    held.push(late);
-  }
-  return held;
+  const { oversample, seconds } = heldShaper('4x', drive.context.sampleRate, 1, undefined, 'none');
+  drive.oversample = oversample;
+  if (!(seconds > 0)) return [];
+  const late = new Tone.Delay(seconds, seconds);
+  inside._shaper.disconnect();
+  inside._shaper.chain(late, inside.effectReturn);
+  return [late];
 }
 
 /** 808 bass: a long sine boom with a quick downward pitch drop, lightly saturated. */
@@ -249,21 +243,16 @@ export function create808(output: Tone.InputNode, modern = false) {
     envelope: { attack: modern ? 0.006 : 0.002, decay: 1.4, sustain: 0.35, release: 0.9 },
   });
   const extra: Array<{ dispose: () => void }> = [];
-  // The driven part as late against the clean one at every rate as at 44.1 kHz (see shaperLag.ts):
-  // the classic's dry part, or the Expressive voice's clean sub
-  const lag = shaperLag(SHAPER_4X_FRAMES, drive.context.sampleRate);
-  extra.push(...holdDriven(drive, lag.driven, modern ? 0 : lag.clean));
+  // The driven part as late at every rate as at 44.1 kHz (see shaperLag.ts): the classic's dry
+  // part, or the Expressive voice's clean sub, meets it as there
+  extra.push(...holdDriven(drive));
   if (modern) {
     const clean = new Tone.Filter({ type: 'lowpass', frequency: 120, rolloff: -24 });
     const lowCut = new Tone.Filter({ type: 'highpass', frequency: 90, rolloff: -12 });
     const highCut = new Tone.Filter({ type: 'lowpass', frequency: 3500, rolloff: -12 });
     const grit = new Tone.Gain(Tone.dbToGain(-8));
     synth.connect(clean);
-    if (lag.clean > 0) {
-      const late = new Tone.Delay(lag.clean, lag.clean);
-      clean.chain(late, output);
-      extra.push(late);
-    } else clean.connect(output);
+    clean.connect(output);
     synth.chain(lowCut, drive, highCut, grit, output);
     extra.push(clean, lowCut, highCut, grit);
   } else synth.chain(drive, output);

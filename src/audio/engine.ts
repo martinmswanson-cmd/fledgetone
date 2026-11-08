@@ -16,7 +16,7 @@ import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';
 import { createWorkletNode, loadWorklet } from './worklets';
 import { installMonitor, listeningVolume, setListeningVolume } from './monitor';
 import { DEFAULT_MASTER_FX, defaultMasterSettings, defaultTrackFx } from '../store/timelineTypes';
-import { insertRoomChannelsSoon, ROOM_RATE } from './effects/roomIR';
+import { prepareFirstRooms } from './effects/roomIR';
 import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
 export type AudioState = 'suspended' | 'running' | 'closed';
@@ -148,10 +148,11 @@ function ceilingCurve(): Float32Array {
 
 export const liveMix = createMixChain(Tone.getDestination());
 
-// A track's Reverb insert at its first decay: its room made now, a few milliseconds at a time, so
-// one switched on while a song plays is ready at once (away from 44.1 kHz each room is resampled
-// from the 44.1 kHz one, tens of milliseconds' work: see roomIR.ts)
-if (liveContext.sampleRate !== ROOM_RATE) void insertRoomChannelsSoon(defaultTrackFx().reverb.decay, liveContext.sampleRate);
+// The rooms a song is likely to want first (a Reverb insert at its first decay, the guitars' studio
+// room, the stage around strings and harp): made now, a few milliseconds at a time, so the first
+// of each is there at once (each room takes a few to tens of milliseconds to make, more away from
+// 44.1 kHz, where it's resampled from the 44.1 kHz one: see roomIR.ts)
+prepareFirstRooms(liveContext.sampleRate, defaultTrackFx().reverb.decay);
 
 export const masterBus = liveMix.bus;
 export const masterBusEffects = liveMix.busFx;

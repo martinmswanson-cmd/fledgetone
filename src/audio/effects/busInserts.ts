@@ -8,11 +8,13 @@
  * The Saturation's dry/wet blend is inside its curve: the curve is (1 - mix) * x + mix * a tanh
  * that starts at the same slope, so quiet sound passes at its own level and only peaks are
  * rounded. One WaveShaper (4x oversampled, so no aliasing fizz) does it all, with no parallel dry
- * path to comb-filter against the oversampler's delay.
+ * path to comb-filter against the oversampler's delay; as late at every rate as at 44.1 kHz
+ * (holdShaper, see shaperLag.ts), so the bus keeps its place in the mix.
  */
 import * as Tone from 'tone';
 import type { TrackFx } from '../../store/timelineTypes';
 import { smoothSet } from './smoothParam';
+import { holdShaper } from '../shaperLag';
 
 export interface BusInsert {
   input: Tone.ToneAudioNode;
@@ -58,14 +60,15 @@ export function createSaturation(settings: NonNullable<TrackFx['saturate']>): Sa
     shaper.curve = saturationCurve(s.amount, s.mix);
   };
   set(settings);
-  input.connect(shaper);
-  shaper.connect(output.input as unknown as AudioNode);
+  const clip = holdShaper(raw, shaper, '4x');
+  input.connect(clip.input);
+  clip.output.connect(output.input as unknown as AudioNode);
   return {
     input,
     output,
     set,
     dispose: () => {
-      shaper.disconnect();
+      clip.nodes.forEach((n) => n.disconnect());
       input.dispose();
       output.dispose();
     },

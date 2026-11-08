@@ -20,6 +20,7 @@ import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
 import { audibleIds, busChain, busOf, liveSends, soloLit } from '../store/buses';
 import { compensateTracks } from './delayCompensation';
+import { roomsMaking } from './effects/roomIR';
 import { compressorLatencyNow, measureCompressorLatency } from './compressorLatency';
 import { setMixDelay } from './latency';
 import { bendStamp } from './bendWindow';
@@ -523,17 +524,20 @@ function watchSleep() {
 
 /** Whether an instrument the song plays is still getting its sounds (downloading recordings, starting a plugin). */
 const stillLoading = (lt: LiveTrack) => lt.audible && !lt.loaded && !lt.failed && !lt.waited;
-export const liveSoundsLoading = (): boolean => [...live.values()].some(stillLoading);
+/** ...or a room (a reverb's, a guitar's studio) is still being made (see roomIR.ts roomsMaking). */
+export const liveSoundsLoading = (): boolean => [...live.values()].some(stillLoading) || roomsMaking().length > 0;
 
 /**
- * Resolves once every instrument the song plays has its sounds, or after `ms`. Play waits for it:
- * notes played before their recordings arrived were lost, so a song opened and played at once
- * started with its piano missing.
+ * Resolves once every instrument the song plays has its sounds, and every room being made is
+ * there, or after `ms`. Play waits for it: notes played before their recordings arrived were lost,
+ * so a song opened and played at once started with its piano missing (and, its reverb made a few
+ * milliseconds at a time, without its reverb).
  */
 export function liveSoundsReady(ms: number): Promise<void> {
   const pending = [...live.values()].filter(stillLoading);
-  if (!pending.length) return Promise.resolve();
-  const all = Promise.all(pending.map((lt) => lt.instrument.ready.catch(() => undefined))).then(() => undefined);
+  const rooms = roomsMaking();
+  if (!pending.length && !rooms.length) return Promise.resolve();
+  const all = Promise.all([...pending.map((lt) => lt.instrument.ready.catch(() => undefined)), ...rooms.map((r) => r.catch(() => undefined))]).then(() => undefined);
   const timeout = new Promise<void>((resolve) => setTimeout(resolve, ms));
   // One that took too long (a plugin that never says it's ready) isn't waited for again
   return Promise.race([all, timeout]).then(() => pending.forEach((lt) => (lt.waited = true)));

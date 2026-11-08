@@ -14,7 +14,6 @@ import {
   createHeldDrive,
   createOsc,
   createVoiceSet,
-  fixedLate,
   leveledWave,
   noteFrequency,
   releaseConstant,
@@ -22,7 +21,6 @@ import {
 } from './native';
 import type { NativeVoice } from './native';
 import type { GlideRef } from '../instruments';
-import { SHAPER_4X_FRAMES, shaperLag } from '../shaperLag';
 
 /**
  * The EDM basses: Wobble, Growl and Reese. Monophonic, built from plain Web Audio nodes per note
@@ -81,12 +79,6 @@ interface BassPatch {
   tone: (raw: BaseAudioContext, note: BassNote, until: number, sweep: Sweeper) => ToneSection;
   /** A legato note gets fresh filters, so its wobble restarts with it. Otherwise one set lasts the voice. */
   retone: boolean;
-  /**
-   * Samples the shapers on the way from the oscillators to the amp hold the sound back in all, at
-   * 44.1 kHz (each a createHeldDrive: as late at every rate). Below 44.1 kHz they hold it back
-   * longer, and the clean sub (`direct`) is held back the difference (see shaperLag.ts).
-   */
-  driven: number;
 }
 
 /** Crossfade from a legato note's filters to the next one's: quick, and both hear the same oscillators. */
@@ -375,19 +367,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       amp.gain.setTargetAtTime(0, end, releaseTc);
       source.main.connect(first.tone.input);
       first.gate.connect(amp);
-      const subNodes: AudioNode[] = [];
-      if (source.direct) {
-        // (Below 44.1 kHz the driven part is later than there: the clean sub meets it as there)
-        const late = shaperLag(patch.driven, raw.sampleRate).clean;
-        if (late > 0) {
-          const hold = fixedLate(raw, late);
-          source.direct.connect(hold);
-          hold.connect(amp);
-          subNodes.push(hold);
-        } else source.direct.connect(amp);
-      }
+      // (Its shapers are as late at every rate as at 44.1 kHz, createHeldDrive: the clean sub meets them as there)
+      source.direct?.connect(amp);
       amp.connect(input);
-      const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, ...subNodes, first.gate, ...first.tone.nodes, amp], amp };
+      const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
       voices.add(voice);
       current = { voice, source, gate: first.gate, tone: first.tone, sweeps: first.sweeps, end, note: n.note, freq: note.freq, fedTo: start };
       follow(current, start, stopAt);
@@ -468,7 +451,7 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
       // not heard), a square an octave down from about A1 up
       const low = freq < 60;
       const sub = createOsc(raw, leveledWave(raw, low ? 'sine' : 'square', low ? 0.3 : 0.22), low ? freq : freq / 2, start);
-      const drive = createHeldDrive(raw, 1.4);
+      const drive = createHeldDrive(raw, 1.4, 1, 1, '4x', 'none');
       [saw1, saw2].forEach((o) => o.connect(drive.input));
       return {
         main: drive.output,
@@ -483,7 +466,7 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
       // and down squelched instead of wubbing)
       const lp1 = createFilter(raw, 'lowpass', 200, 2.5);
       const lp2 = createFilter(raw, 'lowpass', 200, 0.7);
-      const grit = createHeldDrive(raw, 1.25);
+      const grit = createHeldDrive(raw, 1.25, 1, 1, '4x', 'none');
       lp1.connect(lp2);
       lp2.connect(grit.input);
       // Closed an octave above the fundamental, opening 4.5 to 5.5 octaves with velocity; the
@@ -494,8 +477,6 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
       sweep([lp1.frequency, lp2.frequency], (t) => Math.min(16000, closed * 2 ** (octaves * wob(t, note.cycle) ** 1.4)));
       return { input: lp1, output: grit.output, nodes: [lp1, lp2, ...grit.nodes] };
     },
-    // The drive, then the grit
-    driven: 2 * SHAPER_4X_FRAMES,
   }, glide);
 }
 
@@ -585,7 +566,7 @@ export function createGrowlBass(output: Tone.InputNode, glide?: GlideRef) {
     retone: true,
     source: (raw, { freq, start }) => {
       const fm = createOsc(raw, growlWave(raw), freq, start);
-      const drive = createHeldDrive(raw, 3.5);
+      const drive = createHeldDrive(raw, 3.5, 1, 1, '4x', 'none');
       const sub = createOsc(raw, leveledWave(raw, 'sine', 0.45), freq, start);
       fm.connect(drive.input);
       return {
@@ -611,7 +592,6 @@ export function createGrowlBass(output: Tone.InputNode, glide?: GlideRef) {
       sweep([body.frequency], (t) => 700 * 2 ** (2.3 * m(t)));
       return { input: f1, output: body, nodes: [f1, f2, body] };
     },
-    driven: SHAPER_4X_FRAMES,
   }, glide);
 }
 
@@ -630,7 +610,7 @@ export function createReeseBass(output: Tone.InputNode, glide?: GlideRef) {
       const saw = leveledWave(raw, 'sawtooth', 0.3);
       const saws = [-17, 3, 15].map((cents) => createOsc(raw, saw, freq, start, cents));
       const sine = createOsc(raw, leveledWave(raw, 'sine', 0.3), freq, start);
-      const drive = createHeldDrive(raw, 1.3);
+      const drive = createHeldDrive(raw, 1.3, 1, 1, '4x', 'none');
       const oscs = [...saws, sine];
       oscs.forEach((o) => o.connect(drive.input));
       return {
@@ -645,6 +625,5 @@ export function createReeseBass(output: Tone.InputNode, glide?: GlideRef) {
       const lp = createFilter(raw, 'lowpass', Math.min(4000, 520 + note.freq * 6), 3);
       return { input: lp, output: lp, nodes: [lp] };
     },
-    driven: SHAPER_4X_FRAMES,
   }, glide);
 }

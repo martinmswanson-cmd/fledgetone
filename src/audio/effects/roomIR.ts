@@ -16,7 +16,7 @@
  * where that reverb can't run.
  */
 
-import { resampleOnceSteps } from '../loopResample';
+import { onceResampler } from '../loopResample';
 
 export type RoomStyle = 'hall' | 'chamber' | 'church' | 'studio' | 'plate' | 'lush';
 
@@ -104,17 +104,6 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
 
 export const ROOM_STYLE_IDS = Object.keys(ROOM_STYLES) as RoomStyle[];
 
-/** A repeatable noise source (the same room every time it's built). */
-function noise(seed: number) {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s ^= s << 13;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    return (s >>> 0) / 2147483648 - 1;
-  };
-}
-
 /**
  * Longest impulse response made (seconds). Every style's every band fits up to the longest decay
  * the app offers (12 s: a church's lows ring 1.4 times that); past it, the bands that would ring
@@ -145,8 +134,10 @@ export const ROOM_RATE = 44100;
 
 type Channels = Float32Array<ArrayBuffer>[];
 type Pair = [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>];
-/** Samples worked out between pauses when a room is made while the page plays (see madeSoon), less one. */
-const PIECE = 0x3fff;
+/** Samples worked out between pauses when a room is made while the page plays (see madeSoon). */
+const PIECE = 0x4000;
+/** A room made at once: no pauses. */
+const AT_ONCE = Infinity;
 /**
  * The resampling sinc's zero crossings each side for a room (see resampleOnce): half the usual, so
  * half the work, the room within 0.003 dB to 18 kHz (its top is soaked up: the song's reverb is fed
@@ -171,20 +162,18 @@ function drain<T>(steps: Generator<void, T>): T {
  * still 1.4 dB louder or quieter here and there). At ROOM_RATE, the channels themselves.
  */
 export function roomAtRate<T extends Channels>(channels: T, rate: number, length?: number): T {
-  return drain(roomAtRateSteps(channels, rate, length));
+  return drain(roomAtRateSteps(channels, rate, length, AT_ONCE));
 }
 
-/** roomAtRate in pieces (see madeSoon). */
-function* roomAtRateSteps<T extends Channels>(channels: T, rate: number, length?: number): Generator<void, T> {
+/** roomAtRate in pieces of `piece` samples (see madeSoon): the same, sample for sample. */
+function* roomAtRateSteps<T extends Channels>(channels: T, rate: number, length: number | undefined, piece: number): Generator<void, T> {
   if (rate === ROOM_RATE) return channels;
-  const k = ROOM_RATE / rate;
-  const out: Channels = [];
-  for (const c of channels) {
-    const y = yield* resampleOnceSteps(c, ROOM_RATE, rate, length, PIECE + 1, ROOM_KERNEL);
-    for (let i = 0; i < y.length; i++) y[i] *= k;
-    out.push(y);
+  const once = onceResampler(channels, ROOM_RATE, rate, length, ROOM_KERNEL, ROOM_RATE / rate);
+  for (let i = 0; i < once.length; i += piece) {
+    once.run(i, i + piece);
+    if (i + piece < once.length) yield;
   }
-  return out as T;
+  return once.outs as T;
 }
 
 /** Rooms made lately, by what they were made from, most recent last (see madeOnce). */
@@ -193,17 +182,20 @@ const made = new Map<string, Channels>();
 const MADE_MOST = 4_000_000;
 /** The rooms being made while the page plays (see madeSoon), by key. */
 const making = new Map<string, Promise<Channels>>();
+/** Rooms an export holds on to while its sound is set up (see prepareRooms): kept however many others are made. */
+const held = new Map<string, number>();
 /** Milliseconds of making a room before the page gets a turn (see madeSoon). */
 const TURN_MS = 6;
 
-/** Keep `room` as `key`'s, letting the least lately used go past MADE_MOST. */
+/** Keep `room` as `key`'s, letting the least lately used go past MADE_MOST (never one held). */
 function keep<T extends Channels>(key: string, room: T): T {
   made.delete(key);
   made.set(key, room);
   let kept = 0;
   for (const r of made.values()) kept += r.reduce((n, c) => n + c.length, 0);
   for (const [k, r] of made) {
-    if (kept <= MADE_MOST || k === key) break;
+    if (kept <= MADE_MOST) break;
+    if (k === key || held.has(k)) continue;
     kept -= r.reduce((n, c) => n + c.length, 0);
     made.delete(k);
   }
@@ -211,33 +203,33 @@ function keep<T extends Channels>(key: string, room: T): T {
 }
 
 /**
- * The room `key` names, made by `steps` unless it was lately: a song's reverb and each track's
- * Reverb insert at the same decay, live and in an export at the same rate, share one. Kept as
- * made: those using it copy it (into an AudioBuffer), never change it.
+ * The room `key` names, made at once by `steps` unless it was lately: a song's reverb and each
+ * track's Reverb insert at the same decay, live and in an export at the same rate, share one. Kept
+ * as made: those using it copy it (into an AudioBuffer), never change it.
  */
-function madeOnce<T extends Channels>(key: string, steps: () => Generator<void, T>): T {
+function madeOnce<T extends Channels>(key: string, steps: (piece: number) => Generator<void, T>): T {
   const have = made.get(key);
-  return keep(key, (have as T | undefined) ?? drain(steps()));
+  return keep(key, (have as T | undefined) ?? drain(steps(AT_ONCE)));
 }
 
 /**
  * madeOnce, while the page plays: made a few milliseconds at a time, the page getting a turn
- * between (a long room at 96 kHz takes a quarter of a second to make, which held up the page and
- * the notes it hands out). The room is the same, sample for sample.
+ * between (a long room at 96 kHz takes a few tenths of a second to make, which held up the page
+ * and the notes it hands out). The room is the same, sample for sample.
  */
-function madeSoon<T extends Channels>(key: string, steps: () => Generator<void, T>): Promise<T> {
+function madeSoon<T extends Channels>(key: string, steps: (piece: number) => Generator<void, T>): Promise<T> {
   const have = made.get(key);
   if (have) return Promise.resolve(keep(key, have as T));
   const going = making.get(key);
   if (going) return going as Promise<T>;
   const job = (async () => {
-    const run = steps();
+    const run = steps(PIECE);
     let from = performance.now();
     for (;;) {
       const r = run.next();
       if (r.done) return keep(key, r.value);
       if (performance.now() - from >= TURN_MS) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await pageTurn();
         from = performance.now();
       }
     }
@@ -249,6 +241,59 @@ function madeSoon<T extends Channels>(key: string, steps: () => Generator<void, 
 }
 
 /**
+ * Let the page have a turn (whatever's waiting: a click, a frame, the notes handed out) and carry
+ * on straight after: a message to itself, not a timer, which a page in a background tab waits up to
+ * a second for (an export from a page out of sight would have taken minutes over a long room).
+ */
+function pageTurn(): Promise<void> {
+  if (typeof MessageChannel !== 'function') return new Promise((resolve) => setTimeout(resolve, 0));
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+}
+
+/**
+ * The rooms being made now, a few milliseconds at a time (see madeSoon): Play waits for them
+ * (liveTracks.ts liveSoundsReady), so a song's first notes are heard in their rooms, as exported.
+ */
+export const roomsMaking = (): Promise<unknown>[] => [...making.values()];
+
+/** A room an export will want (see prepareRooms). */
+export type RoomWish = { style: RoomStyle; decay: number; lowLevel?: number } | { insert: number } | 'stage';
+
+/**
+ * Make the rooms an export at `rate` will want, a few milliseconds at a time (see madeSoon), so
+ * setting up its sound (which takes them at once, as roomChannels and the rest do) doesn't hold
+ * up the page: away from 44.1 kHz a long room takes longer to make than it did, being made there
+ * and resampled. Each is kept until the returned function is called. At 44.1 kHz, nothing to do.
+ */
+export async function prepareRooms(rate: number, wishes: readonly RoomWish[]): Promise<() => void> {
+  if (rate === ROOM_RATE) return () => {};
+  const keys: string[] = [];
+  for (const wish of wishes) {
+    const key = wish === 'stage' ? stageKey(rate) : 'insert' in wish ? insertKey(wish.insert, rate) : roomKey(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6);
+    if (keys.includes(key)) continue;
+    keys.push(key);
+    held.set(key, (held.get(key) ?? 0) + 1);
+    if (wish === 'stage') await madeSoon(key, (piece) => stageSteps(rate, piece));
+    else if ('insert' in wish) await madeSoon(key, (piece) => insertSteps(wish.insert, rate, piece));
+    else await madeSoon(key, (piece) => roomSteps(wish.style, wish.decay, rate, wish.lowLevel ?? 1.6, piece));
+  }
+  return () => {
+    for (const key of keys.splice(0)) {
+      const n = (held.get(key) ?? 1) - 1;
+      if (n > 0) held.set(key, n);
+      else held.delete(key);
+    }
+  };
+}
+
+/**
  * The impulse response's two channels for `style` with a middle decay of `decay` seconds (to
  * -60 dB), at `sampleRate`: made at ROOM_RATE (see roomAtRate). Its total energy at ROOM_RATE is 1
  * (ROOM_RATE / sampleRate at another rate: the same loudness), so changing style or decay keeps
@@ -257,18 +302,33 @@ function madeSoon<T extends Channels>(key: string, steps: () => Generator<void, 
  * warmth). Shared with others asking for the same room: read it, don't change it.
  */
 export function roomChannels(style: RoomStyle, decay: number, sampleRate: number, lowLevel = 1.6): Pair {
-  return madeOnce(roomKey(style, decay, sampleRate, lowLevel), () => roomSteps(style, decay, sampleRate, lowLevel));
+  return madeOnce(roomKey(style, decay, sampleRate, lowLevel), (piece) => roomSteps(style, decay, sampleRate, lowLevel, piece));
 }
 
 /** roomChannels made while the page plays, a few milliseconds at a time (see madeSoon). */
 export function roomChannelsSoon(style: RoomStyle, decay: number, sampleRate: number, lowLevel = 1.6): Promise<Pair> {
-  return madeSoon(roomKey(style, decay, sampleRate, lowLevel), () => roomSteps(style, decay, sampleRate, lowLevel));
+  return madeSoon(roomKey(style, decay, sampleRate, lowLevel), (piece) => roomSteps(style, decay, sampleRate, lowLevel, piece));
 }
 
 const roomKey = (style: RoomStyle, decay: number, sampleRate: number, lowLevel: number) => `${style} ${decay} ${lowLevel} ${sampleRate}`;
 
-function* roomSteps(style: RoomStyle, decay: number, sampleRate: number, lowLevel: number): Generator<void, Pair> {
-  return yield* roomAtRateSteps(yield* makeRoom(style, decay, ROOM_RATE, lowLevel), sampleRate, roomLength(style, decay, sampleRate));
+function* roomSteps(style: RoomStyle, decay: number, sampleRate: number, lowLevel: number, piece: number): Generator<void, Pair> {
+  return yield* roomAtRateSteps(yield* makeRoom(style, decay, lowLevel, piece), sampleRate, roomLength(style, decay, sampleRate), piece);
+}
+
+/** The guitars' studio room's decay (seconds to fall 60 dB, its middle; its highs die sooner: samplerManager.ts studioChain). */
+export const STUDIO_DECAY = 0.45;
+
+/**
+ * Make, a few milliseconds at a time, the rooms the page is likely to want first at `rate`: a Reverb
+ * insert at its first decay (`insertDecay`), the guitars' studio room and the stage, so the first
+ * of each is there at once.
+ */
+export function prepareFirstRooms(rate: number, insertDecay: number): void {
+  void insertRoomChannelsSoon(insertDecay, rate)
+    .then(() => roomChannelsSoon('studio', STUDIO_DECAY, rate))
+    .then(() => madeSoon(stageKey(rate), (piece) => stageSteps(rate, piece)))
+    .catch(() => undefined);
 }
 
 /**
@@ -287,8 +347,63 @@ const CONVOLVER_CALIBRATION = 10 ** (-58 / 20);
 /** How many samples `style`'s room at a middle decay of `decay` lasts at `sampleRate` (see roomSeconds). */
 const roomLength = (style: RoomStyle, decay: number, sampleRate: number) => Math.max(1, Math.round(roomSeconds(style, decay) * sampleRate));
 
-/** The room, made sample by sample at `sampleRate` (only ever ROOM_RATE: see roomAtRate). */
-function* makeRoom(style: RoomStyle, decay: number, sampleRate: number, lowLevel: number): Generator<void, Pair> {
+/** Where the tail's noise and filters stand between pieces of a room (see roomTail). */
+interface TailState {
+  /** The noise's state (see roomTail) */
+  s: number;
+  lp: number;
+  lp2: number;
+  eLow: number;
+  eMid: number;
+  eHigh: number;
+}
+
+/** What shapes a room's tail (see makeRoom): fixed for the room. */
+interface TailShape {
+  start: number;
+  build: number;
+  cLow: number;
+  cHigh: number;
+  fLow: number;
+  fMid: number;
+  fHigh: number;
+  lowLevel: number;
+}
+
+/**
+ * Samples i0 to i1 of a room's tail into `data`, carrying on from `st`: noise split into low,
+ * middle and high, each dying away at its own rate, swelling in over `build`. The noise is a
+ * repeatable one (xorshift from a fixed seed: the same room every time it's built), worked out in
+ * the loop (a function call a sample made the room three times as slow to make the first time).
+ */
+function roomTail(data: Float32Array, st: TailState, i0: number, i1: number, t: TailShape): void {
+  const { start, build, cLow, cHigh, fLow, fMid, fHigh, lowLevel } = t;
+  let { s, lp, lp2, eLow, eMid, eHigh } = st;
+  for (let i = i0; i < i1; i++) {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    const x = (s >>> 0) / 2147483648 - 1;
+    // Split the noise: low, high, and what's between
+    lp += cLow * (x - lp);
+    lp2 += cHigh * (x - lp2);
+    const low = lp;
+    const high = x - lp2;
+    const mid = lp2 - lp;
+    // The tail swells in over `build`, as reflections pile up
+    const k = i - start;
+    const swell = k < build ? (k / build) ** 2 : 1;
+    data[i] = swell * (low * eLow * lowLevel + mid * eMid + high * eHigh * 0.8);
+    eLow *= fLow;
+    eMid *= fMid;
+    eHigh *= fHigh;
+  }
+  Object.assign(st, { s, lp, lp2, eLow, eMid, eHigh });
+}
+
+/** The room, made sample by sample at ROOM_RATE (see roomAtRate), in pieces of `piece` samples. */
+function* makeRoom(style: RoomStyle, decay: number, lowLevel: number, piece: number): Generator<void, Pair> {
+  const sampleRate = ROOM_RATE;
   const room = style === 'lush' ? HALL : (ROOM_STYLES[style] ?? HALL);
   const rt = Math.max(0.2, decay);
   const seconds = roomSeconds(style, decay);
@@ -297,40 +412,25 @@ function* makeRoom(style: RoomStyle, decay: number, sampleRate: number, lowLevel
   const room60 = seconds - room.preDelay - END_FADE;
   const t60 = (k: number) => Math.min(rt * k, room60);
   const out: Pair = [new Float32Array(n), new Float32Array(n)];
-  // Crossovers between the low, middle and high bands of the tail (one-pole filters)
-  const cLow = 1 - Math.exp((-2 * Math.PI * 300) / sampleRate);
-  const cHigh = 1 - Math.exp((-2 * Math.PI * 4000) / sampleRate);
   // Per sample, how much each band falls (to -60 dB over its decay time)
   const fall = (t60: number) => Math.exp(-6.908 / (t60 * sampleRate));
-  const fLow = fall(t60(room.low));
-  const fMid = fall(t60(1));
-  const fHigh = fall(t60(room.high));
-  const start = Math.round(room.preDelay * sampleRate);
-  const build = Math.max(1, Math.round(room.build * sampleRate));
+  const shape: TailShape = {
+    start: Math.round(room.preDelay * sampleRate),
+    build: Math.max(1, Math.round(room.build * sampleRate)),
+    // Crossovers between the low, middle and high bands of the tail (one-pole filters)
+    cLow: 1 - Math.exp((-2 * Math.PI * 300) / sampleRate),
+    cHigh: 1 - Math.exp((-2 * Math.PI * 4000) / sampleRate),
+    fLow: fall(t60(room.low)),
+    fMid: fall(t60(1)),
+    fHigh: fall(t60(room.high)),
+    lowLevel,
+  };
   for (let c = 0; c < 2; c++) {
-    const rnd = noise(c === 0 ? 0x1234567 : 0x7654321);
     const data = out[c];
-    let lp = 0;
-    let lp2 = 0;
-    let eLow = 1;
-    let eMid = 1;
-    let eHigh = 1;
-    for (let i = start; i < n; i++) {
-      const x = rnd();
-      // Split the noise: low, high, and what's between
-      lp += cLow * (x - lp);
-      lp2 += cHigh * (x - lp2);
-      const low = lp;
-      const high = x - lp2;
-      const mid = lp2 - lp;
-      // The tail swells in over `build`, as reflections pile up
-      const k = i - start;
-      const swell = k < build ? (k / build) ** 2 : 1;
-      data[i] = swell * (low * eLow * lowLevel + mid * eMid + high * eHigh * 0.8);
-      eLow *= fLow;
-      eMid *= fMid;
-      eHigh *= fHigh;
-      if ((k & PIECE) === PIECE) yield;
+    const st: TailState = { s: (c === 0 ? 0x1234567 : 0x7654321) >>> 0 || 1, lp: 0, lp2: 0, eLow: 1, eMid: 1, eHigh: 1 };
+    for (let i = shape.start; i < n; i += piece) {
+      roomTail(data, st, i, Math.min(n, i + piece), shape);
+      if (i + piece < n) yield;
     }
     // The early reflections: distinct, a little softened (a 1 ms smear), each favouring a side
     for (const [time, gain, side] of room.reflections) {
@@ -364,8 +464,11 @@ const STAGE_SECONDS = 0.9;
  * ROOM_RATE, see roomAtRate). Shared: read it, don't change it.
  */
 export function stageChannels(rate: number): Pair {
-  return madeOnce(`stage ${rate}`, () => roomAtRateSteps(makeStage(), rate, Math.round(rate * STAGE_SECONDS)));
+  return madeOnce(stageKey(rate), (piece) => stageSteps(rate, piece));
 }
+
+const stageKey = (rate: number) => `stage ${rate}`;
+const stageSteps = (rate: number, piece: number) => roomAtRateSteps(makeStage(), rate, Math.round(rate * STAGE_SECONDS), piece);
 
 /** The stage, made sample by sample at ROOM_RATE (see stageChannels). */
 function makeStage(): Pair {
@@ -461,19 +564,21 @@ const pinkWhite = new Map<number, number>();
  * song's Reverb inserts keep their level.
  */
 export function insertRoomChannels(decay: number, sampleRate: number): Pair {
-  return madeOnce(`insert ${decay} ${sampleRate}`, () => insertSteps(decay, sampleRate));
+  return madeOnce(insertKey(decay, sampleRate), (piece) => insertSteps(decay, sampleRate, piece));
 }
 
 /** insertRoomChannels made while the page plays, a few milliseconds at a time (see madeSoon). */
 export function insertRoomChannelsSoon(decay: number, sampleRate: number): Promise<Pair> {
-  return madeSoon(`insert ${decay} ${sampleRate}`, () => insertSteps(decay, sampleRate));
+  return madeSoon(insertKey(decay, sampleRate), (piece) => insertSteps(decay, sampleRate, piece));
 }
 
-function* insertSteps(decay: number, sampleRate: number): Generator<void, Pair> {
+const insertKey = (decay: number, sampleRate: number) => `insert ${decay} ${sampleRate}`;
+
+function* insertSteps(decay: number, sampleRate: number, piece: number): Generator<void, Pair> {
   // (Its lows no louder than its middle: the plain tail had none extra, and a track's own room
   // shouldn't make its bass boom more than it did. Matched at ROOM_RATE, then taken to the rate:
   // the pinking filter's sums are per sample)
-  const out = yield* makeRoom(INSERT_ROOM, decay, ROOM_RATE, 1);
+  const out = yield* makeRoom(INSERT_ROOM, decay, 1, piece);
   let white = pinkWhite.get(ROOM_RATE);
   if (white === undefined) {
     const click = new Float32Array(1);
@@ -483,5 +588,5 @@ function* insertSteps(decay: number, sampleRate: number): Generator<void, Pair> 
   }
   const g = Math.sqrt((2 * white) / (pinkEnergy(out[0], ROOM_RATE) + pinkEnergy(out[1], ROOM_RATE)));
   for (const d of out) for (let i = 0; i < d.length; i++) d[i] *= g;
-  return yield* roomAtRateSteps(out, sampleRate, roomLength(INSERT_ROOM, decay, sampleRate));
+  return yield* roomAtRateSteps(out, sampleRate, roomLength(INSERT_ROOM, decay, sampleRate), piece);
 }

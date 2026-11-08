@@ -127,6 +127,9 @@ export async function reverbImpulseSoon(raw: BaseAudioContext, decay: number): P
 
 const insertDecay = (decay: number) => Math.max(0.05, Math.min(REVERB_DECAY_MAX, decay));
 
+/** The decay (seconds) a Reverb insert set to `decay` makes its room at: to the nearest 50 ms (see createReverb), within the insert's range. */
+export const insertRoomDecay = (decay: number): number => insertDecay(Math.round(decay * 20) / 20);
+
 function impulseOf(raw: BaseAudioContext, [l, r]: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>]): AudioBuffer {
   const buffer = raw.createBuffer(2, l.length, raw.sampleRate);
   buffer.copyToChannel(l, 0);
@@ -137,6 +140,9 @@ function impulseOf(raw: BaseAudioContext, [l, r]: [Float32Array<ArrayBuffer>, Fl
 export interface ReverbUnit extends SpaceUnit {
   set: (s: TrackFx['reverb'], ramp: number) => void;
 }
+
+/** Seconds a live Reverb insert's tail takes to come in once its first room is made (see createReverb). */
+const FIRST_TAIL_FADE = 0.03;
 
 /** input -> dry, plus input -> pre-delay -> convolver (the tail) -> tone low-pass -> wet. */
 export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
@@ -156,13 +162,22 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   tone.type = 'lowpass';
   tone.Q.value = 0.5;
   const wet = raw.createGain();
+  const offline = input.context.isOffline;
+  // Live, the tail comes in through a gate, shut until its first room is made (a few milliseconds
+  // at a time, see below) and then opened over FIRST_TAIL_FADE: a room handed to the convolver
+  // while a part plays starts on whatever it hears then, which could come in with a click
+  const gate = offline ? null : raw.createGain();
+  if (gate) gate.gain.value = 0;
   // In an export the tail is never switched off part way between notes (see keepOn.ts)
   const letGo = keepOn(into);
   into.connect(dry);
   dry.connect(out);
   into.connect(pre);
   pre.connect(convolver);
-  convolver.connect(tone);
+  if (gate) {
+    convolver.connect(gate);
+    gate.connect(tone);
+  } else convolver.connect(tone);
   tone.connect(wet);
   wet.connect(out);
   let decay = -1;
@@ -172,13 +187,21 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
     const d = Math.round(s.decay * 20) / 20;
     if (d !== decay) {
       decay = d;
-      // At once for an export and the first sound; a change while the page plays is made a few
-      // milliseconds at a time (away from 44.1 kHz it's resampled, up to a few tenths of a
-      // second's work), the tail before playing on until it's ready
-      if (input.context.isOffline || !convolver.buffer) convolver.buffer = reverbImpulse(raw, d);
+      // At once for an export (its rooms made beforehand, a little at a time: prepareRooms in
+      // exportWav.ts); live, a few milliseconds at a time (a long room takes a few tenths of a
+      // second, more away from 44.1 kHz, where it's resampled), the tail before playing on until
+      // it's ready (Play waits for a first one, see liveTracks.ts liveSoundsReady)
+      if (offline) convolver.buffer = reverbImpulse(raw, d);
       else
         void reverbImpulseSoon(raw, d).then((buffer) => {
-          if (decay === d && !gone) convolver.buffer = buffer;
+          if (decay !== d || gone) return;
+          const first = !convolver.buffer;
+          convolver.buffer = buffer;
+          if (first && gate) {
+            const at = raw.currentTime;
+            gate.gain.setValueAtTime(0, at);
+            gate.gain.linearRampToValueAtTime(1, at + FIRST_TAIL_FADE);
+          }
         });
     }
     // (The room answers after its own short pre-delay: the knob's is the whole of it, where it can be)
@@ -195,7 +218,7 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
     set,
     dispose: () => {
       gone = true;
-      [dry, pre, convolver, tone, wet].forEach((n) => n.disconnect());
+      [dry, pre, convolver, gate, tone, wet].forEach((n) => n?.disconnect());
       letGo();
       input.dispose();
       output.dispose();

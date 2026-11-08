@@ -5,7 +5,7 @@ import { struckLater } from '../songPlace';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
 import { ATTACK_TRIES, attackRoom, soundLead } from '../soundLead';
-import { SHAPER_4X_FRAMES, shaperLag } from '../shaperLag';
+import { holdShaper, type HeldNodes, type Oversampling } from '../shaperLag';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -414,24 +414,11 @@ export function createDrive(raw: BaseAudioContext, amount: number, pre = 1, post
 }
 
 /**
- * createDrive, its sound as late at every rate as at 44.1 kHz (see shaperLag.ts): above it, a delay
- * after the shaper makes up the difference. `input` to play into, `output` to take its sound from,
- * and every node made (to let go with the voice).
+ * createDrive, as late at every rate as at 44.1 kHz (see shaperLag.ts holdShaper). `voiced`: its
+ * oversampling at 44.1 kHz; `floor`: the least it may take below 44.1 kHz (a bass's: none).
  */
-export function createHeldDrive(raw: BaseAudioContext, amount: number, pre = 1, post = 1): { input: WaveShaperNode; output: AudioNode; nodes: AudioNode[] } {
-  const shaper = createDrive(raw, amount, pre, post);
-  const { driven } = shaperLag(SHAPER_4X_FRAMES, raw.sampleRate);
-  if (!(driven > 0)) return { input: shaper, output: shaper, nodes: [shaper] };
-  const late = fixedLate(raw, driven);
-  shaper.connect(late);
-  return { input: shaper, output: late, nodes: [shaper, late] };
-}
-
-/** A delay line holding its sound back `seconds`. */
-export function fixedLate(raw: BaseAudioContext, seconds: number): DelayNode {
-  const late = raw.createDelay(Math.max(0.01, seconds));
-  late.delayTime.value = seconds;
-  return late;
+export function createHeldDrive(raw: BaseAudioContext, amount: number, pre = 1, post = 1, voiced: Oversampling = '4x', floor: Oversampling = '2x'): HeldNodes {
+  return holdShaper(raw, createDrive(raw, amount, pre, post), voiced, floor);
 }
 
 export function createFilter(raw: BaseAudioContext, type: BiquadFilterType, frequency: number, q: number): BiquadFilterNode {

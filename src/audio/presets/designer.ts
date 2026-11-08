@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
-import { builtinWave, connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, phasedSaw, releaseConstant, releaseTail, roomAhead, scaledWave, strikeLive } from './native';
+import { builtinWave, connectOut, createBus, createDrive, createFilter, createHeldDrive, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, noteFrequency, onceStruck, phasedSaw, releaseConstant, releaseTail, roomAhead, scaledWave, strikeLive } from './native';
 import { noteJitter } from '../samplers/samplerManager';
 import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
@@ -12,6 +12,7 @@ import { defaultSynthPatch } from '../../store/synthPatch';
 import { createBendTimeline } from '../bendTimeline';
 import type { NoteSlide } from '../legato';
 import { FEED_EVERY, feedFollower, followsNow } from '../bendFeed';
+import { heldShaper, holdShaper, SHAPER_FRAMES, VOICED_RATE } from '../shaperLag';
 
 /** Harmonics (amplitude by number, from 1) of the table waves (see OscWave). */
 const TABLES: Record<'pulse' | 'organ' | 'vowel', (k: number) => number> = {
@@ -83,8 +84,6 @@ function buildWaves(raw: BaseAudioContext, p: SynthPatch): void {
 
 /** Decay times (to 95%) a sustain-0 envelope takes to fall 80 dB. */
 const FADED = Math.log(1e4) / 3;
-/** Samples a WaveShaperNode delays what it shapes by, for each oversampling (as Chrome's do). */
-const SHAPER_LATENCY: Record<OverSampleType, number> = { none: 0, '2x': 128, '4x': 192 };
 /**
  * The ladder's warm drive is oversampled 2x, not 4x: it's gentle, so the harmonics it adds above
  * the top of hearing (which fold back down unless oversampled) are faint, and what 2x lets fold
@@ -103,6 +102,12 @@ const DRIVE_4X = 0.2;
 function driveOversampling(drive: number): OverSampleType {
   return drive >= DRIVE_4X ? '4x' : '2x';
 }
+/**
+ * Below 44.1 kHz, a note under this (C3 and down) may have its shapers oversample less, down to
+ * none, to stay as late as at 44.1 kHz (see playNote): at 32 kHz a hard drive (0.9) on an open saw
+ * folded back no more there than at 44.1 kHz, where from C4 up it was 9 to 14 dB more.
+ */
+const FOLD_SAFE_HZ = 131;
 
 const SYNC_BEATS: Record<Exclude<LfoSync, 'free'>, number> = { '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/8T': 1 / 3, '1/16': 0.25, '1/16T': 1 / 6, '1/32': 0.125 };
 
@@ -127,7 +132,7 @@ interface DesignerVoice extends NativeVoice {
   oscs: OscillatorNode[];
   /** Each oscillator's own detune (cents), before any bend */
   detunes: number[];
-  /** Seconds its envelopes run ahead of its oscillators (see SHAPER_LATENCY) */
+  /** Seconds its envelopes run ahead of its oscillators (see SHAPER_FRAMES in playNote) */
   early: number;
   /** The same for its filter envelope */
   filterEarly: number;
@@ -181,19 +186,29 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
 
     const bendCents = bends.at(start);
     const ladder = p.filter.type === 'ladder';
-    // A shaper oversampling 4x delays what passes through it by SHAPER_LATENCY['4x'] samples, and
+    // A shaper oversampling 4x delays what passes through it by SHAPER_FRAMES['4x'] samples, and
     // the envelopes after it were voiced on that: where a shaper oversamples less (or not at all),
     // the envelopes, filter sweeps and LFOs after it start that much earlier instead, so the note
     // sounds the same, only that much sooner (no longer late by the shaper's delay). A note too
     // close to now for its envelopes to start earlier (live, no sooner than a render callback past
-    // the clock: see roomAhead) keeps 4x.
-    const lessOf = (o: OverSampleType) => (SHAPER_LATENCY['4x'] - SHAPER_LATENCY[o]) / raw.sampleRate;
+    // the clock: see roomAhead) keeps 4x. All of it as at 44.1 kHz, where the patches were voiced:
+    // each shaper is held as late at every rate as there (holdShaper, see shaperLag.ts), and the
+    // envelopes start that much earlier in seconds there, so a note and its envelopes meet as
+    // there, and a clean sound beside it (the Sub enhancer's sine) meets it as there.
+    const lessOf = (o: OverSampleType) => (SHAPER_FRAMES['4x'] - SHAPER_FRAMES[o]) / VOICED_RATE;
     const ahead = roomAhead(bus.context, start, (ladder ? lessOf(WARM_OVERSAMPLE) : 0) + (p.drive > 0 ? lessOf(driveOversampling(p.drive)) : 0));
     const warmOversample: OverSampleType = ladder && ahead ? WARM_OVERSAMPLE : '4x';
     const driveOversample: OverSampleType = p.drive > 0 && ahead ? driveOversampling(p.drive) : '4x';
+    // Below 44.1 kHz (a computer playing at 32 kHz) a shaper that would be later there oversamples
+    // less (see shaperLag.ts): on a note up to C3 down to none, which folds back nothing heard; on a
+    // higher one, where a hard drive's fold-back would be heard, it keeps its own and the note is
+    // that much later (`late`), its envelopes with it
+    const floor = freq < FOLD_SAFE_HZ ? 'none' : null;
+    const warmHeld = ladder ? heldShaper(warmOversample, raw.sampleRate, 1, undefined, floor ?? warmOversample) : null;
+    const driveHeld = p.drive > 0 ? heldShaper(driveOversample, raw.sampleRate, 1, undefined, floor ?? driveOversample) : null;
     // The filters come after the warm drive; the amp after both
-    const filterEarly = ladder ? lessOf(warmOversample) : 0;
-    const early = filterEarly + (p.drive > 0 ? lessOf(driveOversample) : 0);
+    const filterEarly = (ladder ? lessOf(warmOversample) : 0) - (warmHeld?.late ?? 0);
+    const early = filterEarly + (p.drive > 0 ? lessOf(driveOversample) : 0) - (driveHeld?.late ?? 0);
     const from = start - early;
     const until = end - early;
     const filterFrom = start - filterEarly;
@@ -297,11 +312,10 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     if (p.filter.envAmount !== 0) filters.forEach((f) => envelope(f.detune, filterFrom, 0, p.filter.envAmount * 1200, p.filterEnv));
     let head: AudioNode = filters[0];
     if (ladder) {
-      const warm = createDrive(raw, 1.4);
-      warm.oversample = warmOversample;
-      warm.connect(filters[0]).connect(filters[1]);
-      nodes.push(warm);
-      head = warm;
+      const warm = holdShaper(raw, createDrive(raw, 1.4), warmOversample, floor ?? warmOversample);
+      warm.output.connect(filters[0]).connect(filters[1]);
+      nodes.push(...warm.nodes);
+      head = warm.input;
     }
     if (glideFrom !== null) {
       // (Silent until the note: its oscillators started a block early)
@@ -316,11 +330,10 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     let tail: AudioNode = filters[filters.length - 1];
     if (p.drive > 0) {
       // The gains into and out of the drive are built into its curve
-      const drive = createDrive(raw, 1 + p.drive * 5, 1 + p.drive * 3, 1 / (1 + p.drive * 1.5));
-      drive.oversample = driveOversample;
-      tail.connect(drive);
-      nodes.push(drive);
-      tail = drive;
+      const drive = createHeldDrive(raw, 1 + p.drive * 5, 1 + p.drive * 3, 1 / (1 + p.drive * 1.5), driveOversample, floor ?? driveOversample);
+      tail.connect(drive.input);
+      nodes.push(...drive.nodes);
+      tail = drive.output;
     }
 
     const amp = raw.createGain();
