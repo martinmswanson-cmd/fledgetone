@@ -244,7 +244,7 @@ export function opsToHear(song: ProjectSnapshot, plan: { suggestion?: string; op
     }
     if (!plan.force) {
       if (s.songId && song.songId && s.songId !== song.songId) throw new UsageError(`${basename(plan.suggestion)} was made for another song (--force hears it anyway)`);
-      const fresh = classifySuggestion({ touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { song });
+      const fresh = classifySuggestion({ touchedHashes: s.touchedHashes, touchedNames: s.touchedNames, touchedRows: s.touchedRows }, { song });
       if (fresh.status === 'out_of_date') throw new UsageError(`the song changed since ${basename(plan.suggestion)} was made (${fresh.changed.join('; ')}); --force hears it anyway`);
     }
     return { ops: s.ops, idBase: suggestionIdBase(s.ops), title: s.title };

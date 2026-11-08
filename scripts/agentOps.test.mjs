@@ -668,3 +668,56 @@ test('a value a hair past a limit of 0 reads as 0: no caution; a very small nega
   const neg = mustApply(base(), [{ op: 'set_insert', trackId: KEYS, insert: 'lofi', settings: { on: true, tone: -1e-7 } }]);
   assert.deepEqual(neg.warnings, ['"Keys" Lo-fi tone, given as a very small negative number, is out of range: set to 1000.']);
 });
+
+test('two tracks with the same name: every caution and note says which by its row, and the same caution on both is two lines (scan r43)', () => {
+  // A second "Keys" (row 6), made the way an agent makes one
+  const made = mustApply(base(), [{ op: 'add_track', instrument: base().tracks[0].instrumentKey, name: 'Keys', ref: 'k2' }]);
+  const s = made.song;
+  const [A, B] = [s.tracks[0].id, made.refs.k2];
+  assert.equal(s.tracks.findIndex((t) => t.id === B), 5);
+  const run = (song, ops) => mustApply(song, ops);
+  // The same out-of-range volume on both: two lines, each saying which
+  const both = run(s, [
+    { op: 'set_track', trackId: A, volumeDb: 12 },
+    { op: 'set_track', trackId: B, volumeDb: 12 },
+  ]);
+  assert.deepEqual(both.warnings.filter((w) => /out of range/.test(w)), ['"Keys" (track 1) volume 12 dB is out of range: set to 6 dB (-60 to 6).', '"Keys" (track 6) volume 12 dB is out of range: set to 6 dB (-60 to 6).']);
+  assert.ok(both.warnings.includes('"Keys" (track 1) goes up by 17.5 dB. Turn your speakers down before you listen.'), both.warnings.join('\n'));
+  // The same caution about level on both: two lines
+  const driven = run(s, [
+    { op: 'set_insert', trackId: A, insert: 'distortion', settings: { on: true, amount: 1 } },
+    { op: 'set_insert', trackId: B, insert: 'distortion', settings: { on: true, amount: 1 } },
+  ]);
+  assert.deepEqual(driven.warnings, ['This turns on Distortion on "Keys" (track 1) at 100% drive: it gets louder and harsher.', 'This turns on Distortion on "Keys" (track 6) at 100% drive: it gets louder and harsher.']);
+  assert.deepEqual(run(s, [{ op: 'set_insert', trackId: B, insert: 'filter', settings: { on: true, slope: 18 } }]).warnings, ['"Keys" (track 6) Filter slope: the value given isn\'t one of its choices (left as it was).']);
+  assert.deepEqual(run(s, [{ op: 'set_instrument', trackId: B, instrument: s.tracks[0].instrumentKey }]).warnings, ['"Keys" (track 6) already plays Electric Piano (Real).']);
+  // Unmuted, solo cleared, a note out of its range
+  const muted = run(s, [{ op: 'set_track', trackId: B, mute: true }]).song;
+  assert.deepEqual(run(muted, [{ op: 'set_track', trackId: B, mute: false }]).warnings, ['This unmutes "Keys" (track 6, at 0 dB): it will be heard again.']);
+  const soloed = run(s, [{ op: 'set_track', trackId: B, solo: true }]).song;
+  assert.deepEqual(run(soloed, [{ op: 'set_track', trackId: B, solo: false }]).warnings, ['This un-solos "Keys" (track 6): every other track is heard again.']);
+  const clip = run(s, [{ op: 'add_clip', trackId: B, startBar: 1, lengthBars: 1, ref: 'c' }]);
+  const low = run(clip.song, [{ op: 'add_notes', clipId: clip.refs.c, notes: [{ pitch: 'C0', start: 0, length: 0.25 }] }]);
+  assert.ok(low.warnings.some((w) => w.endsWith('on "Keys" (track 6): it may not sound.')), low.warnings.join('\n'));
+  // Both through one bus that comes up: the louder list names both apart
+  const bus = run(s, [
+    { op: 'add_track', instrument: 'bus', name: 'Group', ref: 'bus' },
+    { op: 'set_track', trackId: A, output: '$bus' },
+    { op: 'set_track', trackId: B, output: '$bus' },
+    { op: 'set_track', trackId: '$bus', volumeDb: -10 },
+  ]);
+  const up = run(bus.song, [{ op: 'set_track', trackId: bus.refs.bus, volumeDb: -2 }]);
+  assert.ok(up.warnings.includes('"Keys" (track 1) and "Keys" (track 6) come out up to 8 dB louder through the buses and the master together. Turn your speakers down before you listen.'), up.warnings.join('\n'));
+  // A twin made by a later op of the same suggestion counts too: the caution says which, as the change line does
+  const later = run(base(), [
+    { op: 'set_track', trackId: KEYS, volumeDb: 12 },
+    { op: 'add_track', instrument: 'bus', name: 'Keys' },
+  ]);
+  assert.ok(later.warnings.includes('"Keys" (track 1) volume 12 dB is out of range: set to 6 dB (-60 to 6).'), later.warnings.join('\n'));
+  assert.ok(later.diff.changes.some((c) => c.text.startsWith('Turns "Keys" (track 1) up')));
+  // A name no other track has: no row
+  assert.deepEqual(run(s, [{ op: 'set_track', trackId: s.tracks[1].id, volumeDb: 12 }]).warnings.filter((w) => /out of range/.test(w)), ['"Drums" volume 12 dB is out of range: set to 6 dB (-60 to 6).']);
+  // Each name is still marked as a name on the card
+  for (const w of both.marked.warnings) assert.match(w, /^\uE000Keys\uE001 \(track [16]\) /);
+  for (const w of both.marked.warnings) assert.doesNotMatch(w, /[\uE002\uE003]/);
+});

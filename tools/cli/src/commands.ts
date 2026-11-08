@@ -296,7 +296,7 @@ export function apply(args: string[], flags: Flags): number {
     say(`This suggestion was made for another song. Nothing was written (--force applies it anyway).`);
     return 1;
   }
-  const fresh = classifySuggestion({ touchedHashes: suggestion.touchedHashes, touchedNames: suggestion.touchedNames }, { song });
+  const fresh = classifySuggestion({ touchedHashes: suggestion.touchedHashes, touchedNames: suggestion.touchedNames, touchedRows: suggestion.touchedRows }, { song });
   if (fresh.status === 'out_of_date' && !flags.force) {
     say(`The song changed since this suggestion was made (${fresh.changed.join('; ')}). Nothing was written (--force applies it anyway).`);
     return 1;
