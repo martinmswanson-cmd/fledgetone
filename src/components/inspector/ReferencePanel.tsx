@@ -9,7 +9,7 @@ import { clearReference, hear, loadReferenceFile, referenceMatchDb, restoreRefer
 import { analyseMix, cancelMixRender, useMixStudio } from '../../audio/mixStudio';
 import { compareSpectra, totalBands, type BandSpectrum } from '../../audio/mixAnalysis';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
-import { formatLufs } from '../../audio/loudness';
+import { formatLufs, isSilent } from '../../audio/loudness';
 import { maxOf } from '../../support/minMax';
 
 const W = 260;
@@ -100,7 +100,7 @@ export const ReferencePanel: React.FC = () => {
             <span className="truncate flex-1" title={ref.sound.name}>
               {ref.sound.name}
             </span>
-            <span className="font-mono text-[10px] text-forge-muted shrink-0">{formatLufs(ref.lufs)}</span>
+            <span className="font-mono text-[10px] text-forge-muted shrink-0">{isSilent(ref.truePeakDb) ? 'silent' : formatLufs(ref.lufs)}</span>
             <button type="button" onClick={clearReference} title="Remove the reference" className="shrink-0 text-forge-muted hover:text-white">
               <X className="w-3 h-3" />
             </button>

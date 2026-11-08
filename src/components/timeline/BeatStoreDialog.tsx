@@ -13,7 +13,7 @@ import { detectKey, keyOf, NOTE_NAMES } from '../../store/songKey';
 import { audibleTracks, channelsOf, cutRingOut, downloadBlob, encodeWav, exportCues, renderArrangement, renderStems, stemTracks, type RenderOptions } from '../../audio/exportWav';
 import { encodeAudio } from '../../audio/encoders';
 import { createZip, type ZipEntry } from '../../audio/zip';
-import { formatDbtp, formatLufs, measureLoudness } from '../../audio/loudness';
+import { exportedWords, loudnessWords, measureLoudness, notMatchedWords, unmeasured } from '../../audio/loudness';
 import { LOUDNESS_TARGETS, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { exportCeilingDbtp, limitChannels } from '../../audio/effects/limiter';
 import { beatFileBase, coverExtension, layTag, tagTimes } from '../../audio/beatPack';
@@ -166,7 +166,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
         textName(title.trim()) || 'Untitled',
         `Tempo: ${Math.round(s.bpm * 100) / 100} BPM`,
         `Key: ${key || 'not given'}`,
-        reading ? `Loudness: ${formatLufs(reading.integrated)}, true peak ${formatDbtp(reading.truePeakMax)}` : null,
+        reading ? `Loudness: ${loudnessWords(reading.integrated, reading.truePeakMax, reading.seconds, 'true peak')}` : null,
         opts.stems ? 'Stems: one WAV per track (24-bit, 44.1 kHz), all starting at bar 1, before the master compressor and limiter: they add up to the mix.' : null,
         '',
         'Made with Fledgetone.',
@@ -175,7 +175,8 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
       step('Packing the .zip', 0.98);
       controller.signal.throwIfAborted();
       downloadBlob(await createZip(files), `${base}.zip`);
-      showToast(`Made ${base}.zip${reading ? `: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}` : ''}`);
+      const quiet = reading && opts.target && unmeasured(reading.integrated, reading.truePeakMax) ? notMatchedWords(reading.seconds) : '';
+      showToast(`Made ${base}.zip${reading ? `: ${exportedWords(reading.integrated, reading.truePeakMax, reading.seconds)}${quiet}` : ''}`);
       onClose();
     } catch (err) {
       setStatus(controller.signal.aborted ? { kind: 'idle' } : { kind: 'idle', error: err instanceof Error ? err.message : String(err) });

@@ -152,6 +152,38 @@ test('level against the target: too quiet, too loud, or fine', () => {
   assert.ok(!checkMix({ lufs: -13.5, truePeakDb: -1, spectrum }, [], target).some((f) => f.id === 'quiet' || f.id === 'loud'));
 });
 
+test('a mix too quiet to measure (under the -70 LUFS gate, but sounding) is flagged, never passed as healthy', () => {
+  const spectrum = A.bandSpectrum([pink(SR, 2), pink(SR, 2)], SR);
+  const target = { lufs: -14, name: 'the streaming target (-14 LUFS)' };
+  const found = checkMix({ lufs: -Infinity, truePeakDb: -52.5, spectrum }, [], target).find((f) => f.id === 'quiet');
+  assert.ok(found && found.level === 'problem');
+  assert.match(found.detail, /under -70 LUFS, too quiet to measure \(its peaks reach -52\.5 dBTP\)/);
+  assert.doesNotMatch(found.title + found.detail, /inf|NaN/i);
+  // (bass nearly all in one side: its side is about as loud as its middle, a hair under, and reads "0 dB", never "-0")
+  const n = SR * 2;
+  const left = new Float32Array(n).map((_, i) => 0.3 * Math.sin((2 * Math.PI * 60 * i) / SR));
+  const oneSide = checkMix({ lufs: -14, truePeakDb: -1, spectrum: A.bandSpectrum([left, left.map((v) => v * 0.0175)], SR) }, [], target).find((f) => f.id === 'lowSides');
+  assert.match(oneSide.detail, /\(0 dB of side against the middle\)/);
+  // Silence (no peak) isn't a level to fix: nothing plays
+  assert.ok(!checkMix({ lufs: -Infinity, truePeakDb: -Infinity, spectrum }, [], target).some((f) => f.id === 'quiet'));
+});
+
+test('a listen says silent only of silence; a sounding render too quiet to measure is told so, live and from a file alike', async () => {
+  const { mixFindings, allFindings } = await import('../src/agent/listenReport.ts');
+  const reading = (lufs, truePeakDbtp) => ({ lufs, shortTermMaxLufs: null, truePeakDbtp, crestDb: 10, regions: [] });
+  assert.deepEqual(mixFindings(reading(-Infinity, -Infinity)), ['It is silent.']);
+  assert.deepEqual(mixFindings(reading(-Infinity, -52.46)), ['It is too quiet to measure: under -70 LUFS, with its peaks at -52.5 dBTP.']);
+  assert.deepEqual(mixFindings(reading(-20, -3)), []);
+  // The Mix check's own "quieter than the target" isn't said twice
+  const own = mixFindings(reading(-Infinity, -52.46));
+  assert.deepEqual(allFindings(own, [{ id: 'quiet', title: 'Quieter than the streaming target', detail: 'x' }]), own);
+  // The studio's live listen gives the same findings (one source)
+  const { readFileSync } = await import('node:fs');
+  const handlers = readFileSync(new URL('../src/agent/handlers.ts', import.meta.url), 'utf8');
+  assert.match(handlers, /const findings = mixFindings\(m, stats\);/);
+  assert.doesNotMatch(handlers, /It is silent/);
+});
+
 test('a limiter or clipper working hard is flagged', () => {
   const spectrum = A.bandSpectrum([pink(SR, 2), pink(SR, 2)], SR);
   const target = { lufs: -14, name: 'streaming' };

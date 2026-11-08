@@ -16,6 +16,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { versionLabel } from '../version';
 import { chooseInterface } from './pocketMode';
 import { renderSongMp3 } from './pocketExport';
+import { exportedWords, formatLufs, notMatchedWords, unmeasured } from '../audio/loudness';
 import { shareFailureWords } from '../audio/exportFailure';
 import { Card, pill } from './pocketUi';
 import { APP_LINK_BASE, isNativeApp, nativeShareLink } from '../native/nativeApp';
@@ -58,7 +59,8 @@ export const PocketShare: React.FC = () => {
       const file = new File([out.blob], out.name, { type: 'audio/mpeg' });
       if (!(await shareSheet({ files: [file], title: out.name }))) {
         downloadBlob(out.blob, out.name);
-        showToast(`Saved ${out.name} (${out.lufs.toFixed(1)} LUFS)`);
+        // (as the studio's Export says it: silent, or too quiet to measure and so not matched to the target)
+        showToast(Number.isFinite(out.lufs) ? `Saved ${out.name} (${formatLufs(out.lufs)})` : `Saved ${out.name}: ${exportedWords(out.lufs, out.peakDbtp, out.seconds, 'in the song')}${unmeasured(out.lufs, out.peakDbtp) ? notMatchedWords(out.seconds) : ''}`);
       }
     } catch (err) {
       showToast(`Couldn't make the MP3: ${shareFailureWords(err)}`);

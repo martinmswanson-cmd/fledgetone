@@ -284,7 +284,7 @@ export function checkMix(mix: MixMeasure, tracks: readonly TrackMeasure[], targe
       id: 'lowSides',
       level: m.lowSideDb > LOW_SIDE_LIMIT_DB + 3 ? 'problem' : 'note',
       title: "The low end isn't in the middle",
-      detail: `Below about 120 Hz, the left and right sides differ a lot (${m.lowSideDb.toFixed(0)} dB of side against the middle). Wide bass sounds thin on club systems and disappears on phones. Look at ${list(ids)}: pan it to the centre, take off stereo chorus or wideners, or turn on the master Stereo width with "Keep the bass in the middle".`,
+      detail: `Below about 120 Hz, the left and right sides differ a lot (${Math.round(m.lowSideDb) || 0} dB of side against the middle). Wide bass sounds thin on club systems and disappears on phones. Look at ${list(ids)}: pan it to the centre, take off stereo chorus or wideners, or turn on the master Stereo width with "Keep the bass in the middle".`,
       trackIds: ids,
     });
   }
@@ -347,6 +347,15 @@ export function checkMix(mix: MixMeasure, tracks: readonly TrackMeasure[], targe
         trackIds: [],
       });
     }
+  } else if (Number.isFinite(mix.truePeakDb)) {
+    // It sounds, but every 400 ms of it is under the loudness gate: no loudness to read, so an export can't match a target from it
+    out.push({
+      id: 'quiet',
+      level: 'problem',
+      title: `Quieter than ${target.name}`,
+      detail: `The mix is under -70 LUFS, too quiet to measure (its peaks reach ${mix.truePeakDb.toFixed(1)} dBTP), so "Match a loudness target" can't bring it up when you export. Raise the faders of the tracks playing, or the master Level.`,
+      trackIds: [],
+    });
   }
 
   const stats = mix.stats;

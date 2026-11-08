@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { createLoudnessAnalyser, normalizeGainDb, sharedGainDb, truePeakOf, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
+const { createLoudnessAnalyser, normalizeGainDb, sharedGainDb, truePeakOf, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp, exportedWords, loudnessWords, versionWords, notMatchedWords, isSilent, unmeasured } = await import('../src/audio/loudness.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -176,8 +176,69 @@ test('the normalize gain reaches -14 LUFS unless the -1 dBTP ceiling holds it ba
   assert.deepEqual(normalizeGainDb({ integrated: -Infinity, truePeakMax: -Infinity }), { gainDb: 0, limited: false });
   assert.deepEqual(normalizeGainDb({ integrated: -20, truePeakMax: -10 }, -16, -2), { gainDb: 4, limited: false });
   assert.equal(formatLufs(-14.04), '-14.0 LUFS');
-  assert.equal(formatLufs(-Infinity), '-inf LUFS');
   assert.equal(formatDbtp(-0.96), '-1.0 dBTP');
+});
+
+test('no reading is told in plain words, never as -inf: silent, too quiet to measure, or too short', () => {
+  assert.equal(formatLufs(-Infinity), 'under -70 LUFS');
+  assert.equal(formatDbtp(-Infinity), 'silent');
+  // Digital silence (every sample zero): no loudness and no peak
+  const sr = 48000;
+  const zero = measure(sr, new Float32Array(sr * 2));
+  assert.equal(exportedWords(zero.integrated, zero.truePeakMax, zero.seconds), "it's silent (nothing plays in this range)");
+  assert.equal(exportedWords(zero.integrated, zero.truePeakMax, zero.seconds, 'in the song'), "it's silent (nothing plays in the song)");
+  assert.equal(loudnessWords(zero.integrated, zero.truePeakMax, zero.seconds), 'silent');
+  // A tone you can hear, every 400 ms of it under the -70 LUFS gate: no loudness, but a peak
+  const hush = measure(sr, sine(sr, 1000, -75, 2));
+  assert.equal(hush.integrated, -Infinity);
+  assert.ok(Number.isFinite(hush.truePeakMax));
+  assert.ok(unmeasured(hush.integrated, hush.truePeakMax) && !isSilent(hush.truePeakMax));
+  assert.equal(exportedWords(hush.integrated, hush.truePeakMax, hush.seconds), `under -70 LUFS (too quiet to measure), peak ${hush.truePeakMax.toFixed(1)} dBTP`);
+  assert.equal(loudnessWords(hush.integrated, hush.truePeakMax, hush.seconds, 'true peak'), `under -70 LUFS (too quiet to measure), true peak ${hush.truePeakMax.toFixed(1)} dBTP`);
+  assert.equal(notMatchedWords(hush.seconds), '. Too quiet to match the loudness target, so it is left at its own level');
+  // A loud blip shorter than one 400 ms block has no loudness either: it isn't quiet
+  const blip = measure(sr, sine(sr, 1000, -6, 0.2));
+  assert.equal(blip.integrated, -Infinity);
+  assert.equal(exportedWords(blip.integrated, blip.truePeakMax, blip.seconds), `too short to measure its loudness, peak ${blip.truePeakMax.toFixed(1)} dBTP`);
+  assert.equal(notMatchedWords(blip.seconds), '. Too short to match the loudness target, so it is left at its own level');
+  // A reading: the numbers, as before
+  assert.equal(exportedWords(-14.04, -1.04, 30), '-14.0 LUFS, peak -1.0 dBTP');
+  // One version of several
+  assert.equal(versionWords('underscore', zero, true), 'underscore: silent');
+  assert.equal(versionWords('underscore', hush, false), 'underscore under -70 LUFS (too quiet to measure)');
+  assert.equal(versionWords('underscore', hush, true), 'underscore under -70 LUFS (too quiet to measure), not matched to the target');
+  assert.equal(versionWords('full', { integrated: -14.04, truePeakMax: -1, seconds: 30 }, true), 'full -14.0 LUFS');
+  for (const words of [exportedWords(zero.integrated, zero.truePeakMax), exportedWords(hush.integrated, hush.truePeakMax), versionWords('x', hush, true), formatLufs(NaN), formatDbtp(NaN)]) {
+    assert.doesNotMatch(words, /inf|NaN/i, words);
+  }
+});
+
+test('every place that tells a measured loudness says it in these words (no -inf, -Infinity or NaN)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const dialog = src('src/components/timeline/ExportDialog.tsx');
+  assert.match(dialog, /exportedWords\(m\.reading\.integrated, m\.reading\.truePeakMax, m\.reading\.seconds\)/);
+  assert.match(dialog, /versionWords\(m\.label\.toLowerCase\(\), m\.reading, settings\.normalize\)/);
+  assert.match(dialog, /settings\.normalize && unmeasured\(reading\.integrated, reading\.truePeakMax\)\) note \+= notMatchedWords/);
+  assert.match(dialog, /exportedWords\(videoLufs, videoPeak, reading\.seconds\)/);
+  assert.match(dialog, /every stem is silent/);
+  assert.match(dialog, /every layer is silent/);
+  const store = src('src/components/timeline/BeatStoreDialog.tsx');
+  assert.match(store, /Loudness: \$\{loudnessWords\(reading\.integrated, reading\.truePeakMax, reading\.seconds, 'true peak'\)\}/);
+  assert.match(store, /exportedWords\(reading\.integrated, reading\.truePeakMax, reading\.seconds\)/);
+  assert.match(src('src/components/inspector/MixCheckPanel.tsx'), /loudnessWords\(analysis\.lufs, analysis\.truePeakDb\)/);
+  assert.match(src('src/components/inspector/ReferencePanel.tsx'), /isSilent\(ref\.truePeakDb\) \? 'silent' : formatLufs\(ref\.lufs\)/);
+  // Pocket's MP3 says what the studio's Export says
+  const pocket = src('src/pocket/PocketShare.tsx');
+  assert.doesNotMatch(pocket, /lufs\.toFixed/);
+  assert.match(pocket, /exportedWords\(out\.lufs, out\.peakDbtp, out\.seconds, 'in the song'\)/);
+  // A song file rendered from the command line says silent / too quiet, and claims no target it didn't reach
+  const runtime = src('src/runtime/render.ts');
+  assert.match(runtime, /It is silent: nothing plays in this range\./);
+  assert.match(runtime, /reading\.integrated - held\.trimDb, peak, !quiet\)/);
+  for (const path of ['src/components/timeline/ExportDialog.tsx', 'src/components/timeline/BeatStoreDialog.tsx', 'src/components/inspector/MixCheckPanel.tsx', 'src/components/inspector/ReferencePanel.tsx', 'src/audio/loudness.ts']) {
+    assert.doesNotMatch(src(path), /-inf (LUFS|dBTP)/, path);
+  }
 });
 
 test('the worklet source is self-contained: it runs with only the worklet globals', () => {

@@ -105,6 +105,48 @@ export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] 
 }
 
 /**
+ * Seconds from an audio clip's start to `bars` into it, where it is now: along the tempo map where
+ * that plays across a change (see playsAlongMap), else at the tempo where it starts.
+ */
+export function secondsInto(clip: Pick<Clip, 'startBar' | 'audio'>, bars: number, tempo: Tempo): number {
+  const to = clip.startBar + bars;
+  return playsAlongMap(clip, to, tempo) ? secondsBetween(clip.startBar, to, tempo) : bars * secondsPerBar(tempoAt(clip.startBar, tempo));
+}
+
+/**
+ * An audio clip that plays its sound in real time, moved or copied to `startBar`: as long in seconds
+ * there as it is where it is now (in `from`, the tempo where it is; `to`, the tempo where it goes:
+ * the same song's, or another song's for a paste), so its bars follow the tempo at its new place,
+ * and its comp's places in the sound stay where they were. Never past `endBar` (the timeline's end).
+ * A clip that follows the tempo, and a note clip, keep their bars.
+ */
+export function audioClipAt(clip: Pick<Clip, 'startBar' | 'lengthBars' | 'audio' | 'comp'>, startBar: number, from: Tempo, to: Tempo, endBar = Infinity): Pick<Clip, 'lengthBars' | 'comp'> {
+  if (!clip.audio || clip.audio.stretchBpm) return { lengthBars: clip.lengthBars, ...(clip.comp ? { comp: clip.comp } : {}) };
+  const ratio = tempoAt(startBar, to) / tempoAt(clip.startBar, from);
+  const scaled = clip.lengthBars * ratio;
+  // In one tempo where it is and where it goes, scaled by the two tempos (exactly its bars where they're the same);
+  // across a change at either place, its seconds counted along the map (as moving it keeps them)
+  const steady = !playsAlongMap(clip, clip.startBar + clip.lengthBars, from) && !playsAlongMap({ ...clip, startBar }, startBar + scaled, to);
+  const barsAt = (bars: number) => (steady ? bars * ratio : barsForSeconds(startBar, secondsInto(clip, bars, from), to));
+  return {
+    lengthBars: Math.min(endBar - startBar, barsAt(clip.lengthBars)),
+    ...(clip.comp ? { comp: clip.comp.map((seg) => ({ ...seg, at: barsAt(seg.at) })) } : {}),
+  };
+}
+
+/**
+ * Where a clip copied to `want` goes, and how long it is there (see audioClipAt): as near `want` as
+ * it fits between bar 1 and `endBar`, measured at the place it ends up.
+ */
+export function placedClip(clip: Pick<Clip, 'startBar' | 'lengthBars' | 'audio' | 'comp'>, want: number, from: Tempo, to: Tempo, endBar: number): Pick<Clip, 'startBar' | 'lengthBars' | 'comp'> {
+  const first = Math.max(1, want);
+  let placed = audioClipAt(clip, first, from, to);
+  const startBar = Math.max(1, Math.min(endBar - placed.lengthBars, first));
+  if (startBar !== first) placed = audioClipAt(clip, startBar, from, to);
+  return { ...placed, startBar, lengthBars: Math.min(endBar - startBar, placed.lengthBars) };
+}
+
+/**
  * Likely tempos a loop was recorded at, from its length: tempos at which it lasts a whole number
  * of bars (1, 2, 4, 8 or 16), between 60 and 200 BPM, nearest `near` first.
  */

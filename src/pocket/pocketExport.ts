@@ -27,7 +27,7 @@ export function pocketTarget(): string {
   return loud?.on ? loud.target : DEFAULT_TARGET;
 }
 
-export function renderSongMp3(onProgress: (fraction: number, detail: string) => void, targetId: string = pocketTarget()): Promise<{ blob: Blob; name: string; lufs: number } | null> {
+export function renderSongMp3(onProgress: (fraction: number, detail: string) => void, targetId: string = pocketTarget()): Promise<{ blob: Blob; name: string; lufs: number; peakDbtp: number; seconds: number } | null> {
   return countedRender(async () => {
     const s = useTimelineStore.getState();
     // The render swaps the global audio context while it sets up, so live playback halts first
@@ -80,6 +80,7 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     // (Turned down a little after encoding if its decoded peaks passed the ceiling: the loudness told is the file's)
     let trimDb = 0;
     const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16, onHeld: (h) => (trimDb = h.trimDb) });
-    return { blob, name: `${safeFileName(s.projectName)}.mp3`, lufs: (loud && found ? found.lufs : reading.integrated) - trimDb };
+    // (its true peak and length too, so a file too quiet to measure, or silent, is told so: see loudness.ts exportedWords)
+    return { blob, name: `${safeFileName(s.projectName)}.mp3`, lufs: (loud && found ? found.lufs : reading.integrated) - trimDb, peakDbtp: reading.truePeakMax - trimDb, seconds: reading.seconds };
   });
 }

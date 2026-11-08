@@ -28,7 +28,7 @@ import {
   cutRingOut,
   stemTracks,
 } from '../../audio/exportWav';
-import { formatDbtp, formatLufs, measureLoudness, sharedGainDb, truePeakOf } from '../../audio/loudness';
+import { exportedWords, formatDbtp, formatLufs, isSilent, lufsWords, measureLoudness, notMatchedWords, sharedGainDb, truePeakOf, unmeasured, versionWords } from '../../audio/loudness';
 import { fileAgainstHeardDb, heardLoudness } from '../../audio/monitor';
 import { exportCeilingDbtp, limitInPlace } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
@@ -474,6 +474,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
           peakDbtp += gainDb;
           note = limited ? ` (held under the target so peaks stay under ${ceilingDbtp} dBTP)` : '';
+          // (a loop with no loudness to measure gets no gain: say so)
+          if (unmeasured(reading.integrated, peakDbtp)) note = notMatchedWords(reading.seconds);
         }
         const files: Array<{ name: string; data: Blob }> = [];
         // Compressed: every intro and loop turned down together if at all, so an intro still runs into
@@ -505,7 +507,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         deliver(await createZip(files), fileName);
-        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated - trimmedDb())}, peak ${formatDbtp(filePeak(peakDbtp))}${note}${trimNote()}` : held.peakDbtp !== null ? `: the loudest layer peaks at ${formatDbtp(held.peakDbtp)}${trimNote()}` : ''}`);
+        const loopWords = (r: NonNullable<typeof reading>) => (isSilent(r.truePeakMax) ? 'silent' : `${lufsWords(r.integrated - trimmedDb(), r.seconds)}, peak ${formatDbtp(filePeak(peakDbtp))}`);
+        const layersWords = (peak: number) => (isSilent(peak) ? 'every layer is silent' : `the loudest layer peaks at ${formatDbtp(peak)}`);
+        showToast(`Exported ${fileName}${reading ? `: the loop is ${loopWords(reading)}${note}${trimNote()}` : held.peakDbtp !== null ? `: ${layersWords(held.peakDbtp)}${trimNote()}` : ''}`);
       } else if (videoOut) {
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
         // cut where its tails die away once it has its final level (see keepRingOut)
@@ -558,7 +562,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         controller.signal.throwIfAborted();
         deliver(blob, fileName);
         if (loudMatch) keepPush(true);
-        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated - trimmedDb())}, peak ${formatDbtp(held.peakDbtp ?? reading.truePeakMax - held.trimDb)}${loudMatch ? loudNote() : ''}${trimNote()}`);
+        const videoPeak = held.peakDbtp ?? reading.truePeakMax - held.trimDb;
+        const videoLufs = reading.integrated - trimmedDb();
+        showToast(`Exported ${fileName}: ${exportedWords(videoLufs, videoPeak, reading.seconds)}${loudMatch ? loudNote() : ''}${settings.normalize && unmeasured(videoLufs, videoPeak) ? notMatchedWords(reading.seconds) : ''}${trimNote()}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
           opts,
@@ -572,7 +578,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const zip = await createZip(rendered.map((r, i) => ({ name: names[i], data: r.wav })));
         controller.signal.throwIfAborted();
         deliver(zip, fileName);
-        if (format !== 'wav') showToast(`Exported ${fileName}${held.peakDbtp !== null ? `: the loudest stem peaks at ${formatDbtp(held.peakDbtp)}` : ''}${trimNote()}`);
+        if (format !== 'wav') showToast(`Exported ${fileName}${held.peakDbtp !== null ? (isSilent(held.peakDbtp) ? ': every stem is silent' : `: the loudest stem peaks at ${formatDbtp(held.peakDbtp)}`) : ''}${trimNote()}`);
       } else {
         // Each version (the full mix, and the underscore or no-drums ones asked for) rendered the same way
         const made: Array<{ name: string; data: Blob | null; label: string; reading: Awaited<ReturnType<typeof measureLoudness>>; note: string }> = [];
@@ -604,6 +610,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the Loud master (Master tab)`;
             else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
           }
+          // Nothing it could be matched from: it sounds, but too quietly (or too briefly) to measure
+          if (settings.normalize && unmeasured(reading.integrated, reading.truePeakMax)) note += notMatchedWords(reading.seconds);
           if (format === 'wav') made.push({ name: versionFile(version), data: encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)), label, reading, note });
           else {
             const channels = channelsOf(audio);
@@ -633,11 +641,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         if (made.length === 1) {
           const [m] = made;
           deliver(m.data!, fileName);
-          showToast(`Exported ${fileName}: ${formatLufs(m.reading.integrated)}, peak ${formatDbtp(m.reading.truePeakMax)}${m.note}`);
+          showToast(`Exported ${fileName}: ${exportedWords(m.reading.integrated, m.reading.truePeakMax, m.reading.seconds)}${m.note}`);
         } else {
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
           deliver(await createZip(made.map((m) => ({ name: m.name, data: m.data! }))), fileName);
-          showToast(`Exported ${fileName}: ${made.map((m) => `${m.label.toLowerCase()} ${formatLufs(m.reading.integrated)}`).join(', ')}`);
+          showToast(`Exported ${fileName}: ${made.map((m) => versionWords(m.label.toLowerCase(), m.reading, settings.normalize)).join(', ')}`);
         }
       }
       onClose();

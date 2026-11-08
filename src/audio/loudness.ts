@@ -451,12 +451,58 @@ export function sharedGainDb(
   return { ...normalizeGainDb({ integrated: reading.integrated, truePeakMax: peakDbtp }, targetLufs, ceilingDbtp), peakDbtp };
 }
 
-/** "-14.0 LUFS" / "-inf LUFS" */
+/**
+ * "-14.0 LUFS", or "under -70 LUFS" for no reading: every 400 ms of the audio is under the gate
+ * (BS.1770's absolute gate, -70 LUFS), so integrated loudness has nothing to measure.
+ */
 export function formatLufs(v: number): string {
-  return Number.isFinite(v) ? `${v.toFixed(1)} LUFS` : '-inf LUFS';
+  return Number.isFinite(v) ? `${v.toFixed(1)} LUFS` : 'under -70 LUFS';
 }
 
-/** "-1.0 dBTP" / "-inf dBTP" */
+/** "-1.0 dBTP", or "silent" for no peak (every sample is zero). */
 export function formatDbtp(v: number): string {
-  return Number.isFinite(v) ? `${v.toFixed(1)} dBTP` : '-inf dBTP';
+  return Number.isFinite(v) ? `${v.toFixed(1)} dBTP` : 'silent';
 }
+
+/** Audio with no peak at all: every sample is zero. */
+export const isSilent = (peakDbtp: number): boolean => !Number.isFinite(peakDbtp);
+
+/**
+ * Audio that sounds but has no integrated loudness: too quiet for the gate (or shorter than one
+ * 400 ms block, `seconds`), so no loudness target can be matched from it.
+ */
+export const unmeasured = (lufs: number, peakDbtp: number): boolean => !Number.isFinite(lufs) && Number.isFinite(peakDbtp);
+
+/**
+ * How loud a file is, in plain words: "-14.0 LUFS, peak -1.0 dBTP"; "under -70 LUFS (too quiet to
+ * measure), peak -52.5 dBTP" when it sounds but every 400 ms of it is under the gate; "too short to
+ * measure its loudness, peak -3.0 dBTP" for under 0.4 seconds; "silent" when every sample is zero.
+ */
+export function loudnessWords(lufs: number, peakDbtp: number, seconds = Infinity, peakWord = 'peak'): string {
+  if (isSilent(peakDbtp)) return 'silent';
+  return `${lufsWords(lufs, seconds)}, ${peakWord} ${formatDbtp(peakDbtp)}`;
+}
+
+/** The loudness alone in words (of audio that isn't silent): "-14.0 LUFS", "under -70 LUFS (too quiet to measure)" or "too short to measure its loudness". */
+export function lufsWords(lufs: number, seconds = Infinity): string {
+  if (Number.isFinite(lufs)) return formatLufs(lufs);
+  return seconds < 0.4 ? 'too short to measure its loudness' : `${formatLufs(lufs)} (too quiet to measure)`;
+}
+
+/** What Export says of a file it made: its loudness and peak (loudnessWords), or that it's silent (nothing plays `where`). */
+export function exportedWords(lufs: number, peakDbtp: number, seconds = Infinity, where = 'in this range'): string {
+  return isSilent(peakDbtp) ? `it's silent (nothing plays ${where})` : loudnessWords(lufs, peakDbtp, seconds);
+}
+
+/**
+ * One version in the list Export gives for several (`label` "underscore"): "underscore -14.0 LUFS",
+ * "underscore: silent", or "underscore under -70 LUFS (too quiet to measure)", with ", not matched
+ * to the target" when it was to be matched (`normalize`) and had no loudness to match from.
+ */
+export function versionWords(label: string, r: Pick<LoudnessReading, 'integrated' | 'truePeakMax' | 'seconds'>, normalize: boolean): string {
+  if (isSilent(r.truePeakMax)) return `${label}: silent`;
+  return `${label} ${lufsWords(r.integrated, r.seconds)}${normalize && unmeasured(r.integrated, r.truePeakMax) ? ', not matched to the target' : ''}`;
+}
+
+/** Said after a file that was to match a loudness target but had no loudness to match from (see unmeasured). */
+export const notMatchedWords = (seconds = Infinity): string => `. ${seconds < 0.4 ? 'Too short' : 'Too quiet'} to match the loudness target, so it is left at its own level`;
