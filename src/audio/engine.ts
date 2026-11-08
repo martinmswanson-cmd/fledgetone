@@ -8,6 +8,8 @@ import * as Tone from 'tone';
 import { liveTransport, liveDestination, liveContext } from './liveContext';
 // Must run before any oscillator exists: keeps Tone's waveform cache per audio context
 import './toneFixes';
+// Must run before any buffer is started: every one starts on a whole frame, live and exported alike
+import './wholeFrameStarts';
 import { createBusEffects } from './effects/busEffects';
 import { createMasterInserts } from './effects/masterChain';
 import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';

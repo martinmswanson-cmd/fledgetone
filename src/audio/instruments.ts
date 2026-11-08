@@ -10,6 +10,7 @@ import { liveContext } from './liveContext';
 import * as Tone from 'tone';
 import { createChipBass, createChipDrums, createChipLead } from './presets/chiptune';
 import './toneFixes';
+import './wholeFrameStarts';
 import type { InstrumentKey } from './instrumentCatalog';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { createDrumKit } from './presets/drums';

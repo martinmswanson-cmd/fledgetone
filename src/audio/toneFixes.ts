@@ -4,7 +4,7 @@
  */
 import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
-import { noiseStart, toneNoiseChannel } from './seededNoise';
+import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { ATTACK_TRIES, attackRoom, soundLead } from './soundLead';
 
@@ -184,8 +184,13 @@ soloDisposer.dispose = function () {
  * export of the same song. Its noise comes from a fixed seed here (seededNoise.ts), the way Tone
  * makes it, and each burst starts at a point picked by the noise's key (seedToneNoise; 0 if it has
  * none) and its start time: each hit still differs from the next, the same way every time.
- * The buffers are made at 44.1 kHz whatever the context, as Tone's are, so the first context to
- * play noise doesn't decide its samples.
+ * The buffers are Tone's noise as made at 44.1 kHz, and for a context at any other rate that same
+ * noise resampled (toneNoiseLoop), so a burst is the same sound below 20 kHz, band for band, live
+ * and exported at every rate. Played as made at 44.1 kHz, a 48 kHz computer read them between their
+ * samples (wholeFrameStarts.ts), and the Groove Drum Kit's snare played 0.8 dB quieter (its noise
+ * 1.7 dB, a Drum Machine hat 2.2 dB) than exported; made sample by sample at 96 kHz, the same white
+ * noise spread up to 48 kHz, and a 96 kHz export's snare noise was 3 dB duller below 20 kHz.
+ * A kit's buffer is made with the kit (seedToneNoise): resampling takes a few tens of ms.
  */
 interface NoiseInside {
   context: Tone.BaseContext;
@@ -201,21 +206,21 @@ interface NoiseInside {
   noiseKey?: number;
 }
 const TONE_NOISE_SECONDS = 5;
-const toneNoiseBuffers = new Map<NoiseColour, Tone.ToneAudioBuffer>();
-function toneNoiseBuffer(colour: NoiseColour): Tone.ToneAudioBuffer {
-  let buffer = toneNoiseBuffers.get(colour);
+const toneNoiseBuffers = new Map<string, Tone.ToneAudioBuffer>();
+function toneNoiseBuffer(colour: NoiseColour, rate: number): Tone.ToneAudioBuffer {
+  let buffer = toneNoiseBuffers.get(`${colour}@${rate}`);
   if (!buffer) {
-    const rate = 44100;
-    const audio = new AudioBuffer({ numberOfChannels: 2, length: TONE_NOISE_SECONDS * rate, sampleRate: rate });
-    for (let c = 0; c < 2; c++) audio.copyToChannel(toneNoiseChannel(colour, audio.length, 0x70e + c * 0x1000), c);
+    const channels = [0, 1].map((c) => toneNoiseLoop(colour, TONE_NOISE_SECONDS, rate, 0x70e + c * 0x1000));
+    const audio = new AudioBuffer({ numberOfChannels: 2, length: channels[0].length, sampleRate: rate });
+    channels.forEach((data, c) => audio.copyToChannel(data, c));
     buffer = new Tone.ToneAudioBuffer(audio);
-    toneNoiseBuffers.set(colour, buffer);
+    toneNoiseBuffers.set(`${colour}@${rate}`, buffer);
   }
   return buffer;
 }
 const noiseProto = Tone.Noise.prototype as unknown as { _start: (this: NoiseInside, time: Tone.Unit.Time) => void };
 noiseProto._start = function (time) {
-  const buffer = toneNoiseBuffer(this._type);
+  const buffer = toneNoiseBuffer(this._type, this.context.sampleRate);
   const at = this.toSeconds(time);
   this._source = new Tone.ToneBufferSource({
     url: buffer,
@@ -229,9 +234,11 @@ noiseProto._start = function (time) {
   this._source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
 };
 
-/** Give a Tone.Noise (a NoiseSynth's `noise`) its key: see noiseKey, from the track's seed and which drum. */
+/** Give a Tone.Noise (a NoiseSynth's `noise`) its key (see noiseKey, from the track's seed and which drum), and its buffer now rather than at its first hit. */
 export function seedToneNoise(noise: Tone.Noise, key: number): void {
-  (noise as unknown as NoiseInside).noiseKey = key;
+  const inside = noise as unknown as NoiseInside;
+  inside.noiseKey = key;
+  toneNoiseBuffer(inside._type, inside.context.sampleRate);
 }
 
 /**

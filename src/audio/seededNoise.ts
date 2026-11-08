@@ -1,4 +1,5 @@
 import { hashSeed } from './human';
+import { resampleLoop } from './loopResample';
 
 /**
  * Repeatable noise for the instruments, so a song renders the same sample for sample every time.
@@ -78,4 +79,19 @@ export function toneNoiseChannel(colour: NoiseColour, length: number, seed: numb
     for (let i = 0; i < length; i++) data[i] = random() * 2 - 1;
   }
   return data;
+}
+
+/** The rate Tone makes its noise at. */
+export const TONE_NOISE_RATE = 44100;
+
+/**
+ * `seconds` (whole) of one channel of Tone's noise of `colour` from `seed`, looped, for a context
+ * at `rate`: as made at 44.1 kHz, and at any other rate that same noise resampled (resampleLoop),
+ * so a burst has the same level in every band below 20 kHz, hit for hit, at every rate a song is
+ * heard or exported at. (Made sample by sample at 96 kHz, white noise spreads its level up to
+ * 48 kHz, and a snare's noise exported at 96 kHz was 3 dB duller below 20 kHz than at 44.1 kHz.)
+ */
+export function toneNoiseLoop(colour: NoiseColour, seconds: number, rate: number, seed: number): Float32Array<ArrayBuffer> {
+  const noise = toneNoiseChannel(colour, seconds * TONE_NOISE_RATE, seed);
+  return rate === TONE_NOISE_RATE ? noise : resampleLoop(noise, TONE_NOISE_RATE, rate);
 }
