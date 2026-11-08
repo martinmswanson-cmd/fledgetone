@@ -3,7 +3,7 @@ import type { TrackFx } from '../../store/timelineTypes';
 import { ECHO_BEATS, REVERB_DECAY_MAX } from '../../store/timelineTypes';
 import { writeTime } from './lightFx';
 import { paramSetter as smoothParamSetter } from './smoothParam';
-import { INSERT_ROOM, insertRoomChannels, ROOM_STYLES } from './roomIR';
+import { INSERT_ROOM, insertRoomChannels, insertRoomChannelsSoon, ROOM_STYLES } from './roomIR';
 import { keepOn } from '../keepOn';
 
 /**
@@ -117,9 +117,21 @@ export function createEcho(settings: TrackFx['echo'], bpm: number): EchoUnit {
  * different on each side), as loud on music as the plain noise tail it took over from.
  */
 export function reverbImpulse(raw: BaseAudioContext, decay: number): AudioBuffer {
-  const rate = raw.sampleRate;
-  const [l, r] = insertRoomChannels(Math.max(0.05, Math.min(REVERB_DECAY_MAX, decay)), rate);
-  const buffer = raw.createBuffer(2, l.length, rate);
+  return impulseOf(raw, insertRoomChannels(insertDecay(decay), raw.sampleRate));
+}
+
+/** reverbImpulse made while the page plays, a few milliseconds at a time (see roomIR.ts madeSoon). */
+export async function reverbImpulseSoon(raw: BaseAudioContext, decay: number): Promise<AudioBuffer> {
+  return impulseOf(raw, await insertRoomChannelsSoon(insertDecay(decay), raw.sampleRate));
+}
+
+const insertDecay = (decay: number) => Math.max(0.05, Math.min(REVERB_DECAY_MAX, decay));
+
+/** The decay (seconds) a Reverb insert set to `decay` makes its room at: to the nearest 50 ms (see createReverb), within the insert's range. */
+export const insertRoomDecay = (decay: number): number => insertDecay(Math.round(decay * 20) / 20);
+
+function impulseOf(raw: BaseAudioContext, [l, r]: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>]): AudioBuffer {
+  const buffer = raw.createBuffer(2, l.length, raw.sampleRate);
   buffer.copyToChannel(l, 0);
   buffer.copyToChannel(r, 1);
   return buffer;
@@ -128,6 +140,9 @@ export function reverbImpulse(raw: BaseAudioContext, decay: number): AudioBuffer
 export interface ReverbUnit extends SpaceUnit {
   set: (s: TrackFx['reverb'], ramp: number) => void;
 }
+
+/** Seconds a live Reverb insert's tail takes to come in once its first room is made (see createReverb). */
+const FIRST_TAIL_FADE = 0.03;
 
 /** input -> dry, plus input -> pre-delay -> convolver (the tail) -> tone low-pass -> wet. */
 export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
@@ -147,22 +162,47 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   tone.type = 'lowpass';
   tone.Q.value = 0.5;
   const wet = raw.createGain();
+  const offline = input.context.isOffline;
+  // Live, the tail comes in through a gate, shut until its first room is made (a few milliseconds
+  // at a time, see below) and then opened over FIRST_TAIL_FADE: a room handed to the convolver
+  // while a part plays starts on whatever it hears then, which could come in with a click
+  const gate = offline ? null : raw.createGain();
+  if (gate) gate.gain.value = 0;
   // In an export the tail is never switched off part way between notes (see keepOn.ts)
   const letGo = keepOn(into);
   into.connect(dry);
   dry.connect(out);
   into.connect(pre);
   pre.connect(convolver);
-  convolver.connect(tone);
+  if (gate) {
+    convolver.connect(gate);
+    gate.connect(tone);
+  } else convolver.connect(tone);
   tone.connect(wet);
   wet.connect(out);
   let decay = -1;
+  let gone = false;
   const set: ReverbUnit['set'] = (s, ramp) => {
     // A new tail only when its length changes (to the nearest 50 ms)
     const d = Math.round(s.decay * 20) / 20;
     if (d !== decay) {
       decay = d;
-      convolver.buffer = reverbImpulse(raw, d);
+      // At once for an export (its rooms made beforehand, a little at a time: prepareRooms in
+      // exportWav.ts); live, a few milliseconds at a time (a long room takes a few tenths of a
+      // second, more away from 44.1 kHz, where it's resampled), the tail before playing on until
+      // it's ready (Play waits for a first one, see liveTracks.ts liveSoundsReady)
+      if (offline) convolver.buffer = reverbImpulse(raw, d);
+      else
+        void reverbImpulseSoon(raw, d).then((buffer) => {
+          if (decay !== d || gone) return;
+          const first = !convolver.buffer;
+          convolver.buffer = buffer;
+          if (first && gate) {
+            const at = raw.currentTime;
+            gate.gain.setValueAtTime(0, at);
+            gate.gain.linearRampToValueAtTime(1, at + FIRST_TAIL_FADE);
+          }
+        });
     }
     // (The room answers after its own short pre-delay: the knob's is the whole of it, where it can be)
     setParam(pre.delayTime, Math.max(0, Math.min(0.2, s.preDelay / 1000) - ROOM_STYLES[INSERT_ROOM].preDelay), ramp);
@@ -177,7 +217,8 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
     output,
     set,
     dispose: () => {
-      [dry, pre, convolver, tone, wet].forEach((n) => n.disconnect());
+      gone = true;
+      [dry, pre, convolver, gate, tone, wet].forEach((n) => n?.disconnect());
       letGo();
       input.dispose();
       output.dispose();

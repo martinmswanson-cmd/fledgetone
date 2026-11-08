@@ -209,6 +209,7 @@ node scripts/audio-check/starters-loudness.cjs   # every starter's loudness (IDS
 node scripts/audio-check/live-controllers.cjs    # live: a plugin's held controllers after Stop, a loop, an unmute
 node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost, releases, Stop, stalls
 node scripts/audio-check/rack-levels.cjs        # a Drum Rack pad as loud live as in the export (one- and two-channel sounds, panned)
+node scripts/audio-check/rates.cjs              # the same sound, at the same moment, at 44.1, 48, 96 and 32 kHz: driven sounds, amps and inserts, rooms, both reverbs
 ```
 
 Two generated files are checked by the tests. Regenerate them when you change what they're built

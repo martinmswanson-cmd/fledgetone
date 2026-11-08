@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import type { MasterFx } from '../../store/timelineTypes';
 import { createLightPingPong, type LightPingPong } from './lightFx';
 import { decodeSound } from '../soundLibrary';
-import { ROOM_STYLES, roomChannels, type RoomStyle } from './roomIR';
+import { normalizedLevel, ROOM_RATE, ROOM_STYLES, roomChannels, roomChannelsSoon, type RoomStyle } from './roomIR';
 import { LUSH_PROCESSOR, LUSH_WORKLET_SOURCE } from './lushReverb';
 import { dampingMakeup, LUSH_PRE_DELAY, lushDecay, RECORDED_ROOM_DAMP_HZ, REVERB_DAMP_HZ, REVERB_FILTER_Q, REVERB_LOW_CUT_HZ } from './lushAfter';
 import { createWorkletNode, loadWorklet } from '../worklets';
@@ -48,6 +48,12 @@ const SWAP_FADE = 0.05;
 const REBUILD_QUIET_MS = 120;
 /** ...or at the latest this long after the first of them (a long drag is heard as it goes) */
 const REBUILD_MAX_WAIT_MS = 450;
+
+/**
+ * Designed rooms made away from 44.1 kHz, already at the level a convolver's normalizing gives
+ * them at 44.1 kHz (see normalizedLevel): played as they are, here and in an export's other parts.
+ */
+const atLevel = new WeakSet<AudioBuffer>();
 
 export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm: number): BusEffects {
   const reverbInput = new Tone.Gain(1);
@@ -113,7 +119,10 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
    * rings out what it already heard (see above).
    */
   const setImpulse = (buffer: AudioBuffer) => {
+    // (A designed room away from 44.1 kHz comes at its level; any other, the convolver sets it)
+    const normalize = !atLevel.has(buffer);
     if (!room.convolver.buffer || !live() || !convolverFed) {
+      room.convolver.normalize = normalize;
       room.convolver.buffer = buffer;
       return;
     }
@@ -129,6 +138,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     }
     const before = room;
     room = makeRoom(0);
+    room.convolver.normalize = normalize;
     room.convolver.buffer = buffer;
     before.feed.gain.setValueAtTime(1, at);
     before.feed.gain.linearRampToValueAtTime(0, at + SWAP_FADE);
@@ -157,15 +167,42 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
       convIn.gain.rampTo(dampingMakeup(hz), 0.05, at);
     }
   };
-  // The generated room (roomIR.ts): designed for its style
+  // The generated room (roomIR.ts): designed for its style. Made at once for an export (whose
+  // rooms are made beforehand a little at a time: prepareRooms in exportWav.ts); live, always a few
+  // milliseconds at a time (a long room takes a few tenths of a second to make, more away from
+  // 44.1 kHz, where it's resampled from the 44.1 kHz one), the room before (or the lush reverb)
+  // playing on until it's ready, and Play waiting for it (liveTracks.ts liveSoundsReady)
+  /** The roomToken a room being made is for: the lush reverb hands over to it once it's ready */
+  let roomComing = -1;
   const designed = (style: RoomStyle | undefined, decay: number) => {
-    setDamping(ROOM_STYLES[style ?? 'hall']?.damp ?? REVERB_DAMP_HZ);
     const rate = context.sampleRate;
-    const [l, r] = roomChannels(style ?? 'hall', designedDecay(decay), rate);
-    const buffer = context.createBuffer(2, l.length, rate);
-    buffer.copyToChannel(l, 0);
-    buffer.copyToChannel(r, 1);
-    setImpulse(buffer);
+    const playRoom = ([l, r]: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>]) => {
+      setDamping(ROOM_STYLES[style ?? 'hall']?.damp ?? REVERB_DAMP_HZ);
+      const buffer = context.createBuffer(2, l.length, rate);
+      if (rate === ROOM_RATE) {
+        buffer.copyToChannel(l, 0);
+        buffer.copyToChannel(r, 1);
+      } else {
+        // At the level the convolver gives the 44.1 kHz room (see normalizedLevel)
+        const k = normalizedLevel(style ?? 'hall', designedDecay(decay));
+        [l, r].forEach((x, c) => {
+          const d = buffer.getChannelData(c);
+          for (let i = 0; i < d.length; i++) d[i] = x[i] * k;
+        });
+        atLevel.add(buffer);
+      }
+      setImpulse(buffer);
+    };
+    if (context.isOffline) return playRoom(roomChannels(style ?? 'hall', designedDecay(decay), rate));
+    const token = roomToken;
+    roomComing = token;
+    void roomChannelsSoon(style ?? 'hall', designedDecay(decay), rate).then((channels) => {
+      if (token !== roomToken || disposed) return;
+      roomComing = -1;
+      playRoom(channels);
+      // (The lush reverb played on while it was made)
+      setLush(wantsLush(current));
+    });
   };
   // A recorded room: its impulse response (a sound in the library) goes into the convolver in
   // place of the generated one, so the sends, filters and exports all stay as they are
@@ -333,7 +370,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
         if (next.roomStyle !== before.roomStyle) rebuild();
         else rebuildSoon();
       }
-      setLush(wantsLush(next));
+      // (From the lush reverb to a room still being made: the lush plays on until it's ready)
+      if (!(lushOn && !wantsLush(next) && roomComing === roomToken)) setLush(wantsLush(next));
       if (lush) lush.parameters.get('decay')!.value = lushDecay(next.reverbDecay);
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
