@@ -215,7 +215,7 @@ test('the switch waits for all its messages, the old sound playing on, then fade
 test('a knob turned while it plays is not a switch (no fade)', () => {
   const pair = [makeProc(fledge, 'fledge'), makeProc(fledge, 'fledge')];
   const t0 = scope.currentFrame;
-  const outs = pair.map(({ p }, k) => {
+  const outs = pair.map(({ p }) => {
     scope.currentFrame = t0;
     chord(p);
     render(p, 0.2);
