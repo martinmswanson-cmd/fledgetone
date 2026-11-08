@@ -16,6 +16,14 @@ export const NAME_CLOSE = '\uE001';
 const MARKS = /[\uE000\uE001]/g;
 
 /**
+ * Where a reference to a track starts and ends in a warning made while a suggestion's ops run
+ * (ops.ts): worded once the song is made. Never in a name (nm takes them out).
+ */
+export const TRACK_REF_OPEN = '\uE002';
+export const TRACK_REF_CLOSE = '\uE003';
+const OWN_MARKS = /[\uE000-\uE003]/g;
+
+/**
  * Quote and bracket characters, which could close the quotes or brackets a sentence puts a name
  * in: opening and closing punctuation of every script, quotation marks, and the look-alikes of
  * the double quote (primes, ditto marks, the Hebrew gershayim...). The apostrophes (' and ’) and
@@ -38,8 +46,8 @@ export function textName(name: unknown): string {
 /** Whether `name` holds a quote or bracket character (textName would take it out). */
 export const hasQuotesOrBrackets = (name: string): boolean => new RegExp(QUOTES_AND_BRACKETS.source, 'u').test(name);
 
-/** `name` marked as a name in a sentence (see plainNames and nameParts). */
-export const nm = (name: unknown): string => `${NAME_OPEN}${(typeof name === 'string' ? name : '').replace(MARKS, '')}${NAME_CLOSE}`;
+/** `name` marked as a name in a sentence (see plainNames and nameParts); the app's own marks taken out of it. */
+export const nm = (name: unknown): string => `${NAME_OPEN}${(typeof name === 'string' ? name : '').replace(OWN_MARKS, '')}${NAME_CLOSE}`;
 
 const MARKED = /\uE000([^\uE000\uE001]*)\uE001/g;
 

@@ -366,7 +366,8 @@ characters). The warnings and what changes, which the musician reads on the card
 text an op gave: a setting given a value that isn't one of its choices says so, "(left as it
 was)" (the Filter's slope is a choice of 12 or 24 dB: a number that reads as one of them is that
 one, any other leaves it as it was). Two tracks with the same name are told apart by their row
-("Keys" (track 3)). **Values out of range** are brought into range with a warning
+("Keys" (track 3)), in what changes and in every warning and note alike, and a figure a warning
+gives is rounded as the change line and the mixer round it. **Values out of range** are brought into range with a warning
 (a volume of +12 dB becomes +6 dB). **Big jumps in level** are warnings too: a track up by more
 than 6 dB (by its fader, its EQ, its compressor's makeup, a parametric EQ or multiband band, a
 parametric EQ cut eased or taken away, a parametric EQ or multiband compressor that held it down
@@ -684,7 +685,9 @@ song).
 }
 ```
 
-`touchedHashes` are fingerprints of what the ops touch, as it was when the suggestion was made.
+`touchedHashes` are fingerprints of what the ops touch, as it was when the suggestion was made
+(`touchedNames` and `touchedRows`, when there, keep their names and the touched tracks' rows, so a
+deleted one is still named: "the track "Keys" (track 6) is gone", the row when another track has its name).
 When it's applied (or accepted in the studio): the song unchanged, it applies; changed elsewhere
 but not in what it touches, it applies again to the song as it is now (in the studio it's made
 again when the musician hears it); something it touches changed or went, it's out of date and

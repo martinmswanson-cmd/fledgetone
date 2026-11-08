@@ -21,6 +21,8 @@ import { textName } from './names';
 
 export const SUGGESTION_FORMAT = 'fledgetone-suggestion';
 export const SUGGESTION_VERSION = 1;
+/** The highest row a suggestion file's touchedRows may name (more is left out as read). */
+const MAX_ROW = 100000;
 
 export interface SuggestionFile {
   format: typeof SUGGESTION_FORMAT;
@@ -31,6 +33,8 @@ export interface SuggestionFile {
   touchedHashes: Record<string, string>;
   /** Their names then, to say which one went if one is deleted (see touchedNames). */
   touchedNames?: Record<string, string>;
+  /** The touched tracks' rows then, to say which of two named alike went (see touchedRows). */
+  touchedRows?: Record<string, number>;
   title: string;
   explanation: string;
   opsVersion: typeof OPS_VERSION;
@@ -169,6 +173,20 @@ export function touchedNames(song: ProjectSnapshot, ops: readonly Op[]): Record<
   return out;
 }
 
+/**
+ * The rows (1 on) of the tracks `ops` touch in `song`, by touched key, kept with the names so a
+ * deleted track that shared its name can still be told apart ("Keys" (track 6) is gone).
+ */
+export function touchedRows(song: ProjectSnapshot, ops: readonly Op[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const key of Object.keys(touchedHashes(song, ops))) {
+    if (!key.startsWith('track:') && !key.startsWith('kind:')) continue;
+    const t = byAgentId(song.tracks, key.slice(key.indexOf(':') + 1));
+    if (t) out[key] = song.tracks.indexOf(t) + 1;
+  }
+  return out;
+}
+
 function nameOf(song: ProjectSnapshot, key: string): string | undefined {
   const id = key.slice(key.indexOf(':') + 1);
   if (key.startsWith('clip:')) return byAgentId(song.clips, id)?.name;
@@ -178,14 +196,19 @@ function nameOf(song: ProjectSnapshot, key: string): string | undefined {
 }
 
 /** What a touched key is, in plain words, for saying why a suggestion is out of date. */
-function describeKey(song: ProjectSnapshot, key: string, names: Record<string, string> = {}): string {
+function describeKey(song: ProjectSnapshot, key: string, names: Record<string, string> = {}, rows: Record<string, number> = {}): string {
   // (a name from the song, as plainly as the agent's summary has it: this reaches the agent)
   const raw = nameOf(song, key) ?? names[key];
   const name = raw === undefined ? undefined : agentLine(raw, 64);
   const what = key.startsWith('clip:') ? 'clip' : key.startsWith('marker:') ? 'marker' : 'track';
   // (a track named as another is, by its row too, so two tracks named "Keys" read apart, as on the card: songDiff.ts)
-  const track = key.startsWith('track:') || key.startsWith('kind:') ? byAgentId(song.tracks, key.slice(key.indexOf(':') + 1)) : undefined;
-  const row = track && song.tracks.some((t) => t !== track && t.name === track.name) ? ` (track ${song.tracks.indexOf(track) + 1})` : '';
+  const isTrack = (k: string) => k.startsWith('track:') || k.startsWith('kind:');
+  const idOf = (k: string) => k.slice(k.indexOf(':') + 1);
+  const track = isTrack(key) ? byAgentId(song.tracks, idOf(key)) : undefined;
+  // (one that's gone, by the row it had, when a track there now has its name, or another track it touched had it)
+  const twin = (n: string) => song.tracks.some((t) => t.name === n) || Object.entries(names).some(([k, other]) => other === n && isTrack(k) && idOf(k) !== idOf(key));
+  const goneRow = isTrack(key) && !track && raw !== undefined && Number.isInteger(rows[key]) && twin(raw);
+  const row = track && song.tracks.some((t) => t !== track && t.name === track.name) ? ` (track ${song.tracks.indexOf(track) + 1})` : goneRow ? ` (track ${rows[key]})` : '';
   if (key.startsWith('clip:') || key.startsWith('track:') || key.startsWith('kind:') || key.startsWith('marker:')) return name ? `the ${what} "${textName(name)}"${row}` : `a ${what} it changes`;
   if (key === 'markers') return 'the markers';
   if (key === 'tempo') return 'the tempo';
@@ -199,15 +222,15 @@ function describeKey(song: ProjectSnapshot, key: string, names: Record<string, s
  * names what moved on, in plain words.
  */
 export function classifySuggestion(
-  made: { revision?: number; touchedHashes: Record<string, string>; touchedNames?: Record<string, string> },
+  made: { revision?: number; touchedHashes: Record<string, string>; touchedNames?: Record<string, string>; touchedRows?: Record<string, number> },
   now: { revision?: number; song: ProjectSnapshot }
 ): { status: Freshness; changed: string[] } {
   if (made.revision !== undefined && made.revision === now.revision) return { status: 'unchanged', changed: [] };
   const changed: string[] = [];
   for (const [key, hash] of Object.entries(made.touchedHashes)) {
     const part = partOf(now.song, key);
-    if (part === undefined) changed.push(`${describeKey(now.song, key, made.touchedNames)} is gone`);
-    else if (fingerprint(part) !== hash && !legacyMatch(now.song, key, hash)) changed.push(`${describeKey(now.song, key, made.touchedNames)} changed`);
+    if (part === undefined) changed.push(`${describeKey(now.song, key, made.touchedNames, made.touchedRows)} is gone`);
+    else if (fingerprint(part) !== hash && !legacyMatch(now.song, key, hash)) changed.push(`${describeKey(now.song, key, made.touchedNames, made.touchedRows)} changed`);
   }
   if (changed.length) return { status: 'out_of_date', changed };
   return { status: made.revision === undefined ? 'unchanged' : 'reapply', changed: [] };
@@ -227,6 +250,7 @@ export function makeSuggestionFile(song: ProjectSnapshot, s: { title: string; ex
     ...(song.songId ? { songId: song.songId } : {}),
     touchedHashes: touchedHashes(song, s.ops),
     touchedNames: touchedNames(song, s.ops),
+    touchedRows: touchedRows(song, s.ops),
     // (the agent's words as the studio shows them: plain text, no controls or hidden characters)
     title: titleOf(s.title),
     explanation: fromAgent(s.explanation, 2000),
@@ -251,6 +275,10 @@ export function parseSuggestionFile(raw: unknown): SuggestionFile {
     touchedHashes: Object.fromEntries(Object.entries(hashes).filter((e): e is [string, string] => typeof e[1] === 'string')),
     ...(typeof o.touchedNames === 'object' && o.touchedNames !== null
       ? { touchedNames: Object.fromEntries(Object.entries(o.touchedNames as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string').map(([k, v]) => [k, agentLine(v, 64)])) }
+      : {}),
+    // (a row is a whole number from 1: anything else is left out)
+    ...(typeof o.touchedRows === 'object' && o.touchedRows !== null
+      ? { touchedRows: Object.fromEntries(Object.entries(o.touchedRows as Record<string, unknown>).filter((e): e is [string, number] => Number.isInteger(e[1]) && (e[1] as number) >= 1 && (e[1] as number) <= MAX_ROW)) }
       : {}),
     // (a file can be written by anyone: its words as plain as an agent's on the panel)
     title: (typeof o.title === 'string' && titleOf(o.title)) || 'Suggestion',

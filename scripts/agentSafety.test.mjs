@@ -912,3 +912,74 @@ test('a resonant Filter swept by a cutoff lane says it peaks where the largest r
     assert.doesNotMatch(said, /and it peaks around/);
   }
 });
+
+// ---- Round 43: a caution's figures are the change line's; a level rounds as the mixer does ----
+
+test('a caution states a rise as the change line on the same card does, and a level as the mixer rounds it (scan r43)', async () => {
+  const { safetyCautions: marked } = await import('../src/agent/safety.ts');
+  const { diffSongs } = await import('../src/agent/songDiff.ts');
+  const { plainNames } = await import('../src/agent/names.ts');
+  const safetyCautions = (x, y) => marked(x, y).map((c) => ({ ...c, text: plainNames(c.text) }));
+  const a = base();
+  const keys = a.tracks[0];
+  const card = (b) => ({ changes: diffSongs(a, b).changes.map((c) => c.text), cautions: safetyCautions(a, b) });
+  // The fader: "up by 6 dB (-11.5 dB to -5.5 dB)" and the caution the same 6 dB (it said 6.1)
+  const fader = card(withTrack(a, 0, { volume: -5.45 }));
+  assert.deepEqual(fader.changes, ['Turns "Keys" up by 6 dB (-11.5 dB to -5.5 dB).']);
+  assert.deepEqual(fader.cautions, [{ text: '"Keys" goes up by 6 dB. Turn your speakers down before you listen.', louder: -5.45 - keys.volume }]);
+  // The master Level and an EQ band alike
+  const master = card({ ...a, master: { ...a.master, level: 6.55 } });
+  assert.deepEqual(master.changes, ['Turns the master Level up by 3 dB (+3.5 dB to +6.5 dB).']);
+  assert.equal(master.cautions[0].text, 'The master Level goes up by 3 dB. Turn your speakers down before you listen.');
+  assert.ok(Math.abs(master.cautions[0].louder - 3.05) < 1e-9);
+  const eq = card(withTrack(a, 0, { eq: { ...keys.eq, low: 6.05 } }));
+  assert.deepEqual(eq.changes, ['Sets the EQ of "Keys": low +6 dB.']);
+  assert.deepEqual(eq.cautions, [{ text: 'On "Keys", the EQ low goes up by 6 dB.', louder: 6.05 }]);
+  // Every fader target from two starts (one off the 0.1 grid, as an earlier agent edit leaves it) and every master Level: the same figure
+  for (const from of [keys.volume, -11.54]) {
+    const start = withTrack(a, 0, { volume: from });
+    for (let v = -5.5; v <= 6; v = Math.round((v + 0.01) * 100) / 100) {
+      const b = withTrack(start, 0, { volume: v });
+      const said = diffSongs(start, b).changes[0].text.match(/up by ([\d.]+) dB/)[1];
+      const warned = safetyCautions(start, b)[0]?.text.match(/goes up by ([\d.]+) dB/)?.[1];
+      if (v - from > 6 + 1e-9) assert.equal(warned, said, `from ${from} to ${v}`);
+    }
+  }
+  for (let v = 6.5; v <= 12; v = Math.round((v + 0.01) * 100) / 100) {
+    const b = { ...a, master: { ...a.master, level: v } };
+    const said = diffSongs(a, b).changes[0].text.match(/up by ([\d.]+) dB/)[1];
+    const warned = safetyCautions(a, b)[0]?.text.match(/goes up by ([\d.]+) dB/)?.[1];
+    if (v - 3.5 > 3 + 1e-9) assert.equal(warned, said, `master to ${v}`);
+  }
+  // A level is rounded a half away from zero, as the mixer and the change line round it: -5.25 is -5.3, never -5.2
+  const muted = withTrack(a, 0, { isMuted: true });
+  const unmuted = card(withTrack(a, 0, { volume: -5.25 }));
+  assert.equal(unmuted.cautions[0].text, '"Keys" goes up by 6.2 dB. Turn your speakers down before you listen.');
+  assert.match(diffSongs(a, withTrack(a, 0, { volume: -5.25 })).changes[0].text, /up by 6\.2 dB \(-11\.5 dB to -5\.3 dB\)/);
+  const back = safetyCautions(muted, withTrack(a, 0, { volume: -5.25, isMuted: false }));
+  assert.ok(back.some((c) => c.text === 'This unmutes "Keys" (at -5.3 dB): it will be heard again.'), JSON.stringify(back));
+  // The clipper's ceiling raised by a little with a harder drive: two different numbers, never "from -1.5 to -1.5 dB"
+  const q = { ...a, master: { ...a.master, level: 0, clipper: { on: true, drive: 0, softness: 0.5, ceiling: -1.54 } } };
+  const clipped = safetyCautions(q, { ...q, master: { ...q.master, clipper: { ...q.master.clipper, drive: 5, ceiling: -1.48 } } });
+  assert.equal(clipped[0].text, 'The master clipper is driven 5 dB harder and its ceiling goes up from -1.54 to -1.48 dB: the song comes out up to 5 dB louder. Turn your speakers down before you listen.');
+});
+
+test('two tracks with the same name: the cautions name each by its row, as the change lines do (scan r43)', async () => {
+  const { safetyCautions: marked } = await import('../src/agent/safety.ts');
+  const { plainNames } = await import('../src/agent/names.ts');
+  const safetyCautions = (x, y) => marked(x, y).map((c) => ({ ...c, text: plainNames(c.text) }));
+  const a0 = base();
+  const a = { ...a0, tracks: [...a0.tracks, { ...a0.tracks[0], id: 'track-twin', volume: 0 }] };
+  const both = safetyCautions(a, { ...a, tracks: a.tracks.map((t) => (t.name === 'Keys' ? { ...t, volume: t.volume + 9, eq: { ...t.eq, high: 8 } } : t)) }).map((c) => c.text);
+  assert.deepEqual(both, [
+    '"Keys" (track 1) goes up by 9 dB. Turn your speakers down before you listen.',
+    'On "Keys" (track 1), the EQ high goes up by 8 dB.',
+    '"Keys" (track 6) goes up by 9 dB. Turn your speakers down before you listen.',
+    'On "Keys" (track 6), the EQ high goes up by 8 dB.',
+  ]);
+  // A track that's gone after counts as one with the name before: the one left is still told apart
+  const one = safetyCautions(a, { ...a, tracks: a.tracks.filter((t) => t.id !== 'track-twin').map((t, i) => (i === 0 ? { ...t, volume: t.volume + 9 } : t)) }).map((c) => c.text);
+  assert.deepEqual(one, ['"Keys" (track 1) goes up by 9 dB. Turn your speakers down before you listen.']);
+  // A name no other track has keeps no row
+  assert.deepEqual(safetyCautions(a0, withTrack(a0, 0, { volume: a0.tracks[0].volume + 9 })).map((c) => c.text), ['"Keys" goes up by 9 dB. Turn your speakers down before you listen.']);
+});

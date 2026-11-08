@@ -55,13 +55,13 @@ import { INSTRUMENTS, canMoveClipBetween, isAudioKind, isDropKind, isDrumKind, i
 import { normalizePoints, specOf } from '../audio/automation';
 import { clampBpm, sortedPoints, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 import { defaultClipper } from '../audio/effects/clipper';
-import { diffSongs, lengthWordsIn, positionWords, wordMeter, type SongDiff } from './songDiff';
+import { diffSongs, lengthWordsIn, positionWords, trackLabeler, wordMeter, type SongDiff } from './songDiff';
 import { louderSaid, safetyCautions } from './safety';
 import { firstDifferencePath, stableJson } from './fingerprint';
 import { agentLabel, LIMITS } from './protocol';
 import { byAgentId, givenKey, givenText as quoted } from './agentText';
 import { insertLabel, masterPartLabel, settingWord, valueWord } from './settingWords';
-import { nm, plainNames } from './names';
+import { nm, plainNames, TRACK_REF_CLOSE, TRACK_REF_OPEN } from './names';
 import { fileMade } from '../store/ownFiles';
 
 
@@ -393,6 +393,9 @@ export function applyOps(base: ProjectSnapshot, doc: unknown, opts: { idBase: st
 
 const upper = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
+/** A track named in a warning while the ops run (applyMarked's tn), as it's held until the song is made. */
+const TRACK_REF = new RegExp(`${TRACK_REF_OPEN}(\\d+)${TRACK_REF_CLOSE}`, 'g');
+
 function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string }): ApplyOutcome {
   const shape = checkOpsShape(doc);
   if (shape.length) return { ok: false, errors: shape };
@@ -400,6 +403,21 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   const warnings: string[] = [];
   const warn = (text: string) => {
     if (!warnings.includes(text) && warnings.length < 100) warnings.push(text);
+  };
+  // A track a warning names, held by reference while the ops run and worded once the song is made,
+  // as the change lines and the cautions name it: by its row too when another track has its name,
+  // before or after (songDiff trackLabeler), so two tracks named "Keys" read apart and their
+  // warnings aren't taken for one. The name is the one it had when the warning was made.
+  const namedTracks: Array<Pick<Track, 'id' | 'name'>> = [];
+  const refAt = new Map<string, number>();
+  const tn = (t: Pick<Track, 'id' | 'name'>): string => {
+    const key = `${t.id}\u0000${t.name}`;
+    let i = refAt.get(key);
+    if (i === undefined) {
+      i = namedTracks.push({ id: t.id, name: t.name }) - 1;
+      refAt.set(key, i);
+    }
+    return `${TRACK_REF_OPEN}${i}${TRACK_REF_CLOSE}`;
   };
   // (places and lengths in the musician's words: in a song not in 4/4, by measure as the ruler numbers them, lengths in quarter notes)
   const meter = wordMeter(base);
@@ -614,14 +632,14 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       case 'set_track': {
         const track = trackRef(op.trackId, `${at}.trackId`);
         const next: Track = { ...track };
-        if (op.volumeDb !== undefined) next.volume = clamped(op.volumeDb, -60, 6, `${nm(track.name)} volume`, 'dB');
-        if (op.pan !== undefined) next.pan = clamped(op.pan, -1, 1, `${nm(track.name)} pan`);
+        if (op.volumeDb !== undefined) next.volume = clamped(op.volumeDb, -60, 6, `${tn(track)} volume`, 'dB');
+        if (op.pan !== undefined) next.pan = clamped(op.pan, -1, 1, `${tn(track)} pan`);
         if (op.mute !== undefined) next.isMuted = op.mute;
         if (op.solo !== undefined) next.isSoloed = op.solo;
         if (op.name !== undefined) next.name = cleanName(op.name, `${at}.name`, 'a track name needs at least one letter')!;
-        if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `${nm(track.name)} reverb send`);
-        if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `${nm(track.name)} delay send`);
-        if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `${nm(track.name)} distance`);
+        if (op.reverbSend !== undefined) next.reverbSend = clamped(op.reverbSend, 0, REVERB_SEND_MAX, `${tn(track)} reverb send`);
+        if (op.delaySend !== undefined) next.delaySend = clamped(op.delaySend, 0, 1, `${tn(track)} delay send`);
+        if (op.distance !== undefined) next.distance = clamped(op.distance, 0, 1, `${tn(track)} distance`);
         // (up front, 0, is how a saved song keeps it: with no distance at all)
         if (next.distance === 0) delete next.distance;
         if (op.output !== undefined) {
@@ -639,7 +657,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
       case 'set_eq': {
         const track = trackRef(op.trackId, `${at}.trackId`);
         const eq = { ...track.eq };
-        for (const band of ['low', 'mid', 'high'] as const) if (op[band] !== undefined) eq[band] = clamped(op[band]!, -24, 12, `${nm(track.name)} EQ ${band}`, 'dB');
+        for (const band of ['low', 'mid', 'high'] as const) if (op[band] !== undefined) eq[band] = clamped(op[band]!, -24, 12, `${tn(track)} EQ ${band}`, 'dB');
         replaceTrack(track, { ...track, eq });
         return;
       }
@@ -664,7 +682,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (pick !== undefined) settings[k] = pick;
           else {
             delete settings[k];
-            warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (left as it was).`);
+            warn(`${tn(track)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (left as it was).`);
           }
         }
         if (insert === 'pump' && settings.source !== undefined) {
@@ -678,9 +696,9 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const fx = normalizeTrackFx({ ...track.fx, [insert]: merged });
         const out = fx[insert] as unknown as Record<string, unknown>;
         for (const [k, v] of Object.entries(settings)) {
-          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9 && !readsSame(v, out[k] as number)) warn(`${givenWords(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}`, v)} is out of range: set to ${round(out[k] as number, 4)}.`);
+          if (typeof v === 'number' && typeof out[k] === 'number' && Math.abs((out[k] as number) - v) > 1e-9 && !readsSame(v, out[k] as number)) warn(`${givenWords(`${tn(track)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}`, v)} is out of range: set to ${round(out[k] as number, 4)}.`);
           // (what the agent wrote is never echoed: it could read as the app's own words)
-          if (typeof v === 'string' && out[k] !== v) warn(`${nm(track.name)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k], k)}).`);
+          if (typeof v === 'string' && out[k] !== v) warn(`${tn(track)} ${insertLabel(insert)} ${settingWord(k) ?? 'setting'}: the value given isn't one of its choices (${keptWords(current[k], out[k], k)}).`);
         }
         replaceTrack(track, { ...track, fx: fx as TrackFx });
         return;
@@ -689,7 +707,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         const track = trackRef(op.trackId, `${at}.trackId`);
         const key = readInstrument(op.instrument, `${at}.instrument`);
         if (key === track.instrumentKey) {
-          warn(`${nm(track.name)} already plays ${INSTRUMENTS[key].name}.`);
+          warn(`${tn(track)} already plays ${INSTRUMENTS[key].name}.`);
           return;
         }
         // The store's rules (setTrackInstrument): a bus or return is made as one, and the Drop pad's notes are moves, not notes
@@ -722,7 +740,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
           if (!isObj(raw) || !isNum(raw.bar) || !isNum(raw.value)) throw new OpFail(path, 'expected { "bar": <song bar>, "value": 0 to 1, "curve"?: -1 to 1 }');
           if (raw.curve !== undefined && !isNum(raw.curve)) throw new OpFail(`${path}.curve`, 'expected a number, -1 to 1');
           // (the track's name marked as the agent's, the point counted from 1, its place as the ruler numbers it)
-          const point = `${nm(track.name)} automation point ${i + 1}`;
+          const point = `${tn(track)} automation point ${i + 1}`;
           const bar = clamp(raw.bar, 1, TOTAL_BARS + 1);
           // (no caution when the place given reads as where it was put: bar 401.00001 is "bar 401")
           if (bar !== raw.bar && (raw.bar < 1 || atGiven(raw.bar) !== at4(bar))) warn(`${point} at ${raw.bar < 1 ? 'a bar before bar 1' : atGiven(raw.bar)} is off the timeline: put at ${at4(bar)}.`);
@@ -949,7 +967,7 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
     if (!Number.isFinite(m) || m < 0 || m > 127) throw new OpFail(path, `${quoted(value)} isn't a pitch: write it as a note name and octave, like "C4" (middle C), "F#2" or "Bb3"`);
     const [lo, hi] = INSTRUMENTS[track.instrumentKey].range;
     if (!isDrumKind(track.instrumentKey) && !isFxKind(track.instrumentKey) && !isDropKind(track.instrumentKey) && (m < lo || m > hi))
-      warn(`${nameOf(m)} is outside ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) on ${nm(track.name)}: it may not sound.`);
+      warn(`${nameOf(m)} is outside ${INSTRUMENTS[track.instrumentKey].name}'s range (${nameOf(lo)} to ${nameOf(hi)}) on ${tn(track)}: it may not sound.`);
     return nameOf(m);
   }
 
@@ -1117,19 +1135,22 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
   if (lost) return { ok: false, errors: [{ op: -1, path: '', message: `the result can't be saved as it is: ${lost}` }] };
   const notesAfter = song.clips.reduce((n, c) => n + c.notes.length, 0);
   if (notesAfter - notesBefore > MAX_ADDED_NOTES) return { ok: false, errors: [{ op: -1, path: '', message: `the result has ${notesAfter - notesBefore} more notes: at most ${MAX_ADDED_NOTES} more in one suggestion` }] };
-  song = withFileValues(base, song, gated, warn);
+  song = withFileValues(base, song, gated, warn, tn);
 
   const notes: string[] = [];
   const cautions = safetyCautions(base, song, notes);
   for (const c of cautions) warn(c.text);
   const said = louderSaid(cautions);
   const diff = diffSongs(base, song);
+  // (the tracks the warnings name, worded now the song is made; two that come out the same are one)
+  const label = trackLabeler(base, song);
+  const worded = [...new Set(warnings.map((text) => text.replace(TRACK_REF, (_m, i: string) => label(namedTracks[Number(i)]))))];
   return {
     ok: true,
     song,
-    warnings,
+    warnings: worded,
     notes,
-    marked: { warnings, notes },
+    marked: { warnings: worded, notes },
     cautioned: said !== null,
     louderSaid: said,
     diff,
@@ -1182,7 +1203,7 @@ const fileClip = ({ isSelected: _s, ...rest }: Clip) => rest;
  * range): the checked version, with a warning naming what changed. Untouched objects stay the
  * very objects of `base`.
  */
-function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: ProjectSnapshot, warn: (text: string) => void): ProjectSnapshot {
+function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: ProjectSnapshot, warn: (text: string) => void, tn: (t: Track) => string): ProjectSnapshot {
   const baseTracks = new Set(base.tracks);
   const baseClips = new Set(base.clips);
   const gatedTracks = new Map(gated.tracks.map((t) => [t.id, t]));
@@ -1191,7 +1212,7 @@ function withFileValues(base: ProjectSnapshot, song: ProjectSnapshot, gated: Pro
     if (baseTracks.has(t)) return t;
     const g = gatedTracks.get(t.id);
     if (!g || stableJson(g) === stableJson(t)) return t;
-    warn(`Something in ${nm(t.name)} was out of what a saved song can hold and was brought into range${differsAt(t, g)}.`);
+    warn(`Something in ${tn(t)} was out of what a saved song can hold and was brought into range${differsAt(t, g)}.`);
     return g;
   });
   const clips = song.clips.map((c) => {
