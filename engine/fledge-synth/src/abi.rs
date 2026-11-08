@@ -1,9 +1,10 @@
 //! The interface Fledgetone's plugin host calls (scripts/plugins/bbplug.h): plain C functions
-//! over handles, parameters as 0..1, buffers in this module's memory. Plus three that hosts
+//! over handles, parameters as 0..1, buffers in this module's memory. Plus four that hosts
 //! may call: `bb_tempo` (the song's tempo, for tempo-synced LFOs; else 120), `bb_position`
 //! (where in the song it is, in beats: free LFOs, chaos and random values follow the song, so
-//! live playback and an export match) and `bb_legacy` (an older saved sound with fewer values
-//! was just loaded: the parameters it didn't have are set as it sounded then).
+//! live playback and an export match), `bb_legacy` (an older saved sound with fewer values
+//! was just loaded: the parameters it didn't have are set as it sounded then) and `bb_settle`
+//! (the whole sound was just switched with the output faded out: the level goes straight to the new one).
 
 use crate::params::{param, COUNT};
 use crate::presets::PRESETS;
@@ -159,6 +160,15 @@ pub extern "C" fn bb_position(h: i32, beats: f64) {
 pub extern "C" fn bb_legacy(h: i32, count: i32) {
     if let Some(x) = get(h) {
         x.synth.legacy(count.max(0) as usize);
+    }
+}
+
+/// The host has switched the whole sound while it held the output faded out (see Synth::settle):
+/// what eases toward a setting goes straight to it.
+#[no_mangle]
+pub extern "C" fn bb_settle(h: i32) {
+    if let Some(x) = get(h) {
+        x.synth.settle();
     }
 }
 

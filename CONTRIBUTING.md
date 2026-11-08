@@ -210,7 +210,12 @@ node scripts/audio-check/live-controllers.cjs    # live: a plugin's held control
 node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost, releases, Stop, stalls
 node scripts/audio-check/rack-levels.cjs        # a Drum Rack pad as loud live as in the export (one- and two-channel sounds, panned)
 node scripts/audio-check/rates.cjs              # the same sound, at the same moment, at 44.1, 48, 96 and 32 kHz: driven sounds, amps and inserts, rooms, both reverbs
+node scripts/audio-check/fledge-undo.cjs        # Fledge Synth: undo and redo of a preset, in its window and in Pocket, a held note playing on
 ```
+
+When a change touches a menu, a popover or another popup, run `node scripts/ui-check/popup-tab.cjs`
+(the same dev server): each kind of popup opened with the keyboard and the mouse, left with Tab and
+Shift+Tab, closed, focus where it should be, and the shortcuts working again.
 
 Two generated files are checked by the tests. Regenerate them when you change what they're built
 from:

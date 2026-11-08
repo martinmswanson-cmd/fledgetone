@@ -161,72 +161,70 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3" role="dialog" aria-label="Try it in a game">
-      <div className="w-full max-w-6xl h-[88vh] rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl flex flex-col overflow-hidden text-xs text-forge-muted">
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-forge-border">
-          <Gamepad2 className="w-4 h-4 text-emerald-300" />
-          <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
-          {picker}
-          <span className="hidden xl:inline">D F J K or the arrows hit the lanes · hold long notes · R restarts · Esc closes</span>
-          <label className="ml-auto flex items-center gap-1" title="How many of the song's notes fall: Easy keeps its beat, Hard adds its quick notes and pairs">
-            Difficulty
-            <select
-              value={difficulty}
-              onChange={(e) => {
-                const d = e.target.value as RhythmDifficulty;
-                setDifficulty(d);
-                write(DIFFICULTY_KEY, d);
-                e.target.blur();
-              }}
-              className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
-            >
-              <option value="easy">Easy</option>
-              <option value="normal">Normal</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-1" title="If every hit comes out late (or early), move the notes to match what you hear: Bluetooth headphones usually need +150 ms or more">
-            Timing
-            <select
-              value={offset}
-              onChange={(e) => {
-                const o = Number(e.target.value);
-                setOffset(o);
-                write(OFFSET_KEY, String(o));
-                e.target.blur();
-              }}
-              className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
-            >
-              {OFFSETS.map((o) => (
-                <option key={o} value={o}>
-                  {o > 0 ? `+${o}` : o} ms
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={restart} className="h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text">
-            <RotateCcw className="w-3.5 h-3.5" /> Restart
-          </button>
-          <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" aria-label="Close the game">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="relative flex-1 min-h-0 bg-[#0d0b1a]">
-          <div ref={host} className="absolute inset-0" />
-          {!buffer && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-1/3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
-              <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress}
-            </div>
-          )}
-          {buffer && !chart.length && (
-            <div className="absolute inset-x-0 top-1/3 text-center text-white text-sm">This song has no notes to play yet: add some drums or a melody.</div>
-          )}
-          {buffer && chart.length > 0 && (
-            <div className="absolute left-3 bottom-3 rounded-lg bg-black/45 px-3 py-2 text-white/80 text-[11px] pointer-events-none">
-              {chart.length} notes on {difficulty === 'easy' ? 'Easy' : difficulty === 'hard' ? 'Hard' : 'Normal'}, from your song{result ? ` · last run: ${result.grade}, ${(result.accuracy * 100).toFixed(1)}%` : ''}
-            </div>
-          )}
-        </div>
+    <div className="w-full max-w-6xl h-[88vh] rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl flex flex-col overflow-hidden text-xs text-forge-muted">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-forge-border">
+        <Gamepad2 className="w-4 h-4 text-emerald-300" />
+        <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
+        {picker}
+        <span className="hidden xl:inline">D F J K or the arrows hit the lanes · hold long notes · R restarts · Esc closes</span>
+        <label className="ml-auto flex items-center gap-1" title="How many of the song's notes fall: Easy keeps its beat, Hard adds its quick notes and pairs">
+          Difficulty
+          <select
+            value={difficulty}
+            onChange={(e) => {
+              const d = e.target.value as RhythmDifficulty;
+              setDifficulty(d);
+              write(DIFFICULTY_KEY, d);
+              e.target.blur();
+            }}
+            className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
+          >
+            <option value="easy">Easy</option>
+            <option value="normal">Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1" title="If every hit comes out late (or early), move the notes to match what you hear: Bluetooth headphones usually need +150 ms or more">
+          Timing
+          <select
+            value={offset}
+            onChange={(e) => {
+              const o = Number(e.target.value);
+              setOffset(o);
+              write(OFFSET_KEY, String(o));
+              e.target.blur();
+            }}
+            className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
+          >
+            {OFFSETS.map((o) => (
+              <option key={o} value={o}>
+                {o > 0 ? `+${o}` : o} ms
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" onClick={restart} className="h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text">
+          <RotateCcw className="w-3.5 h-3.5" /> Restart
+        </button>
+        <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" aria-label="Close the game">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="relative flex-1 min-h-0 bg-[#0d0b1a]">
+        <div ref={host} className="absolute inset-0" />
+        {!buffer && (
+          <div className="absolute left-1/2 -translate-x-1/2 top-1/3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress}
+          </div>
+        )}
+        {buffer && !chart.length && (
+          <div className="absolute inset-x-0 top-1/3 text-center text-white text-sm">This song has no notes to play yet: add some drums or a melody.</div>
+        )}
+        {buffer && chart.length > 0 && (
+          <div className="absolute left-3 bottom-3 rounded-lg bg-black/45 px-3 py-2 text-white/80 text-[11px] pointer-events-none">
+            {chart.length} notes on {difficulty === 'easy' ? 'Easy' : difficulty === 'hard' ? 'Hard' : 'Normal'}, from your song{result ? ` · last run: ${result.grade}, ${(result.accuracy * 100).toFixed(1)}%` : ''}
+          </div>
+        )}
       </div>
     </div>
   );

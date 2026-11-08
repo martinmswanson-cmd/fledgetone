@@ -26,6 +26,7 @@ import { guessTryOutMap, intensityFor, TRY_OUT_MOMENTS, type TryOutMap } from '.
 import type { PlatformerEvents } from './platformerScene';
 import type { TryOutEvents } from './tryOutScene';
 import { RhythmTryOut } from './RhythmTryOut';
+import { useDialogFocus } from '../timeline/useDialogFocus';
 
 /** What the preview needs from either adventure scene (3D or 2D) */
 interface GameScene {
@@ -66,6 +67,8 @@ const HEALTH = /health|^hp$|life/i;
 
 /** Try it in a game, on the game picked last time. */
 export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const box = useRef<HTMLDivElement>(null);
+  useDialogFocus(box, onClose);
   const [game, setGame] = useState<TryOutGame>(() => {
     try {
       const saved = localStorage.getItem(GAME_KEY);
@@ -98,7 +101,14 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       ))}
     </div>
   );
-  return game === 'rhythm' ? <RhythmTryOut key="rhythm" picker={picker} onClose={onClose} /> : <AdventureTryOut key={game} kind={game} picker={picker} onClose={onClose} />;
+  // A modal dialog as the app's others are (useDialogFocus): it takes focus as it opens, Tab goes
+  // round inside it (never to the controls under the dimmed page), and focus goes back to what
+  // opened it as it closes. Its own, so changing the game keeps it
+  return (
+    <div ref={box} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 focus:outline-none" role="dialog" aria-modal="true" aria-label="Try it in a game">
+      {game === 'rhythm' ? <RhythmTryOut key="rhythm" picker={picker} onClose={onClose} /> : <AdventureTryOut key={game} kind={game} picker={picker} onClose={onClose} />}
+    </div>
+  );
 };
 
 /** The arena and the platformer: the song's states, stingers and sounds following the game. */
@@ -385,104 +395,102 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     what === 'state' ? (manifest?.states ?? []).map((s) => s.name) : what === 'stinger' ? (manifest?.stingers ?? []).map((s) => s.name) : (manifest?.sfx ?? []).filter((s) => !s.loop).map((s) => s.name);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3" role="dialog" aria-label="Try it in a game">
-      <div className="w-full max-w-6xl h-[88vh] rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl flex flex-col overflow-hidden text-xs text-forge-muted">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-forge-border">
-          <Gamepad2 className="w-4 h-4 text-emerald-300" />
-          <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
-          {picker}
-          <span className="hidden xl:inline">
-            {kind === 'platformer' ? 'Arrows or A/D run · Space, W or Up jumps (land on a blob to squash it) · R restarts · Esc closes' : 'Arrows or WASD walk · Space jumps (land on the guard to beat it) · R restarts · Esc closes'}
-          </span>
-          <button type="button" onClick={() => setPanel((p) => !p)} aria-pressed={panel} className="ml-auto h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text" title="Which state, stinger and sound each moment plays">
-            <SlidersHorizontal className="w-3.5 h-3.5" /> Music wiring
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              scene.current?.reset();
-              start();
-            }}
-            className="h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /> Restart
-          </button>
-          <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" aria-label="Close the game">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="flex-1 min-h-0 flex">
-          <div className="relative flex-1 min-w-0 bg-sky-200">
-            <div ref={host} className="absolute inset-0" />
-            {!manifest && (
-              <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} {kind === 'platformer' ? 'The blobs nap' : 'The guard naps'} until it's ready: {kind === 'platformer' ? 'run' : 'walk around'} and grab coins meanwhile.
-              </div>
-            )}
-            {(
-              <>
-                <div className="absolute left-3 top-3 flex flex-col gap-1 rounded-lg bg-black/55 px-3 py-2 text-white font-mono text-[11px] pointer-events-none">
-                  <div className="flex items-center gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <Heart key={i} className={`w-4 h-4 ${i < hud.hearts ? 'fill-rose-400 text-rose-400' : 'text-white/30'}`} />
-                    ))}
-                    <span className="ml-2 text-amber-300">
-                      ● {hud.coins}/{hud.coinsTotal}
-                    </span>
-                  </div>
-                  <div>
-                    Music: <b>{hud.state || '(none)'}</b>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    Intensity
-                    <span className="inline-block w-24 h-1.5 rounded bg-white/20 overflow-hidden">
-                      <span className="block h-full bg-emerald-400" style={{ width: `${Math.round(hud.intensity * 100)}%` }} />
-                    </span>
-                  </div>
-                </div>
-                <ul className="absolute left-3 bottom-3 flex flex-col gap-0.5 rounded-lg bg-black/45 px-3 py-2 text-white text-[11px] pointer-events-none" aria-label="What the music did">
-                  {log.map((l, i) => (
-                    <li key={`${i}-${l}`} className={i ? 'opacity-60' : ''}>
-                      {l}
-                    </li>
+    <div className="w-full max-w-6xl h-[88vh] rounded-xl border border-emerald-500/50 bg-forge-panel shadow-2xl flex flex-col overflow-hidden text-xs text-forge-muted">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-forge-border">
+        <Gamepad2 className="w-4 h-4 text-emerald-300" />
+        <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
+        {picker}
+        <span className="hidden xl:inline">
+          {kind === 'platformer' ? 'Arrows or A/D run · Space, W or Up jumps (land on a blob to squash it) · R restarts · Esc closes' : 'Arrows or WASD walk · Space jumps (land on the guard to beat it) · R restarts · Esc closes'}
+        </span>
+        <button type="button" onClick={() => setPanel((p) => !p)} aria-pressed={panel} className="ml-auto h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text" title="Which state, stinger and sound each moment plays">
+          <SlidersHorizontal className="w-3.5 h-3.5" /> Music wiring
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            scene.current?.reset();
+            start();
+          }}
+          className="h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> Restart
+        </button>
+        <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" aria-label="Close the game">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 flex">
+        <div className="relative flex-1 min-w-0 bg-sky-200">
+          <div ref={host} className="absolute inset-0" />
+          {!manifest && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} {kind === 'platformer' ? 'The blobs nap' : 'The guard naps'} until it's ready: {kind === 'platformer' ? 'run' : 'walk around'} and grab coins meanwhile.
+            </div>
+          )}
+          {(
+            <>
+              <div className="absolute left-3 top-3 flex flex-col gap-1 rounded-lg bg-black/55 px-3 py-2 text-white font-mono text-[11px] pointer-events-none">
+                <div className="flex items-center gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <Heart key={i} className={`w-4 h-4 ${i < hud.hearts ? 'fill-rose-400 text-rose-400' : 'text-white/30'}`} />
                   ))}
-                </ul>
-                {(hud.over || hud.beaten) && (
-                  <div className="absolute inset-x-0 top-1/3 text-center pointer-events-none">
-                    <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : kind === 'platformer' ? 'Level clear! Press R to play again' : 'Guard beaten! Press R to play again'}</span>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          {panel && map && manifest && (
-            <aside className="w-72 shrink-0 border-l border-forge-border p-3 flex flex-col gap-2 overflow-y-auto" aria-label="Music wiring">
-              <p>What each moment plays. Sounds left on <i>preview's own</i> come from the sound effects maker; add your own with Add to game in the Sound FX tab.</p>
-              {TRY_OUT_MOMENTS.map((m) => (
-                <label key={m.key} className="flex flex-col gap-0.5">
-                  <span className="text-[10px] uppercase font-mono">{m.label}</span>
-                  <select
-                    value={map[m.key]}
-                    onChange={(e) => {
-                      setMap({ ...map, [m.key]: e.target.value });
-                      // Back to the game, so its keys work again
-                      e.target.blur();
-                    }}
-                    className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
-                  >
-                    <option value="">{m.what === 'sfx' ? "(preview's own)" : '(nothing)'}</option>
-                    {options(m.what).map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
-              <p className="text-[10px]">Intensity rises from 30% to 100% as the guard closes in, the way a game might drive it.</p>
-            </aside>
+                  <span className="ml-2 text-amber-300">
+                    ● {hud.coins}/{hud.coinsTotal}
+                  </span>
+                </div>
+                <div>
+                  Music: <b>{hud.state || '(none)'}</b>
+                </div>
+                <div className="flex items-center gap-2">
+                  Intensity
+                  <span className="inline-block w-24 h-1.5 rounded bg-white/20 overflow-hidden">
+                    <span className="block h-full bg-emerald-400" style={{ width: `${Math.round(hud.intensity * 100)}%` }} />
+                  </span>
+                </div>
+              </div>
+              <ul className="absolute left-3 bottom-3 flex flex-col gap-0.5 rounded-lg bg-black/45 px-3 py-2 text-white text-[11px] pointer-events-none" aria-label="What the music did">
+                {log.map((l, i) => (
+                  <li key={`${i}-${l}`} className={i ? 'opacity-60' : ''}>
+                    {l}
+                  </li>
+                ))}
+              </ul>
+              {(hud.over || hud.beaten) && (
+                <div className="absolute inset-x-0 top-1/3 text-center pointer-events-none">
+                  <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : kind === 'platformer' ? 'Level clear! Press R to play again' : 'Guard beaten! Press R to play again'}</span>
+                </div>
+              )}
+            </>
           )}
         </div>
+        {panel && map && manifest && (
+          <aside className="w-72 shrink-0 border-l border-forge-border p-3 flex flex-col gap-2 overflow-y-auto" aria-label="Music wiring">
+            <p>What each moment plays. Sounds left on <i>preview's own</i> come from the sound effects maker; add your own with Add to game in the Sound FX tab.</p>
+            {TRY_OUT_MOMENTS.map((m) => (
+              <label key={m.key} className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase font-mono">{m.label}</span>
+                <select
+                  value={map[m.key]}
+                  onChange={(e) => {
+                    setMap({ ...map, [m.key]: e.target.value });
+                    // Back to the game, so its keys work again
+                    e.target.blur();
+                  }}
+                  className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
+                >
+                  <option value="">{m.what === 'sfx' ? "(preview's own)" : '(nothing)'}</option>
+                  {options(m.what).map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <p className="text-[10px]">Intensity rises from 30% to 100% as the guard closes in, the way a game might drive it.</p>
+          </aside>
+        )}
       </div>
     </div>
   );

@@ -48,6 +48,12 @@ as a Rust library for a future desktop app.
 
 Saved sounds keep their sound: parameters are only ever added at the end, and a sound saved
 with fewer of them loads with the new ones set as it sounded then (`bb_legacy`).
+When the host switches the whole sound (a preset, settings put back by an undo) it fades the output
+out and back in around the change and calls `bb_settle` at the bottom of it: the output level goes
+straight to the new one instead of easing over 10 ms (eased, a preset with a high level gave way
+to a loud sound at that level for a moment). Unison voices a note doesn't play yet start at points
+of their own, and the OTT follows the sound while it's off, so neither comes in as a burst when a
+preset or a lane turns it on mid-note (`src/synth_switch_tests.rs`).
 `tests/legacy_sound.rs` renders every older preset and an older saved sound and compares them
 with numbers taken from the engine before the change. `cargo run --release --example movement`
 measures how the presets' timbre moves on a riff of 16ths (src/analysis.rs), and how alike a riff
