@@ -29,7 +29,7 @@ import { renderMixdown, stemFileNames } from '../audio/exportMix';
 import { encodeTogether, type HeldReport } from '../audio/encoders';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, targetById } from '../audio/loudnessTarget';
-import { createLoudnessAnalyser, pairedLoudnessDiff } from '../audio/loudness';
+import { createLoudnessAnalyser, isSilent, lufsWords, pairedLoudnessDiff, unmeasured } from '../audio/loudness';
 import { measureRender, renderRange, renderRangeStems, type RenderMeasure } from '../audio/listen';
 import { sharedRunIn } from '../audio/auditionMath';
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
@@ -269,7 +269,11 @@ export async function renderSong(projectJson: unknown, opts: RenderSongOptions =
   }
   progress(1, 'Done');
   const peak = format !== 'wav' && held.peakDbtp !== null ? held.peakDbtp : reading.truePeakMax - held.trimDb;
-  return result([{ name: `${base}.${format}`, id: keep(blob), bytes: blob.size }], audio.length / audio.sampleRate, reading.integrated - held.trimDb, peak);
+  // Nothing to measure, so nothing was matched to a target: said in words (the numbers are left out)
+  const quiet = isSilent(reading.truePeakMax) || unmeasured(reading.integrated, reading.truePeakMax);
+  if (isSilent(reading.truePeakMax)) notes.push('It is silent: nothing plays in this range.');
+  else if (quiet) notes.push(`It is ${lufsWords(reading.integrated, reading.seconds)}${targetId ? ', so it is not matched to the loudness target' : ''}.`);
+  return result([{ name: `${base}.${format}`, id: keep(blob), bytes: blob.size }], audio.length / audio.sampleRate, reading.integrated - held.trimDb, peak, !quiet);
 }
 
 export interface ListenOptions {

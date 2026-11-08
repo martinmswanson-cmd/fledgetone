@@ -15,6 +15,7 @@ import { useUiStore } from '../store/uiStore';
 import { barToSeconds } from '../audio/tempoMap';
 import { measureRender, renderRange } from '../audio/listen';
 import { listenSnapshot } from './listenSnapshot';
+import { mixFindings } from './listenReport';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { ring } from '../search/reveal';
 import { APP_VERSION } from '../version';
@@ -207,11 +208,8 @@ function handlersAsTheyAre(): Partial<Record<StudioMethod, Handler>> {
         let stats: MasterStats | undefined;
         const audio = await renderRange(listenSnapshot(song), fromBar, toBar, { signal: stop.signal, onMasterStats: (s) => (stats = s) });
         const m = await measureRender(audio, stop.signal);
-        const findings: string[] = [];
-        if (m.truePeakDbtp > -1) findings.push(`The true peak reaches ${m.truePeakDbtp.toFixed(1)} dBTP: over -1, it may distort when it's turned into an MP3.`);
-        if (stats && stats.limiterPeakDb > 3) findings.push(`The master limiter takes up to ${stats.limiterPeakDb.toFixed(1)} dB off the peaks.`);
-        if (stats?.clipper && stats.clipper.peakDb > 3) findings.push(`The master clipper takes up to ${stats.clipper.peakDb.toFixed(1)} dB off the peaks.`);
-        if (!Number.isFinite(m.lufs)) findings.push('It is silent.');
+        // (the same findings as a listen to a song file: listenReport.ts)
+        const findings = mixFindings(m, stats);
         const finite = (v: number | null) => (v !== null && Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
         return {
           range: { fromBar, toBar },

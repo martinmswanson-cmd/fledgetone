@@ -111,9 +111,11 @@ import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soun
 import { bounceDeleteLoss, bounceDeleteWords, liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
+  audioClipAt,
   audioLengthLimitAt,
   audioTrimStartLimitAt,
   barsForSeconds,
+  placedClip,
   playsAlongMap,
   soundShift,
   clipNameFromFile,
@@ -817,8 +819,11 @@ interface TimelineState {
   clipboard: Clip[];
   /** Instrument of the track the clipboard was copied from, or null if it came from several tracks. */
   clipboardInstrument: InstrumentKey | null;
-  /** The tempo at the copy: audio clips pasted at another tempo keep their length in seconds. */
-  clipboardBpm: number;
+  /**
+   * Where the copied clips were (the bar the clipboard's starts count from) and the song's tempo map
+   * then: an audio clip playing at its own speed is pasted as long in seconds as it was there.
+   */
+  clipboardFrom: { bar: number; tempo: TempoMap };
   /** Each copied clip's track's instrument, by track id: a clip goes back only onto a track it fits (another song's track can have the same id) */
   clipboardTracks: Record<string, InstrumentKey>;
   copySelectedClips: () => void;
@@ -1018,6 +1023,17 @@ function copyClip(clip: Clip, offset: number): Clip {
     isSelected: true,
     notes: clip.notes.map((n) => ({ ...n, id: uid('note') })),
   };
+}
+
+/**
+ * copyClip for the copies Duplicate, Repeat and Fill make: an audio clip playing at its own speed is
+ * as long in seconds where its copy lands as where it is (its bars follow the tempo there, see
+ * audioClipAt), never past the end of the timeline. (Not in copyClip itself: Cut to length copies
+ * its sections with their tempos and times them afterwards.)
+ */
+function copyClipAt(clip: Clip, offset: number, tempo: Tempo): Clip {
+  const copy = copyClip(clip, offset);
+  return clip.audio && !clip.audio.stretchBpm ? { ...copy, ...audioClipAt(clip, copy.startBar, tempo, tempo, TOTAL_BARS + 1) } : copy;
 }
 
 /**
@@ -2860,15 +2876,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       updateClip(clipId, (c) => {
         const start = Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, startBar));
         // An audio clip keeps its length in seconds: moved to where the tempo differs, its bars change
+        // (along the tempo map where it plays across a change, here or where it goes), and its comp with them
         if (!c.audio || c.audio.stretchBpm || !get().tempoPoints.length) return { startBar: start };
         const tempo = songTempo(get());
-        // (Along the tempo map where it plays across a change, here or where it goes)
-        const end = c.startBar + c.lengthBars;
-        const seconds = playsAlongMap(c, end, tempo) ? secondsBetween(c.startBar, end, tempo) : c.lengthBars * secondsPerBar(tempoAt(c.startBar, tempo));
-        const scaled = (c.lengthBars * tempoAt(start, tempo)) / tempoAt(c.startBar, tempo);
-        const steady = !playsAlongMap(c, end, tempo) && !playsAlongMap({ ...c, startBar: start }, start + scaled, tempo);
-        const lengthBars = Math.min(TOTAL_BARS + 1 - start, steady ? scaled : barsForSeconds(start, seconds, tempo));
-        return { startBar: start, lengthBars };
+        return { startBar: start, ...audioClipAt(c, start, tempo, tempo, TOTAL_BARS + 1) };
       }),
 
     trimClipStart: (clipId, newStartBar) =>
@@ -2945,13 +2956,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           // Keep untouched clips identical so their (memoized) views don't re-render on every pointer move
           if (startBar === c.startBar && trackId === c.trackId) return c;
           changed = true;
-          // An audio clip playing at its own speed keeps its length in seconds at the tempo it lands in
+          // An audio clip playing at its own speed keeps its length in seconds where it lands, as
+          // moveClip keeps it (along the tempo map where it plays across a change, there or here)
           if (c.audio && !c.audio.stretchBpm && s.tempoPoints.length && startBar !== c.startBar) {
             const tempo = songTempo(s);
-            const ratio = tempoAt(startBar, tempo) / tempoAt(c.startBar, tempo);
-            if (Math.abs(ratio - 1) > EPS) {
-              return { ...c, startBar, trackId, lengthBars: c.lengthBars * ratio, ...(c.comp ? { comp: c.comp.map((seg) => ({ ...seg, at: seg.at * ratio })) } : {}) };
-            }
+            return { ...c, startBar, trackId, ...audioClipAt(c, startBar, tempo, tempo, TOTAL_BARS + 1) };
           }
           return { ...c, startBar, trackId };
         });
@@ -2970,7 +2979,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (block.start + 2 * block.span > TOTAL_BARS + 1 + EPS) return `No room for a copy before the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)}).`;
       // The originals join a pattern (their own, or a new one), and the copies share it and its notes
       const patternOf = new Map(linkable.map((c) => [c.id, c.pattern ?? uid('pattern')]));
-      const copies = block.selected.map((c) => (patternOf.has(c.id) ? { ...c, id: uid('clip'), startBar: c.startBar + block.span, isSelected: true, pattern: patternOf.get(c.id)! } : copyClip(c, block.span)));
+      const copies = block.selected.map((c) => (patternOf.has(c.id) ? { ...c, id: uid('clip'), startBar: c.startBar + block.span, isSelected: true, pattern: patternOf.get(c.id)! } : copyClipAt(c, block.span, songTempo(s))));
       set((st) => ({
         clips: [...st.clips.map((c) => (patternOf.has(c.id) ? { ...c, pattern: patternOf.get(c.id)!, isSelected: false } : c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
         ...pushPast(st),
@@ -2994,7 +3003,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const end = `the end of the timeline (bar ${barLabel(get(), TOTAL_BARS + 1)})`;
         return room <= 0 ? `No room for a copy before ${end}.` : `Only ${room} ${room === 1 ? 'copy fits' : 'copies fit'} before ${end}.`;
       }
-      const copies = Array.from({ length: count }, (_, i) => block.selected.map((c) => copyClip(c, (i + 1) * block.span))).flat();
+      const tempo = songTempo(get());
+      const copies = Array.from({ length: count }, (_, i) => block.selected.map((c) => copyClipAt(c, (i + 1) * block.span, tempo))).flat();
       set((s) => ({
         clips: [...s.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
         ...pushPast(s),
@@ -3013,12 +3023,14 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         return `Filling to bar ${barLabel(get(), out)} would make ${countOf(passes * block.selected.length)} clips; Fill makes at most ${countOf(MAX_FILL_CLIPS)} at a time. Move Out earlier, or fill with longer clips.`;
       }
       const copies: Clip[] = [];
+      const tempo = songTempo(s);
       for (let k = 1; k <= passes; k++) {
         for (const c of block.selected) {
-          const copy = copyClip(c, k * block.span);
+          // (an audio clip's copy timed where it lands first, then cut at Out)
+          const copy = copyClipAt(c, k * block.span, tempo);
           // The last pass is cut off at Out. Notes past the cut stay in the clip, hidden, as after a trim.
-          const length = Math.min(c.lengthBars, out - copy.startBar);
-          if (length >= MIN_CLIP_BARS - EPS) copies.push(length < c.lengthBars ? { ...copy, lengthBars: length } : copy);
+          const length = Math.min(copy.lengthBars, out - copy.startBar);
+          if (length >= MIN_CLIP_BARS - EPS) copies.push(length < copy.lengthBars ? { ...copy, lengthBars: length } : copy);
         }
       }
       if (copies.length === 0) {
@@ -3413,11 +3425,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     // ---------- Clipboard ----------
     clipboard: [],
     clipboardInstrument: null,
-    clipboardBpm: 122,
+    clipboardFrom: { bar: 1, tempo: { bpm: 122, points: [] } },
     clipboardTracks: {},
 
     copySelectedClips: () => {
-      const { tracks, bpm, fileMarks } = get();
+      const { tracks, fileMarks } = get();
       // From a song without the marks, each clip's name the old check takes for a file's is marked
       // as it's copied: pasted into a song with them, its marks alone are what's judged (ownFiles.ts).
       // Checked against the names opening it knew (its file's sounds' and the library's), and while
@@ -3434,7 +3446,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         clipboard: selected.map((c) => ({ ...c, startBar: c.startBar - origin, isSelected: false })),
         // Remembered now, so the clips can still be pasted onto a matching track after theirs is gone
         clipboardInstrument: fromOneTrack ? (tracks.find((t) => t.id === selected[0].trackId)?.instrumentKey ?? null) : null,
-        clipboardBpm: bpm,
+        clipboardFrom: { bar: origin, tempo: songTempo(get()) },
         clipboardTracks: Object.fromEntries(tracks.filter((t) => selected.some((c) => c.trackId === t.id)).map((t) => [t.id, t.instrumentKey])),
       });
     },
@@ -3445,7 +3457,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     },
 
     pasteClips: (atBar, ontoTrackId) => {
-      const { clipboard, clipboardInstrument, clipboardBpm, clipboardTracks, tracks, playheadPosition, snapGrid, isPlaying, bpm } = get();
+      const { clipboard, clipboardInstrument, clipboardFrom, clipboardTracks, tracks, playheadPosition, snapGrid, isPlaying } = get();
       if (clipboard.length === 0) return;
       // Back onto their own tracks: the ones still there with an instrument they fit (in another
       // song opened since, a track of the same id may be a bus, or play audio)
@@ -3458,14 +3470,16 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const onto = ontoTrackId !== undefined ? tracks.find((t) => t.id === ontoTrackId) : undefined;
       const target = onto && clipboardInstrument && canMoveClipBetween(clipboardInstrument, onto.instrumentKey) ? onto.id : null;
 
-      // Audio clips copied at another tempo are as long in seconds as they were
-      const pasted: Clip[] = retimeAudioClips(clipboard, clipboardBpm, bpm)
+      // Audio clips playing at their own speed are as long in seconds where they land as where they
+      // were copied (in this song or another): measured along each song's tempo map
+      const tempo = songTempo(get());
+      const pasted: Clip[] = clipboard
         .filter((c) => target !== null || fits(c))
         .map((c) => ({
           ...c,
           id: uid('clip'),
           trackId: target ?? c.trackId,
-          startBar: Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, at + c.startBar)),
+          ...placedClip({ ...c, startBar: clipboardFrom.bar + c.startBar }, at + c.startBar, clipboardFrom.tempo, tempo, TOTAL_BARS + 1),
           isSelected: true,
           notes: c.notes.map((n) => ({ ...n, id: uid('note') })),
         }));
