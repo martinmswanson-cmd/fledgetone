@@ -1,9 +1,23 @@
 // The lush reverb (src/audio/effects/lushReverb.ts): its tail dies at the asked decay, stays finite (frozen too), differs left and right, rests in silence, and is as loud as the hall it stands beside.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+
 const { createLushKernel, LUSH_WORKLET_SOURCE } = await import('../src/audio/effects/lushReverb.ts');
-const { roomChannels, ROOM_STYLES } = await import('../src/audio/effects/roomIR.ts');
+const { normalizedLevel, roomChannels, ROOM_STYLES } = await import('../src/audio/effects/roomIR.ts');
 const SR = 48000;
 const { low, high } = ROOM_STYLES.lush;
 
@@ -150,10 +164,10 @@ test('left and right are decorrelated', () => {
 
 test('as loud as the hall at the same decay (A-weighted, within 1 dB)', () => {
   for (const decay of [0.8, 2.4, 8, 12]) {
-    // The convolver's normalization: the hall's impulse response (total energy 1) scaled by
-    // 10^(-58/20) x sqrt(2 x length) x 44100 / sampleRate
+    // The hall as the song's reverb plays it: away from 44.1 kHz, its room (made at 44.1 kHz and
+    // resampled) at the level the convolver's normalization gives the 44.1 kHz room
     const [hl, hr] = roomChannels('hall', decay, SR);
-    const k = (44100 / SR) * 10 ** (-58 / 20) * Math.sqrt(2 * hl.length);
+    const k = normalizedLevel('hall', decay);
     const hall = (aEnergy(hl) + aEnergy(hr)) * k * k;
     const [l, r] = impulseResponse(decay, Math.min(16, decay * 1.6 + 1));
     const db = 10 * Math.log10((aEnergy(l) + aEnergy(r)) / hall);

@@ -16,6 +16,7 @@ import type { GlideRef } from '../instruments';
 import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
 import { createBendFeed } from '../bendFeed';
 import { attackAhead, type NoteSynth } from './toneStart';
+import { SHAPER_4X_FRAMES, shaperLag } from '../shaperLag';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -192,6 +193,35 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   };
 }
 
+/** Tone.Distortion's inside: its shaper between effectSend and effectReturn, and the crossfade its dry part goes into (`a`). */
+interface DistortionInside {
+  _shaper: Tone.WaveShaper;
+  effectReturn: Tone.Gain;
+  _dryWet: Tone.CrossFade;
+}
+
+/**
+ * Hold a Tone.Distortion's driven part back `driven` seconds, and its dry part `dry` (see
+ * shaperLag.ts): the delays made, to be let go with it. Nothing for 0.
+ */
+export function holdDriven(drive: Tone.Distortion, driven: number, dry = 0): Tone.Delay[] {
+  const inside = drive as unknown as DistortionInside;
+  const held: Tone.Delay[] = [];
+  if (driven > 0) {
+    const late = new Tone.Delay(driven, driven);
+    inside._shaper.disconnect();
+    inside._shaper.chain(late, inside.effectReturn);
+    held.push(late);
+  }
+  if (dry > 0) {
+    const late = new Tone.Delay(dry, dry);
+    drive.input.disconnect(inside._dryWet.a);
+    drive.input.chain(late, inside._dryWet.a);
+    held.push(late);
+  }
+  return held;
+}
+
 /** 808 bass: a long sine boom with a quick downward pitch drop, lightly saturated. */
 /** Seconds an 808 note takes to slide to the next one's pitch when they overlap. */
 const SLIDE_808 = 0.08;
@@ -219,13 +249,21 @@ export function create808(output: Tone.InputNode, modern = false) {
     envelope: { attack: modern ? 0.006 : 0.002, decay: 1.4, sustain: 0.35, release: 0.9 },
   });
   const extra: Array<{ dispose: () => void }> = [];
+  // The driven part as late against the clean one at every rate as at 44.1 kHz (see shaperLag.ts):
+  // the classic's dry part, or the Expressive voice's clean sub
+  const lag = shaperLag(SHAPER_4X_FRAMES, drive.context.sampleRate);
+  extra.push(...holdDriven(drive, lag.driven, modern ? 0 : lag.clean));
   if (modern) {
     const clean = new Tone.Filter({ type: 'lowpass', frequency: 120, rolloff: -24 });
     const lowCut = new Tone.Filter({ type: 'highpass', frequency: 90, rolloff: -12 });
     const highCut = new Tone.Filter({ type: 'lowpass', frequency: 3500, rolloff: -12 });
     const grit = new Tone.Gain(Tone.dbToGain(-8));
     synth.connect(clean);
-    clean.connect(output);
+    if (lag.clean > 0) {
+      const late = new Tone.Delay(lag.clean, lag.clean);
+      clean.chain(late, output);
+      extra.push(late);
+    } else clean.connect(output);
     synth.chain(lowCut, drive, highCut, grit, output);
     extra.push(clean, lowCut, highCut, grit);
   } else synth.chain(drive, output);

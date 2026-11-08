@@ -1,15 +1,30 @@
-// The designed reverb rooms (src/audio/effects/roomIR.ts): the highs die before the lows, the two sides differ, longer decays ring longer, the level is the same whatever the room, and every tail has died away (not stopped) by its end.
+// The designed reverb rooms (src/audio/effects/roomIR.ts): the highs die before the lows, the two sides differ, longer decays ring longer, the level is the same whatever the room, and every tail has died away (not stopped) by its end. (The same room at every rate: sameAtEveryRate.test.mjs.)
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
 
 const { roomChannels, roomSeconds, ROOM_STYLE_IDS, ROOM_IR_MAX_SECONDS } = await import('../src/audio/effects/roomIR.ts');
 const SR = 48000;
 const energy = (x, a, b) => x.subarray(a, b).reduce((s, v) => s + v * v, 0);
 
-test('every room has total energy 1, two different sides, and starts after its pre-delay', () => {
+test('every room has total energy 1 (as made, at 44.1 kHz: as loud at every rate, see sameAtEveryRate.test.mjs), two different sides, and starts after its pre-delay', () => {
   for (const style of ROOM_STYLE_IDS) {
+    const [l44, r44] = roomChannels(style, 2.4, 44100);
+    assert.ok(Math.abs(energy(l44, 0, l44.length) + energy(r44, 0, r44.length) - 1) < 1e-3, style);
     const [l, r] = roomChannels(style, 2.4, SR);
-    assert.ok(Math.abs(energy(l, 0, l.length) + energy(r, 0, r.length) - 1) < 1e-3, style);
     let diff = 0;
     for (let i = 0; i < l.length; i += 97) diff += Math.abs(l[i] - r[i]);
     assert.ok(diff > 0.01, `${style}: stereo`);
