@@ -10,6 +10,7 @@ import { createPeaks, fillPeaks } from './waveform';
 import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
 import { DspDropped, runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
+import { carriedBytes, checkSounds, isCheckedSound, isSoundOf, soundIdOf } from './soundIds';
 import type { Peaks } from './waveform';
 import type { ClipAudio, CustomSample, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
@@ -21,6 +22,9 @@ export type { EmbeddedSound, SoundMeta };
  * tracks or projects) is stored once, and projects only hold the ids: browser autosave has about
  * 5 MB for a whole project, and a sound file alone can be ten times that. A saved .fledgetone.json
  * embeds the files it uses (see embedSounds), and opening one puts them back here.
+ *
+ * Bytes are used only under the id they hash to: a file's are checked before anything keeps or
+ * plays them (soundIds.ts checkSounds), and a stored copy before this page first reads it (storedBytes).
  *
  * Each sound is decoded once per sample rate (the live context's, and the WAV export's) and the
  * decoded buffer shared by every player; its waveform peaks are worked out once, in idle moments.
@@ -203,16 +207,43 @@ async function readStoredData(id: string): Promise<Blob | undefined> {
   return request(db.transaction(DATA_STORE).objectStore(DATA_STORE).get(id) as IDBRequest<Blob | undefined>);
 }
 
+/**
+ * Sounds whose stored bytes this page has checked against their id (or stored itself, checked):
+ * a stored copy is used only once it has been (storedBytes), so bytes kept under another sound's
+ * id never play or go into a saved file.
+ */
+const storedChecked = new Set<string>();
+
+/** Keep a sound's bytes, whose id `meta.id` the caller has checked them against. */
 async function writeStoredSound(meta: SoundMeta, data: Blob): Promise<void> {
+  storedChecked.delete(meta.id);
   const db = await openDb();
   const tx = db.transaction([META_STORE, DATA_STORE], 'readwrite');
   tx.objectStore(META_STORE).put(meta);
   tx.objectStore(DATA_STORE).put(data, meta.id);
   await completed(tx);
+  storedChecked.add(meta.id);
+}
+
+/**
+ * The bytes this browser keeps for sound `id`, if they are the ones the id names: undefined when
+ * none are kept, or other bytes are (a file from before the app checked could put them there).
+ * Those are never used: the sound reads as not in this browser until its own file is loaded or
+ * opened again, which puts the right bytes in their place.
+ */
+async function storedBytes(id: string): Promise<ArrayBuffer | undefined> {
+  const data = await readStoredData(id);
+  if (!data) return undefined;
+  const bytes = await data.arrayBuffer();
+  if (storedChecked.has(id)) return bytes;
+  if (!(await isSoundOf(id, bytes))) return undefined;
+  storedChecked.add(id);
+  return bytes;
 }
 
 /** Keep any other file in this browser under `key` (the reference video: see videoStore). */
 export async function storeBlob(key: string, blob: Blob): Promise<void> {
+  storedChecked.delete(key);
   const db = await openDb();
   const tx = db.transaction(DATA_STORE, 'readwrite');
   tx.objectStore(DATA_STORE).put(blob, key);
@@ -224,6 +255,7 @@ export async function readBlob(key: string): Promise<Blob | undefined> {
 }
 
 export async function deleteBlob(key: string): Promise<void> {
+  storedChecked.delete(key);
   const db = await openDb();
   const tx = db.transaction(DATA_STORE, 'readwrite');
   tx.objectStore(DATA_STORE).delete(key);
@@ -241,29 +273,11 @@ async function deleteStoredSounds(ids: readonly string[]): Promise<void> {
   const db = await openDb();
   const tx = db.transaction([META_STORE, DATA_STORE], 'readwrite');
   for (const id of ids) {
+    storedChecked.delete(id);
     tx.objectStore(META_STORE).delete(id);
     tx.objectStore(DATA_STORE).delete(id);
   }
   await completed(tx);
-}
-
-// ---------- hashing ----------
-
-/** The id of a file's bytes: SHA-256 (the first 128 bits), or a pair of FNV hashes where the browser has no crypto. */
-async function hashBytes(bytes: ArrayBuffer): Promise<string> {
-  const subtle = globalThis.crypto?.subtle;
-  if (subtle) {
-    const digest = new Uint8Array(await subtle.digest('SHA-256', bytes));
-    return Array.from(digest.subarray(0, 16), (b) => b.toString(16).padStart(2, '0')).join('');
-  }
-  const data = new Uint8Array(bytes);
-  let a = 0x811c9dc5;
-  let b = 0x01000193;
-  for (let i = 0; i < data.length; i++) {
-    a = Math.imul(a ^ data[i], 0x01000193) >>> 0;
-    b = Math.imul(b ^ data[i], 0x9e3779b1) >>> 0;
-  }
-  return `fnv${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}${data.length.toString(16)}`;
 }
 
 // ---------- decoding ----------
@@ -336,16 +350,23 @@ export function letGoHeldSounds(keep: ReadonlySet<string>): void {
 /** How many sounds are held in memory for want of storage (for tests). */
 export const heldSoundCount = (): number => unstored.size;
 
-/** A sound's file: from the library, else from an opened project that carried it (undefined: neither has it). */
-async function soundData(id: string): Promise<Blob | undefined> {
+/** Sounds a file carries whose bytes are being checked against their ids (importEmbeddedSounds): nothing reads them meanwhile. */
+const checking = new Map<string, Promise<unknown>>();
+
+/**
+ * A sound's bytes: from the library when they are the ones its id names, else from an opened
+ * project that carried them (checked when it was opened); undefined when neither has them.
+ */
+async function soundBytes(id: string): Promise<ArrayBuffer | undefined> {
+  await checking.get(id);
   try {
-    const data = await readStoredData(id);
-    if (data) return data;
+    const bytes = await storedBytes(id);
+    if (bytes) return bytes;
   } catch {
     // Storage blocked: an opened project may still have it
   }
   const carried = unstored.get(id);
-  return carried ? (await fetch(`data:${carried.type || 'application/octet-stream'};base64,${carried.data}`)).blob() : undefined;
+  return carried && carriedBytes(carried);
 }
 
 /**
@@ -390,13 +411,13 @@ export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer
   let promise = decoded.get(key);
   if (!promise) {
     promise = (async () => {
-      const data = await soundData(id);
-      if (!data) {
+      const bytes = await soundBytes(id);
+      if (!bytes) {
         setStatus(id, 'missing');
         throw new SoundError('This sound is not in this browser any more.');
       }
       try {
-        return await decodeBytes(await data.arrayBuffer(), sampleRate);
+        return await decodeBytes(bytes, sampleRate);
       } catch {
         setStatus(id, 'error');
         throw new SoundError("This sound can't be decoded.");
@@ -733,6 +754,8 @@ export function ensureSound(id: string): void {
 /**
  * Put a sound file into the library: checked for size, hashed, decoded (a file the browser can't
  * play is refused) and stored. The same bytes loaded again give the same id and are stored once.
+ * They're stored whenever what this browser keeps under the id isn't them (nothing, or other
+ * bytes a file put there before the app checked): the id is these bytes' own, so that is always right.
  * The meta describes the file; the caller names the clip or track.
  */
 export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_SOUND_BYTES): Promise<SoundMeta> {
@@ -740,7 +763,7 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
     throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${maxBytes / 1048576} MB can be loaded, because each is kept in this browser and saved inside your project file: trim it, or save it as MP3 or OGG (a tenth of the size).`);
   }
   const bytes = await file.arrayBuffer();
-  const id = await hashBytes(bytes);
+  const id = await soundIdOf(bytes);
   const type = file.type || 'application/octet-stream';
   // Kept before decoding, which consumes the bytes
   const data = new Blob([bytes], { type });
@@ -751,19 +774,22 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
   } catch {
     throw new SoundError(`Couldn't read "${name}" as audio. Try a WAV, MP3, OGG, FLAC or M4A file.`);
   }
-  let meta = useSoundLibrary.getState().metas[id];
-  if (!meta) {
-    let stored: SoundMeta | undefined;
-    try {
-      stored = await readStoredMeta(id);
-      meta = stored ?? { id, name, type, size: data.size, seconds: buffer.duration };
-      if (!stored) await writeStoredSound(meta, data);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-        throw new SoundError(`There's no room left in this browser to keep "${name}". "Free unused", under an Audio or Sampler track's settings, makes room.`);
-      }
-      throw new SoundError("Your browser is blocking storage for this site, so sounds can't be kept. Check the site's permissions (or leave private browsing).");
+  const known = useSoundLibrary.getState().metas[id];
+  let meta: SoundMeta;
+  try {
+    const stored = await readStoredMeta(id);
+    if (stored && (await storedBytes(id))) meta = known ?? stored;
+    else {
+      // (Kept under the id the bytes' own hash gives: these are the bytes it names, whatever was there)
+      meta = { id, name, type, size: data.size, seconds: buffer.duration };
+      await writeStoredSound(meta, data);
     }
+  } catch (err) {
+    // (One this page already has, from a song that carried it, plays on as before while storage is blocked or full)
+    if (known) meta = known;
+    else if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new SoundError(`There's no room left in this browser to keep "${name}". "Free unused", under an Audio or Sampler track's settings, makes room.`);
+    } else throw new SoundError("Your browser is blocking storage for this site, so sounds can't be kept. Check the site's permissions (or leave private browsing).");
   }
   decoded.set(decodeKey(id, sampleRate), Promise.resolve(buffer));
   decodedBuffers.set(decodeKey(id, sampleRate), buffer);
@@ -817,7 +843,7 @@ const base64Of = (data: Blob): Promise<string> =>
 
 /**
  * The sounds with these ids as a project file embeds them (bytes in base64). A sound this browser
- * doesn't have is left out: the file still opens, with that sound missing.
+ * doesn't have (or keeps other bytes for: see storedBytes) is left out: the file still opens, with that sound missing.
  */
 export async function embedSounds(ids: readonly string[]): Promise<EmbeddedSound[]> {
   const sounds: EmbeddedSound[] = [];
@@ -830,8 +856,9 @@ export async function embedSounds(ids: readonly string[]): Promise<EmbeddedSound
     }
     try {
       const meta = useSoundLibrary.getState().metas[id] ?? (await readStoredMeta(id));
-      const data = meta && (await readStoredData(id));
-      if (meta && data) sounds.push({ ...meta, data: await base64Of(data) });
+      // (only the bytes the id names: see storedBytes)
+      const bytes = meta && (await storedBytes(id));
+      if (meta && bytes) sounds.push({ ...meta, data: await base64Of(new Blob([bytes])) });
     } catch {
       // Storage blocked: nothing to embed
     }
@@ -839,13 +866,31 @@ export async function embedSounds(ids: readonly string[]): Promise<EmbeddedSound
   return sounds;
 }
 
+/** Set a sound's status, or forget it (undefined). */
+const putStatus = (id: string, status: SoundStatus | undefined) => {
+  if (status) return setStatus(id, status);
+  useSoundLibrary.setState((s) => {
+    if (!Object.hasOwn(s.status, id)) return s;
+    const next = { ...s.status };
+    delete next[id];
+    return { status: next };
+  });
+};
+
 /**
  * Put a project file's embedded sounds into the library (the ones not already there) and get them
- * ready. Their status reads "loading" from the moment this is called, so clips drawn meanwhile
- * wait for them rather than report them missing.
+ * ready. Each one's bytes are checked against its id first (soundIds.ts checkSounds; the ones it has
+ * already checked aren't looked at again): one that isn't under its own id is kept under that instead,
+ * and the result maps the id the file gave it to that one (the caller points the song there; an
+ * empty map when every one was right). A stored copy that isn't the bytes its id names is
+ * replaced by the file's. Statuses read "loading" from the moment this is called, so clips drawn
+ * meanwhile wait for them rather than report them missing.
  */
-export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<void> {
-  for (const sound of sounds) {
+export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<Map<string, string>> {
+  const known = new Set<string>();
+  const know = (sound: EmbeddedSound) => {
+    if (known.has(sound.id)) return;
+    known.add(sound.id);
     const { data: _data, ...meta } = sound;
     // (A sound the library already has keeps its name, as it reads after a reload: the file's
     // name for the same bytes stays known as another, see soundFileNames)
@@ -854,15 +899,38 @@ export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<
     else setMeta(meta);
     if (soundStatus(sound.id) !== 'ready') setStatus(sound.id, 'loading');
     unstored.set(sound.id, sound);
+  };
+  // Ones already checked are known at once; the rest wait, unread, until they have been
+  const checked = sounds.filter(isCheckedSound);
+  const unchecked = sounds.filter((s) => !isCheckedSound(s));
+  for (const sound of checked) know(sound);
+  const before = new Map<string, SoundStatus | undefined>();
+  for (const { id } of unchecked) {
+    if (before.has(id) || known.has(id)) continue;
+    before.set(id, soundStatus(id));
+    if (soundStatus(id) !== 'ready') setStatus(id, 'loading');
   }
+  const check = checkSounds(unchecked).catch(() => ({ sounds: [] as EmbeddedSound[], moved: new Map<string, string>() }));
+  for (const id of before.keys()) checking.set(id, check);
   return (async () => {
-    for (const sound of sounds) {
-      const { data, ...meta } = sound;
+    const result = await check;
+    for (const sound of result.sounds) know(sound);
+    for (const [id, status] of before) {
+      if (checking.get(id) === check) checking.delete(id);
+      // (An id the file gave other bytes: as it was, so what this browser keeps under it, if anything, plays)
+      if (!known.has(id) && soundStatus(id) === 'loading') putStatus(id, status);
+    }
+    for (const sound of [...checked, ...result.sounds]) {
+      if (!known.delete(sound.id)) continue;
+      const { data: _data, ...meta } = sound;
       try {
         const stored = await readStoredMeta(meta.id);
-        if (!stored) {
-          const blob = await (await fetch(`data:${meta.type || 'application/octet-stream'};base64,${data}`)).blob();
-          await writeStoredSound(meta, blob);
+        if (!stored || !(await storedBytes(meta.id))) {
+          // Not kept here, or other bytes are kept under its id: these are the ones it names
+          const bytes = await carriedBytes(sound);
+          if (!bytes) throw new Error('unreadable');
+          await writeStoredSound(meta, new Blob([bytes], { type: meta.type || 'application/octet-stream' }));
+          if (stored) setMeta(meta);
         } else if (stored.name !== meta.name) {
           // (Kept here under another name: that one it goes by, as after a reload, and the file's is known too)
           addOtherName(meta.id, meta.name, stored.name);
@@ -870,11 +938,11 @@ export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<
         }
         unstored.delete(meta.id);
       } catch {
-        // Storage full or blocked: it plays and saves from the project's copy (or, if the data
-        // isn't base64, stays missing)
+        // Storage full or blocked: it plays and saves from the project's copy
       }
       await prepareSound(meta.id);
     }
+    return result.moved;
   })();
 }
 
