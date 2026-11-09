@@ -186,10 +186,15 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // Made afresh at its new settings in a switch's silence (see makeSwitch): a plugin whose
     // filters, set for one preset, blow up in another (paramLimits.ts FRESH_ON_SWITCH)
     this.freshOnSwitch = !!o.freshOnSwitch;
-    // The keys held down (note: its note-on) and the sustain pedal's last word, so an instrument
-    // made afresh in a switch strikes the notes still held again (see restart)
+    // What an instrument made afresh in a switch is given again (see restart, keys): the keys held
+    // down and the notes the sustain pedal holds after their keys came up (each: its note-on), and
+    // each channel's last controllers (the pedal among them), pressure and pitch bend
     this.down = new Map();
-    this.pedal = null;
+    this.sustained = new Map();
+    this.ctl = new Map();
+    // The notes the pedal held, struck again in a switch and still owed their note-off (given
+    // when the pedal comes up)
+    this.owed = new Set();
     this.limits = [];
     // The last preset file and user table it was given, to start it again with after a blow-up
     this.presetData = null;
@@ -318,7 +323,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
    */
   restart(blownUp) {
     const notes = blownUp ? [] : [...this.down.values()];
-    const pedal = blownUp ? null : this.pedal;
+    const sustained = blownUp ? [] : [...this.sustained.entries()];
+    const ctl = blownUp ? [] : [...this.ctl.values()];
     const e = this.e;
     const values = [];
     for (let i = 0; i < this.n; i++) values.push(e.bb_get(this.h, i));
@@ -343,18 +349,84 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
     if (this.bpm > 0 && this.e.bb_tempo) this.e.bb_tempo(this.h, this.bpm);
     this.views();
-    // (Made afresh in a switch: the keys still down strike again, as fresh notes of the new sound)
-    if (pedal) this.e.bb_midi(this.h, pedal[0], pedal[1], pedal[2]);
-    for (const b of notes) this.e.bb_midi(this.h, b[0], b[1], b[2]);
+    // (Made afresh in a switch: the controllers, pressure, bend and pedal as they were, so the notes
+    // start where they played (bent, not gliding to it); the notes the pedal holds struck again,
+    // their note-off kept until the pedal comes up (a one-voice sound lets a note go at its
+    // note-off, pedal or not); the keys still down struck again, as fresh notes of the new sound;
+    // then each one's own pressure)
+    this.owed.clear();
+    const midi = (b) => this.e.bb_midi(this.h, b[0], b[1], b[2]);
+    const touch = [];
+    for (const b of ctl) {
+      if ((b[0] & 0xf0) === 0xa0) touch.push(b);
+      else midi(b);
+    }
+    for (const [key, b] of sustained) {
+      midi(b);
+      this.owed.add(key);
+    }
+    for (const b of notes) midi(b);
+    for (const b of touch) midi(b);
   }
 
-  /** Which keys are down, and the pedal, after MIDI message b (instruments made afresh in a switch) */
+  /**
+   * What MIDI message b leaves held (instruments made afresh in a switch, see restart): the keys
+   * down, the notes the pedal holds, each channel's controllers, pressure and bend. Reset All
+   * Controllers puts a channel's back (and lets its pedal up), all-notes-off and all-sound-off
+   * end every note.
+   */
   keys(b) {
-    const kind = b[0] & 0xf0;
-    if (kind === 0x90 && b[2]) this.down.set(b[1], [b[0], b[1], b[2]]);
-    else if (kind === 0x80 || kind === 0x90) this.down.delete(b[1]);
-    else if (kind === 0xb0 && b[1] === 64) this.pedal = [b[0], 64, b[2] || 0];
-    else if (kind === 0xb0 && (b[1] === 120 || b[1] === 123)) this.down.clear();
+    const kind = b[0] & 0xf0, ch = b[0] & 15;
+    const key = ch * 128 + (b[1] & 127);
+    const value = b[2] || 0;
+    const keep = (name, bytes) => {
+      // (Last sent last: given again in the order they came)
+      this.ctl.delete(name);
+      this.ctl.set(name, bytes);
+    };
+    const channel = (map) => {
+      for (const [k, v] of map) if ((v[0] & 15) === ch) map.delete(k);
+    };
+    // The pedal up (or Reset All Controllers): the notes it held end, those struck again in a
+    // switch with their note-off now
+    const letGo = () => {
+      for (const [k, v] of this.sustained) {
+        if ((v[0] & 15) !== ch) continue;
+        this.sustained.delete(k);
+        if (!this.down.has(k)) this.ctl.delete('a' + k);
+        if (this.owed.delete(k)) this.e.bb_midi(this.h, 0x80 | ch, k & 127, 0);
+      }
+    };
+    if (kind === 0x90 && value) {
+      this.sustained.delete(key);
+      this.owed.delete(key);
+      this.down.set(key, [b[0], b[1], value]);
+    } else if (kind === 0x80 || kind === 0x90) {
+      const on = this.down.get(key);
+      this.down.delete(key);
+      const pedal = this.ctl.get('c' + ch + ':64');
+      if (on && pedal && pedal[2] >= 64) this.sustained.set(key, on);
+      else if (!this.sustained.has(key)) this.ctl.delete('a' + key);
+    } else if (kind === 0xb0 && b[1] === 121) {
+      letGo();
+      channel(this.ctl);
+    } else if (kind === 0xb0 && (b[1] === 120 || b[1] >= 123)) {
+      this.down.clear();
+      this.sustained.clear();
+      this.owed.clear();
+      for (const k of [...this.ctl.keys()]) if (k[0] === 'a') this.ctl.delete(k);
+    } else if (kind === 0xb0 && b[1] < 120) {
+      keep('c' + ch + ':' + b[1], [b[0], b[1], value]);
+      if (b[1] === 64 && value < 64) letGo();
+    } else if (kind === 0xe0) {
+      // (At rest: nothing to give again)
+      if ((b[1] || 0) === 0 && value === 64) this.ctl.delete('b' + ch);
+      else keep('b' + ch, [b[0], b[1] || 0, value]);
+    } else if (kind === 0xd0) {
+      keep('p' + ch, [b[0], b[1] || 0, 0]);
+    } else if (kind === 0xa0 && (this.down.has(key) || this.sustained.has(key))) {
+      keep('a' + key, [b[0], b[1], value]);
+    }
   }
 
   /**
