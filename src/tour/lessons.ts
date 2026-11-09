@@ -604,7 +604,7 @@ const HELPERS: Lesson = {
     },
     {
       title: 'Chords for chills',
-      body: 'Right-click an empty spot on a synth or pad track and choose **Chills progression…**: chord moves that give listeners a shiver at a peak, such as *the minor iv*, *almost home, then somewhere else* or *up a whole step for the last time through*, each with a line on why it works. Later, select the clips before your peak, right-click and choose **Build into a peak…**: the parts swell back to their level, a filter opens and a pad joins at the peak, all in lanes you can change, and nothing is turned up past where it was.',
+      body: 'Right-click an empty spot on a synth or pad track and choose **Chills progression…**: chord moves that give listeners a shiver at a peak, such as *the minor iv*, *almost home, then somewhere else* or *up a whole step for the last time through*, each with a line on why it works. Later, select the clips before your peak, right-click and choose **Build into a peak…**: the parts swell back to their level and a filter opens, in lanes you can change; a riser and a pad at the peak come on new tracks, set under the music by measuring it, and nothing already there is turned up past where it was.',
       target: '[data-timeline-scroll]',
       task: { hint: 'Right-click a lane, Chills progression…', begin: clipIds, done: newClip },
     },

@@ -16,8 +16,8 @@ import { MATH_PATTERNS, type MathPatternId } from '../../store/mathPatterns';
 import { MELODY_VARIATIONS, type MelodyVariation, type VariationPlace } from '../../store/melodyVariations';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
-import { CHILLS, chillsById, chillsNames } from '../../store/chills';
-import { BUILD_DEFAULTS, buildForChills, buildTracks, makeChillsClip, type BuildChoices } from '../../store/chillsActions';
+import { CHILLS, chillsById, chillsNames, registerOf } from '../../store/chills';
+import { BUILD_DEFAULTS, buildChosen, buildForChills, buildTracks, makeChillsClip, PAD_UNDER_LU, RISER_UNDER_DB, type BuildChoices } from '../../store/chillsActions';
 import { BUILD_DEPTHS } from '../../store/chillsBuild';
 
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
@@ -443,7 +443,10 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
   return (
     <Modal title={`Chills progression${track ? ` on ${track.name}` : ''}`} onClose={onClose}>
       <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
-        <p className="text-[11px] text-forge-muted">Chord moves that give listeners chills at an emotional peak. Held chords, voiced for synths and pads: one low note, the chord in the middle.</p>
+        <p className="text-[11px] text-forge-muted">
+          Chord moves that give listeners chills at an emotional peak.{' '}
+          {track && registerOf(INSTRUMENTS[track.instrumentKey]?.range).kind === 'roots' ? 'On this bass instrument it plays each chord’s root (or the held home note), inside its range.' : 'Held chords, voiced for synths and pads: one low note, the chord in the middle.'}
+        </p>
         <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Progression">
           {CHILLS.map((p) => (
             <label key={p.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${p.id === prog.id ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
@@ -514,7 +517,8 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
   const tracks = buildTracks(range.from, range.to, picked ? trackIds : undefined);
   const make = () => {
     rememberBuild(opts);
-    showToast(buildForChills({ ...opts, from: range.from, peak: range.to, ...(picked && trackIds?.length ? { trackIds } : {}) }));
+    showToast('Measuring the music for the build…');
+    void buildForChills({ ...opts, from: range.from, peak: range.to, ...(picked && trackIds?.length ? { trackIds } : {}) }).then(showToast);
     onClose();
   };
   const box = (k: 'volume' | 'filter' | 'riser' | 'gap' | 'layer', label: string, detail: string) => (
@@ -530,7 +534,7 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
     <Modal title="Build into a peak" onClose={onClose}>
       <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
         <p className="text-[11px] text-forge-muted">
-          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. The tracks start a little quieter and darker and grow back to where they were, so the peak arrives full without anything jumping out: no track is turned up past its level.
+          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. The tracks start a little quieter and darker and grow back to where they were: no track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
         </p>
         {box('volume', 'Swell', 'Each track’s volume rises over the build, written as a volume lane you can see and change.')}
         <label className={`${field} ml-6`}>
@@ -541,10 +545,10 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
             ))}
           </select>
         </label>
-        {box('filter', 'Filter opens', 'A low-pass filter on the pitched tracks opens over the build, as a filter lane.')}
-        {box('riser', 'Riser', 'A riser on a new track, under the mix, up to the peak.')}
-        {box('gap', 'A breath before the peak', 'Half a beat of near-silence just before it, then back to the level the build reached.')}
-        {box('layer', 'Pad at the peak', 'A new pad track joins at the peak, playing the chords there spread wide, under the mix.')}
+        {box('filter', 'Filter opens', 'A low-pass filter on the pitched tracks opens over the build, as a filter lane (not a Filter with a resonant peak: it would sing through the sweep).')}
+        {box('riser', 'Riser', `A riser on a new track up to the peak, its loudest moment ${RISER_UNDER_DB} dB under the music there (measured).`)}
+        {box('gap', 'A breath before the peak', 'Half a beat of near-silence just before it, then back to the level the build reached (a volume lane).')}
+        {box('layer', 'Pad at the peak', `A new pad track joins at the peak, playing the chords there spread wide, ${PAD_UNDER_LU} dB under the music (measured).`)}
         {!!trackIds?.length && (
           <label className="flex items-center gap-2 text-xs text-forge-text">
             <input type="checkbox" className="accent-cyan-500" checked={picked} onChange={(e) => setPicked(e.target.checked)} />
@@ -555,7 +559,7 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
           {tracks.length ? `${tracks.length} track${tracks.length === 1 ? '' : 's'} playing there: ${tracks.slice(0, 4).map((t) => t.name).join(', ')}${tracks.length > 4 ? ' and more' : ''}.` : 'Nothing plays in these bars yet.'} One Undo takes it all out.
         </p>
         <div className="flex justify-end">
-          <button type="button" className={primary} onClick={make} disabled={!tracks.length}>
+          <button type="button" className={`${primary} disabled:opacity-40 disabled:cursor-not-allowed`} onClick={make} disabled={!tracks.length || !buildChosen(opts)} title={buildChosen(opts) ? undefined : 'Choose at least one part of the build'}>
             Make the build
           </button>
         </div>

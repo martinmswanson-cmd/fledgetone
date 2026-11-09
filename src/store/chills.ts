@@ -181,6 +181,23 @@ export const BASS_FLOOR = 40;
 /** The lowest a climbing bass starts (MIDI, C2): it ends an octave higher. */
 export const CLIMB_FLOOR = 36;
 
+/** The lowest a bass instrument's roots go (MIDI, E1). */
+export const ROOTS_FLOOR = 28;
+
+/**
+ * How an instrument of `range` plays the progressions: 'roots' (a bass instrument: too low for a
+ * chord above E3, it plays each chord's root, or the climbing bass, or the pedal, inside its
+ * range), 'full' (a low note and the chord over it) or 'chord' (no room for a low note under it).
+ * `low` is where its low notes start.
+ */
+export function registerOf(range: readonly [number, number] = [0, 127]): { kind: 'roots' | 'full' | 'chord'; low: number } {
+  const [lo, hi] = range;
+  if (hi < LOW_REGISTER + 12) return { kind: 'roots', low: Math.max(lo, ROOTS_FLOOR) };
+  const low = Math.max(lo, BASS_FLOOR);
+  // (a low note needs a chord's room over it, out of the low register: up to about A4)
+  return { kind: low <= LOW_REGISTER && hi - low >= 24 && hi >= LOW_REGISTER + 17 ? 'full' : 'chord', low };
+}
+
 /** One chord's notes as voiced: the bass (if any) and the notes above it, low to high. */
 export interface ChillsVoicing {
   bass: number[];
@@ -196,15 +213,17 @@ export interface ChillsVoiceOptions {
 export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, opts: ChillsVoiceOptions = {}): ChillsVoicing[] {
   const chords = chillsChords(key, prog);
   const [lo, hi] = opts.range ?? [0, 127];
-  const bassLo = Math.max(lo, BASS_FLOOR);
-  // A bass note only where there's room for it and the chord above (a bass instrument plays the chords' roots only)
-  const hasBass = bassLo <= LOW_REGISTER && hi - bassLo >= 24;
+  const reg = registerOf([lo, hi]);
+  const bassLo = reg.low;
   const lift = prog.lift ?? 0;
+  if (reg.kind === 'roots') return rootsOnly(key, prog, [lo, hi]);
   const top = hi - 3 - lift;
   // Around E4, the middle of a pad's range, and room above it for the key change
   const center = Math.min(Math.max(64, Math.max(lo, LOW_REGISTER) + 6), top - 5);
   const climbLo = Math.max(lo, CLIMB_FLOOR);
   const home = prog.climb ? climbLo + pc(key.root - climbLo) : bassLo + pc(key.root - bassLo);
+  // (a climb needs its octave and a chord over its top: where the instrument hasn't the room, chords alone)
+  const hasBass = reg.kind === 'full' && (!prog.climb || home + 12 + 7 + 7 <= hi);
   const out: ChillsVoicing[] = [];
   let prev: number[] | null = null;
   chords.forEach((c, i) => {
@@ -229,7 +248,7 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
     }
     const lowest = prog.pedal && hasBass ? home : (bass[0] ?? -Infinity);
     // The chord above: at least a 5th over everything under it (a 4th over a doubled 5th), and out of the low register
-    const floor = Math.max(lo, LOW_REGISTER, lowest + 7, bass.length > 1 ? bass[1] + 5 : -Infinity);
+    const floor = Math.max(lo, LOW_REGISTER, lowest + 7, bass.length > 1 ? bass[1] + (bass[1] < LOW_REGISTER ? 7 : 5) : -Infinity);
     let upper = voiceLead(pcs, prev, Math.max(center, floor + 4));
     while (minOf(upper) < floor) upper = upper.map((m) => m + 12);
     while (maxOf(upper) > hi - lift && minOf(upper) - 12 >= floor) upper = upper.map((m) => m - 12);
@@ -251,9 +270,45 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
       const span = (v: ChillsVoicing) => maxOf([...v.bass, ...v.upper]) - minOf([...v.bass, ...v.upper]);
       for (let m = maxOf(upper) + 3; m <= hi - lift && span({ bass, upper }) <= span(before); m++) if (pcs.includes(pc(m))) upper = [...upper, m];
     }
+    // Never outside the instrument: notes it can't play go; a chord with none left is voiced in its range on its own
+    const inRange = (m: number) => m >= lo && m <= hi - (c.up ? 0 : lift);
+    bass = bass.filter(inRange);
+    upper = upper.filter(inRange);
+    if (!upper.length) {
+      upper = voiceLead(pcs, null, Math.max(lo + 6, Math.min(hi - lift - 6, center)));
+      while (maxOf(upper) > hi - lift && minOf(upper) - 12 >= lo) upper = upper.map((m) => m - 12);
+      while (minOf(upper) < lo) upper = upper.map((m) => m + 12);
+      upper = upper.filter(inRange);
+      // (under a chord pushed this low, a low note would crowd it)
+      if (bass.length && minOf(upper) - maxOf(bass) < 7) bass = [];
+      prev = upper;
+    }
     out.push({ bass, upper });
   });
   return out;
+}
+
+/**
+ * A bass instrument's part: each chord's root (the climbing bass's own note, nothing under a
+ * pedal, which is held on its own), in its range: the lift moves up with the music.
+ */
+function rootsOnly(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, [lo, hi]: readonly [number, number]): ChillsVoicing[] {
+  const chords = chillsChords(key, prog);
+  const low = registerOf([lo, hi]).low;
+  let home = low + pc(key.root - low);
+  // (room for the climb's octave)
+  if (prog.climb && home + 12 > hi && home - 12 >= lo) home -= 12;
+  // (the pedal's home note, where the instrument reaches it: then it's all the part plays)
+  let pedal = low + pc(key.root - low);
+  while (pedal > hi && pedal - 12 >= lo) pedal -= 12;
+  const held = !!prog.pedal && pedal >= lo && pedal <= hi;
+  return chords.map((c) => {
+    if (held) return { bass: [], upper: [] };
+    let m = c.bass !== undefined ? home + c.bass : low + pc(key.root + c.semis - low);
+    if (c.up && c.bass === undefined) m += c.up;
+    while (m > hi && m - 12 >= lo) m -= 12;
+    return { bass: m >= lo && m <= hi ? [m] : [], upper: [] };
+  });
 }
 
 export interface ChillsNoteOptions extends ChillsVoiceOptions {
@@ -283,18 +338,22 @@ export function chillsNotes(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
     const resolveAt = round(span.start + span.length * 0.75);
     const third = chillsPcs(key, c)[1];
     for (const m of v.upper) {
-      if (c.sus && pc(m) === third && span.length >= 1 / 8 && resolveAt > span.start + EPS) {
-        const sus = m + (5 - pc(third - chillsPcs(key, c)[0]));
+      const sus = m + (5 - pc(third - chillsPcs(key, c)[0]));
+      // (a suspension the instrument can't reach is played as the chord)
+      if (c.sus && pc(m) === third && span.length >= 1 / 8 && resolveAt > span.start + EPS && sus <= (opts.range ?? [0, 127])[1]) {
         add(sus, span.start, resolveAt - span.start, vel);
         add(m, resolveAt, span.start + span.length - resolveAt, vel);
       } else add(m, span.start, span.length, vel);
     }
   });
   if (prog.pedal) {
+    const reg = registerOf(opts.range);
     const [lo, hi] = opts.range ?? [0, 127];
-    const bassLo = Math.max(lo, BASS_FLOOR);
-    if (bassLo <= LOW_REGISTER && hi - bassLo >= 24) {
-      const home = bassLo + pc(key.root - bassLo);
+    let home = reg.low + pc(key.root - reg.low);
+    while (home > hi && home - 12 >= lo) home -= 12;
+    // (held under the chords only with a 5th's room between: where the chords had to come down to fit, they play alone)
+    const clear = voiced.every((v) => !v.upper.length || minOf(v.upper) - home >= 7);
+    if (reg.kind !== 'chord' && home >= lo && home <= hi && clear) {
       for (let k = 0; k < spans.length; k += chords.length) {
         const pass = spans.slice(k, k + chords.length);
         const end = pass[pass.length - 1].start + pass[pass.length - 1].length;

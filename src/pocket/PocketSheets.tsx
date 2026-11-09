@@ -23,7 +23,7 @@ import { DRUM_STYLES, FILLS, drummer, type DrumStyle } from '../store/smartTools
 import { fillClipBar } from '../store/smartActions';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
-import { CHILLS, chillsFill, chillsNames, type ChillsProgression } from '../store/chills';
+import { CHILLS, chillsFill, chillsNames, registerOf, type ChillsProgression } from '../store/chills';
 import { BUILD_DEFAULTS, buildForChills } from '../store/chillsActions';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
@@ -296,11 +296,12 @@ const SectionSheet: React.FC = () => {
       {i > 0 && (
         <SheetItem
           title="Build for chills into it"
-          detail={`${sections[i - 1].letter} swells into it: the parts start a little quieter and darker and grow back to their level, a riser, a breath of near-silence, then a pad joins on its first beat. Nothing is turned up past its level.`}
-          onClick={() => run(() => {
-            const said = buildForChills({ ...BUILD_DEFAULTS, from: sections[i - 1].from, peak: sec.from });
-            showToast(said);
-          }, () => i)}
+          detail={`${sections[i - 1].letter} swells into it: the parts start a little quieter and darker and grow back to their level (no part already there is turned up), a riser, a breath of near-silence, then a pad joins on its first beat, the riser and pad set under the music by measuring it.`}
+          onClick={() => {
+            close();
+            showToast('Measuring the music for the build…');
+            void buildForChills({ ...BUILD_DEFAULTS, from: sections[i - 1].from, peak: sec.from }).then(showToast);
+          }}
         />
       )}
       <SheetItem
@@ -362,7 +363,7 @@ const ChordsSheet: React.FC = () => {
         <SheetItem key={p.id} title={p.name} onClick={() => write(p)} />
       ))}
       <p className="text-xs font-semibold text-forge-text px-2 mt-3 mb-1">For chills</p>
-      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: held chords for synths and pads, one low note and the chord in the middle.</p>
+      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: {registerOf(INSTRUMENTS[track.instrumentKey].range).kind === 'roots' ? 'on this bass instrument, each chord’s root (or the held home note), inside its range.' : 'held chords for synths and pads, one low note and the chord in the middle.'}</p>
       {CHILLS.map((p) => (
         <SheetItem key={p.id} title={p.name} detail={`${chillsNames(songKey, p).join(' – ')}. ${p.detail}`} onClick={() => writeChills(p)} />
       ))}

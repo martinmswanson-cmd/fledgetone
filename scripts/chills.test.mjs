@@ -255,11 +255,22 @@ test('the build in 3/4: a measure line point each three beats, the near-silence 
 
 test('the build is one undo step, with the app\'s cautions, and reachable in the studio and in Pocket', () => {
   const actions = src('src/store/chillsActions.ts');
-  const build = actions.slice(actions.indexOf('export function buildForChills'));
+  const build = actions.slice(actions.indexOf('export async function buildForChills'));
   assert.equal((build.match(/checkpoint\(\)/g) ?? []).length, 1);
   assert.match(build, /useTimelineStore\.setState\(\{ past, future: \[\] \}\)/);
   assert.match(build, /allOrNothing\(/);
-  assert.match(build, /checkSafety\(before, currentProject\(\)\)/);
+  assert.match(build, /checkSafety\(before, after\)/);
+  // New parts are set from the measured music, and the result is measured again: the sound check's caution counts them
+  assert.match(build, /musicPeak - PAD_UNDER_LU - padLufs/);
+  assert.match(build, /musicEnd - RISER_UNDER_DB - loudest/);
+  assert.match(build, /measuredRise\(la\.bars, lb\.bars, la\.song\)/);
+  // Nothing chosen, nothing to change: no undo step (an early return before the checkpoint), and the button is off
+  assert.ok(build.indexOf("if (!buildChosen(o))") < build.indexOf('checkpoint()'));
+  assert.ok(build.indexOf('if (!plan.tracks.size && !plan.riser && !plan.pad)') < build.indexOf('checkpoint()'));
+  assert.match(src('src/components/timeline/SmartDialog.tsx'), /disabled=\{!tracks\.length \|\| !buildChosen\(opts\)\}/);
+  // A resonant Filter isn't swept
+  assert.match(build.length ? actions : '', /filter\.resonance > RESONANT_Q/);
+  assert.match(actions, /plural\(plan\.swelled, 'track swells', 'tracks swell'\)/);
   assert.match(src('src/components/timeline/ClipContextMenu.tsx'), /Build into a peak…/);
   assert.match(src('src/components/timeline/ClipContextMenu.tsx'), /Chills progression…/);
   assert.match(src('src/components/timeline/ChordRiffBar.tsx'), /chillsFill\(/);
@@ -271,4 +282,38 @@ test('the build is one undo step, with the app\'s cautions, and reachable in the
     assert.doesNotMatch(`${p.name} ${p.detail}`, /[_{}]|\bAI\b|  /);
     assert.ok(p.detail.endsWith('.'));
   }
+});
+
+test('a bass instrument plays the roots, in its range; every instrument stays in its range', () => {
+  const ranges = { slap: [24, 55], sub: [24, 48], b808: [24, 52], trumpet: [52, 84], guitar: [40, 76], stabs: [48, 84], violins: [55, 88] };
+  for (const [name, range] of Object.entries(ranges))
+    for (const mode of ['major', 'minor'])
+      for (let root = 0; root < 12; root++)
+        for (const p of X.CHILLS) {
+          const key = keyOf(root, mode);
+          const notes = X.chillsFill(key, p, 1, 9, FOUR, id, { range });
+          assert.ok(notes.length, `${name} ${p.id} ${key.name}: something to play`);
+          for (const x of notes) assert.ok(midiOf(x.note) >= range[0] && midiOf(x.note) <= range[1], `${name} ${p.id} ${key.name}: ${x.note}`);
+          if (range[1] < X.LOW_REGISTER + 12) {
+            assert.equal(X.registerOf(range).kind, 'roots');
+            const v = X.chillsVoicings(key, p, { range });
+            X.chillsChords(key, p).forEach((c, i) => {
+              if (p.pedal) return assert.equal(v[i].bass.length + v[i].upper.length, 0);
+              assert.deepEqual(v[i].upper, []);
+              assert.equal(v[i].bass.length, 1);
+              assert.equal(pc(v[i].bass[0]), pc(root + (c.bass ?? c.semis) + (c.up ?? 0)), `${name} ${p.id}: the chord's root`);
+            });
+          }
+        }
+});
+
+test('the swell follows a lane at every one of its points: a silence in it stays silent, never louder at any moment', () => {
+  const lane = [{ bar: 1, value: vol.toNorm(-6) }, { bar: 7.5, value: vol.toNorm(-6) }, { bar: 7.51, value: 0 }, { bar: 7.74, value: 0 }, { bar: 7.75, value: vol.toNorm(-6) }];
+  const points = B.swellLane(lane, -6, { from: 5, peak: 9, gap: true, depthDb: 6 }, FOUR);
+  for (const bar of [7.52, 7.6, 7.7, 7.73]) assert.equal(laneValueAt(points, bar), 0);
+  for (let bar = 1; bar < 12; bar += 1 / 256) assert.ok(laneValueAt(points, bar) <= laneValueAt(lane, bar) + 1e-9, `at ${bar}`);
+  // A user's crescendo inside the build, and a curved lane
+  const rising = [{ bar: 2, value: vol.toNorm(-20) }, { bar: 6, value: vol.toNorm(0), curve: 0.7 }, { bar: 8.3, value: vol.toNorm(-10) }];
+  const r = B.swellLane(rising, 0, { from: 5, peak: 9, gap: false, depthDb: 6 }, FOUR);
+  for (let bar = 1; bar < 12; bar += 1 / 256) assert.ok(dbAt(r, bar) <= dbAt(rising, bar) + 0.01, `at ${bar}: ${dbAt(r, bar)} over ${dbAt(rising, bar)}`);
 });

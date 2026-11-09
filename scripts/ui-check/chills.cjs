@@ -249,10 +249,17 @@ const exported = (name, m) => {
     await page.getByRole('menuitem', { name: /Build into a peak/ }).click();
     await page.waitForTimeout(300);
     await shot(page, 'studio-build-dialog');
+    // With nothing chosen the button is off
+    const boxes = page.getByRole('dialog').locator('input[type="checkbox"]');
+    const n = await boxes.count();
+    for (let i = 0; i < Math.min(5, n); i++) await boxes.nth(i).uncheck();
+    step('studio build: nothing chosen, nothing to make', await page.getByRole('dialog').getByRole('button', { name: 'Make the build' }).isDisabled());
+    for (let i = 0; i < Math.min(5, n); i++) await boxes.nth(i).check();
     await page.getByRole('dialog').getByRole('button', { name: 'Make the build' }).click();
-    await page.waitForTimeout(400);
+    // (the music is measured first, then the build measured again)
+    await page.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
     const toast = await page.evaluate(() => document.body.innerText.match(/A build for chills[^\n]*/)?.[0] ?? '');
-    step('studio build: says what it did', /swell/.test(toast) && /Undo takes it out/.test(toast), toast);
+    step('studio build: says what it did, and what the peak measures', /swell/.test(toast) && /Measured, the peak comes out/.test(toast) && /Undo takes it out/.test(toast), toast);
     const lanes = await store((S) => S.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => `${l.param}:${l.points.length}`) })));
     const lane = (id, p) => lanes.find((t) => t.id === id)?.lanes.some((l) => l.startsWith(`${p}:`));
     step('studio build: volume lanes on the three tracks', ['t1', 't2', 't3'].every((id) => lane(id, 'volume')), JSON.stringify(lanes));
@@ -322,7 +329,7 @@ const exported = (name, m) => {
     await pk.waitForTimeout(300);
     await shot(pk, 'pocket-section-sheet');
     await pk.getByRole('dialog').getByText('Build for chills into it', { exact: true }).click();
-    await pk.waitForTimeout(500);
+    await pk.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
     await shot(pk, 'pocket-after-build');
     const lanes = await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => l.param) })));
     step('Pocket build: volume lanes, a riser and a pad', ['t1', 't2', 't3'].every((id) => lanes.find((t) => t.id === id).lanes.includes('volume')) && lanes.some((t) => t.name === 'Peak pad'), JSON.stringify(lanes));

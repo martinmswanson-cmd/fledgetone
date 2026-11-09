@@ -13,7 +13,7 @@ import { clipMeasures } from '../../audio/tempoMap';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { uid } from '../../store/timelineTypes';
 import { SCALES, type Scale } from '../../store/noteTools';
-import { detectKey, keyOf, NOTE_NAMES, type SongKey } from '../../store/songKey';
+import { detectKey, keyOf, MAJOR_STEPS, MINOR_STEPS, NOTE_NAMES, type SongKey } from '../../store/songKey';
 import { chordChanges } from '../../store/smartTools';
 import { ARP_STYLES, arpeggiateChords, degreeChordName, degreeLabels, riff, RIFF_STYLES, stampDegree, type ArpStyle, type RiffStyle } from '../../store/chordTools';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
@@ -142,10 +142,15 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
   /** A chills progression over the whole clip, in place of its notes (one undo step). */
   const writeChills = () => {
     const prog = chillsById(chills) ?? CHILLS[0];
-    const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity: Math.min(1, 0.7 * (velocity / 0.8)) });
+    const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity });
     if (!out.length) return;
     apply(out);
-    showToast(`${prog.name} in ${key.name}: ${chillsNames(key, prog).join(' – ')}. Undo for the last.`);
+    // They're written in major or minor (their surprises are against those): a clip in another
+    // seven-note scale is told which, as its own notes aren't all followed
+    const plainKey = `${NOTE_NAMES[key.root]} ${key.mode}`;
+    const plain = (key.mode === 'minor' ? MINOR_STEPS : MAJOR_STEPS) as readonly number[];
+    const other = key.steps.length !== 7 || key.steps.some((st, i) => st !== plain[i]);
+    showToast(`${prog.name} in ${plainKey}: ${chillsNames(key, prog).join(' – ')}.${other ? ` These are written for major and minor keys, so with this clip's ${key.name} scale some of their notes fall outside it.` : ''} Undo for the last.`);
   };
 
   if (!pitched && links < 2) return null;
@@ -206,7 +211,7 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
           Apply
         </button>
       </span>
-      <span data-search="chills progression peak shiver" className="flex items-center gap-1.5" title="Chord moves that give listeners chills at an emotional peak, in the key, held over the whole clip (in place of its notes), voiced for synths and pads">
+      <span data-search="chills progression peak shiver" className="flex items-center gap-1.5" title="Chord moves that give listeners chills at an emotional peak, held over the whole clip (in place of its notes), voiced for synths and pads. Written in major or minor: the SCALE's root and whether its third is major or minor.">
         CHILLS
         <select className={select} value={chills} onChange={(e) => setChills(e.target.value)} aria-label="Chills progression">
           {CHILLS.map((p) => (
