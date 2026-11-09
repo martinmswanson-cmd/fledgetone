@@ -22,14 +22,15 @@
  * fades out over SWITCH_OUT_S on the old sound, the change is made with it silent (Fledge Synth's
  * bb_settle then puts its eased level straight at the new one and strikes its held notes again
  * as fresh notes of the new sound; a plugin given `freshOnSwitch` is made afresh at its new
- * settings, an instrument then striking the keys and pedal notes still held again, no louder
- * than it played just before and none if it was silent: see level), and it fades back in over
+ * settings, an instrument's held notes ending there and its controllers, pressure and bend
+ * given again), and it fades back in over
  * SWITCH_IN_S (once `switched` has come, or SWITCH_HOLD_S has gone by). So no switch clicks, and
  * no plugin's leftover state (an envelope, a compressor, an eased level, filters or a reverb's
- * tail from another preset) is heard as a burst; held notes play on (Surge XT's stop as its patch
- * changes, faded). Timed events, `sync`, `clear` and `dropBends` never wait. Silent, a switch is
+ * tail from another preset) is heard as a burst. Fledge Synth's held notes still sounding play on
+ * (one that had died away stays silent); a plugin made afresh lets its held notes go, and Surge XT
+ * stops them as its patch changes, with the fade. Timed events, `sync`, `clear` and `dropBends` never wait. Silent, a switch is
  * made as soon as its messages are all there, with no fade out, and the new sound still fades in
- * over SWITCH_IN_S (a held note that had died away comes back with the new sound).
+ * over SWITCH_IN_S (held notes still sounding come in with the new sound without a click).
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made, `fault` (once) if it
  * blew up (see guard below).
@@ -87,9 +88,6 @@ const SWITCH_HOLD = ${SWITCH_HOLD_S};
 const SWITCH_IN = ${SWITCH_IN_S};
 /** Quieter than this (-100 dBFS) in its last render, a plugin is silent: a switch needs no fade out, only the fade in */
 const SILENT = 1e-5;
-// Under this (about -60 dB), what an instrument made afresh in a switch played before it counts as
-// silent: the notes it held are not struck again (see makeSwitch)
-const HUSHED = 1e-3;
 /** The messages a switch never holds back (timed events go in at their own time; sync answers at once) */
 const NOT_HELD = new Set(['events', 'clear', 'dropBends', 'sync', 'destroy', 'switch']);
 /** Messages the host waits on for an answer: one among a switch's starts its fade out at once */
@@ -190,29 +188,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // Made afresh at its new settings in a switch's silence (see makeSwitch): a plugin whose
     // filters, set for one preset, blow up in another (paramLimits.ts FRESH_ON_SWITCH)
     this.freshOnSwitch = !!o.freshOnSwitch;
-    // What an instrument made afresh in a switch is given again (see restart, keys): the keys held
-    // down and the notes the sustain pedal holds after their keys came up (each: its note-on), and
-    // each channel's last controllers (the pedal among them), pressure and pitch bend
-    this.down = new Map();
-    this.sustained = new Map();
+    // What an instrument made afresh in a switch is given again (see restart, keys): each
+    // channel's last controllers (the pedal among them), pressure and pitch bend. The notes held
+    // end with the switch: struck again as fresh notes of the new sound, a note that had died away
+    // came back out of silence, and one carried on louder than it had played.
     this.ctl = new Map();
-    // The notes the pedal held, struck again in a switch and still owed their note-off (given
-    // when the pedal comes up)
-    this.owed = new Set();
-    // One-voice settings (a parameter whose text starts so) let a note go at its note-off, pedal
-    // or not: no note is left to the pedal then (paramLimits.ts ONE_VOICE)
-    this.oneVoice = o.oneVoice || null;
-    // How loud it plays, left, right and the two together (their power over a few milliseconds,
-    // and that heard over about 100 ms), and the ceiling a switch's struck-again notes are held
-    // under (cap: 0 for none, rising from 1 once a new note is played; see makeSwitch, level)
-    this.env = [0, 0, 0];
-    this.heard = [0, 0, 0];
-    this.caps = [0, 0, 0];
-    this.cap = 0;
-    this.capGain = 1;
-    this.capUnder = 0;
-    this.capRise = false;
-    this.struck = new Set();
     this.limits = [];
     // The last preset file and user table it was given, to start it again with after a blow-up
     this.presetData = null;
@@ -340,8 +320,6 @@ class BuiltinPlugin extends AudioWorkletProcessor {
    * with an instance of its own gets a new one too.
    */
   restart(blownUp) {
-    const notes = blownUp ? [] : [...this.down.values()];
-    const sustained = blownUp ? [] : [...this.sustained.entries()];
     const ctl = blownUp ? [] : [...this.ctl.values()];
     const e = this.e;
     const values = [];
@@ -367,87 +345,36 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
     if (this.bpm > 0 && this.e.bb_tempo) this.e.bb_tempo(this.h, this.bpm);
     this.views();
-    // (Made afresh in a switch: the controllers, pressure, bend and pedal as they were, so the notes
-    // start where they played (bent, not gliding to it); the notes the pedal holds struck again,
-    // their note-off kept until the pedal comes up (a one-voice sound lets a note go at its
-    // note-off, pedal or not); the keys still down struck again, as fresh notes of the new sound;
-    // then each one's own pressure)
-    this.owed.clear();
-    const midi = (b) => this.e.bb_midi(this.h, b[0], b[1], b[2]);
-    const touch = [];
-    for (const b of ctl) {
-      if ((b[0] & 0xf0) === 0xa0) touch.push(b);
-      else midi(b);
-    }
-    for (const [key, b] of sustained) {
-      midi(b);
-      this.owed.add(key);
-    }
-    for (const b of notes) midi(b);
-    for (const b of touch) midi(b);
+    // (Made afresh in a switch: the controllers, pressure, bend and pedal as they were, so the next
+    // notes play as the last did)
+    for (const b of ctl) this.e.bb_midi(this.h, b[0], b[1], b[2]);
   }
 
   /**
-   * What MIDI message b leaves held (instruments made afresh in a switch, see restart): the keys
-   * down, the notes the pedal holds, each channel's controllers, pressure and bend. Reset All
-   * Controllers puts a channel's back (and lets its pedal up), all-notes-off and all-sound-off
-   * end every note.
+   * What MIDI message b leaves set (instruments made afresh in a switch, see restart): each
+   * channel's controllers, pressure and bend. Reset All Controllers puts a channel's back.
    */
   keys(b) {
     const kind = b[0] & 0xf0, ch = b[0] & 15;
-    const key = ch * 128 + (b[1] & 127);
     const value = b[2] || 0;
     const keep = (name, bytes) => {
       // (Last sent last: given again in the order they came)
       this.ctl.delete(name);
       this.ctl.set(name, bytes);
     };
-    const channel = (map) => {
-      for (const [k, v] of map) if ((v[0] & 15) === ch) map.delete(k);
-    };
-    // The pedal up (or Reset All Controllers): the notes it held end, those struck again in a
-    // switch with their note-off now
-    const letGo = () => {
-      for (const [k, v] of this.sustained) {
-        if ((v[0] & 15) !== ch) continue;
-        this.sustained.delete(k);
-        if (!this.down.has(k)) this.ctl.delete('a' + k);
-        if (this.owed.delete(k)) this.e.bb_midi(this.h, 0x80 | ch, k & 127, 0);
-      }
-    };
-    if (kind === 0x90 && value) {
-      // (A new note: the ceiling of a switch's notes struck again rises, see level)
-      if (this.cap > 0 && !this.struck.has(key)) this.capRise = true;
-      this.sustained.delete(key);
-      this.owed.delete(key);
-      this.down.set(key, [b[0], b[1], value]);
-    } else if (kind === 0x80 || kind === 0x90) {
-      const on = this.down.get(key);
-      this.down.delete(key);
-      const pedal = this.ctl.get('c' + ch + ':64');
-      if (on && pedal && pedal[2] >= 64 && !this.playsOneVoice()) this.sustained.set(key, on);
-      else if (!this.sustained.has(key)) this.ctl.delete('a' + key);
-    } else if (kind === 0xb0 && b[1] === 121) {
-      letGo();
-      channel(this.ctl);
-    } else if (kind === 0xb0 && (b[1] === 120 || b[1] >= 123)) {
-      this.down.clear();
-      this.sustained.clear();
-      this.owed.clear();
-      for (const k of [...this.ctl.keys()]) if (k[0] === 'a') this.ctl.delete(k);
+    if (kind === 0xb0 && b[1] === 121) {
+      for (const [k, v] of this.ctl) if ((v[0] & 15) === ch) this.ctl.delete(k);
     } else if (kind === 0xb0 && b[1] < 120) {
       keep('c' + ch + ':' + b[1], [b[0], b[1], value]);
-      if (b[1] === 64 && value < 64) letGo();
     } else if (kind === 0xe0) {
       // (At rest: nothing to give again)
       if ((b[1] || 0) === 0 && value === 64) this.ctl.delete('b' + ch);
       else keep('b' + ch, [b[0], b[1] || 0, value]);
     } else if (kind === 0xd0) {
       keep('p' + ch, [b[0], b[1] || 0, 0]);
-    } else if (kind === 0xa0 && (this.down.has(key) || this.sustained.has(key))) {
-      keep('a' + key, [b[0], b[1], value]);
     }
   }
+
 
   /**
    * The plugin as it starts, with no preset file (an undo back to "(none)"): a new instance, so
@@ -621,101 +548,12 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.message(d);
       if (!this.alive) return;
     }
-    // (Made afresh: nothing it held for the old sound plays on into the new one. The notes held
-    // strike again no louder than it played just before: none if it was silent (a held note died
-    // away, a one-voice sound that let its note go), and those struck under a ceiling at that
-    // level until they end, see level)
-    if (this.freshOnSwitch) {
-      const was = this.heard.map(Math.sqrt);
-      if (!(was[0] > HUSHED || was[1] > HUSHED)) this.forget();
-      const struck = new Set([...this.down.keys(), ...this.sustained.keys()]);
-      this.restart(false);
-      this.struck = struck;
-      this.caps = was;
-      this.cap = struck.size ? 1 : 0;
-      this.capGain = 1;
-      this.capUnder = 0;
-      this.capRise = false;
-      this.env = [0, 0, 0];
-    }
+    // (Made afresh: nothing it held for the old sound plays on into the new one; the notes held
+    // end there)
+    if (this.freshOnSwitch) this.restart(false);
     if (!this.alive) return;
     if (this.e.bb_settle) this.e.bb_settle(this.h);
   }
-
-  /** The notes held are let be: not struck again (the keys still down end as they come up). */
-  forget() {
-    this.down.clear();
-    this.sustained.clear();
-    this.owed.clear();
-    for (const k of [...this.ctl.keys()]) if (k[0] === 'a') this.ctl.delete(k);
-  }
-
-  /** Whether it plays one voice now (see oneVoice) */
-  playsOneVoice() {
-    const v = this.oneVoice;
-    if (!v) return false;
-    if (v.index === undefined) {
-      v.index = -1;
-      for (let i = 0; i < this.n; i++) if (readString(this.e, this.e.bb_param_name(this.h, i)) === v.param) v.index = i;
-    }
-    return v.index >= 0 && readString(this.e, this.e.bb_param_display(this.h, v.index)).startsWith(v.prefix);
-  }
-
-  /**
-   * How loud it plays (an instrument made afresh in a switch), and the ceiling the notes a switch
-   * struck again are held under: what it played just before, so they come in no louder (a held
-   * note that had died down, struck afresh, comes in at that level, not at its own). The gain
-   * drops at once to keep under it and comes back over about 50 ms; the ceiling goes once the
-   * notes struck again are no longer held (keys up, pedal up) and it has played under it for
-   * 100 ms, and rises (12 dB in 100 ms) once a new note is played, so new notes are heard in full
-   * (the notes still held coming up with them to their level in the new sound).
-   */
-  level(out, frames) {
-    const l = out[0], r = out[1];
-    if (!l) return;
-    const fast = 1 - Math.exp(-1 / (0.003 * sampleRate));
-    const avg = 1 - Math.exp(-1 / (0.05 * sampleRate));
-    const rise = Math.pow(10, 6 / sampleRate);
-    const measuring = this.dipState === 'none' || this.dipState === 'gather';
-    const env = this.env, heard = this.heard, caps = this.caps;
-    let cap = this.cap, g = this.capGain, under = this.capUnder;
-    let held = false;
-    if (cap > 0) for (const k of this.struck) if (this.down.has(k) || this.sustained.has(k)) held = true;
-    const p = [0, 0, 0];
-    for (let i = 0; i < frames; i++) {
-      const x = l[i], y = r ? r[i] : x;
-      p[0] = x * x;
-      p[1] = y * y;
-      p[2] = 0.25 * (x + y) * (x + y);
-      let t = 1;
-      for (let c = 0; c < 3; c++) {
-        env[c] += (p[c] - env[c]) * fast;
-        if (cap > 0) {
-          const a = Math.sqrt(env[c]), most = caps[c] * cap;
-          if (a > most) t = Math.min(t, most / a);
-        }
-      }
-      if (cap > 0) {
-        if (this.capRise) cap *= rise;
-        g = t < g ? t : g + (t - g) * avg;
-        under = !held && t >= 1 && g > 0.999 ? under + 1 : 0;
-        // (Gone: the gain comes back the rest of the way as it would have)
-        if (under > 0.1 * sampleRate || cap > 100) cap = 0;
-      } else if (g < 1) {
-        g = g > 0.9999 ? 1 : g + (1 - g) * avg;
-      }
-      if (g < 1) {
-        l[i] = x * g;
-        if (r) r[i] = y * g;
-      }
-      if (measuring) for (let c = 0; c < 3; c++) heard[c] += (p[c] * g * g - heard[c]) * avg;
-    }
-    this.cap = cap;
-    this.capGain = g;
-    this.capUnder = under;
-    if (!cap) this.capRise = false;
-  }
-
 
   fadeIn() {
     if (this.e.bb_settle) this.e.bb_settle(this.h);
@@ -905,7 +743,6 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (o) for (let i = 0; i < frames; i++) { const a = Math.abs(o[i]); if (a > peak) peak = a; }
     }
     this.peak = peak;
-    if (this.freshOnSwitch) this.level(out, frames);
     if (this.dipState !== 'none') this.applyDip(out, 0, frames);
     if (this.follow) this.followInput(input, out, frames);
     return true;

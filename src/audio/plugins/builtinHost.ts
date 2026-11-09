@@ -8,7 +8,7 @@ import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { isBendAfter, type TimedEvent } from '../legato';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
-import { FRESH_ON_SWITCH, ONE_VOICE, OUTPUT_TRIMS_DB, ownMemoryFor, PARAM_LIMITS } from './paramLimits';
+import { FRESH_ON_SWITCH, OUTPUT_TRIMS_DB, ownMemoryFor, PARAM_LIMITS } from './paramLimits';
 
 /**
  * Built-in plugins: open-source effects and instruments compiled to WebAssembly (see
@@ -212,7 +212,6 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       outputGain: 10 ** ((OUTPUT_TRIMS_DB[builtinUrl(ref.family.family, ref.info.name)] ?? 0) / 20),
       limits: PARAM_LIMITS[builtinUrl(ref.family.family, ref.info.name)] ?? null,
       freshOnSwitch: FRESH_ON_SWITCH.has(builtinUrl(ref.family.family, ref.info.name)),
-      oneVoice: ONE_VOICE[builtinUrl(ref.family.family, ref.info.name)] ?? null,
     },
   });
 

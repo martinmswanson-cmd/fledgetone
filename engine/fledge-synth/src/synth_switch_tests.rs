@@ -222,7 +222,7 @@ fn every_preset_chosen_on_a_held_chord_comes_in_no_louder_than_it_plays() {
 }
 
 #[test]
-fn a_mono_preset_chosen_on_a_held_chord_keeps_only_the_last_note_and_back_the_chord() {
+fn a_mono_preset_chosen_on_a_held_chord_keeps_only_the_last_note_and_back_only_it() {
     let slide = PRESETS.iter().position(|p| p.name == "Bass/808 slide").unwrap();
     let mut s = Synth::new(SR);
     s.set_tempo(120.0);
@@ -237,7 +237,8 @@ fn a_mono_preset_chosen_on_a_held_chord_keeps_only_the_last_note_and_back_the_ch
     s.settle();
     let on: Vec<u8> = s.voices.iter().filter(|v| v.active).map(|v| v.note).collect();
     assert_eq!(on, vec![57], "one voice, the last key's");
-    // Back to your own sound (poly), as an undo: the three keys still down sound again
+    // Back to your own sound (poly), as an undo: the one note sounding goes on; the keys the
+    // one-voice sound had let go stay silent (struck again they came back out of nothing)
     let mut back = Synth::new(SR);
     back.set_tempo(120.0);
     for k in [45u8, 52, 57] {
@@ -249,11 +250,89 @@ fn a_mono_preset_chosen_on_a_held_chord_keeps_only_the_last_note_and_back_the_ch
     back.process(BLOCK);
     back.params = p::defaults();
     back.settle();
-    let mut notes: Vec<u8> = back.voices.iter().filter(|v| v.active).map(|v| v.note).collect();
-    notes.sort();
-    assert_eq!(notes, vec![45, 52, 57], "the chord again");
+    let notes: Vec<u8> = back.voices.iter().filter(|v| v.active).map(|v| v.note).collect();
+    assert_eq!(notes, vec![57], "the note still sounding");
     // Letting go of it goes back to the next key still held, as a mono sound does
     s.midi(0x80, 57, 0);
     s.process(BLOCK);
     assert!(s.voices[0].active && s.voices[0].target == 52.0);
+}
+
+/// A chord held (by its keys, or by the pedal after they came up) on `a` for `secs`, then `b`
+/// chosen (with the host's settle): its level over the 100 ms before, and the loudest 10 ms over
+/// the 2 s after
+fn held_then(a: [f32; COUNT], b: [f32; COUNT], secs: f32, pedal: bool) -> (f32, f32) {
+    let mut s = Synth::new(SR);
+    s.set_tempo(120.0);
+    s.set_position(0.0);
+    s.params = a;
+    if pedal {
+        s.midi(0xb0, 64, 127);
+    }
+    for k in [57u8, 60, 64] {
+        s.midi(0x90, k, 100);
+    }
+    let mut out = vec![];
+    let at = (SR * secs) as usize / BLOCK * BLOCK;
+    while out.len() < at {
+        if pedal && out.len() == BLOCK * 4 {
+            for k in [57u8, 60, 64] {
+                s.midi(0x80, k, 0);
+            }
+        }
+        s.process(BLOCK);
+        out.extend_from_slice(&s.out[0][..BLOCK]);
+    }
+    let before = rms(&out[at - SR as usize / 10..at]);
+    s.params = b;
+    s.settle();
+    while out.len() < at + SR as usize * 2 {
+        s.process(BLOCK);
+        out.extend_from_slice(&s.out[0][..BLOCK]);
+    }
+    (before, loudest(&out, at, 0.0, 1990.0))
+}
+
+#[test]
+fn a_held_chord_that_had_died_away_stays_silent_and_one_still_sounding_comes_in_no_louder() {
+    let named = |n: &str| PRESETS.iter().find(|p| p.name == n).unwrap_or_else(|| panic!("{n}")).values();
+    // Keys/Pluck, Keys/Stab, Keys/Glass Pluck held 4 s (by the keys, or the pedal) died away;
+    // Pad/Warm strings or Pad/Silk Wash then struck the chord again from nothing (0.31 to 0.36)
+    for from in ["Keys/Pluck", "Keys/Stab", "Keys/Glass Pluck"] {
+        for to in ["Pad/Warm strings", "Pad/Silk Wash"] {
+            for pedal in [false, true] {
+                let (before, after) = held_then(named(from), named(to), 4.0, pedal);
+                assert!(before < 1e-3 && after < 1e-3, "{from} to {to} (pedal {pedal}): {before} before, {after} after");
+            }
+        }
+    }
+    // Still sounding (held 4 s, the pads' slow attacks done): it goes on from the level it had
+    // (1 dB over at most the louder of that and the same chord struck afresh on the new sound),
+    // and plays on
+    let fresh = |b: [f32; COUNT]| {
+        let mut s = Synth::new(SR);
+        s.set_tempo(120.0);
+        s.set_position(0.0);
+        s.params = b;
+        for k in [57u8, 60, 64] {
+            s.midi(0x90, k, 100);
+        }
+        let mut out = vec![];
+        while out.len() < SR as usize * 4 {
+            s.process(BLOCK);
+            out.extend_from_slice(&s.out[0][..BLOCK]);
+        }
+        loudest(&out, 0, 0.0, 3990.0)
+    };
+    for from in ["Pad/Warm strings", "Pad/Silk Wash"] {
+        for to in ["Keys/Pluck", "Pad/Warm strings", "Pad/Silk Wash", "Bass/808 slide"] {
+            let f = fresh(named(to));
+            for pedal in [false, true] {
+                let (before, after) = held_then(named(from), named(to), 4.0, pedal);
+                assert!(before > 1e-2, "{from} (pedal {pedal}): sounding, {before}");
+                assert!(after <= 1.122 * before.max(f), "{from} to {to} (pedal {pedal}): {after} against {before} before, {f} fresh");
+                assert!(after > 0.25 * before.min(f), "{from} to {to} (pedal {pedal}): plays on ({after})");
+            }
+        }
+    }
 }

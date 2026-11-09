@@ -1260,14 +1260,18 @@ impl Synth {
     /// one's level for a moment: a short loud burst where a quiet preset (its level set high) gave
     /// way to a loud one (Neuro back to your own sound: about 8 dB in the first 10 ms).
     ///
-    /// Notes still held then strike again with the new sound, as fresh notes of it (its envelopes
-    /// and pitch drop from their start, its oscillators from their own points), and a mono or
-    /// legato sound keeps only the last key's note, on its one voice. Carried on as they were, a
-    /// held chord came in up to 6 dB louder than the new sound ever plays: three notes on a
-    /// one-voice preset (808 slide, Hard Clip Stab, Folded), a note held at your own sound's full
-    /// sustain going on under a preset whose pitch drop and envelopes had long run out
-    /// (Downlifter), or at full level into a rise (Riser). Back to a poly sound, every key still
-    /// down sounds again. The host's fade covers the restart.
+    /// Notes still held then strike again with the new sound (its filter and other envelopes and
+    /// pitch drop from their start, its oscillators from their own points), but only those still
+    /// sounding, and at the level they had: past its attack, a note never rises above it (it
+    /// falls to the new sound's sustain level if that is lower), and a note still rising goes on
+    /// up as the new attack does. A note that had died away (under -60 dB of its peak), held by
+    /// its key or the pedal, stays silent. A mono or legato sound keeps only the last key's note,
+    /// on its one voice. Carried on as they were, a held chord came in up to 6 dB louder than the
+    /// new sound ever plays: three notes on a one-voice preset (808 slide, Hard Clip Stab,
+    /// Folded), a note held at your own sound's full sustain going on under a preset whose pitch
+    /// drop and envelopes had long run out (Downlifter), or at full level into a rise (Riser).
+    /// Struck again from nothing, a chord that had died away (Keys/Pluck held 4 s, then
+    /// Pad/Warm strings) came back out of silence. The host's fade covers the restart.
     pub fn settle(&mut self) {
         self.gain = db_gain(self.v(p::LEVEL));
         let cfg = self.cfg();
@@ -1288,7 +1292,13 @@ impl Synth {
         }
         for i in 0..VOICES {
             if held(&self.voices[i]) {
-                let (note, vel, sustained) = (self.voices[i].note, self.voices[i].vel, self.voices[i].sustained);
+                let (note, vel, sustained, amp) = (self.voices[i].note, self.voices[i].vel, self.voices[i].sustained, self.voices[i].amp);
+                if amp.value < 1e-3 {
+                    // (Died away: it stays so)
+                    self.voices[i].active = false;
+                    self.voices[i].pending_up = false;
+                    continue;
+                }
                 let v = &mut self.voices[i];
                 v.pitch = note as f32;
                 v.target = note as f32;
@@ -1296,6 +1306,7 @@ impl Synth {
                 // (Its random values as a note struck where it was: the same restart every time)
                 self.seed(note, self.struck[note as usize & 127], &cfg);
                 self.start(i, note, vel, &cfg, true, false);
+                self.voices[i].amp.carry(amp.value, amp.stage == Stage::Attack);
                 // (Held by the pedal after its key came up: still only the pedal holds it)
                 self.voices[i].sustained = sustained;
             }
@@ -1309,24 +1320,6 @@ impl Synth {
                 v.pitch = first as f32;
                 v.glide = first as f32 - last as f32;
                 set_glide(v, &cfg, sr);
-            }
-        }
-        if cfg.mode == 0 {
-            // Poly after mono or legato: every key still down sounds again, as a chord struck
-            // afresh would (at the velocity it had, or the one voice's)
-            let keys: Vec<u8> = self.stack.iter().copied().filter(|&k| self.down[k as usize & 127] > 0).collect();
-            for k in keys {
-                if self.voices.iter().any(|v| v.note == k && (held(v) || v.pending.map(|(n, _)| n) == Some(k))) {
-                    continue;
-                }
-                let Some(i) = (0..VOICES).find(|&i| !self.voices[i].active && self.voices[i].pending.is_none()) else { break };
-                let vel = self.voices.iter().find(|v| !v.active && v.note == k).map_or(self.voices[0].vel, |v| v.vel);
-                let v = &mut self.voices[i];
-                v.pitch = k as f32;
-                v.target = k as f32;
-                v.glide = 0.0;
-                self.seed(k, self.struck[k as usize & 127], &cfg);
-                self.start(i, k, vel, &cfg, true, false);
             }
         }
     }
