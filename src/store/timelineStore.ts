@@ -61,7 +61,7 @@ import {
   stopTransport,
   transportStartsAt,
 } from '../audio/transport';
-import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
+import { liveTakesReady, releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
 import { holdAutomationAt, liveSoundsLoading, liveSoundsReady, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck, setLiveStripTempo } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
@@ -79,7 +79,7 @@ import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
-import { createStinger, fitNotesToRange } from './stingers';
+import { createStinger, stingerNotesOn } from './stingers';
 import { capsWords, editPastCaps, MAX_CLIP_NOTES, MAX_LANE_POINTS, pastCapsWords, SONG_CAPS, type CapKind } from './songCaps';
 import { showToast } from '../components/timeline/toastStore';
 import { livePlayhead, setLivePlayhead } from './playheadClock';
@@ -1082,9 +1082,15 @@ export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: stri
 }
 
 let rafId = 0;
-/** Play is waiting for instruments' sounds; each Stop or Pause (and each Play) moves the token on, so a wait that's been stopped doesn't start */
+/** Play is waiting (for instruments' sounds, then for takes to be worked out); each Stop or Pause (and each Play
+ *  that starts a wait) moves the token on, so a wait that's been stopped doesn't start */
 let waitingToPlay = false;
 let playToken = 0;
+/** The token the waiting Play starts for: a Play pressed after a Pause or Stop, while that wait goes on, takes it
+ *  over (renews this) rather than being lost; one pressed while it still stands is the same Play, so nothing doubles */
+let waitClaim = 0;
+/** The start time the waiting Play will use (the latest Play's) */
+let waitStartAt: number | undefined;
 /** The longest Play waits for sounds still downloading */
 const PLAY_WAIT_MS = 10000;
 /** How often, while playing, the store's playheadPosition follows the playhead (ms); playheadClock.ts has it every frame. */
@@ -1812,21 +1818,45 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     // ---------- Transport ----------
     play: async (startAt) => {
       await initAudio();
-      if (get().isPlaying || waitingToPlay) return;
-      // Instruments still downloading: wait for them (a while at most), or the first notes are lost
-      if (liveSoundsLoading()) {
-        const token = ++playToken;
-        waitingToPlay = true;
-        set({ loadingToPlay: true });
-        try {
-          await liveSoundsReady(PLAY_WAIT_MS);
-        } finally {
+      if (get().isPlaying) return;
+      if (waitingToPlay) {
+        // A Pause or Stop gave the waiting Play up: it carries on for this one instead
+        if (waitClaim !== playToken) {
+          waitClaim = ++playToken;
+          waitStartAt = startAt;
+          set({ loadingToPlay: true });
+        }
+        return;
+      }
+      waitStartAt = startAt;
+      let waited = false;
+      const wait = async (ready: Promise<unknown>) => {
+        if (!waited) {
+          waited = true;
+          waitClaim = ++playToken;
+          waitingToPlay = true;
+          set({ loadingToPlay: true });
+        }
+        await ready;
+      };
+      try {
+        // Instruments still downloading: wait for them (a while at most), or the first notes are lost
+        if (liveSoundsLoading()) await wait(liveSoundsReady(PLAY_WAIT_MS));
+        // The recorded instruments' takes, if a change since left them out of date (see scheduler.ts takesOf)
+        // (not when a Pause or Stop has given the Play up and no Play took it over)
+        if (!waited || waitClaim === playToken) {
+          const takes = liveTakesReady();
+          if (takes) await wait(takes);
+        }
+      } finally {
+        if (waited) {
           waitingToPlay = false;
           set({ loadingToPlay: false });
         }
-        // Stopped (or started some other way) while it waited
-        if (token !== playToken || get().isPlaying) return;
       }
+      // Stopped (or started some other way) while it waited
+      if (waited && (waitClaim !== playToken || get().isPlaying)) return;
+      startAt = waitStartAt;
       const s = get();
       const armed = s.isRecording ? s.tracks.find((t) => t.isArmed) : undefined;
       // A count-in: a bar of clicks first, the Transport (and the take) starting after them
@@ -1846,6 +1876,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     pause: () => {
       playToken++;
+      // A Play still waiting is given up: the button shows Play again, and Space plays
+      if (waitingToPlay) set({ loadingToPlay: false });
       if (!get().isPlaying) return;
       // The place being heard, kept; what has begun since (not heard yet: Play plays it) fades out
       const { bar: pos, at: heard } = getAudibleMoment();
@@ -1863,6 +1895,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     stop: () => {
       playToken++;
+      if (waitingToPlay) set({ loadingToPlay: false });
       if (get().isPlaying) endTake();
       stopTransport();
       stopFrameLoop();
@@ -3255,7 +3288,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         startBar: at,
         lengthBars: stinger.lengthBars,
         isSelected: true,
-        notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range).map((n) => ({ ...n, id: uid('note') })),
+        notes: stingerNotesOn(stinger.notes, stinger.instrumentKey).map((n) => ({ ...n, id: uid('note') })),
       };
       if (hasRecordings(track.instrumentKey)) void loadQuick(track.instrumentKey).catch(() => {});
       set((st) => ({

@@ -182,7 +182,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   const pitchedLane = !!track && !audioLane && !drumLane && !isMixTrack(track) && !isDropKind(track.instrumentKey);
   const noteClip = !!menuClip && !audioClip;
   // (made at the start of the bar clicked in, as the ruler counts bars)
-  const openSmart = (mode: 'chords' | 'drummer' | 'math') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: measureAt(Math.max(1, menu.bar) + 1e-6, meter).start } }));
+  const openSmart = (mode: 'chords' | 'chills' | 'drummer' | 'math') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: measureAt(Math.max(1, menu.bar) + 1e-6, meter).start } }));
   // Writing helpers: fills on a drum clip, chords and a bass line from a note clip
   const smartClipItems: Item[] = !noteClip
     ? []
@@ -359,7 +359,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           : []),
         { key: 'repeat', label: 'Repeat ×N…', icon: <Repeat2 className="w-3.5 h-3.5" />, onClick: () => setRepeating(true) },
         // Speed up the end of the block under the pointer (this clip, or every selected clip with it)
-        // into what follows: two one-click versions, and the options
+        // into what follows: two one-click versions, and the options; and a build into a peak there
         ...(() => {
           const picked = menuClip?.isSelected ? s.clips.filter((c) => c.isSelected) : menuClip ? [menuClip] : [];
           if (!picked.length) return [];
@@ -380,6 +380,16 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               onClick: () => {
                 onClose();
                 openArrange('drops', roundToMeasure(to, meter), undefined, { from, to });
+              },
+            },
+            {
+              key: 'build-peak',
+              label: 'Build into a peak…',
+              shortcut: 'swell, chills',
+              icon: <ChevronsRight className="w-3.5 h-3.5" />,
+              onClick: () => {
+                onClose();
+                useSmartDialog.setState({ open: { mode: 'build', trackId: menu.trackId, bar: to, range: { from, to }, trackIds: [...new Set(picked.map((c) => c.trackId))] } });
               },
             },
           ];
@@ -452,6 +462,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(track && !audioLane ? [newClip(1), newClip(2), newClip(4)] : []),
         ...(drumLane ? [{ key: 'drummer', label: 'Drummer…', shortcut: 'make a beat', icon: <Drum className="w-3.5 h-3.5" />, onClick: openSmart('drummer') }] : []),
         ...(pitchedLane ? [{ key: 'chords', label: 'Chord progression…', shortcut: 'in key', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chords') }] : []),
+        ...(pitchedLane ? [{ key: 'chills', label: 'Chills progression…', shortcut: 'for a peak', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chills') }] : []),
         ...(pitchedLane ? [{ key: 'math', label: 'Math patterns…', shortcut: 'formulas', icon: <Sigma className="w-3.5 h-3.5" />, onClick: openSmart('math') }] : []),
         ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'bells, piano', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', measureAt(Math.max(1, menu.bar) + 1e-6, meter).start, menu.trackId)) }] : []),
         ...(track

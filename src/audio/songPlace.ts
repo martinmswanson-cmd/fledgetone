@@ -16,6 +16,10 @@
  *
  * A note played by hand (a key, a pad, MIDI, note repeat, a preview) has no place in the song: it
  * keeps its time on the audio clock, so no two presses are quite alike, as a player's aren't.
+ *
+ * A recorded instrument's take and a guitar's strum follow the song the same way: a song's note
+ * carries its turn and a chord its strum, worked out from the song's start (takeTurns.ts); a note
+ * played by hand plays the instrument's next take, and is strummed after the strum before it.
  */
 
 /** The song's note being played now: the audio time it was asked for, and its place. */
@@ -46,8 +50,9 @@ export function placeOf(time: number): number {
 
 /**
  * Build a song's note that has been moved `by` seconds later than it was asked for (struck live
- * once the page had been held up past it: native.ts strikeLive), its times still counted from
- * where it was asked for, so it's picked as it would have been on time.
+ * once the page had been held up past it: native.ts strikeLive; a Tone synth's note or drum hit,
+ * toneFixes.ts and monotonic.ts; a stinger's note handed out late, stingerPlayer.ts), its times
+ * still counted from where it was asked for, so it's picked as it would have been on time.
  */
 export function struckLater<T>(by: number, build: () => T): T {
   if (!playing || !(by > 0)) return build();
@@ -65,8 +70,17 @@ export function struckLater<T>(by: number, build: () => T): T {
  * `salt` picks which of a note's differences it is.
  */
 export function noteJitter(note: string, time: number, salt: number): number {
+  return jitterAt(note, placeOf(time), salt);
+}
+
+/**
+ * noteJitter for `note` at `place` in the song (seconds from bar 1): what the scheduler works out
+ * ahead for a song's note (an Expressive recorded kit's level picks the loudness, and so the take
+ * it's counted at: takeTurns.ts).
+ */
+export function jitterAt(note: string, place: number, salt: number): number {
   let h = 0x811c9dc5 ^ salt;
-  const text = `${note}@${Math.round(placeOf(time) * 1000)}`;
+  const text = `${note}@${Math.round(place * 1000)}`;
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i);
     h = Math.imul(h, 0x01000193);

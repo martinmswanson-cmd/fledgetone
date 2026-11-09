@@ -1,6 +1,6 @@
 /**
- * The Chord progression and Drummer dialogs: make a clip from a few choices at the right-clicked
- * bar (smartTools.ts writes the notes).
+ * The Chord progression, Chills progression and Drummer dialogs: make a clip from a few choices at
+ * the right-clicked bar (smartTools.ts and chills.ts write the notes); and Build into a peak.
  */
 import { GROOVE_FEELS } from '../../store/grooveFeels';
 import React, { useMemo, useState } from 'react';
@@ -9,13 +9,16 @@ import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { keyOf, NOTE_NAMES } from '../../store/songKey';
 import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
 import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
-import { formatBarPosition, type InstrumentKey } from '../../store/timelineTypes';
+import { formatBarPosition, formatBarRange, type InstrumentKey } from '../../store/timelineTypes';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
 import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, makeMathClip, songKey, useSmartDialog, varyMelody } from '../../store/smartActions';
 import { MATH_PATTERNS, type MathPatternId } from '../../store/mathPatterns';
 import { MELODY_VARIATIONS, type MelodyVariation, type VariationPlace } from '../../store/melodyVariations';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
+import { CHILLS, chillsById, chillsNames, registerOf } from '../../store/chills';
+import { BUILD_DEFAULTS, buildChosen, buildForChills, buildTracks, makeChillsClip, PAD_UNDER_LU, RISER_UNDER_DB, type BuildChoices } from '../../store/chillsActions';
+import { BUILD_DEPTHS } from '../../store/chillsBuild';
 
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
 const control = 'bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text';
@@ -32,6 +35,8 @@ export const SmartDialog: React.FC = () => {
   if (open.mode === 'accompany' && open.clipId) return <AccompanyForm clipId={open.clipId} onClose={close} />;
   if (open.mode === 'melody' && open.clipId) return <MelodyForm clipId={open.clipId} onClose={close} />;
   if (open.mode === 'math') return <MathForm trackId={open.trackId} bar={open.bar} onClose={close} />;
+  if (open.mode === 'chills') return <ChillsForm trackId={open.trackId} bar={open.bar} onClose={close} />;
+  if (open.mode === 'build' && open.range) return <BuildForm range={open.range} trackIds={open.trackIds} onClose={close} />;
   return open.mode === 'chords' ? <ChordsForm trackId={open.trackId} bar={open.bar} onClose={close} /> : <DrummerForm trackId={open.trackId} bar={open.bar} onClose={close} />;
 };
 
@@ -407,6 +412,155 @@ const MathForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> 
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
             Make clip at bar <BarAt bar={bar} />
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+let lastChills = { progression: CHILLS[0].id as string, chordBars: 1, repeats: 1 };
+const rememberChills = (o: typeof lastChills) => {
+  lastChills = o;
+};
+
+/** Chills progressions: a clip of one, in the song's key (or one picked), at the bar right-clicked. */
+const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> = ({ trackId, bar, onClose }) => {
+  const detected = useMemo(() => songKey(), []);
+  const [root, setRoot] = useState(detected.root);
+  const [mode, setMode] = useState(detected.mode);
+  const [opts, setOpts] = useState(lastChills);
+  const key = keyOf(root, mode);
+  const prog = chillsById(opts.progression) ?? CHILLS[0];
+  const track = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId));
+  const set = (patch: Partial<typeof opts>) => setOpts((o) => ({ ...o, ...patch }));
+  const count = (prog.lift ? 1 : opts.repeats) * (mode === 'minor' ? prog.minor : prog.major).length;
+  const make = () => {
+    rememberChills({ ...opts, progression: prog.id });
+    if (makeChillsClip(trackId, bar, prog.id, key, opts.chordBars, opts.repeats)) showToast(`${prog.name} in ${key.name}: ${chillsNames(key, prog).join(' – ')}. Undo takes it out.`);
+    onClose();
+  };
+  return (
+    <Modal title={`Chills progression${track ? ` on ${track.name}` : ''}`} onClose={onClose}>
+      <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
+        <p className="text-[11px] text-forge-muted">
+          Chord moves that give listeners chills at an emotional peak.{' '}
+          {track && registerOf(INSTRUMENTS[track.instrumentKey]?.range).kind === 'roots' ? 'On this bass instrument it plays each chord’s root (or the held home note), inside its range.' : 'Held chords, voiced for synths and pads: one low note, the chord in the middle.'}
+        </p>
+        <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Progression">
+          {CHILLS.map((p) => (
+            <label key={p.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${p.id === prog.id ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
+              <input type="radio" name="chills" className="mt-1 accent-cyan-500" checked={p.id === prog.id} onChange={() => set({ progression: p.id })} />
+              <span className="text-xs text-forge-text">
+                {p.name}
+                <span className="block text-[11px] text-forge-muted">{p.detail}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <label className={field}>
+            Key {root === detected.root && mode === detected.mode && <span className="text-cyan-300">(the song's)</span>}
+            <div className="flex gap-1">
+              <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
+                {NOTE_NAMES.map((n, i) => (
+                  <option key={n} value={i}>{n}</option>
+                ))}
+              </select>
+              <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
+                <option value="major">major</option>
+                <option value="minor">minor</option>
+              </select>
+            </div>
+          </label>
+          <label className={field}>
+            Each chord lasts
+            <select className={control} value={opts.chordBars} onChange={(e) => set({ chordBars: Number(e.target.value) })}>
+              <option value={0.5}>half a bar</option>
+              <option value={1}>1 bar</option>
+              <option value={2}>2 bars</option>
+            </select>
+          </label>
+          <label className={field}>
+            Times through
+            <select className={control} value={prog.lift ? 1 : opts.repeats} disabled={!!prog.lift} onChange={(e) => set({ repeats: Number(e.target.value) })} title={prog.lift ? 'Once: played again it would drop back down' : undefined}>
+              {[1, 2].map((n) => (
+                <option key={n} value={n}>{n}×</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-forge-text">
+          {chillsNames(key, prog).join(' – ')} <span className="text-forge-muted">· {count} chords, {count * opts.chordBars} bar{count * opts.chordBars === 1 ? '' : 's'}</span>
+        </p>
+        <div className="flex justify-end">
+          <button type="button" className={primary} onClick={make}>
+            Make clip at bar <BarAt bar={bar} />
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+let lastBuild: Omit<BuildChoices, 'from' | 'peak' | 'trackIds'> = { ...BUILD_DEFAULTS };
+const rememberBuild = (o: typeof lastBuild) => {
+  lastBuild = o;
+};
+
+/** The build into a peak, over a block of bars: a swell, a riser, a moment of near-silence and a pad at the peak. */
+const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: string[]; onClose: () => void }> = ({ range, trackIds, onClose }) => {
+  const [opts, setOpts] = useState(lastBuild);
+  const [picked, setPicked] = useState(!!trackIds?.length);
+  const meter = useSongMeter();
+  const set = (patch: Partial<typeof opts>) => setOpts((o) => ({ ...o, ...patch }));
+  const tracks = buildTracks(range.from, range.to, picked ? trackIds : undefined);
+  const make = () => {
+    rememberBuild(opts);
+    showToast('Measuring the music for the build…');
+    void buildForChills({ ...opts, from: range.from, peak: range.to, ...(picked && trackIds?.length ? { trackIds } : {}) }).then(showToast);
+    onClose();
+  };
+  const box = (k: 'volume' | 'filter' | 'riser' | 'gap' | 'layer', label: string, detail: string) => (
+    <label className="flex items-start gap-2 text-xs text-forge-text">
+      <input type="checkbox" className="mt-0.5 accent-cyan-500" checked={opts[k]} onChange={(e) => set({ [k]: e.target.checked })} />
+      <span>
+        {label}
+        <span className="block text-[11px] text-forge-muted">{detail}</span>
+      </span>
+    </label>
+  );
+  return (
+    <Modal title="Build into a peak" onClose={onClose}>
+      <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
+        <p className="text-[11px] text-forge-muted">
+          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. The tracks start a little quieter and darker and grow back to where they were: no track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
+        </p>
+        {box('volume', 'Swell', 'Each track’s volume rises over the build, written as a volume lane you can see and change.')}
+        <label className={`${field} ml-6`}>
+          Starts this far under its level
+          <select className={control} value={opts.depthDb} disabled={!opts.volume} onChange={(e) => set({ depthDb: Number(e.target.value) })}>
+            {BUILD_DEPTHS.map((d) => (
+              <option key={d} value={d}>{d} dB{d === BUILD_DEPTHS[BUILD_DEPTHS.length - 1] ? ' (the most)' : ''}</option>
+            ))}
+          </select>
+        </label>
+        {box('filter', 'Filter opens', 'A low-pass filter on the pitched tracks opens over the build, as a filter lane (not a Filter with a resonant peak: it would sing through the sweep).')}
+        {box('riser', 'Riser', `A riser on a new track up to the peak, its loudest moment ${RISER_UNDER_DB} dB under the music there (measured).`)}
+        {box('gap', 'A breath before the peak', 'Half a beat of near-silence just before it, then back to the level the build reached (a volume lane).')}
+        {box('layer', 'Pad at the peak', `A new pad track joins at the peak, playing the chords there spread wide, ${PAD_UNDER_LU} dB under the music (measured).`)}
+        {!!trackIds?.length && (
+          <label className="flex items-center gap-2 text-xs text-forge-text">
+            <input type="checkbox" className="accent-cyan-500" checked={picked} onChange={(e) => setPicked(e.target.checked)} />
+            Only the tracks of the selected clips
+          </label>
+        )}
+        <p className="text-[11px] text-forge-muted">
+          {tracks.length ? `${tracks.length} track${tracks.length === 1 ? '' : 's'} playing there: ${tracks.slice(0, 4).map((t) => t.name).join(', ')}${tracks.length > 4 ? ' and more' : ''}.` : 'Nothing plays in these bars yet.'} One Undo takes it all out.
+        </p>
+        <div className="flex justify-end">
+          <button type="button" className={`${primary} disabled:opacity-40 disabled:cursor-not-allowed`} onClick={make} disabled={!tracks.length || !buildChosen(opts)} title={buildChosen(opts) ? undefined : 'Choose at least one part of the build'}>
+            Make the build
           </button>
         </div>
       </div>

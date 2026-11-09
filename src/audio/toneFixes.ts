@@ -6,6 +6,7 @@ import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
+import { struckLater } from './songPlace';
 import { attackRoom, ifUndone, soundLead, strikeAsked, strikeWhole, whenHeard } from './soundLead';
 
 /**
@@ -237,6 +238,17 @@ noiseProto._start = function (time) {
   // set for it, so struck again it would play on under the new one, twice as loud; see strikeTone)
   ifUndone(() => source.stop(this.context.currentTime));
 };
+/**
+ * Tone starts a burst asked for a time the clock has passed at the clock (a live note set late):
+ * a song's note's burst is still picked from where it was asked for (songPlace.ts struckLater),
+ * as it is in an export, whose clock waits for its notes.
+ */
+const noiseStarter = Tone.Noise.prototype as unknown as { start: (this: NoiseInside, time?: Tone.Unit.Time, offset?: Tone.Unit.Time, duration?: Tone.Unit.Time) => unknown };
+const startNoise = noiseStarter.start;
+noiseStarter.start = function (time, offset, duration) {
+  if (time === undefined || this.context.isOffline) return startNoise.call(this, time, offset, duration);
+  return struckLater(this.context.currentTime - this.toSeconds(time), () => startNoise.call(this, time, offset, duration));
+};
 
 /** Give a Tone.Noise (a NoiseSynth's `noise`) its key (see noiseKey, from the track's seed and which drum), and its buffer now rather than at its first hit. */
 export function seedToneNoise(noise: Tone.Noise, key: number): void {
@@ -281,6 +293,8 @@ oneShotProto._startGain = function (time, gain) {
  *
  * A release that would come before a moved attack, or within as long again after it, moves with it
  * (so it can't cut the attack off); a later one is left where it is.
+ * A song's note moved later is picked as it would have been on time (a NoiseSynth's burst from
+ * where it was asked for, as in an export: songPlace.ts struckLater, applied by strikeWhole).
  */
 interface EnvelopeInside {
   context: Tone.BaseContext;
