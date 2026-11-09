@@ -20,11 +20,15 @@
  * messages wait, the old sound playing on, until `switched` says they're all there (at most
  * SWITCH_GATHER_S; at once if one is waited on for an answer: a patch loading); then the output
  * fades out over SWITCH_OUT_S on the old sound, the change is made with it silent (Fledge Synth's
- * bb_settle then puts its eased level straight at the new one), and it fades back in over
+ * bb_settle then puts its eased level straight at the new one and strikes its held notes again
+ * as fresh notes of the new sound; a plugin given `freshOnSwitch` is made afresh at its new
+ * settings, an instrument then striking the keys still held again), and it fades back in over
  * SWITCH_IN_S (once `switched` has come, or SWITCH_HOLD_S has gone by). So no switch clicks, and
- * no plugin's leftover state (an envelope, a compressor, an eased level) is heard as a burst; held
- * notes play on (Surge XT's stop as its patch changes, faded). Timed events, `sync`, `clear` and
- * `dropBends` never wait. Silent, a switch is made at once.
+ * no plugin's leftover state (an envelope, a compressor, an eased level, filters or a reverb's
+ * tail from another preset) is heard as a burst; held notes play on (Surge XT's stop as its patch
+ * changes, faded). Timed events, `sync`, `clear` and `dropBends` never wait. Silent, a switch is
+ * made as soon as its messages are all there, with no fade out, and the new sound still fades in
+ * over SWITCH_IN_S (a held note that had died away comes back with the new sound).
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made, `fault` (once) if it
  * blew up (see guard below).
@@ -80,7 +84,7 @@ const SWITCH_GATHER = ${SWITCH_GATHER_S};
 const SWITCH_OUT = ${SWITCH_OUT_S};
 const SWITCH_HOLD = ${SWITCH_HOLD_S};
 const SWITCH_IN = ${SWITCH_IN_S};
-/** Quieter than this (-100 dBFS) in its last render, a plugin is silent: a switch needs no fade */
+/** Quieter than this (-100 dBFS) in its last render, a plugin is silent: a switch needs no fade out, only the fade in */
 const SILENT = 1e-5;
 /** The messages a switch never holds back (timed events go in at their own time; sync answers at once) */
 const NOT_HELD = new Set(['events', 'clear', 'dropBends', 'sync', 'destroy', 'switch']);
@@ -179,6 +183,13 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.ownMemory = !!o.ownMemory;
     this.limitNames = o.limits || null;
     this.outputGain = Number.isFinite(o.outputGain) && o.outputGain > 0 ? o.outputGain : 1;
+    // Made afresh at its new settings in a switch's silence (see makeSwitch): a plugin whose
+    // filters, set for one preset, blow up in another (paramLimits.ts FRESH_ON_SWITCH)
+    this.freshOnSwitch = !!o.freshOnSwitch;
+    // The keys held down (note: its note-on) and the sustain pedal's last word, so an instrument
+    // made afresh in a switch strikes the notes still held again (see restart)
+    this.down = new Map();
+    this.pedal = null;
     this.limits = [];
     // The last preset file and user table it was given, to start it again with after a blow-up
     this.presetData = null;
@@ -199,6 +210,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.dipAt = 0;
     this.dipState = 'none';
     this.peak = 0;
+    // A switch begun with the plugin silent: made at once when its messages are all there, with
+    // no fade out (see startSwitch)
+    this.quietSwitch = false;
     try {
       this.fam = this.ownMemory ? null : familyOf(o.family, o.module);
       this.e = (this.fam || instantiate(o.family, o.module)).e;
@@ -294,6 +308,17 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     }
     if (currentFrame - this.resetAt < sampleRate) return;
     this.resetAt = currentFrame;
+    this.restart(true);
+  }
+
+  /**
+   * The plugin made again as it's set (its values, preset, preset file, user table and tempo):
+   * whatever it held from before (filters, envelopes, delay lines) is gone. Blown up, a plugin
+   * with an instance of its own gets a new one too.
+   */
+  restart(blownUp) {
+    const notes = blownUp ? [] : [...this.down.values()];
+    const pedal = blownUp ? null : this.pedal;
     const e = this.e;
     const values = [];
     for (let i = 0; i < this.n; i++) values.push(e.bb_get(this.h, i));
@@ -304,7 +329,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // (Its memory may be what went wrong: a new instance below)
     }
     // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone
-    if (this.ownMemory) this.e = instantiate(this.familyName, this.module).e;
+    if (blownUp && this.ownMemory) this.e = instantiate(this.familyName, this.module).e;
     this.h = this.e.bb_create(this.index, sampleRate);
     if (!this.h) {
       this.alive = false;
@@ -318,6 +343,18 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
     if (this.bpm > 0 && this.e.bb_tempo) this.e.bb_tempo(this.h, this.bpm);
     this.views();
+    // (Made afresh in a switch: the keys still down strike again, as fresh notes of the new sound)
+    if (pedal) this.e.bb_midi(this.h, pedal[0], pedal[1], pedal[2]);
+    for (const b of notes) this.e.bb_midi(this.h, b[0], b[1], b[2]);
+  }
+
+  /** Which keys are down, and the pedal, after MIDI message b (instruments made afresh in a switch) */
+  keys(b) {
+    const kind = b[0] & 0xf0;
+    if (kind === 0x90 && b[2]) this.down.set(b[1], [b[0], b[1], b[2]]);
+    else if (kind === 0x80 || kind === 0x90) this.down.delete(b[1]);
+    else if (kind === 0xb0 && b[1] === 64) this.pedal = [b[0], 64, b[2] || 0];
+    else if (kind === 0xb0 && (b[1] === 120 || b[1] === 123)) this.down.clear();
   }
 
   /**
@@ -381,8 +418,12 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // While a switch gathers its messages and fades out, they (and any after them) wait
     if (this.held && !NOT_HELD.has(d.type)) {
       this.held.push(d);
-      // All there (or one waits for its answer): the old sound fades out now
-      if (this.dipState === 'gather' && (d.type === 'switched' || ANSWERED.has(d.type))) this.fadeOut();
+      // All there (or one waits for its answer): the old sound fades out now (still silent:
+      // made at once, then faded in)
+      if (this.dipState === 'gather' && (d.type === 'switched' || ANSWERED.has(d.type))) {
+        if (this.quietSwitch && !(this.peak > SILENT)) this.makeSwitch();
+        else this.fadeOut();
+      }
       return;
     }
     if (d.type === 'switch') {
@@ -461,7 +502,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
    */
   startSwitch() {
     if (this.dipState === 'gather' || this.dipState === 'out' || this.dipState === 'silent') return;
-    if (!(this.peak > SILENT)) return;
+    // Silent: its messages still wait for all the rest (a render between them would play half
+    // the change), then go in at once with no fade out, and it fades in from nothing, so notes
+    // still held (a sound that had died away, or one a preset makes from silence) come back
+    // without a click
+    this.quietSwitch = !(this.peak > SILENT);
     this.held = [];
     this.dipState = 'gather';
     this.dipFrom = this.dip;
@@ -475,6 +520,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
 
   /** Silent now: the waiting messages go in, the plugin settles at its new settings, and it waits for 'switched'. */
   makeSwitch() {
+    this.quietSwitch = false;
     const waiting = this.held || [];
     this.held = null;
     this.dipState = 'silent';
@@ -483,6 +529,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.message(d);
       if (!this.alive) return;
     }
+    // (Made afresh: nothing it held for the old sound plays on into the new one)
+    if (this.freshOnSwitch) this.restart(false);
+    if (!this.alive) return;
     if (this.e.bb_settle) this.e.bb_settle(this.h);
   }
 
@@ -556,6 +605,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (ev.type === 'wam-midi') {
       const b = ev.data.bytes;
       this.e.bb_midi(this.h, b[0], b[1] || 0, b[2] || 0);
+      if (this.freshOnSwitch) this.keys(b);
     } else if (ev.type === 'wam-transport') {
       // The song's tempo, for plugins with tempo-synced parts (Fledge Synth's LFOs), and where in
       // the song it is (beats), for plugins that follow it (Fledge Synth's free LFOs and random

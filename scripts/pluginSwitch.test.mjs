@@ -148,14 +148,16 @@ test('Fledge Synth: Init saw chosen from Neuro, and Neuro from your own sound, o
   }
 });
 
-test('the switch: silent, at once; playing, its messages wait for the fade out, sync never does', () => {
-  // Nothing playing: the preset is chosen at once (an offline render's settings, a stopped song)
+test('the switch: silent, at once when all there; playing, its messages wait for the fade out, sync never does', () => {
+  // Nothing playing: the preset is chosen as soon as the switch's messages are all there, with no
+  // fade out (a render between them would play half the change)
   const quiet = makeProc(fledge, 'fledge');
   render(quiet.p, 0.05);
   quiet.p.message({ type: 'switch' });
   quiet.p.message({ type: 'program', index: NEURO, asked: 1 });
-  assert.equal(quiet.p.program(), NEURO);
+  assert.equal(quiet.p.program(), -1);
   quiet.p.message({ type: 'switched' });
+  assert.equal(quiet.p.program(), NEURO);
 
   // Playing: the preset waits until the old sound has faded out (5 ms), the answers with it
   const { p, sent } = makeProc(fledge, 'fledge');
@@ -244,6 +246,128 @@ test('Surge XT: a patch loaded with notes held stops them with a fade, not a cut
   assert.ok(rms(after.subarray(192, 240)) < 0.2 * was, 'faded out by 5 ms');
 });
 
+/** `seconds` of a processor's left channel, fed a sawtooth chord (110, 165, 220 Hz at 0.1) */
+const renderFed = (p, seconds) => {
+  const got = new Float32Array(Math.ceil((seconds * sr) / 128) * 128);
+  for (let b = 0; b < got.length / 128; b++) {
+    const inp = new Float32Array(128);
+    for (let i = 0; i < 128; i++) {
+      const t = (scope.currentFrame + i) / sr;
+      for (const f of [110, 165, 220]) inp[i] += 0.1 * (2 * ((t * f) % 1) - 1);
+    }
+    const out = [new Float32Array(128), new Float32Array(128)];
+    p.process([[inp, inp]], [out]);
+    got.set(out[0], b * 128);
+    scope.currentFrame += 128;
+  }
+  return got;
+};
+
+test('the Vocoder: a preset changed on a bright sound comes in at its own level (made afresh in the silence)', () => {
+  const mdaFamily = PLUGIN_FAMILIES.find((f) => f.family === 'mda');
+  const index = mdaFamily.plugins.findIndex((x) => x.name === 'Vocoder');
+  const mda = wasm(mdaFamily.file);
+  const p = makeProc(mda, 'mda', { index, program: 1, freshOnSwitch: true }).p;
+  // 16 Band and Old Vocoder, back and forth at moments a little apart: its band filters, left as
+  // one had them, blew up under the other on most (+19 to +30 dB over the settled sound, then the
+  // guard's cut)
+  const peak = (a) => a.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+  let was = loudest(renderFed(p, 0.8), 0.4, 0.79);
+  for (let k = 0; k < 8; k++) {
+    const to = k % 2 ? 1 : 2;
+    for (const m of [{ type: 'switch' }, { type: 'program', index: to, asked: 1 }, { type: 'switched' }]) p.message(m);
+    const y = renderFed(p, 0.8 + 0.0371 * k);
+    const first = loudest(y, 0, 0.25);
+    const settled = loudest(y, 0.35, 0.79);
+    assert.ok(first <= 1.122 * Math.max(settled, was), `${k}, to ${to}: loudest 10 ms ${first.toFixed(3)} against ${settled.toFixed(3)} settled`);
+    assert.ok(peak(y.subarray(0, 0.25 * sr)) <= 1.25 * peak(y.subarray(0.35 * sr)), `${k}, to ${to}: peak ${peak(y.subarray(0, 0.25 * sr)).toFixed(3)} against ${peak(y.subarray(0.35 * sr)).toFixed(3)} settled`);
+    was = settled;
+  }
+  assert.equal(p.program(), 1);
+});
+
+test('the JX10: a preset changed on a held chord is made afresh and strikes the held keys again, at its own level', () => {
+  const mdaFamily = PLUGIN_FAMILIES.find((f) => f.family === 'mda');
+  const index = mdaFamily.plugins.findIndex((x) => x.name === 'JX10');
+  const mda = wasm(mdaFamily.file);
+  const ARCTIC = 60;
+  // A fresh chord on Arctic Wind
+  const f = makeProc(mda, 'mda', { index, program: ARCTIC, freshOnSwitch: true }).p;
+  render(f, 0.05);
+  chord(f);
+  const fresh = loudest(render(f, 1), 0, 0.99);
+  // Held on Empty Patch, then Arctic Wind: its voices went on into the new filter and envelopes
+  // from where the old preset had them (up to +18 dB over the sound it settles at, for about 60 ms)
+  const { p } = makeProc(mda, 'mda', { index, program: 56, freshOnSwitch: true });
+  chord(p);
+  render(p, 0.5);
+  for (const m of [{ type: 'switch' }, { type: 'program', index: ARCTIC, asked: 1 }, { type: 'switched' }]) p.message(m);
+  const after = render(p, 1);
+  // (From 6 ms on: before that the old sound fades out)
+  const first = loudest(after, 0.006, 0.25);
+  const settled = loudest(after, 0.35, 0.99);
+  assert.ok(first <= 1.122 * Math.max(settled, fresh), `first 250 ms ${first.toFixed(3)} against ${settled.toFixed(3)} settled, ${fresh.toFixed(3)} fresh`);
+  assert.ok(settled > 0.5 * fresh, 'the held chord plays on in the new sound');
+  assert.equal(p.program(), ARCTIC);
+  // Let go: made afresh, it still hears the keys come up (it fades as a fresh chord let go does)
+  const up = (q) => q.message({ type: 'events', events: [45, 52, 57].map((n) => ({ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes: [0x80, n, 0] } })) });
+  up(p);
+  up(f);
+  const [lp, lf] = [p, f].map((q) => {
+    render(q, 1.5);
+    return rms(render(q, 0.1));
+  });
+  assert.ok(lp <= 1.5 * lf + 1e-4, `let go: ${lp.toFixed(4)} against ${lf.toFixed(4)} for a fresh chord`);
+});
+
+test('a switch made while the plugin is silent still fades the new sound in (held notes come back without a click)', () => {
+  // Fledge Synth's Stab dies away under a held chord; back to your own sound (as an undo), the
+  // chord comes back: at once it stepped by about 0.33 against a steady 0.01
+  const STAB = 24;
+  const { p } = makeProc(fledge, 'fledge', { program: STAB });
+  chord(p);
+  const died = render(p, 4);
+  assert.ok(rms(died.subarray(died.length - 1280)) < 1e-5, 'died away');
+  for (const m of [{ type: 'switch' }, { type: 'noProgram', asked: 1 }, ...ownValues.map((value, index) => ({ type: 'set', index, value })), { type: 'switched' }]) p.message(m);
+  const back = render(p, 0.5);
+  const jump = step(back, 0, 0.03);
+  const steady = step(back, 0.2, 0.5);
+  assert.ok(rms(back.subarray(back.length - 4800)) > 0.03, 'the chord plays again');
+  assert.ok(jump <= 1.25 * steady + 0.01, `step ${jump.toFixed(3)} coming in against ${steady.toFixed(3)} steady`);
+  assert.ok(Math.abs(back[0]) < 1e-3 && rms(back.subarray(240, 288)) < rms(back.subarray(4800, 4848)), 'rising over its first 10 ms');
+  assert.equal(p.program(), -1, 'made at once');
+
+  // The page's messages can reach the plugin with a render between them: half the change must
+  // not play (the held chord came up half made, then struck again as the rest came: a click)
+  const q = makeProc(fledge, 'fledge', { program: STAB }).p;
+  chord(q);
+  render(q, 4);
+  const msgs = [{ type: 'switch' }, { type: 'noProgram', asked: 1 }, ...ownValues.map((value, index) => ({ type: 'set', index, value })), { type: 'switched' }];
+  const half = msgs.length >> 1;
+  for (const m of msgs.slice(0, half)) q.message(m);
+  const mid = render(q, 128 / sr);
+  for (const m of msgs.slice(half)) q.message(m);
+  const rest = render(q, 0.5);
+  const both = new Float32Array(mid.length + rest.length);
+  both.set(mid);
+  both.set(rest, mid.length);
+  assert.ok(rms(mid) < 1e-4, 'nothing of it plays until it is all there');
+  const jump2 = step(both, 0, 0.03);
+  assert.ok(jump2 <= 1.25 * step(both, 0.2, 0.5) + 0.01, `split by a render: step ${jump2.toFixed(3)} coming in`);
+});
+
+test('Fledge Synth: a one-voice preset chosen on a held chord plays one note, no louder than it plays', () => {
+  // 808 slide from your own sound: the chord's three notes went on, 4-6 dB over the preset's own level
+  const SLIDE = 13;
+  const { p } = makeProc(fledge, 'fledge');
+  const r = through(p, [{ type: 'switch' }, { type: 'program', index: SLIDE, asked: 1 }, { type: 'switched' }]);
+  const f = makeProc(fledge, 'fledge', { program: SLIDE }).p;
+  render(f, 0.05);
+  chord(f);
+  const fresh = loudest(render(f, 1), 0, 0.99);
+  assert.ok(r.first <= 1.122 * Math.max(r.settled, fresh), `first 60 ms ${r.first.toFixed(3)} against ${r.settled.toFixed(3)} settled, ${fresh.toFixed(3)} fresh`);
+});
+
 // --- The host: which changes are switches, and only while the context plays ---
 
 const queue = [];
@@ -323,6 +447,25 @@ test('the host: a preset, an undo of one, Reset all are switches (faded) while i
     const moves = controls.params().flatMap((p, i) => (p.value !== p.defaultValue ? [[i, p.defaultValue]] : [])).slice(0, 5);
     const reset = await sends(() => editPluginParams(controls, moves, undefined));
     assert.deepEqual([reset[0], reset.at(-1)], ['switch', 'switched']);
+  }
+});
+
+test('the host: the Vocoder is made afresh in a switch, other plugins are not', async () => {
+  const { FRESH_ON_SWITCH } = await import('../src/audio/plugins/paramLimits.ts');
+  assert.ok(FRESH_ON_SWITCH.has('builtin:mda/Vocoder'));
+  let opts = null;
+  const Was = globalThis.AudioWorkletNode;
+  globalThis.AudioWorkletNode = class extends Was {
+    constructor(ctx, name, o) {
+      super(ctx, name, o);
+      opts = o.processorOptions;
+    }
+  };
+  try {
+    await make(undefined, true);
+    assert.equal(opts.freshOnSwitch, false, 'Fledge Synth goes on from where it was (its own settle)');
+  } finally {
+    globalThis.AudioWorkletNode = Was;
   }
 });
 

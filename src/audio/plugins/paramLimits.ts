@@ -55,6 +55,21 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
 };
 
 /**
+ * Built-in plugins made afresh at their new settings while a switch of the whole sound holds them
+ * silent (a preset chosen, an undo; see processor.ts 'switch'), by address; an instrument then
+ * strikes the keys still held again. The Vocoder's band filters, left as one preset had them, blew
+ * up under the next one fed a bright sound (16 Band and Old Vocoder: +19 to +30 dB over the
+ * settled sound for up to 100 ms, then the guard's cut). The JX10's held voices went on into the
+ * next preset's filter and envelopes from where the last had them (Arctic Wind from a held chord:
+ * up to +18 dB over the sound it settles at, and a fresh chord on it, for about 60 ms). The Hall
+ * Reverb's and Plateau's tails, built up under one preset, went on under the next (Plateau's
+ * Wobbly Lo-Fi: up to +4.7 dB for a moment, the Hall Reverb's Small Percussion Hall +1.9). Made
+ * afresh, each comes in as a new one does (a reverb's tail building up again from the sound going
+ * in). Each takes under a millisecond; the Tonewheel Organ, which takes over 100, isn't one.
+ */
+export const FRESH_ON_SWITCH: ReadonlySet<string> = new Set(['builtin:mda/Vocoder', 'builtin:mda/JX10', 'builtin:dragonfly/Hall Reverb', 'builtin:plateau/Plateau']);
+
+/**
  * Families whose plugins each get a WebAssembly instance (and memory) of their own rather than
  * sharing one: the Mutable Instruments models read memory they never set, and in the memory a
  * plugin of the family left behind ("Particles" deleted, then "String and Reverb" added) they

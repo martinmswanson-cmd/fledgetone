@@ -1259,8 +1259,76 @@ impl Synth {
     /// over the 10 ms ease that keeps a turned knob smooth. Eased, the new sound played at the old
     /// one's level for a moment: a short loud burst where a quiet preset (its level set high) gave
     /// way to a loud one (Neuro back to your own sound: about 8 dB in the first 10 ms).
+    ///
+    /// Notes still held then strike again with the new sound, as fresh notes of it (its envelopes
+    /// and pitch drop from their start, its oscillators from their own points), and a mono or
+    /// legato sound keeps only the last key's note, on its one voice. Carried on as they were, a
+    /// held chord came in up to 6 dB louder than the new sound ever plays: three notes on a
+    /// one-voice preset (808 slide, Hard Clip Stab, Folded), a note held at your own sound's full
+    /// sustain going on under a preset whose pitch drop and envelopes had long run out
+    /// (Downlifter), or at full level into a rise (Riser). Back to a poly sound, every key still
+    /// down sounds again. The host's fade covers the restart.
     pub fn settle(&mut self) {
         self.gain = db_gain(self.v(p::LEVEL));
+        let cfg = self.cfg();
+        let held = |v: &Voice| v.active && !v.dying && v.pending.is_none() && v.amp.stage != Stage::Release && v.amp.stage != Stage::Idle;
+        if cfg.mode > 0 {
+            // One voice: the last key's note goes on it (from wherever poly put it), the rest go
+            if let Some(&last) = self.stack.last() {
+                if let Some(i) = (0..VOICES).filter(|&i| held(&self.voices[i]) && self.voices[i].note == last).max_by_key(|&i| self.voices[i].age) {
+                    self.voices.swap(0, i);
+                }
+            }
+            for v in self.voices.iter_mut().skip(1) {
+                if held(v) {
+                    v.active = false;
+                    v.pending_up = false;
+                }
+            }
+        }
+        for i in 0..VOICES {
+            if held(&self.voices[i]) {
+                let (note, vel, sustained) = (self.voices[i].note, self.voices[i].vel, self.voices[i].sustained);
+                let v = &mut self.voices[i];
+                v.pitch = note as f32;
+                v.target = note as f32;
+                v.glide = 0.0;
+                // (Its random values as a note struck where it was: the same restart every time)
+                self.seed(note, self.struck[note as usize & 127], &cfg);
+                self.start(i, note, vel, &cfg, true, false);
+                // (Held by the pedal after its key came up: still only the pedal holds it)
+                self.voices[i].sustained = sustained;
+            }
+        }
+        if cfg.mode > 0 && self.stack.len() > 1 && self.voices[0].active {
+            // (As a chord struck on it: from the first key's pitch, gliding to the last's)
+            let (first, last) = (self.stack[0], self.stack[self.stack.len() - 1]);
+            let sr = self.sr;
+            let v = &mut self.voices[0];
+            if v.note == last {
+                v.pitch = first as f32;
+                v.glide = first as f32 - last as f32;
+                set_glide(v, &cfg, sr);
+            }
+        }
+        if cfg.mode == 0 {
+            // Poly after mono or legato: every key still down sounds again, as a chord struck
+            // afresh would (at the velocity it had, or the one voice's)
+            let keys: Vec<u8> = self.stack.iter().copied().filter(|&k| self.down[k as usize & 127] > 0).collect();
+            for k in keys {
+                if self.voices.iter().any(|v| v.note == k && (held(v) || v.pending.map(|(n, _)| n) == Some(k))) {
+                    continue;
+                }
+                let Some(i) = (0..VOICES).find(|&i| !self.voices[i].active && self.voices[i].pending.is_none()) else { break };
+                let vel = self.voices.iter().find(|v| !v.active && v.note == k).map_or(self.voices[0].vel, |v| v.vel);
+                let v = &mut self.voices[i];
+                v.pitch = k as f32;
+                v.target = k as f32;
+                v.glide = 0.0;
+                self.seed(k, self.struck[k as usize & 127], &cfg);
+                self.start(i, k, vel, &cfg, true, false);
+            }
+        }
     }
 
     /// An older saved sound with only its first `count` values has just been loaded: the
@@ -1539,16 +1607,7 @@ impl Synth {
         let cfg = self.cfg();
         self.struck[note as usize & 127] = self.song_beats;
         self.chord_place(note, &cfg);
-        if self.anchored {
-            // Random values from where in the song this note is, and which note (not from what
-            // played before): the same notes from the same place sound the same, live or exported
-            // (Within the random cycle, when there is one: a riff that repeats sounds the same)
-            let at = if cfg.random_cycle > 0.0 { self.song_beats.rem_euclid(cfg.random_cycle) } else { self.song_beats };
-            // ("Even keyboard": its place in a chord struck at once, not its pitch, so a riff on
-            // other notes starts each step as it did, and neighbouring notes alike)
-            let which = if cfg.even_keys { self.struck_k[note as usize & 127] } else { note };
-            self.rng = Rng::new((hash01(ticks(at) << 8 ^ which as u64 ^ 0x5eed_0000_0000) * 4_294_967_000.0) as u32);
-        }
+        self.seed(note, self.song_beats, &cfg);
         if cfg.mode > 0 {
             // Mono and legato: one voice; legato keeps the envelopes going between joined notes
             let sr = self.sr;
@@ -1646,6 +1705,21 @@ impl Synth {
         self.voices[i].target = note as f32;
         self.voices[i].glide = 0.0;
         self.start(i, note, vel, &cfg, true, false);
+    }
+
+    /// Random values from where in the song a note is struck (`beats`), and which note (not from
+    /// what played before): the same notes from the same place sound the same, live or exported.
+    /// Only once the host has said where in the song it is.
+    fn seed(&mut self, note: u8, beats: f64, cfg: &Cfg) {
+        if !self.anchored {
+            return;
+        }
+        // (Within the random cycle, when there is one: a riff that repeats sounds the same)
+        let at = if cfg.random_cycle > 0.0 { beats.rem_euclid(cfg.random_cycle) } else { beats };
+        // ("Even keyboard": its place in a chord struck at once, not its pitch, so a riff on
+        // other notes starts each step as it did, and neighbouring notes alike)
+        let which = if cfg.even_keys { self.struck_k[note as usize & 127] } else { note };
+        self.rng = Rng::new((hash01(ticks(at) << 8 ^ which as u64 ^ 0x5eed_0000_0000) * 4_294_967_000.0) as u32);
     }
 
     /// Mono restart: the mono voice's last note (still letting go) moves to a spare voice and fades

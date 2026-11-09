@@ -63,7 +63,8 @@ fn switching_back_to_a_quieter_level_has_no_burst_once_settled() {
     let (eased, at) = held(PRESETS[neuro].values(), |s| s.params = own, false);
     let (settled, _) = held(PRESETS[neuro].values(), |s| s.params = own, true);
     let level = loudest(&settled, at, 100.0, 400.0);
-    assert!(loudest(&eased, at, 0.0, 20.0) > 1.8 * level, "the eased level's burst (the old way) is gone: test no longer shows it");
+    // (Against its own level later: settled, Neuro's one voice gives way to the chord's three)
+    assert!(loudest(&eased, at, 0.0, 20.0) > 1.8 * loudest(&eased, at, 100.0, 400.0), "the eased level's burst (the old way) is gone: test no longer shows it");
     let first = loudest(&settled, at, 0.0, 60.0);
     assert!(first <= 1.1 * level, "first 60 ms {first} against {level} settled");
 }
@@ -146,4 +147,113 @@ fn a_note_of_one_voice_plays_as_before() {
     }
     assert!(sum > 0.0);
     assert_eq!(s.voices[0].phase[0][1..].iter().filter(|&&ph| ph == s.voices[0].phase[0][1]).count(), 1, "the spare voices' points differ");
+}
+
+/// A chord held on `a`, switched to `b` at 0.5 s (with the host's settle), on to 3.3 s
+fn held_long(a: [f32; COUNT], b: [f32; COUNT]) -> (Vec<f32>, usize) {
+    let mut s = Synth::new(SR);
+    s.set_tempo(120.0);
+    s.set_position(0.0);
+    s.params = a;
+    for k in [45u8, 52, 57] {
+        s.midi(0x90, k, 100);
+    }
+    let at = (SR as usize / 2) / BLOCK * BLOCK;
+    let mut out = vec![];
+    while out.len() < SR as usize * 33 / 10 {
+        if out.len() == at {
+            s.params = b;
+            s.settle();
+        }
+        s.process(BLOCK);
+        out.extend_from_slice(&s.out[0][..BLOCK]);
+    }
+    (out, at)
+}
+
+/// The loudest 10 ms of a chord struck afresh on `a` at 0.5 s (where held_long switches: a free
+/// LFO is where it was there), over 2.5 s
+fn fresh_chord(a: [f32; COUNT]) -> f32 {
+    let mut s = Synth::new(SR);
+    s.set_tempo(120.0);
+    s.set_position(0.0);
+    s.params = a;
+    let at = (SR as usize / 2) / BLOCK * BLOCK;
+    for _ in 0..at / BLOCK {
+        s.process(BLOCK);
+    }
+    for k in [45u8, 52, 57] {
+        s.midi(0x90, k, 100);
+    }
+    let mut out = vec![];
+    while out.len() < SR as usize * 5 / 2 + 480 {
+        s.process(BLOCK);
+        out.extend_from_slice(&s.out[0][..BLOCK]);
+    }
+    loudest(&out, 0, 0.0, 2500.0)
+}
+
+#[test]
+fn every_preset_chosen_on_a_held_chord_comes_in_no_louder_than_it_plays() {
+    // A chord held on your own sound, then each preset, and back: the first 250 ms are never more
+    // than 1 dB over the louder of the new sound settled (350 ms on) and a chord struck afresh on
+    // it. Carried on, the held notes came in 2-6 dB over both: three notes on a one-voice preset
+    // (808 slide, Hard Clip Stab), your own sound's full sustain under a preset whose pitch drop
+    // had long run out (Downlifter), or at full level into a rise (Riser)
+    let own = p::defaults();
+    let own_fresh = fresh_chord(own);
+    let mut worst = (0.0f32, "");
+    for pr in PRESETS.iter() {
+        let b = pr.values();
+        let fresh = fresh_chord(b);
+        for (to, f, name) in [(b, fresh, pr.name), (own, own_fresh, "back to your own sound")] {
+            let from = if name == pr.name { own } else { b };
+            let (x, at) = held_long(from, to);
+            let first = loudest(&x, at, 0.0, 240.0);
+            let settled = loudest(&x, at, 350.0, 2780.0);
+            let db = 20.0 * (first / settled.max(f)).log10();
+            if db > worst.0 {
+                worst = (db, pr.name);
+            }
+            assert!(db <= 1.0, "{} ({name}): {first} in the first 250 ms against {settled} settled, {f} fresh: {db:.1} dB over", pr.name);
+        }
+    }
+    eprintln!("loudest switch {:.2} dB over ({})", worst.0, worst.1);
+}
+
+#[test]
+fn a_mono_preset_chosen_on_a_held_chord_keeps_only_the_last_note_and_back_the_chord() {
+    let slide = PRESETS.iter().position(|p| p.name == "Bass/808 slide").unwrap();
+    let mut s = Synth::new(SR);
+    s.set_tempo(120.0);
+    for k in [45u8, 52, 57] {
+        s.midi(0x90, k, 100);
+    }
+    for _ in 0..100 {
+        s.process(BLOCK);
+    }
+    assert_eq!(s.voices.iter().filter(|v| v.active).count(), 3);
+    s.params = PRESETS[slide].values();
+    s.settle();
+    let on: Vec<u8> = s.voices.iter().filter(|v| v.active).map(|v| v.note).collect();
+    assert_eq!(on, vec![57], "one voice, the last key's");
+    // Back to your own sound (poly), as an undo: the three keys still down sound again
+    let mut back = Synth::new(SR);
+    back.set_tempo(120.0);
+    for k in [45u8, 52, 57] {
+        back.midi(0x90, k, 100);
+    }
+    back.process(BLOCK);
+    back.params = PRESETS[slide].values();
+    back.settle();
+    back.process(BLOCK);
+    back.params = p::defaults();
+    back.settle();
+    let mut notes: Vec<u8> = back.voices.iter().filter(|v| v.active).map(|v| v.note).collect();
+    notes.sort();
+    assert_eq!(notes, vec![45, 52, 57], "the chord again");
+    // Letting go of it goes back to the next key still held, as a mono sound does
+    s.midi(0x80, 57, 0);
+    s.process(BLOCK);
+    assert!(s.voices[0].active && s.voices[0].target == 52.0);
 }
