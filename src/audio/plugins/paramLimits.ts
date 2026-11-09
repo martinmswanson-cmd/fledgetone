@@ -70,6 +70,17 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
 export const FRESH_ON_SWITCH: ReadonlySet<string> = new Set(['builtin:mda/Vocoder', 'builtin:mda/JX10', 'builtin:dragonfly/Hall Reverb', 'builtin:plateau/Plateau']);
 
 /**
+ * Built-in instruments with one-voice settings that let a note go at its note-off whether the
+ * sustain pedal is down or not, by address: the parameter, and how its text starts on those
+ * settings. The JX10's Glide on MONO, M-LEGATO or M-GLIDE (303 Square Bass and the other
+ * basses and leads) plays one voice and lets the pedal hold nothing, so a note let go under the
+ * pedal there is not struck again in a switch (processor.ts keys).
+ */
+export const ONE_VOICE: Readonly<Record<string, { param: string; prefix: string }>> = {
+  'builtin:mda/JX10': { param: 'Glide', prefix: 'M' },
+};
+
+/**
  * Families whose plugins each get a WebAssembly instance (and memory) of their own rather than
  * sharing one: the Mutable Instruments models read memory they never set, and in the memory a
  * plugin of the family left behind ("Particles" deleted, then "String and Reverb" added) they

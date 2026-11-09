@@ -320,12 +320,30 @@ test('the JX10: a preset changed on a held chord is made afresh and strikes the 
   assert.ok(lp <= 1.5 * lf + 1e-4, `let go: ${lp.toFixed(4)} against ${lf.toFixed(4)} for a fresh chord`);
 });
 
+const { ONE_VOICE } = await import('../src/audio/plugins/paramLimits.ts');
 /** A JX10 on preset `program`, made afresh in a switch as the host has it */
 const jx10 = (program) => {
   const mdaFamily = PLUGIN_FAMILIES.find((f) => f.family === 'mda');
   const index = mdaFamily.plugins.findIndex((x) => x.name === 'JX10');
-  return makeProc(wasm(mdaFamily.file), 'mda', { index, program, freshOnSwitch: true }).p;
+  return makeProc(wasm(mdaFamily.file), 'mda', { index, program, freshOnSwitch: true, oneVoice: { ...ONE_VOICE['builtin:mda/JX10'] } }).p;
 };
+/** Steps on a fresh JX10 on `program`: [bytes...] sent now, or a number of seconds rendered. Its sound, from the start. */
+const play = (p, steps) => {
+  const parts = [];
+  for (const st of steps) {
+    if (typeof st === 'number') parts.push(render(p, st));
+    else midiNow(p, st);
+  }
+  const x = new Float32Array(parts.reduce((n, q) => n + q.length, 0));
+  let at = 0;
+  for (const q of parts) {
+    x.set(q, at);
+    at += q.length;
+  }
+  return x;
+};
+/** Notes struck and let go one after another (`on` seconds each, then `gap`) */
+const run = (notes, on, gap) => notes.flatMap((n) => [[0x90, n, 100], on, [0x80, n, 0], gap]);
 const midiNow = (p, ...list) => p.message({ type: 'events', events: list.map((bytes) => ({ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes } })) });
 const toPreset = (p, index) => {
   for (const m of [{ type: 'switch' }, { type: 'program', index, asked: 1 }, { type: 'switched' }]) p.message(m);
@@ -487,6 +505,88 @@ test('the JX10: its mod wheel, other controllers, pressure and bend go to it aga
   toPreset(p, 1);
   render(p, 0.05);
   assert.deepEqual(sent, [], 'nothing held after all-notes-off and Reset All Controllers');
+});
+
+test('the JX10: a switch never brings back notes that had gone silent (held keys, the pedal, a one-voice sound)', () => {
+  // Each: what is played, the sound gone silent, then a preset chosen. Struck again as fresh notes
+  // of the new sound they came in out of silence (up to 0.48 for a bass line's eight notes)
+  const cases = [
+    // 303 Square Bass plays one voice: its pedal holds nothing, so a note let go under it has ended
+    ['a one-voice note let go under the pedal, to MONO', 16, [[0x90, 57, 100], 0.3, [0xb0, 64, 127], 0.05, [0x80, 57, 0], 2], 18],
+    ['a one-voice note let go under the pedal, to a pad', 16, [[0x90, 57, 100], 0.3, [0xb0, 64, 127], 0.05, [0x80, 57, 0], 2], 1],
+    ['a one-voice note let go under the pedal, to Solid Backing', 16, [[0x90, 57, 100], 0.3, [0xb0, 64, 127], 0.05, [0x80, 57, 0], 2], 3],
+    ['a bass line under the pedal on a one-voice sound', 16, [[0xb0, 64, 127], 0.05, ...run([45, 47, 48, 50, 52, 53, 55, 57], 0.15, 0.05), 1.5], 1],
+    ['a Thumb Piano run under the pedal, died away', 44, [[0xb0, 64, 127], 0.05, ...run([48, 52, 55, 60, 64, 67, 72, 76, 79, 84, 72, 67, 64, 60, 55, 52], 0.08, 0.02), 3], 43],
+    ['a Thumb Piano chord under the pedal, died away', 44, [[0x90, 57, 100], [0x90, 60, 100], [0x90, 64, 100], 0.1, [0xb0, 64, 127], 0.05, [0x80, 57, 0], [0x80, 60, 0], [0x80, 64, 0], 3], 43],
+    ['a Thumb Piano chord still held, died away', 44, [[0x90, 57, 100], [0x90, 60, 100], [0x90, 64, 100], 3.15], 43],
+    ['a Pizzicato chord still held, died away', 28, [[0x90, 57, 100], [0x90, 60, 100], [0x90, 64, 100], 3.15], 44],
+  ];
+  for (const [what, from, steps, to] of cases) {
+    const p = jx10(from);
+    const x = play(p, steps);
+    const was = rms(x.subarray(x.length - 4800));
+    assert.ok(was < 1e-3, `${what}: silent before (${was.toFixed(5)})`);
+    toPreset(p, to);
+    const after = render(p, 1.8);
+    const most = loudest(after, 0, 1.79);
+    assert.ok(most < 1e-3, `${what}, to ${to}: ${most.toFixed(4)} out of silence`);
+    // The keys and the pedal let go after: nothing comes (nor is anything left hanging)
+    midiNow(p, [0x80, 57, 0], [0x80, 60, 0], [0x80, 64, 0], [0xb0, 64, 0]);
+    assert.ok(loudest(render(p, 1), 0, 0.99) < 1e-3, `${what}: nothing at the let go`);
+  }
+  // Silent, the same key struck again plays (the switch forgot the old note, not the key)
+  const q = jx10(44);
+  play(q, [[0x90, 57, 100], [0x90, 60, 100], [0x90, 64, 100], 3.15]);
+  toPreset(q, 43);
+  render(q, 0.3);
+  const again = loudest(play(q, [[0x80, 60, 0], [0x90, 60, 100], 0.3]), 0, 0.29);
+  assert.ok(again > 0.03, `a key struck again after: ${again.toFixed(4)}`);
+});
+
+test('the JX10: the notes a switch strikes again come in no louder than it played, and a new note after is heard in full', () => {
+  // Echo Pad, the pedal down over a run, a preset chosen while it sounds: Solid Backing struck
+  // the run's 16 notes afresh at about 1.7 times its level (+4.8 dB)
+  const arp = [[0xb0, 64, 127], 0.05, ...run([48, 52, 55, 60, 64, 67, 72, 76, 79, 84, 72, 67, 64, 60, 55, 52], 0.08, 0.02), 0.3];
+  for (const [from, to] of [
+    [1, 3],
+    [1, 1],
+    [0, 1],
+  ]) {
+    const p = jx10(from);
+    const x = play(p, arp);
+    const was = rms(x.subarray(x.length - 4800));
+    toPreset(p, to);
+    const after = render(p, 1);
+    // (From 6 ms on: before that the old sound fades out)
+    const first = loudest(after, 0.006, 0.99);
+    assert.ok(was > 0.05, `${from} to ${to}: playing (${was.toFixed(4)})`);
+    assert.ok(first <= 1.122 * was, `${from} to ${to}: loudest 10 ms ${first.toFixed(4)} against ${was.toFixed(4)} before`);
+    assert.ok(loudest(after, 0.02, 0.99) > 0.5 * was, `${from} to ${to}: it plays on`);
+    // The pedal up: they end as the same run on a fresh one does, and the ceiling goes with them
+    const f = jx10(to);
+    play(f, arp);
+    const [ended, own] = [p, f].map((q) => {
+      midiNow(q, [0xb0, 64, 0]);
+      render(q, 3);
+      return rms(render(q, 0.1));
+    });
+    assert.ok(ended <= 1.5 * own + 1e-4, `${from} to ${to}: ended (${ended.toFixed(5)} against ${own.toFixed(5)})`);
+    assert.equal(p.cap, 0, 'no ceiling left once they have ended');
+  }
+  // A chord died down to a murmur (E.Piano, held 3 s), Steel Drums chosen: struck again under
+  // that murmur; a note played after it comes up in full within about 100 ms
+  const p = jx10(43);
+  const x = play(p, [[0x90, 57, 100], [0x90, 60, 100], [0x90, 64, 100], 3]);
+  const was = rms(x.subarray(x.length - 4800));
+  toPreset(p, 45);
+  const under = loudest(render(p, 0.3), 0.006, 0.29);
+  assert.ok(under <= 1.122 * was, `under the murmur: ${under.toFixed(4)} against ${was.toFixed(4)}`);
+  midiNow(p, [0x90, 72, 100]);
+  const struck = render(p, 0.4);
+  const f = jx10(45);
+  midiNow(f, [0x90, 72, 100]);
+  const own = render(f, 0.4);
+  assert.ok(loudest(struck, 0.1, 0.35) >= 0.7 * loudest(own, 0.1, 0.35), `a new note: ${loudest(struck, 0.1, 0.35).toFixed(4)} against ${loudest(own, 0.1, 0.35).toFixed(4)} on a fresh one`);
 });
 
 test('a switch made while the plugin is silent still fades the new sound in (held notes come back without a click)', () => {
