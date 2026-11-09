@@ -6,7 +6,7 @@
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
-import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, fromMeasureBeatLength, isPlainMeter, secondsToBar as mapSecondsToBar, tempoChangeBars, tempoFrom, toMeasureBeat, toMeasureBeatLength } from './tempoMap';
+import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, fromMeasureBeatLength, isPlainMeter, secondsToBar as mapSecondsToBar, tempoAt, tempoChangeBars, tempoFrom, toMeasureBeat, toMeasureBeatLength } from './tempoMap';
 import type { MeterMap, Tempo } from './tempoMap';
 
 export type { Tempo } from './tempoMap';
@@ -84,6 +84,30 @@ export function swingDelay(swing: number, bpm: number, ppq = 192, grid: 8 | 16 =
   if (!(swing > 0)) return 0;
   const unit = grid === 8 ? ppq / 2 : ppq / 4;
   return (((2 * unit) / 3) / ppq) * (60 / bpm) * swing;
+}
+
+/**
+ * How late a note on Transport tick `tick` plays, in seconds: swing's lateness if it swings (a row's
+ * own swing, else its clip's, else the song's `songSwing`) and its row's shift (a share of a 16th),
+ * worked out at the tempo `tempo` (the song's map) has at the tick. So a note plays at the same
+ * moment, and is picked by the same place in the song (songPlace.ts), live and in every export, in a
+ * tempo glide too. (The scheduler read the Transport's tempo as it ran, which in a glide is the
+ * tempo a little after the tick, by however far ahead it was running: live, up to its look-ahead;
+ * in an export, a little differently for each range and rate. A swung note then played up to two
+ * samples apart live and in the file, a hair apart in an export from bar 5 or at another rate, and
+ * had another noise burst and level.)
+ */
+export function noteLateness(
+  note: { swung: boolean; rowSwing?: { swing: number; grid: 8 | 16 }; groove?: { swing: number; grid?: 8 | 16 }; shift?: number },
+  tick: number,
+  songSwing: number,
+  tempo: Tempo,
+  ppq = liveTransport.PPQ
+): number {
+  // (bar from tick as ticksToBar counts, at `ppq`)
+  const bpm = tempoAt(tick / (4 * ppq) + 1, tempo);
+  const swing = !note.swung ? 0 : note.rowSwing ? swingDelay(note.rowSwing.swing, bpm, ppq, note.rowSwing.grid) : note.groove ? swingDelay(note.groove.swing, bpm, ppq, note.groove.grid) : swingDelay(songSwing, bpm, ppq);
+  return swing + (note.shift ? (note.shift * 15) / bpm : 0);
 }
 
 /**
