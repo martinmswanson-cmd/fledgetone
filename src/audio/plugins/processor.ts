@@ -7,10 +7,24 @@
  * Messages in (port): `events` (timed MIDI and parameter changes, as WAM events: applied at their
  * exact frame), `set` (a parameter now, from its panel), `clear` (drop pending events),
  * `describe` (send every parameter's name, value and text), `program` (choose a preset, which
- * sets the parameters), `load` (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
+ * sets the parameters), `noProgram` (no preset any more, the parameters left as they are: an undo
+ * back to Fledge Synth's "(your own sound)"; it says none until a preset is chosen again), `load`
+ * (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
  * `legacy` (an older saved sound with only its first `count` values went in: the plugin sets the
  * rest as it sounded then; answered with `params`), `table` (Fledge Synth's user table: `frames`
  * cycles of 2048 samples, or none; see userTable.ts), `destroy`.
+ * `program` and `noProgram` carry `asked`, the host's count of preset changes, which every `params`
+ * answer gives back: an answer from before the latest change says nothing about the preset.
+ * `switch` and `switched` go round a change of the whole sound (a preset chosen, a patch loaded or
+ * let go, settings put back by an undo, Reset all, a user table): with sound playing, the change's
+ * messages wait, the old sound playing on, until `switched` says they're all there (at most
+ * SWITCH_GATHER_S; at once if one is waited on for an answer: a patch loading); then the output
+ * fades out over SWITCH_OUT_S on the old sound, the change is made with it silent (Fledge Synth's
+ * bb_settle then puts its eased level straight at the new one), and it fades back in over
+ * SWITCH_IN_S (once `switched` has come, or SWITCH_HOLD_S has gone by). So no switch clicks, and
+ * no plugin's leftover state (an envelope, a compressor, an eased level) is heard as a burst; held
+ * notes play on (Surge XT's stop as its patch changes, faded). Timed events, `sync`, `clear` and
+ * `dropBends` never wait. Silent, a switch is made at once.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made, `fault` (once) if it
  * blew up (see guard below).
@@ -41,6 +55,18 @@ export const BLOWN_UP = 1000;
  */
 export const OUTPUT_CEILING = 4;
 
+/**
+ * Switching the whole sound with notes playing (see `switch` above), in seconds: the most it waits
+ * for the change's messages, playing on; the fade out on the old sound; the most it stays silent
+ * waiting for the change to be made (a patch file loading); the fade in on the new one.
+ * Raised-cosine fades: no click, and the old and new sounds never overlap, so nothing adds up
+ * louder than either.
+ */
+export const SWITCH_GATHER_S = 0.05;
+export const SWITCH_OUT_S = 0.005;
+export const SWITCH_HOLD_S = 0.1;
+export const SWITCH_IN_S = 0.01;
+
 export const BUILTIN_PROCESSOR = 'bb-builtin-plugin';
 
 export const BUILTIN_PROCESSOR_SOURCE = `
@@ -49,6 +75,17 @@ const BLOCK = 128;
 const BLOWN = ${BLOWN_UP};
 /** Held under this (+12 dBFS) */
 const CEILING = ${OUTPUT_CEILING};
+/** A switch of the whole sound: the most it gathers its messages, the fade out, the most it waits silent for its end, the fade back in (seconds) */
+const SWITCH_GATHER = ${SWITCH_GATHER_S};
+const SWITCH_OUT = ${SWITCH_OUT_S};
+const SWITCH_HOLD = ${SWITCH_HOLD_S};
+const SWITCH_IN = ${SWITCH_IN_S};
+/** Quieter than this (-100 dBFS) in its last render, a plugin is silent: a switch needs no fade */
+const SILENT = 1e-5;
+/** The messages a switch never holds back (timed events go in at their own time; sync answers at once) */
+const NOT_HELD = new Set(['events', 'clear', 'dropBends', 'sync', 'destroy', 'switch']);
+/** Messages the host waits on for an answer: one among a switch's starts its fade out at once */
+const ANSWERED = new Set(['load', 'fresh', 'legacy', 'describe']);
 const families = new Map();
 const insertTimedEvent = ${insertTimedEvent.toString()};
 const isBendAfter = ${isBendAfter.toString()};
@@ -150,6 +187,18 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // The guard: when it last started the plugin again, and whether it has said so
     this.resetAt = -Infinity;
     this.reported = false;
+    // No preset, whatever the plugin last had (see noProgram), and the host's latest preset change it has heard
+    this.noProgram = false;
+    this.asked = 0;
+    // A switch of the whole sound (see 'switch'): its messages waiting while it gathers them and
+    // fades out (null: none waiting), where its fade is, and the loudest sample of the last render
+    // (before the fade)
+    this.held = null;
+    this.dip = 1;
+    this.dipFrom = 1;
+    this.dipAt = 0;
+    this.dipState = 'none';
+    this.peak = 0;
     try {
       this.fam = this.ownMemory ? null : familyOf(o.family, o.module);
       this.e = (this.fam || instantiate(o.family, o.module)).e;
@@ -315,7 +364,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
   }
 
   program() {
-    return this.programs ? this.e.bb_get_program(this.h) : -1;
+    return this.programs && !this.noProgram ? this.e.bb_get_program(this.h) : -1;
   }
 
   describe() {
@@ -329,7 +378,19 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (d.type === 'sync') this.port.postMessage({ type: 'synced', id: d.id });
       return;
     }
-    if (d.type === 'events') {
+    // While a switch gathers its messages and fades out, they (and any after them) wait
+    if (this.held && !NOT_HELD.has(d.type)) {
+      this.held.push(d);
+      // All there (or one waits for its answer): the old sound fades out now
+      if (this.dipState === 'gather' && (d.type === 'switched' || ANSWERED.has(d.type))) this.fadeOut();
+      return;
+    }
+    if (d.type === 'switch') {
+      this.startSwitch();
+    } else if (d.type === 'switched') {
+      // Made: back in (from silent, or straight on if it was still fading out: see process)
+      if (this.dipState === 'silent') this.fadeIn();
+    } else if (d.type === 'events') {
       // Kept in time order (they nearly always arrive in order)
       for (const ev of d.events) insertTimedEvent(this.events, ev, this.join);
     } else if (d.type === 'set') {
@@ -340,11 +401,18 @@ class BuiltinPlugin extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'display', index: d.index, value: this.e.bb_get(this.h, d.index), text: readString(this.e, this.e.bb_param_display(this.h, d.index)) });
       }
     } else if (d.type === 'program') {
+      if (Number.isInteger(d.asked)) this.asked = d.asked;
       if (d.index >= 0 && d.index < this.programs) {
+        this.noProgram = false;
         this.e.bb_set_program(this.h, d.index);
         this.enforceLimits();
-        this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
+        this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program(), asked: this.asked });
       }
+    } else if (d.type === 'noProgram') {
+      // (Only the preset's name goes: the parameters, and a note playing, are untouched; the host
+      // sets the parameters next. Kept here, so no later answer, nor a start after a blow-up, puts it back)
+      if (Number.isInteger(d.asked)) this.asked = d.asked;
+      if (this.programs) this.noProgram = true;
     } else if (d.type === 'load') {
       this.loadData(d.data);
       this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
@@ -365,15 +433,16 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // (As at the start: an older saved sound with only its first "count" values just went in)
       if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);
       this.enforceLimits();
-      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
+      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program(), asked: this.asked });
     } else if (d.type === 'table') {
       this.loadTable(d.data, d.frames);
     } else if (d.type === 'describe') {
       // (Automation already due first: a sleeping track's queue still says what it plays now)
       this.dueAutomation();
-      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
+      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program(), asked: this.asked });
     } else if (d.type === 'destroy') {
       this.alive = false;
+      this.held = null;
       this.events.length = 0;
       try {
         this.e.bb_destroy(this.h);
@@ -381,6 +450,77 @@ class BuiltinPlugin extends AudioWorkletProcessor {
         // (Its memory may be what went wrong: it's let go below anyway)
       }
       this.release();
+    }
+  }
+
+  /**
+   * A switch of the whole sound begins: with sound playing, the messages that make it wait (the
+   * old sound playing on, at the level a fade in had got to) until they're all there, then it fades
+   * out and they go in (see 'switch'); silent, they go in at once. Asked again before it's made,
+   * it's the same switch.
+   */
+  startSwitch() {
+    if (this.dipState === 'gather' || this.dipState === 'out' || this.dipState === 'silent') return;
+    if (!(this.peak > SILENT)) return;
+    this.held = [];
+    this.dipState = 'gather';
+    this.dipFrom = this.dip;
+    this.dipAt = 0;
+  }
+
+  fadeOut() {
+    this.dipState = 'out';
+    this.dipAt = 0;
+  }
+
+  /** Silent now: the waiting messages go in, the plugin settles at its new settings, and it waits for 'switched'. */
+  makeSwitch() {
+    const waiting = this.held || [];
+    this.held = null;
+    this.dipState = 'silent';
+    this.dipAt = 0;
+    for (const d of waiting) {
+      this.message(d);
+      if (!this.alive) return;
+    }
+    if (this.e.bb_settle) this.e.bb_settle(this.h);
+  }
+
+  fadeIn() {
+    if (this.e.bb_settle) this.e.bb_settle(this.h);
+    this.dipState = 'in';
+    this.dipAt = 0;
+  }
+
+  /** The switch's fade on frames from..to of what it played (see 'switch') */
+  applyDip(out, from, to) {
+    for (let i = from; i < to; i++) {
+      let g = 1;
+      if (this.dipState === 'gather') {
+        g = this.dipFrom;
+        this.dipAt++;
+      } else if (this.dipState === 'out') {
+        const u = Math.min(1, this.dipAt / (SWITCH_OUT * sampleRate));
+        const c = Math.cos(0.5 * Math.PI * u);
+        g = this.dipFrom * c * c;
+        this.dipAt++;
+      } else if (this.dipState === 'silent') {
+        g = 0;
+        this.dipAt++;
+      } else if (this.dipState === 'in') {
+        const u = this.dipAt / (SWITCH_IN * sampleRate);
+        if (u >= 1) {
+          this.dipState = 'none';
+        } else {
+          const c = Math.sin(0.5 * Math.PI * u);
+          g = c * c;
+          this.dipAt++;
+        }
+      }
+      this.dip = g;
+      if (g === 1) continue;
+      if (out[0]) out[0][i] *= g;
+      if (out[1]) out[1][i] *= g;
     }
   }
 
@@ -431,6 +571,14 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     const out = outputs[0];
     const input = inputs[0] || [];
     const frames = out[0] ? out[0].length : BLOCK;
+    // A switch: faded out now, it's made (before this render's events); silent too long waiting
+    // for its end (a lost 'switched'), back in
+    if (this.dipState === 'gather' && this.dipAt >= SWITCH_GATHER * sampleRate) this.fadeOut();
+    if (this.dipState === 'out' && this.dipAt >= SWITCH_OUT * sampleRate) {
+      this.makeSwitch();
+      if (!this.alive) return false;
+    }
+    if (this.dipState === 'silent' && this.dipAt >= SWITCH_HOLD * sampleRate) this.fadeIn();
     const start = currentFrame;
     let pos = 0;
     while (pos < frames) {
@@ -518,6 +666,14 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       }
       pos = end;
     }
+    // (How loud it played, before any switch's fade: whether a switch now needs one)
+    let peak = 0;
+    for (let c = 0; c < 2; c++) {
+      const o = out[c];
+      if (o) for (let i = 0; i < frames; i++) { const a = Math.abs(o[i]); if (a > peak) peak = a; }
+    }
+    this.peak = peak;
+    if (this.dipState !== 'none') this.applyDip(out, 0, frames);
     if (this.follow) this.followInput(input, out, frames);
     return true;
   }

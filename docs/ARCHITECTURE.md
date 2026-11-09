@@ -83,7 +83,13 @@ gives the saveable part as a `ProjectSnapshot`; `project.ts` turns it into the f
 Sound files are not in the store. They live in the **sound library** (`soundLibrary.ts`): stored
 in IndexedDB under a hash of their bytes, decoded once per sample rate, with waveform peaks
 measured in idle time. Clips and instruments refer to them by id. A saved project file embeds
-the sounds it uses; the browser autosave doesn't (they're already in IndexedDB).
+the sounds it uses; the browser autosave doesn't (they're already in IndexedDB). A file's sounds
+are checked against their ids (`soundIds.ts`, by the id's own form) before anything keeps or
+plays them: one under another id is kept under its own, and the song is pointed there
+(`withSoundsMoved`). A stored copy is used only once its bytes have been checked against its id,
+and its name and length show only then. A page with no crypto (not served over https) still makes
+FNV ids, so the files it already keeps are found again, and checks SHA-256 ids with the SHA-256 in
+`soundIds.ts`.
 
 ## What happens when...
 

@@ -1138,6 +1138,8 @@ pub struct Synth {
     lfo_rate_mod: [f32; 4],
     ott: Ott,
     ott_on: bool,
+    /// The OTT has followed the sound while off (see Ott::track): turned on, it goes on from there
+    ott_warm: bool,
     fx: Effects,
     side_hp: [Svf; 2],
     dc: [DcBlock; 2],
@@ -1199,6 +1201,7 @@ impl Synth {
             lfo_rate_mod: [0.0; 4],
             ott: Ott::new(sr),
             ott_on: false,
+            ott_warm: false,
             fx: Effects::new(sr),
             side_hp: [Svf::default(); 2],
             dc: [DcBlock::default(); 2],
@@ -1249,6 +1252,15 @@ impl Synth {
         self.song_beats = beats;
         self.song_secs = beats * 60.0 / self.tempo as f64;
         self.anchored = true;
+    }
+
+    /// The host has just switched the whole sound (a preset chosen, settings put back by an undo)
+    /// while it held its output faded out: the output level goes straight to the new sound's, not
+    /// over the 10 ms ease that keeps a turned knob smooth. Eased, the new sound played at the old
+    /// one's level for a moment: a short loud burst where a quiet preset (its level set high) gave
+    /// way to a loud one (Neuro back to your own sound: about 8 dB in the first 10 ms).
+    pub fn settle(&mut self) {
+        self.gain = db_gain(self.v(p::LEVEL));
     }
 
     /// An older saved sound with only its first `count` values has just been loaded: the
@@ -1775,11 +1787,22 @@ impl Synth {
             // Each oscillator starts at its phase, plus as much randomness as asked; unison
             // voices each start at a random point of their cycle (seeded, so renders repeat)
             let mut r = Rng::new((seed * 4_000_000_000.0) as u32 ^ 0x5bd1_e995);
+            // (A note of one voice: the unison voices it doesn't play yet get random points of
+            // their own, from a draw of their own, so the voice it plays and every later draw stay
+            // as they were. Left at the same point, the voices a preset or a lane adds mid-note
+            // started in step and summed to a burst until their detune pulled them apart)
+            let mut spare = Rng::new((seed * 4_000_000_000.0) as u32 ^ 0x2c1b_3c6d);
             for o in 0..2 {
                 let oc = &cfg.osc[o];
                 let start = oc.phase + oc.rand * r.next();
                 for u in 0..UNISON {
-                    let spread = if oc.unison > 1 { r.next() } else { 0.0 };
+                    let spread = if oc.unison > 1 {
+                        r.next()
+                    } else if u > 0 {
+                        spare.next()
+                    } else {
+                        0.0
+                    };
                     v.phase[o][u] = (start + spread).fract();
                 }
             }
@@ -2373,7 +2396,7 @@ impl Synth {
         }
 
         // ---- the output stage ----
-        if cfg.ott > 0.0 && !self.ott_on {
+        if cfg.ott > 0.0 && !self.ott_on && !self.ott_warm {
             self.ott.reset();
         }
         // The voices' DC out first (a lopsided drive or warp leaves an offset that thumps)
@@ -2417,13 +2440,20 @@ impl Synth {
             self.band_in = self.out.iter().flat_map(|o| o[..frames].iter()).fold(0.0f32, |a, &x| a.max(x.abs()));
         }
         self.ott_on = cfg.ott > 0.0;
+        let att = 1.0 - (-1.0 / ((0.002 + 0.03 * cfg.ott_time) * sr)).exp();
+        let rel = 1.0 - (-1.0 / ((0.03 + 0.4 * cfg.ott_time) * sr)).exp();
         if cfg.ott > 0.0 {
-            let att = 1.0 - (-1.0 / ((0.002 + 0.03 * cfg.ott_time) * sr)).exp();
-            let rel = 1.0 - (-1.0 / ((0.03 + 0.4 * cfg.ott_time) * sr)).exp();
             for n in 0..frames {
                 let (l, r) = self.ott.tick(self.out[0][n], self.out[1][n], cfg.ott, att, rel);
                 self.out[0][n] = l;
                 self.out[1][n] = r;
+            }
+        } else if self.ott_warm || self.out.iter().any(|o| o[..frames].iter().any(|&x| x != 0.0)) {
+            // Off, it follows the sound (see Ott::track); from the first sound on, so a synth
+            // that starts with it on, or turns it on before any sound, starts as it always has
+            self.ott_warm = true;
+            for n in 0..frames {
+                self.ott.track(self.out[0][n], self.out[1][n], att, rel);
             }
         }
         let mut mods = [FxMods::default(); NBLK];
@@ -3677,3 +3707,7 @@ mod range_tests;
 #[cfg(test)]
 #[path = "synth_drive_tests.rs"]
 mod drive_tests;
+
+#[cfg(test)]
+#[path = "synth_switch_tests.rs"]
+mod switch_tests;

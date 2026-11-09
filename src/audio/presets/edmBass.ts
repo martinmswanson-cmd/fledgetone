@@ -10,8 +10,8 @@ import {
   atAudioTime,
   attackDecay,
   createBus,
-  createDrive,
   createFilter,
+  createHeldDrive,
   createOsc,
   createVoiceSet,
   leveledWave,
@@ -367,6 +367,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       amp.gain.setTargetAtTime(0, end, releaseTc);
       source.main.connect(first.tone.input);
       first.gate.connect(amp);
+      // (Its shapers are as late at every rate as at 44.1 kHz, createHeldDrive: the clean sub meets them as there)
       source.direct?.connect(amp);
       amp.connect(input);
       const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
@@ -450,13 +451,13 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
       // not heard), a square an octave down from about A1 up
       const low = freq < 60;
       const sub = createOsc(raw, leveledWave(raw, low ? 'sine' : 'square', low ? 0.3 : 0.22), low ? freq : freq / 2, start);
-      const drive = createDrive(raw, 1.4);
-      [saw1, saw2].forEach((o) => o.connect(drive));
+      const drive = createHeldDrive(raw, 1.4, 1, 1, '4x', 'none');
+      [saw1, saw2].forEach((o) => o.connect(drive.input));
       return {
-        main: drive,
+        main: drive.output,
         direct: sub,
         sources: [saw1, saw2, sub],
-        nodes: [saw1, saw2, sub, drive],
+        nodes: [saw1, saw2, sub, ...drive.nodes],
         ...glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, low ? 1 : 0.5]]),
       };
     },
@@ -465,16 +466,16 @@ export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
       // and down squelched instead of wubbing)
       const lp1 = createFilter(raw, 'lowpass', 200, 2.5);
       const lp2 = createFilter(raw, 'lowpass', 200, 0.7);
-      const grit = createDrive(raw, 1.25);
+      const grit = createHeldDrive(raw, 1.25, 1, 1, '4x', 'none');
       lp1.connect(lp2);
-      lp2.connect(grit);
+      lp2.connect(grit.input);
       // Closed an octave above the fundamental, opening 4.5 to 5.5 octaves with velocity; the
       // wobble sits closed a little longer than open ("wub", not "wow")
       const closed = Math.max(90, note.freq * 2);
       const octaves = 4.5 + note.velocity;
       // (Both stages share one curve: the browser copies it)
       sweep([lp1.frequency, lp2.frequency], (t) => Math.min(16000, closed * 2 ** (octaves * wob(t, note.cycle) ** 1.4)));
-      return { input: lp1, output: grit, nodes: [lp1, lp2, grit] };
+      return { input: lp1, output: grit.output, nodes: [lp1, lp2, ...grit.nodes] };
     },
   }, glide);
 }
@@ -565,14 +566,14 @@ export function createGrowlBass(output: Tone.InputNode, glide?: GlideRef) {
     retone: true,
     source: (raw, { freq, start }) => {
       const fm = createOsc(raw, growlWave(raw), freq, start);
-      const drive = createDrive(raw, 3.5);
+      const drive = createHeldDrive(raw, 3.5, 1, 1, '4x', 'none');
       const sub = createOsc(raw, leveledWave(raw, 'sine', 0.45), freq, start);
-      fm.connect(drive);
+      fm.connect(drive.input);
       return {
-        main: drive,
+        main: drive.output,
         direct: sub,
         sources: [fm, sub],
-        nodes: [fm, drive, sub],
+        nodes: [fm, ...drive.nodes, sub],
         ...glider([[fm.frequency, 1], [sub.frequency, 1]]),
       };
     },
@@ -609,13 +610,13 @@ export function createReeseBass(output: Tone.InputNode, glide?: GlideRef) {
       const saw = leveledWave(raw, 'sawtooth', 0.3);
       const saws = [-17, 3, 15].map((cents) => createOsc(raw, saw, freq, start, cents));
       const sine = createOsc(raw, leveledWave(raw, 'sine', 0.3), freq, start);
-      const drive = createDrive(raw, 1.3);
+      const drive = createHeldDrive(raw, 1.3, 1, 1, '4x', 'none');
       const oscs = [...saws, sine];
-      oscs.forEach((o) => o.connect(drive));
+      oscs.forEach((o) => o.connect(drive.input));
       return {
-        main: drive,
+        main: drive.output,
         sources: oscs,
-        nodes: [...oscs, drive],
+        nodes: [...oscs, ...drive.nodes],
         ...glider(oscs.map((o) => [o.frequency, 1])),
       };
     },

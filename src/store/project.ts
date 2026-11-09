@@ -666,7 +666,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     ...(isObj(raw.video) && isStr(raw.video.key) && isStr(raw.video.name)
       ? {
           video: {
-            key: raw.video.key,
+            // (where this browser keeps it, never where it keeps a sound: its keys all start so, see videoStore keyOf)
+            key: raw.video.key.startsWith('video:') ? raw.video.key : `video:${raw.video.key}`,
             name: raw.video.name,
             type: isStr(raw.video.type) ? raw.video.type : 'video/mp4',
             // (as the video's own setter has it: up to ten hours either way)

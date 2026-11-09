@@ -71,7 +71,9 @@ export function mixFindings(m: MixReading, stats?: MasterStats): string[] {
   if (m.truePeakDbtp > -1) findings.push(`The true peak reaches ${m.truePeakDbtp.toFixed(1)} dBTP: over -1, it may distort when it's turned into an MP3.`);
   if (stats && stats.limiterPeakDb > 3) findings.push(`The master limiter takes up to ${stats.limiterPeakDb.toFixed(1)} dB off the peaks.`);
   if (stats?.clipper && stats.clipper.peakDb > 3) findings.push(`The master clipper takes up to ${stats.clipper.peakDb.toFixed(1)} dB off the peaks.`);
-  if (!Number.isFinite(m.lufs)) findings.push('It is silent.');
+  if (!Number.isFinite(m.truePeakDbtp)) findings.push('It is silent.');
+  // (sounding, but every 400 ms of it under the loudness gate: no loudness to read, or to match a target from)
+  else if (!Number.isFinite(m.lufs)) findings.push(`It is too quiet to measure: under -70 LUFS, with its peaks at ${m.truePeakDbtp.toFixed(1)} dBTP.`);
   return findings;
 }
 
@@ -92,11 +94,11 @@ export function listenMix(m: MixReading, stats?: MasterStats): ListenMix {
 
 /**
  * The findings of a report: the listen's own, then the Mix check's (`checks`), leaving out a check
- * of the limiter or clipper the listen's own already speak of.
+ * of the limiter or clipper, or of a level too quiet to measure, the listen's own already speak of.
  */
 export function allFindings(own: string[], checks: ReadonlyArray<Pick<Finding, 'id' | 'title' | 'detail'>>): string[] {
   const said = (word: string) => own.some((f) => f.includes(word));
-  const more = checks.filter((c) => !(c.id === 'limiter' && said('limiter')) && !(c.id === 'clipper' && said('clipper'))).map((c) => `${c.title}: ${c.detail}`);
+  const more = checks.filter((c) => !(c.id === 'limiter' && said('limiter')) && !(c.id === 'clipper' && said('clipper')) && !(c.id === 'quiet' && said('too quiet to measure'))).map((c) => `${c.title}: ${c.detail}`);
   return [...own, ...more];
 }
 

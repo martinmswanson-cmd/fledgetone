@@ -20,7 +20,7 @@ import type { ProjectSnapshot } from '../store/project';
 import { barToSeconds, secondsToBar, measureAt } from '../audio/tempoMap';
 import { musicEnd } from '../audio/auditionMath';
 import { applyOps, OPS_VERSION, type ApplyResult, type Op, type OpError } from './ops';
-import { classifySuggestion, NO_CHANGE, touchedHashes, touchedNames } from './suggestion';
+import { classifySuggestion, NO_CHANGE, touchedHashes, touchedNames, touchedRows } from './suggestion';
 import { DEFAULT_PERMISSIONS, fromAgent, LIMITS, type Permissions } from './protocol';
 import { partsChanged, VIEW_ONLY, type Parts } from './revision';
 import { stableJson } from './fingerprint';
@@ -95,6 +95,8 @@ export interface Suggestion {
   stale: boolean;
   touchedHashes: Record<string, string>;
   touchedNames: Record<string, string>;
+  /** The touched tracks' rows as it was made, to say which of two named alike went (suggestion.ts touchedRows). */
+  touchedRows?: Record<string, number>;
   status: SuggestionStatus;
   /** The song as it would be, and what changes, in plain words (each name in plain quotes: names.ts). */
   song: ProjectSnapshot;
@@ -592,6 +594,7 @@ export function makeSuggestion(
       stale: false,
       touchedHashes: touchedHashes(base, ops),
       touchedNames: touchedNames(base, ops),
+      touchedRows: touchedRows(base, ops),
       status: 'waiting',
       ...fromResult(out, focus, base),
       measured: null,
@@ -615,7 +618,7 @@ export function checkSuggestion(s: Suggestion, now: ProjectSnapshot, ctx: SongCo
   if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
   // (the song as it was made again, say after an unrelated edit was undone: as it was, not stale)
   if (sameSong(s, ctx)) return s.stale ? { ...s, status: s.version > 1 ? 'changed' : 'waiting', stale: false, armed: null } : s;
-  const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
+  const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames, touchedRows: s.touchedRows }, { revision: 1, song: now });
   if (fit.status === 'out_of_date') return { ...s, status: 'out_of_date', outOfDate: fit.changed, outOfDateAt: ctx.parts, armed: null };
   return s.status === 'changed' && s.stale && !s.armed ? s : { ...s, status: 'changed', stale: true, armed: null };
 }
@@ -624,7 +627,7 @@ export function checkSuggestion(s: Suggestion, now: ProjectSnapshot, ctx: SongCo
 function recheck(s: Suggestion, now: ProjectSnapshot, ctx: SongContext): Suggestion {
   if (s.epoch !== ctx.epoch) return { ...s, status: 'other_song' };
   if (s.outOfDateAt && !partsChanged(s.outOfDateAt, ctx.parts)) return s;
-  const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames }, { revision: 1, song: now });
+  const fit = classifySuggestion({ revision: 0, touchedHashes: s.touchedHashes, touchedNames: s.touchedNames, touchedRows: s.touchedRows }, { revision: 1, song: now });
   if (fit.status === 'out_of_date') return { ...s, outOfDate: fit.changed, outOfDateAt: ctx.parts };
   const { outOfDate: _o, outOfDateAt: _a, ...rest } = s;
   return sameSong(s, ctx) ? { ...rest, status: s.version > 1 ? 'changed' : 'waiting', stale: false, armed: null } : { ...rest, status: 'changed', stale: true, armed: null };

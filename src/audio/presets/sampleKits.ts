@@ -9,6 +9,7 @@ import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../in
 import type { TrackPlan } from '../samplers/songSamples';
 import { createBendTimeline } from '../bendTimeline';
 import { fadeOutFrom } from '../effects/smoothParam';
+import { fixedLate, heldShaper } from '../shaperLag';
 
 /**
  * The Drum Rack and the Multi Sampler: the user's own sounds played from buffers, each hit or note
@@ -64,6 +65,8 @@ interface Hit {
 interface PadChain {
   input: GainNode;
   shaper: WaveShaperNode;
+  /** After the shaper: what holds its sound as late as at 44.1 kHz (see shaperLag.ts; none there) */
+  late: DelayNode | null;
   highpass: BiquadFilterNode;
   lowpass: BiquadFilterNode;
   pan: StereoPannerNode;
@@ -82,8 +85,9 @@ function routeChain(chain: PadChain, pad: RackPad): void {
   const st = stagesOf(pad);
   const key = routeKey(st);
   if (chain.route === key) return;
-  for (const node of [chain.input, chain.shaper, chain.highpass, chain.lowpass]) node.disconnect();
-  const stages: AudioNode[] = [chain.input, ...(st.drive ? [chain.shaper] : []), ...(st.highpass ? [chain.highpass] : []), ...(st.lowpass ? [chain.lowpass] : []), chain.pan];
+  for (const node of [chain.input, chain.shaper, chain.late, chain.highpass, chain.lowpass]) node?.disconnect();
+  const drive = chain.late ? [chain.shaper, chain.late] : [chain.shaper];
+  const stages: AudioNode[] = [chain.input, ...(st.drive ? drive : []), ...(st.highpass ? [chain.highpass] : []), ...(st.lowpass ? [chain.lowpass] : []), chain.pan];
   for (let k = 0; k + 1 < stages.length; k++) stages[k].connect(stages[k + 1]);
   chain.route = key;
 }
@@ -134,8 +138,11 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     if (chain) return chain;
     const input = raw.createGain();
     const shaper = raw.createWaveShaper();
-    // (oversampled, so the drive's clipping doesn't fold back as fizz)
-    shaper.oversample = '4x';
+    // (oversampled, so the drive's clipping doesn't fold back as fizz; as late at every rate as at
+    // 44.1 kHz, so a driven pad keeps its place against the other pads and tracks)
+    const held = heldShaper('4x', raw.sampleRate);
+    shaper.oversample = held.oversample;
+    const late = held.seconds > 0 ? fixedLate(raw, held.seconds) : null;
     const highpass = raw.createBiquadFilter();
     highpass.type = 'highpass';
     highpass.Q.value = 0.7;
@@ -152,7 +159,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     lowpass.frequency.value = pad.lowpass;
     highpass.frequency.value = pad.highpass;
     if (pad.drive > 0.001) shaper.curve = driveCurve(pad.drive);
-    chain = { input, shaper, highpass, lowpass, pan, level, drive: pad.drive, route: '' };
+    chain = { input, shaper, late, highpass, lowpass, pan, level, drive: pad.drive, route: '' };
     // The drive's shaper is in the chain only while it drives (a shaper with no curve was silent live)
     routeChain(chain, pad);
     chains.set(i, chain);
@@ -315,7 +322,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
       }
       hits.clear();
       copies.dispose();
-      for (const c of chains.values()) [c.input, c.shaper, c.highpass, c.lowpass, c.pan, c.level].forEach((n) => n.disconnect());
+      for (const c of chains.values()) [c.input, c.shaper, c.late, c.highpass, c.lowpass, c.pan, c.level].forEach((n) => n?.disconnect());
       chains.clear();
       letGo();
       out.dispose();

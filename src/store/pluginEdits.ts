@@ -66,7 +66,12 @@ export function editPluginParams(controls: BuiltinControls, values: ReadonlyArra
     // (The next turn of a knob is a step of its own)
     last = null;
   }
-  for (const [index, value] of values) controls.set(index, value);
+  // (Several at once change the whole sound: faded out and in with notes playing, see BuiltinControls.switching)
+  const setAll = () => {
+    for (const [index, value] of values) controls.set(index, value);
+  };
+  if (values.length > 1 && controls.switching) void controls.switching(setAll);
+  else setAll();
   if (pluginId) readSoon(pluginId);
 }
 
@@ -92,11 +97,16 @@ export async function editPluginTable(controls: BuiltinControls, table: UserTabl
     begin(pluginId, 'table');
     last = null;
   }
-  const ok = await controls.setUserTable(table);
-  if (ok && oscillator) {
-    const i = controls.params().findIndex((p) => p.name === `${oscillator} table`);
-    if (i >= 0) controls.set(i, USER_TABLE_INDEX / (TABLE_CAP - 1));
-  }
+  // (The table and the oscillator taking it are one change of the sound: see BuiltinControls.switching)
+  const give = async () => {
+    const ok = await controls.setUserTable(table);
+    if (ok && oscillator) {
+      const i = controls.params().findIndex((p) => p.name === `${oscillator} table`);
+      if (i >= 0) controls.set(i, USER_TABLE_INDEX / (TABLE_CAP - 1));
+    }
+    return ok;
+  };
+  const ok = controls.switching ? await controls.switching(give) : await give();
   if (pluginId) readSoon(pluginId);
   return ok;
 }

@@ -112,29 +112,44 @@ export const EFFECT_TAIL_SECONDS = 1.5;
 
 /**
  * `v` to `places` decimals, a half away from zero as the mixer's numbers are (toFixed): -14.25 is
- * -14.3, never -14.2.
+ * -14.3, never -14.2. Every dB figure on a card is rounded this way (the cautions too: safety.ts).
  */
-const rd = (v: number, places: number) => Number(v.toFixed(places)) || 0;
+export const rd = (v: number, places: number) => Number(v.toFixed(places)) || 0;
 const r1 = (v: number) => rd(v, 1);
 const db = (v: number, places = 1) => `${rd(v, places) > 0 ? '+' : ''}${rd(v, places)} dB`;
 /**
  * The decimals a change from `a` to `b` is worded with: one, or two (then three) where one would
  * read the same before and after (a real change never reads as none); null when even three would,
- * and the sentence says "very slightly" with no numbers to compare.
+ * and the sentence says "very slightly" with no numbers to compare. `places` to try other decimals.
  */
-function placesFor<T>(words: (v: T, places: number) => string, a: T, b: T): number | null {
-  for (const p of [1, 2, 3]) if (words(a, p) !== words(b, p)) return p;
+function placesFor<T>(words: (v: T, places: number) => string, a: T, b: T, places: readonly number[] = [1, 2, 3]): number | null {
+  for (const p of places) if (words(a, p) !== words(b, p)) return p;
   return null;
 }
 /**
+ * How far a level goes from `a` to `b` dB, as a card words it (levelSentence): the difference of the
+ * two ends, each to the decimals that tell them apart, so a caution's figure is the change line's
+ * ("up by 6 dB (-11.5 dB to -5.5 dB)", never "up by 6.1 dB" for the same move). 0 when they read the same.
+ */
+export function riseDb(a: number, b: number): number {
+  const p = placesFor(db, a, b);
+  return p === null ? 0 : rd(Math.abs(rd(b, p) - rd(a, p)), p);
+}
+/**
  * "Turns "Keys" up by 0.04 dB (-11.5 dB to -11.46 dB)", "Turns the master Level down very slightly
- * (about +3.5 dB)". The change is the difference of the two levels as worded, so the figures add up
+ * (about +3.5 dB)". The change is the difference of the two levels as worded (riseDb), so the figures add up
  * (never "down by 2.8 dB (-11.5 dB to -14.2 dB)").
  */
 function levelSentence(what: string, a: number, b: number): string {
   const way = b > a ? 'up' : 'down';
   const p = placesFor(db, a, b);
-  return p === null ? `Turns ${what} ${way} very slightly (about ${db(b)}).` : `Turns ${what} ${way} by ${rd(Math.abs(rd(b, p) - rd(a, p)), p)} dB (${db(a, p)} to ${db(b, p)}).`;
+  return p === null ? `Turns ${what} ${way} very slightly (about ${db(b)}).` : `Turns ${what} ${way} by ${riseDb(a, b)} dB (${db(a, p)} to ${db(b, p)}).`;
+}
+/** Two numbers to the fewest decimals (1 to 3) that tell them apart ("-1.54", "-1.48"); null when even 3 would read the same. */
+export function apartWords(a: number, b: number): [string, string] | null {
+  const num = (v: number, places: number) => String(rd(v, places));
+  const p = placesFor(num, a, b);
+  return p === null ? null : [num(a, p), num(b, p)];
 }
 /** "from 30% to 30.04%" (in `unit` after each), or " very slightly (about 30%)" where they'd read the same. */
 function fromTo(a: number, b: number, unit = ''): string {
@@ -175,11 +190,46 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const same = (a: unknown, b: unknown) => a === b || stableJson(a) === stableJson(b);
 const noteEnd = (n: NoteEvent) => n.startOffset + durationToBars(n.duration);
 
+/**
+ * A tempo change changed in place, by what differs, each with the decimals that tell it from before
+ * (a real change never reads as none): "Changes the tempo change at bar 5: 120 BPM to 120.04 BPM,
+ * moved to bar 6, now ramping into it." A move or a tempo too small for 3 decimals is "very slightly".
+ */
+function tempoPointSentence(a: TempoPoint, b: TempoPoint): string {
+  const parts: string[] = [];
+  const num = (v: number, places: number) => String(rd(v, places));
+  const pb = placesFor(barAt, a.bar, b.bar);
+  if (a.bpm !== b.bpm) {
+    const p = placesFor(num, a.bpm, b.bpm);
+    parts.push(p === null ? `very slightly ${b.bpm > a.bpm ? 'faster' : 'slower'} (about ${r1(b.bpm)} BPM)` : `${num(a.bpm, p)} BPM to ${num(b.bpm, p)} BPM`);
+  }
+  if (a.bar !== b.bar) parts.push(pb === null ? `moved very slightly ${b.bar > a.bar ? 'later' : 'earlier'} (about ${barAt(b.bar)})` : `moved to ${barAt(b.bar, pb)}`);
+  if (!!a.ramp !== !!b.ramp) parts.push(b.ramp ? 'now ramping into it' : 'no longer ramping into it');
+  return `Changes the tempo change at ${barAt(a.bar, pb ?? 1)}${parts.length ? `: ${parts.join(', ')}` : ''}.`;
+}
+
 /** Items by id, the first of each (as a list's find would give): one look-up each, however long the song. */
 function byId<T extends { id: string }>(items: readonly T[]): Map<string, T> {
   const out = new Map<string, T>();
   for (const x of items) if (!out.has(x.id)) out.set(x.id, x);
   return out;
+}
+
+/**
+ * A track as a card names it, in what changes and in the cautions and notes alike (safety.ts,
+ * ops.ts): its name, and, when another track has the same name in `before` or `after`, its row
+ * number too, so two tracks named "Keys" read apart ("Keys" (track 3)). Its row is the one it has
+ * in `after` (in `before` when it's gone). `also` is what a sentence puts in brackets after it, in
+ * the same brackets ("Keys" (track 3, bars 5-6)).
+ */
+export function trackLabeler(before: Pick<ProjectSnapshot, 'tracks'>, after: Pick<ProjectSnapshot, 'tracks'>): (t: Pick<Track, 'id' | 'name'>, also?: string) => string {
+  return (t, also) => {
+    const shared = [before, after].some((s) => s.tracks.some((o) => o.id !== t.id && o.name === t.name));
+    const at = after.tracks.findIndex((x) => x.id === t.id);
+    const row = (at >= 0 ? at : before.tracks.findIndex((x) => x.id === t.id)) + 1;
+    const inside = [shared && row > 0 ? `track ${row}` : '', also ?? ''].filter(Boolean);
+    return inside.length ? `${nm(t.name)} (${inside.join(', ')})` : nm(t.name);
+  };
 }
 
 /** The changes from `before` to `after` (their bars named in words as `before`'s ruler numbers them: see wordMeter). */
@@ -204,17 +254,7 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
     if (c.clipId) touchedClips.add(c.clipId);
     if (c.markerId) touchedMarkers.add(c.markerId);
   };
-  /**
-   * A track as a card names it: its name, and, when another track has the same name (before or after),
-   * its row number too, so two tracks named "Keys" read apart ("Keys" (track 3)). `also` is what a
-   * sentence puts in brackets after it, in the same brackets ("Keys" (track 3, bars 5-6)).
-   */
-  const trackLabel = (t: Track, also?: string): string => {
-    const shared = [before, after].some((s) => s.tracks.some((o) => o.id !== t.id && o.name === t.name));
-    const row = after.tracks.findIndex((x) => x.id === t.id);
-    const inside = [shared ? `track ${(row >= 0 ? row : before.tracks.findIndex((x) => x.id === t.id)) + 1}` : '', also ?? ''].filter(Boolean);
-    return inside.length ? `${nm(t.name)} (${inside.join(', ')})` : nm(t.name);
-  };
+  const trackLabel = trackLabeler(before, after);
   const trackName = (id: string, also?: string) => {
     const t = after.tracks.find((x) => x.id === id) ?? before.tracks.find((x) => x.id === id);
     return t ? trackLabel(t, also) : also ? `a track (${also})` : 'a track';
@@ -236,7 +276,7 @@ function diffWith(before: ProjectSnapshot, after: ProjectSnapshot): SongDiff {
   for (const p of aPoints) {
     const old = bPointIds.get(p.id);
     if (!old) add({ text: `Adds a tempo change to ${r1(p.bpm)} BPM at ${barAt(p.bar)}${p.ramp ? ', ramping into it' : ''}.`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
-    else if (!same(old, p)) add({ text: `Changes the tempo change at ${barAt(old.bar)} to ${r1(p.bpm)} BPM at ${barAt(p.bar)}.`, fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
+    else if (!same(old, p)) add({ text: tempoPointSentence(old, p), fromBar: tempoFrom(p.id, Math.min(old.bar, p.bar)), toBar: Math.max(old.bar, p.bar) + 1, hear: 'from' });
   }
   for (const p of bPoints) if (!aPointIds.has(p.id)) add({ text: `Removes the tempo change at ${barAt(p.bar)} (${r1(p.bpm)} BPM).`, fromBar: tempoFrom(p.id, p.bar), toBar: p.bar + 1, hear: 'from' });
   tempoChanged ||= !same(bPoints, aPoints);
@@ -751,8 +791,21 @@ const settingList = (keys: readonly string[]): string => {
 };
 
 /**
+ * A setting's change whose two values read the same in its usual words (valueWord: a number to 3
+ * decimals), as a real change never may: "mix 0.5 to 0.5001" (4, 5 or 6 decimals, the fewest that
+ * tell them apart), "mix very slightly up (about 0.5)" where even 6 wouldn't; anything else, "changed".
+ */
+function sameWords(name: string, a: unknown, b: unknown, shown: string): string {
+  if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b)) return `${name} changed`;
+  const num = (v: number, places: number) => String(rd(v, places));
+  const p = placesFor(num, a, b, [4, 5, 6]);
+  return p === null ? `${name} very slightly ${b > a ? 'up' : 'down'} (about ${shown})` : `${name} ${num(a, p)} to ${num(b, p)}`;
+}
+
+/**
  * "cutoff 1000 to 800, mix 0.3 to 0.5, ping-pong on to off": the settings of an object that differ,
- * in words (valueWord), the track a Pump follows by its name (`trackName`).
+ * in words (valueWord), the track a Pump follows by its name (`trackName`). Never "mix 0.5 to 0.5":
+ * values that read the same get more decimals, or "very slightly" (sameWords).
  */
 function settingChanges(x: unknown, y: unknown, trackName?: (id: string) => string): string {
   const a = (x ?? {}) as Record<string, unknown>;
@@ -768,7 +821,10 @@ function settingChanges(x: unknown, y: unknown, trackName?: (id: string) => stri
     const from = show(a[k]);
     const to = show(b[k]);
     // (a setting there wasn't before, an insert new to the track: its value alone, never "none to 300")
-    out.push(typeof b[k] === 'object' || from === null || to === null ? `${name} changed` : a[k] === undefined ? `${name} ${to}` : `${name} ${from} to ${to}`);
+    if (typeof b[k] === 'object' || from === null || to === null) out.push(`${name} changed`);
+    else if (a[k] === undefined) out.push(`${name} ${to}`);
+    else if (from !== to) out.push(`${name} ${from} to ${to}`);
+    else out.push(sameWords(name, a[k], b[k], to));
   }
   return out.slice(0, 4).join(', ') + (out.length > 4 ? `, and ${out.length - 4} more` : '');
 }

@@ -1,9 +1,10 @@
 /**
  * A hook for a panel floating beside a button (portalled to the page body, on whichever side has
- * room), closed by a click elsewhere, Esc or scrolling.
+ * room), closed by a click elsewhere, Esc, scrolling, or Tab out of it.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { usePopupKeys } from './popupKeys';
 
 const MENU_W = 340;
 const MENU_MAX_H = 460;
@@ -16,7 +17,9 @@ interface FloatingPos {
 
 /**
  * A panel floating by a button (position: fixed, portalled to <body>, so nothing clips or covers
- * it), on whichever side has more room. It closes on a click elsewhere, Esc, or scrolling the page.
+ * it), on whichever side has more room. It closes on a click elsewhere, Esc, or scrolling the page;
+ * and on Tab out of it, focus going to the stop after its button (Shift+Tab: back on the button),
+ * as if the panel sat beside it in the page.
  */
 export function useFloatingMenu(width = MENU_W, maxHeight = MENU_MAX_H) {
   const [pos, setPos] = useState<FloatingPos | null>(null);
@@ -54,6 +57,7 @@ export function useFloatingMenu(width = MENU_W, maxHeight = MENU_MAX_H) {
       window.removeEventListener('scroll', onScroll, true);
     };
   }, [pos]);
+  usePopupKeys(menuRef, { open: pos !== null, onClose: () => setPos(null), opener: buttonRef, place: 'portal' });
 
   const toggle = () => {
     if (pos) return setPos(null);

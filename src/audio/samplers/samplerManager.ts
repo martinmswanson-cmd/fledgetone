@@ -2,7 +2,8 @@ import * as Tone from 'tone';
 import { createWidener } from '../presets/widen';
 import { createLightChorus } from '../effects/lightFx';
 import { fixedDelay } from '../effects/delayLink';
-import { roomChannels } from '../effects/roomIR';
+import { heldShaper, SHAPER_FRAMES } from '../shaperLag';
+import { roomChannels, stageChannels, STUDIO_DECAY } from '../effects/roomIR';
 import { STRUMMED, strumPlan } from '../guitarStrum';
 import type { LastStrum } from '../guitarStrum';
 import { breathOf, INSTRUMENTS, isSection } from '../instrumentCatalog';
@@ -1021,7 +1022,10 @@ interface ShapingChain {
  * amp keeps 4x: it's brightened before and after its clip, and 2x came to -74 dB there, closer to
  * hearing than the rest. 2x holds the sound back 64 samples less than 4x (Chromium's shapers: 128
  * against 192), which moved the guitars against the bass enough to change a mix's loudness by 0.2
- * LU: a delay line after the stages (inStep) puts them back where they were.
+ * LU: a delay line after the stages (inStep) puts them back where they were. All of it as at
+ * 44.1 kHz, where the amps were voiced: each stage as late at every rate as a 4x one is there, its
+ * oversampling there (less below 44.1 kHz, see shaperLag.ts heldShaper) and the delay line making up
+ * the rest, so a guitar keeps its place against the other tracks at every rate.
  */
 function saturator(drive: number, oversample: OverSampleType = '2x'): WaveShaperNode {
   const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
@@ -1034,8 +1038,6 @@ function saturator(drive: number, oversample: OverSampleType = '2x'): WaveShaper
   return shaper;
 }
 
-/** How many samples less a 2x shaper holds the sound back than a 4x one (see saturator). */
-const SHAPER_2X_EARLIER = 64;
 
 /** The erhu's vibrato: how far the delay swings, in seconds, once a note has settled (about ±20 cents at 5.5 Hz). */
 const ERHU_VIBRATO = 0.00035;
@@ -1108,8 +1110,15 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     f.gain.value = gain;
     return f;
   };
-  /** A delay line that holds back `stages` 2x shapers' sound as 4x ones would (see saturator). */
-  const inStep = (stages: number) => fixedDelay(raw, (stages * SHAPER_2X_EARLIER) / raw.sampleRate);
+  /**
+   * An amp's `stages` gain stages voiced with `oversample` (see saturator): each one's oversampling
+   * at this rate, and the delay line after them that holds their sound back as 4x ones are at
+   * 44.1 kHz (none where nothing's to add).
+   */
+  const ampStages = (stages: number, oversample: OverSampleType = '2x') => {
+    const held = heldShaper(oversample, raw.sampleRate, stages, SHAPER_FRAMES['4x']);
+    return { oversample: held.oversample, inStep: held.frames > 0 ? [fixedDelay(raw, held.frames / raw.sampleRate)] : [] };
+  };
   const chain = (nodes: AudioNode[]) => {
     for (let i = 0; i + 1 < nodes.length; i++) nodes[i].connect(nodes[i + 1]);
     Tone.connect(nodes[nodes.length - 1], output);
@@ -1156,14 +1165,15 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     sustain.attack.value = 0.004;
     sustain.release.value = 0.15;
     const pre = biquad('highshelf', 1200, 0.7, 6);
-    const drive = saturator(3);
+    const stage = ampStages(1);
+    const drive = saturator(3, stage.oversample);
     const thump = biquad('peaking', 120, 1, 3);
     const scoop = biquad('peaking', 450, 1, -3);
     const presence = biquad('peaking', 2200, 1, 1.5);
     const cab = biquad('lowpass', 4800, 0.8);
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-6);
-    return chain([tight, sustain, pre, drive, inStep(1), thump, scoop, presence, cab, trim]);
+    return chain([tight, sustain, pre, drive, ...stage.inStep, thump, scoop, presence, cab, trim]);
   }
   if (shape && Object.hasOwn(AMPS, shape)) {
     const amp = AMPS[shape as AmpModel];
@@ -1178,12 +1188,13 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
       nodes.push(squeeze);
     }
     for (const [type, hz, q, db] of amp.pre) nodes.push(biquad(type, hz, q, db));
+    const stages = ampStages(amp.stages.length, amp.oversample);
     amp.stages.forEach((drive, i) => {
       // Between stages: the coupling that keeps a high-gain amp's lows tight and its fizz down
       if (i > 0) nodes.push(biquad('highpass', 180, 0.7), biquad('lowpass', 4500, 0.7));
-      nodes.push(saturator(drive, amp.oversample));
+      nodes.push(saturator(drive, stages.oversample));
     });
-    if ((amp.oversample ?? '2x') === '2x') nodes.push(inStep(amp.stages.length));
+    nodes.push(...stages.inStep);
     nodes.push(
       biquad('lowshelf', 120, 0.7, amp.bass),
       biquad('peaking', amp.midHz, 0.7, amp.mid),
@@ -1331,9 +1342,7 @@ function studioChain(db: number, output: Tone.InputNode): { input: AudioNode; no
   Tone.connect(into, output);
   return { input, nodes: [{ dispose: () => [input, room, wet, into].forEach((n) => n.disconnect()) }] };
 }
-/** The studio room's decay (seconds to fall 60 dB, its middle; its highs die sooner) */
-const STUDIO_DECAY = 0.45;
-/** The studio room's response by sample rate (made once each). */
+/** The studio room's response by sample rate (made once each; at 44.1 kHz and resampled at any other: see roomIR.ts roomAtRate). */
 const studioResponses = new Map<number, AudioBuffer>();
 function studioResponse(rate: number): AudioBuffer {
   const have = studioResponses.get(rate);
@@ -1351,62 +1360,16 @@ function studioResponse(rate: number): AudioBuffer {
 /** The stage's response by sample rate (made once each: an AudioBuffer isn't tied to a context). */
 const stageResponses = new Map<number, AudioBuffer>();
 /**
- * A small concert stage heard from a few metres, in stereo: a dozen early reflections from 6 to
- * 45 ms (the floor, the side walls and the shell behind the player, each a little duller and from
- * one side or the other) and a diffuse tail dying away over about 0.8 s (60 dB), its highs going
- * first as air and walls take them. Its energy is the direct sound's, so the instrument's `room`
- * sets the level. The same every time (a seeded noise), so an export sounds as it plays live.
+ * A small concert stage heard from a few metres (roomIR.ts stageChannels), at `rate`: made at
+ * 44.1 kHz and resampled at any other rate, so an export at any rate sounds as it plays live.
  */
 export function stageResponse(rate: number): AudioBuffer {
   const have = stageResponses.get(rate);
   if (have) return have;
-  const length = Math.round(rate * 0.9);
-  const ir = new AudioBuffer({ length, sampleRate: rate, numberOfChannels: 2 });
-  let seed = 0x5eed;
-  const random = () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  const left = ir.getChannelData(0);
-  const right = ir.getChannelData(1);
-  // The early reflections: [ms, gain, side (-1 left .. 1 right)]
-  const early: Array<[number, number, number]> = [
-    [6, 0.55, 0], [11, 0.42, -0.8], [13, 0.4, 0.8], [17, 0.3, -0.4], [21, 0.33, 0.5], [24, 0.25, -0.9],
-    [28, 0.24, 0.9], [31, 0.2, -0.2], [35, 0.18, 0.4], [38, 0.15, -0.6], [42, 0.13, 0.7], [45, 0.12, -0.3],
-  ];
-  for (const [ms, g, side] of early) {
-    const i = Math.round((ms / 1000) * rate);
-    // a little duller each time: three samples' smear
-    for (let k = -1; k <= 1; k++) {
-      const w = k === 0 ? 0.5 : 0.25;
-      left[i + k] += g * w * Math.sqrt((1 - side) / 2) * 1.2;
-      right[i + k] += g * w * Math.sqrt((1 + side) / 2) * 1.2;
-    }
-  }
-  // The tail: noise from 20 ms, its level falling 60 dB in 0.8 s, low-passed ever lower (8 kHz to 2 kHz)
-  const begin = Math.round(0.02 * rate);
-  let lpL = 0;
-  let lpR = 0;
-  for (let i = begin; i < length; i++) {
-    const t = (i - begin) / rate;
-    const env = 0.11 * Math.min(1, t / 0.03) * 10 ** ((-60 * t) / 0.8 / 20);
-    const cutoff = 8000 * 0.25 ** Math.min(1, t / 0.6);
-    const c = 1 - Math.exp((-2 * Math.PI * cutoff) / rate);
-    lpL += c * ((random() * 2 - 1) - lpL);
-    lpR += c * ((random() * 2 - 1) - lpR);
-    left[i] += env * lpL * 1.7;
-    right[i] += env * lpR * 1.7;
-  }
-  // Its energy set to the direct sound's (1): `room` dB then says how much of it there is
-  let energy = 0;
-  for (let i = 0; i < length; i++) energy += (left[i] * left[i] + right[i] * right[i]) / 2;
-  const scale = 1 / Math.sqrt(energy);
-  for (let i = 0; i < length; i++) {
-    left[i] *= scale;
-    right[i] *= scale;
-  }
+  const [left, right] = stageChannels(rate);
+  const ir = new AudioBuffer({ length: left.length, sampleRate: rate, numberOfChannels: 2 });
+  ir.copyToChannel(left, 0);
+  ir.copyToChannel(right, 1);
   stageResponses.set(rate, ir);
   return ir;
 }

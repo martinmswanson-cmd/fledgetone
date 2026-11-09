@@ -70,3 +70,45 @@ test('a track that shares its name with another is named by its row too (scan r4
   const edited = classifySuggestion(made, { revision: 4, song: withTrack(p, p.tracks.length - 1, { pan: 0.5 }) });
   assert.deepEqual(edited, { status: 'out_of_date', changed: [`the track "Keys" (track ${p.tracks.length}) changed`] });
 });
+
+test('a deleted track that shared its name is named by the row it had: kept with the suggestion, in a file too (scan r43)', async () => {
+  const { touchedRows } = await import('../src/agent/suggestion.ts');
+  const p0 = base();
+  const p = { ...p0, tracks: [...p0.tracks, { ...p0.tracks[0], id: 'track-twin' }] };
+  const ops = [{ op: 'set_track', trackId: 'track-twin', volumeDb: -10 }];
+  assert.deepEqual(touchedRows(p, ops), { 'track:track-twin': 6 });
+  const made = { revision: 3, touchedHashes: touchedHashes(p, ops), touchedNames: touchedNames(p, ops), touchedRows: touchedRows(p, ops) };
+  // The second "Keys" deleted while the first is still there: which one went
+  const gone = { ...p, tracks: p.tracks.filter((t) => t.id !== 'track-twin') };
+  assert.deepEqual(classifySuggestion(made, { revision: 4, song: gone }), { status: 'out_of_date', changed: ['the track "Keys" (track 6) is gone'] });
+  // Through a suggestion file and back
+  const file = parseSuggestionFile(JSON.parse(JSON.stringify(makeSuggestionFile(p, { title: 'x', explanation: '', ops }))));
+  assert.deepEqual(file.touchedRows, { 'track:track-twin': 6 });
+  assert.deepEqual(classifySuggestion(file, { song: gone }).changed, ['the track "Keys" (track 6) is gone']);
+  // Both touched and both gone: each by its row
+  const both = [...ops, { op: 'set_track', trackId: p.tracks[0].id, volumeDb: -10 }];
+  const madeBoth = { touchedHashes: touchedHashes(p, both), touchedNames: touchedNames(p, both), touchedRows: touchedRows(p, both) };
+  const none = { ...p, tracks: p.tracks.filter((t) => t.name !== 'Keys') };
+  assert.deepEqual(classifySuggestion(madeBoth, { song: none }).changed.sort(), ['the track "Keys" (track 1) is gone', 'the track "Keys" (track 6) is gone']);
+  // A name no other track has (then or now): no row, as before
+  const lone = [{ op: 'set_track', trackId: p.tracks[2].id, volumeDb: -10 }];
+  const madeLone = { touchedHashes: touchedHashes(p, lone), touchedNames: touchedNames(p, lone), touchedRows: touchedRows(p, lone) };
+  assert.deepEqual(classifySuggestion(madeLone, { song: { ...p, tracks: p.tracks.filter((_, i) => i !== 2) } }).changed, ['the track "Bass" is gone']);
+  // Rows read from a file are whole numbers from 1, or left out
+  const odd = parseSuggestionFile({ ...JSON.parse(JSON.stringify(makeSuggestionFile(p, { title: 'x', explanation: '', ops }))), touchedRows: { 'track:a': 'x', 'track:b': 0, 'track:c': 2.5, 'track:d': 3 } });
+  assert.deepEqual(odd.touchedRows, { 'track:d': 3 });
+});
+
+test('the studio keeps the rows with its suggestion, and its out-of-date note says which "Keys" went (scan r43)', async () => {
+  const { makeSuggestion, checkSuggestion } = await import('../src/agent/suggestionsStore.ts');
+  const p0 = base();
+  const p = { ...p0, tracks: [...p0.tracks, { ...p0.tracks[0], id: 'track-twin' }] };
+  const ctx = { epoch: 1, parts: {}, ext: null };
+  const made = makeSuggestion(p, ctx, { title: 'Quieter', explanation: '', ops: [{ op: 'set_track', trackId: 'track-twin', volumeDb: -12 }] }, 'sg-twin');
+  assert.ok(made.ok, made.message);
+  assert.deepEqual(made.suggestion.touchedRows, { 'track:track-twin': 6 });
+  const gone = { ...p, tracks: p.tracks.filter((t) => t.id !== 'track-twin') };
+  const checked = checkSuggestion(made.suggestion, gone, { ...ctx, parts: { tracks: 'changed' } });
+  assert.equal(checked.status, 'out_of_date');
+  assert.deepEqual(checked.outOfDate, ['the track "Keys" (track 6) is gone']);
+});

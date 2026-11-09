@@ -11,6 +11,8 @@ import { useTimelineStore } from '../store/timelineStore';
 import { uid } from '../store/timelineTypes';
 import { captureWamStates } from '../audio/wamHost';
 import { embedSounds, importEmbeddedSounds } from '../audio/soundLibrary';
+import { checkSounds } from '../audio/soundIds';
+import { withSoundsMoved } from '../store/audioClips';
 import { saveBlobFile } from '../audio/exportWav';
 import { isNativeApp } from '../native/nativeApp';
 import { showToast } from './timeline/toastStore';
@@ -38,6 +40,17 @@ export async function exportMySounds(): Promise<void> {
   else showToast(`Saved ${plural(sounds.length, 'sound')} and ${plural(favourites.length, 'favourite')} to ${name}${isNativeApp() ? '' : ' (in your downloads)'}.`);
 }
 
+/**
+ * A My sounds or sound file's contents with the recordings checked against their ids (checkSounds)
+ * and each sound pointed at the right one, before any of it is kept or played.
+ */
+async function checkedFile(file: File): Promise<ReturnType<typeof parseMySoundsFile>> {
+  const parsed = parseMySoundsFile(JSON.parse(await file.text()));
+  const { sounds: recordings, moved } = await checkSounds(parsed.recordings);
+  const sounds = moved.size ? parsed.sounds.map((s) => ({ ...s, settings: withSoundsMoved({ clips: [], tracks: [s.settings] }, moved).tracks[0] })) : parsed.sounds;
+  return { ...parsed, sounds, recordings };
+}
+
 /** What a message adds when sounds didn't fit in My sounds ('' when they all did). */
 const noRoom = (full: number) => (full ? ` My sounds is full (${MAX_SOUNDS} sounds), so ${plural(full, 'sound')} ${full === 1 ? 'wasn’t' : 'weren’t'} added: delete some you don't need, then open the file again.` : '');
 
@@ -57,7 +70,7 @@ function importedNote(done: { added: number; replaced: number; starred: number }
 /** Add a My sounds file's sounds and stars to this browser's. Returns what happened, for a message. */
 export async function importMySoundsFile(file: File): Promise<string> {
   try {
-    const { sounds, favourites, recordings } = parseMySoundsFile(JSON.parse(await file.text()));
+    const { sounds, favourites, recordings } = await checkedFile(file);
     if (recordings.length) await importEmbeddedSounds(recordings);
     const done = useMySounds.getState().importSounds(sounds, favourites);
     if (!done) return "The browser wouldn't keep them (its storage is full or blocked).";
@@ -107,7 +120,7 @@ export async function shareTrackSound(trackId: string): Promise<void> {
  */
 export async function openSoundFile(file: File, trackId?: string): Promise<string> {
   try {
-    const { sounds, favourites, recordings } = parseMySoundsFile(JSON.parse(await file.text()));
+    const { sounds, favourites, recordings } = await checkedFile(file);
     if (!sounds.length) return `${file.name} has no sounds in it.`;
     if (recordings.length) await importEmbeddedSounds(recordings);
     const done = useMySounds.getState().importSounds(sounds, favourites);

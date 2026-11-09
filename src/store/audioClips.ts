@@ -105,6 +105,48 @@ export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] 
 }
 
 /**
+ * Seconds from an audio clip's start to `bars` into it, where it is now: along the tempo map where
+ * that plays across a change (see playsAlongMap), else at the tempo where it starts.
+ */
+export function secondsInto(clip: Pick<Clip, 'startBar' | 'audio'>, bars: number, tempo: Tempo): number {
+  const to = clip.startBar + bars;
+  return playsAlongMap(clip, to, tempo) ? secondsBetween(clip.startBar, to, tempo) : bars * secondsPerBar(tempoAt(clip.startBar, tempo));
+}
+
+/**
+ * An audio clip that plays its sound in real time, moved or copied to `startBar`: as long in seconds
+ * there as it is where it is now (in `from`, the tempo where it is; `to`, the tempo where it goes:
+ * the same song's, or another song's for a paste), so its bars follow the tempo at its new place,
+ * and its comp's places in the sound stay where they were. Never past `endBar` (the timeline's end).
+ * A clip that follows the tempo, and a note clip, keep their bars.
+ */
+export function audioClipAt(clip: Pick<Clip, 'startBar' | 'lengthBars' | 'audio' | 'comp'>, startBar: number, from: Tempo, to: Tempo, endBar = Infinity): Pick<Clip, 'lengthBars' | 'comp'> {
+  if (!clip.audio || clip.audio.stretchBpm) return { lengthBars: clip.lengthBars, ...(clip.comp ? { comp: clip.comp } : {}) };
+  const ratio = tempoAt(startBar, to) / tempoAt(clip.startBar, from);
+  const scaled = clip.lengthBars * ratio;
+  // In one tempo where it is and where it goes, scaled by the two tempos (exactly its bars where they're the same);
+  // across a change at either place, its seconds counted along the map (as moving it keeps them)
+  const steady = !playsAlongMap(clip, clip.startBar + clip.lengthBars, from) && !playsAlongMap({ ...clip, startBar }, startBar + scaled, to);
+  const barsAt = (bars: number) => (steady ? bars * ratio : barsForSeconds(startBar, secondsInto(clip, bars, from), to));
+  return {
+    lengthBars: Math.min(endBar - startBar, barsAt(clip.lengthBars)),
+    ...(clip.comp ? { comp: clip.comp.map((seg) => ({ ...seg, at: barsAt(seg.at) })) } : {}),
+  };
+}
+
+/**
+ * Where a clip copied to `want` goes, and how long it is there (see audioClipAt): as near `want` as
+ * it fits between bar 1 and `endBar`, measured at the place it ends up.
+ */
+export function placedClip(clip: Pick<Clip, 'startBar' | 'lengthBars' | 'audio' | 'comp'>, want: number, from: Tempo, to: Tempo, endBar: number): Pick<Clip, 'startBar' | 'lengthBars' | 'comp'> {
+  const first = Math.max(1, want);
+  let placed = audioClipAt(clip, first, from, to);
+  const startBar = Math.max(1, Math.min(endBar - placed.lengthBars, first));
+  if (startBar !== first) placed = audioClipAt(clip, startBar, from, to);
+  return { ...placed, startBar, lengthBars: Math.min(endBar - startBar, placed.lengthBars) };
+}
+
+/**
  * Likely tempos a loop was recorded at, from its length: tempos at which it lasts a whole number
  * of bars (1, 2, 4, 8 or 16), between 60 and 200 BPM, nearest `near` first.
  */
@@ -203,6 +245,56 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
     for (const zone of t.multi?.zones ?? []) ids.add(zone.soundId);
   }
   return [...ids];
+}
+
+/** What can play sounds from the library: a song, or a saved sound's settings as a track. */
+export type SoundHolders = { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi' | 'slots'>>; masterFx?: { room?: string } };
+
+/**
+ * `p` with every sound it refers to by an id in `moved` pointed at the id `moved` gives it
+ * instead: each place referencedSoundIds reads, and nothing else. What opening a file does when
+ * a sound it carries isn't under the id of its bytes (soundIds.ts checkSounds): the song plays
+ * the bytes it was sent with, filed where they belong. Parts that don't change stay the same objects.
+ */
+export function withSoundsMoved<T extends SoundHolders>(p: T, moved: ReadonlyMap<string, string>): T {
+  if (!moved.size) return p;
+  const to = (id: string): string => moved.get(id) ?? id;
+  const audioOf = (a: ClipAudio): ClipAudio => {
+    const next: ClipAudio = { ...a, soundId: to(a.soundId) };
+    if (a.tunedFrom !== undefined) next.tunedFrom = to(a.tunedFrom);
+    if (a.reversedFrom !== undefined) next.reversedFrom = to(a.reversedFrom);
+    if (a.shiftedFrom !== undefined) next.shiftedFrom = to(a.shiftedFrom);
+    if (a.mangled) next.mangled = { ...a.mangled, from: to(a.mangled.from), ...(a.mangled.was ? { was: audioOf(a.mangled.was) } : {}) };
+    return referencedSoundIds({ clips: [{ audio: a }], tracks: [] }).some((id) => moved.has(id)) ? next : a;
+  };
+  const clipOf = <C extends Pick<Clip, 'audio' | 'takes'>>(c: C): C => {
+    const audio = c.audio && audioOf(c.audio);
+    const takes = c.takes?.map((t) => (t.audio ? { ...t, audio: audioOf(t.audio) } : t));
+    const takesSame = !takes || takes.every((t, i) => t.audio === c.takes![i].audio);
+    return audio === c.audio && takesSame ? c : { ...c, ...(c.audio ? { audio } : {}), ...(takesSame ? {} : { takes }) };
+  };
+  const trackOf = <K extends SoundHolders['tracks'][number]>(t: K): K => {
+    if (!referencedSoundIds({ clips: [], tracks: [t] }).some((id) => moved.has(id))) return t;
+    const next = { ...t };
+    if (t.sample?.soundId !== undefined && moved.has(t.sample.soundId)) next.sample = { ...t.sample, soundId: to(t.sample.soundId) };
+    if (t.slicer && moved.has(t.slicer.soundId)) next.slicer = { ...t.slicer, soundId: to(t.slicer.soundId) };
+    if (t.rack?.pads.some((pad) => pad.soundId !== undefined && moved.has(pad.soundId))) {
+      next.rack = { ...t.rack, pads: t.rack.pads.map((pad) => (pad.soundId !== undefined && moved.has(pad.soundId) ? { ...pad, soundId: to(pad.soundId) } : pad)) };
+    }
+    if (t.multi?.zones.some((z) => moved.has(z.soundId))) next.multi = { ...t.multi, zones: t.multi.zones.map((z) => (moved.has(z.soundId) ? { ...z, soundId: to(z.soundId) } : z)) };
+    if (t.slots) next.slots = t.slots.map((s) => {
+      const clip = clipOf(s.clip);
+      return clip === s.clip ? s : { ...s, clip };
+    });
+    return next;
+  };
+  const room = p.masterFx?.room;
+  return {
+    ...p,
+    clips: p.clips.map(clipOf),
+    tracks: p.tracks.map(trackOf),
+    ...(room !== undefined && moved.has(room) ? { masterFx: { ...p.masterFx, room: to(room) } } : {}),
+  };
 }
 
 /** A file name without its extension, for a clip's name ("take 3.wav" -> "take 3"). */

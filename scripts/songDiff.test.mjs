@@ -954,3 +954,47 @@ test('two tracks with the same name are told apart by their row (scan r42)', asy
   // A name no other track has: as before
   assert.deepEqual(texts(applyOps(s, { opsVersion: 1, ops: [{ op: 'set_track', trackId: s.tracks[2].id, mute: true }] }, { idBase: 'sg-u' }).diff), ['Mutes "Bass".']);
 });
+
+test('a tiny change of an insert\'s or a master part\'s setting never reads as no change: more decimals, or "very slightly" (scan r43)', async () => {
+  const { applyOps } = await import('../src/agent/ops.ts');
+  const a = base();
+  const KEYS = a.tracks[0].id;
+  const one = (ops, song = a) => {
+    const out = applyOps(song, { opsVersion: 1, ops }, { idBase: 'sg-t' });
+    assert.ok(out.ok, JSON.stringify(out.errors));
+    return texts(out.diff).join('\n');
+  };
+  const chorus = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { on: true, mix: 0.5 } }] }, { idBase: 'sg-c' }).song;
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { mix: 0.5001 } }], chorus), 'Changes the Chorus on "Keys": mix 0.5 to 0.5001.');
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { mix: 0.49999 } }], chorus), 'Changes the Chorus on "Keys": mix 0.5 to 0.49999.');
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { mix: 0.5000001 } }], chorus), 'Changes the Chorus on "Keys": mix very slightly up (about 0.5).');
+  // A real step still reads as before
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { mix: 0.501 } }], chorus), 'Changes the Chorus on "Keys": mix 0.5 to 0.501.');
+  const comp = applyOps(a, { opsVersion: 1, ops: [{ op: 'set_insert', trackId: KEYS, insert: 'compressor', settings: { on: true, threshold: -20 } }] }, { idBase: 'sg-c' }).song;
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'compressor', settings: { threshold: -19.9996 } }], comp), 'Changes the Compressor on "Keys": threshold -20 to -19.9996.');
+  // Switched on with a tiny change: the same rule
+  const lofiOff = { ...a, tracks: a.tracks.map((t, i) => (i === 0 ? { ...t, fx: { ...t.fx, lofi: { ...t.fx.lofi, on: false, mix: 0.5 } } } : t)) };
+  assert.equal(one([{ op: 'set_insert', trackId: KEYS, insert: 'lofi', settings: { on: true, mix: 0.5002 } }], lofiOff), 'Turns on the Lo-fi on "Keys" (mix 0.5 to 0.5002).');
+  // The master's parts, on and switched off
+  assert.equal(one([{ op: 'set_master', width: { amount: a.master.width.amount + 0.0003 } }]), 'Changes the master stereo width (amount 1.05 to 1.0503).');
+  assert.equal(one([{ op: 'set_master', ott: { depth: a.master.ott.depth + 0.0004 } }]), 'Changes the master OTT (switched off): depth 0.5 to 0.5004.');
+  assert.equal(one([{ op: 'set_master', clipper: { ceiling: -1.0004 } }]), 'Changes the master clipper (switched off): ceiling -1 to -1.0004.');
+  // Never "X to X" anywhere in these
+  for (const t of [
+    one([{ op: 'set_insert', trackId: KEYS, insert: 'chorus', settings: { mix: 0.50004, rate: 0.5 + 1e-8 } }], chorus),
+    one([{ op: 'set_master', width: { amount: a.master.width.amount - 1e-9 } }]),
+  ])
+    assert.doesNotMatch(t, /(-?[\d.]+) to \1\b/, t);
+});
+
+test('a tempo change changed in place says what changed, never "to 120 BPM" for 120 (scan r43)', () => {
+  const a = { ...base(), tempoPoints: [{ id: 't1', bar: 5, bpm: 120, ramp: false }] };
+  const one = (patch) => texts(diffSongs(a, { ...a, tempoPoints: [{ ...a.tempoPoints[0], ...patch }] })).join('\n');
+  assert.equal(one({ bpm: 120.04 }), 'Changes the tempo change at bar 5: 120 BPM to 120.04 BPM.');
+  assert.equal(one({ bpm: 128 }), 'Changes the tempo change at bar 5: 120 BPM to 128 BPM.');
+  assert.equal(one({ bpm: 120.00001 }), 'Changes the tempo change at bar 5: very slightly faster (about 120 BPM).');
+  assert.equal(one({ ramp: true }), 'Changes the tempo change at bar 5: now ramping into it.');
+  assert.equal(one({ bar: 6, bpm: 128 }), 'Changes the tempo change at bar 5: 120 BPM to 128 BPM, moved to bar 6.');
+  assert.equal(one({ bar: 5.01 }), 'Changes the tempo change at bar 5: moved to bar 5.01.');
+  assert.equal(one({ bar: 5.0001 }), 'Changes the tempo change at bar 5: moved very slightly later (about bar 5).');
+});

@@ -3,7 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { FX_NOTES } from '../instrumentCatalog';
 import { notLate } from './monotonic';
-import { connectOut, createBus, createDrive, createFilter, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, strikeLive } from './native';
+import { connectOut, createBus, createFilter, createHeldDrive, createNoise, createOsc, createOscAhead, createVoiceSet, movedRelease, strikeLive } from './native';
 import type { NativeVoice } from './native';
 import { noiseKey } from '../seededNoise';
 
@@ -108,7 +108,9 @@ const HITS: Record<string, Hit> = {
     boomAmp.gain.setValueAtTime(0, start);
     boomAmp.gain.linearRampToValueAtTime(1, start + 0.004);
     boomAmp.gain.setTargetAtTime(0, start + 0.01, 0.45);
-    const drive = createDrive(raw, 2);
+    // (As late at every rate as at 44.1 kHz, see shaperLag.ts: the boom meets the noise as there;
+    // a low boom, so no more fold-back from oversampling less below 44.1 kHz)
+    const drive = createHeldDrive(raw, 2, 1, 1, '4x', 'none');
     const noise = createNoise(raw, start, key);
     const noiseFilter = createFilter(raw, 'lowpass', 7000, 0);
     noiseFilter.frequency.setValueAtTime(7000, start);
@@ -119,12 +121,12 @@ const HITS: Record<string, Hit> = {
     noiseAmp.gain.setTargetAtTime(0, start + 0.004, 0.35);
     const amp = gain(raw, level * 0.55);
     boom.connect(boomAmp);
-    boomAmp.connect(drive);
-    drive.connect(amp);
+    boomAmp.connect(drive.input);
+    drive.output.connect(amp);
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseAmp);
     noiseAmp.connect(amp);
-    return { stopAt: end, sources: [boom, noise], nodes: [boom, boomAmp, drive, noise, noiseFilter, noiseAmp, amp], amp };
+    return { stopAt: end, sources: [boom, noise], nodes: [boom, boomAmp, ...drive.nodes, noise, noiseFilter, noiseAmp, amp], amp };
   },
 
   // A sine falling from 60 to 30 Hz over the note, saturated a little so it reaches small speakers, fading out over its last third
@@ -132,7 +134,7 @@ const HITS: Record<string, Hit> = {
     const end = start + length;
     const sine = createOsc(raw, 'sine', 60, start);
     sine.frequency.exponentialRampToValueAtTime(30, end);
-    const drive = createDrive(raw, 1.5);
+    const drive = createHeldDrive(raw, 1.5, 1, 1, '4x', 'none');
     const amp = raw.createGain();
     // A sustained sub is all energy: kept below the others' peaks so it doesn't swamp the mix
     const peak = level * 0.6;
@@ -140,9 +142,9 @@ const HITS: Record<string, Hit> = {
     amp.gain.linearRampToValueAtTime(peak, start + 0.01);
     amp.gain.setValueAtTime(peak, start + length * 0.66);
     amp.gain.linearRampToValueAtTime(0, end);
-    sine.connect(drive);
-    drive.connect(amp);
-    return { stopAt: end, sources: [sine], nodes: [sine, drive, amp], amp };
+    sine.connect(drive.input);
+    drive.output.connect(amp);
+    return { stopAt: end, sources: [sine], nodes: [sine, ...drive.nodes, amp], amp };
   },
 
   // The riser in reverse: noise and saws falling, the low-pass closing, fading away over the note

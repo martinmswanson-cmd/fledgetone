@@ -2,6 +2,7 @@ import { currentProject, onProjectReplaced, songGeneration, useTimelineStore } f
 import { parseProject, safeFileName, serializeProject, unreadWords } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds, soundFileNames } from '../../audio/soundLibrary';
+import { withCheckedSounds } from '../../audio/soundIds';
 import { saveBlobFile } from '../../audio/exportWav';
 import { isNativeApp } from '../../native/nativeApp';
 import { showToast } from './toastStore';
@@ -163,7 +164,8 @@ async function saveAs(song: number): Promise<void> {
 /** Open a .fledgetone.json file. Returns why it couldn't (or what of it couldn't be read), or null. */
 export async function openProjectFromFile(file: File, handle: FileHandle | null = null): Promise<string | null> {
   try {
-    const project = parseProject(JSON.parse(await file.text()));
+    // (each sound it carries checked against its id first, and the song pointed at the right one: see checkSounds)
+    const project = await withCheckedSounds(parseProject(JSON.parse(await file.text())));
     useTimelineStore.getState().loadProject(project);
     // Parts of the file this version couldn't read are left out: Save mustn't write over the file
     // without them, so it asks for a new one

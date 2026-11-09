@@ -5,6 +5,7 @@ import { PEQ_MAX_BANDS, type PeqBand } from '../../store/timelineTypes';
 import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
 import { keepOn } from '../keepOn';
 import { planShapedDuck, verticesGain, type DuckPoint, type ShapedDuck } from './duckShape';
+import { holdShaper } from '../shaperLag';
 
 /**
  * Lean stand-ins for Tone.EQ3, Tone.Distortion and Tone.Chorus that sound the same but cost far
@@ -168,7 +169,8 @@ function driveMakeup(drive: number): number {
  * (4x oversampled: no aliasing fizz), the top is rolled off more the
  * harder it's driven (as a speaker does), and the level is made up so the insert is about as
  * loud as what went in. Amount 0 is clean; the drive, tone and makeup glide, so turning the
- * knob while playing is smooth (the curve itself never changes).
+ * knob while playing is smooth (the curve itself never changes). The clip is as late at every
+ * rate as at 44.1 kHz (holdShaper, see shaperLag.ts), so the track keeps its place in the mix.
  */
 export function createLightDistortion(amount: number): LightDistortion {
   const input = new Tone.Gain(1);
@@ -191,6 +193,7 @@ export function createLightDistortion(amount: number): LightDistortion {
   const curve = new Float32Array(16385);
   for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / (curve.length - 1)) * 2 - 1) * CURVE_SPAN);
   shaper.curve = curve;
+  const clip = holdShaper(raw, shaper, '4x');
   const tone = raw.createBiquadFilter();
   tone.type = 'lowpass';
   tone.Q.value = 0.8;
@@ -217,8 +220,8 @@ export function createLightDistortion(amount: number): LightDistortion {
   input.connect(tight);
   tight.connect(preTone);
   preTone.connect(drive);
-  drive.connect(shaper);
-  shaper.connect(tone);
+  drive.connect(clip.input);
+  clip.output.connect(tone);
   tone.connect(makeup);
   makeup.connect(output.input as unknown as AudioNode);
   return {
@@ -226,7 +229,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     output,
     setAmount,
     dispose: () => {
-      [tight, preTone, drive, shaper, tone, makeup].forEach((n) => n.disconnect());
+      [tight, preTone, drive, ...clip.nodes, tone, makeup].forEach((n) => n.disconnect());
       input.dispose();
       output.dispose();
     },

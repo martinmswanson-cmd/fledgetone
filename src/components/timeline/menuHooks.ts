@@ -1,8 +1,21 @@
+/**
+ * What the timeline's right-click menus share: closing on Esc, a click outside, scrolling, resizing
+ * or Tab out of them, their keys, and staying on screen.
+ */
 import { useEffect, useLayoutEffect } from 'react';
 import type { RefObject } from 'react';
+import { usePopupKeys } from '../popupKeys';
 
-/** Close a popup menu on Esc, a click outside it, scrolling the page (or a panel) or resizing the window. */
-export function useMenuDismiss(ref: RefObject<HTMLElement | null>, onClose: () => void): void {
+/**
+ * Close a popup menu on Esc, a click outside it, scrolling the page (or a panel), resizing the
+ * window, or Tab out of it (Shift+Tab off its top: back on what opened it, `opener` if given, else
+ * what was pressed or had focus as it opened; Tab off its end: on to the stop after that). Opened
+ * from the keyboard (the menu key, Shift+F10, Enter on a button), it takes focus on its first
+ * item, the arrow keys move between its items (and along a row of them, the track menu's
+ * colours), and focus goes back when it closes; opened with the mouse it works as it always has.
+ */
+export function useMenuDismiss(ref: RefObject<HTMLElement | null>, onClose: () => void, opener?: () => HTMLElement | null | undefined): void {
+  usePopupKeys(ref, { onClose, opener, place: 'portal', menu: true });
   useEffect(() => {
     const outside = (e: Event) => !ref.current?.contains(e.target as Node);
     const onPointerDown = (e: PointerEvent) => {

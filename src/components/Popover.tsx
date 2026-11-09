@@ -1,8 +1,9 @@
 /**
  * A small panel dropped below the control that opened it, kept on screen and inside any clipping
- * box, closed by Esc or a click elsewhere. The base of most of the app's popovers.
+ * box, closed by Esc, a click elsewhere or Tab out of it. The base of most of the app's popovers.
  */
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import { usePopupKeys } from './popupKeys';
 
 /** Room kept between a popover and the edge of whatever would cut it off. */
 const EDGE_GAP = 8;
@@ -42,8 +43,9 @@ interface PopoverProps {
 /**
  * A small panel dropped below its anchor (place it inside a `relative` wrapper), slid sideways if
  * it would stick out of the screen or a clipping box. It's a dialog, so the timeline's and sound
- * deck's keyboard shortcuts pause while it's open. Esc or a click anywhere else closes it. Mark the
- * field to focus on opening with `data-autofocus` (not `autoFocus`, which focuses before placing).
+ * deck's keyboard shortcuts pause while it's open. Esc, a click anywhere else, or Tab out of it
+ * (Shift+Tab off its top goes back to its button) closes it. Mark the field to focus on opening
+ * with `data-autofocus` (not `autoFocus`, which focuses before placing).
  */
 export const Popover: React.FC<PopoverProps> = ({ label, onClose, anchorRef, className = '', children }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -69,6 +71,7 @@ export const Popover: React.FC<PopoverProps> = ({ label, onClose, anchorRef, cla
       window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [onClose, anchorRef]);
+  usePopupKeys(ref, { onClose, opener: anchorRef, place: 'inline' });
 
   // Place it before anything in it takes focus (focus would scroll a clipping box to show the field),
   // then focus the field marked data-autofocus and bring the panel into view if it opened below the fold

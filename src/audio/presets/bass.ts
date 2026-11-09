@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 import type { GlideRef } from '../instruments';
-import { legatoGlide, letGoMono, playMono, toneSlide } from './synths';
+import { holdDriven, legatoGlide, letGoMono, playMono, toneSlide } from './synths';
 import type { NoteSlide } from '../legato';
 import { createBendFeed } from '../bendFeed';
 import { attackAhead } from './toneStart';
@@ -41,8 +41,10 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
     },
   });
 
-  // Route: synth -> distortion -> output (bass channel -> masterBus)
+  // Route: synth -> distortion -> output (bass channel -> masterBus). The drive's sound as late at
+  // every rate as at 44.1 kHz (see shaperLag.ts): the Sub enhancer's sine under it meets it as there
   synth.chain(distortion, output);
+  const held = holdDriven(distortion);
 
   // Monophonic: overlapping bass clips could land two notes on one instant
   const safeTime = monotonicTime(synth.context);
@@ -57,6 +59,7 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
       bends.dispose();
       synth.dispose();
       distortion.dispose();
+      held.forEach((n) => n.dispose());
     },
     trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
       const start = safeTime(time);

@@ -100,6 +100,7 @@ test('Surge XT: a patch, then back to none, plays exactly as it did before the p
 
 test('setState with no preset file puts a plugin with one back to none (an undo of a preset chosen from "(none)")', () => {
   const host = fs.readFileSync(new URL('../src/audio/plugins/builtinHost.ts', import.meta.url), 'utf8');
-  assert.match(host, /saved\.preset === undefined\) await startFresh\(\)/);
+  assert.match(host, /const fresh = !choose && !!files && program >= 0 && !!saved && Array\.isArray\(saved\.values\) && saved\.preset === undefined;/);
+  assert.match(host, /else if \(fresh\) await startFresh\(\);/);
   assert.match(host, /type: 'fresh'/);
 });

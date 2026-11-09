@@ -5,6 +5,7 @@ import { struckLater } from '../songPlace';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
 import { ATTACK_TRIES, attackRoom, soundLead } from '../soundLead';
+import { holdShaper, type HeldNodes, type Oversampling } from '../shaperLag';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -410,6 +411,14 @@ export function createDrive(raw: BaseAudioContext, amount: number, pre = 1, post
   // fizz; shaped at four times the rate, they're filtered out before they can
   shaper.oversample = '4x';
   return shaper;
+}
+
+/**
+ * createDrive, as late at every rate as at 44.1 kHz (see shaperLag.ts holdShaper). `voiced`: its
+ * oversampling at 44.1 kHz; `floor`: the least it may take below 44.1 kHz (a bass's: none).
+ */
+export function createHeldDrive(raw: BaseAudioContext, amount: number, pre = 1, post = 1, voiced: Oversampling = '4x', floor: Oversampling = '2x'): HeldNodes {
+  return holdShaper(raw, createDrive(raw, amount, pre, post), voiced, floor);
 }
 
 export function createFilter(raw: BaseAudioContext, type: BiquadFilterType, frequency: number, q: number): BiquadFilterNode {

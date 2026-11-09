@@ -8,7 +8,7 @@ import { AlertTriangle, CheckCircle2, Info, Loader2, Stethoscope } from 'lucide-
 import { cancelMixRender, runMixCheck, useMixStudio, ANALYSE_SECONDS } from '../../audio/mixStudio';
 import { LOUDNESS_TARGETS } from '../../audio/loudnessTarget';
 import { useTimelineStore } from '../../store/timelineStore';
-import { formatDbtp, formatLufs } from '../../audio/loudness';
+import { loudnessWords } from '../../audio/loudness';
 import { HitCheckSection } from './HitCheckSection';
 
 export const MixCheckPanel: React.FC = () => {
@@ -72,7 +72,7 @@ export const MixCheckPanel: React.FC = () => {
         <div className="flex flex-col gap-1.5" data-testid="mix-check-findings">
           {analysis && (
             <p className="text-[10px] font-mono text-forge-muted">
-              {formatLufs(analysis.lufs)}, peak {formatDbtp(analysis.truePeakDb)}
+              {loudnessWords(analysis.lufs, analysis.truePeakDb)}
             </p>
           )}
           {findings.length === 0 ? (

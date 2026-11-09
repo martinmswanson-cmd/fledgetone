@@ -207,6 +207,9 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
           <button
             key={c}
             type="button"
+            // (A row of the menu: the arrow keys go along it, Up and Down to and from it; see popupKeys.ts)
+            role="menuitemradio"
+            aria-checked={c === track.color}
             onClick={run(() => {
               if (c !== track.color) s.setTrackColor(track.id, c);
             })}
