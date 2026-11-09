@@ -19,7 +19,8 @@ register(
 }`)
 );
 
-const { humanVelocities, loudnessOf, recordedLoudness, sampledLoudnesses, takeOf, trackTakes } = await import('../src/audio/takeTurns.ts');
+const { humanVelocities, loudnessOf, recordedLoudness, sampledLoudnesses, takeOf, takesFollowPlaces, takesKind, trackTakes } = await import('../src/audio/takeTurns.ts');
+const { readFileSync } = await import('node:fs');
 const { drumHits } = await import('../src/audio/drumHits.ts');
 const { jitterAt, noteJitter, atSongPlace } = await import('../src/audio/songPlace.ts');
 const { noteDrift, noteSeed } = await import('../src/audio/human.ts');
@@ -273,4 +274,54 @@ test("an Expressive kit's level differences are worked out ahead from a note's p
   assert.equal(recordedLoudness(0.1, [0.3, 0.55, 0.8, 1], 4, (l) => l > 1), 2);
   assert.equal(loudnessOf(1.2, [0.3, 0.55, 0.8, 1]), 3);
   assert.equal(takeOf(5, 2), 1);
+});
+
+test("only an Expressive kit's and a strummed instrument's takes follow the tempo and the swing; the rest are kept while they change", () => {
+  // A song with accents, chords, chances and Human drift, its notes' places at two tempos with swing
+  const song = (key) => {
+    const kit = INSTRUMENTS[key].kind === 'drums';
+    const notes = [];
+    for (let tick = 0; tick < 8 * BAR; tick += Q / 4) {
+      const v = 0.3 + 0.7 * (((tick / (Q / 4)) * 7) % 10) / 10;
+      if (kit) notes.push({ tick, note: [DRUM_NOTES.closedHat, DRUM_NOTES.kick, DRUM_NOTES.snare][(tick / (Q / 4)) % 3], velocity: v, ...(tick % BAR === Q ? { chance: 0.5 } : {}) });
+      else for (const note of tick % Q === 0 ? ['C3', 'E3', 'G3'] : ['C3']) notes.push({ tick, note, velocity: v });
+    }
+    return items(notes);
+  };
+  const at = (list, scale, swing) => list.map((g) => ({ ...g, place: g.place * scale + ((g.tick / (Q / 4)) % 2 ? swing : 0) }));
+  let followed = 0;
+  let checked = 0;
+  for (const key of Object.keys(INSTRUMENTS)) {
+    if (!takesKind(key)) continue;
+    for (const expressive of [false, true])
+      for (const feel of [undefined, KIT_FEEL]) {
+        const list = song(key);
+        const a = trackTakes(key, expressive, feel, at(list, 1, 0));
+        const b = trackTakes(key, expressive, feel, at(list, 0.83, 0.041));
+        const same = JSON.stringify(a) === JSON.stringify(b);
+        if (!takesFollowPlaces(key, expressive)) {
+          assert.ok(same, `${key} ${expressive} ${!!feel}: kept at another tempo, but its takes change`);
+          checked++;
+        } else if (!same) followed++;
+      }
+  }
+  assert.ok(checked > 40, `${checked}`);
+  // (the others do change: a kit's level differences and a guitar's strums follow the places)
+  assert.ok(followed > 10, `${followed}`);
+  assert.equal(takesFollowPlaces('studioKit', true), true);
+  assert.equal(takesFollowPlaces('studioKit', false), false);
+  assert.equal(takesFollowPlaces('realGuitar', false), true);
+  assert.equal(takesFollowPlaces('realHarpsichord', true), false);
+});
+
+test("Play works the takes out before the Transport starts; a tempo or swing drag while playing doesn't work them out at every step", () => {
+  const store = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
+  const play = store.slice(store.indexOf('    play: async (startAt) => {'), store.indexOf('    pause: () => {'));
+  assert.ok(play.indexOf('liveTakesReady()') > 0 && play.indexOf('liveTakesReady()') < play.indexOf('startTransportAt('));
+  const sched = readFileSync(new URL('../src/audio/scheduler.ts', import.meta.url), 'utf8');
+  const takesOf = sched.slice(sched.indexOf('  const takesOf = (trackId: string)'), sched.indexOf('  /** `group` with its notes\' turns'));
+  // while playing, the same version at another tempo or swing keeps the turns worked out before
+  assert.match(takesOf, /live && known && known\.version === t\.version && transport\.state === 'started'\) return known\.of/);
+  assert.match(sched, /function liveTakesSoon\(\)/);
+  assert.match(sched.slice(sched.indexOf('export function syncTransport')), /liveTakesSoon\(\);/);
 });

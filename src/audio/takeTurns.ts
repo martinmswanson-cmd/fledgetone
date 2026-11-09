@@ -175,6 +175,18 @@ export function takesKind(key: InstrumentKey): 'kit' | 'sampled' | null {
   return null;
 }
 
+/**
+ * Whether an instrument's song notes' takes (see trackTakes) can change with where its notes fall
+ * in seconds, so with the tempo map or the swing: an Expressive kit's (each hit's small level
+ * difference is picked by its place) and a strummed instrument's (a chord's strum follows the gap
+ * since the strum before). The others count by velocity and order alone.
+ */
+export function takesFollowPlaces(key: InstrumentKey, expressive: boolean): boolean {
+  const kind = takesKind(key);
+  if (kind === 'kit') return expressive;
+  return kind === 'sampled' && STRUMMED.has(key) && !INSTRUMENTS[key].bowed;
+}
+
 const recordedMemo = new Map<InstrumentKey, Map<string, boolean[]>>();
 /** Each note's loudnesses a kit has recordings at (from its catalog entry). */
 function recordedNotes(key: InstrumentKey): Map<string, boolean[]> {

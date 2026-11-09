@@ -21,7 +21,7 @@ import { clipHasConditions, clipRuns, isConditional, notePlays, ownClipId, passO
 import { INSTRUMENTS, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
 import { atSongPlace } from './songPlace';
-import { humanVelocities, takesKind, trackTakes, type GroupTakes, type SongItem } from './takeTurns';
+import { humanVelocities, takesFollowPlaces, takesKind, trackTakes, type GroupTakes, type SongItem } from './takeTurns';
 import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteStepper, type NoteStepper } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
@@ -185,6 +185,11 @@ export interface ClipSchedule {
   letGoTail: (instrument: TrackInstrument, time: number) => void;
   /** `instrument` is gone (its track deleted, or given another instrument): its notes and the bends still to give it are forgotten. */
   forget: (instrument: TrackInstrument) => void;
+  /**
+   * Work out the takes of one track whose takes are out of date (see takesOf). True if one was
+   * worked out; false when every track's are up to date.
+   */
+  workOutTakes: () => boolean;
   dispose: () => void;
 }
 
@@ -1006,22 +1011,22 @@ export function createClipSchedule(
 
   /**
    * The tracks whose instrument plays takes in turn or strums (see takeTurns.ts): what their notes'
-   * turns are worked out from, and a version that changes with it (set by update). The turns are
-   * worked out when a track's note first plays after a change (takesOf), so an edit costs nothing
-   * more until then, and only the track that changed is worked out again.
+   * turns are worked out from, and a version that changes with it (set by update). Live, a track's
+   * turns are worked out ahead of playing, a little at a time while the page is idle after a
+   * change and before Play starts the Transport (see workOutTakes, liveTakesReady); a track edited
+   * while playing is worked out when its note first plays after the edit, and only that track.
    */
-  let takeTracks = new Map<string, { track: Track; entries: ClipEntry[]; version: number }>();
+  let takeTracks = new Map<string, { track: Track; entries: ClipEntry[]; version: number; byPlace: boolean }>();
   let takeVersions = 0;
   /** Each such track's groups' takes, as last worked out: for its version, the tempo map and the song's swing then */
   const takeCache = new Map<string, { version: number; tempo: Tempo; swing: number; of: Map<NoteGroup, GroupTakes> }>();
-  /** A track's groups' takes (see takeTracks), worked out again if anything they depend on changed */
-  const takesOf = (trackId: string): Map<NoteGroup, GroupTakes> | undefined => {
-    const t = takeTracks.get(trackId);
-    if (!t) return undefined;
-    const tempo = tempoOf();
-    const songSwing = swing();
-    const known = takeCache.get(trackId);
-    if (known && known.version === t.version && known.tempo === tempo && known.swing === songSwing) return known.of;
+  /**
+   * Whether a track's takes as last worked out are still right: for its version and, where they
+   * follow the notes' places in seconds (takeTurns.ts takesFollowPlaces), the tempo map and swing now.
+   */
+  const takesCurrent = (t: { version: number; byPlace: boolean }, known: { version: number; tempo: Tempo; swing: number } | undefined, tempo: Tempo, songSwing: number) =>
+    !!known && known.version === t.version && (!t.byPlace || (known.tempo === tempo && known.swing === songSwing));
+  const workOut = (trackId: string, t: { track: Track; entries: ClipEntry[]; version: number }, tempo: Tempo, songSwing: number): Map<NoteGroup, GroupTakes> => {
     const list = playOrder(t.entries.map((e) => e.groups));
     const items = takeItems(list, { track: t.track, tempo, swing: songSwing, straight: straight.has(trackId), ppq: transport.PPQ, runs });
     const f = feel.get(trackId);
@@ -1033,6 +1038,23 @@ export function createClipSchedule(
     });
     takeCache.set(trackId, { version: t.version, tempo, swing: songSwing, of });
     return of;
+  };
+  /**
+   * A track's groups' takes (see takeTracks), worked out again if anything they depend on changed.
+   * Live while playing, a change of the tempo or the swing alone (a slider dragged) keeps the ones
+   * worked out before until the track's turn comes round in workOutTakes, once the dragging stops
+   * (see liveTakesSoon): working every track out again at each step of a drag held the page up. A
+   * change of tempo or swing while playing plays the notes at other times than any export anyway.
+   */
+  const takesOf = (trackId: string): Map<NoteGroup, GroupTakes> | undefined => {
+    const t = takeTracks.get(trackId);
+    if (!t) return undefined;
+    const tempo = tempoOf();
+    const songSwing = swing();
+    const known = takeCache.get(trackId);
+    if (takesCurrent(t, known, tempo, songSwing)) return known!.of;
+    if (live && known && known.version === t.version && transport.state === 'started') return known.of;
+    return workOut(trackId, t, tempo, songSwing);
   };
   /** `group` with its notes' turns and its strum (see takesOf), as it's to play */
   const withTakes = (group: NoteGroup): NoteGroup => {
@@ -1357,12 +1379,12 @@ export function createClipSchedule(
       }
       // A track's version changes with its instrument, Expressive switch, Human insert or any of its
       // clips' groups (a clip changed, moved, added, taken away or put in another order)
-      const nextTakes = new Map<string, { track: Track; entries: ClipEntry[]; version: number }>();
+      const nextTakes = new Map<string, { track: Track; entries: ClipEntry[]; version: number; byPlace: boolean }>();
       for (const [id, list] of takers) {
         const track = trackById.get(id)!;
         const was = takeTracks.get(id);
         const same = !!was && was.track.instrumentKey === track.instrumentKey && !!was.track.expressive === !!track.expressive && was.track.fx.human === track.fx.human && was.entries.length === list.length && was.entries.every((e, i) => e === list[i]);
-        nextTakes.set(id, { track, entries: list, version: same ? was.version : ++takeVersions });
+        nextTakes.set(id, { track, entries: list, version: same ? was.version : ++takeVersions, byPlace: takesFollowPlaces(track.instrumentKey, !!track.expressive) });
       }
       takeTracks = nextTakes;
       for (const id of takeCache.keys()) if (!takeTracks.has(id)) takeCache.delete(id);
@@ -1396,6 +1418,16 @@ export function createClipSchedule(
     letGo: forgetNotes,
     letGoTail,
     forget: forgetInstrument,
+    workOutTakes: () => {
+      const tempo = tempoOf();
+      const songSwing = swing();
+      for (const [id, t] of takeTracks) {
+        if (takesCurrent(t, takeCache.get(id), tempo, songSwing)) continue;
+        workOut(id, t, tempo, songSwing);
+        return true;
+      }
+      return false;
+    },
     dispose: () => {
       transport.off('loop', onLoop);
       transport.off('start', onStart);
@@ -1420,6 +1452,7 @@ let liveLoop: LoopRegion | null = null;
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
   liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity, () => liveLoop, getSongMeter, () => (liveLoop ? [barToTicks(liveLoop.inBar), barToTicks(liveLoop.outBar)] : null));
   liveSchedule.update(tracks, clips);
+  liveTakesSoon();
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
   liveAudioClips ??= createAudioClipSchedule(liveMix.bus.context.transport, getLiveClipBus, getLiveTempo);
@@ -1455,6 +1488,79 @@ export function syncTransport(loop: LoopRegion, tempo: Tempo, swing: number): vo
   const now = liveContext.now();
   applyTempoAt(liveTransport, tempo, ticksToBar(liveTransport.getTicksAtTime(now)), now);
   liveSwing = swing;
+  liveTakesSoon();
+}
+
+/**
+ * How long the tempo, the swing and the song must stay as they are before the takes a change left
+ * out of date are worked out (see takesOf): a slider or a note dragged changes them many times a
+ * second, each worked out once only. Longer while playing, when the takes worked out before play on.
+ */
+const TAKES_SETTLE_MS = { playing: 250, stopped: 100 };
+let takesTimer: ReturnType<typeof setTimeout> | null = null;
+let takesIdle: number | null = null;
+const stopTakesWork = () => {
+  if (takesTimer !== null) clearTimeout(takesTimer);
+  if (takesIdle !== null && typeof cancelIdleCallback === 'function') cancelIdleCallback(takesIdle);
+  takesTimer = takesIdle = null;
+};
+/** Run `go` once the page has a moment (idle; at the latest `timeout` ms on) */
+const whenIdle = (go: () => void, timeout: number) => {
+  if (typeof requestIdleCallback === 'function') takesIdle = requestIdleCallback(go, { timeout });
+  else takesTimer = setTimeout(go, 0);
+};
+/** Hand the page back for a moment between two tracks' takes (no 4 ms timer clamp) */
+const yieldToPage = () =>
+  new Promise<void>((resolve) => {
+    const c = new MessageChannel();
+    c.port1.onmessage = () => {
+      c.port1.close();
+      resolve();
+    };
+    c.port2.postMessage(0);
+  });
+
+/**
+ * After a change to the song, the tempo or the swing: the live tracks' takes it left out of date
+ * are worked out a track at a time once the changes stop for a moment (TAKES_SETTLE_MS), while
+ * stopped when the page is idle (so Play finds them ready).
+ */
+function liveTakesSoon(): void {
+  if (!liveSchedule) return;
+  stopTakesWork();
+  const next = () => {
+    takesTimer = takesIdle = null;
+    if (liveTransport.state === 'started') takesTimer = setTimeout(step, 0);
+    else whenIdle(step, 500);
+  };
+  const step = () => {
+    takesTimer = takesIdle = null;
+    if (liveSchedule?.workOutTakes()) next();
+  };
+  takesTimer = setTimeout(next, liveTransport.state === 'started' ? TAKES_SETTLE_MS.playing : TAKES_SETTLE_MS.stopped);
+}
+
+/** Before Play, how long the takes are worked out for before the page is handed back for a moment */
+const TAKES_SLICE_MS = 40;
+/** Work out tracks' takes for up to TAKES_SLICE_MS (at least one track); false once none is left */
+const takesSlice = (): boolean => {
+  const from = performance.now();
+  while (liveSchedule?.workOutTakes()) if (performance.now() - from >= TAKES_SLICE_MS) return true;
+  return false;
+};
+
+/**
+ * Before Play starts the Transport: every live track's takes worked out (in slices, the page
+ * handed back between them), so the first notes aren't held up working them out in the
+ * scheduler's first look-ahead. Null when they're all ready (worked out now, if it took little).
+ */
+export function liveTakesReady(): Promise<void> | null {
+  if (!takesSlice()) return null;
+  stopTakesWork();
+  return (async () => {
+    do await yieldToPage();
+    while (takesSlice());
+  })();
 }
 
 /**

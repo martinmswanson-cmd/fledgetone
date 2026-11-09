@@ -61,7 +61,7 @@ import {
   stopTransport,
   transportStartsAt,
 } from '../audio/transport';
-import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
+import { liveTakesReady, releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
 import { holdAutomationAt, liveSoundsLoading, liveSoundsReady, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck, setLiveStripTempo } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
@@ -1825,6 +1825,18 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           set({ loadingToPlay: false });
         }
         // Stopped (or started some other way) while it waited
+        if (token !== playToken || get().isPlaying) return;
+      }
+      // The recorded instruments' takes, if a change since left them out of date (see scheduler.ts takesOf)
+      const takes = liveTakesReady();
+      if (takes) {
+        const token = ++playToken;
+        waitingToPlay = true;
+        try {
+          await takes;
+        } finally {
+          waitingToPlay = false;
+        }
         if (token !== playToken || get().isPlaying) return;
       }
       const s = get();
