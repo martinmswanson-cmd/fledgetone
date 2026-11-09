@@ -39,6 +39,7 @@ import { createDesignedKit } from './presets/designedKit';
 import type { DrumDesign } from '../store/drumDesign';
 import { SYNTH_KIT_DESIGNS } from '../store/synthKits';
 import { trackSeed } from './seededNoise';
+import { drumHits, hitPitch, ROW_OF, type DrumRow } from './drumHits';
 import type { Bass808Settings } from '../store/bass808';
 import { tuneNote } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
@@ -52,8 +53,7 @@ import { maxOf } from '../support/minMax';
 
 /** Drum note map (GM-style), kept in store/drumNotes.ts so Node can read it. */
 export { DRUM_NOTES };
-export type DrumRow = keyof typeof DRUM_NOTES;
-const ROW_OF = new Map(Object.entries(DRUM_NOTES).map(([row, note]) => [note as string, row as DrumRow]));
+export type { DrumRow };
 
 export interface PlayableNote {
   note: string;
@@ -63,6 +63,14 @@ export interface PlayableNote {
   expr?: NoteExpression;
   /** Its clip's wobble rate (only Wobble and Growl Bass use it). */
   wobble?: WobbleRate;
+  /**
+   * A song's note on an instrument that plays takes in turn: its turn at each loudness (by
+   * loudness, softest first), the take it plays there (see takeTurns.ts). A note played by hand
+   * has none, and plays the instrument's next take.
+   */
+  turns?: readonly number[];
+  /** A song's chord on a strummed instrument: strummed down (else up), as its place in the song gives it (see takeTurns.ts) */
+  down?: boolean;
 }
 
 /** One sounding note's own controls (see TrackInstrument.noteVoice). */
@@ -246,6 +254,8 @@ export function safely(trigger: () => void): void {
 
 const loudest = (notes: PlayableNote[]) => maxOf(notes.map((n) => n.velocity));
 const loudestNote = (notes: PlayableNote[]) => notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
+/** A song's notes' turns and its chord's strum (see PlayableNote), for a sampled instrument; none for notes played by hand. */
+const songTakesOf = (notes: PlayableNote[]) => (notes.some((n) => n.turns || n.down !== undefined) ? { turns: notes.map((n) => n.turns), down: notes[0].down } : undefined);
 
 interface DrumHits {
   kick: (time: number, velocity: number, ratio?: number) => void;
@@ -256,8 +266,11 @@ interface DrumHits {
   releaseAll: (heard?: number) => void;
 }
 
-/** Play one row of a kit at `time` (`ratio`: detune as a frequency ratio, 1 = none). */
-type DrumPlayer = (row: DrumRow, time: number, velocity: number, ratio?: number) => void;
+/**
+ * Play one row of a kit at `time` (`ratio`: detune as a frequency ratio, 1 = none; `turns`: a
+ * song's hit's, see PlayableNote.turns, for a kit that plays takes in turn).
+ */
+type DrumPlayer = (row: DrumRow, time: number, velocity: number, ratio?: number, turns?: readonly number[]) => void;
 
 /** A synthesized kit's player: its own five sounds, and the extras for the rows added later. */
 function synthKitPlayer(kit: DrumHits, extras: KitExtras): DrumPlayer {
@@ -284,42 +297,12 @@ function extraHit(extras: KitExtras, row: DrumRow, time: number, v: number, r = 
 }
 
 /**
- * Expressive drums (Track.expressive): how far each row's hits may be detuned, in cents, so a
- * repeated hit isn't the identical sound (a real drum never is; real 808s drift too). The kick
- * hardly moves, so the low end stays put; hats and claps the most. Synthesized kits only: a kit
- * that plays recordings (a recorded kit, the Designed Kit's rendered hits) would resample every
- * hit for it, which dulls the cymbals, so its hits vary in level alone.
- */
-const DRUM_SPREAD: Partial<Record<DrumRow, number>> = { kick: 4, snare: 14, clap: 18, closedHat: 20, openHat: 16, tomLow: 10, tomMid: 10, tomHigh: 10, crash: 12, ride: 12, cowbell: 6 };
-
-/**
- * A drum hit's own pitch, as a frequency ratio: the bend it starts with (in semitones, see
- * NoteExpression), as the hat roll painter's rising pitch writes it; 1 for none.
- */
-const hitPitch = (n: Pick<PlayableNote, 'expr'>) => {
-  const st = n.expr?.bend?.[0]?.value ?? 0;
-  return st ? 2 ** (Math.max(-24, Math.min(24, st)) / 12) : 1;
-};
-
-/**
  * Map drum-clip notes onto a kit's rows (expressive: each hit a hair different in level, and in
- * pitch where `detune`, seeded so exports repeat).
+ * pitch where `detune`, picked by its place in the song so exports repeat: see drumHits.ts). A
+ * song's hit carries its turns (PlayableNote.turns) to the kit.
  */
 function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expressive = false, detune = true): void {
-  // One hi-hat voice: an open hat on the same tick replaces the closed one
-  const openHat = notes.some((n) => n.note === DRUM_NOTES.openHat);
-  for (const n of notes) {
-    const row = ROW_OF.get(n.note);
-    if (!row || (row === 'closedHat' && openHat)) continue;
-    const pitch = hitPitch(n);
-    if (expressive) {
-      const ratio = detune ? pitch * 2 ** (((DRUM_SPREAD[row] ?? 8) * noteJitter(row, time, 3)) / 1200) : pitch;
-      const velocity = Math.min(1, n.velocity * 10 ** ((0.8 * noteJitter(row, time, 5)) / 20));
-      safely(() => play(row, time, velocity, ratio));
-      continue;
-    }
-    safely(() => play(row, time, n.velocity, pitch));
-  }
+  for (const h of drumHits(notes, (row, salt) => noteJitter(row, time, salt), expressive, detune)) safely(() => play(h.row, time, h.velocity, h.ratio, notes[h.index].turns));
 }
 
 /** A synthesized kit as a track instrument. */
@@ -375,9 +358,10 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
     note: row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row],
     rate: row === 'openHat' ? 0.94 * r : r,
   });
-  const player: DrumPlayer = (row, time, v, r = 1) => {
+  const player: DrumPlayer = (row, time, v, r = 1, turns) => {
     const { note, rate } = hitOf(row, r);
-    const opts = row === 'closedHat' ? { seconds: 0.14, rate } : { rate };
+    // (A song's hit plays the take its turn gives it: see takeTurns.ts)
+    const opts = row === 'closedHat' ? { seconds: 0.14, rate, turns } : { rate, turns };
     // Still downloading: nothing (rather than the extras standing in for every row)
     if (!kit.loaded()) return;
     if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v, r);
@@ -778,7 +762,8 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   if (kind === 'sampled' || kind === 'custom') {
     const voice = kind === 'sampled' ? createSamplerVoice(key, output, !!options.expressive, options.feel) : createCustomSamplerVoice(options.sample, output);
     return {
-      play: (notes, time) => voice.play(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
+      // (a song's notes carry their turns and a chord its strum: see PlayableNote)
+      play: (notes, time) => voice.play(notes.map((n) => n.note), notes[0].duration, time, loudest(notes), songTakesOf(notes)),
       noteOn: (n, time) => {
         voice.attack(n.note, time, n.velocity);
         return (at) => voice.release(n.note, at);

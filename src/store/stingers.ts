@@ -1,5 +1,5 @@
 import type { InstrumentKey } from '../audio/instrumentCatalog';
-import { currentInstrumentKey } from '../audio/instrumentCatalog';
+import { currentInstrumentKey, INSTRUMENTS } from '../audio/instrumentCatalog';
 import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
 import { readNoteDuration, uid } from './timelineTypes';
 import { isPrototypeName } from './ownKey';
@@ -101,7 +101,6 @@ export function stingerNotes(kind: StingerKind, key: SongKey, variation = 0): { 
   return { notes, lengthBars };
 }
 
-/** Move notes by octaves into an instrument's range (MIDI numbers, inclusive). */
 /**
  * How long a stinger bridging a switch holds the new state back: its length rounded up to whole
  * bars of the song's time signature (in 4/4 whole notes, as before). `measures` is that many of
@@ -113,6 +112,7 @@ export function stingerHold(lengthBars: number, meter?: Meter): { measures: numb
   return { measures, bars: measures * unit };
 }
 
+/** Move notes by octaves into an instrument's range (MIDI numbers, inclusive). */
 export function fitNotesToRange(notes: NoteEvent[], [lo, hi]: readonly [number, number]): NoteEvent[] {
   const midi = (n: string) => {
     const m = /^([A-G]#?)(-?\d+)$/.exec(n);
@@ -125,6 +125,20 @@ export function fitNotesToRange(notes: NoteEvent[], [lo, hi]: readonly [number, 
   while (min + shift < lo && max + shift + 12 <= hi + 12) shift += 12;
   while (max + shift > hi && min + shift - 12 >= lo - 12) shift -= 12;
   return shift ? notes.map((n, i) => ({ ...n, note: nameOf(ms[i] + shift) })) : notes;
+}
+
+/** Instruments whose notes are sounds, not pitches: a drum kit's rows, the FX's hits, the Slicer's slices, the Drum Rack's pads, the Drop pad's moves. */
+const SOUND_ROWS: ReadonlySet<string> = new Set(['drums', 'fx', 'slicer', 'rack', 'drop']);
+
+/**
+ * A stinger's (or a transition cue's) notes as they play on instrument `key`, in the preview, the
+ * file and on the timeline alike: moved by octaves into its range (fitNotesToRange), but where its
+ * notes are sounds (a drum kit's rows) left as written, so a snare stays a snare (moved an octave,
+ * a kit's snare would play its high tom, and a kick or hat nothing).
+ */
+export function stingerNotesOn(notes: NoteEvent[], key: InstrumentKey): NoteEvent[] {
+  const def = INSTRUMENTS[key];
+  return !def || SOUND_ROWS.has(def.kind) ? notes : fitNotesToRange(notes, def.range);
 }
 
 /** A new stinger of `kind` in `key`. */

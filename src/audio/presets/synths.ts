@@ -4,7 +4,7 @@
  * the Drum Machine kit.
  */
 import * as Tone from 'tone';
-import { monotonicTime } from './monotonic';
+import { monotonicHits, monotonicTime } from './monotonic';
 import { joinsNote } from '../legato';
 import type { NoteSlide } from '../legato';
 import { createWideOutput } from './widen';
@@ -370,36 +370,38 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   const bellLow = new Tone.Synth({ oscillator: { type: 'square' }, envelope: bellEnv, volume: -12 }).connect(bellFilter);
   const bellHigh = new Tone.Synth({ oscillator: { type: 'square' }, envelope: bellEnv, volume: -12 }).connect(bellFilter);
 
-  const kickTime = monotonicTime(kick.context);
-  const snareTime = monotonicTime(snareNoise.context);
-  const hatTime = monotonicTime(hat.context);
-  const bellTime = monotonicTime(bellLow.context);
+  // (Each voice's hits strictly in order; a song's hit moved later live, the page held up, picks
+  // its snare's or hat's noise from where it was asked for: see monotonicHits)
+  const kickHit = monotonicHits(kick.context);
+  const snareHit = monotonicHits(snareNoise.context);
+  const hatHit = monotonicHits(hat.context);
+  const bellHit = monotonicHits(bellLow.context);
   // The hits handed out for later, which Stop calls off
   const coming = createComingHits(() => kick.context.currentTime);
 
   return {
-    kick: (time: number, velocity: number, ratio = 1) => {
-      const t = kickTime(time);
-      coming.add(kick, attackAhead(kick, 27.5 * ratio, t, (at) => kick.triggerAttackRelease(27.5 * ratio, '8n', at, velocity)));
-    },
-    snare: (time: number, velocity: number, ratio = 1) => {
-      const t = snareTime(time);
-      coming.add(snareNoise, t);
-      snareNoise.triggerAttackRelease('16n', t, velocity);
-      coming.add(snareTone, attackAhead(snareTone, 185 * ratio, t, (at) => snareTone.triggerAttackRelease(185 * ratio, '32n', at, velocity * 0.8)));
-    },
-    hat: (open: boolean, time: number, velocity: number) => {
-      const t = hatTime(time);
-      coming.add(hat, t);
-      hat.envelope.decay = open ? 0.32 : 0.04;
-      hat.envelope.release = open ? 0.25 : 0.03;
-      hat.triggerAttackRelease(open ? '8n' : '32n', t, velocity);
-    },
-    cowbell: (time: number, velocity: number, ratio = 1) => {
-      const t = bellTime(time);
-      coming.add(bellLow, attackAhead(bellLow, 540 * ratio, t, (at) => bellLow.triggerAttackRelease(540 * ratio, '16n', at, velocity)));
-      coming.add(bellHigh, attackAhead(bellHigh, 800 * ratio, t, (at) => bellHigh.triggerAttackRelease(800 * ratio, '16n', at, velocity)));
-    },
+    kick: (time: number, velocity: number, ratio = 1) =>
+      kickHit(time, (t) => {
+        coming.add(kick, attackAhead(kick, 27.5 * ratio, t, (at) => kick.triggerAttackRelease(27.5 * ratio, '8n', at, velocity)));
+      }),
+    snare: (time: number, velocity: number, ratio = 1) =>
+      snareHit(time, (t) => {
+        coming.add(snareNoise, t);
+        snareNoise.triggerAttackRelease('16n', t, velocity);
+        coming.add(snareTone, attackAhead(snareTone, 185 * ratio, t, (at) => snareTone.triggerAttackRelease(185 * ratio, '32n', at, velocity * 0.8)));
+      }),
+    hat: (open: boolean, time: number, velocity: number) =>
+      hatHit(time, (t) => {
+        coming.add(hat, t);
+        hat.envelope.decay = open ? 0.32 : 0.04;
+        hat.envelope.release = open ? 0.25 : 0.03;
+        hat.triggerAttackRelease(open ? '8n' : '32n', t, velocity);
+      }),
+    cowbell: (time: number, velocity: number, ratio = 1) =>
+      bellHit(time, (t) => {
+        coming.add(bellLow, attackAhead(bellLow, 540 * ratio, t, (at) => bellLow.triggerAttackRelease(540 * ratio, '16n', at, velocity)));
+        coming.add(bellHigh, attackAhead(bellHigh, 800 * ratio, t, (at) => bellHigh.triggerAttackRelease(800 * ratio, '16n', at, velocity)));
+      }),
     /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
     releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),
     dispose: () => {

@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { attackRoom } from '../soundLead';
+import { struckLater } from '../songPlace';
 
 /**
  * Monophonic Tone synths throw if triggered twice at the same instant ("Start time must be
@@ -49,5 +50,25 @@ export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time
     const t = notLate(context, time);
     last = t > last ? t : last + 0.001;
     return last;
+  };
+}
+
+/**
+ * monotonicTime for a voice whose hit is built at once: `play` builds the hit asked for `time` at
+ * the voice's next time. A song's hit moved later live because the page was held up (see notLate)
+ * is picked as it would have been on time: what a hash picks for it (a snare's or hat's noise
+ * burst) counted from where it was asked for, one past the voice's last hit as an export puts it,
+ * not from where it lands (songPlace.ts struckLater). Played by hand, or exported, as before.
+ */
+export function monotonicHits(context: Tone.BaseContext): <T>(time: Tone.Unit.Time | undefined, play: (at: number) => T) => T {
+  const next = monotonicTime(context);
+  /** Where the voice's last hit was asked for, one past the one before (as an export, whose clock waits for its notes, puts it) */
+  let asked = -Infinity;
+  return (time, play) => {
+    const at = next(time);
+    if (time === undefined || context.isOffline) return play(at);
+    const wanted = Tone.Time(time).toSeconds();
+    asked = wanted > asked ? wanted : asked + 0.001;
+    return struckLater(at - asked, () => play(at));
   };
 }
