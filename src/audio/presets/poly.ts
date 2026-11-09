@@ -9,6 +9,7 @@ import { createBendFeed } from '../bendFeed';
 import { chooseNoteToSteal } from '../samplers/noteStealing';
 import { letGoToneSynth, type ToneVoice } from './toneStop';
 import { attackAhead, type NoteSynth } from './toneStart';
+import { ifUndone, inStrike, strikeWhole } from '../soundLead';
 import { RENDER_BLOCK } from './native';
 
 /** Seconds a pool voice may sit silent before it's disposed. */
@@ -111,7 +112,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
    * Every voice's pitch signal feeds this muted gain, so the browser keeps working it out between
    * notes. Between notes nothing else listens to it (its oscillator is stopped) and Chrome leaves
    * it as it was, so a voice taken again could start its note with one sample at the last note's
-   * pitch, even with the pitch set a block early (toneStart.ts pitchAhead): in the export, where
+   * pitch, even with the pitch set a block early (toneStart.ts attackAhead): in the export, where
    * the render waits each second for notes to be handed out, 3 Brass notes in 40 did, and differed
    * from the others and from what was heard. Gain 0 sends out nothing at all (no sound, no
    * offset); the cost is one constant worked out per voice, about a hundredth of a percent of
@@ -141,7 +142,7 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
 
   /**
    * How long a voice rests after its note before it's taken for the next: two render blocks, so its
-   * note can start early silent (toneStart.ts pitchAhead). Taken sooner, the new note starts from
+   * note can start early silent (toneStart.ts attackAhead). Taken sooner, the new note starts from
    * where in the block it lands, so it sounded different live and in the export.
    */
   const rest = (2 * RENDER_BLOCK) / out.context.sampleRate;
@@ -172,28 +173,40 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
 
   return {
     trigger: (notes, duration, time, velocity = 1) => {
-      const t = notLate(out.context, time);
       const length = out.toSeconds(duration);
-      for (const note of notes) {
-        const v = pick(t);
-        if (!v) return;
-        try {
-          // (A free voice still has the last note's pitch: this one's is set before it starts)
-          const at = attackAhead(v.voice as unknown as NoteSynth, note, t, (when) => v.voice.triggerAttackRelease(note, length, when, velocity));
-          v.start = at;
-          v.end = at + length + v.voice.toSeconds(v.voice.envelope.release);
-          v.velocity = velocity;
-          v.releasedAt = at + length;
-          v.serial++;
-        } catch (err) {
-          console.warn('Skipped a note:', err);
+      // (A chord struck as one, live: see soundLead.ts strikeWhole)
+      try {
+        strikeWhole(out.context, notLate(out.context, time), (t) => {
+        for (const note of notes) {
+          const v = pick(t);
+          if (!v) return;
+          try {
+            // (A free voice still has the last note's pitch: this one's is set before it starts)
+            const was = { start: v.start, end: v.end, velocity: v.velocity, releasedAt: v.releasedAt, serial: v.serial };
+            const at = attackAhead(v.voice as unknown as NoteSynth, note, t, (when) => v.voice.triggerAttackRelease(note, length, when, velocity));
+            ifUndone(() => Object.assign(v, was));
+            v.start = at;
+            v.end = at + length + v.voice.toSeconds(v.voice.envelope.release);
+            v.velocity = velocity;
+            v.releasedAt = at + length;
+            v.serial++;
+          } catch (err) {
+            if (inStrike()) throw err;
+            console.warn('Skipped a note:', err);
+          }
         }
+        });
+      } catch (err) {
+        console.warn('Skipped a chord:', err);
       }
     },
     attack: (note, time, velocity) => {
       const t = notLate(out.context, time);
       const v = pick(t);
       if (!v) return { release: () => {} };
+      // (Inside a strike, struck again: this voice is free again)
+      const was = { start: v.start, end: v.end, velocity: v.velocity, releasedAt: v.releasedAt, serial: v.serial };
+      ifUndone(() => Object.assign(v, was));
       v.start = attackAhead(v.voice as unknown as NoteSynth, note, t, (at) => v.voice.triggerAttack(note, at, velocity));
       v.end = Infinity;
       v.velocity = velocity ?? 1;

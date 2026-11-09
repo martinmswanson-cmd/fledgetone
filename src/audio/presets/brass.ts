@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { notLate } from './monotonic';
+import { ifUndone, strikeWhole } from '../soundLead';
 import { createVoicePool } from './poly';
 
 /**
@@ -34,6 +35,12 @@ export function createBrassVoice(output: Tone.InputNode) {
     filter
   );
 
+  /** The swell at `t`, taken away should its strike be struck again. */
+  const swellAt = (t: number) => {
+    swell(t);
+    ifUndone(() => filter.frequency.cancelScheduledValues(t));
+  };
+
   // Route: voices -> filter -> output (brass channel -> masterBus)
   filter.connect(output);
 
@@ -51,17 +58,19 @@ export function createBrassVoice(output: Tone.InputNode) {
       synth.dispose();
       filter.dispose();
     },
+    // (The swell struck with its notes, live: see soundLead.ts strikeWhole)
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.85) => {
-      const t = notLate(filter.context, time);
-      swell(t);
-      synth.trigger(notes, duration, t, velocity);
+      strikeWhole(filter.context, notLate(filter.context, time), (t) => {
+        swellAt(t);
+        synth.trigger(notes, duration, t, velocity);
+      });
     },
     // A key held on a MIDI keyboard
-    attack: (note: string, time: number, velocity: number) => {
-      const t = notLate(filter.context, time);
-      swell(t);
-      return synth.attack(note, t, velocity);
-    },
+    attack: (note: string, time: number, velocity: number) =>
+      strikeWhole(filter.context, notLate(filter.context, time), (t) => {
+        swellAt(t);
+        return synth.attack(note, t, velocity);
+      }),
     bend: synth.bend,
   };
 }

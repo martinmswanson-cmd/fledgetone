@@ -62,16 +62,18 @@ export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
       held.forEach((n) => n.dispose());
     },
     trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
-      const start = safeTime(time);
+      const asked = safeTime(time);
       // A plucked bass plucks every note, unless the track glides: then a note that joins the last
       // one slides from it without a new pluck
-      const joined = glideFor(start, start + synth.toSeconds(duration));
-      playMono(synth, note, duration, start, velocity, glide?.seconds !== undefined ? joined : null);
+      const joined = glideFor(asked, asked + synth.toSeconds(duration));
+      const start = playMono(synth, note, duration, asked, velocity, glide?.seconds !== undefined ? joined : null);
+      safeTime.struck(start);
       slid = toneSlide(synth, start);
     },
     // A key held on a MIDI keyboard: sounds until released
     attack: (note: string, time: number, velocity: number) => {
       const start = attackAhead(synth, note, safeTime(time), (at) => synth.triggerAttack(note, at, velocity));
+      safeTime.struck(start);
       slid = toneSlide(synth, start);
     },
     /** How the note it began last got to its pitch (see TrackInstrument.slide) */

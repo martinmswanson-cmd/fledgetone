@@ -82,13 +82,10 @@ const PAGE = async (cfg) => {
   const triggerAttack = KP.triggerAttack;
   KP.triggerAttack = function (...a) {
     if (this.context.isOffline) return triggerAttack.apply(this, a);
-    const h = { asked: this.toSeconds(a[1]) };
+    // (Where its envelope went is read once the hit is struck: its attack is set as its strike's last step)
+    const h = { asked: this.toSeconds(a[1]), env: this.envelope };
     live.set(hand, h);
-    try {
-      return triggerAttack.apply(this, a);
-    } finally {
-      h.struck = this.envelope._struckAt ?? h.asked;
-    }
+    return triggerAttack.apply(this, a);
   };
 
   // The hold-up: the page busy until the clock has moved on three blocks past the press
@@ -167,6 +164,8 @@ const PAGE = async (cfg) => {
     count = 0;
     held = cfg.hold === 'none';
     LI.playMidi({ kind: 'noteOn', note: cfg.midi, velocity: 0.8 }, press);
+    const h = live.get(i);
+    if (h) h.struck = h.env._struckAt ?? h.asked;
     LI.playMidi({ kind: 'noteOff', note: cfg.midi }, raw.currentTime);
     presses.push(press);
   }

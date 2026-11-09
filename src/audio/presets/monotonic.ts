@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { attackRoom } from '../soundLead';
+import { attackRoom, inStrike } from '../soundLead';
 
 /**
  * Monophonic Tone synths throw if triggered twice at the same instant ("Start time must be
@@ -40,14 +40,22 @@ export function notLate(context: Tone.BaseContext, time?: Tone.Unit.Time): numbe
   const raw = context.rawContext;
   const soonest = raw.currentTime + LATE_MARGIN;
   if (context.isOffline) return Math.max(requested, soonest);
+  // (A part of a live strike under way keeps the strike's time: see soundLead.ts strikeWhole)
+  if (time !== undefined && inStrike()) return requested;
   return Math.max(requested, soonest, attackRoom({ currentTime: raw.currentTime, sampleRate: raw.sampleRate, rawContext: raw }));
 }
 
-export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time) => number {
+/** A voice's times, strictly increasing (see above); `struck(at)` tells it where a note went when its strike moved it later (soundLead.ts strikeWhole). */
+export function monotonicTime(context: Tone.BaseContext): ((time?: Tone.Unit.Time) => number) & { struck: (at: number) => void } {
   let last = -Infinity;
-  return (time) => {
+  const next = (time?: Tone.Unit.Time) => {
     const t = notLate(context, time);
     last = t > last ? t : last + 0.001;
     return last;
   };
+  return Object.assign(next, {
+    struck: (at: number) => {
+      if (at > last) last = at;
+    },
+  });
 }

@@ -9,7 +9,7 @@
  */
 import * as Tone from 'tone';
 import { RENDER_BLOCK } from './native';
-import { ATTACK_TRIES, AttackMoved, attackRoom, settledAt, strikeExactly } from '../soundLead';
+import { attackRoom, ifUndone, inStrike, strikeWhole } from '../soundLead';
 
 /** Where a Tone source keeps its starts and stops (Tone keeps it to itself). */
 interface States {
@@ -48,7 +48,7 @@ function silentFrom(source: States | undefined, start: number, context: Tone.Bas
   return early > now ? early : now - 0.5 / context.sampleRate;
 }
 
-/** A synth whose note is started a render block early at 0 Hz (see pitchAhead), and how. */
+/** A synth whose note is started a render block early at 0 Hz (see attackAhead), and how. */
 interface EarlyStart {
   /** The oscillators its note starts. */
   sources: Array<States & { start: (time: number) => unknown; stop: (time: number) => unknown }>;
@@ -84,35 +84,13 @@ function lastStart(source: States): number {
   return t;
 }
 
-/**
- * Before a Tone synth's note at `start` (before triggerAttack): when its oscillator is stopped,
- * its pitch is set a render block early, so the note starts on its own pitch wherever in the
- * block it lands. A MembraneSynth (a kick's drop), a MetalSynth (a hat) and an FMSynth also start
- * their oscillators a block early, held at 0 Hz from a block before that until the note (where
- * its pitch is set), so the note starts on time and at the start of its wave wherever it lands
- * (its envelope is silent until then). A note that starts while the oscillator still sounds
- * (legato, a ringing tail) is left as it was.
- *
- * Returns when the note is to start: `start`, or later live (see earlyLive) when the audio clock
- * is too near it for its attack, or moves on while the oscillators are started (the main thread
- * held up for a moment): late by the hold-up, but whole and on its own pitch.
- */
-export function pitchAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): number {
-  const plan = planAhead(synth, note, start);
-  if (!plan.waiting) return plan.at;
-  // (Settled as a strike made exactly would be: see attackAhead)
-  const at = settledAt(synth.context, plan.at);
-  plan.waiting.pitch.setValueAtTime(plan.waiting.hz, at);
-  return at;
-}
-
 /** Where a note set ahead is to start, and, when its oscillators were started live to wait for it at 0 Hz (see earlyLive), their pitch, still to be set where it comes. */
 interface Planned {
   at: number;
   waiting: EarlyStart | null;
 }
 
-/** pitchAhead, leaving the pitch of oscillators that wait for the note to be set (see Planned). */
+/** Before a note at `start` (see attackAhead): its pitch set early, or its oscillators started early, their pitch still to be set where it comes (see Planned). */
 function planAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): Planned {
   const early = earlyStartOf(synth, note);
   if (!early) {
@@ -157,32 +135,25 @@ function planAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number): 
 }
 
 /**
- * pitchAhead's early start, live. Each of the synth's oscillators (a hat's six FM pairs) runs on
- * from where it's started, so all of them must begin their waves together, on the note's attack,
- * as they do in the export. Live, the clock can move on while they're started, and the attack
- * with it (an attack must be set a render callback past the clock: see soundLead.ts): pairs
- * started early were then already playing their waves when the rest started fresh with the
- * moved attack, out of step with them, and a hand-played hat came out up to 4.5 dB quieter or 2.5
- * dB louder than in the export (a kick, a snare's snap or an FM note began differently). So every one of
- * them is started early at 0 Hz, where a wave waits at its start however long it's held (Tone
- * moves a start the clock has passed up to the clock: still at 0 Hz), and the note's start is
- * settled only as it's struck, once they're all started: where it was to be while the clock is
- * still two blocks short of it (every start then reached the sound in time), or else that far
- * past the clock (see soundLead.ts settledAt), no later than any note's attack would go; its pitch
- * is set there, just before it's struck (see attackAhead). Returns where it was to be, or null
- * when they aren't all silent from two blocks before the note (it's left to pitchAhead).
+ * The early start, live. Each of the synth's oscillators (a hat's six FM pairs) runs on from where
+ * it's started, so all of them must begin their waves together, on the note's attack, as they do in
+ * the export. So every one of them is started a block early at 0 Hz, where a wave waits at its
+ * start however long it's held (Tone moves a start the clock has passed up to the clock: still at
+ * 0 Hz), and the note's own pitch is set at its start (see attackAhead), all inside the note's
+ * strike (soundLead.ts strikeWhole): held up while they're set, they're stopped and the whole note
+ * started again for its new time (stopWaiting). Returns where the note is to start (after every
+ * start, should one have landed there), or null when they aren't all silent from two blocks
+ * before the note (only its pitch is set early).
  */
 function earlyLive(synth: NoteSynth, early: EarlyStart, start: number, quietFrom: (at: number, blocks: number) => number | null): number | null {
   const frame = 1 / synth.context.sampleRate;
-  // (Where the clock already puts the attack: the room for the early start is then before it)
-  const planned = Math.max(start, attackRoom(synth.context));
-  const from = quietFrom(planned, 2);
-  const ahead = planned - RENDER_BLOCK * frame;
+  const from = quietFrom(start, 2);
+  const ahead = start - RENDER_BLOCK * frame;
   if (from === null || !(from < ahead)) return null;
   early.pitch.setValueAtTime(0, from);
   for (const source of early.sources) source.start(ahead);
   // (After each start too: a note can't start an oscillator again at the moment it already starts)
-  let at = planned;
+  let at = start;
   for (const source of early.sources) at = Math.max(at, lastStart(source) + frame);
   return at;
 }
@@ -202,58 +173,98 @@ function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number): v
 }
 
 /**
- * A Tone synth's note at `start`, its pitch set ahead (see pitchAhead): `attack` triggers it at
- * the time it's given, and the note's start comes back.
+ * A Tone synth's note at `start`: `attack` triggers it at the time it's given, and the note's start
+ * comes back. Before it, when its oscillator is stopped, its pitch is set a render block early, so
+ * the note starts on its own pitch wherever in the block it lands. A MembraneSynth (a kick's drop),
+ * a MetalSynth (a hat) and an FMSynth also start their oscillators a block early, held at 0 Hz
+ * from a block before that until the note (where its pitch is set), so the note starts on time and
+ * at the start of its wave wherever it lands (its envelope is silent until then). A note that
+ * starts while the oscillator still sounds (legato, a ringing tail) is left as it was.
  *
- * Live, a note whose oscillators wait for it at 0 Hz (see earlyLive) is struck exactly
- * (strikeExactly, soundLead.ts): its pitch is set where the strike settles it, just before its
- * attack, so they set out together; should the clock move on too near it before its attack is set
- * (the page held up again), nothing of it is set and its oscillators are started again for where
- * it has to go (three tries; the third moves as it must).
+ * Live, all of it is one strike (soundLead.ts strikeWhole): where it starts is decided once, its
+ * pitch set for that time, its attack heard last; held up while that's set, its oscillators are
+ * stopped and the whole note struck again later. Its oscillators waiting at 0 Hz are readied before the
+ * time is decided (they wait for any time); inside another strike (a snare's snap, struck with its
+ * noise), whose time is decided already, they're started for it, and stopped should it be struck
+ * again (see earlyLive).
  *
- * Should Tone refuse the start (it won't start an oscillator again at or before the moment its
- * last start is set, which the audio clock moving on at the wrong moment could still bring
- * about), the note is struck again just after every start already set, so it's never left silent
- * at the 0 Hz the early start holds (the first try's envelope, which opened, is taken over by the
- * second: one note, struck once).
+ * In an export, should Tone refuse the start (it won't start an oscillator again at or before the
+ * moment its last start is set), the note is struck again just after every start already set, so
+ * it's never left silent at the 0 Hz the early start holds.
  */
 export function attackAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number, attack: (time: number) => void): number {
-  let plan = planAhead(synth, note, start);
-  for (let tries = 1; plan.waiting && tries < ATTACK_TRIES; tries++) {
-    const early = plan.waiting;
-    let at = plan.at;
-    let pitched = false;
-    const pitch = (when: number) => {
-      early.pitch.setValueAtTime(early.hz, when);
-      at = when;
-      pitched = true;
-    };
-    try {
-      strikeExactly(() => attack(plan.at), pitch);
-      // (One that didn't say where it went: its pitch all the same)
-      if (!pitched) pitch(at);
-      return at;
-    } catch (err) {
-      if (!(err instanceof AttackMoved)) {
-        if (!pitched) pitch(at);
-        return strikeAfterStarts(synth, note, at, attack);
-      }
-      stopWaiting(synth, note, plan.at);
-      plan = planAhead(synth, note, err.at);
-    }
+  return strikeTogether(synth.context, start, [[synth, note]], (_at, play) => play(0, attack));
+}
+
+/** A note's oscillators readied ahead of its strike, live (see strikeTogether): where it can go, and what waits for its pitch. */
+interface Readied {
+  at: number;
+  early: EarlyStart | null;
+}
+
+/**
+ * A hit of one or more Tone synths' notes struck as one (a snare's noise and snap, a bell's two
+ * tones): `build` sets the hit at its time `at`, playing part `i` of `parts` with `play(i,
+ * attack)`, which sets that note up (see attackAhead) and calls `attack` with its time. Live, and
+ * not inside another strike, every part's oscillators are readied first (started early at 0 Hz,
+ * they wait at the start of their waves for any time after), and only then is where the hit goes
+ * decided (soundLead.ts strikeWhole), so the slow part of a hat (six FM pairs) doesn't hold up the
+ * strike itself; struck again, they're stopped and the part set up afresh for its new time. Inside
+ * another strike, whose time is decided already, they're started for that time, and stopped should
+ * it be struck again. Returns what `build` returned.
+ */
+export function strikeTogether<R>(context: Tone.BaseContext, start: number, parts: Array<[NoteSynth, Tone.Unit.Frequency]>, build: (at: number, play: (i: number, attack: (time: number) => void) => number) => R): R {
+  if (!context.isOffline && !inStrike()) {
+    const readied: Readied[] = parts.map(([synth, note]) => {
+      const plan = planAhead(synth, note, Math.max(start, attackRoom(context)));
+      return { at: plan.at, early: plan.waiting };
+    });
+    const at = readied.reduce((latest, r) => Math.max(latest, r.at), start);
+    // (Struck again, a part starts afresh for its new time, its oscillators stopped and started again)
+    let again = false;
+    return strikeWhole(
+      context,
+      start,
+      (when) =>
+        build(when, (i, attack) => {
+          const [synth, note] = parts[i];
+          if (again) return playAhead(synth, note, when, attack);
+          ifUndone(() => (again = true));
+          const early = readied[i].early;
+          if (early) {
+            early.pitch.setValueAtTime(early.hz, when);
+            ifUndone(() => stopWaiting(synth, note, when));
+          }
+          attack(when);
+          return when;
+        }),
+      at
+    );
   }
-  // (The last try, as any note: a callback past the clock, so the strike needn't move it)
-  const at = plan.waiting ? Math.max(plan.at, attackRoom(synth.context)) : plan.at;
-  if (plan.waiting) plan.waiting.pitch.setValueAtTime(plan.waiting.hz, at);
+  return strikeWhole(context, start, (when) => build(when, (i, attack) => playAhead(parts[i][0], parts[i][1], when, attack)));
+}
+
+/** A note set up and struck at `when` inside a strike already decided, or in an export (see attackAhead). */
+function playAhead(synth: NoteSynth, note: Tone.Unit.Frequency, when: number, attack: (time: number) => void): number {
+  const plan = planAhead(synth, note, when);
+  const early = plan.waiting;
+  if (early) {
+    early.pitch.setValueAtTime(early.hz, plan.at);
+    ifUndone(() => stopWaiting(synth, note, plan.at));
+  }
+  if (!synth.context.isOffline) {
+    attack(plan.at);
+    return plan.at;
+  }
   try {
-    attack(at);
-    return at;
+    attack(plan.at);
+    return plan.at;
   } catch {
-    return strikeAfterStarts(synth, note, at, attack);
+    return strikeAfterStarts(synth, note, plan.at, attack);
   }
 }
 
-/** A note at `at` Tone refused: struck again just after every start already set (see attackAhead). */
+/** An export's note at `at` Tone refused: struck again just after every start already set (see attackAhead). */
 function strikeAfterStarts(synth: NoteSynth, note: Tone.Unit.Frequency, at: number, attack: (time: number) => void): number {
   const frame = 1 / synth.context.sampleRate;
   const sources = earlyStartOf(synth, note)?.sources ?? [];

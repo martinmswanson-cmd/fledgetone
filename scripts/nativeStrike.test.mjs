@@ -1,6 +1,7 @@
 // Live notes of the synths and kits made of plain Web Audio nodes (src/audio/presets/native.ts, monotonic.ts):
-// set no sooner than a render callback past the clock, struck again when the page is held up while one
-// is built (a strike found late, or with less than a render block to spare, never heard), and exports left exactly as they were. Also the wave normalizers kept ready (KNOWN_NORMALIZERS).
+// set no sooner than a render callback past the clock, struck again whole when the page is held up while one
+// is built (the clock no longer a callback short of it: never heard), and exports left exactly as they were.
+// Also the wave normalizers kept ready (KNOWN_NORMALIZERS).
 // Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -77,22 +78,14 @@ function fakeInstrument(context, holdUps = []) {
     const made = fakeVoice(start);
     N.connectOut(made.node, 'bus');
     // (The page held up: the clock moves on while the note is set)
-    context.rawContext.currentTime += holdUps[built.length] ?? 0;
+    const held = holdUps[built.length] ?? 0;
+    context.rawContext.currentTime += held;
     set.add(made.voice);
     built.push(made);
     return made.voice;
   };
   return { set, built, build };
 }
-
-test('a native note built in time is struck once, a callback past the clock (scan r41)', () => {
-  const context = fakeContext();
-  const { built, build } = fakeInstrument(context, [0.002]);
-  const voice = N.strikeLive(context, 1, build);
-  assert.equal(built.length, 1);
-  assert.equal(voice.start, 1 + ROOM);
-  assert.deepEqual(voice.moved, { asked: 1, at: 1 + ROOM });
-});
 
 test('the page held up past the note while it is built: struck again a callback past the clock, the first strike never heard (scan r41, r42)', () => {
   const context = fakeContext();
@@ -147,7 +140,9 @@ test('what a note does to others (the note before giving way) waits until it is 
     builds++;
     const { voice } = fakeVoice(start);
     N.onceStruck(() => gaveWay.push(start));
-    if (builds === 1) context.rawContext.currentTime += 0.02;
+    if (builds === 1) {
+      context.rawContext.currentTime += 0.02;
+    }
     set.add(voice);
     return voice;
   });
@@ -159,83 +154,19 @@ test('what a note does to others (the note before giving way) waits until it is 
   assert.equal(now, 1);
 });
 
-test('a note found late at its third strike too is let go unheard, not played as a burst (scan r42)', () => {
-  const context = fakeContext();
-  // (Held up longer than even the third strike's room: see the next test)
-  const { built, build } = fakeInstrument(context, [0.02, 0.02, 0.03]);
-  const dropped = N.struckAgain.dropped;
-  let putBack = 0;
-  N.strikeLive(context, 1, build, () => putBack++);
-  assert.equal(built.length, 3);
-  assert.equal(putBack, 3);
-  assert.equal(N.struckAgain.dropped, dropped + 1);
-  for (const b of built) assert.deepEqual(b.out, []);
-});
-
-test('the third strike takes a callback more room: a page held up 20 ms at every strike still lets the note sound (scan r42)', () => {
-  const context = fakeContext();
-  const { built, build } = fakeInstrument(context, [0.02, 0.02, 0.02]);
-  const dropped = N.struckAgain.dropped;
-  const voice = N.strikeLive(context, 1, build);
-  assert.equal(built.length, 3);
-  assert.equal(N.struckAgain.dropped, dropped);
-  // Two callbacks past the clock as it was then
-  assert.ok(Math.abs(voice.start - (1.04 + ROOM + 4 * BLOCK)) < 1e-12);
-  assert.deepEqual(built[2].out, ['bus']);
-  assert.deepEqual(built[0].out, []);
-  assert.deepEqual(built[1].out, []);
-  assert.equal(N.strikeRoom(context, 1), 0);
-  assert.equal(N.strikeRoom(context, 2), 0);
-  assert.equal(N.strikeRoom(context, 3), 4 * BLOCK);
-});
-
-test('a native note is struck three times at most, however long the page is held up (scan r41)', () => {
-  const context = fakeContext();
-  const { built, build } = fakeInstrument(context, [0.05, 0.05, 0.05, 0.05]);
-  N.strikeLive(context, 1, build);
-  assert.equal(built.length, 3);
-});
-
-test('a strike is connected only with a render block to spare before its start: the block under way as the clock is read plays the connection only from the next (scan r42)', () => {
-  assert.equal(N.inTimeToConnect(1, SR, 1 + BLOCK + 1 / SR), true);
-  assert.equal(N.inTimeToConnect(1, SR, 1 + 2 * BLOCK), true);
-  // Short of its start, but by less than a block: first heard after it (a Pluck silent or 20 dB quiet)
-  assert.equal(N.inTimeToConnect(1, SR, 1 + BLOCK), false);
-  assert.equal(N.inTimeToConnect(1, SR, 1 + 1 / SR), false);
-  assert.equal(N.inTimeToConnect(1, SR, 1), false);
-});
-
-test('the clock stepping on three blocks while a note is built is not struck again; four (its start still a frame ahead, less than a block) is, and sounds whole a callback past the clock (scan r41, r42)', () => {
-  const context = fakeContext();
-  const { built, build } = fakeInstrument(context, [3 * BLOCK]);
-  N.strikeLive(context, 1, build);
-  assert.equal(built.length, 1);
-  assert.deepEqual(built[0].out, ['bus']);
-  // Four blocks on, its start a frame ahead: found in time before, first heard after its attack
-  const later = fakeContext();
-  const again = fakeInstrument(later, [4 * BLOCK]);
-  const voice = N.strikeLive(later, 1, again.build);
-  assert.equal(again.built.length, 2);
-  assert.deepEqual(again.built[0].out, []);
-  assert.deepEqual(again.built[1].out, ['bus']);
-  assert.ok(Math.abs(voice.start - (1 + 4 * BLOCK + ROOM)) < 1e-12);
-  // A block further, past the start: struck again too
-  const past = fakeContext();
-  const more = fakeInstrument(past, [5 * BLOCK]);
-  N.strikeLive(past, 1, more.build);
-  assert.equal(more.built.length, 2);
-});
-
-test('a note whose envelopes begin before its start is struck again once the clock is past them (scan r41)', () => {
+test('a note whose envelopes begin before its start is struck again once the clock leaves no callback before them (scan r41, r44)', () => {
   const context = fakeContext();
   const set = N.createVoiceSet(context.rawContext);
   let builds = 0;
-  N.strikeLive(context, 1, (start) => {
+  N.strikeLive(context, 1.05, (start) => {
     builds++;
     const { voice } = fakeVoice(start);
-    voice.early = 0.004;
-    // (Held up past the envelopes' start, short of the note's)
-    if (builds === 1) context.rawContext.currentTime = start - 0.002;
+    // (Ahead only with room for it, as the 808 Designer's and the Synth Designer's are: see roomAhead)
+    voice.early = N.roomAhead(context, start, 0.004) ? 0.004 : 0;
+    // (Held up to within a callback of the envelopes' start, short of the note's)
+    if (builds === 1) {
+      context.rawContext.currentTime = start - 0.004 - ROOM + 2 * BLOCK;
+    }
     set.add(voice);
     return voice;
   });
@@ -259,30 +190,6 @@ test('live, envelopes run ahead of a note (for a shaper\'s delay) only from a re
   assert.equal(N.roomAhead(offline, notLate(offline), shaper), true);
   assert.equal(N.roomAhead(offline, 1 + shaper, shaper), true);
   assert.equal(N.roomAhead(offline, 1 + shaper - 1e-6, shaper), false);
-});
-
-test('a note set no sooner than a render callback past the clock survives a build of three render blocks; one set 192 frames sooner is found late until its third strike (scan r42)', () => {
-  // (The 808 Designer's note, built in three blocks of the clock at a time while the page is busy: with its
-  // envelope a shaper's delay ahead of its start it was struck three times and let go unheard)
-  const build = (ahead, roomFirst) => {
-    const context = fakeContext();
-    const set = N.createVoiceSet(context.rawContext);
-    let builds = 0;
-    const dropped = N.struckAgain.dropped;
-    N.strikeLive(context, 1, (start) => {
-      builds++;
-      const { voice } = fakeVoice(start);
-      voice.start = start - (!roomFirst || N.roomAhead(context, start, ahead) ? ahead : 0);
-      context.rawContext.currentTime += 3 * BLOCK;
-      set.add(voice);
-      return voice;
-    });
-    return { builds, missed: N.struckAgain.dropped - dropped };
-  };
-  assert.deepEqual(build(192 / SR, true), { builds: 1, missed: 0 });
-  // (What it did before: its envelope ahead regardless, found late at the first two strikes; the
-  // third, with a callback more room, sounds)
-  assert.deepEqual(build(192 / SR, false), { builds: 3, missed: 0 });
 });
 
 test('an export\'s native note is built once, where notLate puts it, and not marked moved (scan r41)', () => {
@@ -320,4 +227,56 @@ test('the wave normalizers kept ready are exactly what working them out gives (s
     }
   }
   assert.equal(checked, 33);
+});
+
+test('a native note built with the clock standing still is struck once, a callback past the clock, connected as its last step (scan r41, r44)', () => {
+  const context = fakeContext();
+  const { built, build } = fakeInstrument(context);
+  const voice = N.strikeLive(context, 1, build);
+  assert.equal(built.length, 1);
+  assert.equal(voice.start, 1 + ROOM);
+  assert.deepEqual(built[0].out, ['bus']);
+  assert.deepEqual(voice.moved, { asked: 1, at: 1 + ROOM });
+});
+
+test('the clock stepping on at all while a note is built (the callbacks don\'t always come evenly): let go unheard and struck again a callback past the clock (scan r44)', () => {
+  for (const step of [BLOCK, 3 * BLOCK, 4 * BLOCK, 0.02]) {
+    const context = fakeContext();
+    const { built, build } = fakeInstrument(context, [step]);
+    const voice = N.strikeLive(context, 1, build);
+    assert.equal(built.length, 2, `stepped ${step}`);
+    assert.deepEqual(built[0].out, [], `stepped ${step}: the first never connected`);
+    assert.ok(built[0].disconnected);
+    assert.ok(Math.abs(voice.start - (1 + step + ROOM)) < 1e-12, `stepped ${step}: ${voice.start}`);
+  }
+});
+
+test('a native note held up at every strike is struck four times at most; the last, a callback later still, is heard however it went: never lost (scan r44)', () => {
+  const context = fakeContext();
+  const { built, build } = fakeInstrument(context, [0.02, 0.02, 0.02, 0.03]);
+  const before = { ...N.strikeCounts };
+  const voice = N.strikeLive(context, 1, build);
+  assert.equal(built.length, 4);
+  assert.deepEqual(built.map((b) => b.out.length), [0, 0, 0, 1]);
+  assert.ok(Math.abs(voice.start - (1.06 + ROOM + 4 * BLOCK)) < 1e-12, `${voice.start}`);
+  // (Held up past it once more: heard all the same, and counted)
+  assert.equal(N.strikeCounts.again - before.again, 3);
+  assert.equal(N.strikeCounts.late - before.late, 1);
+});
+
+test('an 808 Designer note, its envelope a shaper\'s delay ahead of its start, survives a page as busy as three render blocks while it is built only when it was set with room for that (scan r42, r44)', () => {
+  const build = (ahead) => {
+    const context = fakeContext();
+    const set = N.createVoiceSet(context.rawContext);
+    let builds = 0;
+    N.strikeLive(context, 1, (start) => {
+      builds++;
+      const { voice } = fakeVoice(start);
+      voice.start = start - (N.roomAhead(context, start, ahead) ? ahead : 0);
+      set.add(voice);
+      return voice;
+    });
+    return builds;
+  };
+  assert.equal(build(192 / SR), 1);
 });

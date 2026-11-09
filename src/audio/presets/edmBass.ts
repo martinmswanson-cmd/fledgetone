@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
 import { monotonicTime, notLate } from './monotonic';
+import { ifUndone, strikeWhole } from '../soundLead';
 import { joinsNote, slideConstant } from '../legato';
 import type { NoteSlide } from '../legato';
 import { createBendTimeline } from '../bendTimeline';
@@ -13,9 +14,11 @@ import {
   createFilter,
   createHeldDrive,
   createOsc,
+  connectOut,
   createVoiceSet,
   leveledWave,
   noteFrequency,
+  onceStruck,
   releaseConstant,
   releaseTail,
 } from './native';
@@ -296,16 +299,19 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       // A note a hand-edited file garbled (NaN) is skipped before anything starts playing
       if (!Number.isFinite(length) || !(freq > 0)) return;
       const start = safeTime(time);
-      const end = start + Math.max(0.005, length);
-      const note: BassNote = {
-        start,
-        end,
-        freq,
-        velocity: n.velocity,
-        cycle: WOBBLE_BEATS[n.wobble ?? DEFAULT_WOBBLE] * bus.toSeconds('4n'),
+      const timesAt = (at: number) => {
+        const end = at + Math.max(0.005, length);
+        const note: BassNote = {
+          start: at,
+          end,
+          freq,
+          velocity: n.velocity,
+          cycle: WOBBLE_BEATS[n.wobble ?? DEFAULT_WOBBLE] * bus.toSeconds('4n'),
+        };
+        return { end, note, stopAt: end + releaseTail(patch.release) };
       };
+      const { end, note, stopAt } = timesAt(start);
       const peak = patch.level * n.velocity;
-      const stopAt = end + releaseTail(patch.release);
 
       const v = current;
       slid = v && joinsNote(start, v.end) ? { seconds: glide?.seconds ?? patch.glide, curve: 'target' } : null;
@@ -359,21 +365,31 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         return;
       }
 
-      const cents = bends.at(start);
-      const source = patch.source(raw, cents ? { ...note, freq: bentBy(note.freq, cents) } : note);
-      const first = section(note, stopAt);
-      const amp = raw.createGain();
-      attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
-      amp.gain.setTargetAtTime(0, end, releaseTc);
-      source.main.connect(first.tone.input);
-      first.gate.connect(amp);
-      // (Its shapers are as late at every rate as at 44.1 kHz, createHeldDrive: the clean sub meets them as there)
-      source.direct?.connect(amp);
-      amp.connect(input);
-      const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
-      voices.add(voice);
-      current = { voice, source, gate: first.gate, tone: first.tone, sweeps: first.sweeps, end, note: n.note, freq: note.freq, fedTo: start };
-      follow(current, start, stopAt);
+      // (Live, struck whole, again should the page be held up while it's built: see soundLead.ts strikeWhole)
+      const struckAt = strikeWhole(bus.context, start, (at) => {
+        const { end, note, stopAt } = timesAt(at);
+        const start = at;
+        const cents = bends.at(start);
+        const source = patch.source(raw, cents ? { ...note, freq: bentBy(note.freq, cents) } : note);
+        const first = section(note, stopAt);
+        const amp = raw.createGain();
+        attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
+        amp.gain.setTargetAtTime(0, end, releaseTc);
+        source.main.connect(first.tone.input);
+        first.gate.connect(amp);
+        // (Its shapers are as late at every rate as at 44.1 kHz, createHeldDrive: the clean sub meets them as there)
+        source.direct?.connect(amp);
+        connectOut(amp, input);
+        const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
+        voices.add(voice);
+        ifUndone(() => endSweeps(first.sweeps, raw.currentTime));
+        onceStruck(() => {
+          current = { voice, source, gate: first.gate, tone: first.tone, sweeps: first.sweeps, end, note: n.note, freq: note.freq, fedTo: start };
+          follow(current, start, stopAt);
+        });
+        return start;
+      });
+      safeTime.struck(struckAt);
     },
     /** How the note it began last got to its pitch (see TrackInstrument.slide) */
     slide: () => slid,
