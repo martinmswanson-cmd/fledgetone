@@ -29,7 +29,9 @@ const onDropPad = (trackId: string) => isDropKind(tl().tracks.find((t) => t.id =
 const newId = () => uid('note');
 
 /** Which smart dialog is open, for which track and bar. */
-export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany' | 'melody' | 'math'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
+export const useSmartDialog = create<{
+  open: null | { mode: 'chords' | 'chills' | 'build' | 'drummer' | 'accompany' | 'melody' | 'math'; trackId: string; bar: number; clipId?: string; range?: { from: number; to: number }; trackIds?: string[] };
+}>(() => ({ open: null }));
 
 /** The song's key, from its notes (C major for a song with none yet). */
 export function songKey(): SongKey {

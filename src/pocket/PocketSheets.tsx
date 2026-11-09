@@ -23,6 +23,8 @@ import { DRUM_STYLES, FILLS, drummer, type DrumStyle } from '../store/smartTools
 import { fillClipBar } from '../store/smartActions';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
+import { CHILLS, chillsFill, chillsNames, type ChillsProgression } from '../store/chills';
+import { BUILD_DEFAULTS, buildForChills } from '../store/chillsActions';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
 import { showToast } from '../components/timeline/toastStore';
@@ -291,6 +293,16 @@ const SectionSheet: React.FC = () => {
           onClick={() => run(() => useTimelineStore.getState().addBuildAndDrop(sec.from), () => i, 'A build-up into it')}
         />
       )}
+      {i > 0 && (
+        <SheetItem
+          title="Build for chills into it"
+          detail={`${sections[i - 1].letter} swells into it: the parts start a little quieter and darker and grow back to their level, a riser, a breath of near-silence, then a pad joins on its first beat. Nothing is turned up past its level.`}
+          onClick={() => run(() => {
+            const said = buildForChills({ ...BUILD_DEFAULTS, from: sections[i - 1].from, peak: sec.from });
+            showToast(said);
+          }, () => i)}
+        />
+      )}
       <SheetItem
         title="Bounce it to a pad"
         detail="Everything playing in it made into one sound, on the first empty pad of your pads (or a new Bounces track): play it like a drum."
@@ -329,6 +341,13 @@ const ChordsSheet: React.FC = () => {
     editCell(track.id, sec, () => notes);
     close();
   };
+  // (Held chords filling the section, as the studio's piano roll fills a clip with one: chills.ts chillsFill)
+  const writeChills = (prog: ChillsProgression) => {
+    const notes = chillsFill(songKey, prog, sec.from, sec.to, meter, pocketNoteId, { range: INSTRUMENTS[track.instrumentKey].range });
+    editCell(track.id, sec, () => notes);
+    close();
+    showToast(`${prog.name}: ${chillsNames(songKey, prog).join(' – ')}. Undo takes it out.`);
+  };
   return (
     <Sheet title={`Chords in ${songKey.name}`} onClose={close}>
       <div className="flex gap-1.5 flex-wrap mb-2 px-1">
@@ -341,6 +360,11 @@ const ChordsSheet: React.FC = () => {
       <p className="text-xs text-forge-muted px-2 mb-1">Fills {track.name} in {sec.letter} with the progression, in place of what's there (Undo brings it back).</p>
       {PROGRESSIONS.filter((p) => p.mode === songKey.mode).map((p) => (
         <SheetItem key={p.id} title={p.name} onClick={() => write(p)} />
+      ))}
+      <p className="text-xs font-semibold text-forge-text px-2 mt-3 mb-1">For chills</p>
+      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: held chords for synths and pads, one low note and the chord in the middle.</p>
+      {CHILLS.map((p) => (
+        <SheetItem key={p.id} title={p.name} detail={`${chillsNames(songKey, p).join(' – ')}. ${p.detail}`} onClick={() => writeChills(p)} />
       ))}
     </Sheet>
   );

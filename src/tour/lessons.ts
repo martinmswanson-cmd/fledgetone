@@ -588,8 +588,8 @@ const HELPERS: Lesson = {
   id: 'helpers',
   level: 'Intermediate',
   title: 'Write with the helpers',
-  summary: 'Chords in a key, an accompaniment for them, a drummer, a melody turned another way, and a swing for one clip.',
-  minutes: 6,
+  summary: 'Chords in a key, chords for chills, an accompaniment for them, a drummer, a melody turned another way, and a swing for one clip.',
+  minutes: 7,
   steps: [
     {
       title: 'Write with the helpers',
@@ -601,6 +601,12 @@ const HELPERS: Lesson = {
       target: '[data-timeline-scroll]',
       before: ensureTrack,
       task: { hint: 'Right-click a lane, Chord progression…', begin: clipIds, done: newClip },
+    },
+    {
+      title: 'Chords for chills',
+      body: 'Right-click an empty spot on a synth or pad track and choose **Chills progression…**: chord moves that give listeners a shiver at a peak, such as *the minor iv*, *almost home, then somewhere else* or *up a whole step for the last time through*, each with a line on why it works. Later, select the clips before your peak, right-click and choose **Build into a peak…**: the parts swell back to their level, a filter opens and a pad joins at the peak, all in lanes you can change, and nothing is turned up past where it was.',
+      target: '[data-timeline-scroll]',
+      task: { hint: 'Right-click a lane, Chills progression…', begin: clipIds, done: newClip },
     },
     {
       title: 'An accompaniment',

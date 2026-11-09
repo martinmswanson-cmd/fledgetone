@@ -2,8 +2,9 @@
  * The piano roll's second toolbar for pitched clips: chords by scale degree (click I, V, vi, IV
  * and the progression builds from the playhead, voiced smoothly), the arpeggiator (pattern,
  * octaves, speed, note length) and the riff generator (a riff, lead line or bass line in the key
- * that follows the chords on the other tracks; New riff gives another). The maths is in
- * store/chordTools.ts; linked clips follow every change (see store/patterns.ts).
+ * that follows the chords on the other tracks; New riff gives another) and the chills progressions
+ * (chord moves for an emotional peak, over the whole clip). The maths is in store/chordTools.ts and
+ * store/chills.ts; linked clips follow every change (see store/patterns.ts).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Link2, Unlink } from 'lucide-react';
@@ -18,6 +19,7 @@ import { ARP_STYLES, arpeggiateChords, degreeChordName, degreeLabels, riff, RIFF
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { patternLabelOf, patternSize } from '../../store/patterns';
 import { showToast } from './toastStore';
+import { CHILLS, chillsById, chillsFill, chillsNames } from '../../store/chills';
 
 const select = 'bg-forge-bg border border-forge-border rounded px-1.5 py-0.5 text-forge-text';
 const button = 'h-6 px-2 rounded border border-forge-border text-forge-text hover:border-cyan-400 hover:text-cyan-200 disabled:opacity-40';
@@ -83,6 +85,7 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
   const [sevenths, setSevenths] = useState(false);
   const [arp, setArp] = useState<{ style: ArpStyle; octaves: number; rate: number; gate: number }>({ style: 'up', octaves: 1, rate: 0, gate: 0.8 });
   // (A bass instrument starts on bass lines)
+  const [chills, setChills] = useState<string>(CHILLS[0].id);
   const [riffStyle, setRiffStyle] = useState<RiffStyle>(INSTRUMENTS[instrument].range[1] <= 64 ? 'bass' : 'pluck');
   // The last chord stamped (for smooth voicing), per clip
   const last = useRef<{ clipId: string; voiced: number[] } | null>(null);
@@ -134,6 +137,15 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
     }
     apply(out.map((n) => ({ ...n, velocity: Math.min(1, n.velocity * (velocity / 0.8)) })));
     showToast(`Riff ${seed} in ${key.name}${chords.length ? ', over the chords on the other tracks' : ''}. New riff again for another; Undo for the last.`);
+  };
+
+  /** A chills progression over the whole clip, in place of its notes (one undo step). */
+  const writeChills = () => {
+    const prog = chillsById(chills) ?? CHILLS[0];
+    const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity: Math.min(1, 0.7 * (velocity / 0.8)) });
+    if (!out.length) return;
+    apply(out);
+    showToast(`${prog.name} in ${key.name}: ${chillsNames(key, prog).join(' – ')}. Undo for the last.`);
   };
 
   if (!pitched && links < 2) return null;
@@ -192,6 +204,17 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
         </select>
         <button type="button" className={button} onClick={arpeggiate}>
           Apply
+        </button>
+      </span>
+      <span data-search="chills progression peak shiver" className="flex items-center gap-1.5" title="Chord moves that give listeners chills at an emotional peak, in the key, held over the whole clip (in place of its notes), voiced for synths and pads">
+        CHILLS
+        <select className={select} value={chills} onChange={(e) => setChills(e.target.value)} aria-label="Chills progression">
+          {CHILLS.map((p) => (
+            <option key={p.id} value={p.id} title={p.detail}>{p.name}</option>
+          ))}
+        </select>
+        <button type="button" className={button} onClick={writeChills}>
+          Write
         </button>
       </span>
       <span data-search="riff generator melody hook bassline" className="flex items-center gap-1.5" title="A new riff in the key over the whole clip (replacing its notes), following the chords on your other tracks">
