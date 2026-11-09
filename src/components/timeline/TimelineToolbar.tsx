@@ -236,7 +236,7 @@ export const TimelineToolbar: React.FC = () => {
         <button
           id="btn-play"
           type="button"
-          title={loadingToPlay ? 'Loading the instruments’ sounds: it plays once they’re in (click to cancel)' : 'Play / Pause (Space)'}
+          title={loadingToPlay ? 'Getting the song ready: it plays once it’s ready (click to cancel)' : 'Play / Pause (Space)'}
           onClick={() => void togglePlay()}
           className={`h-8 w-11 flex items-center justify-center rounded-md border transition-colors ${
             isPlaying
