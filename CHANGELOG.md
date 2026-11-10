@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.10 — Chills progressions, the same takes live as in the export, and many fixes
 
 - **Chills progressions**: nine chord progressions made to give listeners chills at a peak (a major chord a third away, the minor iv, almost home then somewhere else, held then let go, one note held under moving chords, up a whole step or a half step for the last time through, a bass that climbs step by step, chords that open out), each with a line on why it works, in the song's or the clip's key, major or minor, held and voiced for synths and pads with no low clusters (a bass instrument plays their roots, inside its range). Right-click an empty spot on an instrument track for **Chills progression…**, use **CHILLS** in the piano roll's chords row, or **For chills** in Pocket's **Chords**. Each is one Undo step.
 - **Build into a peak**: right-click the clips leading into a peak (or, in Pocket, a section's **Build for chills into it**) for a build that swells the tracks from up to 6 dB under their level back to it, opens a filter, adds a breath of near-silence, a riser during the build and a pad at the peak, the riser and pad on new tracks set under the music by measuring it first. The swell and the filter are volume and filter lanes you can change. No track already there is turned up past where it was, every change in a lane is a slope, and afterwards it says how loud the peak comes out against the bars before the build, with the app's usual cautions if anything comes out much louder. One Undo takes it out.
