@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { attackRoom, ifUndone, soundLead, strikeAsked, strikeWhole, whenHeard } from './soundLead';
+import { attackRoom, ifUndone, soundLead, soundReached, strikeAsked, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -236,7 +236,7 @@ noiseProto._start = function (time) {
   source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
   // (Live, a strike undone stops it before it's heard: Tone forgets a noise source once a stop is
   // set for it, so struck again it would play on under the new one, twice as loud; see strikeTone)
-  ifUndone(() => source.stop(this.context.currentTime));
+  ifUndone((gone) => source.stop(gone));
 };
 /**
  * Tone starts a burst asked for a time the clock has passed at the clock (a live note set late):
@@ -296,10 +296,20 @@ oneShotProto._startGain = function (time, gain) {
  * A song's note moved later is picked as it would have been on time (a NoiseSynth's burst from
  * where it was asked for, as in an export: songPlace.ts struckLater, applied by strikeWhole).
  */
+/** A param (a Tone Signal) a note sets, and what's needed to hold it where it was. */
+interface HeldParam {
+  getValueAtTime: (time: number) => number;
+  setValueAtTime: (value: number, time: number) => unknown;
+  cancelScheduledValues: (time: number) => unknown;
+  cancelAndHoldAtTime: (time: number) => unknown;
+  linearRampToValueAtTime: (value: number, time: number) => unknown;
+}
 interface EnvelopeInside {
   context: Tone.BaseContext;
   toSeconds: (time?: Tone.Unit.Time) => number;
   cancel: (after?: Tone.Unit.Time) => unknown;
+  /** Its signal (Tone keeps it to itself). */
+  _sig: HeldParam;
   /** Where the last attack was asked for and where it went, when it was moved. */
   _movedAttack?: { asked: number; at: number };
   /** Where the last attack was set. */
@@ -323,7 +333,26 @@ envelopeProto.triggerAttack = function (time, velocity) {
   const held = heldBack.get(this);
   const attack = () => {
     this._struckAt = at;
-    return triggerAttack.call(this, at, velocity);
+    // (The clock read once its attack is set, before its decay: see soundLead.ts soundReached)
+    const sig = this._sig as HeldParam & { exponentialApproachValueAtTime?: (...a: unknown[]) => unknown };
+    const decay = sig.exponentialApproachValueAtTime;
+    let reached: number | undefined;
+    const own = Object.prototype.hasOwnProperty.call(sig, 'exponentialApproachValueAtTime');
+    if (typeof decay === 'function') {
+      sig.exponentialApproachValueAtTime = (...a: unknown[]) => {
+        reached ??= this.context.currentTime;
+        return decay.apply(sig, a);
+      };
+    }
+    try {
+      return triggerAttack.call(this, at, velocity);
+    } finally {
+      if (typeof decay === 'function') {
+        if (own) sig.exponentialApproachValueAtTime = decay;
+        else delete sig.exponentialApproachValueAtTime;
+      }
+      soundReached(reached ?? this.context.currentTime);
+    }
   };
   if (!held) return attack();
   held.push(attack);
@@ -362,7 +391,7 @@ interface SynthInside {
   envelope?: EnvelopeInside;
   filterEnvelope?: EnvelopeInside;
   modulationEnvelope?: EnvelopeInside;
-  frequency?: { cancelScheduledValues: (time: number) => unknown };
+  frequency?: HeldParam;
   oscillator?: StateInside;
   modulation?: StateInside;
   _oscillators?: StateInside[];
@@ -387,13 +416,27 @@ function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
           heldBack.delete(amp);
           for (const then of held) then();
         });
-        ifUndone(() => heldBack.delete(amp));
       }
-      ifUndone(() => {
-        const now = this.context.currentTime;
-        for (const source of fresh) source.stop(now);
-        this.frequency?.cancelScheduledValues(at);
-        for (const env of others) env.cancel(at);
+      // (What its pitch and other envelopes are at `at` before the note: a glide or a filter sweep
+      // under way, which the note's own moments hold there, is held there again should it be undone)
+      const params = [this.frequency, ...others.map((env) => env._sig)].filter((param): param is HeldParam => param !== undefined);
+      const before = params.map((param) => param.getValueAtTime(at));
+      ifUndone((gone, heard) => {
+        if (amp) heldBack.delete(amp);
+        if (heard && amp) {
+          // (Heard late, maybe in part: faded out from where it is, not cut)
+          amp._sig.cancelAndHoldAtTime(this.context.currentTime);
+          amp._sig.linearRampToValueAtTime(0, gone);
+        }
+        for (const source of fresh) source.stop(gone);
+        params.forEach((param, i) => {
+          if (heard) {
+            param.cancelAndHoldAtTime(gone);
+            return;
+          }
+          param.cancelScheduledValues(at);
+          if (Number.isFinite(before[i])) param.setValueAtTime(before[i], at);
+        });
       });
       // (Its release, if it would cut the attack where it went, moves with it)
       whenHeard(() => {

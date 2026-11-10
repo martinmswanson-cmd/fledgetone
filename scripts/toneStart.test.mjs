@@ -49,6 +49,25 @@ function fakeSource(context, onStart = () => {}) {
   };
 }
 
+/** A stand-in for a Tone Signal kept as [value, time] pairs: what a note sets on it, cancels and holds. */
+function fakePitch(pitch) {
+  const valueAt = (t) => {
+    let v = 0;
+    for (const [pv, pt] of pitch) if (pt <= t) v = pv;
+    return v;
+  };
+  return {
+    setValueAtTime: (v, t) => pitch.push([v, t]),
+    cancelScheduledValues: (t) => pitch.splice(0, pitch.length, ...pitch.filter((p) => p[1] < t)),
+    cancelAndHoldAtTime: (t) => {
+      const v = valueAt(t);
+      pitch.splice(0, pitch.length, ...pitch.filter((p) => p[1] < t), [v, t]);
+    },
+    linearRampToValueAtTime: (v, t) => pitch.push([v, t]),
+    getValueAtTime: valueAt,
+  };
+}
+
 /** A stand-in for a Tone FMSynth (so it's started early): its clock, carrier, modulator and pitch. */
 function fakeFm({ now = 1, offline = false, stepInStart = 0 } = {}) {
   const context = { currentTime: now, sampleRate: SR, isOffline: offline };
@@ -64,7 +83,7 @@ function fakeFm({ now = 1, offline = false, stepInStart = 0 } = {}) {
     context: { value: context },
     oscillator: { value: fakeSource(context, onStart) },
     modulation: { value: fakeSource(context, onStart) },
-    frequency: { value: { setValueAtTime: (v, t) => pitch.push([v, t]) } },
+    frequency: { value: fakePitch(pitch) },
     toFrequency: { value: (n) => (typeof n === 'number' ? n : 329.63) },
   });
   return { synth, context, pitch };
@@ -72,7 +91,7 @@ function fakeFm({ now = 1, offline = false, stepInStart = 0 } = {}) {
 
 test('a note in time starts its oscillators a block early, held at 0 Hz, and keeps its time', () => {
   const { synth, pitch } = fakeFm();
-  const start = 1.005;
+  const start = 1.02;
   assert.equal(pitchAhead(synth, 'E4', start), start);
   assert.deepEqual(synth.oscillator.events, [{ state: 'started', time: start - BLOCK }]);
   assert.deepEqual(synth.modulation.events, [{ state: 'started', time: start - BLOCK }]);
@@ -83,7 +102,7 @@ test('live, a note too near the clock for a block\'s early start still starts it
   const { synth, pitch } = fakeFm({ now: 1 });
   const start = 1 + BLOCK * 0.5;
   const at = pitchAhead(synth, 'E4', start);
-  assert.ok(Math.abs(at - (1 + BLOCK + 1 / SR)) < 1e-12, `${at}`);
+  assert.ok(Math.abs(at - (1 + 2 * BLOCK + 1 / SR)) < 1e-12, `${at}`);
   assert.equal(synth.oscillator.events.length, 1);
   assert.equal(synth.modulation.events.length, 1);
   assert.deepEqual(pitch.map(([v]) => v), [0, 329.63]);
@@ -136,18 +155,13 @@ function fakeHat({ now = 1, offline = false, stepAt = -1, step = 0, steps = { [s
   Object.defineProperties(synth, {
     context: { value: context },
     _oscillators: { value: Array.from({ length: 6 }, () => fakeSource(context, onStart)) },
-    frequency: {
-      value: {
-        setValueAtTime: (v, t) => pitch.push([v, t]),
-        cancelScheduledValues: (t) => pitch.splice(0, pitch.length, ...pitch.filter((p) => p[1] < t)),
-      },
-    },
+    frequency: { value: fakePitch(pitch) },
     toFrequency: { value: (f) => (typeof f === 'number' ? f : 200) },
   });
   return { synth, context, pitch };
 }
 /** A live note's room past the clock with that callback: four blocks and a frame (see soundLead.ts). */
-const ROOM = (4 * 128 + 1) / SR;
+const ROOM = (5 * 128 + 1) / SR;
 
 test('live, a hat not held up keeps its time, every pair started a block early (scan r42)', () => {
   const { synth, pitch } = fakeHat();
@@ -185,7 +199,7 @@ test('a one-shot start whose gain is set as the clock steps on past it: a later 
 });
 
 /** A stand-in for a Tone envelope (Tone's own triggerAttack and triggerRelease run on it): its clock and the attacks and releases it sets. */
-async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0 } = {}) {
+async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0, stepOnDecay = 0 } = {}) {
   await import('../src/audio/toneFixes.ts');
   const context = { currentTime: now, sampleRate: SR, isOffline: offline };
   const attacks = [];
@@ -199,8 +213,16 @@ async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0 }
       const held = stepOnAttack(attacks.length);
       context.currentTime += held;
     },
-    exponentialApproachValueAtTime: () => {},
+    exponentialApproachValueAtTime: () => {
+      context.currentTime += stepOnDecay;
+    },
     targetRampTo: (v, ramp, t) => releases.push(t),
+    // (a strike found late once heard fades it out: see soundLead.ts strikeWhole)
+    fades: [],
+    cancelAndHoldAtTime: (t) => sig.fades.push(['hold', t]),
+    linearRampToValueAtTime: (v, t) => sig.fades.push(['ramp', v, t]),
+    setValueAtTime: () => {},
+    cancelScheduledValues: () => {},
   };
   Object.defineProperties(env, {
     context: { value: context },
@@ -227,8 +249,8 @@ test('an export\'s envelope keeps every time it is given, even one at its clock 
 });
 
 /** A stand-in for a Tone synth (Tone's own triggerAttack runs on it) whose clock can step on before its source's start, strike by strike; `order` is what it set, in turn. */
-async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack } = {}) {
-  const { env, context, attacks, releases, sig } = await fakeEnvelope({ offline, stepOnAttack });
+async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack, stepOnDecay, setNote } = {}) {
+  const { env, context, attacks, releases, sig } = await fakeEnvelope({ offline, stepOnAttack, stepOnDecay });
   context.rawContext = { baseLatency: 0.01 };
   const order = [];
   const linearRampTo = sig.linearRampTo;
@@ -259,8 +281,8 @@ async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAt
     log: { value: () => {} },
     envelope: { value: env },
     oscillator: { value: source },
-    frequency: { value: { cancelScheduledValues: (t) => pitch.splice(0, pitch.length, ...pitch.filter((p) => p[1] < t)) } },
-    setNote: { value: (note, t) => pitch.push([note, t]) },
+    frequency: { value: fakePitch(pitch) },
+    setNote: { value: (note, t) => (setNote ? setNote(note, t) : pitch.push([note, t])) },
     _triggerEnvelopeAttack: {
       value: (time, velocity) => {
         env.triggerAttack(time, velocity);
@@ -307,16 +329,55 @@ test('live, the page held up while a synth\'s note is set: nothing of it heard, 
   assert.deepEqual(order.map(([what]) => what), ['start', 'stop', 'start', 'attack']);
   // (Moved up to the clock by the hold-up, it's stopped right there: its envelope, never set, kept it silent)
   assert.ok(order[1][1] <= order[0][1] + 1e-12, 'stopped no later than it started');
-  assert.deepEqual(pitch, [['C4', attacks[0]]]);
+  // (The pitch before it held where it was, 0 here; the note's own only where it went)
+  assert.deepEqual(pitch.filter(([v]) => v !== 0), [['C4', attacks[0]]]);
 });
 
-test('live, the clock stepping on while a note\'s envelope is set (its last step): it is never struck again, so it never rises twice (scan r43)', async () => {
-  for (const step of [BLOCK, 3 * BLOCK, 0.008, 0.03]) {
+test('live, the clock stepping on while a note\'s envelope is set (its last step), still a block short of it after: never struck again, so it never rises twice (scan r43)', async () => {
+  for (const step of [BLOCK, 3 * BLOCK, 0.008]) {
     const { synth, attacks, starts } = await fakeStrikeSynth({ stepOnAttack: (n) => (n === 1 ? step : 0) });
     synth.triggerAttack('C4', 1.001, 1);
     assert.equal(attacks.length, 1, `stepped ${step}`);
     assert.equal(starts.length, 1, `stepped ${step}`);
   }
+});
+
+test('live, held up inside its last step past the note (its envelope may have reached the sound late: silent, or a burst): faded out over 3 ms and struck again whole a callback past the clock (scan r44)', async () => {
+  const { synth, context, attacks, starts, sig } = await fakeStrikeSynth({ stepOnAttack: (n) => (n === 1 ? 0.03 : 0) });
+  synth.triggerAttack('C4', 1.001, 1);
+  assert.equal(attacks.length, 2);
+  assert.equal(starts.length, 2);
+  // (Faded from where it is at the clock, to nothing 3 ms on)
+  assert.deepEqual(sig.fades, [
+    ['hold', 1.03],
+    ['ramp', 0, 1.03 + 0.003],
+  ]);
+  assert.ok(Math.abs(attacks[1] - (context.currentTime + ROOM)) < 1e-9, `${attacks[1]}`);
+});
+
+test('live, a gliding note struck again: the glide under way is held where the note took it over (at the first try\'s time), not sent back to where it began (scan r44)', async () => {
+  let glide;
+  const { synth, attacks, pitch } = await fakeStrikeSynth({
+    stepBeforeSource: 0.02,
+    // (Tone's portamento: the glide held where it is at the note, then on to the note's pitch)
+    setNote: (note, t) => {
+      glide.cancelAndHoldAtTime(t);
+      glide.linearRampToValueAtTime(261.6, t + 0.035);
+    },
+  });
+  glide = synth.frequency;
+  // (The last note's glide under way: at 150 by the first try's time, 200 at its end)
+  pitch.push([150, 1.005], [200, 1.1]);
+  synth.triggerAttack('C4', 1.001, 1);
+  assert.equal(attacks.length, 1);
+  const first = 1 + ROOM;
+  // The first try's own moments gone, the glide held where it was then: 150 from there (not left
+  // ending nowhere, as cancelling the hold left it), then the second try's
+  assert.deepEqual(pitch.filter(([, t]) => t >= first - 1e-9 && t < attacks[0]), [[150, first]], JSON.stringify(pitch));
+  assert.deepEqual(pitch.filter(([, t]) => t >= attacks[0]), [
+    [150, attacks[0]],
+    [261.6, attacks[0] + 0.035],
+  ]);
 });
 
 test('live, a note held up at every strike is struck four times at most, the last a callback later still and heard however it went (scan r44)', async () => {
@@ -362,7 +423,7 @@ async function fakeStruckHat(options = {}) {
 
 test('live, a hat held up while any of its six pairs start (readied before its time is decided): all six started once, waiting at 0 Hz, and it is struck where it can come once they are, its pitch leaving 0 Hz only there (scan r42, r44)', async () => {
   for (let k = 0; k < 6; k++) {
-    const { synth, context, attacks, pitch } = await fakeStruckHat({ stepAt: k, step: 0.0116 });
+    const { synth, context, attacks, pitch } = await fakeStruckHat({ stepAt: k, step: 0.0145 });
     const at = attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
     assert.ok(Math.abs(at - (context.currentTime + ROOM)) < 1e-9, `held up in pair ${k}: ${at}`);
     assert.deepEqual(attacks, [at], `held up in pair ${k}: its envelope set once, where it went`);
@@ -380,10 +441,10 @@ test('live, a hat held up inside its strike, once its time is decided: struck ag
   holdInStrike(() => {
     if (held) return;
     held = true;
-    context.currentTime += 0.0116;
+    context.currentTime += 0.0145;
   });
   const at = attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
-  assert.ok(Math.abs(at - (1.0116 + ROOM)) < 1e-9, `${at}`);
+  assert.ok(Math.abs(at - (context.currentTime + ROOM)) < 1e-9, `${at}`);
   assert.deepEqual(attacks, [at]);
   for (const osc of synth._oscillators) {
     const states = osc.events.map((e) => e.state);
@@ -392,4 +453,12 @@ test('live, a hat held up inside its strike, once its time is decided: struck ag
     assert.ok(osc.events[3].time === at - BLOCK && osc.events[4].time === at);
   }
   assert.deepEqual(pitch.filter(([v]) => v !== 0).map(([, t]) => t), [at]);
+});
+
+test('live, held up inside its last step only once its attack is set (in its decay): its attack reached the sound in time, so it stays, struck once (scan r44)', async () => {
+  const { synth, attacks, starts, sig } = await fakeStrikeSynth({ stepOnDecay: 0.03 });
+  synth.triggerAttack('C4', 1.001, 1);
+  assert.equal(attacks.length, 1);
+  assert.equal(starts.length, 1);
+  assert.deepEqual(sig.fades, []);
 });

@@ -25,7 +25,7 @@ const P = await import('../src/audio/songPlace.ts');
 const SR = 44100;
 const BLOCK = 128 / SR;
 /** At a baseLatency of 10 ms: four blocks, and a frame. */
-const ROOM = 4 * BLOCK + 1 / SR;
+const ROOM = 5 * BLOCK + 1 / SR;
 const LEAD = 4 * BLOCK;
 
 function clock({ now = 1, offline = false } = {}) {
@@ -57,11 +57,11 @@ test('a live note set with the clock standing still is set once, a callback past
   assert.equal(L.strikeWhole(context, 1.2, later.build), 1.2);
 });
 
-test('the clock stepping on while a note is set (even a block: the callbacks don\'t always come evenly): undone (last thing first), never heard, and set whole again a callback past the clock as it is then (scan r44)', () => {
+test('the clock stepping on to within a block of the note while it is set: undone (last thing first), never heard, and set whole again a callback past the clock as it is then (scan r44)', () => {
   const context = clock();
-  const { log, build } = note(context, [BLOCK]);
+  const { log, build } = note(context, [5 * BLOCK]);
   const at = L.strikeWhole(context, 1.001, build);
-  assert.ok(Math.abs(at - (1 + BLOCK + ROOM)) < 1e-12, `${at}`);
+  assert.ok(Math.abs(at - (1 + 5 * BLOCK + ROOM)) < 1e-12, `${at}`);
   assert.deepEqual(log.map(([what, n, x]) => [what, n, typeof x === 'number' ? 'at' : x]), [
     ['set', 0, 'at'],
     ['undo', 0, 'b'],
@@ -98,7 +98,7 @@ test('the parts of one hit (a snare\'s noise and snap) are struck as one: each s
       });
       assert.equal(got, t);
       if (part === 'noise' && n === 0) {
-        context.currentTime += 3 * BLOCK;
+        context.currentTime += 5 * BLOCK;
       }
     }
     return t;
@@ -119,7 +119,7 @@ test('a part that begins before the note (an envelope run ahead) needs the clock
     // (Run ahead only with room for it: see native.ts roomAhead)
     if (at - 0.004 >= L.attackRoom(context)) L.beginsAt(at - 0.004);
     if (tries === 1) {
-      context.currentTime = 1.05 - 0.004 - ROOM + BLOCK;
+      context.currentTime = 1.05 - 0.004 - BLOCK / 2;
     }
   });
   assert.equal(tries, 2);
@@ -158,7 +158,7 @@ test('a song\'s note struck later keeps what is picked for it by its place in th
   P.atSongPlace(asked, place, () =>
     L.strikeWhole(context, asked, (at) => {
       if (tries++ === 0) {
-        context.currentTime += 3 * BLOCK;
+        context.currentTime += 5 * BLOCK;
       }
       picks.push([P.placeOf(at), P.noteJitter('C4', at, 7)]);
     })
@@ -168,4 +168,53 @@ test('a song\'s note struck later keeps what is picked for it by its place in th
     assert.equal(at, place);
     assert.equal(jitter, P.atSongPlace(asked, place, () => P.noteJitter('C4', asked, 7)));
   }
+});
+
+test('the clock stepping on a block or three while a note is set, still a block short of it after: set once, where it was put (scan r44)', () => {
+  for (const step of [BLOCK, 3 * BLOCK]) {
+    const context = clock();
+    const { log, build } = note(context, [step]);
+    assert.equal(L.strikeWhole(context, 1.001, build), 1 + ROOM, `stepped ${step}`);
+    assert.deepEqual(log.map(([what]) => what), ['set', 'heard'], `stepped ${step}`);
+  }
+});
+
+test('held up inside its last step to within a block of the note (it may have reached the sound late: silent, or a burst): undone as heard, faded out by 3 ms on, and struck again (scan r44)', () => {
+  const context = clock();
+  const undone = [];
+  let tries = 0;
+  const at = L.strikeWhole(context, 1.001, (t) => {
+    const n = tries++;
+    L.ifUndone((gone, heard) => undone.push([n, gone, heard]));
+    L.whenHeard(() => {
+      if (n === 0) context.currentTime += 5 * BLOCK;
+    });
+    return t;
+  });
+  assert.equal(tries, 2);
+  assert.deepEqual(undone, [[0, 1 + 5 * BLOCK + L.UNDO_FADE, true]]);
+  assert.ok(Math.abs(at - (1 + 5 * BLOCK + ROOM)) < 1e-12, `${at}`);
+});
+
+test('before a strike made again, what waits for any time is readied first, and the strike comes no sooner than where that says (scan r44)', () => {
+  const context = clock();
+  const seen = [];
+  let tries = 0;
+  const at = L.strikeWhole(
+    context,
+    1.001,
+    (t) => {
+      seen.push(['build', t]);
+      if (tries++ === 0) context.currentTime += 0.02;
+      return t;
+    },
+    undefined,
+    (from) => {
+      seen.push(['prepare', from]);
+      return from + 0.001;
+    }
+  );
+  assert.equal(seen[1][0], 'prepare');
+  assert.ok(Math.abs(seen[1][1] - (1.02 + ROOM)) < 1e-12);
+  assert.ok(Math.abs(at - (1.02 + ROOM + 0.001)) < 1e-12, `${at}`);
 });

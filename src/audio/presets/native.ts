@@ -3,7 +3,7 @@ import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { fillWhiteNoise, noiseStart } from '../seededNoise';
 import { UNHEARD_FADE } from './toneStop';
 import { notLate } from './monotonic';
-import { attackRoom, beginsAt, ifUndone, inStrike, strikeWhole, whenHeard } from '../soundLead';
+import { attackRoom, beginsAt, ifUndone, inStrike, soundReached, strikeWhole, whenHeard } from '../soundLead';
 import { holdShaper, type HeldNodes, type Oversampling } from '../shaperLag';
 
 /**
@@ -112,7 +112,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       // (Inside a live strike: let go unheard should it be struck again, and its envelopes' start must be in time)
       if (inStrike()) {
         added?.push(v);
-        ifUndone(() => set.drop(v));
+        ifUndone((gone, heard) => (heard ? set.fadeOut(v, gone) : set.drop(v)));
         beginsAt(v.start - (v.early ?? 0));
       }
       v.sources.forEach((s) => s.stop(v.stopAt));
@@ -213,6 +213,21 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       if (lingerSeconds > 0) atAudioTime(raw, raw.currentTime + lingerSeconds, () => disconnect(v));
       else disconnect(v);
     },
+    /**
+     * Fade a voice of a strike found late once heard (see soundLead.ts strikeWhole) out by `gone`:
+     * from the level it has reached, so nothing is cut.
+     */
+    fadeOut(v: NativeVoice, gone: number): void {
+      if (!voices.has(v) || v.stopAt <= gone) return;
+      const now = raw.currentTime;
+      const gain = v.amp.gain;
+      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+      else gain.cancelScheduledValues(now);
+      gain.linearRampToValueAtTime(0, gone);
+      v.stopAt = gone;
+      silenceAtStop(v);
+      v.sources.forEach((s) => s.stop(gone));
+    },
     /** For disposal: silence everything now. */
     stopAll(): void {
       for (const v of voices) {
@@ -239,7 +254,11 @@ export { strikeCounts } from '../soundLead';
  * strikeWhole): until then nothing of it can be heard, so a strike made again is never heard.
  */
 export function connectOut(node: AudioNode, to: AudioNode): void {
-  whenHeard(() => node.connect(to));
+  whenHeard(() => {
+    node.connect(to);
+    const clock = (node.context as BaseAudioContext | undefined)?.currentTime;
+    if (clock !== undefined) soundReached(clock);
+  });
 }
 
 /**

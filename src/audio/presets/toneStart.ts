@@ -160,16 +160,18 @@ function earlyLive(synth: NoteSynth, early: EarlyStart, start: number, quietFrom
 
 /**
  * Live: the oscillators started early for a note at `at` that has to come later after all,
- * stopped, and its pitch at `at` taken away, so they can be started early again for its new
- * time (their waves would otherwise set out at `at`, out of step with the moved attack). They're
- * silent: at 0 Hz, or behind the note's envelope, not set yet, which the last note left at 0.
+ * stopped (by `gone`), and its pitch at `at` taken away, so they can be started early again for
+ * its new time (their waves would otherwise set out at `at`, out of step with the moved attack).
+ * They're silent: at 0 Hz, or behind the note's envelope, not set yet, which the last note left
+ * at 0; or (`heard`, its last step found late) faded out by `gone`.
  */
-function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number): void {
+function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number, gone = synth.context.currentTime, heard = false): void {
   const early = earlyStartOf(synth, note);
   if (!early) return;
-  const now = synth.context.currentTime;
-  for (const source of early.sources) source.stop(now);
-  early.pitch.cancelScheduledValues(at);
+  for (const source of early.sources) source.stop(gone);
+  // (Heard late, maybe in part: its pitch held from where it fades out, not taken back to the last note's)
+  if (heard) early.pitch.cancelAndHoldAtTime(gone);
+  else early.pitch.cancelScheduledValues(at);
 }
 
 /**
@@ -209,36 +211,40 @@ interface Readied {
  * not inside another strike, every part's oscillators are readied first (started early at 0 Hz,
  * they wait at the start of their waves for any time after), and only then is where the hit goes
  * decided (soundLead.ts strikeWhole), so the slow part of a hat (six FM pairs) doesn't hold up the
- * strike itself; struck again, they're stopped and the part set up afresh for its new time. Inside
+ * strike itself; struck again, they're stopped and readied afresh, again before the new time is
+ * decided (a part reusing oscillators restarted for a time given up came out a little off). Inside
  * another strike, whose time is decided already, they're started for that time, and stopped should
  * it be struck again. Returns what `build` returned.
  */
 export function strikeTogether<R>(context: Tone.BaseContext, start: number, parts: Array<[NoteSynth, Tone.Unit.Frequency]>, build: (at: number, play: (i: number, attack: (time: number) => void) => number) => R): R {
   if (!context.isOffline && !inStrike()) {
-    const readied: Readied[] = parts.map(([synth, note]) => {
-      const plan = planAhead(synth, note, Math.max(start, attackRoom(context)));
-      return { at: plan.at, early: plan.waiting };
-    });
-    const at = readied.reduce((latest, r) => Math.max(latest, r.at), start);
-    // (Struck again, a part starts afresh for its new time, its oscillators stopped and started again)
-    let again = false;
+    // (Readied for no sooner than `from`, before the time is decided; again before each strike made again)
+    const ready = (from: number): Readied[] =>
+      parts.map(([synth, note]) => {
+        const plan = planAhead(synth, note, Math.max(from, attackRoom(context)));
+        return { at: plan.at, early: plan.waiting };
+      });
+    let readied = ready(start);
+    const latest = (from: number) => readied.reduce((l, r) => Math.max(l, r.at), from);
     return strikeWhole(
       context,
       start,
       (when) =>
         build(when, (i, attack) => {
           const [synth, note] = parts[i];
-          if (again) return playAhead(synth, note, when, attack);
-          ifUndone(() => (again = true));
           const early = readied[i].early;
           if (early) {
             early.pitch.setValueAtTime(early.hz, when);
-            ifUndone(() => stopWaiting(synth, note, when));
+            ifUndone((gone, heard) => stopWaiting(synth, note, when, gone, heard));
           }
           attack(when);
           return when;
         }),
-      at
+      latest(start),
+      (from) => {
+        readied = ready(from);
+        return latest(from);
+      }
     );
   }
   return strikeWhole(context, start, (when) => build(when, (i, attack) => playAhead(parts[i][0], parts[i][1], when, attack)));
@@ -250,7 +256,7 @@ function playAhead(synth: NoteSynth, note: Tone.Unit.Frequency, when: number, at
   const early = plan.waiting;
   if (early) {
     early.pitch.setValueAtTime(early.hz, plan.at);
-    ifUndone(() => stopWaiting(synth, note, plan.at));
+    ifUndone((gone, heard) => stopWaiting(synth, note, plan.at, gone, heard));
   }
   if (!synth.context.isOffline) {
     attack(plan.at);

@@ -382,7 +382,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         connectOut(amp, input);
         const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
         voices.add(voice);
-        ifUndone(() => endSweeps(first.sweeps, raw.currentTime));
+        ifUndone((gone) => endSweeps(first.sweeps, gone));
         onceStruck(() => {
           current = { voice, source, gate: first.gate, tone: first.tone, sweeps: first.sweeps, end, note: n.note, freq: note.freq, fedTo: start };
           follow(current, start, stopAt);
