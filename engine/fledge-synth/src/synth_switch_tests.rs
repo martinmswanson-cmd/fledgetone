@@ -336,3 +336,36 @@ fn a_held_chord_that_had_died_away_stays_silent_and_one_still_sounding_comes_in_
         }
     }
 }
+
+#[test]
+fn a_note_struck_a_moment_before_a_switch_keeps_sounding() {
+    // Struck a few samples before the switch, its level still under -60 dB in its attack: it was
+    // taken for one that had died away and stayed silent while held (Pad/Silk Wash up to 16
+    // samples, a 10 s attack up to 128)
+    let silk = PRESETS.iter().find(|p| p.name == "Pad/Silk Wash").unwrap().values();
+    let mut slow = p::defaults();
+    let attack = p::index_of("Amp attack").unwrap();
+    slow[attack] = param(attack).kind.normal(10.0);
+    for (from, to, name) in [(silk, silk, "Pad/Silk Wash"), (slow, slow, "a 10 s attack"), (p::defaults(), silk, "your own sound to Pad/Silk Wash")] {
+        for k in [1usize, 8, 16, 64, 128, 256] {
+            let mut s = Synth::new(SR);
+            s.set_tempo(120.0);
+            s.set_position(0.0);
+            s.params = from;
+            for _ in 0..4 {
+                s.process(BLOCK);
+            }
+            s.midi(0x90, 57, 100);
+            s.process(k);
+            s.params = to;
+            s.settle();
+            assert!(s.voices.iter().any(|v| v.active && v.note == 57), "{name}, struck {k} samples before: kept");
+            let mut out = vec![];
+            while out.len() < SR as usize * 3 {
+                s.process(BLOCK);
+                out.extend_from_slice(&s.out[0][..BLOCK]);
+            }
+            assert!(rms(&out[out.len() - SR as usize / 10..]) > 1e-3, "{name}, struck {k} samples before: sounds");
+        }
+    }
+}

@@ -25,7 +25,7 @@
 //
 // APP_URL overrides http://localhost:5200/. ONLY=<part of a name> for some plugins; K=<n> presets
 // per plugin in the chain (default 16, spread over its list; ALL=1 for every one); WAIT=<ms> after
-// each action (default 750); SHOW=1 prints each step as it's made; ROWS=1 every switch's figures; MODE=pocket runs it in Pocket's page (the same audio path).
+// each action (default 750); SHOW=1 prints each step as it's made; ROWS=1 every switch's figures; RESTRIKE=<ms> an instrument's chord is struck again before each action (default 400; 0: at once); MODE=pocket runs it in Pocket's page (the same audio path).
 // Needs Playwright with Chromium. Exit code 0 when nothing fails. Timing matters (a stalled render
 // is a gap): run it on a quiet machine; it prints the load, and the recorder's gaps per plugin.
 let playwright;
@@ -38,6 +38,8 @@ const os = require('os');
 
 const APP = process.env.APP_URL || 'http://localhost:5200/';
 const ONLY = process.env.ONLY || '';
+// (ms an instrument's chord, struck again before each action, sounds before the switch)
+const RESTRIKE = Number(process.env.RESTRIKE ?? 400);
 const K = process.env.ALL ? 1e9 : Number(process.env.K || 16);
 const WAIT = Number(process.env.WAIT || 750);
 const MODE = process.env.MODE === 'pocket' ? 'pocket' : 'studio';
@@ -87,7 +89,7 @@ const load = () => os.loadavg().map((x) => x.toFixed(2)).join(' ');
     for (const source of sources) {
       const l0 = load();
       const r = await page.evaluate(
-        async ([e, source, K, WAIT]) => {
+        async ([e, source, K, WAIT, RESTRIKE]) => {
           const W = await import('/src/audio/wamHost.ts');
           const E = await import('/src/store/pluginEdits.ts');
           const H = await import('/src/audio/plugins/builtinHost.ts');
@@ -151,6 +153,14 @@ const load = () => os.loadavg().map((x) => x.toFixed(2)).join(' ');
           const actions = [];
           const act = async (label, fn, pause = WAIT) => {
             console.log(label);
+            // (An instrument: the chord struck again first, so every switch is made with it
+            // sounding, not on notes a sound before let die away)
+            if (e.instrument) {
+              const at = ac.currentTime;
+              for (const k of [45, 52, 57]) node.scheduleEvents({ type: 'wam-midi', time: at, data: { bytes: [0x80, k, 0] } });
+              for (const k of [45, 52, 57]) node.scheduleEvents({ type: 'wam-midi', time: at + 0.01, data: { bytes: [0x90, k, 100] } });
+              await wait(RESTRIKE);
+            }
             const t = ac.currentTime;
             await fn();
             await wait(pause);
@@ -319,7 +329,7 @@ const load = () => os.loadavg().map((x) => x.toFixed(2)).join(' ');
           await ac.close();
           return { rows, gaps: got0.gaps + got1.gaps, N };
         },
-        [e, source, K, WAIT],
+        [e, source, K, WAIT, RESTRIKE],
       );
       let worstB = { v: -Infinity, label: '' };
       let worstC = { v: 0, label: '' };

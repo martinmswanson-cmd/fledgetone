@@ -1264,9 +1264,10 @@ impl Synth {
     /// pitch drop from their start, its oscillators from their own points), but only those still
     /// sounding, and at the level they had: past its attack, a note never rises above it (it
     /// falls to the new sound's sustain level if that is lower), and a note still rising goes on
-    /// up as the new attack does. A note that had died away (under -60 dB of its peak), held by
-    /// its key or the pedal, stays silent. A mono or legato sound keeps only the last key's note,
-    /// on its one voice. Carried on as they were, a held chord came in up to 6 dB louder than the
+    /// up as the new attack does (however little it had risen: one struck a moment before). A
+    /// note past its attack that had died away (under -60 dB of its peak), held by its key or the
+    /// pedal, stays silent. A mono or legato sound keeps only the last key's note, on its one
+    /// voice. Carried on as they were, a held chord came in up to 6 dB louder than the
     /// new sound ever plays: three notes on a one-voice preset (808 slide, Hard Clip Stab,
     /// Folded), a note held at your own sound's full sustain going on under a preset whose pitch
     /// drop and envelopes had long run out (Downlifter), or at full level into a rise (Riser).
@@ -1293,7 +1294,7 @@ impl Synth {
         for i in 0..VOICES {
             if held(&self.voices[i]) {
                 let (note, vel, sustained, amp) = (self.voices[i].note, self.voices[i].vel, self.voices[i].sustained, self.voices[i].amp);
-                if amp.value < 1e-3 {
+                if amp.stage != Stage::Attack && amp.value < 1e-3 {
                     // (Died away: it stays so)
                     self.voices[i].active = false;
                     self.voices[i].pending_up = false;
