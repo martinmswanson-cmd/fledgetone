@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { afterHeard, attackNow, attackRoom, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
+import { afterHeard, attackNow, attackRoom, ifLate, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -431,6 +431,48 @@ function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (valu
   if (t < end) sig.linearRampToValueAtTime(value, end);
 }
 
+/** An automation event as Tone keeps it (its Param's timeline). */
+interface ToneEvent {
+  time: number;
+  type: string;
+  value: number;
+  constant?: number;
+}
+interface ToneTimeline {
+  get: (time: number) => ToneEvent | null;
+  forEachAfter: (time: number, callback: (event: ToneEvent) => void) => unknown;
+}
+
+/**
+ * Live, a strike found late once heard (the page held up inside it, or after it, before the clock
+ * was read; see soundLead.ts ifLate): its loudness envelope's moments may have reached the sound
+ * after the sound had passed them, and the browser moves those up to where the sound is: an attack
+ * then lost, the envelope only creeping towards its sustain (a kick 40 dB quiet, silent to the ear).
+ * It's set again from a render callback past the clock (as far as the sound can be ahead of it),
+ * where its moments are all still to come: held there at the value Tone has it at (where it should
+ * be in its envelope), and on from there as it would have gone, every moment after that set again
+ * (a decay under way restarted there: an exponential approach forgets where it began). Heard in
+ * time after all, it's the very same curve; late, it comes in there at its proper level.
+ */
+function reshapeLate(env: EnvelopeInside): void {
+  const context = env.context;
+  const sig = env._sig as HeldParam & { _param?: { _events?: ToneTimeline }; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
+  const events = sig._param?._events ?? sig._events;
+  if (context.isOffline || !events || typeof sig.setTargetAtTime !== 'function') return;
+  const h = context.currentTime + soundLead(context) + 1 / context.sampleRate;
+  const under = events.get(h);
+  const later: ToneEvent[] = [];
+  events.forEachAfter(h, (event) => void later.push({ ...event }));
+  sig.cancelAndHoldAtTime(h);
+  if (under?.type === 'setTargetAtTime' && under.constant !== undefined) sig.setTargetAtTime(under.value, h, under.constant);
+  for (const event of later) {
+    if (event.type === 'setValueAtTime') sig.setValueAtTime(event.value, event.time);
+    else if (event.type === 'linearRampToValueAtTime') sig.linearRampToValueAtTime(event.value, event.time);
+    else if (event.type === 'exponentialRampToValueAtTime') sig.exponentialRampToValueAtTime?.(event.value, event.time);
+    else if (event.type === 'setTargetAtTime' && event.constant !== undefined) sig.setTargetAtTime(event.value, event.time, event.constant);
+  }
+}
+
 /** An envelope's release at `time`, moved with its attack when that was moved (see above). */
 function releaseMoved(env: EnvelopeInside, time?: Tone.Unit.Time): unknown {
   const moved = env._movedAttack;
@@ -502,6 +544,8 @@ function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
           if (Number.isFinite(before[i])) param.setValueAtTime(before[i], at);
         });
       });
+      // (Found late once heard: its loudness set again from where it should be by then)
+      if (amp) ifLate(() => reshapeLate(amp));
       // (Its release, if it would cut the attack where it went, moves with it)
       whenHeard(() => {
         for (const env of [amp, ...others]) if (env) env._movedAttack = at > from ? { asked: from, at } : undefined;

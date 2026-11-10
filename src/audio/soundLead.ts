@@ -40,8 +40,10 @@
  *    a note is never undone, even should the page have been held up inside that step: some of it
  *    may already be sounding, and cutting it to strike it again is heard as a hit, a gap and the
  *    hit again. It plays on, late; an envelope whose moments the sound had passed by then is taken
- *    from where it is, over two blocks, to where it should be (toneFixes.ts catchUp), so it's
- *    neither silent nor a burst.
+ *    from where it is, over two blocks, to where it should be (toneFixes.ts catchUp), and should the
+ *    clock, read after the whole strike, show its moments may have reached the sound late, its
+ *    loudness is set again from a callback past the clock on, where it should be by then (ifLate,
+ *    toneFixes.ts reshapeLate): never silent, never a burst.
  *
  * No part of a note moves without the rest, and a note is struck again only while nothing of it
  * has been heard, so it's never out of step, never doubled, and never lost; it's at worst a
@@ -100,6 +102,8 @@ interface Strike {
   heard: (() => void)[];
   /** Run once every step in `heard` has (see afterHeard). */
   after: (() => void)[];
+  /** Run should it be found late once heard (see ifLate). */
+  late: (() => void)[];
   undo: ((gone: number) => void)[];
   earliest: number;
 }
@@ -172,7 +176,7 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
   if (!reachedInTime(context, at)) at = Math.max(at, retryRoom(context));
   for (let tries = 1; ; tries++) {
     const last = tries >= STRIKE_TRIES;
-    const strike: Strike = { asked, heard: [], after: [], undo: [], earliest: at, last };
+    const strike: Strike = { asked, heard: [], after: [], late: [], undo: [], earliest: at, last };
     striking = strike;
     let result: R | undefined;
     let failed: { error: unknown } | null = null;
@@ -205,6 +209,9 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
         // (Held up while it was made heard: counted, and played on, late; see step 5)
         const by = Number.isFinite(reached) ? { currentTime: reached, sampleRate: context.sampleRate } : context;
         if (!reachedInTime(by, strike.earliest) || context.currentTime + 128 / context.sampleRate >= strike.earliest) strikeCounts.late++;
+        // (The clock past where the note's moments could all have reached the sound in time, read
+        // after the whole strike: its loudness is set again from where it should be by then)
+        if (!reachedInTime(by, strike.earliest) || !reachedInTime(context, strike.earliest)) for (const then of strike.late) then();
       }
       if (failed?.error) throw failed.error;
       return result as R;
@@ -234,6 +241,16 @@ export function whenHeard(then: () => void): void {
 export function afterHeard(then: () => void): void {
   if (striking) striking.after.push(then);
   else then();
+}
+
+/**
+ * Inside a strike: run `then` should it be found late once heard (the page held up inside its last
+ * step, or after it, before the clock was read): its moments may have reached the sound after the
+ * sound had passed them, so a loudness envelope is set again from where it should be (toneFixes.ts
+ * reshapeLate). Never run for a strike undone, nor outside one.
+ */
+export function ifLate(then: () => void): void {
+  striking?.late.push(then);
 }
 
 /**

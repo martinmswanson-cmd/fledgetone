@@ -558,3 +558,22 @@ test('live, a hit of two synths (a bell\'s two tones) made heard as its last ste
   });
   assert.deepEqual(log, ['low attack', 'high attack', 'low decay', 'high decay']);
 });
+
+test('live, a hat held up inside its strike once its attack is set, past where the sound may be: its loudness set again from a callback past the clock, where it should be in its envelope by then, its decay going on from there, so it is never left silent (scan r44)', async () => {
+  const { synth, context, attacks, holdInStrike, env } = await fakeStruckHat();
+  const sig = env._sig;
+  // (Tone's own timeline of it: the decay under way, as Tone has it)
+  sig._events = { get: () => ({ time: 1 + ROOM + 0.001, type: 'setTargetAtTime', value: 0, constant: 0.01 }), forEachAfter: () => {} };
+  let held = false;
+  holdInStrike(() => {
+    if (held) return;
+    held = true;
+    context.currentTime += 5 * BLOCK;
+  });
+  const at = attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
+  assert.equal(at, 1 + ROOM);
+  assert.deepEqual(attacks, [at]);
+  const h = context.currentTime + ROOM;
+  assert.ok(sig.fades.some(([what, t]) => what === 'hold' && Math.abs(t - h) < 1e-9), JSON.stringify(sig.fades));
+  assert.ok(sig.fades.some(([what, v, t]) => what === 'target' && v === 0 && Math.abs(t - h) < 1e-9), JSON.stringify(sig.fades));
+});
