@@ -532,3 +532,29 @@ test('live, a MonoSynth\'s note held up after its filter envelope is set: nothin
   assert.ok(Math.abs(attacks[0] - (1 + 5 * BLOCK + RETRY)) < 1e-9, `${attacks[0]} (clock ${context.currentTime})`);
   assert.deepEqual(sig.fades, []);
 });
+
+test('live, a hit of two synths (a bell\'s two tones) made heard as its last step: both attacks set first, then both decays, so the two come as close together as can be (scan r44)', async () => {
+  const low = await fakeStrikeSynth();
+  const context = low.context;
+  const high = await fakeStrikeSynth({ context });
+  const log = [];
+  for (const [name, part] of [['low', low], ['high', high]]) {
+    const sig = part.env._sig;
+    const ramp = sig.linearRampTo;
+    sig.linearRampTo = (...a) => {
+      log.push(`${name} attack`);
+      return ramp(...a);
+    };
+    const decay = sig.exponentialApproachValueAtTime;
+    sig.exponentialApproachValueAtTime = (...a) => {
+      log.push(`${name} decay`);
+      return decay(...a);
+    };
+  }
+  strikeTogether(context, 1 + ROOM, [], (u) => {
+    low.synth.triggerAttack('C4', u, 1);
+    high.synth.triggerAttack('G4', u, 1);
+    return u;
+  });
+  assert.deepEqual(log, ['low attack', 'high attack', 'low decay', 'high decay']);
+});

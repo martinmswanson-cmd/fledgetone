@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { attackNow, attackRoom, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
+import { afterHeard, attackNow, attackRoom, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -331,6 +331,12 @@ const heldBack = new Map<EnvelopeInside, Array<() => void>>();
  * moments are all set already, and the rest of the note can come late with no harm.
  */
 const setNow = new WeakSet<EnvelopeInside>();
+/**
+ * While a strike's loudness envelopes are set, its last step: what each sets after its attack (its
+ * decay, its release), set once every one's attack is (see strikeTone), so a hit's parts (a snare's
+ * noise and snap) are made heard as close together as can be.
+ */
+let afterAttacks: Array<() => void> | null = null;
 
 envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
@@ -350,7 +356,16 @@ envelopeProto.triggerAttack = function (time, velocity) {
     if (typeof decay === 'function') {
       sig.exponentialApproachValueAtTime = (...a: unknown[]) => {
         reached ??= this.context.currentTime;
-        decaying = a as [number, number, number];
+        const args = a as [number, number, number];
+        if (loud && afterAttacks) {
+          // (Set, and caught up should it come late, once the other parts' attacks are)
+          afterAttacks.push(() => {
+            decay.apply(sig, args);
+            catchUp(this, sig, args);
+          });
+          return sig;
+        }
+        decaying = args;
         return decay.apply(sig, a);
       };
     }
@@ -463,7 +478,16 @@ function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
         heldBack.set(amp, held);
         whenHeard(() => {
           heldBack.delete(amp);
-          for (const then of held) then();
+          // (Its attack now; its decay and anything asked after it (a release) once every part's attack is set)
+          afterAttacks ??= [];
+          const [first, ...rest] = held;
+          first?.();
+          afterAttacks.push(...rest);
+        });
+        afterHeard(() => {
+          const rest = afterAttacks ?? [];
+          afterAttacks = null;
+          for (const then of rest) then();
         });
       }
       // (What its pitch and other envelopes are at `at` before the note: a glide or a filter sweep

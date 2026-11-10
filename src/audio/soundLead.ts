@@ -46,8 +46,8 @@
  * No part of a note moves without the rest, and a note is struck again only while nothing of it
  * has been heard, so it's never out of step, never doubled, and never lost; it's at worst a
  * callback or two later than asked. A hit of several synths (a snare's noise and snap, a bell's two
- * tones) is struck in one strike, every part's loudness set together in its last step, so its
- * parts stay together. A song's note moved later keeps what's picked for it by its place in
+ * tones) is struck in one strike, every part's loudness set together in its last step (every
+ * part's attack first, then their decays, see afterHeard), so its parts stay together. A song's note moved later keeps what's picked for it by its place in
  * the song (songPlace.ts struckLater), so it sounds as in the export. An export's clock waits for
  * its notes, so offline every note is set once, where it's asked, exactly as before.
  */
@@ -98,6 +98,8 @@ interface Strike {
   /** Its last try: heard however it goes. */
   last: boolean;
   heard: (() => void)[];
+  /** Run once every step in `heard` has (see afterHeard). */
+  after: (() => void)[];
   undo: ((gone: number) => void)[];
   earliest: number;
 }
@@ -170,7 +172,7 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
   if (!reachedInTime(context, at)) at = Math.max(at, retryRoom(context));
   for (let tries = 1; ; tries++) {
     const last = tries >= STRIKE_TRIES;
-    const strike: Strike = { asked, heard: [], undo: [], earliest: at, last };
+    const strike: Strike = { asked, heard: [], after: [], undo: [], earliest: at, last };
     striking = strike;
     let result: R | undefined;
     let failed: { error: unknown } | null = null;
@@ -192,7 +194,11 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
     if (heard || (!failed && (last || reachedInTime(built, strike.earliest)))) {
       committing = { reached: -Infinity };
       try {
-        for (const then of strike.heard) then();
+        try {
+          for (const then of strike.heard) then();
+        } finally {
+          for (const then of strike.after) then();
+        }
       } finally {
         const reached = Math.max(committing.reached, strike.audible ?? -Infinity);
         committing = null;
@@ -218,6 +224,15 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
 /** Inside a strike: run `then` as its last step, once it's found in time (now outside one). */
 export function whenHeard(then: () => void): void {
   if (striking) striking.heard.push(then);
+  else then();
+}
+
+/**
+ * Inside a strike: run `then` in its last step, once every step given to whenHeard has (what can
+ * come late with no harm: an envelope's decay, set once every part's attack is); now outside one.
+ */
+export function afterHeard(then: () => void): void {
+  if (striking) striking.after.push(then);
   else then();
 }
 
