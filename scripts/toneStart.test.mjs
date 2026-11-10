@@ -251,8 +251,10 @@ test('an export\'s envelope keeps every time it is given, even one at its clock 
 });
 
 /** A stand-in for a Tone synth (Tone's own triggerAttack runs on it) whose clock can step on before its source's start, strike by strike; `order` is what it set, in turn. */
-async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack, stepOnDecay, setNote, context: shared } = {}) {
+async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack, stepOnDecay, setNote, context: shared, filter = false } = {}) {
   const { env, context, attacks, releases, sig } = await fakeEnvelope({ offline, stepOnAttack, stepOnDecay, ...(shared ? { context: shared } : {}) });
+  // (A MonoSynth's filter envelope, set in the note's build after its loudness envelope)
+  const filterEnv = filter ? await fakeEnvelope({ context }) : null;
   context.rawContext = { baseLatency: 0.01 };
   const order = [];
   const linearRampTo = sig.linearRampTo;
@@ -282,19 +284,21 @@ async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAt
     toSeconds: { value: (t) => t },
     log: { value: () => {} },
     envelope: { value: env },
+    filterEnvelope: { value: filterEnv?.env },
     oscillator: { value: source },
     frequency: { value: fakePitch(pitch) },
     setNote: { value: (note, t) => (setNote ? setNote(note, t) : pitch.push([note, t])) },
     _triggerEnvelopeAttack: {
       value: (time, velocity) => {
         env.triggerAttack(time, velocity);
+        filterEnv?.env.triggerAttack(time);
         const held = steps.shift() ?? 0;
         context.currentTime += held;
         source.start(time);
       },
     },
   });
-  return { synth, context, attacks, releases, starts, order, source, pitch, sig, env };
+  return { synth, context, attacks, releases, starts, order, source, pitch, sig, env, filterEnv };
 }
 
 test('an export\'s synth is never struck again (scan r40)', async () => {
@@ -517,4 +521,14 @@ test('live, a hit of two parts (a snare\'s noise, and its snap waiting at 0 Hz) 
     ['snap', at],
   ]);
   assert.ok(at > 1 + 5 * BLOCK, `${at}`);
+});
+
+test('live, a MonoSynth\'s note held up after its filter envelope is set: nothing of it was heard (a filter envelope makes nothing heard), so it is undone and struck again whole, its loudness set once, never left to play on late (scan r44)', async () => {
+  const { synth, context, attacks, starts, filterEnv, sig } = await fakeStrikeSynth({ filter: true, stepBeforeSource: 5 * BLOCK });
+  synth.triggerAttack('C4', 1.001, 1);
+  assert.equal(starts.length, 2);
+  assert.equal(attacks.length, 1);
+  assert.equal(filterEnv.attacks.length, 2);
+  assert.ok(Math.abs(attacks[0] - (1 + 5 * BLOCK + RETRY)) < 1e-9, `${attacks[0]} (clock ${context.currentTime})`);
+  assert.deepEqual(sig.fades, []);
 });

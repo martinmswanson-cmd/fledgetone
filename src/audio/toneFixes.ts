@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { attackNow, attackRoom, ifUndone, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
+import { attackNow, attackRoom, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -336,6 +336,9 @@ envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
   const at = this.toSeconds(time);
   const held = heldBack.get(this);
+  // (Only a strike's loudness envelope makes it heard: held back to its last step, or set at once.
+  // A filter's or an FM note's modulation envelope, set in its build, is heard by nothing yet)
+  const loud = held !== undefined || setNow.has(this);
   const attack = () => {
     this._struckAt = at;
     // (The clock read once its attack is set, before its decay: see soundLead.ts soundReached)
@@ -358,8 +361,9 @@ envelopeProto.triggerAttack = function (time, velocity) {
         if (own) sig.exponentialApproachValueAtTime = decay;
         else delete sig.exponentialApproachValueAtTime;
       }
-      soundReached(reached ?? this.context.currentTime);
-      if (decaying) catchUp(this, sig, decaying);
+      if (loud) soundReached(reached ?? this.context.currentTime);
+      // (Not a filter's inside a strike still being built: should it be late, the strike is made again)
+      if (decaying && (loud || !inStrike())) catchUp(this, sig, decaying);
     }
   };
   if (!held) {
