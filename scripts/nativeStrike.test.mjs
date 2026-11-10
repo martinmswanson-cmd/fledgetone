@@ -284,7 +284,7 @@ test('an 808 Designer note, its envelope a shaper\'s delay ahead of its start, s
   assert.equal(build(192 / SR), 1);
 });
 
-test('a native note whose connection is made with the page held up past its start: faded out by 3 ms on, not cut, and struck again whole (scan r44)', () => {
+test('a native note whose connection is made with the page held up past its start: played on, late, never faded out or struck again (scan r44)', () => {
   const context = fakeContext();
   const set = N.createVoiceSet(context.rawContext);
   const made = [];
@@ -294,16 +294,14 @@ test('a native note whose connection is made with the page held up past its star
     // (The connection held up: the clock past the note by the time it's made)
     v.node.connect = (to) => {
       v.out.push(to);
-      if (made.length === 1) context.rawContext.currentTime += 5 * BLOCK;
+      context.rawContext.currentTime += 5 * BLOCK;
     };
     N.connectOut(v.node, 'bus');
     set.add(v.voice);
     return v.voice;
   });
-  assert.equal(made.length, 2);
-  // (The first faded from where it was to nothing 3 ms on, its sources stopped there)
-  const fade = made[0].events.filter(([what]) => what === 'hold' || what === 'ramp');
-  assert.ok(fade.length >= 2, JSON.stringify(made[0].events));
-  assert.ok(made[0].stops.includes(1 + 5 * BLOCK + 0.003), JSON.stringify(made[0].stops));
-  assert.deepEqual(made[1].out, ['bus']);
+  assert.equal(made.length, 1);
+  assert.deepEqual(made[0].out, ['bus']);
+  assert.ok(!made[0].events.some(([what]) => what === 'hold'), JSON.stringify(made[0].events));
+  assert.ok(made[0].stops.every((t) => t > 1.1), JSON.stringify(made[0].stops));
 });

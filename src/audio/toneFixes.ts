@@ -359,7 +359,7 @@ envelopeProto.triggerAttack = function (time, velocity) {
         else delete sig.exponentialApproachValueAtTime;
       }
       soundReached(reached ?? this.context.currentTime);
-      if (decaying && reached !== undefined) catchUpDecay(this, sig, at, reached, decaying);
+      if (decaying) catchUp(this, sig, decaying);
     }
   };
   if (!held) {
@@ -387,17 +387,19 @@ envelopeProto.triggerRelease = function (time) {
 };
 
 /**
- * Live, an envelope whose attack at `at` reached the sound in time (the clock `reached`, read just
- * after it, two blocks short of it) but whose decay was set with the page held up past where it begins:
- * the browser would hold it at its peak until then, a loud stretch the export hasn't. It's taken
- * on from where it is, over two blocks, to where the decay has it by then, and decays on from
- * there as it would have (an exponential approach forgets where it began).
+ * Live, an envelope set with the page held up past where its decay begins (its attack too, maybe:
+ * a strike held up inside its last step, which is never undone, see soundLead.ts strikeWhole): the
+ * browser would move what the sound had passed up to where it is, an attack jumping to its peak (a
+ * burst) or a decay already run out (silent), or hold it at its peak until the decay, a loud
+ * stretch the export hasn't. It's taken on from where it is, over two blocks, to where the
+ * envelope has it by then (as Tone has it, every moment where it was set), and decays on from there
+ * as it would have (an exponential approach forgets where it began): late, but whole.
  */
-function catchUpDecay(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (value: number, time: number, constant: number) => unknown }, at: number, reached: number, [value, start, seconds]: [number, number, number]): void {
+function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (value: number, time: number, constant: number) => unknown }, [value, start, seconds]: [number, number, number]): void {
   const context = env.context;
   const block = 128 / context.sampleRate;
   const now = context.currentTime;
-  if (context.isOffline || !(reached + 2 * block < at) || now + 2 * block < start || typeof sig.setTargetAtTime !== 'function') return;
+  if (context.isOffline || now + 2 * block < start || typeof sig.setTargetAtTime !== 'function') return;
   const t = now + 2 * block + 1 / context.sampleRate;
   const end = start + seconds;
   const want = sig.getValueAtTime(t);
@@ -464,19 +466,10 @@ function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
       // under way, which the note's own moments hold there, is held there again should it be undone)
       const params = [this.frequency, ...others.map((env) => env._sig)].filter((param): param is HeldParam => param !== undefined);
       const before = params.map((param) => param.getValueAtTime(at));
-      ifUndone((gone, heard) => {
+      ifUndone((gone) => {
         if (amp) heldBack.delete(amp);
-        if (heard && amp) {
-          // (Heard late, maybe in part: faded out from where it is, not cut)
-          amp._sig.cancelAndHoldAtTime(this.context.currentTime);
-          amp._sig.linearRampToValueAtTime(0, gone);
-        }
         for (const source of fresh) source.stop(gone);
         params.forEach((param, i) => {
-          if (heard) {
-            param.cancelAndHoldAtTime(gone);
-            return;
-          }
           param.cancelScheduledValues(at);
           if (Number.isFinite(before[i])) param.setValueAtTime(before[i], at);
         });

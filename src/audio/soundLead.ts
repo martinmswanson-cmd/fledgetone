@@ -33,18 +33,21 @@
  *    set is undone (oscillators stopped, pitch and envelope moments taken away, a glide or filter
  *    sweep under way held where it was, nodes let go) and the whole note is struck again from
  *    step 1, three blocks past the clock as it is then (the callback that moved it has just been
- *    rendered; see retryRoom). Held up while the last step itself was
- *    taken, the note may have reached the sound late, part of it heard (an envelope set out after
- *    the sound had passed it: silent, or a burst): it's faded out over 3 ms and struck again the
- *    same way. Oscillators waiting at 0 Hz for a note struck again are readied for it before its
- *    new time is decided. The last of STRIKE_TRIES takes a callback more and is heard however it
- *    went, so a note is never lost.
+ *    rendered; see retryRoom). Oscillators waiting at 0 Hz for a note struck again are readied for
+ *    it before its new time is decided. The last of STRIKE_TRIES takes a callback more and is
+ *    heard however it went, so a note is never lost.
+ * 5. Once its last step is taken (or a part of it made audible while it was built, see attackNow)
+ *    a note is never undone, even should the page have been held up inside that step: some of it
+ *    may already be sounding, and cutting it to strike it again is heard as a hit, a gap and the
+ *    hit again. It plays on, late; an envelope whose moments the sound had passed by then is taken
+ *    from where it is, over two blocks, to where it should be (toneFixes.ts catchUp), so it's
+ *    neither silent nor a burst.
  *
- * No part of a note moves without the rest, and a note is struck again only once nothing of it is
- * left to hear (undone before it was heard, or faded out when its last step came late), so it's
- * never out of step, and doubled or lost only if the page is held up, inside its last step, at
- * every try; it's at worst a callback or two later than asked. A hit of several synths (a snare's noise and snap) is struck in one strike, so
- * its parts stay together. A song's note moved later keeps what's picked for it by its place in
+ * No part of a note moves without the rest, and a note is struck again only while nothing of it
+ * has been heard, so it's never out of step, never doubled, and never lost; it's at worst a
+ * callback or two later than asked. A hit of several synths (a snare's noise and snap, a bell's two
+ * tones) is struck in one strike, every part's loudness set together in its last step, so its
+ * parts stay together. A song's note moved later keeps what's picked for it by its place in
  * the song (songPlace.ts struckLater), so it sounds as in the export. An export's clock waits for
  * its notes, so offline every note is set once, where it's asked, exactly as before.
  */
@@ -95,7 +98,7 @@ interface Strike {
   /** Its last try: heard however it goes. */
   last: boolean;
   heard: (() => void)[];
-  undo: ((gone: number, heard: boolean) => void)[];
+  undo: ((gone: number) => void)[];
   earliest: number;
 }
 let striking: Strike | null = null;
@@ -103,9 +106,9 @@ let striking: Strike | null = null;
 let committing: { reached: number } | null = null;
 
 /**
- * While a strike's last step is taken: the clock, read just after a part of the note was made
- * audible (its loudness envelope's attack set, its connection made). Should it be found late, the
- * note is struck again; a part made audible in time stays (see strikeWhole).
+ * While a strike's last step is taken, or a part of it made audible in its build: the clock, read
+ * just after a part of the note was made audible (its loudness envelope's attack set, its
+ * connection made). Found late, the strike is counted late (strikeCounts); it's never undone.
  */
 export function soundReached(clock: number): void {
   if (committing) committing.reached = Math.max(committing.reached, clock);
@@ -135,9 +138,6 @@ export function strikeSettled(): boolean {
 
 /** Live strikes made again (the page held up while one was set), and ones heard with the clock already near them (the last try, or held up within the final step). */
 export const strikeCounts = { again: 0, late: 0 };
-
-/** How long a strike found late after it was heard fades out before it's struck again (see strikeWhole). */
-export const UNDO_FADE = 0.003;
 
 /**
  * Whether a note's moments from `earliest` on, all set, reached the sound in time: the clock, read
@@ -184,33 +184,27 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
     } finally {
       striking = null;
     }
-    let heard = strike.audible !== undefined;
+    // (Step 5: a part made audible in the build is never undone; the rest of it is made heard too)
+    const heard = strike.audible !== undefined;
     // (Step 3: not taken when the clock is too near already; the last try is heard however it went.
     // Judged by the clock after its last time-critical moment when its parts say where that is)
     const built = strike.settled !== undefined && !strike.unsettled ? { currentTime: strike.settled, sampleRate: context.sampleRate } : context;
-    if (!failed && (last || reachedInTime(built, strike.earliest))) {
+    if (heard || (!failed && (last || reachedInTime(built, strike.earliest)))) {
       committing = { reached: -Infinity };
       try {
         for (const then of strike.heard) then();
       } finally {
-        heard = true;
+        const reached = Math.max(committing.reached, strike.audible ?? -Infinity);
+        committing = null;
+        // (Held up while it was made heard: counted, and played on, late; see step 5)
+        const by = Number.isFinite(reached) ? { currentTime: reached, sampleRate: context.sampleRate } : context;
+        if (!reachedInTime(by, strike.earliest) || context.currentTime + 128 / context.sampleRate >= strike.earliest) strikeCounts.late++;
       }
-      const reached = Math.max(committing.reached, strike.audible ?? -Infinity);
-      committing = null;
-      // (The clock read after the last step too: held up while it was taken, the note may have
-      // reached the sound late, an envelope's attack set after the sound had passed it. Judged by
-      // the clock just after its audible start was set, where the step says: held up only after
-      // that, its attack reached the sound in time, and it stays)
-      const by = Number.isFinite(reached) ? { currentTime: reached, sampleRate: context.sampleRate } : context;
-      if (last || reachedInTime(by, strike.earliest)) {
-        if (context.currentTime + 128 / context.sampleRate >= strike.earliest) strikeCounts.late++;
-        return result as R;
-      }
-      strikeCounts.late++;
+      if (failed?.error) throw failed.error;
+      return result as R;
     }
-    // Undone, last thing first: before it was heard, at once; after, faded out over UNDO_FADE
-    const gone = context.currentTime + (heard ? UNDO_FADE : 0);
-    for (const undo of strike.undo.reverse()) undo(gone, heard);
+    // Undone, last thing first, at once: nothing of it has been heard
+    for (const undo of strike.undo.reverse()) undo(context.currentTime);
     if (failed && last) throw failed.error;
     strikeCounts.again++;
     // (The last try a callback later still: a page held up that long once more still lets it sound)
@@ -228,12 +222,10 @@ export function whenHeard(then: () => void): void {
 }
 
 /**
- * Inside a strike: run `undo` should it be undone, last first: the page held up while it was set
- * (`heard` false: nothing of it reached the sound; what it set is taken away, from `gone`, now), or
- * while its last step was taken (`heard` true: it may be sounding; it fades out by `gone`, and what
- * it set is taken away from then on).
+ * Inside a strike: run `undo` should it be undone, last first (the page held up while it was set,
+ * before any of it was heard): what it set is taken away, from `gone`, the clock.
  */
-export function ifUndone(undo: (gone: number, heard: boolean) => void): void {
+export function ifUndone(undo: (gone: number) => void): void {
   striking?.undo.push(undo);
 }
 

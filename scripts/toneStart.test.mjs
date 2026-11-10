@@ -19,7 +19,7 @@ register(
 }`)
 );
 const Tone = await import('tone');
-const { attackAhead } = await import('../src/audio/presets/toneStart.ts');
+const { attackAhead, strikeTogether } = await import('../src/audio/presets/toneStart.ts');
 /** A note set ahead with nothing struck (its strike leaves the rest to Tone): where it starts. */
 const pitchAhead = (synth, note, start) => attackAhead(synth, note, start, () => {});
 
@@ -201,9 +201,8 @@ test('a one-shot start whose gain is set as the clock steps on past it: a later 
 });
 
 /** A stand-in for a Tone envelope (Tone's own triggerAttack and triggerRelease run on it): its clock and the attacks and releases it sets. */
-async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0, stepOnDecay = 0 } = {}) {
+async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0, stepOnDecay = 0, context = { currentTime: now, sampleRate: SR, isOffline: offline } } = {}) {
   await import('../src/audio/toneFixes.ts');
-  const context = { currentTime: now, sampleRate: SR, isOffline: offline };
   const attacks = [];
   const releases = [];
   const env = Object.create(Tone.Envelope.prototype);
@@ -252,8 +251,8 @@ test('an export\'s envelope keeps every time it is given, even one at its clock 
 });
 
 /** A stand-in for a Tone synth (Tone's own triggerAttack runs on it) whose clock can step on before its source's start, strike by strike; `order` is what it set, in turn. */
-async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack, stepOnDecay, setNote } = {}) {
-  const { env, context, attacks, releases, sig } = await fakeEnvelope({ offline, stepOnAttack, stepOnDecay });
+async function fakeStrikeSynth({ offline = false, stepBeforeSource = 0, stepOnAttack, stepOnDecay, setNote, context: shared } = {}) {
+  const { env, context, attacks, releases, sig } = await fakeEnvelope({ offline, stepOnAttack, stepOnDecay, ...(shared ? { context: shared } : {}) });
   context.rawContext = { baseLatency: 0.01 };
   const order = [];
   const linearRampTo = sig.linearRampTo;
@@ -345,17 +344,17 @@ test('live, the clock stepping on while a note\'s envelope is set (its last step
   }
 });
 
-test('live, held up inside its last step past the note (its envelope may have reached the sound late: silent, or a burst): faded out over 3 ms and struck again whole two blocks past the clock (scan r44)', async () => {
-  const { synth, context, attacks, starts, sig } = await fakeStrikeSynth({ stepOnAttack: (n) => (n === 1 ? 0.03 : 0) });
+test('live, held up inside its last step past the note, as its attack is set (some of it may be sounding): never faded out or struck again, but played on, late, its envelope taken from where it is to where it should be by two blocks on (scan r44)', async () => {
+  const { synth, context, attacks, starts, sig } = await fakeStrikeSynth({ stepOnAttack: () => 0.03 });
   synth.triggerAttack('C4', 1.001, 1);
-  assert.equal(attacks.length, 2);
-  assert.equal(starts.length, 2);
-  // (Faded from where it is at the clock, to nothing 3 ms on)
-  assert.deepEqual(sig.fades, [
-    ['hold', 1.03],
-    ['ramp', 0, 1.03 + 0.003],
+  assert.equal(attacks.length, 1);
+  assert.equal(starts.length, 1);
+  const now = context.currentTime;
+  assert.deepEqual(sig.fades.slice(0, 2), [
+    ['hold', now],
+    ['ramp', 0, now + (2 * 128 + 1) / SR],
   ]);
-  assert.ok(Math.abs(attacks[1] - (context.currentTime + RETRY)) < 1e-9, `${attacks[1]}`);
+  assert.ok(!sig.fades.some(([what, v, t]) => what === 'ramp' && v === 0 && Math.abs(t - (now + 0.003)) < 1e-9), JSON.stringify(sig.fades));
 });
 
 test('live, a gliding note struck again: the glide under way is held where the note took it over (at the first try\'s time), not sent back to where it began (scan r44)', async () => {
@@ -403,7 +402,7 @@ test('live, a release asked before a note moved later (or within as long again a
 
 /** fakeHat struck through toneFixes.ts's strike (its envelope's attack, then its pairs started at the note), its pitch with a cancel. */
 async function fakeStruckHat(options = {}) {
-  const { env, context, attacks } = await fakeEnvelope();
+  const { env, context, attacks } = await fakeEnvelope(options.context ? { context: options.context } : {});
   context.rawContext = { baseLatency: 0.01 };
   const hat = fakeHat({ ...options, context });
   const { synth } = hat;
@@ -488,4 +487,34 @@ test('live, held up inside its last step only once its attack is set (in its dec
     ['ramp', 0, now + (2 * 128 + 1) / SR],
   ]);
   assert.ok(sig.fades.some(([what]) => what === 'target'), JSON.stringify(sig.fades));
+});
+
+test('live, a hit of two parts (a snare\'s noise, and its snap waiting at 0 Hz) held up once the snap\'s attack could be set: neither is heard on its own, both struck again together, their loudness set together as the strike\'s last step (scan r44)', async () => {
+  const noise = await fakeStrikeSynth();
+  const context = noise.context;
+  const snap = await fakeStruckHat({ context });
+  const heard = [];
+  for (const [name, part] of [['noise', noise], ['snap', snap]]) {
+    const sig = part.env._sig;
+    const ramp = sig.linearRampTo;
+    sig.linearRampTo = (...a) => {
+      heard.push([name, a[2]]);
+      return ramp(...a);
+    };
+  }
+  let held = false;
+  snap.holdInStrike(() => {
+    if (held) return;
+    held = true;
+    context.currentTime += 5 * BLOCK;
+  });
+  const at = strikeTogether(context, 1 + ROOM, [[snap.synth, 200]], (u, play) => {
+    noise.synth.triggerAttack('C4', u, 1);
+    return play(0, (t) => snap.synth.triggerAttack(200, t, 1));
+  });
+  assert.deepEqual(heard, [
+    ['noise', at],
+    ['snap', at],
+  ]);
+  assert.ok(at > 1 + 5 * BLOCK, `${at}`);
 });

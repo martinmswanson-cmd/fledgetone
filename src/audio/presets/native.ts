@@ -112,7 +112,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       // (Inside a live strike: let go unheard should it be struck again, and its envelopes' start must be in time)
       if (inStrike()) {
         added?.push(v);
-        ifUndone((gone, heard) => (heard ? set.fadeOut(v, gone) : set.drop(v)));
+        ifUndone(() => set.drop(v));
         beginsAt(v.start - (v.early ?? 0));
       }
       v.sources.forEach((s) => s.stop(v.stopAt));
@@ -212,21 +212,6 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
       });
       if (lingerSeconds > 0) atAudioTime(raw, raw.currentTime + lingerSeconds, () => disconnect(v));
       else disconnect(v);
-    },
-    /**
-     * Fade a voice of a strike found late once heard (see soundLead.ts strikeWhole) out by `gone`:
-     * from the level it has reached, so nothing is cut.
-     */
-    fadeOut(v: NativeVoice, gone: number): void {
-      if (!voices.has(v) || v.stopAt <= gone) return;
-      const now = raw.currentTime;
-      const gain = v.amp.gain;
-      if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-      else gain.cancelScheduledValues(now);
-      gain.linearRampToValueAtTime(0, gone);
-      v.stopAt = gone;
-      silenceAtStop(v);
-      v.sources.forEach((s) => s.stop(gone));
     },
     /** For disposal: silence everything now. */
     stopAll(): void {

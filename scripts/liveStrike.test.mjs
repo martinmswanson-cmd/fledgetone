@@ -181,21 +181,44 @@ test('the clock stepping on a block or two while a note is set, still two blocks
   }
 });
 
-test('held up inside its last step to within a block of the note (it may have reached the sound late: silent, or a burst): undone as heard, faded out by 3 ms on, and struck again (scan r44)', () => {
+test('held up inside its last step past the note (some of it may be sounding): never undone or struck again, played on and counted late (scan r44)', () => {
   const context = clock();
   const undone = [];
   let tries = 0;
+  const late = L.strikeCounts.late;
   const at = L.strikeWhole(context, 1.001, (t) => {
-    const n = tries++;
-    L.ifUndone((gone, heard) => undone.push([n, gone, heard]));
+    tries++;
+    L.ifUndone((gone) => undone.push(gone));
     L.whenHeard(() => {
-      if (n === 0) context.currentTime += 5 * BLOCK;
+      L.soundReached(context.currentTime);
+      context.currentTime += 5 * BLOCK;
     });
+    L.whenHeard(() => L.soundReached(context.currentTime));
     return t;
   });
-  assert.equal(tries, 2);
-  assert.deepEqual(undone, [[0, 1 + 5 * BLOCK + L.UNDO_FADE, true]]);
-  assert.ok(Math.abs(at - (1 + 5 * BLOCK + RETRY)) < 1e-12, `${at}`);
+  assert.equal(tries, 1);
+  assert.deepEqual(undone, []);
+  assert.ok(Math.abs(at - (1 + ROOM)) < 1e-12, `${at}`);
+  assert.equal(L.strikeCounts.late, late + 1);
+});
+
+test('a part made audible while its strike was built, then held up: the rest made heard too, never undone (scan r44)', () => {
+  const context = clock();
+  const undone = [];
+  const heard = [];
+  let tries = 0;
+  L.strikeWhole(context, 1.001, (t) => {
+    tries++;
+    L.ifUndone((gone) => undone.push(gone));
+    L.soundReached(context.currentTime);
+    context.currentTime += 5 * BLOCK;
+    L.whenHeard(() => heard.push(t));
+    return t;
+  });
+  assert.equal(tries, 1);
+  assert.deepEqual(undone, []);
+  assert.equal(heard.length, 1);
+  assert.ok(Math.abs(heard[0] - (1 + ROOM)) < 1e-12);
 });
 
 test('before a strike made again, what waits for any time is readied first, and the strike comes no sooner than where that says (scan r44)', () => {

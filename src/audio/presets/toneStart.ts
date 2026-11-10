@@ -162,16 +162,13 @@ function earlyLive(synth: NoteSynth, early: EarlyStart, start: number, quietFrom
  * Live: the oscillators started early for a note at `at` that has to come later after all,
  * stopped (by `gone`), and its pitch at `at` taken away, so they can be started early again for
  * its new time (their waves would otherwise set out at `at`, out of step with the moved attack).
- * They're silent: at 0 Hz, or behind the note's envelope, not set yet, which the last note left
- * at 0; or (`heard`, its last step found late) faded out by `gone`.
+ * They're silent: at 0 Hz, or behind the note's envelope, not set yet, which the last note left at 0.
  */
-function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number, gone = synth.context.currentTime, heard = false): void {
+function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number, gone = synth.context.currentTime): void {
   const early = earlyStartOf(synth, note);
   if (!early) return;
   for (const source of early.sources) source.stop(gone);
-  // (Heard late, maybe in part: its pitch held from where it fades out, not taken back to the last note's)
-  if (heard) early.pitch.cancelAndHoldAtTime(gone);
-  else early.pitch.cancelScheduledValues(at);
+  early.pitch.cancelScheduledValues(at);
 }
 
 /**
@@ -195,7 +192,7 @@ function stopWaiting(synth: NoteSynth, note: Tone.Unit.Frequency, at: number, go
  * it's never left silent at the 0 Hz the early start holds.
  */
 export function attackAhead(synth: NoteSynth, note: Tone.Unit.Frequency, start: number, attack: (time: number) => void): number {
-  return strikeTogether(synth.context, start, [[synth, note]], (_at, play) => play(0, attack));
+  return strikeTogether(synth.context, start, [[synth, note]], (_at, play) => play(0, attack), true);
 }
 
 /** A note's oscillators readied ahead of its strike, live (see strikeTogether): where it can go, and what waits for its pitch. */
@@ -215,8 +212,13 @@ interface Readied {
  * decided (a part reusing oscillators restarted for a time given up came out a little off). Inside
  * another strike, whose time is decided already, they're started for that time, and stopped should
  * it be struck again. Returns what `build` returned.
+ *
+ * Unless the hit is one note alone (`alone`, see attackAhead), every part's loudness is set
+ * together, as the strike's last step (soundLead.ts unsettled): a part set audible on its own in
+ * the build (a snare's snap, its oscillators waiting at 0 Hz) would sound ahead of the rest (its
+ * noise) should the page be held up before they're set.
  */
-export function strikeTogether<R>(context: Tone.BaseContext, start: number, parts: Array<[NoteSynth, Tone.Unit.Frequency]>, build: (at: number, play: (i: number, attack: (time: number) => void) => number) => R): R {
+export function strikeTogether<R>(context: Tone.BaseContext, start: number, parts: Array<[NoteSynth, Tone.Unit.Frequency]>, build: (at: number, play: (i: number, attack: (time: number) => void) => number) => R, alone = false): R {
   if (!context.isOffline && !inStrike()) {
     // (Readied for no sooner than `from`, before the time is decided; again before each strike made again)
     const ready = (from: number): Readied[] =>
@@ -229,13 +231,14 @@ export function strikeTogether<R>(context: Tone.BaseContext, start: number, part
     return strikeWhole(
       context,
       start,
-      (when) =>
-        build(when, (i, attack) => {
+      (when) => {
+        if (!alone) unsettled();
+        return build(when, (i, attack) => {
           const [synth, note] = parts[i];
           const early = readied[i].early;
           if (early) {
             early.pitch.setValueAtTime(early.hz, when);
-            ifUndone((gone, heard) => stopWaiting(synth, note, when, gone, heard));
+            ifUndone((gone) => stopWaiting(synth, note, when, gone));
             // (Its oscillators wait at 0 Hz: with its pitch, everything set before it is set too;
             // what Tone sets after, their carrying on at the note and their stops well after, can be
             // set late with no harm. Its attack is judged as it's set, see soundLead.ts soundReached)
@@ -243,7 +246,8 @@ export function strikeTogether<R>(context: Tone.BaseContext, start: number, part
           } else unsettled();
           attack(when);
           return when;
-        }),
+        });
+      },
       latest(start),
       (from) => {
         readied = ready(from);
@@ -260,7 +264,7 @@ function playAhead(synth: NoteSynth, note: Tone.Unit.Frequency, when: number, at
   const early = plan.waiting;
   if (early) {
     early.pitch.setValueAtTime(early.hz, plan.at);
-    ifUndone((gone, heard) => stopWaiting(synth, note, plan.at, gone, heard));
+    ifUndone((gone) => stopWaiting(synth, note, plan.at, gone));
   }
   if (!synth.context.isOffline) {
     attack(plan.at);

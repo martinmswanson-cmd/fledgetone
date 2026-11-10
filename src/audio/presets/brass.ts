@@ -40,11 +40,7 @@ export function createBrassVoice(output: Tone.InputNode) {
     // (Struck again: the swell before held where it was, not sent back to where it began)
     const before = filter.frequency.getValueAtTime(t);
     swell(t);
-    ifUndone((gone, heard) => {
-      if (heard) {
-        filter.frequency.cancelAndHoldAtTime(gone);
-        return;
-      }
+    ifUndone(() => {
       filter.frequency.cancelScheduledValues(t);
       filter.frequency.setValueAtTime(before, t);
     });
