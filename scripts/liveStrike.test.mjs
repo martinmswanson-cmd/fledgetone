@@ -27,8 +27,8 @@ const BLOCK = 128 / SR;
 /** At a baseLatency of 10 ms: four blocks, and a frame. */
 const ROOM = 4 * BLOCK + 1 / SR;
 const LEAD = 4 * BLOCK;
-/** Where a note struck again goes: two blocks past the clock, and a frame (see soundLead.ts retryRoom). */
-const RETRY = (2 * 128 + 1) / SR;
+/** Where a note struck again goes: three blocks past the clock, and a frame (see soundLead.ts retryRoom). */
+const RETRY = (3 * 128 + 1) / SR;
 
 function clock({ now = 1, offline = false } = {}) {
   return { currentTime: now, sampleRate: SR, isOffline: offline, rawContext: { baseLatency: 0.01 } };
@@ -172,8 +172,8 @@ test('a song\'s note struck later keeps what is picked for it by its place in th
   }
 });
 
-test('the clock stepping on a block or three while a note is set, still a block short of it after: set once, where it was put (scan r44)', () => {
-  for (const step of [BLOCK, 3 * BLOCK]) {
+test('the clock stepping on a block or two while a note is set, still two blocks short of it after: set once, where it was put (scan r44)', () => {
+  for (const step of [BLOCK, 2 * BLOCK]) {
     const context = clock();
     const { log, build } = note(context, [step]);
     assert.equal(L.strikeWhole(context, 1.001, build), 1 + ROOM, `stepped ${step}`);

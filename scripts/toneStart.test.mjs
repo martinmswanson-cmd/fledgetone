@@ -102,7 +102,7 @@ test('live, a note too near the clock for a block\'s early start still starts it
   const { synth, pitch } = fakeFm({ now: 1 });
   const start = 1 + BLOCK * 0.5;
   const at = pitchAhead(synth, 'E4', start);
-  assert.ok(Math.abs(at - (1 + BLOCK + 1 / SR)) < 1e-12, `${at}`);
+  assert.ok(Math.abs(at - (1 + 3 * BLOCK + 1 / SR)) < 1e-12, `${at}`);
   assert.equal(synth.oscillator.events.length, 1);
   assert.equal(synth.modulation.events.length, 1);
   assert.deepEqual(pitch.map(([v]) => v), [0, 329.63]);
@@ -162,8 +162,8 @@ function fakeHat({ now = 1, offline = false, stepAt = -1, step = 0, steps = { [s
 }
 /** A live note's room past the clock with that callback: four blocks and a frame (see soundLead.ts). */
 const ROOM = (4 * 128 + 1) / SR;
-/** Where a note struck again goes: two blocks past the clock, and a frame (see soundLead.ts retryRoom). */
-const RETRY = (2 * 128 + 1) / SR;
+/** Where a note struck again goes: three blocks past the clock, and a frame (see soundLead.ts retryRoom). */
+const RETRY = (3 * 128 + 1) / SR;
 
 test('live, a hat not held up keeps its time, every pair started a block early (scan r42)', () => {
   const { synth, pitch } = fakeHat();
@@ -336,8 +336,8 @@ test('live, the page held up while a synth\'s note is set: nothing of it heard, 
   assert.deepEqual(pitch.filter(([v]) => v !== 0), [['C4', attacks[0]]]);
 });
 
-test('live, the clock stepping on while a note\'s envelope is set (its last step), still a block short of it after: never struck again, so it never rises twice (scan r43)', async () => {
-  for (const step of [BLOCK, 3 * BLOCK, 0.008]) {
+test('live, the clock stepping on while a note\'s envelope is set (its last step), still two blocks short of it after: never struck again, so it never rises twice (scan r43)', async () => {
+  for (const step of [BLOCK, 2 * BLOCK, 0.005]) {
     const { synth, attacks, starts } = await fakeStrikeSynth({ stepOnAttack: (n) => (n === 1 ? step : 0) });
     synth.triggerAttack('C4', 1.001, 1);
     assert.equal(attacks.length, 1, `stepped ${step}`);
@@ -485,7 +485,7 @@ test('live, held up inside its last step only once its attack is set (in its dec
   const now = context.currentTime;
   assert.deepEqual(sig.fades.slice(0, 2), [
     ['hold', now],
-    ['ramp', 0, now + RETRY],
+    ['ramp', 0, now + (2 * 128 + 1) / SR],
   ]);
   assert.ok(sig.fades.some(([what]) => what === 'target'), JSON.stringify(sig.fades));
 });

@@ -25,14 +25,14 @@
  *    or an FM note's oscillators started at 0 Hz wait at the start of their waves however long,
  *    and only their pitch is set for the note; struck again, they're set up afresh, see
  *    toneStart.ts strikeTogether.)
- * 3. The clock is read again. If it's still a render block short of the note, nothing of it has
+ * 3. The clock is read again. If it's still two render blocks short of the note, nothing of it has
  *    been rendered, and the last step is taken: the loudness envelope set, or the connection made.
- *    The clock is read once more after it: still a block short, every moment of the note reached
+ *    The clock is read once more after it: still two blocks short, every moment of the note reached
  *    the sound in time, and it's heard whole, once.
  * 4. Otherwise (the page was held up while it was set) none of it can have been heard: what was
  *    set is undone (oscillators stopped, pitch and envelope moments taken away, a glide or filter
  *    sweep under way held where it was, nodes let go) and the whole note is struck again from
- *    step 1, two blocks past the clock as it is then (the callback that moved it has just been
+ *    step 1, three blocks past the clock as it is then (the callback that moved it has just been
  *    rendered; see retryRoom). Held up while the last step itself was
  *    taken, the note may have reached the sound late, part of it heard (an envelope set out after
  *    the sound had passed it: silent, or a burst): it's faded out over 3 ms and struck again the
@@ -75,12 +75,12 @@ export function attackRoom(context: Clock): number {
 
 /**
  * Where a note struck again (or one whose slow part was readied while the clock moved on) can go:
- * two blocks past the clock. The callback that moved the clock has just been rendered, so the next
+ * three blocks past the clock. The callback that moved the clock has just been rendered, so the next
  * is most of a callback away, and what's left to set is quick; should it not be in time after all,
  * its strike says so (see reachedInTime) and it's struck again.
  */
 export function retryRoom(context: Clock): number {
-  return context.currentTime + (2 * 128 + 1) / context.sampleRate;
+  return context.currentTime + (3 * 128 + 1) / context.sampleRate;
 }
 
 /** A strike under way: what's left to do once it's found in time, what undoes it if not, and its earliest moment. */
@@ -141,12 +141,14 @@ export const UNDO_FADE = 0.003;
 
 /**
  * Whether a note's moments from `earliest` on, all set, reached the sound in time: the clock, read
- * after the last of them was set, is still a render block short of them. The clock counts the
- * blocks done, and the next can already be under way as it's read, but no more: every moment set
- * before the read reaches the block that plays it.
+ * after the last of them was set, is still two render blocks short of them. The clock counts the
+ * blocks done, and the next can already be under way as it's read, and one after it straight on
+ * within the same callback: two blocks to spare keep every moment set before the read ahead of the
+ * block that plays it. (One block was found not to: a hand-played hat's oscillators now and then
+ * set out a little apart.)
  */
 function reachedInTime(context: Clock, earliest: number): boolean {
-  return context.currentTime + 128 / context.sampleRate < earliest;
+  return context.currentTime + (2 * 128) / context.sampleRate < earliest;
 }
 
 /**

@@ -28,8 +28,8 @@ const SR = 44100;
 const BLOCK = 128 / SR;
 /** At a baseLatency of 10 ms: four blocks, and a frame. */
 const ROOM = 4 * BLOCK + 1 / SR;
-/** Where a note struck again goes: two blocks past the clock, and a frame (see soundLead.ts retryRoom). */
-const RETRY = (2 * 128 + 1) / SR;
+/** Where a note struck again goes: three blocks past the clock, and a frame (see soundLead.ts retryRoom). */
+const RETRY = (3 * 128 + 1) / SR;
 
 /** A stand-in for a Tone context: its clock (live or an export's). */
 function fakeContext({ now = 1, offline = false } = {}) {
