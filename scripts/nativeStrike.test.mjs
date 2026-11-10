@@ -28,6 +28,8 @@ const SR = 44100;
 const BLOCK = 128 / SR;
 /** At a baseLatency of 10 ms: four blocks, and a frame. */
 const ROOM = 4 * BLOCK + 1 / SR;
+/** Where a note struck again goes: two blocks past the clock, and a frame (see soundLead.ts retryRoom). */
+const RETRY = (2 * 128 + 1) / SR;
 
 /** A stand-in for a Tone context: its clock (live or an export's). */
 function fakeContext({ now = 1, offline = false } = {}) {
@@ -58,6 +60,7 @@ function fakeVoice(start) {
     setTargetAtTime: (v, t, c) => events.push(['target', v, t, c]),
     cancelAndHoldAtTime: (t) => events.push(['hold', t]),
     cancelScheduledValues: (t) => events.push(['cancel', t]),
+    linearRampToValueAtTime: (v, t) => events.push(['ramp', v, t]),
   };
   const stops = [];
   const out = [];
@@ -87,14 +90,14 @@ function fakeInstrument(context, holdUps = []) {
   return { set, built, build };
 }
 
-test('the page held up past the note while it is built: struck again a callback past the clock, the first strike never heard (scan r41, r42)', () => {
+test('the page held up past the note while it is built: struck again two blocks past the clock, the first strike never heard (scan r41, r42)', () => {
   const context = fakeContext();
   const { built, build } = fakeInstrument(context, [0.02]);
   let putBack = 0;
   const voice = N.strikeLive(context, 1, build, () => putBack++);
   assert.equal(built.length, 2);
   assert.equal(putBack, 1);
-  const again = 1.02 + ROOM;
+  const again = 1.02 + RETRY;
   assert.equal(voice.start, again);
   assert.equal(voice, built[1].voice);
   // The first was never connected to where it sounds (its envelopes, set late, would jump to the
@@ -147,14 +150,14 @@ test('what a note does to others (the note before giving way) waits until it is 
     return voice;
   });
   assert.equal(builds, 2);
-  assert.deepEqual(gaveWay, [1.02 + ROOM]);
+  assert.deepEqual(gaveWay, [1.02 + RETRY]);
   // Outside a strike: at once
   let now = 0;
   N.onceStruck(() => now++);
   assert.equal(now, 1);
 });
 
-test('a note whose envelopes begin before its start is struck again once the clock leaves no callback before them (scan r41, r44)', () => {
+test('a note whose envelopes begin before its start is struck again once the clock is within a block of them (scan r41, r44)', () => {
   const context = fakeContext();
   const set = N.createVoiceSet(context.rawContext);
   let builds = 0;
@@ -165,7 +168,7 @@ test('a note whose envelopes begin before its start is struck again once the clo
     voice.early = N.roomAhead(context, start, 0.004) ? 0.004 : 0;
     // (Held up to within a callback of the envelopes' start, short of the note's)
     if (builds === 1) {
-      context.rawContext.currentTime = start - 0.004 - ROOM + 2 * BLOCK;
+      context.rawContext.currentTime = start - 0.004 - BLOCK / 2;
     }
     set.add(voice);
     return voice;
@@ -239,15 +242,15 @@ test('a native note built with the clock standing still is struck once, a callba
   assert.deepEqual(voice.moved, { asked: 1, at: 1 + ROOM });
 });
 
-test('the clock stepping on at all while a note is built (the callbacks don\'t always come evenly): let go unheard and struck again a callback past the clock (scan r44)', () => {
-  for (const step of [BLOCK, 3 * BLOCK, 4 * BLOCK, 0.02]) {
+test('the clock stepping on to within a block of a note while it is built: let go unheard and struck again two blocks past the clock (scan r44)', () => {
+  for (const step of [5 * BLOCK, 0.02]) {
     const context = fakeContext();
     const { built, build } = fakeInstrument(context, [step]);
     const voice = N.strikeLive(context, 1, build);
     assert.equal(built.length, 2, `stepped ${step}`);
     assert.deepEqual(built[0].out, [], `stepped ${step}: the first never connected`);
     assert.ok(built[0].disconnected);
-    assert.ok(Math.abs(voice.start - (1 + step + ROOM)) < 1e-12, `stepped ${step}: ${voice.start}`);
+    assert.ok(Math.abs(voice.start - (1 + step + RETRY)) < 1e-12, `stepped ${step}: ${voice.start}`);
   }
 });
 
@@ -279,4 +282,28 @@ test('an 808 Designer note, its envelope a shaper\'s delay ahead of its start, s
     return builds;
   };
   assert.equal(build(192 / SR), 1);
+});
+
+test('a native note whose connection is made with the page held up past its start: faded out by 3 ms on, not cut, and struck again whole (scan r44)', () => {
+  const context = fakeContext();
+  const set = N.createVoiceSet(context.rawContext);
+  const made = [];
+  N.strikeLive(context, 1, (start) => {
+    const v = fakeVoice(start);
+    made.push(v);
+    // (The connection held up: the clock past the note by the time it's made)
+    v.node.connect = (to) => {
+      v.out.push(to);
+      if (made.length === 1) context.rawContext.currentTime += 5 * BLOCK;
+    };
+    N.connectOut(v.node, 'bus');
+    set.add(v.voice);
+    return v.voice;
+  });
+  assert.equal(made.length, 2);
+  // (The first faded from where it was to nothing 3 ms on, its sources stopped there)
+  const fade = made[0].events.filter(([what]) => what === 'hold' || what === 'ramp');
+  assert.ok(fade.length >= 2, JSON.stringify(made[0].events));
+  assert.ok(made[0].stops.includes(1 + 5 * BLOCK + 0.003), JSON.stringify(made[0].stops));
+  assert.deepEqual(made[1].out, ['bus']);
 });

@@ -35,10 +35,19 @@ export function createBrassVoice(output: Tone.InputNode) {
     filter
   );
 
-  /** The swell at `t`, taken away should its strike be struck again. */
+  /** The swell at `t`, taken away should its strike be struck again (the one before held where it was). */
   const swellAt = (t: number) => {
+    // (Struck again: the swell before held where it was, not sent back to where it began)
+    const before = filter.frequency.getValueAtTime(t);
     swell(t);
-    ifUndone(() => filter.frequency.cancelScheduledValues(t));
+    ifUndone((gone, heard) => {
+      if (heard) {
+        filter.frequency.cancelAndHoldAtTime(gone);
+        return;
+      }
+      filter.frequency.cancelScheduledValues(t);
+      filter.frequency.setValueAtTime(before, t);
+    });
   };
 
   // Route: voices -> filter -> output (brass channel -> masterBus)
