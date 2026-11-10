@@ -297,6 +297,13 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Bug-scan rounds 28-43 and the chills work** (2026.11.10): chord progressions for chills
+  (chills.ts, chillsBuild.ts, chillsActions.ts) with a measured build into a peak; recorded-kit
+  takes and strums worked out from the song's place (takeTurns, drumHits.ts, struckLater) so live
+  matches the export, with Play's wait cancelled and taken over by later presses (waitClaim);
+  rate-independent shapers and room IRs (prepareRooms/releaseRooms); shared-sound ids checked by
+  content (FNV or SHA-256); many agent-card wording fixes. Not in this release, still being checked:
+  plugin switch bursts (scanfix44-a) and the single live-strike rule (scanfix44-b).
 - **Bug-scan rounds 1-27** (2026.11.04): four reviewers a round (security, the agent bridge, renders,
   the app) over a frozen snapshot, fixes merged per round. Main themes: bars counted by the song's
   meter everywhere (tempoMap `measureAt`/`addMeasures`/`spanMeterLines`, timelineTypes
