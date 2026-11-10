@@ -297,6 +297,13 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Plugin switch on held notes** (2026.11.10-2): the Vocoder, JX10, Hall Reverb and Plateau
+  start their new preset afresh during the dip; the JX10 lets held notes go and keeps pedal, bend,
+  mod wheel, pressure and controllers (processor.ts); Fledge Synth's `bb_settle` (synth.rs) drops
+  voices under -60 dB of their peak unless still in their attack, and carries sounding ones from the
+  level they reached; a switch while silent fades in. Tests: pluginSwitch.test.mjs and the Rust
+  switch tests; the sweep (switch-sweep.cjs) strikes the chord again before each action. Still
+  open: the Tonewheel Organ and Ominous Drone settle for a moment after a switch.
 - **Bug-scan rounds 28-43 and the chills work** (2026.11.10): chord progressions for chills
   (chills.ts, chillsBuild.ts, chillsActions.ts) with a measured build into a peak; recorded-kit
   takes and strums worked out from the song's place (takeTurns, drumHits.ts, struckLater) so live
