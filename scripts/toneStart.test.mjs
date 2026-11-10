@@ -223,6 +223,7 @@ async function fakeEnvelope({ now = 1, offline = false, stepOnAttack = () => 0, 
     fades: [],
     cancelAndHoldAtTime: (t) => sig.fades.push(['hold', t]),
     linearRampToValueAtTime: (v, t) => sig.fades.push(['ramp', v, t]),
+    setTargetAtTime: (v, t) => sig.fades.push(['target', v, t]),
     setValueAtTime: () => {},
     cancelScheduledValues: () => {},
   };
@@ -476,10 +477,15 @@ test('live, a hat whose clock is found too near before its attack is set (held u
   assert.deepEqual(pitch.filter(([v]) => v !== 0).map(([, t]) => t), [at]);
 });
 
-test('live, held up inside its last step only once its attack is set (in its decay): its attack reached the sound in time, so it stays, struck once (scan r44)', async () => {
-  const { synth, attacks, starts, sig } = await fakeStrikeSynth({ stepOnDecay: 0.03 });
+test('live, held up inside its last step only once its attack is set (in its decay): its attack reached the sound in time, so it stays, struck once, its decay taken on from where it is to where it should be by two blocks on (scan r44)', async () => {
+  const { synth, context, attacks, starts, sig } = await fakeStrikeSynth({ stepOnDecay: 0.03 });
   synth.triggerAttack('C4', 1.001, 1);
   assert.equal(attacks.length, 1);
   assert.equal(starts.length, 1);
-  assert.deepEqual(sig.fades, []);
+  const now = context.currentTime;
+  assert.deepEqual(sig.fades.slice(0, 2), [
+    ['hold', now],
+    ['ramp', 0, now + RETRY],
+  ]);
+  assert.ok(sig.fades.some(([what]) => what === 'target'), JSON.stringify(sig.fades));
 });

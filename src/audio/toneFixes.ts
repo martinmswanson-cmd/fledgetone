@@ -342,10 +342,12 @@ envelopeProto.triggerAttack = function (time, velocity) {
     const sig = this._sig as HeldParam & { exponentialApproachValueAtTime?: (...a: unknown[]) => unknown };
     const decay = sig.exponentialApproachValueAtTime;
     let reached: number | undefined;
+    let decaying: [number, number, number] | undefined;
     const own = Object.prototype.hasOwnProperty.call(sig, 'exponentialApproachValueAtTime');
     if (typeof decay === 'function') {
       sig.exponentialApproachValueAtTime = (...a: unknown[]) => {
         reached ??= this.context.currentTime;
+        decaying = a as [number, number, number];
         return decay.apply(sig, a);
       };
     }
@@ -357,6 +359,7 @@ envelopeProto.triggerAttack = function (time, velocity) {
         else delete sig.exponentialApproachValueAtTime;
       }
       soundReached(reached ?? this.context.currentTime);
+      if (decaying && reached !== undefined) catchUpDecay(this, sig, at, reached, decaying);
     }
   };
   if (!held) {
@@ -382,6 +385,30 @@ envelopeProto.triggerRelease = function (time) {
   }
   return releaseMoved(this, time);
 };
+
+/**
+ * Live, an envelope whose attack at `at` reached the sound in time (the clock `reached`, read just
+ * after it, a block short of it) but whose decay was set with the page held up past where it begins:
+ * the browser would hold it at its peak until then, a loud stretch the export hasn't. It's taken
+ * on from where it is, over two blocks, to where the decay has it by then, and decays on from
+ * there as it would have (an exponential approach forgets where it began).
+ */
+function catchUpDecay(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (value: number, time: number, constant: number) => unknown }, at: number, reached: number, [value, start, seconds]: [number, number, number]): void {
+  const context = env.context;
+  const block = 128 / context.sampleRate;
+  const now = context.currentTime;
+  if (context.isOffline || !(reached + block < at) || now + block < start || typeof sig.setTargetAtTime !== 'function') return;
+  const t = now + 2 * block + 1 / context.sampleRate;
+  const end = start + seconds;
+  const want = sig.getValueAtTime(t);
+  sig.cancelAndHoldAtTime(now);
+  sig.linearRampToValueAtTime(want, t);
+  if (t < start + seconds * 0.9) {
+    sig.setTargetAtTime(value, t, Math.log(seconds + 1) / Math.log(200));
+    sig.cancelAndHoldAtTime(start + seconds * 0.9);
+  }
+  if (t < end) sig.linearRampToValueAtTime(value, end);
+}
 
 /** An envelope's release at `time`, moved with its attack when that was moved (see above). */
 function releaseMoved(env: EnvelopeInside, time?: Tone.Unit.Time): unknown {
