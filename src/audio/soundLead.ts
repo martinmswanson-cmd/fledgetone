@@ -86,6 +86,14 @@ export function retryRoom(context: Clock): number {
 /** A strike under way: what's left to do once it's found in time, what undoes it if not, and its earliest moment. */
 interface Strike {
   asked: number;
+  /** The clock read just after the last of its time-critical moments was set, when every part says where that is (see settledAt). */
+  settled?: number;
+  /** A part that can't say (any of its moments may be time-critical): the clock after the whole build counts. */
+  unsettled?: boolean;
+  /** The clock read just after a part of it was made audible while it was built (see attackNow), if one was. */
+  audible?: number;
+  /** Its last try: heard however it goes. */
+  last: boolean;
   heard: (() => void)[];
   undo: ((gone: number, heard: boolean) => void)[];
   earliest: number;
@@ -101,6 +109,28 @@ let committing: { reached: number } | null = null;
  */
 export function soundReached(clock: number): void {
   if (committing) committing.reached = Math.max(committing.reached, clock);
+  else if (striking) {
+    striking.audible = Math.max(striking.audible ?? -Infinity, clock);
+    settledAt(clock);
+  }
+}
+
+/** Thrown inside a strike's build by attackNow: the clock is too near the note for its attack; nothing of it was made audible. */
+class StrikeLate extends Error {}
+
+/**
+ * Inside a strike whose time-critical moments are all set (see strikeSettled): about to make a
+ * part audible now, during the build rather than as its last step (a hat's attack, before Tone sets
+ * the slow rest of it, which can come late with no harm). The clock must still be a block
+ * short of `at`; else the strike is struck again, cleanly (nothing of it audible yet).
+ */
+export function attackNow(context: Clock, at: number): void {
+  if (striking && !striking.last && !reachedInTime(context, at)) throw new StrikeLate();
+}
+
+/** Whether the strike under way has all its time-critical moments set (see settledAt), so a part's attack can be set now (attackNow). */
+export function strikeSettled(): boolean {
+  return !!striking && striking.settled !== undefined && !striking.unsettled;
 }
 
 /** Live strikes made again (the page held up while one was set), and ones heard with the clock already near them (the last try, or held up within the final step). */
@@ -137,7 +167,8 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
   // (A time decided before something slow was readied, and the clock moved on meanwhile)
   if (!reachedInTime(context, at)) at = Math.max(at, retryRoom(context));
   for (let tries = 1; ; tries++) {
-    const strike: Strike = { asked, heard: [], undo: [], earliest: at };
+    const last = tries >= STRIKE_TRIES;
+    const strike: Strike = { asked, heard: [], undo: [], earliest: at, last };
     striking = strike;
     let result: R | undefined;
     let failed: { error: unknown } | null = null;
@@ -145,22 +176,24 @@ export function strikeWhole<R>(context: Clock & { isOffline: boolean }, asked: n
       const when = at;
       result = struckLater(when - asked, () => build(when));
     } catch (error) {
-      // (Tone refusing a start at or before one it already has: tried again just later)
-      failed = { error };
+      // (Tone refusing a start at or before one it already has, or an attack found late before it was
+      // set, attackNow: tried again just later)
+      failed = error instanceof StrikeLate ? { error: null } : { error };
     } finally {
       striking = null;
     }
-    const last = tries >= STRIKE_TRIES;
-    let heard = false;
-    // (Step 3: not taken when the clock is too near already; the last try is heard however it went)
-    if (!failed && (last || reachedInTime(context, strike.earliest))) {
+    let heard = strike.audible !== undefined;
+    // (Step 3: not taken when the clock is too near already; the last try is heard however it went.
+    // Judged by the clock after its last time-critical moment when its parts say where that is)
+    const built = strike.settled !== undefined && !strike.unsettled ? { currentTime: strike.settled, sampleRate: context.sampleRate } : context;
+    if (!failed && (last || reachedInTime(built, strike.earliest))) {
       committing = { reached: -Infinity };
       try {
         for (const then of strike.heard) then();
       } finally {
         heard = true;
       }
-      const reached = committing.reached;
+      const reached = Math.max(committing.reached, strike.audible ?? -Infinity);
       committing = null;
       // (The clock read after the last step too: held up while it was taken, the note may have
       // reached the sound late, an envelope's attack set after the sound had passed it. Judged by
@@ -200,6 +233,21 @@ export function whenHeard(then: () => void): void {
  */
 export function ifUndone(undo: (gone: number, heard: boolean) => void): void {
   striking?.undo.push(undo);
+}
+
+/**
+ * Inside a strike: a part of it says its time-critical moments are all set, the clock then reading
+ * `clock`; what it sets after can be set late with no harm (a hat's oscillators, waiting at 0 Hz,
+ * carried on at the note, and stopped well after it). Unless another part can't say so (unsettled),
+ * the strike is judged by the latest such clock rather than the clock after its whole build.
+ */
+export function settledAt(clock: number): void {
+  if (striking) striking.settled = Math.max(striking.settled ?? -Infinity, clock);
+}
+
+/** Inside a strike: a part of it can't say when its time-critical moments are all set (see settledAt). */
+export function unsettled(): void {
+  if (striking) striking.unsettled = true;
 }
 
 /** Inside a strike: a part of it begins at `at`, before its time (an envelope run ahead of the note): the clock must leave room before that. */

@@ -437,22 +437,41 @@ test('live, a hat held up while any of its six pairs start (readied before its t
   }
 });
 
-test('live, a hat held up inside its strike, once its time is decided: struck again later, its six pairs stopped and started afresh for the new time, all together, its pitch leaving 0 Hz only there (scan r44)', async () => {
+test('live, a hat held up inside its strike after its pitch and attack are set (while Tone sets the slow rest: its pairs carried on, their stops): struck once, where it was put, never stopped (scan r44)', async () => {
   const { synth, context, attacks, pitch, holdInStrike } = await fakeStruckHat();
   let held = false;
   holdInStrike(() => {
     if (held) return;
     held = true;
-    context.currentTime += 0.0145;
+    context.currentTime += 5 * BLOCK;
+  });
+  const at = attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
+  assert.equal(at, 1 + ROOM);
+  assert.deepEqual(attacks, [at]);
+  for (const osc of synth._oscillators) assert.deepEqual(osc.events.map((e) => e.state), ['started', 'started']);
+  assert.deepEqual(pitch.filter(([v]) => v !== 0).map(([, t]) => t), [at]);
+});
+
+test('live, a hat whose clock is found too near before its attack is set (held up after its pitch): nothing of it heard, its pairs stopped and readied afresh, struck once two blocks past the clock (scan r44)', async () => {
+  const { synth, context, attacks, pitch, env } = await fakeStruckHat();
+  // (The hold-up just before its attack: in the pitch setting, after the readied pitch)
+  const triggerAttack = Object.getPrototypeOf(env).triggerAttack;
+  let held = false;
+  Object.defineProperty(env, 'triggerAttack', {
+    value: function (...a) {
+      if (!held) {
+        held = true;
+        context.currentTime += 5 * BLOCK;
+      }
+      return triggerAttack.apply(this, a);
+    },
   });
   const at = attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
   assert.ok(Math.abs(at - (context.currentTime + RETRY)) < 1e-9, `${at}`);
   assert.deepEqual(attacks, [at]);
   for (const osc of synth._oscillators) {
-    const states = osc.events.map((e) => e.state);
-    // (Readied, the first strike's start, stopped unheard, started early again, the second strike's start)
-    assert.deepEqual(states, ['started', 'started', 'stopped', 'started', 'started']);
-    assert.ok(osc.events[3].time === at - BLOCK && osc.events[4].time === at);
+    assert.deepEqual(osc.events.map((e) => e.state), ['started', 'stopped', 'started', 'started']);
+    assert.ok(osc.events[2].time === at - BLOCK && osc.events[3].time === at);
   }
   assert.deepEqual(pitch.filter(([v]) => v !== 0).map(([, t]) => t), [at]);
 });

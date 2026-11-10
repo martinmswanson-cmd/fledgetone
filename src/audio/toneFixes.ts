@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { attackRoom, ifUndone, soundLead, soundReached, strikeAsked, strikeWhole, whenHeard } from './soundLead';
+import { attackNow, attackRoom, ifUndone, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -326,6 +326,11 @@ export { attackRoom, soundLead };
 
 /** The loudness envelopes of the strikes under way, and what's been asked of each, set as their strike's last step. */
 const heldBack = new Map<EnvelopeInside, Array<() => void>>();
+/**
+ * Loudness envelopes set at once in their strike's build instead (see strikeTone): its time-critical
+ * moments are all set already, and the rest of the note can come late with no harm.
+ */
+const setNow = new WeakSet<EnvelopeInside>();
 
 envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
@@ -354,7 +359,15 @@ envelopeProto.triggerAttack = function (time, velocity) {
       soundReached(reached ?? this.context.currentTime);
     }
   };
-  if (!held) return attack();
+  if (!held) {
+    // (A loudness envelope set during its strike's build, its time-critical moments already set:
+    // set now if the clock still leaves room, else its strike is made again; see strikeTone)
+    if (setNow.has(this)) {
+      setNow.delete(this);
+      attackNow(this.context, at);
+    }
+    return attack();
+  }
   held.push(attack);
   return this;
 };
@@ -409,7 +422,10 @@ function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
       const others = [this.filterEnvelope, this.modulationEnvelope].filter((env): env is EnvelopeInside => env !== undefined && env !== amp);
       // (The oscillators this note starts afresh, not ones still sounding that it carries on)
       const fresh = [this.oscillator, this.modulation, ...(this._oscillators ?? [])].filter((source): source is StateInside => typeof source?._state?.getValueAtTime === 'function' && source._state.getValueAtTime(at) !== 'started');
-      if (amp) {
+      // (A hit whose oscillators wait at 0 Hz, its pitch set, has nothing else that must come in
+      // time before its attack: set as Tone gets to it, first, before the slow rest of the note)
+      if (amp && strikeSettled()) setNow.add(amp);
+      else if (amp) {
         const held: Array<() => void> = [];
         heldBack.set(amp, held);
         whenHeard(() => {

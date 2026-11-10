@@ -9,7 +9,7 @@
  */
 import * as Tone from 'tone';
 import { RENDER_BLOCK } from './native';
-import { attackRoom, ifUndone, inStrike, strikeWhole } from '../soundLead';
+import { attackRoom, ifUndone, inStrike, settledAt, strikeWhole, unsettled } from '../soundLead';
 
 /** Where a Tone source keeps its starts and stops (Tone keeps it to itself). */
 interface States {
@@ -236,7 +236,11 @@ export function strikeTogether<R>(context: Tone.BaseContext, start: number, part
           if (early) {
             early.pitch.setValueAtTime(early.hz, when);
             ifUndone((gone, heard) => stopWaiting(synth, note, when, gone, heard));
-          }
+            // (Its oscillators wait at 0 Hz: with its pitch, everything set before it is set too;
+            // what Tone sets after, their carrying on at the note and their stops well after, can be
+            // set late with no harm. Its attack is judged as it's set, see soundLead.ts soundReached)
+            settledAt(context.currentTime);
+          } else unsettled();
           attack(when);
           return when;
         }),
