@@ -317,3 +317,95 @@ test('the swell follows a lane at every one of its points: a silence in it stays
   const r = B.swellLane(rising, 0, { from: 5, peak: 9, gap: false, depthDb: 6 }, FOUR);
   for (let bar = 1; bar < 12; bar += 1 / 256) assert.ok(dbAt(r, bar) <= dbAt(rising, bar) + 0.01, `at ${bar}: ${dbAt(r, bar)} over ${dbAt(rising, bar)}`);
 });
+
+test('a build from the music\'s level: nothing dips first, nothing before it changes, only the breath', () => {
+  for (const depthDb of [3, 6]) {
+    const o = { from: 5, peak: 9, gap: true, depthDb, start: 'level' };
+    assert.equal(B.dipsFirst(o), false);
+    assert.equal(B.dipsFirst({ from: 5, peak: 9, gap: true }), true);
+    close(B.buildPlaces(o, FOUR).lead, 5);
+    const points = B.swellLane(undefined, -6, o, FOUR);
+    // No point before the build: the bars before it play as they did
+    assert.ok(points.every((p) => p.bar >= 5 - 1e-9), JSON.stringify(points));
+    // The track's level all through the build, up to the breath
+    for (let bar = 1; bar <= 9 - 1 / 8 + 1e-9; bar += 1 / 32) close(dbAt(points, bar), -6, 1e-3);
+    close(dbAt(points, 9 - 1 / 16), -6 - B.GAP_DB, 1e-3);
+    close(dbAt(points, 9), -6, 1e-3);
+    // Never above the level, and every change a slope
+    assert.ok(B.riseOver(points, 1, 13, -6) <= 1e-3);
+    assert.equal(B.stepUp(points), 0);
+    for (let i = 1; i < points.length; i++) assert.ok(points[i].bar > points[i - 1].bar);
+  }
+  // Over a lane the track has: followed exactly up to the breath
+  const existing = [{ bar: 1, value: vol.toNorm(-3) }, { bar: 6, value: vol.toNorm(-9) }, { bar: 12, value: vol.toNorm(-9) }];
+  const own = B.swellLane(existing, 0, { from: 5, peak: 9, gap: false, depthDb: 6, start: 'level' }, FOUR);
+  for (let bar = 1; bar < 13; bar += 1 / 16) close(dbAt(own, bar), dbAt(existing, bar), 1e-3);
+  // The filter isn't darkened first, so nothing opens: the lane as it was
+  assert.deepEqual(B.openingLane(undefined, 20000, { from: 5, peak: 9, gap: true, start: 'level' }, FOUR), []);
+  assert.deepEqual(B.openingLane(existing, 20000, { from: 5, peak: 9, gap: true, start: 'level' }, FOUR), existing);
+  // The store side: the swell and the filter only when it dips first; the dip stays the default; in the studio and in Pocket
+  const actions = src('src/store/chillsActions.ts');
+  assert.match(actions, /const swell = dipsFirst\(o\) && o\.volume;/);
+  assert.match(actions, /const sweep = dipsFirst\(o\) && o\.filter;/);
+  assert.match(actions, /BUILD_DEFAULTS[^=]*= \{ start: 'dip',/);
+  assert.match(actions, /buildChosen = [^\n]*\(dipsFirst\(o\) && \(o\.volume \|\| o\.filter\)\) \|\| o\.riser \|\| o\.gap \|\| o\.layer/);
+  assert.match(actions, /nothing dips first: the tracks keep their level all through it/);
+  assert.match(src('src/components/timeline/SmartDialog.tsx'), /way\('level', 'Start from the music’s level'/);
+  assert.match(src('src/pocket/PocketSheets.tsx'), /buildForChills\(\{ \.\.\.BUILD_DEFAULTS, start: 'level',/);
+});
+
+test('a chills progression written over a clip takes its name only where the app named it', () => {
+  const tracks = [{ id: 't1', name: 'Pad' }, { id: 't2', name: 'Keys' }];
+  const clip = (id, name, more = {}) => ({ id, trackId: 't1', name, startBar: 1, lengthBars: 4, notes: [], isSelected: false, ...more });
+  const prog = X.chillsById('risingBass').name;
+  // The app's names: a new clip's on its track, another progression's, one made from a file, none
+  for (const name of ['Pad 2', 'Pad 12', X.chillsById('mediant').name, '', '  '])
+    assert.equal(X.autoClipName({ name }, 'Pad'), true, name);
+  assert.equal(X.autoClipName({ name: 'Drums', nameFromFile: true }, 'Pad'), true);
+  // Typed, or not surely the app's: kept
+  for (const name of ['Verse 2', 'Pad', 'Pad 2b', 'Pad two', 'Keys 1', 'My idea'])
+    assert.equal(X.autoClipName({ name }, 'Pad'), false, name);
+  const clips = [clip('a', 'Pad 2'), clip('b', 'Chorus'), clip('f', 'Loop 1', { nameFromFile: true })];
+  const out = X.namedForChills(clips, tracks, 'a', prog);
+  assert.equal(out[0].name, prog);
+  assert.equal(out[1], clips[1]);
+  assert.equal(X.namedForChills(clips, tracks, 'b', prog), clips, 'a typed name: nothing changes');
+  const file = X.namedForChills(clips, tracks, 'f', prog)[2];
+  assert.equal(file.name, prog);
+  assert.equal('nameFromFile' in file, false);
+  // Linked clips: each that has an app's name follows (they all play it now); a typed one is kept
+  const linked = [clip('a', 'Pad 2', { pattern: 'p' }), clip('b', 'Pad 3', { pattern: 'p' }), clip('c', 'Mine', { pattern: 'p' }), clip('d', 'Pad 4')];
+  const named = X.namedForChills(linked, tracks, 'b', prog).map((c) => c.name);
+  assert.deepEqual(named, [prog, prog, 'Mine', 'Pad 4']);
+  // Studio's CHILLS and Pocket's For chills name it inside the edit's one step
+  const roll = src('src/components/timeline/PianoRoll.tsx');
+  assert.match(roll, /store\.setClipNotes\(clip\.id, next\);\s*\/\/[^\n]*\n\s*if \(name\) nameAfterChills\(clip\.id, name\);/);
+  assert.match(src('src/components/timeline/ChordRiffBar.tsx'), /apply\(out, undefined, prog\.name\)/);
+  assert.match(src('src/pocket/PocketSheets.tsx'), /editCell\(track\.id, sec, \(\) => notes, true, \(id\) => nameAfterChills\(id, prog\.name\)\)/);
+  assert.match(src('src/pocket/pocketCell.ts'), /s\.setClipNotes\(id, next\);\s*then\?\.\(id\);/);
+});
+
+test('"New empty clip" starts where the lane menu\'s dialogs make theirs: the start of the bar clicked in', async () => {
+  const { clickedBarStart } = await import('../src/audio/tempoMap.ts');
+  // 14 px into bar 9 at 48 px a bar, snapped to a 16th: 9.25, made at bar 9
+  close(clickedBarStart(9.25, FOUR), 9);
+  close(clickedBarStart(9.9375, FOUR), 9);
+  close(clickedBarStart(9, FOUR), 9);
+  close(clickedBarStart(9 - 1e-9, FOUR), 9);
+  close(clickedBarStart(0.5, FOUR), 1);
+  // In 3/4 a bar is three beats
+  close(clickedBarStart(1 + 0.75 * 2 + 0.5, WALTZ), 1 + 0.75 * 2);
+  const menu = src('src/components/timeline/ClipContextMenu.tsx');
+  assert.match(menu, /const clickedBar = clickedBarStart\(menu\.bar, meter\);/);
+  assert.match(menu, /open: \{ mode, trackId: menu\.trackId, bar: clickedBar \}/);
+  const newClip = menu.slice(menu.indexOf('const newClip'), menu.indexOf('const items'));
+  assert.match(newClip, /const at = clickedBar;/);
+  assert.doesNotMatch(newClip, /beatFloor/);
+});
+
+test('the guide says how far the breath drops truthfully: the tracks, with reverb and echoes ringing on', () => {
+  const guide = src('GUIDE.md');
+  const build = guide.slice(guide.indexOf('- **Build into a peak…**'));
+  assert.doesNotMatch(build.slice(0, build.indexOf('\n')), /near-silence \(18 dB down\)/);
+  assert.match(build.slice(0, build.indexOf('\n')), /the tracks drop 18 dB/);
+});

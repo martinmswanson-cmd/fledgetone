@@ -6,7 +6,10 @@ import { measuresBetween, meterAt, type MeterMap } from '../audio/tempoMap';
 /**
  * The build for chills, as lanes: over the bars before a peak the tracks swell (their volume
  * rises from a little under where it was to where it was, and a low-pass filter opens), with a
- * moment of near-silence just before the peak if asked. Ear safety comes first: the swell only
+ * moment of near-silence just before the peak if asked. Or, started from the music's level
+ * (BuildStart 'level'), nothing dips first: the tracks keep their level all through the build, and
+ * only the near-silence is written (the lift then comes from the parts the build adds: the riser,
+ * the breath, the pad at the peak). Ear safety comes first: the swell only
  * ever takes level away and gives it back (nothing ends up louder than the bars before the build),
  * its whole rise is at most BUILD_MOST_RISE_DB, and every change is a slope, never a step (no two
  * points at one place). A lane the track already has is kept outside the build and followed
@@ -22,6 +25,12 @@ export const GAP_DB = 18;
 /** Where the filter starts as the build begins, Hz (it opens to the track's own cutoff). */
 export const BUILD_LOW_CUTOFF = 500;
 
+/**
+ * How the build starts: 'dip' (the tracks start a little under their level and darker, and grow
+ * back to it by the peak) or 'level' (nothing dips: they keep their level all through the build).
+ */
+export type BuildStart = 'dip' | 'level';
+
 export interface BuildSpan {
   /** Where the build starts (a song position) */
   from: number;
@@ -29,12 +38,21 @@ export interface BuildSpan {
   peak: number;
   /** The near-silence just before the peak */
   gap: boolean;
+  /** How it starts (none given: 'dip') */
+  start?: BuildStart;
 }
 
-/** The build's places: where the dip into it starts (a beat before, from bar 2 on), the measure lines in it, and where the near-silence starts. */
+/** Whether a build starts by dipping (the swell and the filter's opening) or from the music's level. */
+export const dipsFirst = (o: Pick<BuildSpan, 'start'>): boolean => o.start !== 'level';
+
+/**
+ * The build's places: where the dip into it starts (a beat before, from bar 2 on; started from the
+ * music's level, the build's own start: nothing before it changes), the measure lines in it, and
+ * where the near-silence starts.
+ */
 export function buildPlaces(o: BuildSpan, map: MeterMap): { lead: number; marks: number[]; gapStart: number; gapIn: number; gapOut: number } {
   const beat = 1 / meterAt(o.from, map).den;
-  const lead = Math.max(1, o.from - beat);
+  const lead = dipsFirst(o) ? Math.max(1, o.from - beat) : o.from;
   // The near-silence: half a beat (an 8th in 4/4), where the build is long enough for it
   const gapLen = 1 / meterAt(Math.max(1, o.peak - 1e-6), map).den / 2;
   const gap = o.gap && o.peak - o.from >= 4 * gapLen;
@@ -82,7 +100,8 @@ function splice(existing: readonly AutomationPoint[] | undefined, lead: number, 
 
 /** How far under the lane the build holds it at `bar`, dB (0 or less): the dip in, the swell, the near-silence. */
 function swellOffset(bar: number, o: BuildSpan & { depthDb: number }, p: ReturnType<typeof buildPlaces>): number {
-  const depth = Math.max(0, Math.min(BUILD_MOST_RISE_DB, o.depthDb));
+  // (from the music's level: no dip, only the near-silence)
+  const depth = dipsFirst(o) ? Math.max(0, Math.min(BUILD_MOST_RISE_DB, o.depthDb)) : 0;
   if (bar <= p.lead) return 0;
   if (bar < o.from) return (-depth * (bar - p.lead)) / (o.from - p.lead);
   if (bar <= p.gapStart) return -depth * (1 - swellShape((bar - o.from) / (p.gapStart - o.from)));
@@ -96,7 +115,7 @@ function swellOffset(bar: number, o: BuildSpan & { depthDb: number }, p: ReturnT
 /**
  * A track's volume lane with the swell in it: `existing` its lane now (or none: the fader's
  * `trackDb` all along), `depthDb` how far under its level the build starts (at most
- * BUILD_MOST_RISE_DB; 0 with only the near-silence). The build is taken off the lane as it is, at
+ * BUILD_MOST_RISE_DB; 0 with only the near-silence, as when it starts from the music's level). The build is taken off the lane as it is, at
  * every one of its points: never louder than it was at any moment. Null when the track is silent
  * all through the build (nothing to swell).
  */
@@ -120,9 +139,12 @@ export function swellLane(existing: readonly AutomationPoint[] | undefined, trac
 /**
  * A track's filter cutoff lane with the build in it: it closes over the beat before the build to
  * BUILD_LOW_CUTOFF (or where it already was, if lower) and opens back to `openHz` (or the lane's
- * own value, followed at every one of its points) by the peak: never brighter than it was.
+ * own value, followed at every one of its points) by the peak: never brighter than it was. A build
+ * from the music's level leaves it as it was.
  */
 export function openingLane(existing: readonly AutomationPoint[] | undefined, openHz: number, o: BuildSpan, map: MeterMap): AutomationPoint[] {
+  // (a build from the music's level isn't darkened first, so nothing opens: the lane as it was)
+  if (!dipsFirst(o)) return [...(existing ?? [])];
   const has = !!existing?.length;
   const openAt = (bar: number) => (has ? laneValueAt(existing!, bar)! : cutoffNorm(Math.min(FILTER_CUTOFF_MAX, openHz)));
   const p = buildPlaces(o, map);

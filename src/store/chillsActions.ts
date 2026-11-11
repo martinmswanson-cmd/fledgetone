@@ -12,10 +12,10 @@ import { pastCapsWords } from './songCaps';
 import type { AutomationLane, Clip, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration, formatBarPosition, formatBarRange, normalizeTrackFx, TOTAL_BARS, uid } from './timelineTypes';
 import type { SongKey } from './songKey';
-import { chillsChords, chillsNotes, chillsById, wideChord } from './chills';
+import { chillsChords, chillsNotes, chillsById, namedForChills, wideChord } from './chills';
 import { chordChanges, chordSpans } from './smartTools';
 import { placeClip } from './smartActions';
-import { BUILD_MOST_RISE_DB, buildPlaces, openingLane, swellLane } from './chillsBuild';
+import { BUILD_MOST_RISE_DB, buildPlaces, dipsFirst, openingLane, swellLane, type BuildStart } from './chillsBuild';
 import { addMeasures } from '../audio/tempoMap';
 import { FX_NOTES, INSTRUMENTS, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { isMixTrack } from './buses';
@@ -51,6 +51,17 @@ export function makeChillsClip(trackId: string, atBar: number, progId: string, k
   return placeClip(trackId, atBar, length, notes, prog.name);
 }
 
+/**
+ * After a chills progression is written over a clip (the piano roll's CHILLS, Pocket's For chills):
+ * the clip, and those linked to it, named after it where their names are the app's
+ * (chills.ts namedForChills). No undo step of its own: part of the edit's.
+ */
+export function nameAfterChills(clipId: string, name: string): void {
+  const s = tl();
+  const clips = namedForChills(s.clips, s.tracks, clipId, name);
+  if (clips !== s.clips) useTimelineStore.setState({ clips: [...clips] });
+}
+
 /** Notes heard on a track over [from, to), as positions from `from`. */
 function notesOver(trackId: string, from: number, to: number): NoteEvent[] {
   return tl()
@@ -83,7 +94,13 @@ export interface BuildChoices {
   peak: number;
   /** Only these tracks swell (none given: every track playing in the build) */
   trackIds?: readonly string[];
-  /** How far under their level the tracks start, dB (at most BUILD_MOST_RISE_DB) */
+  /**
+   * How it starts: 'dip' (the swell and the filter: the tracks start under their level and darker,
+   * and grow back by the peak) or 'level' (nothing dips: the tracks keep their level, the swell and
+   * the filter aren't written, and the lift comes from the riser, the breath and the pad)
+   */
+  start: BuildStart;
+  /** How far under their level the tracks start, dB (at most BUILD_MOST_RISE_DB), with 'dip' */
   depthDb: number;
   volume: boolean;
   filter: boolean;
@@ -94,7 +111,7 @@ export interface BuildChoices {
 }
 
 /** The defaults the studio's dialog and Pocket start from. */
-export const BUILD_DEFAULTS: Omit<BuildChoices, 'from' | 'peak'> = { depthDb: BUILD_MOST_RISE_DB, volume: true, filter: true, riser: true, gap: true, layer: true };
+export const BUILD_DEFAULTS: Omit<BuildChoices, 'from' | 'peak'> = { start: 'dip', depthDb: BUILD_MOST_RISE_DB, volume: true, filter: true, riser: true, gap: true, layer: true };
 
 /** How long the pad at the peak plays, in measures. */
 const LAYER_MEASURES = 4;
@@ -118,8 +135,8 @@ export function buildTracks(from: number, peak: number, only?: readonly string[]
   );
 }
 
-/** Whether a build with these choices would do anything at all. */
-export const buildChosen = (o: Pick<BuildChoices, 'volume' | 'filter' | 'riser' | 'gap' | 'layer'>): boolean => o.volume || o.filter || o.riser || o.gap || o.layer;
+/** Whether a build with these choices would do anything at all (the swell and the filter only when it dips first). */
+export const buildChosen = (o: Pick<BuildChoices, 'start' | 'volume' | 'filter' | 'riser' | 'gap' | 'layer'>): boolean => (dipsFirst(o) && (o.volume || o.filter)) || o.riser || o.gap || o.layer;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const r1 = (v: number) => Math.round(v * 10) / 10;
@@ -164,6 +181,9 @@ function planBuild(o: BuildChoices, tracks: readonly Track[], map: ReturnType<ty
   const s = tl();
   const places = buildPlaces(o, map);
   const plan: BuildPlan = { tracks: new Map(), riser: null, pad: null, swelled: 0, opened: 0, resonant: [], noChords: false, padEnd: o.peak };
+  // (from the music's level: no swell and no filter, only the breath on the tracks)
+  const swell = dipsFirst(o) && o.volume;
+  const sweep = dipsFirst(o) && o.filter;
   for (const t of tracks) {
     let automation = [...(t.automation ?? [])];
     let fx: Track['fx'] = t.fx;
@@ -173,18 +193,18 @@ function planBuild(o: BuildChoices, tracks: readonly Track[], map: ReturnType<ty
       automation = lane(param) ? automation.map((l) => (l.param === param ? { param, points } : l)) : [...automation, { param, points }];
       changed = true;
     };
-    if (o.volume || o.gap) {
+    if (swell || o.gap) {
       // (the near-silence alone: no swell, only the breath before the peak)
-      const points = swellLane(lane('volume')?.points, t.volume, { ...o, depthDb: o.volume ? o.depthDb : 0 }, map);
+      const points = swellLane(lane('volume')?.points, t.volume, { ...o, depthDb: swell ? o.depthDb : 0 }, map);
       if (points) {
         put('volume', points);
-        if (o.volume) plan.swelled++;
+        if (swell) plan.swelled++;
       }
     }
     const k = t.instrumentKey;
     const filter = t.fx.filter;
     const stepped = s.clips.some((c) => c.trackId === t.id && c.stepLanes?.some((l) => l.target === 'filterCutoff'));
-    if (o.filter && !isDrumKind(k) && !isFxKind(k) && !stepped && (!filter?.on || filter.type === 'lowpass')) {
+    if (sweep && !isDrumKind(k) && !isFxKind(k) && !stepped && (!filter?.on || filter.type === 'lowpass')) {
       const resonant = !!filter?.on && (filter.resonance > RESONANT_Q || !!lane('filterResonance')?.points.length);
       if (resonant) plan.resonant.push(t.name);
       else {
@@ -299,7 +319,7 @@ export async function buildForChills(o: BuildChoices): Promise<string> {
   }, true);
   if (!done.done) return pastCapsWords(done.past);
   // The lanes in view on the tracks that swell (a view setting: no undo step)
-  if (o.volume || o.gap) for (const t of tracks.filter((x) => plan.tracks.has(x.id)).slice(0, 8)) tl().showAutomation(t.id, true, 'volume');
+  if (plan.swelled || o.gap) for (const t of tracks.filter((x) => plan.tracks.has(x.id)).slice(0, 8)) tl().showAutomation(t.id, true, 'volume');
   const after = currentProject();
   const cautions = checkSafety(before, after);
   // Measured again with the build in: the peak against the bars before the build, and the sound check
@@ -328,6 +348,7 @@ export async function buildForChills(o: BuildChoices): Promise<string> {
     measured = ' (It couldn’t be measured again afterwards.)';
   }
   const what = [
+    dipsFirst(o) ? '' : 'nothing dips first: the tracks keep their level all through it',
     plan.swelled ? `${plural(plan.swelled, 'track swells', 'tracks swell')} from ${o.depthDb} dB under ${plan.swelled === 1 ? 'its' : 'their'} level back to it (${plan.swelled === 1 ? 'a volume lane' : 'volume lanes'})` : '',
     plan.opened ? `a low-pass filter opens on ${plural(plan.opened, 'track', 'tracks')} (${plan.opened === 1 ? 'a filter lane' : 'filter lanes'})` : '',
     riser ? `a riser plays under it on a new track, ${RISER_UNDER_DB} dB under the music at its loudest` : plan.riser ? 'no riser, as the music there is silent' : '',

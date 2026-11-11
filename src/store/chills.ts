@@ -1,4 +1,4 @@
-import type { NoteEvent } from './timelineTypes';
+import type { Clip, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration } from './timelineTypes';
 import { nameOf } from './noteTools';
 import type { SongKey } from './songKey';
@@ -396,4 +396,37 @@ export function wideChord(pcs: readonly number[], prev: readonly number[] | null
     }
   }
   return { bass, upper };
+}
+
+/**
+ * Whether a clip's name is one the app gave it, so a chills progression written over the clip may
+ * name it after the progression (as the Chills progression dialog names the clip it makes). The
+ * app keeps no mark of a name the person typed, so only names it surely made count: none at all,
+ * the name a new empty clip gets on its track ("Pad 2"), a chills progression's name, or a name
+ * made from a file's. Anything else (a name typed, or another tool's) is kept as it is.
+ */
+export function autoClipName(clip: Pick<Clip, 'name' | 'nameFromFile'>, trackName: string | undefined): boolean {
+  const name = clip.name.trim();
+  if (!name || clip.nameFromFile || CHILLS.some((p) => p.name === name)) return true;
+  return trackName !== undefined && name.startsWith(`${trackName} `) && /^\d+$/.test(name.slice(trackName.length + 1));
+}
+
+/**
+ * The clips with `clipId` named `name` (a chills progression written over it) where its name is
+ * one the app gave it (autoClipName), and each clip linked to it likewise, as they all play it now.
+ * The same array when no name changes.
+ */
+export function namedForChills(clips: readonly Clip[], tracks: ReadonlyArray<Pick<Track, 'id' | 'name'>>, clipId: string, name: string): readonly Clip[] {
+  const clip = clips.find((c) => c.id === clipId);
+  if (!clip) return clips;
+  let changed = false;
+  const out = clips.map((c) => {
+    if (c !== clip && !(clip.pattern && c.pattern === clip.pattern)) return c;
+    if (c.name === name || !autoClipName(c, tracks.find((t) => t.id === c.trackId)?.name)) return c;
+    changed = true;
+    // (no longer the file's name: the mark goes with it)
+    const { nameFromFile: _file, ...rest } = c;
+    return { ...rest, name };
+  });
+  return changed ? out : clips;
 }

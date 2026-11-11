@@ -101,13 +101,14 @@ test('new empty clips, Smart tools and Math patterns are sized and placed by the
   assert.match(src('src/components/timeline/TrackLane.tsx'), /createEmptyClip\(track\.id, bar, addMeasures\(bar, 1, songMeterOf\(s\)\) - bar\)/);
   const menu = src('src/components/timeline/ClipContextMenu.tsx');
   assert.match(menu, /createEmptyClip\(track\.id, at, addMeasures\(at, bars, meter\) - at\)/);
-  // Make clip at bar: the start of the measure clicked in (Math.floor would be a whole note's start)
-  assert.match(menu, /bar: measureAt\(Math\.max\(1, menu\.bar\) \+ 1e-6, meter\)\.start/);
+  // Make clip at bar (and New empty clip): the start of the measure clicked in (Math.floor would be a whole note's start)
+  assert.match(menu, /const clickedBar = clickedBarStart\(menu\.bar, meter\);/);
+  assert.match(menu, /bar: clickedBar \}/);
   assert.doesNotMatch(menu, /Math\.floor\(menu\.bar \+ 1e-6\)/);
   // In 4/4 that's the old Math.floor(bar)
-  for (const b of [1, 1.5, 5, 5.9999995, 6.75]) assert.equal(tm.measureAt(Math.max(1, b) + 1e-6, FOUR).start, Math.max(1, Math.floor(b + 1e-6)));
+  for (const b of [1, 1.5, 5, 5.9999995, 6.75]) assert.equal(tm.clickedBarStart(b, FOUR), Math.max(1, Math.floor(b + 1e-6)));
   // Right-clicking measure 6 in 3/4 (bar 4.75 to 5.5) makes it at measure 6
-  assert.equal(tm.measureAt(5.2 + 1e-6, THREE).start, 4.75);
+  assert.equal(tm.clickedBarStart(5.2, THREE), 4.75);
   const actions = src('src/store/smartActions.ts');
   assert.match(actions, /const map = songMeterOf\(tl\(\)\);\s+const \{ spans, length \} = chordSpans\(atBar, chords\.length, chordBars, map\);/);
   assert.match(actions, /const map = songMeterOf\(tl\(\)\);\s+const length = addMeasures\(atBar, bars, map\) - atBar;\s+const notes = mathPattern\(pattern, \{ root: key\.root, steps: key\.steps \}, length, newId, \{ start: atBar, map \}\);/);
