@@ -1,7 +1,9 @@
 // Chills progressions and the build into a peak, in a real browser, in the studio and in Pocket:
 // each progression is inserted from the studio's Chills progression dialog (the first through the
-// lane's right-click menu), one through the piano roll's CHILLS, each in Pocket's Chords sheet,
-// and a build from the clips' right-click menu and from Pocket's section sheet. Each is checked to
+// lane's right-click menu), one through the piano roll's CHILLS, each in Pocket's Chords sheet
+// (the clip named after the progression), "New empty clip" from the lane's menu (made where the
+// dialogs make theirs), and a build from the clips' right-click menu and from Pocket's section
+// sheet, both ways it can start (dip, then swell; from the music's level). Each is checked to
 // be one exact undo step (Undo gives the song back as it was, Redo as it was after), then the song
 // is exported through the app's own render (the master and its limiter, as Export plays it) and
 // measured: no sample at or over full scale, and no rise in level beyond the cap (6 dB) anywhere
@@ -208,6 +210,35 @@ const exported = (name, m) => {
     await store((S) => S.getState().undo());
   }
 
+  // ---------- Studio: New empty clip from the lane's menu, where the dialogs make theirs ----------
+  {
+    await store((S) => S.setState({ zoom: 48, snapGrid: '1/16' }));
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(SNAP);
+    const lane = page.locator('[data-lane="t4"]');
+    const at = async () => {
+      const box = await lane.boundingBox();
+      // (14 px into bar 9 at 48 px a bar: 9.25 on the 16th grid)
+      await page.mouse.click(box.x + 8 * 48 + 14, box.y + box.height / 2, { button: 'right' });
+      await page.waitForTimeout(300);
+    };
+    await at();
+    await page.getByRole('menuitem', { name: /Chills progression/ }).click();
+    await page.waitForTimeout(250);
+    const says = await page.getByRole('dialog').getByRole('button', { name: /Make clip at bar/ }).innerText();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    await at();
+    await page.getByRole('menuitem', { name: /New empty clip \(4 bars\)/ }).click();
+    await page.waitForTimeout(300);
+    const made = await store((S) => S.getState().clips.filter((c) => c.trackId === 't4').map((c) => [c.startBar, c.lengthBars]));
+    step('New empty clip starts where the dialogs from the same spot make theirs', says === 'Make clip at bar 9' && made.length === 1 && made[0][0] === 9 && made[0][1] === 4, `${says}; ${JSON.stringify(made)}`);
+    await store((S) => S.getState().closeEditor?.());
+    await page.keyboard.press('Escape');
+    await store((S) => S.getState().undo());
+    step('New empty clip: one Undo takes it out exactly', (await page.evaluate(SNAP)) === before);
+  }
+
   // ---------- Studio: the piano roll's CHILLS over a clip ----------
   {
     const clipId = await store((S) => S.getState().createEmptyClip('t4', 9, 4));
@@ -219,6 +250,8 @@ const exported = (name, m) => {
     await page.waitForTimeout(300);
     const notes = await store((S, id) => S.getState().clips.find((c) => c.id === id).notes.length, clipId);
     step('piano roll CHILLS: the clip is filled', notes >= 32, `${notes} notes`);
+    const named = await store((S, id) => S.getState().clips.find((c) => c.id === id).name, clipId);
+    step('piano roll CHILLS: the clip (its name the app\'s) is named after the progression', named === ids.find((p) => p.id === 'liftStep').name, named);
     await shot(page, 'studio-piano-roll-chills');
     await oneStep(page, 'piano roll CHILLS', before);
     exported('piano roll CHILLS', await page.evaluate(MEASURE, [7, 13]));
@@ -305,6 +338,8 @@ const exported = (name, m) => {
     await pk.waitForTimeout(300);
     const made = await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().clips.filter((c) => c.trackId === 't4').map((c) => ({ start: c.startBar, len: c.lengthBars, notes: c.notes.length })));
     step(`Pocket ${prog.id}: the cell is filled`, made.length === 1 && made[0].start === 9 && made[0].len === 4 && made[0].notes >= 12, JSON.stringify(made));
+    const named = await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().clips.find((c) => c.trackId === 't4').name);
+    step(`Pocket ${prog.id}: the new cell is named after the progression`, named === prog.name, named);
     // The studio's piano roll fills a clip the same way: the same notes
     const same = await pk.evaluate(async (id) => {
       const X = await import('/src/store/chills.ts');
@@ -342,6 +377,66 @@ const exported = (name, m) => {
     exported('Pocket build', m);
     const [verse, , peak] = m.loud;
     step(`Pocket build: the peak no more than ${CAP_DB} dB over the section before the build`, peak - verse <= CAP_DB, `${(peak - verse).toFixed(1)} dB`);
+  }
+  // ---------- Both: a build from the music's level ----------
+  {
+    // (the studio's build above taken out first: the song as it was)
+    await store((S) => S.getState().undo());
+    const plain = await page.evaluate(MEASURE, [1, 17]);
+    const before = await page.evaluate(SNAP);
+    // (back to the studio page: its piano roll and any menu closed, the clip in view)
+    await page.bringToFront();
+    await store((S) => S.getState().closeEditor?.());
+    // (the volume lanes the first build put in view are hidden, a view setting: a right-click reaches the clip)
+    await store((S) => S.getState().tracks.forEach((t) => S.getState().showAutomation(t.id, false)));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await store((S) => {
+      const s = S.getState();
+      s.selectClip('cp1', false);
+      s.selectClip('cd1', true);
+      s.selectClip('cb1', true);
+    });
+    const clip = page.locator('[data-clip-id="cp1"]');
+    await clip.scrollIntoViewIfNeeded();
+    const box = await clip.boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+    await page.waitForTimeout(300);
+    await shot(page, 'studio-level-menu');
+    await page.getByRole('menuitem', { name: /Build into a peak/ }).click();
+    await page.waitForTimeout(300);
+    const d = page.getByRole('dialog');
+    await d.getByRole('radio', { name: /Start from the music’s level/ }).check();
+    await page.waitForTimeout(150);
+    await shot(page, 'studio-build-dialog-level');
+    const boxes = d.locator('input[type="checkbox"]');
+    step('studio level build: Swell and Filter opens are off for it', (await boxes.nth(0).isDisabled()) && (await boxes.nth(1).isDisabled()));
+    await d.getByRole('button', { name: 'Make the build' }).click();
+    await page.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
+    const toast = await page.evaluate(() => document.body.innerText.match(/A build for chills[^\n]*/)?.[0] ?? '');
+    step('studio level build: says nothing dips first, and what the peak measures', /nothing dips first/.test(toast) && !/swell/.test(toast) && /Measured, the peak comes out/.test(toast), toast);
+    const lanes = await store((S) => S.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => l.param) })));
+    step('studio level build: only volume lanes for the breath, no filter lanes', ['t1', 't2', 't3'].every((id) => { const l = lanes.find((t) => t.id === id).lanes; return l.includes('volume') && !l.includes('filterCutoff'); }), JSON.stringify(lanes));
+    await page.keyboard.press('Escape');
+    await oneStep(page, 'studio level build', before);
+    const built = await page.evaluate(MEASURE, [1, 17]);
+    exported('studio level build', built);
+    const [verse, build, peak] = built.loud;
+    step('studio level build: the bars before the build and the build itself no quieter than they were', verse >= plain.loud[0] - 0.05 && build >= plain.loud[1] - 0.05, `verse ${verse.toFixed(2)} (was ${plain.loud[0].toFixed(2)}), build ${build.toFixed(2)} (was ${plain.loud[1].toFixed(2)}) LUFS`);
+    step(`studio level build: the peak no more than ${CAP_DB} dB over the section before the build`, peak - verse <= CAP_DB, `${(peak - verse).toFixed(1)} dB`);
+    // Pocket: its own item, the same lanes as the studio's
+    await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().undo());
+    const pbefore = await pk.evaluate(SNAP);
+    await pocket({ sheet: 'section', sheetSection: 2, section: 2 });
+    await pk.waitForTimeout(300);
+    await shot(pk, 'pocket-section-sheet-level');
+    await pk.getByRole('dialog').getByText('Build for chills from the music’s level', { exact: true }).click();
+    await pk.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
+    const studioLanes = await store((S) => JSON.stringify(S.getState().tracks.filter((t) => ['t1', 't2', 't3'].includes(t.id)).map((t) => t.automation)));
+    const pocketLanes = await pk.evaluate(async () => JSON.stringify((await import('/src/store/timelineStore.ts')).useTimelineStore.getState().tracks.filter((t) => ['t1', 't2', 't3'].includes(t.id)).map((t) => t.automation)));
+    step('Pocket level build: the same lanes as the studio\'s', studioLanes === pocketLanes);
+    await oneStep(pk, 'Pocket level build', pbefore);
+    exported('Pocket level build', await pk.evaluate(MEASURE, [1, 17]));
   }
   await browser.close();
   console.log(failures ? `${failures} failed` : 'all passed');
