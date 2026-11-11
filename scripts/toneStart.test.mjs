@@ -589,7 +589,7 @@ async function lateHat({ sounding, tone }) {
     _param: { value: sounding, cancelAndHoldAtTime: (t) => native.push(['hold', t]) },
     _events: { get: () => null, forEachAfter: () => {}, cancel: () => {}, add: () => {} },
   };
-  sig.getValueAtTime = () => tone;
+  sig.getValueAtTime = typeof tone === 'function' ? tone : () => tone;
   let held = false;
   holdInStrike(() => {
     if (held) return;
@@ -612,4 +612,13 @@ test('live, a hit found late once heard and sounding far under where it should b
   assert.deepEqual(native, [['hold', h]]);
   assert.ok(!sig.fades.some(([what]) => what === 'hold'), JSON.stringify(sig.fades));
   assert.ok(sig.fades.some(([what, v, t]) => what === 'ramp' && v === 0.6 && Math.abs(t - (h + BLOCK)) < 1e-9), JSON.stringify(sig.fades));
+});
+
+test('live, a hit found late and looked at just after its decay begins: judged by where it should be from its decay on, never by the silence before its attack, so one sounding far under is still taken up (scan r44)', async () => {
+  // (Tone has it at nothing before its decay, at 0.6 after; the browser has it at 0.008)
+  const decayStart = 1 + ROOM + 0.001;
+  const { sig, native, context } = await lateHat({ sounding: 0.008, tone: (t) => (t < decayStart ? 0 : 0.6) });
+  assert.ok(context.currentTime - BLOCK < decayStart && context.currentTime >= decayStart);
+  assert.equal(native.length, 1);
+  assert.ok(sig.fades.some(([what, v]) => what === 'ramp' && v === 0.6), JSON.stringify(sig.fades));
 });

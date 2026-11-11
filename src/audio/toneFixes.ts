@@ -485,7 +485,8 @@ const RESHAPE_WAIT = 0.25;
  * then lost, the envelope only creeping towards its sustain (a kick 40 dB quiet, silent to the ear).
  * Once the clock has reached its decay, what the browser has it at (the AudioParam's value, as of
  * the last block rendered) is set beside where Tone has it about then: sounding as it should, it's
- * left exactly as it is. Well under (half its lowest from the clock to a callback past it), it's
+ * left exactly as it is. Well under (half its lowest from a block before the clock, never before
+ * its decay, to a callback past it), it's
  * held at what's sounding a render callback past the clock (as far ahead as the sound can be:
  * holdSounding, never stepped, never down to nothing), taken over one render block to where Tone
  * has it then (where it should be in its envelope), and goes on from there as it would have, every
@@ -508,8 +509,9 @@ function reshapeLate(env: EnvelopeInside, waited = 0): void {
       if (waited < RESHAPE_WAIT) setTimeout(() => reshapeLate(env, waited + Math.max(0.005, decayStart - now)), Math.max(5, (decayStart - now) * 1000));
       return;
     }
+    // (Where Tone has it from a block before the clock, no sooner than its decay, to a callback past it)
     let lowest = Infinity;
-    for (let k = -1; k * block <= lead + block; k++) lowest = Math.min(lowest, sig.getValueAtTime(now + k * block));
+    for (let k = -1; k * block <= lead + block; k++) lowest = Math.min(lowest, sig.getValueAtTime(Math.max(decayStart, now + k * block)));
     if (!(native.value < lowest / 2)) return;
   }
   const hold = Math.max(now + lead + 1 / sr, env._decayStart ?? -Infinity);
