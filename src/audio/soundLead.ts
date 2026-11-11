@@ -41,9 +41,10 @@
  *    may already be sounding, and cutting it to strike it again is heard as a hit, a gap and the
  *    hit again. It plays on, late; an envelope whose moments the sound had passed by then is taken
  *    from where it is, over two blocks, to where it should be (toneFixes.ts catchUp), and should the
- *    clock, read after the whole strike, show its moments may have reached the sound late, its
- *    loudness is set again from a callback past the clock on, where it should be by then (ifLate,
- *    toneFixes.ts reshapeLate): never silent, never a burst.
+ *    clock, read after the whole strike, show its moments may have reached the sound late, what's
+ *    sounding is looked at once the clock reaches its decay: well under where it should be, its
+ *    loudness is taken from what's sounding up to its proper level over one block, a callback past
+ *    the clock (ifLate, toneFixes.ts reshapeLate); sounding as it should, it's left alone.
  *
  * No part of a note moves without the rest, and a note is struck again only while nothing of it
  * has been heard, so it's never out of step, never doubled, and never lost; it's at worst a

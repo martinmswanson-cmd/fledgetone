@@ -448,11 +448,13 @@ function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (valu
   const context = env.context;
   const block = 128 / context.sampleRate;
   const now = context.currentTime;
-  if (context.isOffline || now + 2 * block < start || typeof sig.setTargetAtTime !== 'function') return;
+  // (Not with the clock still short of its attack: held there it would be held at nothing while the
+  // sound, ahead of the clock, may have it at full; reshapeLate sees to a strike late that way)
+  if (context.isOffline || now + 2 * block < start || (env._struckAt !== undefined && now < env._struckAt) || typeof sig.setTargetAtTime !== 'function') return;
   const t = now + 2 * block + 1 / context.sampleRate;
   const end = start + seconds;
   const want = sig.getValueAtTime(t);
-  holdSounding(sig, now);
+  sig.cancelAndHoldAtTime(now);
   sig.linearRampToValueAtTime(want, t);
   if (t < start + seconds * 0.9) {
     sig.setTargetAtTime(value, t, Math.log(seconds + 1) / Math.log(200));
@@ -473,25 +475,45 @@ interface ToneTimeline {
   forEachAfter: (time: number, callback: (event: ToneEvent) => void) => unknown;
 }
 
+/** How long a strike found late waits, at most, for the clock to reach its decay before it's looked at (see reshapeLate). */
+const RESHAPE_WAIT = 0.25;
+
 /**
  * Live, a strike found late once heard (the page held up inside it, or after it, before the clock
  * was read; see soundLead.ts ifLate): its loudness envelope's moments may have reached the sound
  * after the sound had passed them, and the browser moves those up to where the sound is: an attack
  * then lost, the envelope only creeping towards its sustain (a kick 40 dB quiet, silent to the ear).
- * So from a render callback past the clock (as far ahead as the sound can be), and no sooner than
- * its decay begins, it's held at what's sounding then (holdSounding: never stepped, never down to
- * nothing), taken over one render block to where Tone has it then (where it should be in its
- * envelope), and goes on from there as it would have, every moment after that set again (a decay
- * under way restarted there: an exponential approach forgets where it began). Heard in time, the
- * block's ramp joins two points of its own curve; late, it comes up to its proper level there.
+ * Once the clock has reached its decay, what the browser has it at (the AudioParam's value, as of
+ * the last block rendered) is set beside where Tone has it about then: sounding as it should, it's
+ * left exactly as it is. Well under (half its lowest from the clock to a callback past it), it's
+ * held at what's sounding a render callback past the clock (as far ahead as the sound can be:
+ * holdSounding, never stepped, never down to nothing), taken over one render block to where Tone
+ * has it then (where it should be in its envelope), and goes on from there as it would have, every
+ * moment after that set again (a decay under way restarted there: an exponential approach forgets
+ * where it began). With no browser param to read (a stand-in), it's set again straight away.
  */
-function reshapeLate(env: EnvelopeInside): void {
+function reshapeLate(env: EnvelopeInside, waited = 0): void {
   const context = env.context;
-  const sig = env._sig as HeldParam & { _param?: ParamInside; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
+  const sig = env._sig as HeldParam & { _param?: ParamInside & { _param?: { value?: number } }; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
   const events = sig._param?._events ?? sig._events;
   if (context.isOffline || !events || typeof sig.setTargetAtTime !== 'function') return;
-  const hold = Math.max(context.currentTime + soundLead(context) + 1 / context.sampleRate, env._decayStart ?? -Infinity);
-  const t = hold + 128 / context.sampleRate;
+  const sr = context.sampleRate;
+  const block = 128 / sr;
+  const lead = soundLead(context);
+  const now = context.currentTime;
+  const native = sig._param?._param;
+  if (native && typeof native.value === 'number') {
+    const decayStart = env._decayStart ?? env._struckAt ?? now;
+    if (now < decayStart) {
+      if (waited < RESHAPE_WAIT) setTimeout(() => reshapeLate(env, waited + Math.max(0.005, decayStart - now)), Math.max(5, (decayStart - now) * 1000));
+      return;
+    }
+    let lowest = Infinity;
+    for (let k = -1; k * block <= lead + block; k++) lowest = Math.min(lowest, sig.getValueAtTime(now + k * block));
+    if (!(native.value < lowest / 2)) return;
+  }
+  const hold = Math.max(now + lead + 1 / sr, env._decayStart ?? -Infinity);
+  const t = hold + block;
   const want = sig.getValueAtTime(t);
   const under = events.get(t);
   const later: ToneEvent[] = [];

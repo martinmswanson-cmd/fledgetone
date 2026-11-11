@@ -579,27 +579,37 @@ test('live, a hat held up inside its strike once its attack is set, past where t
   assert.ok(sig.fades.some(([what, v, t]) => what === 'target' && v === 0 && Math.abs(t - (h + BLOCK)) < 1e-9), JSON.stringify(sig.fades));
 });
 
-test('live, a hit found late once heard is held at what is sounding, never at the value Tone has (which a moment set late can put near nothing), then taken over one block to where it should be: no gap (scan r44)', async () => {
-  const { synth, context, holdInStrike, env } = await fakeStruckHat();
+/** fakeStruckHat whose envelope has a browser param (`sounding`: what it reads as playing) and Tone's timeline (which has it at `tone`), held up once its attack is set. */
+async function lateHat({ sounding, tone }) {
+  const hat = await fakeStruckHat();
+  const { context, holdInStrike, env } = hat;
   const sig = env._sig;
-  // (The browser's own param, and Tone's timeline of it, which has it at nothing where it sounds at full)
   const native = [];
-  const timeline = [];
   sig._param = {
-    _param: { cancelAndHoldAtTime: (t) => native.push(['hold', t]) },
-    _events: { get: () => null, forEachAfter: () => {}, cancel: (t) => timeline.push(['cancel', t]), add: (e) => timeline.push(['add', e.time]) },
+    _param: { value: sounding, cancelAndHoldAtTime: (t) => native.push(['hold', t]) },
+    _events: { get: () => null, forEachAfter: () => {}, cancel: () => {}, add: () => {} },
   };
-  sig.getValueAtTime = () => 0;
+  sig.getValueAtTime = () => tone;
   let held = false;
   holdInStrike(() => {
     if (held) return;
     held = true;
     context.currentTime += 5 * BLOCK;
   });
-  attackAhead(synth, 200, 1 + ROOM, (t) => synth.triggerAttack(200, t, 1));
+  attackAhead(hat.synth, 200, 1 + ROOM, (t) => hat.synth.triggerAttack(200, t, 1));
+  return { ...hat, sig, native };
+}
+
+test('live, a hit found late once heard but sounding as it should (the browser has it where Tone does): left exactly as it is (scan r44)', async () => {
+  const { sig, native } = await lateHat({ sounding: 0.6, tone: 0.6 });
+  assert.deepEqual(native, []);
+  assert.deepEqual(sig.fades, []);
+});
+
+test('live, a hit found late once heard and sounding far under where it should be (its attack lost): held at what is sounding a callback past the clock, never stepped to nothing, then taken over one block to its proper level (scan r44)', async () => {
+  const { sig, native, context } = await lateHat({ sounding: 0.008, tone: 0.6 });
   const h = context.currentTime + ROOM;
-  // (Held where the browser has it, not stepped to Tone's value)
   assert.deepEqual(native, [['hold', h]]);
   assert.ok(!sig.fades.some(([what]) => what === 'hold'), JSON.stringify(sig.fades));
-  assert.ok(sig.fades.some(([what, , t]) => what === 'ramp' && Math.abs(t - (h + BLOCK)) < 1e-9), JSON.stringify(sig.fades));
+  assert.ok(sig.fades.some(([what, v, t]) => what === 'ramp' && v === 0.6 && Math.abs(t - (h + BLOCK)) < 1e-9), JSON.stringify(sig.fades));
 });
