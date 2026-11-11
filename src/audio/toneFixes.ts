@@ -314,6 +314,8 @@ interface EnvelopeInside {
   _movedAttack?: { asked: number; at: number };
   /** Where the last attack was set. */
   _struckAt?: number;
+  /** Where the last attack's decay begins (see reshapeLate). */
+  _decayStart?: number;
 }
 const envelopeProto = Tone.Envelope.prototype as unknown as {
   triggerAttack: (this: EnvelopeInside, time?: Tone.Unit.Time, velocity?: number) => unknown;
@@ -357,6 +359,8 @@ envelopeProto.triggerAttack = function (time, velocity) {
       sig.exponentialApproachValueAtTime = (...a: unknown[]) => {
         reached ??= this.context.currentTime;
         const args = a as [number, number, number];
+        // (Its last such call is its decay: where that begins, see reshapeLate)
+        this._decayStart = args[1];
         if (loud && afterAttacks) {
           // (Set, and caught up should it come late, once the other parts' attacks are)
           afterAttacks.push(() => {
@@ -414,6 +418,32 @@ envelopeProto.triggerRelease = function (time) {
  * envelope has it by then (as Tone has it, every moment where it was set), and decays on from there
  * as it would have (an exponential approach forgets where it began): late, but whole.
  */
+/** Tone's Param inside a Signal: the browser's AudioParam it drives, and Tone's own timeline of it. */
+interface ParamInside {
+  _param?: { cancelAndHoldAtTime?: (time: number) => unknown };
+  _events?: ToneTimeline & { cancel: (after: number) => unknown; add: (event: ToneEvent) => unknown };
+}
+
+/**
+ * Hold an envelope's signal at `time` at what the browser has it at then: what's sounding, never
+ * the value Tone's own timeline has (which a moment set late can make the two differ by a lot: a
+ * kick Tone has at 0 while it sounds at full, held there, went silent for 10 ms and came back).
+ * Tone's timeline is told the same. Falls back on Tone's own hold where there's no browser param.
+ */
+function holdSounding(sig: HeldParam & { _param?: ParamInside }, time: number): void {
+  const param = sig._param;
+  const native = param?._param;
+  const events = param?._events;
+  if (!native || typeof native.cancelAndHoldAtTime !== 'function' || !events) {
+    sig.cancelAndHoldAtTime(time);
+    return;
+  }
+  const value = sig.getValueAtTime(time);
+  native.cancelAndHoldAtTime(time);
+  events.cancel(time);
+  events.add({ time, type: 'setValueAtTime', value });
+}
+
 function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (value: number, time: number, constant: number) => unknown }, [value, start, seconds]: [number, number, number]): void {
   const context = env.context;
   const block = 128 / context.sampleRate;
@@ -422,7 +452,7 @@ function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (valu
   const t = now + 2 * block + 1 / context.sampleRate;
   const end = start + seconds;
   const want = sig.getValueAtTime(t);
-  sig.cancelAndHoldAtTime(now);
+  holdSounding(sig, now);
   sig.linearRampToValueAtTime(want, t);
   if (t < start + seconds * 0.9) {
     sig.setTargetAtTime(value, t, Math.log(seconds + 1) / Math.log(200));
@@ -448,23 +478,27 @@ interface ToneTimeline {
  * was read; see soundLead.ts ifLate): its loudness envelope's moments may have reached the sound
  * after the sound had passed them, and the browser moves those up to where the sound is: an attack
  * then lost, the envelope only creeping towards its sustain (a kick 40 dB quiet, silent to the ear).
- * It's set again from a render callback past the clock (as far as the sound can be ahead of it),
- * where its moments are all still to come: held there at the value Tone has it at (where it should
- * be in its envelope), and on from there as it would have gone, every moment after that set again
- * (a decay under way restarted there: an exponential approach forgets where it began). Heard in
- * time after all, it's the very same curve; late, it comes in there at its proper level.
+ * So from a render callback past the clock (as far ahead as the sound can be), and no sooner than
+ * its decay begins, it's held at what's sounding then (holdSounding: never stepped, never down to
+ * nothing), taken over one render block to where Tone has it then (where it should be in its
+ * envelope), and goes on from there as it would have, every moment after that set again (a decay
+ * under way restarted there: an exponential approach forgets where it began). Heard in time, the
+ * block's ramp joins two points of its own curve; late, it comes up to its proper level there.
  */
 function reshapeLate(env: EnvelopeInside): void {
   const context = env.context;
-  const sig = env._sig as HeldParam & { _param?: { _events?: ToneTimeline }; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
+  const sig = env._sig as HeldParam & { _param?: ParamInside; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
   const events = sig._param?._events ?? sig._events;
   if (context.isOffline || !events || typeof sig.setTargetAtTime !== 'function') return;
-  const h = context.currentTime + soundLead(context) + 1 / context.sampleRate;
-  const under = events.get(h);
+  const hold = Math.max(context.currentTime + soundLead(context) + 1 / context.sampleRate, env._decayStart ?? -Infinity);
+  const t = hold + 128 / context.sampleRate;
+  const want = sig.getValueAtTime(t);
+  const under = events.get(t);
   const later: ToneEvent[] = [];
-  events.forEachAfter(h, (event) => void later.push({ ...event }));
-  sig.cancelAndHoldAtTime(h);
-  if (under?.type === 'setTargetAtTime' && under.constant !== undefined) sig.setTargetAtTime(under.value, h, under.constant);
+  events.forEachAfter(t, (event) => void later.push({ ...event }));
+  holdSounding(sig, hold);
+  sig.linearRampToValueAtTime(want, t);
+  if (under?.type === 'setTargetAtTime' && under.constant !== undefined) sig.setTargetAtTime(under.value, t, under.constant);
   for (const event of later) {
     if (event.type === 'setValueAtTime') sig.setValueAtTime(event.value, event.time);
     else if (event.type === 'linearRampToValueAtTime') sig.linearRampToValueAtTime(event.value, event.time);
