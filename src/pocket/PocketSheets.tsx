@@ -24,7 +24,7 @@ import { fillClipBar } from '../store/smartActions';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
 import { CHILLS, chillsFill, chillsNames, registerOf, type ChillsProgression } from '../store/chills';
-import { BUILD_DEFAULTS, buildForChills } from '../store/chillsActions';
+import { BUILD_DEFAULTS, buildForChills, nameAfterChills } from '../store/chillsActions';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
 import { showToast } from '../components/timeline/toastStore';
@@ -304,6 +304,17 @@ const SectionSheet: React.FC = () => {
           }}
         />
       )}
+      {i > 0 && (
+        <SheetItem
+          title="Build for chills from the music’s level"
+          detail={`The same build into it with nothing dipping first: the parts of ${sections[i - 1].letter} keep their level all through it (no filter sweep), and the lift comes from the riser, the breath of near-silence and the pad on its first beat.`}
+          onClick={() => {
+            close();
+            showToast('Measuring the music for the build…');
+            void buildForChills({ ...BUILD_DEFAULTS, start: 'level', from: sections[i - 1].from, peak: sec.from }).then(showToast);
+          }}
+        />
+      )}
       <SheetItem
         title="Bounce it to a pad"
         detail="Everything playing in it made into one sound, on the first empty pad of your pads (or a new Bounces track): play it like a drum."
@@ -342,10 +353,11 @@ const ChordsSheet: React.FC = () => {
     editCell(track.id, sec, () => notes);
     close();
   };
-  // (Held chords filling the section, as the studio's piano roll fills a clip with one: chills.ts chillsFill)
+  // (Held chords filling the section, as the studio's piano roll fills a clip with one: chills.ts
+  // chillsFill; and, as there, the clip named after the progression unless its name was typed)
   const writeChills = (prog: ChillsProgression) => {
     const notes = chillsFill(songKey, prog, sec.from, sec.to, meter, pocketNoteId, { range: INSTRUMENTS[track.instrumentKey].range });
-    editCell(track.id, sec, () => notes);
+    editCell(track.id, sec, () => notes, true, (id) => nameAfterChills(id, prog.name));
     close();
     showToast(`${prog.name}: ${chillsNames(songKey, prog).join(' – ')}. Undo takes it out.`);
   };

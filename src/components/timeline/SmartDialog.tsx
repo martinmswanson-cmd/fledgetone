@@ -508,7 +508,7 @@ const rememberBuild = (o: typeof lastBuild) => {
   lastBuild = o;
 };
 
-/** The build into a peak, over a block of bars: a swell, a riser, a moment of near-silence and a pad at the peak. */
+/** The build into a peak, over a block of bars: a swell (or none, from the music's level), a riser, a moment of near-silence and a pad at the peak. */
 const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: string[]; onClose: () => void }> = ({ range, trackIds, onClose }) => {
   const [opts, setOpts] = useState(lastBuild);
   const [picked, setPicked] = useState(!!trackIds?.length);
@@ -521,9 +521,19 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
     void buildForChills({ ...opts, from: range.from, peak: range.to, ...(picked && trackIds?.length ? { trackIds } : {}) }).then(showToast);
     onClose();
   };
-  const box = (k: 'volume' | 'filter' | 'riser' | 'gap' | 'layer', label: string, detail: string) => (
+  const dip = opts.start === 'dip';
+  const way = (start: BuildChoices['start'], label: string, detail: string) => (
     <label className="flex items-start gap-2 text-xs text-forge-text">
-      <input type="checkbox" className="mt-0.5 accent-cyan-500" checked={opts[k]} onChange={(e) => set({ [k]: e.target.checked })} />
+      <input type="radio" name="build-start" className="mt-0.5 accent-cyan-500" checked={opts.start === start} onChange={() => set({ start })} />
+      <span>
+        {label}
+        <span className="block text-[11px] text-forge-muted">{detail}</span>
+      </span>
+    </label>
+  );
+  const box = (k: 'volume' | 'filter' | 'riser' | 'gap' | 'layer', label: string, detail: string, disabled = false) => (
+    <label className={`flex items-start gap-2 text-xs text-forge-text ${disabled ? 'opacity-50' : ''}`}>
+      <input type="checkbox" className="mt-0.5 accent-cyan-500" checked={opts[k]} disabled={disabled} onChange={(e) => set({ [k]: e.target.checked })} />
       <span>
         {label}
         <span className="block text-[11px] text-forge-muted">{detail}</span>
@@ -534,18 +544,22 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
     <Modal title="Build into a peak" onClose={onClose}>
       <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
         <p className="text-[11px] text-forge-muted">
-          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. The tracks start a little quieter and darker and grow back to where they were: no track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
+          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. No track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
         </p>
-        {box('volume', 'Swell', 'Each track’s volume rises over the build, written as a volume lane you can see and change.')}
+        <div className="flex flex-col gap-2" role="radiogroup" aria-label="How the build starts">
+          {way('dip', 'Dip, then swell', 'The tracks start a little quieter and darker and grow back to where they were by the peak (the swell and the filter below).')}
+          {way('level', 'Start from the music’s level', 'Nothing gets quieter or darker first: the tracks keep their level all through the build, and the lift into the peak comes from the riser, the breath and the pad.')}
+        </div>
+        {box('volume', 'Swell', 'Each track’s volume rises over the build, written as a volume lane you can see and change.', !dip)}
         <label className={`${field} ml-6`}>
           Starts this far under its level
-          <select className={control} value={opts.depthDb} disabled={!opts.volume} onChange={(e) => set({ depthDb: Number(e.target.value) })}>
+          <select className={control} value={opts.depthDb} disabled={!opts.volume || !dip} onChange={(e) => set({ depthDb: Number(e.target.value) })}>
             {BUILD_DEPTHS.map((d) => (
               <option key={d} value={d}>{d} dB{d === BUILD_DEPTHS[BUILD_DEPTHS.length - 1] ? ' (the most)' : ''}</option>
             ))}
           </select>
         </label>
-        {box('filter', 'Filter opens', 'A low-pass filter on the pitched tracks opens over the build, as a filter lane (not a Filter with a resonant peak: it would sing through the sweep).')}
+        {box('filter', 'Filter opens', 'A low-pass filter on the pitched tracks opens over the build, as a filter lane (not a Filter with a resonant peak: it would sing through the sweep).', !dip)}
         {box('riser', 'Riser', `A riser on a new track up to the peak, its loudest moment ${RISER_UNDER_DB} dB under the music there (measured).`)}
         {box('gap', 'A breath before the peak', 'Half a beat of near-silence just before it, then back to the level the build reached (a volume lane).')}
         {box('layer', 'Pad at the peak', `A new pad track joins at the peak, playing the chords there spread wide, ${PAD_UNDER_LU} dB under the music (measured).`)}

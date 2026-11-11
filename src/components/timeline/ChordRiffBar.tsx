@@ -3,8 +3,9 @@
  * and the progression builds from the playhead, voiced smoothly), the arpeggiator (pattern,
  * octaves, speed, note length) and the riff generator (a riff, lead line or bass line in the key
  * that follows the chords on the other tracks; New riff gives another) and the chills progressions
- * (chord moves for an emotional peak, over the whole clip). The maths is in store/chordTools.ts and
- * store/chills.ts; linked clips follow every change (see store/patterns.ts).
+ * (chord moves for an emotional peak, over the whole clip, which takes the progression's name if
+ * its own was the app's). The maths is in store/chordTools.ts and store/chills.ts; linked clips
+ * follow every change (see store/patterns.ts).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Link2, Unlink } from 'lucide-react';
@@ -69,8 +70,12 @@ interface Props {
   selected: ReadonlySet<string>;
   /** A pitched clip: the chord, arpeggio and riff tools (a drum clip only shows its links) */
   pitched: boolean;
-  /** Write the clip's notes (one undo step), selecting `select` if given */
-  apply: (notes: NoteEvent[], select?: string[]) => void;
+  /**
+   * Write the clip's notes (one undo step), selecting `select` if given; with `name`, in the same
+   * step, the clip (and those linked to it) named so where its name is one the app gave it
+   * (chills.ts namedForChills)
+   */
+  apply: (notes: NoteEvent[], select?: string[], name?: string) => void;
 }
 
 /** The New riff button's next seed, per clip, so each press gives another and they come back the same */
@@ -144,7 +149,8 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
     const prog = chillsById(chills) ?? CHILLS[0];
     const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity });
     if (!out.length) return;
-    apply(out);
+    // (named after the progression, as the Chills progression dialog names its clip, unless the name was typed)
+    apply(out, undefined, prog.name);
     // They're written in major or minor (their surprises are against those): a clip in another
     // seven-note scale is told which, as its own notes aren't all followed
     const plainKey = `${NOTE_NAMES[key.root]} ${key.mode}`;

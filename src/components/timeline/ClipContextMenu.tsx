@@ -25,7 +25,7 @@ import { patternSize } from '../../store/patterns';
 import { speedUpIntoDrop } from '../../store/speedUpActions';
 import { SPEED_UP_DEFAULTS } from '../../store/speedUp';
 import { maxOf, minOf } from '../../support/minMax';
-import { addMeasures, beatFloor, measureAt, roundToMeasure } from '../../audio/tempoMap';
+import { addMeasures, clickedBarStart, roundToMeasure } from '../../audio/tempoMap';
 
 export interface ContextMenuState {
   x: number;
@@ -181,8 +181,9 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   // (Not the Drop pad: its notes are moves on the whole mix, so no chords, melodies or patterns on it)
   const pitchedLane = !!track && !audioLane && !drumLane && !isMixTrack(track) && !isDropKind(track.instrumentKey);
   const noteClip = !!menuClip && !audioClip;
-  // (made at the start of the bar clicked in, as the ruler counts bars)
-  const openSmart = (mode: 'chords' | 'chills' | 'drummer' | 'math') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: measureAt(Math.max(1, menu.bar) + 1e-6, meter).start } }));
+  // (the dialogs and "New empty clip" make theirs at the start of the bar clicked in, as the ruler counts bars)
+  const clickedBar = clickedBarStart(menu.bar, meter);
+  const openSmart = (mode: 'chords' | 'chills' | 'drummer' | 'math') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: clickedBar } }));
   // Writing helpers: fills on a drum clip, chords and a bass line from a note clip
   const smartClipItems: Item[] = !noteClip
     ? []
@@ -263,8 +264,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
     shortcut: bars === 1 ? 'dbl-click' : '',
     icon: <Piano className="w-3.5 h-3.5" />,
     onClick: run(() => {
-      // On the beat, as a double-click makes one, `bars` bars as the ruler counts them
-      const at = beatFloor(menu.bar, meter);
+      // At the start of the bar clicked in, as the dialogs from this menu make theirs, `bars` bars as the ruler counts them
+      const at = clickedBar;
       const id = track && s.createEmptyClip(track.id, at, addMeasures(at, bars, meter) - at);
       if (id) s.openEditor(id);
     }),
@@ -464,7 +465,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(pitchedLane ? [{ key: 'chords', label: 'Chord progression…', shortcut: 'in key', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chords') }] : []),
         ...(pitchedLane ? [{ key: 'chills', label: 'Chills progression…', shortcut: 'for a peak', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chills') }] : []),
         ...(pitchedLane ? [{ key: 'math', label: 'Math patterns…', shortcut: 'formulas', icon: <Sigma className="w-3.5 h-3.5" />, onClick: openSmart('math') }] : []),
-        ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'bells, piano', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', measureAt(Math.max(1, menu.bar) + 1e-6, meter).start, menu.trackId)) }] : []),
+        ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'bells, piano', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', clickedBar, menu.trackId)) }] : []),
         ...(track
           ? patternsFor(track.instrumentKey).map((p, i) => ({
               key: `pattern-${p.id}`,

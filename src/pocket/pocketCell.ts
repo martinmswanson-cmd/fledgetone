@@ -85,9 +85,10 @@ export function inOneStep<T>(edit: () => T): T | undefined {
  * Change the cell's notes: `edit` gets them (relative to the section) and returns the new ones.
  * Makes the cell one clip first when it isn't. `undo`: make this its own undo step (false for the
  * moves of a gesture that checkpointed when it began). Either way, making the clip and the change
- * are one step; notes given back unchanged change nothing.
+ * are one step; notes given back unchanged change nothing. `then` runs on the clip after a change,
+ * inside the same step (For chills names it after the progression).
  */
-export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, edit: (notes: NoteEvent[]) => NoteEvent[], undo = true): void {
+export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, edit: (notes: NoteEvent[]) => NoteEvent[], undo = true, then?: (clipId: string) => void): void {
   inOneStep(() => {
     const id = cellClip(trackId, sec, true);
     if (!id) return;
@@ -99,5 +100,6 @@ export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
     if (next.length === clip.notes.length && next.every((n, i) => n === clip.notes[i])) return;
     if (undo) s.checkpoint();
     s.setClipNotes(id, next);
+    then?.(id);
   });
 }

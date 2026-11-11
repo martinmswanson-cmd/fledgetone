@@ -37,6 +37,8 @@ import { allOrNothing, editStep, songMeterOf, songTempo, useSongMeter, useTimeli
 import { addMeasures, gridFitsMeasures, isPlainMeter, measureAt, meterGridLine, meterGridLines, spanMeterLines, tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
+import { namedForChills } from '../../store/chills';
+import { nameAfterChills } from '../../store/chillsActions';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
 import type { ChordId, Scale, ScaleId } from '../../store/noteTools';
 import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
@@ -1424,12 +1426,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           velocity={velocity}
           selected={selected}
           pitched={!namedRows}
-          apply={(next, select) => {
+          apply={(next, select, name) => {
             const store = useTimelineStore.getState();
+            const named = (clips: readonly Clip[]) => (name ? namedForChills(clips, useTimelineStore.getState().tracks, clip.id, name) : clips);
             // (Nothing changed: no undo step)
-            if (sameNotes(currentNotes(), next)) return;
+            if (sameNotes(currentNotes(), next) && named(store.clips) === store.clips) return;
             const done = editStep(() => {
               store.setClipNotes(clip.id, next);
+              // (the name in the same step, linked clips' too)
+              if (name) nameAfterChills(clip.id, name);
               return true;
             }, false);
             if (!done) return;
