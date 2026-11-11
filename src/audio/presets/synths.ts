@@ -15,7 +15,8 @@ import { seedToneNoise } from '../toneFixes';
 import type { GlideRef } from '../instruments';
 import { createComingHits, envelopeSignal, letGoToneSynth } from './toneStop';
 import { createBendFeed } from '../bendFeed';
-import { attackAhead, type NoteSynth } from './toneStart';
+import { attackAhead, strikeTogether, type NoteSynth } from './toneStart';
+import { strikeWhole } from '../soundLead';
 import { heldShaper } from '../shaperLag';
 
 /**
@@ -33,12 +34,14 @@ interface HeldSynth extends NoteSynth {
  * clock, so a bend sent ahead of its time moves every note sounding then (given to the signal as
  * it comes due, see bendFeed.ts). `cut`: the bends set for after `time` go first.
  */
-function heldNote(synth: HeldSynth & { context: Tone.BaseContext }, safeTime: (time?: Tone.Unit.Time) => number) {
+function heldNote(synth: HeldSynth & { context: Tone.BaseContext }, safeTime: ReturnType<typeof monotonicTime>) {
   const feed = createBendFeed(synth.context, synth.detune);
   return {
     /** (Returns when it starts) */
     attack: (note: string, time: number, velocity: number) => {
-      return attackAhead(synth, note, safeTime(time), (at) => synth.triggerAttack(note, at, velocity));
+      const at = attackAhead(synth, note, safeTime(time), (t) => synth.triggerAttack(note, t, velocity));
+      safeTime.struck(at);
+      return at;
     },
     release: (time: number) => synth.triggerRelease(time),
     bend: (cents: number, time: number, _live?: boolean, cut?: boolean) => feed.bend(cents, time, cut),
@@ -142,11 +145,10 @@ const JOIN_HOLD = 0.0005;
  * on this note's sustain, the pitch moves (gliding by the synth's portamento; the same pitch is a
  * tie), and the release moves to this note's end. Otherwise (null) it's struck as usual.
  */
-export function playMono(synth: Tone.MonoSynth, note: string, duration: Tone.Unit.Time, start: number, velocity: number, joinedEnd: number | null) {
+export function playMono(synth: Tone.MonoSynth, note: string, duration: Tone.Unit.Time, start: number, velocity: number, joinedEnd: number | null): number {
   if (joinedEnd === null) {
     // (Its pitch set a moment ahead when it starts from silence: see toneStart.ts)
-    attackAhead(synth, note, start, (at) => synth.triggerAttackRelease(note, duration, at, velocity));
-    return;
+    return attackAhead(synth, note, start, (at) => synth.triggerAttackRelease(note, duration, at, velocity));
   }
   const hold = Math.min(start, joinedEnd) - JOIN_HOLD;
   for (const [env, level] of [
@@ -161,6 +163,7 @@ export function playMono(synth: Tone.MonoSynth, note: string, duration: Tone.Uni
   synth.oscillator.start(start);
   synth.setNote(note, start);
   synth.triggerRelease(start + synth.toSeconds(duration));
+  return start;
 }
 
 /** Clean, deep sine sub-bass (monophonic). */
@@ -178,8 +181,9 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   let slid: NoteSlide | null = null;
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
-      const start = safeTime(time);
-      playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
+      const asked = safeTime(time);
+      const start = playMono(synth, note, duration, asked, velocity, glideFor(asked, asked + synth.toSeconds(duration)));
+      safeTime.struck(start);
       slid = toneSlide(synth, start);
     },
     ...held,
@@ -280,6 +284,7 @@ export function create808(output: Tone.InputNode, modern = false) {
         synth.triggerRelease(end);
       } else {
         const at = attackAhead(synth, note, start, (t) => synth.triggerAttack(note, t, velocity));
+        safeTime.struck(at);
         synth.triggerRelease(end + at - start);
       }
       soundingUntil = end;
@@ -325,8 +330,9 @@ export function createLead(output: Tone.InputNode, glide?: GlideRef) {
   let slid: NoteSlide | null = null;
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
-      const start = safeTime(time);
-      playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
+      const asked = safeTime(time);
+      const start = playMono(synth, note, duration, asked, velocity, glideFor(asked, asked + synth.toSeconds(duration)));
+      safeTime.struck(start);
       slid = toneSlide(synth, start);
     },
     ...held,
@@ -382,25 +388,47 @@ export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   return {
     kick: (time: number, velocity: number, ratio = 1) =>
       kickHit(time, (t) => {
-        coming.add(kick, attackAhead(kick, 27.5 * ratio, t, (at) => kick.triggerAttackRelease(27.5 * ratio, '8n', at, velocity)));
+        const at = attackAhead(kick, 27.5 * ratio, t, (u) => kick.triggerAttackRelease(27.5 * ratio, '8n', u, velocity));
+        kickHit.struck(at);
+        coming.add(kick, at);
       }),
     snare: (time: number, velocity: number, ratio = 1) =>
       snareHit(time, (t) => {
-        coming.add(snareNoise, t);
-        snareNoise.triggerAttackRelease('16n', t, velocity);
-        coming.add(snareTone, attackAhead(snareTone, 185 * ratio, t, (at) => snareTone.triggerAttackRelease(185 * ratio, '32n', at, velocity * 0.8)));
+        // (Its noise and its tone struck as one: see soundLead.ts strikeWhole)
+        const [noiseAt, toneAt] = strikeTogether(snareNoise.context, t, [[snareTone, 185 * ratio]], (u, play) => {
+          snareNoise.triggerAttackRelease('16n', u, velocity);
+          return [u, play(0, (at) => snareTone.triggerAttackRelease(185 * ratio, '32n', at, velocity * 0.8))];
+        });
+        snareHit.struck(toneAt);
+        coming.add(snareNoise, noiseAt);
+        coming.add(snareTone, toneAt);
       }),
     hat: (open: boolean, time: number, velocity: number) =>
       hatHit(time, (t) => {
-        coming.add(hat, t);
         hat.envelope.decay = open ? 0.32 : 0.04;
         hat.envelope.release = open ? 0.25 : 0.03;
-        hat.triggerAttackRelease(open ? '8n' : '32n', t, velocity);
+        const at = strikeWhole(hat.context, t, (u) => {
+          hat.triggerAttackRelease(open ? '8n' : '32n', u, velocity);
+          return u;
+        });
+        hatHit.struck(at);
+        coming.add(hat, at);
       }),
     cowbell: (time: number, velocity: number, ratio = 1) =>
       bellHit(time, (t) => {
-        coming.add(bellLow, attackAhead(bellLow, 540 * ratio, t, (at) => bellLow.triggerAttackRelease(540 * ratio, '16n', at, velocity)));
-        coming.add(bellHigh, attackAhead(bellHigh, 800 * ratio, t, (at) => bellHigh.triggerAttackRelease(800 * ratio, '16n', at, velocity)));
+        // (Its two tones struck as one)
+        const [lowAt, highAt] = strikeTogether(
+          bellLow.context,
+          t,
+          [
+            [bellLow, 540 * ratio],
+            [bellHigh, 800 * ratio],
+          ],
+          (_u, play) => [play(0, (at) => bellLow.triggerAttackRelease(540 * ratio, '16n', at, velocity)), play(1, (at) => bellHigh.triggerAttackRelease(800 * ratio, '16n', at, velocity))]
+        );
+        bellHit.struck(Math.max(lowAt, highAt));
+        coming.add(bellLow, lowAt);
+        coming.add(bellHigh, highAt);
       }),
     /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
     releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),

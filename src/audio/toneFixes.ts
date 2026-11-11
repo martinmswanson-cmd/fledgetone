@@ -7,7 +7,7 @@ import { smoothSet } from './effects/smoothParam';
 import { noiseStart, toneNoiseLoop } from './seededNoise';
 import type { NoiseColour } from './seededNoise';
 import { struckLater } from './songPlace';
-import { ATTACK_TRIES, AttackMoved, attackRoom, blockShort, envelopeExactness, exactlyAt, settledAt, soundLead } from './soundLead';
+import { afterHeard, attackNow, attackRoom, ifLate, ifUndone, inStrike, soundLead, soundReached, strikeAsked, strikeSettled, strikeWhole, whenHeard } from './soundLead';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -232,7 +232,11 @@ noiseProto._start = function (time) {
     onended: () => this.onstop(this),
     playbackRate: this._playbackRate,
   }).connect(this.output);
-  this._source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
+  const source = this._source;
+  source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
+  // (Live, a strike undone stops it before it's heard: Tone forgets a noise source once a stop is
+  // set for it, so struck again it would play on under the new one, twice as loud; see strikeTone)
+  ifUndone((gone) => source.stop(gone));
 };
 /**
  * Tone starts a burst asked for a time the clock has passed at the clock (a live note set late):
@@ -277,39 +281,41 @@ oneShotProto._startGain = function (time, gain) {
 };
 
 /**
- * The browser renders sound a render block (128 frames) at a time, a whole render callback's worth
- * of blocks in one go (10 ms or so, the context's baseLatency), and the audio clock the page reads
- * steps on a block at a time as it does. So the page can read the clock at the start of a callback
- * the sound is already being made for, and a time up to a callback past what it read can be behind
- * the sound by the time it's set. A Tone envelope whose attack (and the start of its decay, a
- * millisecond on) reaches the browser once the sound has passed it has all those moments moved up
- * to where the sound is, at once, and the note then often never rises: it only creeps towards the
- * level it holds at (a drum's 0, a held note's sustain), silent or 20 to 40 dB quiet. A hit played
- * by hand (then 5 ms past the clock, see monotonic.ts) did that now and then, more often on a busy
- * computer, the page held up between reading the clock and setting the attack.
+ * Live, every Tone synth's note (every one-voice synth, a PolySynth's voices, the NoiseSynth) is
+ * struck by the one rule for live notes (soundLead.ts strikeWhole): where it goes is decided once
+ * (where it's asked, or a render callback past the clock), its pitch, oscillators, noise and other
+ * envelopes (a filter's, an FM note's modulation) are set for that time, and its loudness envelope,
+ * which alone makes it heard, is set last, only once the clock is found to still leave a callback's
+ * room before it. Held up while it was set, nothing of it has been heard: its oscillators started
+ * for it are stopped, its pitch and other envelopes' moments taken away, and the whole note struck
+ * again a callback past the clock. Its envelope is never set twice, so it never rises twice, and
+ * no part of it moves without the rest. An export's clock waits for its notes: nothing changes there.
  *
- * Live, a Tone synth's note (every one-voice synth, a PolySynth's voices, the NoiseSynth) starts
- * no sooner than a render callback past the clock as it is when it's struck, the whole note
- * moved up together. Its envelopes' attacks are held to that too, as each is set; and when the
- * clock has moved on past that while an attack was being set (the page held up part way), it's
- * struck again a callback past the clock as it is then: a little late, but whole. A release that
- * would come before a moved attack, or within as long again after it, moves with it (so it can't
- * cut the attack off); a later one is left where it is. An export's clock waits for its notes, so
- * nothing changes there. The envelopes of a note struck with strikeExactly (soundLead.ts) keep
- * their time while the clock is still a block short of it, as they're set and once they're set
- * (see blockShort), as a note of plain Web Audio nodes does: its oscillators wait for it there,
- * and an attack struck again a moment later would set out a second time over them. Found
- * otherwise before its first envelope is set, it throws AttackMoved instead (see toneStart.ts
- * attackAhead). A song's note moved later this way is picked as it would have been on time (a
- * NoiseSynth's burst from where it was asked for, as in an export: songPlace.ts struckLater).
+ * A release that would come before a moved attack, or within as long again after it, moves with it
+ * (so it can't cut the attack off); a later one is left where it is.
+ * A song's note moved later is picked as it would have been on time (a NoiseSynth's burst from
+ * where it was asked for, as in an export: songPlace.ts struckLater, applied by strikeWhole).
  */
+/** A param (a Tone Signal) a note sets, and what's needed to hold it where it was. */
+interface HeldParam {
+  getValueAtTime: (time: number) => number;
+  setValueAtTime: (value: number, time: number) => unknown;
+  cancelScheduledValues: (time: number) => unknown;
+  cancelAndHoldAtTime: (time: number) => unknown;
+  linearRampToValueAtTime: (value: number, time: number) => unknown;
+}
 interface EnvelopeInside {
   context: Tone.BaseContext;
   toSeconds: (time?: Tone.Unit.Time) => number;
+  cancel: (after?: Tone.Unit.Time) => unknown;
+  /** Its signal (Tone keeps it to itself). */
+  _sig: HeldParam;
   /** Where the last attack was asked for and where it went, when it was moved. */
   _movedAttack?: { asked: number; at: number };
   /** Where the last attack was set. */
   _struckAt?: number;
+  /** Where the last attack's decay begins (see reshapeLate). */
+  _decayStart?: number;
 }
 const envelopeProto = Tone.Envelope.prototype as unknown as {
   triggerAttack: (this: EnvelopeInside, time?: Tone.Unit.Time, velocity?: number) => unknown;
@@ -317,55 +323,228 @@ const envelopeProto = Tone.Envelope.prototype as unknown as {
 };
 const triggerAttack = envelopeProto.triggerAttack;
 const triggerRelease = envelopeProto.triggerRelease;
-// (How far past the clock an attack must be set: shared with the synths of plain Web Audio nodes, see soundLead.ts)
+// (How far past the clock a note must be set: shared with the synths of plain Web Audio nodes, see soundLead.ts)
 export { attackRoom, soundLead };
+
+/** The loudness envelopes of the strikes under way, and what's been asked of each, set as their strike's last step. */
+const heldBack = new Map<EnvelopeInside, Array<() => void>>();
+/**
+ * Loudness envelopes set at once in their strike's build instead (see strikeTone): its time-critical
+ * moments are all set already, and the rest of the note can come late with no harm.
+ */
+const setNow = new WeakSet<EnvelopeInside>();
+/**
+ * While a strike's loudness envelopes are set, its last step: what each sets after its attack (its
+ * decay, its release), set once every one's attack is (see strikeTone), so a hit's parts (a snare's
+ * noise and snap) are made heard as close together as can be.
+ */
+let afterAttacks: Array<() => void> | null = null;
 
 envelopeProto.triggerAttack = function (time, velocity) {
   if (this.context.isOffline) return triggerAttack.call(this, time, velocity);
-  const asked = this.toSeconds(time);
-  const room = attackRoom(this.context);
-  const exact = envelopeExactness();
-  // (The first of a note struck exactly: where its strike would still settle it, or not at all)
-  if (exact === 'first' && settledAt(this.context, asked) > asked) throw new AttackMoved(settledAt(this.context, asked));
-  let at = exact !== 'no' && blockShort(this.context, asked) ? asked : Math.max(asked, room);
-  let result = triggerAttack.call(this, at, velocity);
-  for (let tries = 1; tries < ATTACK_TRIES && attackRoom(this.context) > at && !(exact !== 'no' && blockShort(this.context, at)); tries++) {
-    at = attackRoom(this.context);
-    result = triggerAttack.call(this, at, velocity);
+  const at = this.toSeconds(time);
+  const held = heldBack.get(this);
+  // (Only a strike's loudness envelope makes it heard: held back to its last step, or set at once.
+  // A filter's or an FM note's modulation envelope, set in its build, is heard by nothing yet)
+  const loud = held !== undefined || setNow.has(this);
+  const attack = () => {
+    this._struckAt = at;
+    // (The clock read once its attack is set, before its decay: see soundLead.ts soundReached)
+    const sig = this._sig as HeldParam & { exponentialApproachValueAtTime?: (...a: unknown[]) => unknown };
+    const decay = sig.exponentialApproachValueAtTime;
+    let reached: number | undefined;
+    let decaying: [number, number, number] | undefined;
+    const own = Object.prototype.hasOwnProperty.call(sig, 'exponentialApproachValueAtTime');
+    if (typeof decay === 'function') {
+      sig.exponentialApproachValueAtTime = (...a: unknown[]) => {
+        reached ??= this.context.currentTime;
+        const args = a as [number, number, number];
+        // (Its last such call is its decay: where that begins, see reshapeLate)
+        this._decayStart = args[1];
+        if (loud && afterAttacks) {
+          // (Set, and caught up should it come late, once the other parts' attacks are)
+          afterAttacks.push(() => {
+            decay.apply(sig, args);
+            catchUp(this, sig, args);
+          });
+          return sig;
+        }
+        decaying = args;
+        return decay.apply(sig, a);
+      };
+    }
+    try {
+      return triggerAttack.call(this, at, velocity);
+    } finally {
+      if (typeof decay === 'function') {
+        if (own) sig.exponentialApproachValueAtTime = decay;
+        else delete sig.exponentialApproachValueAtTime;
+      }
+      if (loud) soundReached(reached ?? this.context.currentTime);
+      // (Not a filter's inside a strike still being built: should it be late, the strike is made again)
+      if (decaying && (loud || !inStrike())) catchUp(this, sig, decaying);
+    }
+  };
+  if (!held) {
+    // (A loudness envelope set during its strike's build, its time-critical moments already set:
+    // set now if the clock still leaves room, else its strike is made again; see strikeTone)
+    if (setNow.has(this)) {
+      setNow.delete(this);
+      attackNow(this.context, at);
+    }
+    return attack();
   }
-  this._movedAttack = at > asked ? { asked, at } : undefined;
-  this._struckAt = at;
-  return result;
+  held.push(attack);
+  return this;
 };
 
 envelopeProto.triggerRelease = function (time) {
-  const moved = this._movedAttack;
-  if (!moved || this.context.isOffline) return triggerRelease.call(this, time);
-  let when = this.toSeconds(time);
-  const delay = moved.at - moved.asked;
-  if (when >= moved.asked && when < moved.at + delay) when += delay;
-  return triggerRelease.call(this, when);
+  if (this.context.isOffline) return triggerRelease.call(this, time);
+  const held = heldBack.get(this);
+  if (held) {
+    const when = this.toSeconds(time);
+    held.push(() => releaseMoved(this, when));
+    return this;
+  }
+  return releaseMoved(this, time);
 };
 
 /**
- * The same hold-up can come between a Tone synth's envelope and its sound source, which Tone
- * starts just after it: Tone moves a start that's already past up to the clock, so the source then
- * began after the attack had gone by on silence (and a drum's, stopped at the end of its decay,
- * was cut off at once). Live, when a synth's source has started more than a block after its
- * envelope's attack, the whole note is struck again a callback past the clock, sources and all
- * (and again, up to three strikes in all, should the page be held up once more).
+ * Live, an envelope set with the page held up past where its decay begins (its attack too, maybe:
+ * a strike held up inside its last step, which is never undone, see soundLead.ts strikeWhole): the
+ * browser would move what the sound had passed up to where it is, an attack jumping to its peak (a
+ * burst) or a decay already run out (silent), or hold it at its peak until the decay, a loud
+ * stretch the export hasn't. It's taken on from where it is, over two blocks, to where the
+ * envelope has it by then (as Tone has it, every moment where it was set), and decays on from there
+ * as it would have (an exponential approach forgets where it began): late, but whole.
  */
-interface StartsInside {
-  _state?: { getLastState: (state: 'started', time: number) => { time: number } | undefined };
-  _oscillator?: StartsInside;
-  _carrier?: StartsInside;
-  _modulator?: StartsInside;
+/** Tone's Param inside a Signal: the browser's AudioParam it drives, and Tone's own timeline of it. */
+interface ParamInside {
+  _param?: { cancelAndHoldAtTime?: (time: number) => unknown };
+  _events?: ToneTimeline & { cancel: (after: number) => unknown; add: (event: ToneEvent) => unknown };
 }
-/** Where `source`'s last start is set, even if a stop is set after it (and its own inner oscillator's, which Tone clamps to the clock again). */
-function latestStart(source: StartsInside | undefined): number {
-  let t = source?._state?.getLastState('started', Infinity)?.time ?? -Infinity;
-  for (const inner of [source?._oscillator, source?._carrier, source?._modulator]) if (inner && inner !== source && inner._state) t = Math.max(t, latestStart(inner));
-  return t;
+
+/**
+ * Hold an envelope's signal at `time` at what the browser has it at then: what's sounding, never
+ * the value Tone's own timeline has (which a moment set late can make the two differ by a lot: a
+ * kick Tone has at 0 while it sounds at full, held there, went silent for 10 ms and came back).
+ * Tone's timeline is told the same. Falls back on Tone's own hold where there's no browser param.
+ */
+function holdSounding(sig: HeldParam & { _param?: ParamInside }, time: number): void {
+  const param = sig._param;
+  const native = param?._param;
+  const events = param?._events;
+  if (!native || typeof native.cancelAndHoldAtTime !== 'function' || !events) {
+    sig.cancelAndHoldAtTime(time);
+    return;
+  }
+  const value = sig.getValueAtTime(time);
+  native.cancelAndHoldAtTime(time);
+  events.cancel(time);
+  events.add({ time, type: 'setValueAtTime', value });
+}
+
+function catchUp(env: EnvelopeInside, sig: HeldParam & { setTargetAtTime?: (value: number, time: number, constant: number) => unknown }, [value, start, seconds]: [number, number, number]): void {
+  const context = env.context;
+  const block = 128 / context.sampleRate;
+  const now = context.currentTime;
+  // (Not with the clock still short of its attack: held there it would be held at nothing while the
+  // sound, ahead of the clock, may have it at full; reshapeLate sees to a strike late that way)
+  if (context.isOffline || now + 2 * block < start || (env._struckAt !== undefined && now < env._struckAt) || typeof sig.setTargetAtTime !== 'function') return;
+  const t = now + 2 * block + 1 / context.sampleRate;
+  const end = start + seconds;
+  const want = sig.getValueAtTime(t);
+  sig.cancelAndHoldAtTime(now);
+  sig.linearRampToValueAtTime(want, t);
+  if (t < start + seconds * 0.9) {
+    sig.setTargetAtTime(value, t, Math.log(seconds + 1) / Math.log(200));
+    sig.cancelAndHoldAtTime(start + seconds * 0.9);
+  }
+  if (t < end) sig.linearRampToValueAtTime(value, end);
+}
+
+/** An automation event as Tone keeps it (its Param's timeline). */
+interface ToneEvent {
+  time: number;
+  type: string;
+  value: number;
+  constant?: number;
+}
+interface ToneTimeline {
+  get: (time: number) => ToneEvent | null;
+  forEachAfter: (time: number, callback: (event: ToneEvent) => void) => unknown;
+}
+
+/** How long a strike found late waits, at most, for the clock to reach its decay before it's looked at (see reshapeLate). */
+const RESHAPE_WAIT = 0.25;
+
+/**
+ * Live, a strike found late once heard (the page held up inside it, or after it, before the clock
+ * was read; see soundLead.ts ifLate): its loudness envelope's moments may have reached the sound
+ * after the sound had passed them, and the browser moves those up to where the sound is: an attack
+ * then lost, the envelope only creeping towards its sustain (a kick 40 dB quiet, silent to the ear).
+ * Once the clock has reached its decay, what the browser has it at (the AudioParam's value, as of
+ * the last block rendered) is set beside where Tone has it about then: sounding as it should, it's
+ * left exactly as it is. Well under (half its lowest from a block before the clock, never before
+ * its decay, to a callback past it), it's
+ * held at what's sounding a render callback past the clock (as far ahead as the sound can be:
+ * holdSounding, never stepped, never down to nothing), taken over one render block to where Tone
+ * has it then (where it should be in its envelope), and goes on from there as it would have, every
+ * moment after that set again (a decay under way restarted there: an exponential approach forgets
+ * where it began). With no browser param to read (a stand-in), it's set again straight away.
+ */
+function reshapeLate(env: EnvelopeInside, waited = 0): void {
+  const context = env.context;
+  const sig = env._sig as HeldParam & { _param?: ParamInside & { _param?: { value?: number } }; _events?: ToneTimeline; setTargetAtTime?: (value: number, time: number, constant: number) => unknown; exponentialRampToValueAtTime?: (value: number, time: number) => unknown };
+  const events = sig._param?._events ?? sig._events;
+  if (context.isOffline || !events || typeof sig.setTargetAtTime !== 'function') return;
+  const sr = context.sampleRate;
+  const block = 128 / sr;
+  const lead = soundLead(context);
+  const now = context.currentTime;
+  const native = sig._param?._param;
+  if (native && typeof native.value === 'number') {
+    const decayStart = env._decayStart ?? env._struckAt ?? now;
+    if (now < decayStart) {
+      if (waited < RESHAPE_WAIT) setTimeout(() => reshapeLate(env, waited + Math.max(0.005, decayStart - now)), Math.max(5, (decayStart - now) * 1000));
+      return;
+    }
+    // (Where Tone has it from a block before the clock, no sooner than its decay, to a callback past it)
+    let lowest = Infinity;
+    for (let k = -1; k * block <= lead + block; k++) lowest = Math.min(lowest, sig.getValueAtTime(Math.max(decayStart, now + k * block)));
+    if (!(native.value < lowest / 2)) return;
+  }
+  const hold = Math.max(now + lead + 1 / sr, env._decayStart ?? -Infinity);
+  const t = hold + block;
+  const want = sig.getValueAtTime(t);
+  const under = events.get(t);
+  const later: ToneEvent[] = [];
+  events.forEachAfter(t, (event) => void later.push({ ...event }));
+  holdSounding(sig, hold);
+  sig.linearRampToValueAtTime(want, t);
+  if (under?.type === 'setTargetAtTime' && under.constant !== undefined) sig.setTargetAtTime(under.value, t, under.constant);
+  for (const event of later) {
+    if (event.type === 'setValueAtTime') sig.setValueAtTime(event.value, event.time);
+    else if (event.type === 'linearRampToValueAtTime') sig.linearRampToValueAtTime(event.value, event.time);
+    else if (event.type === 'exponentialRampToValueAtTime') sig.exponentialRampToValueAtTime?.(event.value, event.time);
+    else if (event.type === 'setTargetAtTime' && event.constant !== undefined) sig.setTargetAtTime(event.value, event.time, event.constant);
+  }
+}
+
+/** An envelope's release at `time`, moved with its attack when that was moved (see above). */
+function releaseMoved(env: EnvelopeInside, time?: Tone.Unit.Time): unknown {
+  const moved = env._movedAttack;
+  if (!moved) return triggerRelease.call(env, time);
+  let when = env.toSeconds(time);
+  const delay = moved.at - moved.asked;
+  if (when >= moved.asked && when < moved.at + delay) when += delay;
+  return triggerRelease.call(env, when);
+}
+
+/** What of a Tone synth a note sets (Tone keeps them to itself). */
+interface StateInside {
+  _state?: { getValueAtTime: (time: number) => string | null };
+  stop: (time?: number) => unknown;
 }
 interface SynthInside {
   context: Tone.BaseContext;
@@ -373,51 +552,68 @@ interface SynthInside {
   envelope?: EnvelopeInside;
   filterEnvelope?: EnvelopeInside;
   modulationEnvelope?: EnvelopeInside;
-  oscillator?: StartsInside;
-  modulation?: StartsInside;
-  noise?: StartsInside;
-  _oscillators?: StartsInside[];
-  _strikingAgain?: boolean;
+  frequency?: HeldParam;
+  oscillator?: StateInside;
+  modulation?: StateInside;
+  _oscillators?: StateInside[];
 }
 type Strike = (this: SynthInside, ...args: unknown[]) => unknown;
-/** A synth's triggerAttack (its time argument `timeAt`): the whole note no sooner than a callback past the clock, and struck again when its source started after its envelope. */
-function strikeWhole(proto: { triggerAttack: Strike }, timeAt: number): void {
+/** A synth's triggerAttack (its time argument `timeAt`), struck whole by the rule above. */
+function strikeTone(proto: { triggerAttack: Strike }, timeAt: number): void {
   const strike = proto.triggerAttack;
   proto.triggerAttack = function (...args) {
-    if (this.context.isOffline || this._strikingAgain) return strike.apply(this, args);
+    if (this.context.isOffline) return strike.apply(this, args);
     const asked = this.toSeconds(args[timeAt] as Tone.Unit.Time);
-    const first = [...args];
-    // (One struck exactly is settled where it comes, and says so first: see strikeExactly)
-    first[timeAt] = exactlyAt(this.context, asked) ?? Math.max(asked, attackRoom(this.context));
-    this._strikingAgain = true;
-    let result: unknown;
-    // (Moved later: picked from where it was asked for, see struckLater)
-    const strikeAt = (strikeArgs: unknown[]) => struckLater((strikeArgs[timeAt] as number) - asked, () => strike.apply(this, strikeArgs));
-    try {
-      result = strikeAt(first);
-      // (Struck again until it comes whole: a page held up once is often held up again)
-      for (let tries = 1; tries < ATTACK_TRIES; tries++) {
-        const struck = this.envelope?._struckAt;
-        let started = -Infinity;
-        for (const source of [this.oscillator, this.modulation, this.noise, ...(this._oscillators ?? [])]) started = Math.max(started, latestStart(source));
-        if (struck === undefined || !(started > struck + 128 / this.context.sampleRate)) break;
-        const again = [...args];
-        again[timeAt] = attackRoom(this.context);
-        try {
-          strikeAt(again);
-        } catch {
-          // (Refused: the note as it came last)
-          break;
-        }
+    return strikeWhole(this.context, asked, (at) => {
+      const from = strikeAsked() ?? asked;
+      const amp = this.envelope;
+      const others = [this.filterEnvelope, this.modulationEnvelope].filter((env): env is EnvelopeInside => env !== undefined && env !== amp);
+      // (The oscillators this note starts afresh, not ones still sounding that it carries on)
+      const fresh = [this.oscillator, this.modulation, ...(this._oscillators ?? [])].filter((source): source is StateInside => typeof source?._state?.getValueAtTime === 'function' && source._state.getValueAtTime(at) !== 'started');
+      // (A hit whose oscillators wait at 0 Hz, its pitch set, has nothing else that must come in
+      // time before its attack: set as Tone gets to it, first, before the slow rest of the note)
+      if (amp && strikeSettled()) setNow.add(amp);
+      else if (amp) {
+        const held: Array<() => void> = [];
+        heldBack.set(amp, held);
+        whenHeard(() => {
+          heldBack.delete(amp);
+          // (Its attack now; its decay and anything asked after it (a release) once every part's attack is set)
+          afterAttacks ??= [];
+          const [first, ...rest] = held;
+          first?.();
+          afterAttacks.push(...rest);
+        });
+        afterHeard(() => {
+          const rest = afterAttacks ?? [];
+          afterAttacks = null;
+          for (const then of rest) then();
+        });
       }
-    } finally {
-      this._strikingAgain = false;
-    }
-    // (Its release, if it would cut the attack where it went, moves with it: see the envelope's)
-    for (const env of [this.envelope, this.filterEnvelope, this.modulationEnvelope]) if (env?._struckAt !== undefined && env._struckAt > asked) env._movedAttack = { asked, at: env._struckAt };
-    return result;
+      // (What its pitch and other envelopes are at `at` before the note: a glide or a filter sweep
+      // under way, which the note's own moments hold there, is held there again should it be undone)
+      const params = [this.frequency, ...others.map((env) => env._sig)].filter((param): param is HeldParam => param !== undefined);
+      const before = params.map((param) => param.getValueAtTime(at));
+      ifUndone((gone) => {
+        if (amp) heldBack.delete(amp);
+        for (const source of fresh) source.stop(gone);
+        params.forEach((param, i) => {
+          param.cancelScheduledValues(at);
+          if (Number.isFinite(before[i])) param.setValueAtTime(before[i], at);
+        });
+      });
+      // (Found late once heard: its loudness set again from where it should be by then)
+      if (amp) ifLate(() => reshapeLate(amp));
+      // (Its release, if it would cut the attack where it went, moves with it)
+      whenHeard(() => {
+        for (const env of [amp, ...others]) if (env) env._movedAttack = at > from ? { asked: from, at } : undefined;
+      });
+      const struck = [...args];
+      struck[timeAt] = at;
+      return strike.apply(this, struck);
+    });
   };
 }
 // (Monophonic, which Tone keeps to itself: every one-voice synth but the NoiseSynth, a PolySynth's voices too)
-strikeWhole(Object.getPrototypeOf(Tone.Synth.prototype) as { triggerAttack: Strike }, 1);
-strikeWhole(Tone.NoiseSynth.prototype as unknown as { triggerAttack: Strike }, 0);
+strikeTone(Object.getPrototypeOf(Tone.Synth.prototype) as { triggerAttack: Strike }, 1);
+strikeTone(Tone.NoiseSynth.prototype as unknown as { triggerAttack: Strike }, 0);

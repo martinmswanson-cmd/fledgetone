@@ -4,7 +4,7 @@ import { monotonicHits } from './monotonic';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
 import { createComingHits } from './toneStop';
-import { attackAhead } from './toneStart';
+import { attackAhead, strikeTogether } from './toneStart';
 
 /**
  * Groove Drum Kit (Synthesized Analog Drums)
@@ -105,24 +105,35 @@ export function createDrumKit(output: Tone.InputNode, seed = 0) {
     kick: (time?: Tone.Unit.Time, velocity: number = 0.95, ratio = 1) =>
       kickHit(time, (t) => {
         // (Its pitch, and its drop, start on time wherever the hit lands: see toneStart.ts)
-        coming.add(kick, attackAhead(kick, 32.703 * ratio, t, (at) => kick.triggerAttackRelease(32.703 * ratio, '8n', at, velocity)));
+        const at = attackAhead(kick, 32.703 * ratio, t, (u) => kick.triggerAttackRelease(32.703 * ratio, '8n', u, velocity));
+        kickHit.struck(at);
+        coming.add(kick, at);
       }),
     snare: (time?: Tone.Unit.Time, velocity: number = 0.85, ratio = 1) =>
       snareHit(time, (t) => {
-        coming.add(snareNoise, t);
-        snareNoise.triggerAttackRelease('16n', t, velocity);
-        coming.add(snareSnap, attackAhead(snareSnap, 200 * ratio, t, (at) => snareSnap.triggerAttackRelease(200 * ratio, '16n', at, velocity * 0.9)));
+        // (Its noise and its snap struck as one: see soundLead.ts strikeWhole)
+        const [noiseAt, snapAt] = strikeTogether(snareNoise.context, t, [[snareSnap, 200 * ratio]], (u, play) => {
+          snareNoise.triggerAttackRelease('16n', u, velocity);
+          return [u, play(0, (at) => snareSnap.triggerAttackRelease(200 * ratio, '16n', at, velocity * 0.9))];
+        });
+        snareHit.struck(snapAt);
+        coming.add(snareNoise, noiseAt);
+        coming.add(snareSnap, snapAt);
       }),
     /** open: longer 0.28s decay; otherwise 0.05s tight closed hat */
     hat: (open: boolean = false, time?: Tone.Unit.Time, velocity: number = 0.75, ratio = 1) =>
       hatHit(time, (t) => {
         hat.envelope.decay = open ? 0.28 : 0.05;
         hat.envelope.release = open ? 0.28 : 0.05;
-        coming.add(hat, attackAhead(hat, 200 * ratio, t, (at) => hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', at, velocity)));
+        const at = attackAhead(hat, 200 * ratio, t, (u) => hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', u, velocity));
+        hatHit.struck(at);
+        coming.add(hat, at);
       }),
     cowbell: (time?: Tone.Unit.Time, velocity: number = 0.8, ratio = 1) =>
       cowbellHit(time, (t) => {
-        coming.add(cowbell, attackAhead(cowbell, 800 * ratio, t, (at) => cowbell.triggerAttackRelease(800 * ratio, '16n', at, velocity)));
+        const at = attackAhead(cowbell, 800 * ratio, t, (u) => cowbell.triggerAttackRelease(800 * ratio, '16n', u, velocity));
+        cowbellHit.struck(at);
+        coming.add(cowbell, at);
       }),
     /** Stop: the hits still to come never sound (the ones ringing ring out; on Pause, see createComingHits, not those not heard yet) */
     releaseAll: (heard?: number) => coming.callOff(kick.context.currentTime, heard),

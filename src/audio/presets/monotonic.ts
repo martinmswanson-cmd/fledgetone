@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { attackRoom } from '../soundLead';
+import { attackRoom, inStrike } from '../soundLead';
 import { struckLater } from '../songPlace';
 
 /**
@@ -41,16 +41,24 @@ export function notLate(context: Tone.BaseContext, time?: Tone.Unit.Time): numbe
   const raw = context.rawContext;
   const soonest = raw.currentTime + LATE_MARGIN;
   if (context.isOffline) return Math.max(requested, soonest);
+  // (A part of a live strike under way keeps the strike's time: see soundLead.ts strikeWhole)
+  if (time !== undefined && inStrike()) return requested;
   return Math.max(requested, soonest, attackRoom({ currentTime: raw.currentTime, sampleRate: raw.sampleRate, rawContext: raw }));
 }
 
-export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time) => number {
+/** A voice's times, strictly increasing (see above); `struck(at)` tells it where a note went when its strike moved it later (soundLead.ts strikeWhole). */
+export function monotonicTime(context: Tone.BaseContext): ((time?: Tone.Unit.Time) => number) & { struck: (at: number) => void } {
   let last = -Infinity;
-  return (time) => {
+  const next = (time?: Tone.Unit.Time) => {
     const t = notLate(context, time);
     last = t > last ? t : last + 0.001;
     return last;
   };
+  return Object.assign(next, {
+    struck: (at: number) => {
+      if (at > last) last = at;
+    },
+  });
 }
 
 /**
@@ -60,15 +68,17 @@ export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time
  * burst) counted from where it was asked for, one past the voice's last hit as an export puts it,
  * not from where it lands (songPlace.ts struckLater). Played by hand, or exported, as before.
  */
-export function monotonicHits(context: Tone.BaseContext): <T>(time: Tone.Unit.Time | undefined, play: (at: number) => T) => T {
+export function monotonicHits(context: Tone.BaseContext): (<T>(time: Tone.Unit.Time | undefined, play: (at: number) => T) => T) & { struck: (at: number) => void } {
   const next = monotonicTime(context);
   /** Where the voice's last hit was asked for, one past the one before (as an export, whose clock waits for its notes, puts it) */
   let asked = -Infinity;
-  return (time, play) => {
+  const hit = <T>(time: Tone.Unit.Time | undefined, play: (at: number) => T): T => {
     const at = next(time);
     if (time === undefined || context.isOffline) return play(at);
     const wanted = Tone.Time(time).toSeconds();
     asked = wanted > asked ? wanted : asked + 0.001;
     return struckLater(at - asked, () => play(at));
   };
+  // (Where a hit went when its strike moved it later: see monotonicTime)
+  return Object.assign(hit, { struck: next.struck });
 }
