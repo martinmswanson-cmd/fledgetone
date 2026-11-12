@@ -101,7 +101,7 @@ const SNAP = async () => {
   const pairsIn = (p, id) => p.evaluate(async (i) => {
     const G = await import('/src/store/chordGlide.ts');
     const c = (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().clips.find((x) => x.id === i);
-    return G.glidePairs(c.notes, c.lengthBars).map((q) => `${q.from.note}>${q.to.note}`).sort();
+    return G.clipGlidePairs(c).map((q) => `${q.from.note}>${q.to.note}`).sort();
   }, id);
   const linesIn = async (p) => (await p.locator('svg[data-glide-lines] path').evaluateAll((els) => els.map((e) => ({ glide: e.getAttribute('data-glide'), dashed: !!e.getAttribute('stroke-dasharray') })))).sort((a, b) => (a.glide < b.glide ? -1 : 1));
 

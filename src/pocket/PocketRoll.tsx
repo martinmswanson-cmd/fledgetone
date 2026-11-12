@@ -20,7 +20,7 @@ import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, rollRulerMarks, scaleRows, toRoll, type RollNote } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import { clipsIn } from './pocketSections';
-import { chordGlideSupport, glidePairs } from '../store/chordGlide';
+import { chordGlideSupport, clipGlidePairs } from '../store/chordGlide';
 import type { PocketSection } from './pocketSections';
 import { pocketNoteId, sliceCount, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
@@ -89,7 +89,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
     () =>
       clipsIn(clips, track.id, sec.from, sec.to)
         .filter((c) => c.glide && !c.audio)
-        .flatMap((c) => glidePairs(c.notes, c.lengthBars).map((p) => ({ key: `${p.from.id}>${p.to.id}`, at: c.startBar + p.at - sec.from, from: noteToMidi(p.from.note), to: noteToMidi(p.to.note) })))
+        .flatMap((c) => clipGlidePairs(c).map((p) => ({ key: `${p.from.id}>${p.to.id}`, at: c.startBar + p.at - sec.from, from: noteToMidi(p.from.note), to: noteToMidi(p.to.note) })))
         .filter((l): l is { key: string; at: number; from: number; to: number } => l.at > -EPS && l.at < sec.to - sec.from + EPS && l.from !== null && l.to !== null),
     [clips, track.id, sec.from, sec.to]
   );

@@ -59,6 +59,39 @@ test('a note both chords share is held, not glided: only the voices that change 
   assert.deepEqual(names(G.glidePairs([...gc].reverse(), 1)), names(G.glidePairs(gc, 1)));
 });
 
+test('notes of the same pitch pair by their start and id, whatever their order in the clip', () => {
+  const a1 = { ...N('C4', 0), id: 'a1' };
+  const a2 = { ...N('C4', 0), id: 'a2' };
+  const b1 = { ...N('C4', 0.5), id: 'b1' };
+  const b2 = { ...N('D4', 0.5), id: 'b2' };
+  const ids = (ps) => ps.map((p) => `${p.from.id}>${p.to.id}`).join(' ');
+  const want = ids(G.glidePairs([a1, a2, b1, b2], 1));
+  for (const order of [[a2, a1, b2, b1], [b1, a2, b2, a1], [b2, b1, a1, a2]]) assert.equal(ids(G.glidePairs(order, 1)), want);
+  assert.equal(want, 'a1>b1 a2>b2');
+});
+
+test('each glide starts where its chord really sounds: a late chord (swing, a feel, Human) glides late', () => {
+  const notes = [N('C4', 0, '8n'), N('D4', 0.125, '8n'), N('E4', 0.25, '4n')];
+  const [chain] = G.glideChains(notes, 1);
+  // The second note 0.085 s late (swung), the third on time; 120 BPM: 2 s a bar
+  const late = (n) => (n === notes[1] ? 0.085 : 0);
+  const s = G.chainSound(chain, 0, { ms: 60 }, 1, 120, undefined, late);
+  const starts = s.expr.bend.filter((p, i, all) => i > 0 && p.value === all[i - 1].value).map((p) => p.at * 2);
+  close(starts[0], 0.25 + 0.085);
+  close(starts[1], 0.5);
+  // (from part way: its first note late too, everything measured from where it sounds)
+  const from = G.chainSound(chain, 1, { ms: 60 }, 1, 120, undefined, late);
+  close(from.expr.bend.find((p, i, all) => i > 0 && p.value === all[i - 1].value).at * 2, 0.5 - 0.25 - 0.085);
+  close(durationToBars(from.duration) * 2, 1 - 0.25 - 0.085, 0.003);
+});
+
+test('the lines are drawn from the notes as they play: the sustain pedal stops a glide there too', () => {
+  const notes = [N('C4', 0, '4n'), N('D4', 0.25, '4n')];
+  assert.equal(G.clipGlidePairs({ notes, lengthBars: 1 }).length, 1);
+  const pedal = { sustain: [{ at: 0, value: 1 }, { at: 1, value: 1 }] };
+  assert.equal(G.clipGlidePairs({ notes, lengthBars: 1, expression: pedal }).length, 0);
+});
+
 test('the bass pairs with the bass, on its own', () => {
   // Gm9 (G2 | G3 Bb3 D4 F4 A4) to C13 (C2 | E4 Bb4 D5 A5)
   const notes = [...chord(['G2', 'G3', 'A#3', 'D4', 'F4', 'A4'], 0), ...chord(['C2', 'E4', 'A#4', 'D5', 'A5'], 0.5)];

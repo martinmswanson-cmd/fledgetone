@@ -12,6 +12,13 @@
 //   whole song's render), never two.
 // - Live, round a loop whose Out cuts a voice part way, then Stop: each pass as loud as the first
 //   (no voices left over), and after Stop it fades as the chords played as written do.
+// - Begun on the last chord (an export from its bar, live round a loop on it): as loud as the chords
+//   as written (it was silent: no voice starts at a voice's last note, and the note was left out).
+// - Live, a jump back while a voice glides: the old voice is let go there (it played on through the
+//   rest of its notes over the song from where it jumped to).
+// - Live, the track given Keys while a voice glides: the next chords sound (they were silent).
+// - The song's swing: the glide into a swung chord starts where that chord sounds (it started on the
+//   written place, about 85 ms early at a slow tempo).
 // - An instrument whose voices don't glide (Pluck; a Wavetable track given Supersaw): the very
 //   same render as the chords without glide.
 //
@@ -133,7 +140,7 @@ const RENDER = async ({ text, startBar = 1, toBar, restart, pitch, peakIn, rms }
 
 // In the page: play `text` live from bar 1 (with `loop`: round the loop, Stop after `stopAfter` seconds), record what's heard, and
 // measure from the first sound: `pitch` as RENDER's, `rms` every 10 ms over [t0, t1]
-const LIVE = async ({ text, seconds, loop, pitch, rms }) => {
+const LIVE = async ({ text, seconds, loop, pitch, rms, from = 1, actions = [], levels }) => {
   const store = await import('/src/store/timelineStore.ts');
   const P = await import('/src/store/project.ts');
   const engine = await (await fetch('/src/audio/engine.ts')).text();
@@ -145,11 +152,17 @@ const LIVE = async ({ text, seconds, loop, pitch, rms }) => {
   await T.start();
   const rec = new T.Recorder();
   T.getDestination().connect(rec);
-  s.getState().seek(1);
+  s.getState().seek(from);
   await sleep(300);
   rec.start();
   await s.getState().togglePlay();
-  await sleep(seconds * 1000);
+  const t0 = performance.now();
+  for (const a of actions) {
+    await sleep(Math.max(0, a.at * 1000 - (performance.now() - t0)));
+    if (a.seek) s.getState().seek(a.seek);
+    if (a.instrument) s.getState().setTrackInstrument('t1', a.instrument);
+  }
+  await sleep(Math.max(0, seconds * 1000 - (performance.now() - t0)));
   if (s.getState().isPlaying) s.getState().stop();
   await sleep(loop ? 3500 : 800);
   const b = await new AudioContext().decodeAudioData(await (await rec.stop()).arrayBuffer());
@@ -181,6 +194,25 @@ const LIVE = async ({ text, seconds, loop, pitch, rms }) => {
       const d = (l - r) / (2 * (l - 2 * best + r) || 1);
       out.pitch.push(sr / (at + Math.max(-1, Math.min(1, d))));
     }
+  }
+  if (levels) {
+    // each window's level (RMS dB) and the level at each of `levels.freqs` (Goertzel, Hann), from the first sound
+    const g = (a, f) => {
+      const k = (2 * Math.PI * f) / sr, c = 2 * Math.cos(k);
+      let s1 = 0, s2 = 0;
+      for (let i = 0; i < a.length; i++) {
+        const s0 = a[i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (a.length - 1))) + c * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+      }
+      return 10 * Math.log10(((s1 * s1 + s2 * s2 - c * s1 * s2) * 4) / (a.length * a.length) + 1e-20);
+    };
+    out.levels = levels.windows.map(([a, b]) => {
+      const seg = x.subarray(onset + Math.round(a * sr), onset + Math.round(b * sr));
+      let e = 0;
+      for (const v of seg) e += v * v;
+      return { rms: 10 * Math.log10(e / Math.max(1, seg.length) + 1e-20), f: levels.freqs.map((f) => g(seg, f)) };
+    });
   }
   if (rms) {
     out.rms = [];
@@ -317,12 +349,60 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
   const loopRun = async (glide) => page.evaluate(LIVE, { text: text({ ...chords(glide), loopRegion: { inBar: 1, outBar: 1.75, enabled: true } }), seconds: 4.5 + 0.2, loop: true, rms: { t0: 0, t1: 8 } });
   const lg = await loopRun({ ms: 150 });
   const lp = await loopRun(undefined);
-  const mean = (r, a, b) => 10 * Math.log10(r.rms.slice(Math.round(a / 0.01), Math.round(b / 0.01)).reduce((s, v) => s + 10 ** (v / 10), 0) / Math.max(1, Math.round((b - a) / 0.01)));
+  const meanOf = (r, a, b) => 10 * Math.log10(r.rms.slice(Math.round(a / 0.01), Math.round(b / 0.01)).reduce((s, v) => s + 10 ** (v / 10), 0) / Math.max(1, Math.round((b - a) / 0.01)));
   // (each pass 1.5 s: the first chord of each pass)
-  const passes = [0, 1.5, 3].map((p) => mean(lg, p + 0.2, p + 0.9));
-  const after = (r) => [0.5, 2].map((d) => mean(r, 4.7 + d, 4.7 + d + 0.3));
+  const passes = [0, 1.5, 3].map((p) => meanOf(lg, p + 0.2, p + 0.9));
+  const after = (r) => [0.5, 2].map((d) => meanOf(r, 4.7 + d, 4.7 + d + 0.3));
   const ag = after(lg), ap = after(lp);
   report(Math.max(...passes) - Math.min(...passes) < 1.5 && ag.every((v, i) => v < ap[i] + 3), `live round a loop that cuts a gliding voice: each pass ${passes.map((v) => v.toFixed(1)).join(', ')} dB; after Stop ${ag.map((v) => v.toFixed(1)).join(', ')} dB at 0.5 and 2 s (as written ${ap.map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
+
+  // Begun on the last chord (bar 2.5): an export from there, and live round a loop on it, as loud as the chords as written (it was silent)
+  {
+    const g = await render({ text: text(chords({ ms: 150 })), startBar: 2.5, toBar: 3, rms: { t0: 0.05, t1: 0.9 } });
+    const p = await render({ text: text(chords()), startBar: 2.5, toBar: 3, rms: { t0: 0.05, t1: 0.9 } });
+    const m = (r) => 10 * Math.log10(r.rms.reduce((a, v) => a + 10 ** (v / 10), 0) / r.rms.length);
+    report(Math.abs(m(g) - m(p)) < 1 && g.hash === p.hash, `an export from the last chord (bar 2.5): ${m(g).toFixed(1)} dB, as written ${m(p).toFixed(1)} dB (${g.hash === p.hash ? 'the very same render' : 'not the same render'})`);
+    const loopLast = async (glide) => page.evaluate(LIVE, { text: text({ ...chords(glide), loopRegion: { inBar: 2.5, outBar: 3, enabled: true } }), from: 2.5, seconds: 3.4, rms: { t0: 0, t1: 3 } });
+    const lg = await loopLast({ ms: 150 });
+    const lp = await loopLast(undefined);
+    const passes = (r) => [0, 1, 2].map((k) => meanOf(r, k + 0.2, k + 0.8));
+    const pg = passes(lg), pp = passes(lp);
+    report(pg.every((v, i) => v > -60 && Math.abs(v - pp[i]) < 1.5), `live round a loop on the last chord: each pass ${pg.map((v) => v.toFixed(1)).join(', ')} dB, as written ${pp.map((v) => v.toFixed(1)).join(', ')} dB (load ${load()})`);
+  }
+
+  // Live, a jump back to bar 1 while a voice glides (1.5 s in, on E4, which glides to D4 at 2 s): the old voice is let go there,
+  // so no D4 a little later, as with the chords as written (it played on through the rest of its voice)
+  {
+    const freqs = [hz('C4'), hz('E4'), hz('D4')];
+    const run = (glide) => page.evaluate(LIVE, { text: text(line(glide)), seconds: 4, actions: [{ at: 1.5, seek: 1 }], levels: { windows: [[2.2, 2.5], [2.8, 3.1]], freqs } });
+    const jg = await run({ ms: 150 });
+    const jp = await run(undefined);
+    const d4 = (r) => Math.max(...r.levels.map((w) => w.f[2]));
+    const lv = (r) => r.levels.map((w) => w.rms);
+    report(d4(jg) < Math.max(-70, d4(jp) + 10) && lv(jg).every((v, i) => Math.abs(v - lv(jp)[i]) < 3), `live, a jump back while a voice glides: D4 after it ${d4(jg).toFixed(1)} dB (as written ${d4(jp).toFixed(1)} dB), level ${lv(jg).map((v) => v.toFixed(1)).join(', ')} dB (as written ${lv(jp).map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
+  }
+
+  // Live, the track given Keys while a voice glides on Wavetable (1.5 s in): the next chords sound (on Keys, gliding), never silence
+  {
+    const run = (glide) => page.evaluate(LIVE, { text: text(line(glide)), seconds: 4, actions: [{ at: 1.5, instrument: 'keys' }], levels: { windows: [[2.1, 2.4], [2.7, 3.0], [3.1, 3.4]], freqs: [hz('D4'), hz('C4')] } });
+    const ig = await run({ ms: 150 });
+    const ip = await run(undefined);
+    const lv = (r) => r.levels.map((w) => w.rms);
+    report(lv(ig).every((v, i) => v > -60 && Math.abs(v - lv(ip)[i]) < 6), `live, the track given Keys while a voice glides: after it ${lv(ig).map((v) => v.toFixed(1)).join(', ')} dB (as written ${lv(ip).map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
+  }
+
+  // Swing: one voice at 60 BPM, a chord each 16th (C4, E4 on the off-beat 16th, D4), the song's swing at 50%: the glide into E4
+  // starts where E4 would sound swung, the glide into D4 on time
+  {
+    const sw = song('wavetable', [clip([n('C4', 0, '16n'), n('E4', 1 / 16, '16n'), n('D4', 2 / 16, '8n')], 1, { ms: 40 })], { bpm: 60, swing: 0.5 });
+    const late = await page.evaluate(async () => (await import('/src/audio/transport.ts')).swingDelay(0.5, 60, 192, 16));
+    const r = await render({ text: text(sw), toBar: 2, pitch: { t0: 0.1, t1: 0.9, band } });
+    const g1 = glideTime(r.pitch, 0.1, 0.002, 0.25 + late, hz('C4'), hz('E4'));
+    const g2 = glideTime(r.pitch, 0.1, 0.002, 0.5, hz('E4'), hz('D4'));
+    // (the 10% point of an eased 40 ms glide comes 0.196 of it in; the 20 ms window shows it about 10 ms sooner)
+    const off1 = g1 ? g1.starts * 1000 - 0.196 * 40 : NaN, off2 = g2 ? g2.starts * 1000 - 0.196 * 40 : NaN;
+    report(Math.abs(off1) < 15 && Math.abs(off2) < 15, `swing: the glide into the swung chord starts ${off1.toFixed(0)} ms from where it sounds (${(late * 1000).toFixed(0)} ms late), into the next on-beat one ${off2.toFixed(0)} ms from its place`);
+  }
 
   // An instrument whose voices don't glide: the chords as written, the very same render
   for (const [key, label] of [['pluck', 'Pluck'], ['supersaw', 'a Wavetable clip on a track given Supersaw']]) {

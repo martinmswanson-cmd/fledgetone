@@ -40,6 +40,8 @@ export interface GlidingVoice {
   pressure: (value: number, time: number) => void;
   /** Let it go at `time`, with the voice's own release */
   off: (time: number) => void;
+  /** Let it go at `time` from where it is then, sooner than its `off` (playback moved or stopped) */
+  cut: (time: number) => void;
 }
 
 /** A note held in the pool (a key held on a MIDI keyboard) until `release`. */
@@ -312,6 +314,15 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
           v.voice.triggerRelease(releaseAt);
           v.end = releaseAt + v.voice.toSeconds(v.voice.envelope.release);
           v.releasedAt = releaseAt;
+        },
+        cut: (at) => {
+          // (as Stop lets a voice go: from where it is then, its own release, nothing given it for later)
+          const t = Math.max(at, out.context.currentTime);
+          if (!mine() || !(v.releasedAt > t)) return;
+          letGoToneSynth(v.voice, t);
+          v.voice.volume?.cancelAndHoldAtTime(t);
+          v.end = v.start >= t ? t : t + v.voice.toSeconds(v.voice.envelope.release);
+          v.releasedAt = t;
         },
       };
     },

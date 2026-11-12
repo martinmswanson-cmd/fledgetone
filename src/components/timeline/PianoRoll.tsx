@@ -13,7 +13,7 @@ import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { StepLanes } from './StepLanes';
 import { stepLanesHeight } from './stepTargets';
 import { bendSupport, diveNotes, withSlide, slideOf, MAX_SLIDE } from '../../store/slides';
-import { chordGlideSupport, glidePairs } from '../../store/chordGlide';
+import { chordGlideSupport, clipGlidePairs } from '../../store/chordGlide';
 import { ChordGlidePicker } from './ChordGlidePicker';
 import { noteValueAt, withNoteLength } from '../../store/noteExpression';
 import { NotationView } from './NotationView';
@@ -429,7 +429,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const bends = fullTrack ? bendSupport(fullTrack, INSTRUMENTS[instrument]?.kind) : 'no';
   /** Whether this track's instrument glides between chords (see chordGlide.ts), and which notes glide into which */
   const glides = !!fullTrack && chordGlideSupport(fullTrack);
-  const glidePairList = useMemo(() => (clip.glide ? glidePairs(clip.notes, clip.lengthBars) : []), [clip.glide, clip.notes, clip.lengthBars]);
+  const glidePairList = useMemo(() => (clip.glide ? clipGlidePairs(clip) : []), [clip]);
   const bendNotice = () => {
     if (bends === 'no') showToast(`${INSTRUMENTS[instrument]?.name ?? 'This instrument'} doesn't bend: slides and dives play at the note's own pitch. Fledge Synth, the basses, Analog Lead and the recorded instruments play them.`);
     else if (bends === 'maybe') showToast('A plugin gets slides and dives as MIDI pitch bend over ±2 semitones, which it may or may not follow.');

@@ -73,9 +73,10 @@ export interface PlayableNote {
   down?: boolean;
   /**
    * A voice gliding between chords (see chordGlide.ts), played on a voice of its own (glideVoice):
-   * the seconds per bar its length and its own bend and pressure are counted in
+   * the seconds per bar its length and its own bend and pressure are counted in; the notes it plays
+   * (`clip id:note id`) and its clip, so it can be let go where the song moves on without it
    */
-  glide?: { spb: number };
+  glide?: { spb: number; keys?: readonly string[]; clipId?: string };
 }
 
 /** One sounding note's own controls (see TrackInstrument.noteVoice). */
@@ -86,6 +87,11 @@ export interface VoiceControl {
   pressure: (value: number, time: number) => void;
   /** Let it go at `time` */
   off: (time: number) => void;
+  /**
+   * Let it go at `time` with its own release from where it is then, sooner than its `off` said
+   * (playback moved, stopped or came round the loop): nothing given it for later sounds
+   */
+  cut?: (time: number) => void;
 }
 
 /** Ends a note started by noteOn (a key let go) at an audio time. */
@@ -746,6 +752,10 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
               },
               off: (at: number) => {
                 voice.off(at);
+                subGo.off(at);
+              },
+              cut: (at: number) => {
+                voice.cut?.(at);
                 subGo.off(at);
               },
             };

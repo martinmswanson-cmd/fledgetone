@@ -4,6 +4,9 @@ import { isExpressive } from './noteExpression';
 import { isConditional } from './noteChance';
 import { midiOf } from './noteTools';
 import { barToSeconds, tempoAt, type Tempo } from '../audio/tempoMap';
+import { maxOf, minOf } from '../support/minMax';
+import { sustainNotes } from './expression';
+import type { Clip } from './timelineTypes';
 
 /**
  * Glide between chords: a clip setting (Clip.glide) under which each note of a chord slides into
@@ -86,9 +89,12 @@ interface Side {
   midi: number;
 }
 
+/** Low to high; the same pitch by its start, then its id (so the pairs never hang on the notes' order in the clip). */
+const bySide = (a: Side, b: Side) => a.midi - b.midi || a.note.startOffset - b.note.startOffset || (a.note.id < b.note.id ? -1 : a.note.id > b.note.id ? 1 : 0);
+
 /** The side's notes low to high, and its bass apart (the lowest, a fifth or more under the next). */
 function splitBass(side: Side[]): { bass: Side | null; upper: Side[] } {
-  const sorted = [...side].sort((a, b) => a.midi - b.midi);
+  const sorted = [...side].sort(bySide);
   if (sorted.length >= 2 && sorted[1].midi - sorted[0].midi >= BASS_GAP) return { bass: sorted[0], upper: sorted.slice(1) };
   return { bass: null, upper: sorted };
 }
@@ -114,16 +120,14 @@ function matchSides(a: Side[], b: Side[]): Array<[Side, Side]> {
   }
   const restB = b.filter((s) => !usedB.has(s));
   if (!held.length) return moveSides(a, b);
-  // The rest move only between the held notes around them (never across one)
-  const heldPitches = held.map(([x]) => x.midi).sort((p, q) => p - q);
-  const region = (s: Side) => heldPitches.filter((m) => m < s.midi).length;
-  const out = [...held];
-  for (let r = 0; r <= heldPitches.length; r++) out.push(...moveSides(restA.filter((s) => region(s) === r), restB.filter((s) => region(s) === r)));
-  return out.sort((p, q) => p[0].midi - q[0].midi);
+  // The rest never glide across a held note
+  const heldPitches = held.map(([x]) => x.midi);
+  const across = (x: Side, y: Side) => heldPitches.some((m) => m > Math.min(x.midi, y.midi) && m < Math.max(x.midi, y.midi));
+  return [...held, ...moveSides(restA, restB, across)].sort((p, q) => bySide(p[0], q[0]));
 }
 
 /** Voices that move (no shared notes among them): as many as can glide, the least movement in all, in order (never crossing). */
-function moveSides(a: Side[], b: Side[]): Array<[Side, Side]> {
+function moveSides(a: Side[], b: Side[], across: (x: Side, y: Side) => boolean = () => false): Array<[Side, Side]> {
   const m = a.length;
   const n = b.length;
   // best[i][j]: the most pairs and least movement among a's first i and b's first j
@@ -139,7 +143,7 @@ function moveSides(a: Side[], b: Side[]): Array<[Side, Side]> {
       let h = 0;
       if (i && j) {
         const d = Math.abs(a[i - 1].midi - b[j - 1].midi);
-        if (d <= GLIDE_MAX_SEMIS) {
+        if (d <= GLIDE_MAX_SEMIS && !across(a[i - 1], b[j - 1])) {
           c = count[i - 1][j - 1] + 1;
           k = cost[i - 1][j - 1] + d;
           h = 1;
@@ -186,7 +190,7 @@ export function glidePairs(notes: readonly NoteEvent[], clipLength: number): Gli
     const a = ends.get(key);
     const b = starts.get(key)!;
     if (!a) continue;
-    const at = Math.min(...b.map((s) => s.note.startOffset));
+    const at = minOf(b.map((s) => s.note.startOffset));
     const sa = splitBass(a);
     const sb = splitBass(b);
     const pairs: GlidePair[] = [];
@@ -255,23 +259,24 @@ const ease = (u: number) => u * u * (3 - 2 * u);
  * long (the bass's its own) and eased, from where the next note starts. `velocity` (default: each
  * note's own) is how loud each note plays (the chord it was struck with, see the scheduler).
  */
-export function chainSound(chain: GlideChain, from: number, glide: ClipGlide, clipStart: number, tempo: Tempo, velocity: (n: NoteEvent) => number = (n) => n.velocity): ChainSound {
+export function chainSound(chain: GlideChain, from: number, glide: ClipGlide, clipStart: number, tempo: Tempo, velocity: (n: NoteEvent) => number = (n) => n.velocity, late: (n: NoteEvent) => number = () => 0): ChainSound {
   const notes = chain.notes.slice(from);
   const first = notes[0];
   const last = notes[notes.length - 1];
   const bar = (n: NoteEvent) => clipStart + n.startOffset;
-  const t0 = barToSeconds(bar(first), tempo);
+  // (each note where it really sounds: `late` seconds after its place, by swing, a feel, Human...)
+  const t0 = barToSeconds(bar(first), tempo) + late(first);
   const spb = 240 / tempoAt(bar(first), tempo);
   const lengthOf = (n: NoteEvent) => (durationToBars(n.duration) * 240) / tempoAt(bar(n), tempo);
-  const seconds = barToSeconds(bar(last), tempo) + lengthOf(last) - t0;
+  const seconds = barToSeconds(bar(last), tempo) + late(last) + lengthOf(last) - t0;
   const ref = midiOf(first.note);
   const vels = notes.map(velocity);
-  const loudest = Math.max(...vels);
+  const loudest = maxOf(vels);
   const bend: Array<{ at: number; value: number }> = [{ at: 0, value: 0 }];
   const level = vels.map((v) => (loudest > 0 ? v / loudest : 1));
   const pressure: Array<{ at: number; value: number }> = [{ at: 0, value: level[0] }];
   for (let i = 1; i < notes.length; i++) {
-    const at = barToSeconds(bar(notes[i]), tempo) - t0;
+    const at = barToSeconds(bar(notes[i]), tempo) + late(notes[i]) - t0;
     const ms = chain.bass[from + i - 1] ? (glide.bassMs ?? glide.ms) : glide.ms;
     const g = Math.min(ms / 1000, GLIDE_SHARE * lengthOf(notes[i]));
     const s0 = midiOf(notes[i - 1].note) - ref;
@@ -306,6 +311,19 @@ function tidy(points: Array<{ at: number; value: number }>): Array<{ at: number;
     else out.push(p);
   }
   return out;
+}
+
+/**
+ * The pairs of a clip as it plays them (the scheduler's: the notes hidden by a trim left out, the
+ * ones the sustain pedal holds on lengthened first), for the piano rolls' lines.
+ */
+export function clipGlidePairs(clip: Pick<Clip, 'notes' | 'lengthBars' | 'expression'>): GlidePair[] {
+  const notes = sustainNotes(
+    clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6),
+    clip.expression?.sustain,
+    clip.lengthBars
+  );
+  return glidePairs(notes, clip.lengthBars);
 }
 
 /**
