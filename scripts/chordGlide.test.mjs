@@ -242,6 +242,9 @@ test('a softer chord: the voice’s pressure follows it, from the loudest, never
   const louder = G.chainSound(G.glideChains([{ ...a, velocity: 0.5 }, { ...b, velocity: 1 }], 1)[0], 0, { ms: 100 }, 1, 120);
   assert.equal(louder.velocity, 1);
   assert.equal(louder.expr.pressure[0].value, 0.5, 'struck at the first note’s level');
+  // (a change of level takes 150 ms at least, even under a short glide: at 120 BPM, 0.075 bar)
+  const lp = louder.expr.pressure;
+  close(lp[lp.length - 1].at, 0.5 + 0.15 / 2);
 });
 
 test('the glide time is in milliseconds whatever the tempo, and the bass has its own', () => {

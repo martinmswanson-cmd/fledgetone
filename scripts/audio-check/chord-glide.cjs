@@ -4,8 +4,9 @@
 // - Each voice glides in the time set (eased: 10% to 90% of the way in about 0.61 of it), at any
 //   tempo (a tempo change in the middle of the progression), the bass in its own time; it ends on
 //   the next note's pitch.
-// - At each chord change, with glide: no step in level over 1 dB from one 10 ms to the next (the level over 50 ms around each), and
-//   no peak above the same chords played as written (a softer chord too).
+// - At each chord change, with glide: no step in level over 1 dB from one 10 ms to the next (the level over 50 ms around each)
+//   where every voice glides or holds; where a note starts fresh (a bass moving by a 4th), none over the chords as written
+//   there; and no peak above the same chords played as written (a softer chord too).
 // - Live as in the export: a voice's pitch over its glides, and its glide times.
 // - Begun part way: a render from between two chords (as Export from a bar, and as the agent's
 //   listening begins held notes again) glides from the next chord on, one voice (as loud as in the
@@ -49,6 +50,14 @@ const CHORDS = [
   ['G2', 'A#3', 'D4', 'F4', 'A4'],
   ['C2', 'A#3', 'E4', 'G4', 'C5'],
 ];
+// The same with a bass moving by steps (F2 E2 D2 C#2) and the voices by steps or held: every voice glides or holds, the third chord softer
+const STEP_CHORDS = [
+  ['F2', 'A3', 'C4', 'E4', 'G4'],
+  ['E2', 'A3', 'C4', 'E4', 'G4'],
+  ['D2', 'A3', 'C4', 'F4', 'A4'],
+  ['C#2', 'A3', 'C#4', 'G4', 'A4'],
+];
+const stepChords = (glide) => song('wavetable', [clip(STEP_CHORDS.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', i === 2 ? 0.5 : 0.8))), 2, glide)]);
 const chords = (glide, key = 'wavetable') => song(key, [clip(CHORDS.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', i === 2 ? 0.5 : 0.8))), 2, glide)]);
 
 // In the page: render `text` (from `startBar`, to `toBar`; `restart`: notes held over it begun again there, as the agent's
@@ -296,14 +305,15 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
   report(!!gb && !!gu && Math.abs(gb.ms - 300) < 60 && gu.ms < 150 && gb.ms > 2 * gu.ms, `the bass glides in its own time: bass ${gb ? gb.ms.toFixed(0) : '?'} ms (300 set), the voice above ${gu ? gu.ms.toFixed(0) : '?'} ms (80 set; both seen through 60 and 30 ms windows)`);
 
   // Level at the chord changes (1 s, 2 s, 3 s), with glide and as written; the third chord is softer
-  const steps = (r) => {
-    let most = 0;
-    for (const at of [1, 2, 3]) {
+  // (the biggest step at each change, 1 s, 2 s, 3 s)
+  const stepsAt = (r) =>
+    [1, 2, 3].map((at) => {
       const i0 = Math.round((at - 0.1 - 0.5) / 0.01);
+      let most = 0;
       for (let i = i0 + 1; i < i0 + 40; i++) most = Math.max(most, Math.abs(r.rms[i] - r.rms[i - 1]));
-    }
-    return most;
-  };
+      return most;
+    });
+  const steps = (r) => Math.max(...stepsAt(r));
   const steady = (r) => {
     let most = 0;
     for (const at of [1.5, 2.5]) {
@@ -312,10 +322,17 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
     }
     return most;
   };
+  // CHORDS' bass moves by 3rds, 4ths and 5ths, so it starts each note fresh, as written (a whole step at most glides): at each
+  // change no step over 1 dB, or, where that fresh note makes one, none over the chords' as written there. STEPS' bass moves by
+  // steps, so every voice glides or holds: no step over 1 dB anywhere
   for (const ms of [60, 150, 300]) {
     const on = await render({ text: text(chords({ ms })), toBar: 3, rms: { t0: 0.5, t1: 3.6 } });
     const off = await render({ text: text(chords()), toBar: 3, rms: { t0: 0.5, t1: 3.6 } });
-    report(steps(on) <= 1 && on.peakDb <= off.peakDb + 0.05, `chords gliding ${ms} ms: the biggest step in level at a change ${steps(on).toFixed(2)} dB (mid-chord ${steady(on).toFixed(2)} dB; as written ${steps(off).toFixed(2)} dB), peak ${on.peakDb.toFixed(2)} dB (as written ${off.peakDb.toFixed(2)} dB)`);
+    const a = stepsAt(on), b = stepsAt(off);
+    report(a.every((v, i) => v <= Math.max(1, b[i])) && on.peakDb <= off.peakDb + 0.05, `chords gliding ${ms} ms (the bass starting fresh): the biggest step in level at each change ${a.map((v) => v.toFixed(2)).join(', ')} dB (as written ${b.map((v) => v.toFixed(2)).join(', ')} dB; mid-chord ${steady(on).toFixed(2)} dB), peak ${on.peakDb.toFixed(2)} dB (as written ${off.peakDb.toFixed(2)} dB)`);
+    const sOn = await render({ text: text(stepChords({ ms })), toBar: 3, rms: { t0: 0.5, t1: 3.6 } });
+    const sOff = await render({ text: text(stepChords()), toBar: 3, rms: { t0: 0.5, t1: 3.6 } });
+    report(steps(sOn) <= 1 && sOn.peakDb <= sOff.peakDb + 0.05, `chords gliding ${ms} ms, every voice by steps: the biggest step in level at a change ${steps(sOn).toFixed(2)} dB (as written ${steps(sOff).toFixed(2)} dB), peak ${sOn.peakDb.toFixed(2)} dB (as written ${sOff.peakDb.toFixed(2)} dB)`);
   }
 
   // Begun part way, between the first two chords (bar 1.25): from Export's start bar, and with held notes begun again
@@ -354,7 +371,7 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
   const passes = [0, 1.5, 3].map((p) => meanOf(lg, p + 0.2, p + 0.9));
   const after = (r) => [0.5, 2].map((d) => meanOf(r, 4.7 + d, 4.7 + d + 0.3));
   const ag = after(lg), ap = after(lp);
-  report(Math.max(...passes) - Math.min(...passes) < 1.5 && ag.every((v, i) => v < ap[i] + 3), `live round a loop that cuts a gliding voice: each pass ${passes.map((v) => v.toFixed(1)).join(', ')} dB; after Stop ${ag.map((v) => v.toFixed(1)).join(', ')} dB at 0.5 and 2 s (as written ${ap.map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
+  report(Math.min(...passes) > -60 && Math.max(...passes) - Math.min(...passes) < 1.5 && ag.every((v, i) => v < ap[i] + 3), `live round a loop that cuts a gliding voice: each pass ${passes.map((v) => v.toFixed(1)).join(', ')} dB; after Stop ${ag.map((v) => v.toFixed(1)).join(', ')} dB at 0.5 and 2 s (as written ${ap.map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
 
   // Begun on the last chord (bar 2.5): an export from there, and live round a loop on it, as loud as the chords as written (it was silent)
   {
@@ -379,7 +396,7 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
     const jp = await run(undefined);
     const d4 = (r) => Math.max(...r.levels.map((w) => w.f[2]));
     const lv = (r) => r.levels.map((w) => w.rms);
-    report(d4(jg) < Math.max(-70, d4(jp) + 10) && lv(jg).every((v, i) => Math.abs(v - lv(jp)[i]) < 3), `live, a jump back while a voice glides: E4 after it ${d4(jg).toFixed(1)} dB (as written ${d4(jp).toFixed(1)} dB), level ${lv(jg).map((v) => v.toFixed(1)).join(', ')} dB (as written ${lv(jp).map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
+    report(d4(jg) < Math.max(-70, d4(jp) + 10) && lv(jg).every((v, i) => v > -60 && Math.abs(v - lv(jp)[i]) < 3), `live, a jump back while a voice glides: E4 after it ${d4(jg).toFixed(1)} dB (as written ${d4(jp).toFixed(1)} dB), level ${lv(jg).map((v) => v.toFixed(1)).join(', ')} dB (as written ${lv(jp).map((v) => v.toFixed(1)).join(', ')} dB) (load ${load()})`);
   }
 
   // Live, the track given Keys while a voice glides on Wavetable (1.5 s in): the next chords sound (on Keys, gliding), never silence

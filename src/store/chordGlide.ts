@@ -49,8 +49,11 @@ const BASS_GAP = 7;
 const JOIN_BINS = 1536;
 /** Points per glide's eased curve */
 const CURVE_POINTS = 12;
-/** A change of level (a softer or louder chord) moves over the glide, and never quicker than this (seconds). */
-const LEVEL_SETTLE = 0.02;
+/**
+ * A change of level (a softer or louder chord) moves over the glide, and never quicker than this
+ * (seconds): under a short glide the level doesn't step (a 4 dB change over 60 ms stepped by 1 dB in 10 ms)
+ */
+const LEVEL_SETTLE = 0.15;
 /** A glide takes at most this share of the note it glides into. */
 const GLIDE_SHARE = 0.5;
 
