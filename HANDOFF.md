@@ -297,6 +297,17 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Hand-played hits and chills follow-ups** (2026.11.12): one strike rule for hits played by
+  hand (soundLead.ts strikeWhole, toneStart.ts strikeTogether, strikeLive for native voices): every
+  part of a hit is set together in the last step; a strike found late before it is heard is undone
+  and struck again, one already heard plays on late and only a hit well under its level is brought
+  up from what is sounding (ifLate, reshapeLate in toneFixes.ts); glide and filter values are put
+  back on undo. Tests: toneStart, nativeStrike, liveStrike; browser: hand-hits.cjs. Cost: at 4x
+  CPU slowdown about 1 hit in 100 comes 15-60 ms later. Chills: "New empty clip" uses
+  clickedBarStart (tempoMap.ts) like the dialogs; CHILLS and Pocket's For chills rename a clip with
+  an automatic name (autoClipName, namedForChills in chills.ts); Build into a peak has
+  start: 'dip' | 'level' (chillsBuild.ts). Still open: a hold-up between two parts' attacks can put
+  them up to about 9 ms apart; the "dbl-click" hint on New empty clip (1 bar) places on the beat.
 - **Plugin switch on held notes** (2026.11.10-2): the Vocoder, JX10, Hall Reverb and Plateau
   start their new preset afresh during the dip; the JX10 lets held notes go and keeps pedal, bend,
   mod wheel, pressure and controllers (processor.ts); Fledge Synth's `bb_settle` (synth.rs) drops
