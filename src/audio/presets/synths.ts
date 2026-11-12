@@ -85,6 +85,7 @@ export function createWavetable(output: Tone.InputNode) {
   return {
     trigger: (notes: string[], duration: Tone.Unit.Time, time: number, velocity: number) => synth.trigger(notes, duration, time, velocity),
     attack: synth.attack,
+    glide: synth.glide,
     bend: synth.bend,
     releaseAll: synth.releaseAll,
     dispose: () => {

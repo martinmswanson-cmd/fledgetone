@@ -2,6 +2,7 @@ import { ROOM_STYLE_IDS } from '../audio/effects/roomIR';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
 import { normalizeStepLanes } from './stepLanes';
+import { normalizeClipGlide } from './chordGlide';
 import { normalizeNoteExpression } from './noteExpression';
 import { normalizeChance, normalizeCond } from './noteChance';
 import { compSegments, normalizeTakes } from './takes';
@@ -337,6 +338,7 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
           ...(c.audio ? { audio: c.audio } : {}),
           ...(c.expression ? { expression: c.expression } : {}),
           ...(c.stepLanes ? { stepLanes: c.stepLanes } : {}),
+          ...(c.glide ? { glide: c.glide } : {}),
         },
       });
     } catch {
@@ -508,6 +510,7 @@ function parseClip(v: unknown): Clip {
   const audio = normalizeClipAudio(v.audio);
   const expression = normalizeExpression(v.expression);
   const stepLanes = normalizeStepLanes(v.stepLanes);
+  const glide = normalizeClipGlide(v.glide);
   const takes = normalizeTakes(v.takes, (n) => {
     try {
       return parseNote(n);
@@ -551,6 +554,8 @@ function parseClip(v: unknown): Clip {
     ...(isStr(v.pattern) && v.pattern && !audio && !takes ? { pattern: v.pattern.slice(0, 40) } : {}),
     // Optional: step lanes (a note clip only)
     ...(stepLanes && !audio ? { stepLanes } : {}),
+    // Optional: glide between chords (a note clip only; an older version plays the chords as written)
+    ...(glide && !audio ? { glide } : {}),
   };
 }
 

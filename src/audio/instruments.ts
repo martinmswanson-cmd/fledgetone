@@ -71,6 +71,12 @@ export interface PlayableNote {
   turns?: readonly number[];
   /** A song's chord on a strummed instrument: strummed down (else up), as its place in the song gives it (see takeTurns.ts) */
   down?: boolean;
+  /**
+   * A voice gliding between chords (see chordGlide.ts), played on a voice of its own (glideVoice):
+   * the seconds per bar its length and its own bend and pressure are counted in; the notes it plays
+   * (`clip id:note id`) and its clip, so it can be let go where the song moves on without it
+   */
+  glide?: { spb: number; keys?: readonly string[]; clipId?: string };
 }
 
 /** One sounding note's own controls (see TrackInstrument.noteVoice). */
@@ -81,6 +87,11 @@ export interface VoiceControl {
   pressure: (value: number, time: number) => void;
   /** Let it go at `time` */
   off: (time: number) => void;
+  /**
+   * Let it go at `time` with its own release from where it is then, sooner than its `off` said
+   * (playback moved, stopped or came round the loop): nothing given it for later sounds
+   */
+  cut?: (time: number) => void;
 }
 
 /** Ends a note started by noteOn (a key let go) at an audio time. */
@@ -127,6 +138,14 @@ export interface TrackInstrument {
    * bending as a whole.
    */
   noteVoice?: (note: PlayableNote, time: number) => VoiceControl | null;
+  /**
+   * Start a voice gliding between chords (see chordGlide.ts): one note held from its first chord to
+   * its last, its own bend and pressure moving its voice alone; null if it doesn't sound. Only the
+   * instruments whose voices glide on their own have it (chordGlideSupport); the others play the
+   * chords as written. (Kept apart from noteVoice: a slide or a dive on these still bends the whole
+   * instrument, as it always has.)
+   */
+  glideVoice?: (note: PlayableNote, time: number) => VoiceControl | null;
   /**
    * Stop and Pause: let every voice go. `heard` (Pause only) is the time on the audio clock being
    * heard now, the output latency behind the clock: the pause keeps that place, so a kit's hits
@@ -484,8 +503,12 @@ function create808Instrument(output: Tone.InputNode, options: InstrumentOptions)
 
 /** A pool synth (chords): a held key gets a voice of its own until it's let go. */
 function poly(
-  synth: { attack: (note: string, t: number, v: number) => { release: (t: number) => void }; bend: (cents: number, t: number, live?: boolean, cut?: boolean) => void },
-  base: Omit<TrackInstrument, 'noteOn' | 'bend'>
+  synth: {
+    attack: (note: string, t: number, v: number) => { release: (t: number) => void };
+    glide: (note: string, t: number, v: number) => VoiceControl | null;
+    bend: (cents: number, t: number, live?: boolean, cut?: boolean) => void;
+  },
+  base: Omit<TrackInstrument, 'noteOn' | 'bend' | 'glideVoice'>
 ): TrackInstrument {
   return {
     ...base,
@@ -493,6 +516,7 @@ function poly(
       const voice = synth.attack(n.note, time, n.velocity);
       return (at) => voice.release(at);
     },
+    glideVoice: (n, time) => synth.glide(n.note, time, n.velocity),
     bend: synth.bend,
   };
 }
@@ -602,6 +626,7 @@ function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
     play: (notes, time) => inst.play(notes.map(soften), time),
     ...(inst.noteOn ? { noteOn: (n: PlayableNote, time: number) => inst.noteOn!(soften(n), time) } : {}),
     ...(inst.noteVoice ? { noteVoice: (n: PlayableNote, time: number) => inst.noteVoice!(soften(n), time) } : {}),
+    ...(inst.glideVoice ? { glideVoice: (n: PlayableNote, time: number) => inst.glideVoice!(soften(n), time) } : {}),
   };
 }
 
@@ -704,6 +729,33 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
               },
               off: (at: number) => {
                 voice.off(at);
+                subGo.off(at);
+              },
+            };
+          },
+        }
+      : {}),
+    ...(inst.glideVoice
+      ? {
+          glideVoice: (n: PlayableNote, time: number) => {
+            const voice = inst.glideVoice!(n, time);
+            if (!voice) return voice;
+            // Held with the note, and let go with it (not a fixed length); under a chord's lowest
+            // note held (its own bend passed on only from that one)
+            const subGo = lowestHeld() ? sub.holdLowest(tuned(n), time) : sub.hold(tuned(n), time, slid());
+            return {
+              ...voice,
+              // (Its own bend reaches its sub too, which stays under it)
+              bend: (cents: number, at: number) => {
+                voice.bend(cents, at);
+                subGo.bend(cents, at);
+              },
+              off: (at: number) => {
+                voice.off(at);
+                subGo.off(at);
+              },
+              cut: (at: number) => {
+                voice.cut?.(at);
                 subGo.off(at);
               },
             };

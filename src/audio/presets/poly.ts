@@ -23,11 +23,25 @@ export interface PoolVoice {
   envelope: ToneVoice['envelope'];
   modulationEnvelope?: ToneVoice['envelope'];
   frequency?: Tone.Signal<'frequency'>;
+  /** Its level (dB): a voice gliding between chords follows a softer chord with it (see VoicePool.glide) */
+  volume?: Tone.Param<'decibels'>;
   /** Its pitch offset in cents (a pitch bend moves it: the pool's bend is connected to it). */
   detune: Tone.Signal<'cents'>;
   connect: (destination: Tone.InputNode) => unknown;
   toSeconds: (time?: Tone.Unit.Time) => number;
   dispose: () => unknown;
+}
+
+/** A note held in the pool whose pitch and level then move on their own: a voice gliding between chords (see VoicePool.glide). */
+export interface GlidingVoice {
+  /** Its pitch `cents` from its note's from `time` (a step of its glide: the steps come every few ms while it moves) */
+  bend: (cents: number, time: number) => void;
+  /** Its level (0 to 1, of its velocity) from `time` */
+  pressure: (value: number, time: number) => void;
+  /** Let it go at `time`, with the voice's own release */
+  off: (time: number) => void;
+  /** Let it go at `time` from where it is then, sooner than its `off` (playback moved or stopped) */
+  cut: (time: number) => void;
 }
 
 /** A note held in the pool (a key held on a MIDI keyboard) until `release`. */
@@ -41,6 +55,12 @@ export interface VoicePool {
   trigger: (notes: string[], duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => void;
   /** Start one note at `time` and hold it until the returned handle releases it. */
   attack: (note: string, time: number, velocity: number) => HeldVoice;
+  /**
+   * Start one note at `time` on a voice of its own whose pitch then glides on its own (on its
+   * frequency: the pool's bend, on every voice's detune, adds to it) and whose level follows a
+   * softer chord (see chordGlide.ts). null when no voice can be had.
+   */
+  glide: (note: string, time: number, velocity: number) => GlidingVoice | null;
   /** Bend every sounding voice (and the ones to come) by `cents` from `time` (`cut`: see TrackInstrument.bend). */
   bend: (cents: number, time: number, live?: boolean, cut?: boolean) => void;
   releaseAll: () => void;
@@ -119,8 +139,12 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
    * the CPU each. (A mono synth played the same way never did, so they have none.)
    */
   const pull = new Tone.Gain({ context: out.context, gain: 0 }).connect(out);
-  /** Each voice, its note's start and end, its velocity, and when its note was let go (Infinity while held) */
-  let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number }[] = [];
+  /**
+   * Each voice, its note's start and end, its velocity, and when its note was let go (Infinity
+   * while held); `own`: it last glided between chords (its pitch and level set on their own, see
+   * glide), so they're put back before its next note
+   */
+  let voices: { voice: PoolVoice; start: number; end: number; serial: number; velocity: number; releasedAt: number; own?: { db: number } }[] = [];
   type Slot = (typeof voices)[number];
   /**
    * The pitch bend in cents, one signal connected to every voice's detune, made with the first
@@ -147,10 +171,29 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
    */
   const rest = (2 * RENDER_BLOCK) / out.context.sampleRate;
 
+  /**
+   * A voice that last glided between chords, taken for a note at `time`: what it had set on its own
+   * from then on (its glide's later steps, should it be taken while still sounding) taken away, its
+   * level back where it was made. A voice that never glided is left exactly as it was.
+   */
+  const putBack = (v: Slot, time: number) => {
+    const own = v.own;
+    if (!own) return;
+    v.own = undefined;
+    v.voice.frequency?.cancelScheduledValues(time);
+    if (v.voice.volume) {
+      v.voice.volume.cancelScheduledValues(time);
+      v.voice.volume.setValueAtTime(own.db, time);
+    }
+  };
+
   /** A voice for a note at `time`. */
   const pick = (time: number): Slot | undefined => {
     const choice = choosePoolVoice(voices, time, rest, maxVoices);
-    if (choice !== 'new') return choice;
+    if (choice !== 'new') {
+      if (choice?.own) putBack(choice, time);
+      return choice;
+    }
     const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
     v.voice.connect(out);
     v.voice.frequency?.connect(pull);
@@ -219,6 +262,67 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
           v.voice.triggerRelease(releaseAt);
           v.end = releaseAt + v.voice.toSeconds(v.voice.envelope.release);
           v.releasedAt = releaseAt;
+        },
+      };
+    },
+    glide: (note, time, velocity) => {
+      const t = notLate(out.context, time);
+      const v = pick(t);
+      if (!v) return null;
+      const db = v.voice.volume?.getValueAtTime(t) ?? 0;
+      v.start = attackAhead(v.voice as unknown as NoteSynth, note, t, (at) => v.voice.triggerAttack(note, at, velocity));
+      v.end = Infinity;
+      v.velocity = velocity;
+      v.releasedAt = Infinity;
+      v.own = { db };
+      const serial = ++v.serial;
+      const hz = Tone.Frequency(note).toFrequency();
+      // The last step given, its time and value: a step after a while with no change (the glide's
+      // first, a held stretch's) is ramped to from one step (4 ms) before it, not from the last
+      const STEP = 0.004;
+      let pitch = { at: v.start, value: hz };
+      let level = { at: v.start, value: 1 };
+      const mine = () => v.serial === serial;
+      return {
+        bend: (cents, at) => {
+          const f = v.voice.frequency;
+          if (!mine() || !f) return;
+          const when = Math.max(at, v.start);
+          const value = hz * 2 ** (cents / 1200);
+          if (value === pitch.value && when > pitch.at) return;
+          if (when - pitch.at > 1.5 * STEP) f.setValueAtTime(pitch.value, when - STEP);
+          f.linearRampToValueAtTime(value, when);
+          pitch = { at: when, value };
+        },
+        pressure: (p, at) => {
+          const vol = v.voice.volume;
+          if (!mine() || !vol) return;
+          const value = Math.max(1e-4, Math.min(1, p));
+          if (value === level.value) return;
+          const when = Math.max(at, v.start);
+          // (At its start: its level set before it sounds)
+          if (when <= v.start) vol.setValueAtTime(db + Tone.gainToDb(value), when);
+          else {
+            if (when - level.at > 1.5 * STEP) vol.setValueAtTime(db + Tone.gainToDb(level.value), when - STEP);
+            vol.linearRampToValueAtTime(db + Tone.gainToDb(value), when);
+          }
+          level = { at: when, value };
+        },
+        off: (at) => {
+          if (!mine() || v.end !== Infinity) return;
+          const releaseAt = Math.max(notLate(out.context, at), v.start);
+          v.voice.triggerRelease(releaseAt);
+          v.end = releaseAt + v.voice.toSeconds(v.voice.envelope.release);
+          v.releasedAt = releaseAt;
+        },
+        cut: (at) => {
+          // (as Stop lets a voice go: from where it is then, its own release, nothing given it for later)
+          const t = Math.max(at, out.context.currentTime);
+          if (!mine() || !(v.releasedAt > t)) return;
+          letGoToneSynth(v.voice, t);
+          v.voice.volume?.cancelAndHoldAtTime(t);
+          v.end = v.start >= t ? t : t + v.voice.toSeconds(v.voice.envelope.release);
+          v.releasedAt = t;
         },
       };
     },

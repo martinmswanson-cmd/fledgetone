@@ -23,6 +23,7 @@ import { detuned, noteDrift, noteSeed } from './human';
 import { atSongPlace } from './songPlace';
 import { humanVelocities, takesFollowPlaces, takesKind, trackTakes, type GroupTakes, type SongItem } from './takeTurns';
 import { pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
+import { chainSound, chordGlideSupport, glideChains, type GlideChain } from '../store/chordGlide';
 import { isExpressive, noteStepper, type NoteStepper } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
@@ -69,6 +70,41 @@ interface NoteGroup {
    */
   turns?: GroupTakes['turns'];
   down?: boolean;
+  /**
+   * Glide between chords (see chordGlide.ts): the notes of the group a gliding voice can play
+   * instead, each with its key (`clip id:note id`): left out where a voice gliding into it is
+   * sounding (see voiced), played as written otherwise (where the instrument doesn't glide, or
+   * where playback began on it, the voice's last note)
+   */
+  chained?: ReadonlyMap<PlayableNote, string>;
+  /**
+   * A group of gliding voices instead, each starting at one of its notes, in step with `notes`
+   * (each the voice's note there, as written): played only where the track's instrument glides,
+   * each only if the voice isn't sounding already (begun at an earlier note: see voiced)
+   */
+  chains?: GlideStart[];
+  /** Gliding voices as they play (see glided): each drifts by its own seed when the track's Human insert is on */
+  voices?: true;
+}
+
+/** A gliding voice from one of its notes on (see NoteGroup.chains). */
+interface GlideStart {
+  chain: GlideChain;
+  /** Which of its notes it starts at */
+  from: number;
+  /** Its notes from there on, each as `clip id:note id` (see voiced) */
+  keys: string[];
+  /** The clip's start (song bar) and its glide setting */
+  clipStart: number;
+  glide: NonNullable<Clip['glide']>;
+  /** How loud each of its notes plays: its chord's loudest, as the chord synths play a chord */
+  loud: ReadonlyMap<NoteEvent, number>;
+  /**
+   * Each of its notes' group, tick and Human seeds (its own, and its group's first: the drift of a
+   * group played together), so each glide starts where that note would sound as written
+   */
+  parts: ReadonlyMap<NoteEvent, { group: NoteGroup; tick: number; seed: number; groupSeed: number }>;
+  clipId: string;
 }
 
 /** A track's Human settings while they're on, and whether its notes can be detuned. */
@@ -240,6 +276,8 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
   // of its own plays apart from the rest (its swing and shift move it alone), as do notes the
   // measured feel moves apart
   const groups = new Map<string, [number, NoteGroup]>();
+  // (each note's group and what it plays as, for the gliding voices)
+  const groupOf = new Map<NoteEvent, [NoteGroup, PlayableNote, number]>();
   notes.forEach((note, i) => {
     const tick = ticks[i];
     const feel = rows?.[note.note];
@@ -260,17 +298,64 @@ function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntr
       group[1].notes.push(playable);
       group[1].seeds.push(seed);
       if (cond || group[1].conds) (group[1].conds ??= group[1].notes.slice(0, -1).map(() => null)).push(cond);
+      groupOf.set(note, [group[1], playable, i]);
     } else {
       const own = feel ? rowSwing.get(note.note) : undefined;
-      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(shift ? { shift } : {}), ...(cond ? { conds: [cond], clipId: clip.id } : {}) }]);
+      const g: NoteGroup = { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(shift ? { shift } : {}), ...(cond ? { conds: [cond], clipId: clip.id } : {}) };
+      groups.set(key, [tick, g]);
+      groupOf.set(note, [g, playable, i]);
     }
   });
   if (clipHasConditions(clip)) for (const [, g] of groups.values()) g.clipId = clip.id;
+  if (clip.glide) glideGroups(clip, notes, ticks, groups, groupOf);
   // Pitch bend and vibrato, as events of their own (played before the notes of the same tick)
   const pitch: ClipEntry['groups'] = pitchEvents(clip).map((ev) => [barToTicks(clip.startBar + ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, pitch: ev }]);
   // Controller lanes, every 64th where they move (from the clip's start)
   const cc: ClipEntry['groups'] = clipCcEvents(clip).map((ev) => [barToTicks(ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, cc: { cc: ev.cc, value: ev.value } }]);
   return [...pitch, ...cc, ...groups.values()];
+}
+
+/**
+ * Glide between chords (see chordGlide.ts): each gliding voice's notes marked in their groups (left
+ * out where the voices glide), and a group of voices at each of their notes but the last, a voice
+ * starting there (the whole voice at its first; a later one should playback begin part way).
+ */
+function glideGroups(clip: Clip, notes: NoteEvent[], ticks: number[], groups: Map<string, [number, NoteGroup]>, groupOf: Map<NoteEvent, [NoteGroup, PlayableNote, number]>): void {
+  const chains = glideChains(notes, clip.lengthBars);
+  if (!chains.length) return;
+  const loud = new Map<NoteEvent, number>();
+  const parts = new Map<NoteEvent, { group: NoteGroup; tick: number; seed: number; groupSeed: number }>();
+  const chained = new Map<NoteGroup, Map<PlayableNote, string>>();
+  const keyOf = (n: NoteEvent) => `${clip.id}:${n.id}`;
+  for (const chain of chains)
+    for (const n of chain.notes) {
+      const [g, playable, i] = groupOf.get(n)!;
+      loud.set(n, maxOf(g.notes.map((p) => p.velocity)));
+      parts.set(n, { group: g, tick: ticks[i], seed: g.seeds[g.notes.indexOf(playable)], groupSeed: g.seeds[0] });
+      (chained.get(g) ?? chained.set(g, new Map()).get(g)!).set(playable, keyOf(n));
+    }
+  for (const [g, map] of chained) g.chained = map;
+  // (a group of voices per group of first notes: each plays as late as its first note would, by swing, a row's shift...)
+  const ids = new Map<NoteGroup, number>();
+  for (const chain of chains)
+    for (let from = 0; from < chain.notes.length - 1; from++) {
+      const n = chain.notes[from];
+      const [g, playable, i] = groupOf.get(n)!;
+      if (!ids.has(g)) ids.set(g, ids.size);
+      const key = `${ticks[i]}|glide|${ids.get(g)}`;
+      const start: GlideStart = { chain, from, keys: chain.notes.slice(from).map(keyOf), clipStart: clip.startBar, glide: clip.glide!, loud, parts, clipId: clip.id };
+      const seed = g.seeds[g.notes.indexOf(playable)];
+      const group = groups.get(key);
+      if (group) {
+        group[1].notes.push(playable);
+        group[1].seeds.push(seed);
+        group[1].chains!.push(start);
+      } else
+        groups.set(key, [
+          ticks[i],
+          { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: g.swung, ...(g.groove ? { groove: g.groove } : {}), ...(g.rowSwing ? { rowSwing: g.rowSwing } : {}), ...(g.shift ? { shift: g.shift } : {}), chains: [start] },
+        ]);
+    }
 }
 
 function newEntry(clip: Clip, role: FeelPart | undefined, meter: MeterMap | undefined): ClipEntry {
@@ -316,7 +401,7 @@ function takeItems(list: ReadonlyArray<[number, NoteGroup]>, o: { track: Pick<Tr
   const wheel = !!INSTRUMENTS[o.track.instrumentKey]?.dynamics;
   return list.map(([tick, g]) => {
     if (g.pitch) return { tick, ...(wheel && (g.pitch.dyn !== undefined || g.pitch.end) ? { wheel: { value: g.pitch.end ? null : g.pitch.dyn!, end: !!g.pitch.end } } : {}) };
-    if (g.cc || !g.notes.length) return { tick };
+    if (g.cc || !g.notes.length || g.chains) return { tick };
     const place = barToSeconds(ticksToBar(tick), o.tempo) + (o.straight ? 0 : noteLateness(g, tick, o.swing, o.tempo, o.ppq));
     return { tick, notes: g.notes, seeds: g.seeds, ...(g.conds ? { conds: g.conds, pass: passOf(g.clipId ? o.runs.get(g.clipId) : undefined, 0, null) } : {}), place };
   });
@@ -348,7 +433,8 @@ const sameNotes = (prev: Clip, next: Clip) =>
   prev.trackId === next.trackId &&
   prev.wobble === next.wobble &&
   prev.groove === next.groove &&
-  prev.expression === next.expression;
+  prev.expression === next.expression &&
+  prev.glide === next.glide;
 
 /** The part a clip's measured feel plays it as: each drum row its own (a Drum Rack's pads by their names), else the bass, chords or lead. */
 function feelRole(clip: Clip, track: Track | undefined, clips: readonly Clip[], memo: Map<string, string>): FeelPart | undefined {
@@ -436,6 +522,31 @@ export function createClipSchedule(
   /** The drum kit each drum track plays (for the hits the Pumps hear). */
   let kitOf = new Map<string, InstrumentKey>();
   let runs = new Map<string, ClipRun>();
+  /** The tracks whose instrument glides between chords (chordGlideSupport): their clips' gliding voices play, else their chords as written */
+  let glideTracks = new Set<string>();
+  /**
+   * The notes (`clip id:note id`) a gliding voice begun since playback started, moved or came round
+   * the loop plays: a voice starting at a later one of its notes (playback begun part way) isn't
+   * begun again over it (see NoteGroup.chains)
+   */
+  const voiced = new Set<string>();
+  /**
+   * The voices gliding between chords given out (see playExpressive), until the song moves on
+   * without them: a jump, Play again, Stop or Pause, the loop coming round, the instrument gone, the
+   * glide switched off. Each is then let go with its own release from where it is, nothing given it
+   * for later sounds, and its notes are no longer voiced (they play as written, or a voice begins
+   * again at the next of them).
+   */
+  const glideVoices = new Set<{ trackId: string; instrument: TrackInstrument; voice: VoiceControl; fed: VoiceFeed; keys: readonly string[]; clipId?: string; end: number }>();
+  const endGlides = (time: number, which: (g: { trackId: string; instrument: TrackInstrument; clipId?: string }) => boolean = () => true) => {
+    for (const g of glideVoices) {
+      if (!which(g)) continue;
+      glideVoices.delete(g);
+      voiceFeeds.delete(g.fed);
+      for (const k of g.keys) voiced.delete(k);
+      if (g.end > time) safely(() => g.voice.cut?.(time));
+    }
+  };
   const events = new Map<number, number>();
   // Times round the loop since playback started (or the loop moved)
   let wraps = 0;
@@ -671,6 +782,8 @@ export function createClipSchedule(
   };
   /** `instrument` is gone (see ClipSchedule.forget). */
   const forgetInstrument = (gone: TrackInstrument) => {
+    // (its gliding voices gone with it: their next notes play on the new instrument, gliding or as written)
+    endGlides(Infinity, (g) => g.instrument === gone);
     windows.delete(gone);
     if (!windows.size) stopWindows();
     for (const f of voiceFeeds) if (f.instrument === gone) voiceFeeds.delete(f);
@@ -686,6 +799,8 @@ export function createClipSchedule(
   /** Every note let go (Stop, Pause, Free memory: the instruments have dropped their bends to come and centred). */
   const forgetNotes = () => {
     // (and their voices: let go too)
+    voiced.clear();
+    glideVoices.clear();
     stopFeeding();
     stopWindows();
     bentNotes.clear();
@@ -966,6 +1081,8 @@ export function createClipSchedule(
     holdBends(tick, time, only);
   };
   const onLoop = (time: number) => {
+    endGlides(time);
+    voiced.clear();
     if (loopOf) {
       currentLoop();
       wraps++;
@@ -979,6 +1096,8 @@ export function createClipSchedule(
   let stoppedAt: number | null = null;
   const onStart = (time: number) => {
     wraps = 0;
+    endGlides(time);
+    voiced.clear();
     if (stoppedAt !== null && stoppedAt !== time) forgetNotes();
     stoppedAt = null;
     jumpAway(time);
@@ -986,15 +1105,89 @@ export function createClipSchedule(
   };
   const onStop = (time: number) => {
     wraps = 0;
+    endGlides(time);
     stoppedAt = time;
   };
   const onPause = (time: number) => {
+    endGlides(time);
     stoppedAt = time;
   };
   transport.on('loop', onLoop);
   transport.on('start', onStart);
   transport.on('stop', onStop);
   transport.on('pause', onPause);
+  /**
+   * A gliding voice from one of its notes, as it sounds at the song's tempo now (see chordGlide.ts
+   * chainSound), each glide starting where its note would sound as written: as late as swing, a
+   * feel, a row's shift and the Human insert play it (`lateOf`), live and in an export alike.
+   */
+  const glideNote = (c: GlideStart, written: PlayableNote, lateOf: (g: NoteGroup, tick: number) => number, trackId: string): PlayableNote => {
+    const tempo = tempoOf();
+    const f = feel.get(trackId);
+    const late = (n: NoteEvent) => {
+      const p = c.parts.get(n);
+      if (!p) return 0;
+      return lateOf(p.group, p.tick) + (f ? noteDrift(f.together ? p.groupSeed : p.seed, f.human).late : 0);
+    };
+    const s = chainSound(c.chain, c.from, c.glide, c.clipStart, tempo, (n) => c.loud.get(n) ?? n.velocity, late);
+    const { expr: _none, ...plain } = written;
+    return { ...plain, duration: s.duration, velocity: s.velocity, glide: { spb: s.spb, keys: c.keys, clipId: c.clipId }, ...(s.expr ? { expr: s.expr } : {}) };
+  };
+  /** A gliding voice's Human seed: its first note's own, or, where a group's notes drift together, its group's first. */
+  const glideSeed = (c: GlideStart, trackId: string) => {
+    const p = c.parts.get(c.chain.notes[c.from])!;
+    return feel.get(trackId)?.together ? p.groupSeed : p.seed;
+  };
+  /**
+   * The groups at a tick as they play with glide between chords (see NoteGroup.chained and
+   * chains): on a track whose instrument glides, its gliding voices (each begun once) in place of
+   * the notes they play, what's left of a chord at the chord's loudest (as it was struck); on any
+   * other, the chords as written.
+   */
+  const glided = (groups: NoteGroup[], lateOf: (g: NoteGroup, tick: number) => number): NoteGroup[] => {
+    if (!groups.some((g) => g.chains || g.chained)) return groups;
+    const out: NoteGroup[] = [];
+    const gliding = (trackId: string) => !!instrumentFor(trackId)?.glideVoice && glideTracks.has(trackId);
+    // The voices first (a voice begun here takes its first note: see below)
+    for (const g of groups) {
+      if (!g.chains || !gliding(g.trackId)) continue;
+      const notes: PlayableNote[] = [];
+      const seeds: number[] = [];
+      g.chains.forEach((c, i) => {
+        if (voiced.has(c.keys[0])) return;
+        for (const k of c.keys) voiced.add(k);
+        notes.push(glideNote(c, g.notes[i], lateOf, g.trackId));
+        seeds.push(glideSeed(c, g.trackId));
+      });
+      if (notes.length) out.push({ trackId: g.trackId, notes, seeds, swung: g.swung, ...(g.groove ? { groove: g.groove } : {}), ...(g.rowSwing ? { rowSwing: g.rowSwing } : {}), ...(g.shift ? { shift: g.shift } : {}), voices: true });
+    }
+    for (const g of groups) {
+      if (g.chains) continue;
+      if (!g.chained || !gliding(g.trackId)) {
+        out.push(g);
+        continue;
+      }
+      // (a note a voice is gliding into is the voice's; any other plays as written: where playback began on the voice's last note)
+      const keep = g.notes.map((n) => {
+        const key = g.chained!.get(n);
+        return key === undefined || !voiced.has(key);
+      });
+      if (keep.every(Boolean)) out.push(g);
+      else if (keep.some(Boolean)) {
+        const loud = maxOf(g.notes.map((n) => n.velocity));
+        const only = <T,>(list: readonly T[]) => list.filter((_, i) => keep[i]);
+        out.push({
+          ...g,
+          notes: only(g.notes).map((n) => (n.velocity === loud ? n : { ...n, velocity: loud })),
+          seeds: only(g.seeds),
+          ...(g.turns ? { turns: only(g.turns) } : {}),
+          ...(g.conds ? { conds: only(g.conds) } : {}),
+        });
+      }
+    }
+    return out;
+  };
+
   /** The group with only the notes that play this time round (null: none of them). */
   const gate = (group: NoteGroup, tick: number): NoteGroup | null => {
     const conds = group.conds;
@@ -1072,18 +1265,26 @@ export function createClipSchedule(
    * else played as usual with the instrument bending as a whole.
    */
   const playExpressive = (trackId: string, instrument: TrackInstrument, note: PlayableNote, scheduled: number) => {
-    const spb = 240 / transport.bpm.value;
+    // (A voice gliding between chords is counted at the tempo where it starts, see chordGlide.ts)
+    const spb = note.glide?.spb ?? 240 / transport.bpm.value;
     // Played live after the page was held up, it starts late, as soon as it can: its bend from there,
     // so it starts at the start of its slide (an export plays every note at its time)
     const time = live ? Math.max(scheduled, liveContext.rawContext.currentTime) : scheduled;
     const length = durationToBars(note.duration);
     // Every 4 ms where it moves (no coarser than a 64th), so a slide or a dive glides rather than steps
     // (Worked out as they're given: a long note's thousands of steps at once held the page up)
-    const steps = noteStepper(note.expr!, length, Math.min(1 / 64, NOTE_STEP_SECONDS / spb));
-    const voice = instrument.noteVoice?.(note, time);
+    const steps = noteStepper(note.expr ?? {}, length, Math.min(1 / 64, NOTE_STEP_SECONDS / spb));
+    // (A voice gliding between chords on a voice of its own, always; a note's own bend where the instrument has them)
+    const voice = note.glide ? instrument.glideVoice?.(note, time) : instrument.noteVoice?.(note, time);
+    if (note.glide && !voice) return;
     if (voice) {
       const pressure = note.expr?.pressure;
       const fed: VoiceFeed = { instrument, voice, steps, next: 0, time, spb, end: time + length * spb, to: -Infinity, still: live && !pressure?.some((p) => p.value !== pressure[0].value) };
+      if (note.glide) {
+        // (kept until the song moves on without it; those long over are let go of here)
+        for (const g of glideVoices) if (g.end < time - 60) glideVoices.delete(g);
+        glideVoices.add({ trackId, instrument, voice, fed, keys: note.glide.keys ?? [], clipId: note.glide.clipId, end: fed.end });
+      }
       if (!live) feedVoice(fed, Infinity);
       // (Live, as many as may be given now: many notes begun at once don't each give a couple of seconds' worth)
       else if (!feedVoiceAhead(fed)) {
@@ -1183,7 +1384,8 @@ export function createClipSchedule(
     // A one-note instrument plays the loudest of them, its own bend with it (handed out one by one,
     // the plain notes then each with its own bend, it would play the last, sliding there from the others)
     const notes = all.length > 1 && instrument.oneNote?.() ? [all.reduce((a, b) => (b.velocity > a.velocity ? b : a))] : all;
-    const expressive = notes.filter((n) => isExpressive(n.expr, durationToBars(n.duration)));
+    // (a voice gliding between chords always on a voice of its own: see playExpressive)
+    const expressive = notes.filter((n) => n.glide || isExpressive(n.expr, durationToBars(n.duration)));
     const play = () => {
       if (instrument.bend) {
         const spb = 240 / transport.bpm.value;
@@ -1203,11 +1405,12 @@ export function createClipSchedule(
         }
         soundsTo.set(instrument, to);
       }
-      const plain = notes.filter((n) => !isExpressive(n.expr, durationToBars(n.duration)));
+      const plain = notes.filter((n) => !n.glide && !isExpressive(n.expr, durationToBars(n.duration)));
       if (plain.length) instrument.play(plain, time);
       for (const n of expressive) playExpressive(trackId, instrument, n, time);
     };
-    const bending = expressive.filter((n) => n.expr?.bend?.length).length;
+    // (A voice gliding between chords bends itself alone)
+    const bending = expressive.filter((n) => n.expr?.bend?.length && !n.glide).length;
     // An export's first note with its own bend begun over an earlier one still sounding: from here
     // its instrument's bends go through a bend window (see windowedExport)
     if (!live && bending && instrument.bend && !windowedExport.has(instrument) && soundingOf(instrument, time).some((o) => o.start < time && o.end > time)) windowExport(trackId, instrument, time);
@@ -1241,7 +1444,8 @@ export function createClipSchedule(
       const note = f.pitched ? detuned(n.note, drift.cents, (name) => Tone.Frequency(name).toFrequency()) : n.note;
       return { note: { ...taken(n, i), note, velocity: velocities[i] }, late: drift.late };
     };
-    if (f.together) {
+    // (gliding voices drift each by its own seed, its first note's drift: see glided)
+    if (f.together && !group.voices) {
       const first = drifted(group.notes[0], 0, group.seeds[0]);
       const notes = group.notes.map((n, i) => (i === 0 ? first.note : drifted(n, i, group.seeds[0]).note));
       atSongPlace(time + first.late, place + first.late, () => playNotes(group.trackId, instrument, notes, time + first.late));
@@ -1268,7 +1472,11 @@ export function createClipSchedule(
       // (with their takes: see takesOf)
       const taken = takeTracks.size ? all.map(withTakes) : all;
       // Notes that sit this pass out don't play, wake their track or pump anything
-      const groups = taken.some((g) => g.conds) ? taken.map((g) => gate(g, tick)).filter((g): g is NoteGroup => !!g) : taken;
+      const gated = taken.some((g) => g.conds) ? taken.map((g) => gate(g, tick)).filter((g): g is NoteGroup => !!g) : taken;
+      // (Glide between chords: the gliding voices in place of the notes they play, where the instrument glides)
+      const songSwingNow = swing();
+      const tempoNow = tempoOf();
+      const groups = glided(gated, (g, t) => (straight.has(g.trackId) ? 0 : noteLateness(g, t, songSwingNow, tempoNow, transport.PPQ)));
       // How late swing and a row's shift play a note: by the tempo the map has at its tick, the same
       // live and in every export, in a tempo glide too (see noteLateness)
       const songSwing = swing();
@@ -1324,7 +1532,7 @@ export function createClipSchedule(
         // One ringing on with its bend lets go of it (see backBefore)
         else if (instrument.bend) backBefore(trackId, instrument, tick, time);
         // (The song's own notes, live: not ones played from outside it, see onLiveNote)
-        const played = { trackId, notes, seeds, swung, ...(group.turns ? { turns: group.turns } : {}), ...(group.down !== undefined ? { down: group.down } : {}) };
+        const played = { trackId, notes, seeds, swung, ...(group.turns ? { turns: group.turns } : {}), ...(group.down !== undefined ? { down: group.down } : {}), ...(group.voices ? { voices: true as const } : {}) };
         if (live) songNotes(() => safely(() => playGroup(instrument, played, time, place + late)));
         else safely(() => playGroup(instrument, played, time, place + late));
       }
@@ -1352,6 +1560,8 @@ export function createClipSchedule(
       feel = new Map();
       tails = new Map(tracks.map((t) => [t.id, bendTailSeconds(t)]));
       straight = new Set(tracks.filter(isDropTrack).map((t) => t.id));
+      glideTracks = new Set(tracks.filter(chordGlideSupport).map((t) => t.id));
+      const glidesOn = new Set(clips.filter((c) => c.glide).map((c) => c.id));
       for (const t of tracks) {
         const f = straight.has(t.id) ? undefined : humanFeelOf(t);
         if (f) feel.set(t.id, f);
@@ -1389,6 +1599,12 @@ export function createClipSchedule(
       takeTracks = nextTakes;
       for (const id of takeCache.keys()) if (!takeTracks.has(id)) takeCache.delete(id);
       entries = nextEntries;
+      // Gliding voices whose clip no longer glides (switched off, deleted) or whose track's instrument
+      // no longer does: let go now, their next notes as written
+      if (glideVoices.size && transport.state === 'started') {
+        const now = live ? liveContext.rawContext.currentTime : transport.context.currentTime;
+        endGlides(now, (g) => !glideTracks.has(g.trackId) || !g.clipId || !glidesOn.has(g.clipId));
+      }
       byTick = nextByTick;
       runs = clipRuns(clips);
 

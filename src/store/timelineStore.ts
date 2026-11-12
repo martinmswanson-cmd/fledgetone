@@ -96,7 +96,7 @@ import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { keepVersion, keepVersionWhileEditing } from './versions';
 import { autosaveRemovedBy, autosaveWrittenBy, hasWork, markOpening, newSongId, songFromAnotherTab, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane } from './timelineTypes';
+import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane, ClipGlide } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
 import type { SynthPatch } from './synthPatch';
@@ -160,6 +160,7 @@ import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '.
 import { setSongMeter } from '../audio/transport';
 import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
 import { maxOf, minOf } from '../support/minMax';
+import { normalizeClipGlide } from './chordGlide';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -887,6 +888,11 @@ interface TimelineState {
   /** Add an empty clip (undoable) and return its id. */
   createEmptyClip: (trackId: string, atBar: number, lengthBars: number) => string | null;
   renameClip: (clipId: string, name: string) => void;
+  /**
+   * Glide between chords on a note clip (null: off; see chordGlide.ts). One undo step, unless
+   * `record` is false (a slider dragged: its gesture takes the step, see UndoableRange).
+   */
+  setClipGlide: (clipId: string, glide: ClipGlide | null, record?: boolean) => void;
   /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
   /** Give a clip its own swing, or (null) let it follow the song's (undoable). */
@@ -3776,6 +3782,15 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || (clip.wobble ?? DEFAULT_WOBBLE) === wobble) return s;
         return { clips: s.clips.map((c) => (c === clip ? { ...c, wobble } : c)), ...pushPast(s) };
+      }),
+
+    setClipGlide: (clipId, glide, record = true) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        const next = glide ? normalizeClipGlide(glide) : undefined;
+        if (!clip || clip.audio || JSON.stringify(clip.glide ?? null) === JSON.stringify(next ?? null)) return s;
+        const { glide: _old, ...rest } = clip;
+        return { clips: s.clips.map((c) => (c === clip ? (next ? { ...rest, glide: next } : rest) : c)), ...(record ? pushPast(s) : {}) };
       }),
 
     setClipGroove: (clipId, groove, record = true) =>

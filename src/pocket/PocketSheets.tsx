@@ -32,7 +32,9 @@ import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
 import { FledgeTourButton } from '../components/FledgeTourButton';
 import { playFledge, soundInstrumentName, usePocket } from './pocketStore';
 import { editCell, inOneStep, useSelection, useSongKey } from './pocketCell';
-import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
+import { cellClip, clipsIn, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
+import { chordGlideSupport, GLIDE_ABOUT, GLIDE_MS_DEFAULT, GLIDE_MS_MAX, GLIDE_MS_MIN, glideNotHere } from '../store/chordGlide';
+import { UndoableRange } from '../components/UndoableRange';
 import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './PocketDrawer';
 import { useMySounds } from '../store/mySounds';
 import { goToSection } from './PocketGrid';
@@ -491,6 +493,47 @@ const ShareSheet: React.FC = () => (
   </Sheet>
 );
 
+/**
+ * Glide between chords for the cell's clip (see chordGlide.ts), as the studio's piano roll sets it
+ * (ChordGlidePicker): switched on and off, one undo step (the cell made one clip first, in the
+ * same step), and its time and the bass's, a drag one step.
+ */
+const GlideSheet: React.FC = () => {
+  const { track, sec } = useSelection();
+  const glide = useTimelineStore((s) => (track && sec ? clipsIn(s.clips, track.id, sec.from, sec.to).find((c) => !c.audio)?.glide : undefined));
+  if (!track || !sec) return null;
+  const glides = chordGlideSupport(track);
+  const name = INSTRUMENTS[track.instrumentKey]?.name ?? 'This instrument';
+  const toggle = () =>
+    inOneStep(() => {
+      const id = cellClip(track.id, sec, true);
+      if (id) useTimelineStore.getState().setClipGlide(id, glide ? null : { ms: GLIDE_MS_DEFAULT });
+    });
+  const slide = (field: 'ms' | 'bassMs') => (v: number) => {
+    const id = cellClip(track.id, sec, false);
+    if (id && glide) useTimelineStore.getState().setClipGlide(id, { ...glide, [field]: v }, false);
+  };
+  const row = 'flex items-center gap-3 px-2 py-2 text-sm';
+  return (
+    <Sheet title={`Glide: ${track.name} in ${sec.letter}`} onClose={close}>
+      <p className="text-xs text-forge-muted px-2 mb-2">{GLIDE_ABOUT}</p>
+      {!glides && <p className="text-xs text-amber-200 px-2 mb-2">{glideNotHere(name)}</p>}
+      <SheetItem title={`Glide between chords: ${glide ? 'on' : 'off'}`} detail={glide ? 'Tap to play the chords as written' : 'Tap to let the chords glide into each other'} onClick={toggle} />
+      <label className={`${row}${glide ? '' : ' opacity-45'}`}>
+        <span className="w-12 text-forge-muted">Time</span>
+        <UndoableRange min={GLIDE_MS_MIN} max={GLIDE_MS_MAX} step={5} value={glide?.ms ?? GLIDE_MS_DEFAULT} onValue={slide('ms')} resetValue={GLIDE_MS_DEFAULT} disabled={!glide} className="flex-1 h-8" aria-label="Glide time" />
+        <span className="w-16 text-right tabular-nums">{Math.round(glide?.ms ?? GLIDE_MS_DEFAULT)} ms</span>
+      </label>
+      <label className={`${row}${glide ? '' : ' opacity-45'}`}>
+        <span className="w-12 text-forge-muted">Bass</span>
+        <UndoableRange min={GLIDE_MS_MIN} max={GLIDE_MS_MAX} step={5} value={glide?.bassMs ?? glide?.ms ?? GLIDE_MS_DEFAULT} onValue={slide('bassMs')} resetValue={glide?.ms ?? GLIDE_MS_DEFAULT} disabled={!glide} className="flex-1 h-8" aria-label="Bass glide time" />
+        <span className="w-16 text-right tabular-nums">{Math.round(glide?.bassMs ?? glide?.ms ?? GLIDE_MS_DEFAULT)} ms</span>
+      </label>
+      <p className="text-xs text-forge-muted px-2 mt-1">The lines in the roll show which note glides into which.</p>
+    </Sheet>
+  );
+};
+
 /** The sheet open now, if any. */
 export const PocketSheets: React.FC = () => {
   const sheet = usePocket((p) => p.sheet);
@@ -502,6 +545,7 @@ export const PocketSheets: React.FC = () => {
   if (sheet === 'drummer') return <DrummerSheet />;
   if (sheet === 'fill') return <FillSheet />;
   if (sheet === 'feel') return <FeelSheet />;
+  if (sheet === 'glide') return <GlideSheet />;
   if (sheet === 'versions') return <VersionsSheet />;
   return null;
 };

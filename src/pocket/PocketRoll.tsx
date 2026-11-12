@@ -19,6 +19,8 @@ import type { SongKey } from '../store/songKey';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, rollRulerMarks, scaleRows, toRoll, type RollNote } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
+import { clipsIn } from './pocketSections';
+import { chordGlideSupport, clipGlidePairs } from '../store/chordGlide';
 import type { PocketSection } from './pocketSections';
 import { pocketNoteId, sliceCount, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
@@ -78,6 +80,19 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
       : slices
         ? SLICE_KEY_BASE
         : (rows.find((m) => isRoot(m) && m <= (INSTRUMENTS[track.instrumentKey]?.range[0] ?? 36) + 30) ?? rows[Math.floor(rows.length / 2)]);
+
+  // Glide between chords (see chordGlide.ts): the cell's clips' pairs, from the same function as the
+  // studio's roll and the sound, as lines from each note into the note it glides to
+  const glides = chordGlideSupport(track);
+  const cellGlide = useMemo(() => clipsIn(clips, track.id, sec.from, sec.to).find((c) => !c.audio)?.glide, [clips, track.id, sec.from, sec.to]);
+  const glideLines = useMemo(
+    () =>
+      clipsIn(clips, track.id, sec.from, sec.to)
+        .filter((c) => c.glide && !c.audio)
+        .flatMap((c) => clipGlidePairs(c).map((p) => ({ key: `${p.from.id}>${p.to.id}`, at: c.startBar + p.at - sec.from, from: noteToMidi(p.from.note), to: noteToMidi(p.to.note) })))
+        .filter((l): l is { key: string; at: number; from: number; to: number } => l.at > -EPS && l.at < sec.to - sec.from + EPS && l.from !== null && l.to !== null),
+    [clips, track.id, sec.from, sec.to]
+  );
 
   const commit = (next: RollNote[]) => {
     editCell(track.id, sec, () => fromRoll(next));
@@ -372,6 +387,11 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'feel' })}>
               Feel
             </button>
+            {!slices && (
+              <button type="button" aria-label={`Glide between chords: ${cellGlide ? 'on' : 'off'}`} className={`${chip}${cellGlide ? ' !border-cyan-400 text-cyan-200' : ''}`} onClick={() => usePocket.getState().set({ sheet: 'glide' })}>
+                Glide
+              </button>
+            )}
           </>
         )}
       </div>
@@ -404,6 +424,20 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
                 </div>
               );
             })}
+            {glideLines.length > 0 && (
+              <svg data-glide-lines="" className="absolute inset-0 pointer-events-none" width={steps * RW} height={rows.length * RH} aria-hidden style={{ zIndex: 2 }}>
+                {glideLines.map((l) => {
+                  const a = rowOf(l.from);
+                  const b = rowOf(l.to);
+                  if (a < 0 || b < 0) return null;
+                  const x0 = l.at * STEPS_PER_WHOLE * RW - 6;
+                  const w = 16;
+                  const y0 = a * RH + RH / 2;
+                  const y1 = b * RH + RH / 2;
+                  return <path key={l.key} data-glide={`${midiToNote(l.from)}>${midiToNote(l.to)}`} d={`M${x0},${y0} C${x0 + w / 2},${y0} ${x0 + w / 2},${y1} ${x0 + w},${y1}`} fill="none" stroke={glides ? 'rgb(250,204,21)' : 'rgba(255,255,255,0.4)'} strokeWidth={2.5} strokeDasharray={glides ? undefined : '4 4'} strokeLinecap="round" />;
+                })}
+              </svg>
+            )}
             <i className="pk-rph" />
           </div>
           <PocketSteps track={track} sec={sec} rw={RW} keyW={KEYW} erase={pen === 'erase'} />
