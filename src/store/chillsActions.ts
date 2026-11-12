@@ -12,7 +12,7 @@ import { pastCapsWords } from './songCaps';
 import type { AutomationLane, Clip, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration, formatBarPosition, formatBarRange, normalizeTrackFx, TOTAL_BARS, uid } from './timelineTypes';
 import type { SongKey } from './songKey';
-import { chillsChords, chillsNotes, chillsById, namedForChills, wideChord } from './chills';
+import { chillsChords, chillsNotes, chillsById, namedForChills, playsOnce, wideChord, type ChillsVoicingStyle } from './chills';
 import { chordChanges, chordSpans } from './smartTools';
 import { placeClip } from './smartActions';
 import { BUILD_MOST_RISE_DB, buildPlaces, dipsFirst, openingLane, swellLane, type BuildStart } from './chillsBuild';
@@ -38,16 +38,16 @@ const rangeOf = (track: Track | undefined): readonly [number, number] => INSTRUM
 
 /**
  * A chills progression clip on a pitched track at `atBar`: each chord `chordBars` measures (as the
- * ruler counts them), `repeats` times through (once for a key change). One undo step; the clip's id
- * (null: none made).
+ * ruler counts them), `repeats` times through (once for a key change or an arrival), plain or rich
+ * (`voicing`: not given, the progression's own). One undo step; the clip's id (null: none made).
  */
-export function makeChillsClip(trackId: string, atBar: number, progId: string, key: SongKey, chordBars: number, repeats: number): string | null {
+export function makeChillsClip(trackId: string, atBar: number, progId: string, key: SongKey, chordBars: number, repeats: number, voicing?: ChillsVoicingStyle | null): string | null {
   const prog = chillsById(progId);
   const track = tl().tracks.find((t) => t.id === trackId);
   if (!prog || !track || isDropKind(track.instrumentKey) || isDrumKind(track.instrumentKey)) return null;
-  const count = chillsChords(key, prog).length * (prog.lift ? 1 : Math.max(1, Math.round(repeats)));
+  const count = chillsChords(key, prog).length * (playsOnce(prog) ? 1 : Math.max(1, Math.round(repeats)));
   const { spans, length } = chordSpans(atBar, count, chordBars, songMeterOf(tl()));
-  const notes = chillsNotes(key, prog, spans, newId, { range: rangeOf(track) });
+  const notes = chillsNotes(key, prog, spans, newId, { range: rangeOf(track), voicing });
   return placeClip(trackId, atBar, length, notes, prog.name);
 }
 

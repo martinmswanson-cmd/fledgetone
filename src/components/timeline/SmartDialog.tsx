@@ -16,7 +16,7 @@ import { MATH_PATTERNS, type MathPatternId } from '../../store/mathPatterns';
 import { MELODY_VARIATIONS, type MelodyVariation, type VariationPlace } from '../../store/melodyVariations';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
-import { CHILLS, chillsById, chillsNames, registerOf } from '../../store/chills';
+import { CHILLS, CHILLS_VOICINGS, chillsById, chillsKeyName, chillsNames, playsOnce, registerOf, voicingOf, type ChillsVoicingStyle } from '../../store/chills';
 import { BUILD_DEFAULTS, buildChosen, buildForChills, buildTracks, makeChillsClip, PAD_UNDER_LU, RISER_UNDER_DB, type BuildChoices } from '../../store/chillsActions';
 import { BUILD_DEPTHS } from '../../store/chillsBuild';
 
@@ -419,7 +419,7 @@ const MathForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> 
   );
 };
 
-let lastChills = { progression: CHILLS[0].id as string, chordBars: 1, repeats: 1 };
+let lastChills = { progression: CHILLS[0].id as string, chordBars: 1, repeats: 1, voicing: null as ChillsVoicingStyle | null };
 const rememberChills = (o: typeof lastChills) => {
   lastChills = o;
 };
@@ -434,10 +434,15 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
   const prog = chillsById(opts.progression) ?? CHILLS[0];
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId));
   const set = (patch: Partial<typeof opts>) => setOpts((o) => ({ ...o, ...patch }));
-  const count = (prog.lift ? 1 : opts.repeats) * (mode === 'minor' ? prog.minor : prog.major).length;
+  const once = playsOnce(prog);
+  const count = (once ? 1 : opts.repeats) * (mode === 'minor' ? prog.minor : prog.major).length;
+  // Plain or rich: the progression's own until another is picked (picking another progression goes back to its own)
+  const voicing = voicingOf(prog, opts.voicing);
+  const range = track ? INSTRUMENTS[track.instrumentKey]?.range : undefined;
+  const names = chillsNames(key, prog, voicing, range).join(' – ');
   const make = () => {
     rememberChills({ ...opts, progression: prog.id });
-    if (makeChillsClip(trackId, bar, prog.id, key, opts.chordBars, opts.repeats)) showToast(`${prog.name} in ${key.name}: ${chillsNames(key, prog).join(' – ')}. Undo takes it out.`);
+    if (makeChillsClip(trackId, bar, prog.id, key, opts.chordBars, opts.repeats, voicing)) showToast(`${prog.name} in ${chillsKeyName(key)}: ${names}. Undo takes it out.`);
     onClose();
   };
   return (
@@ -450,7 +455,7 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
         <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Progression">
           {CHILLS.map((p) => (
             <label key={p.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${p.id === prog.id ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
-              <input type="radio" name="chills" className="mt-1 accent-cyan-500" checked={p.id === prog.id} onChange={() => set({ progression: p.id })} />
+              <input type="radio" name="chills" className="mt-1 accent-cyan-500" checked={p.id === prog.id} onChange={() => set({ progression: p.id, voicing: null })} />
               <span className="text-xs text-forge-text">
                 {p.name}
                 <span className="block text-[11px] text-forge-muted">{p.detail}</span>
@@ -458,6 +463,14 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
             </label>
           ))}
         </div>
+        <label className={field}>
+          Chords
+          <select className={control} value={voicing} onChange={(e) => set({ voicing: e.target.value as ChillsVoicingStyle })} aria-label="Plain or rich chords" title={CHILLS_VOICINGS.find((v) => v.id === voicing)?.detail}>
+            {CHILLS_VOICINGS.map((v) => (
+              <option key={v.id} value={v.id} title={v.detail}>{v.name}{v.id === (prog.voicing ?? 'plain') ? ' (as written)' : ''}</option>
+            ))}
+          </select>
+        </label>
         <div className="grid grid-cols-3 gap-3">
           <label className={field}>
             Key {root === detected.root && mode === detected.mode && <span className="text-cyan-300">(the song's)</span>}
@@ -483,7 +496,7 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
           </label>
           <label className={field}>
             Times through
-            <select className={control} value={prog.lift ? 1 : opts.repeats} disabled={!!prog.lift} onChange={(e) => set({ repeats: Number(e.target.value) })} title={prog.lift ? 'Once: played again it would drop back down' : undefined}>
+            <select className={control} value={once ? 1 : opts.repeats} disabled={once} onChange={(e) => set({ repeats: Number(e.target.value) })} title={prog.lift ? 'Once: played again it would drop back down' : once ? 'Once: its last chord is where it arrives' : undefined}>
               {[1, 2].map((n) => (
                 <option key={n} value={n}>{n}×</option>
               ))}
@@ -491,7 +504,7 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
           </label>
         </div>
         <p className="text-xs text-forge-text">
-          {chillsNames(key, prog).join(' – ')} <span className="text-forge-muted">· {count} chords, {count * opts.chordBars} bar{count * opts.chordBars === 1 ? '' : 's'}</span>
+          {names} <span className="text-forge-muted">· {count} chords, {count * opts.chordBars} bar{count * opts.chordBars === 1 ? '' : 's'}</span>
         </p>
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>

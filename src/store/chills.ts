@@ -2,7 +2,7 @@ import type { Clip, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration } from './timelineTypes';
 import { nameOf } from './noteTools';
 import type { SongKey } from './songKey';
-import { NOTE_NAMES } from './songKey';
+import { NOTE_NAMES, MAJOR_STEPS, MINOR_STEPS } from './songKey';
 import { chordName, CHORD_QUALITIES, voiceLead, type ChordQuality } from './smartTools';
 import { addMeasures, measureCount, type MeterMap } from '../audio/tempoMap';
 import { maxOf, minOf } from '../support/minMax';
@@ -30,9 +30,41 @@ export interface ChillsChord {
   bass?: number;
   /** Moved up by this many semitones: the key change */
   up?: number;
+  /** Its rich chord, where the rule (richQuality) wouldn't choose it */
+  rich?: RichQuality;
 }
 
-export type ChillsId = 'mediant' | 'borrowedIv' | 'deceptive' | 'suspended' | 'pedal' | 'liftStep' | 'liftHalf' | 'risingBass' | 'widening';
+/**
+ * How the chords are voiced: 'plain' (the chords as written: triads, and the 7ths a progression
+ * names) or 'rich' (with their 7ths and 9ths, a 13th or an altered 9th on a dominant, 4 or 5 notes
+ * above the bass, each moving as little as it can from the chord before).
+ */
+export type ChillsVoicingStyle = 'plain' | 'rich';
+export const CHILLS_VOICINGS: ReadonlyArray<{ id: ChillsVoicingStyle; name: string; detail: string }> = [
+  { id: 'plain', name: 'Plain chords', detail: 'The chords as written: three notes each (four for a 7th), over the low note.' },
+  { id: 'rich', name: 'Rich chords', detail: 'With their 7ths and 9ths (a 13th, or a 9th bent sharp or flat, on the chords that pull home), four or five notes over the low note, each moving a step or two from the chord before.' },
+];
+
+/** A rich chord: its notes over the root (an added tone, the 9th, 11th or 13th, is 12 or more) and its name after the root. */
+const RICH = {
+  maj9: { ivs: [0, 4, 7, 11, 14], name: 'maj9' },
+  add9: { ivs: [0, 4, 7, 14], name: 'add9' },
+  maj7: { ivs: [0, 4, 7, 11], name: 'maj7' },
+  six: { ivs: [0, 4, 7, 9], name: '6' },
+  dom9: { ivs: [0, 4, 7, 10, 14], name: '9' },
+  dom13: { ivs: [0, 4, 10, 14, 21], name: '13' },
+  dom7: { ivs: [0, 4, 7, 10], name: '7' },
+  dom7b9: { ivs: [0, 4, 7, 10, 13], name: '7♭9' },
+  dom7s9: { ivs: [0, 4, 10, 15], name: '7♯9' },
+  min9: { ivs: [0, 3, 7, 10, 14], name: 'm9' },
+  min11: { ivs: [0, 3, 7, 10, 14, 17], name: 'm11' },
+  min7: { ivs: [0, 3, 7, 10], name: 'm7' },
+  minAdd9: { ivs: [0, 3, 7, 14], name: 'm(add9)' },
+  halfDim7: { ivs: [0, 3, 6, 10], name: 'm7♭5' },
+} as const;
+export type RichQuality = keyof typeof RICH;
+
+export type ChillsId = 'mediant' | 'borrowedIv' | 'deceptive' | 'suspended' | 'pedal' | 'liftStep' | 'liftHalf' | 'risingBass' | 'widening' | 'soulTurn' | 'minorHome';
 
 export interface ChillsProgression {
   id: ChillsId;
@@ -50,7 +82,17 @@ export interface ChillsProgression {
   lift?: number;
   /** The bass climbs from the home note an octave below the usual bass, so the chords above climb with it */
   climb?: boolean;
+  /** Played once over its span (its last chord is the arrival: played again, it would arrive mid-way) */
+  once?: boolean;
+  /** How it's voiced unless another is picked (plain when not said) */
+  voicing?: ChillsVoicingStyle;
 }
+
+/** Whether a progression plays once over its span, however long (a key change, or an arrival at its end). */
+export const playsOnce = (prog: ChillsProgression): boolean => !!prog.lift || !!prog.once;
+
+/** The voicing a progression is written in: the one picked, else its own (plain unless it says). */
+export const voicingOf = (prog: ChillsProgression, picked?: ChillsVoicingStyle | null): ChillsVoicingStyle => picked ?? prog.voicing ?? 'plain';
 
 const C = (semis: number, quality: ChordQuality, more: Partial<ChillsChord> = {}): ChillsChord => ({ semis, quality, ...more });
 const up = (chords: readonly ChillsChord[], semis: number): ChillsChord[] => chords.map((c) => ({ ...c, up: semis }));
@@ -128,6 +170,33 @@ export const CHILLS: readonly ChillsProgression[] = [
     minor: [C(0, 'min'), C(8, 'maj'), C(3, 'maj'), C(10, 'maj')],
     widen: true,
   },
+  {
+    id: 'soulTurn',
+    name: 'A soul turnaround with a turn away',
+    detail: 'Rich 9th and 13th chords go round ii, V and home, every voice moving a step or so. Halfway they turn away to a major chord borrowed from the minor key and the minor iv, then a tense chord whose sharp note slips down a half step pulls them back to the ii, the V and home. In a minor key, the same in minor.',
+    major: [
+      C(0, 'maj'), C(9, 'min'), C(2, 'min'), C(7, 'dom7', { rich: 'dom13' }),
+      C(4, 'min', { rich: 'min7' }), C(9, 'min'), C(2, 'min'), C(7, 'dom7', { rich: 'dom13' }),
+      C(8, 'maj', { rich: 'maj9' }), C(5, 'min', { rich: 'min9' }), C(4, 'min', { rich: 'min7' }), C(9, 'maj', { rich: 'dom7s9' }),
+      C(9, 'dom7', { rich: 'dom7b9' }), C(2, 'min'), C(7, 'dom7', { rich: 'dom7b9' }), C(0, 'maj'),
+    ],
+    minor: [
+      C(0, 'min'), C(5, 'min'), C(2, 'halfDim7'), C(7, 'dom7', { rich: 'dom7b9' }),
+      C(3, 'maj'), C(0, 'min'), C(2, 'halfDim7'), C(7, 'dom7', { rich: 'dom7b9' }),
+      C(8, 'maj'), C(5, 'min'), C(3, 'maj'), C(9, 'maj', { rich: 'dom7s9' }),
+      C(9, 'dom7', { rich: 'dom7b9' }), C(2, 'halfDim7'), C(7, 'dom7', { rich: 'dom7b9' }), C(0, 'min'),
+    ],
+    voicing: 'rich',
+  },
+  {
+    id: 'minorHome',
+    name: 'Two minor chords, then a major home',
+    detail: 'Two rich minor chords rock back and forth, the minor iv and home, four times, and the last time home turns major: that bright last chord is the chill. In a major key it borrows the minor iv and a minor home, and ends on the song’s own major home.',
+    major: [...Array.from({ length: 3 }, () => [C(5, 'min', { rich: 'min9' }), C(0, 'min', { rich: 'min11' })]).flat(), C(5, 'min', { rich: 'min9' }), C(0, 'maj', { rich: 'six' })],
+    minor: [...Array.from({ length: 3 }, () => [C(5, 'min', { rich: 'min9' }), C(0, 'min', { rich: 'min11' })]).flat(), C(5, 'min', { rich: 'min9' }), C(0, 'maj', { rich: 'six' })],
+    once: true,
+    voicing: 'rich',
+  },
 ];
 
 export const chillsById = (id: string): ChillsProgression | undefined => CHILLS.find((p) => p.id === id);
@@ -144,14 +213,124 @@ export function chillsPcs(key: Pick<SongKey, 'root'>, c: ChillsChord): number[] 
 /** The bass note's pitch class for a chord: its root, or its own bass note. */
 const bassPc = (key: Pick<SongKey, 'root'>, c: ChillsChord) => pc(key.root + (c.bass ?? c.semis) + (c.up ?? 0));
 
-/** The chords' names in the key: "C – F/C – Am/C", a suspended one "Gsus4 G". */
-export function chillsNames(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression): string[] {
-  return chillsChords(key, prog).map((c) => {
+const has = (scale: readonly number[], semis: number) => scale.includes(pc(semis));
+/** The key's harmonic minor: its natural minor with the raised 7th. */
+const HARMONIC_MINOR = [0, 2, 3, 5, 7, 8, 11] as const;
+
+/**
+ * A chord's rich chord: its own (`rich`), else by the rule, from the notes of the key (and of the
+ * borrowed one: the minor for a major key, the harmonic minor for a minor one) the 7th and 9th fit:
+ * a major chord maj9 where its major 7th belongs (I, IV, ♭VI, and home turned major), 9 where the
+ * flat 7th does (V, ♭VII), a minor key's major V 7♭9, else add9; a minor chord m9 (ii, vi, iv, i), m7 where the 9th is outside (iii, v); a dominant 7th
+ * 13 in a major key, 7♭9 in a minor one, the way it leans toward a minor chord. A suspended chord
+ * with a major 7th keeps only the 9th (a major 7th against the held 4th grates).
+ */
+export function richQuality(key: Pick<SongKey, 'mode'>, c: ChillsChord): RichQuality {
+  if (c.rich) return c.rich;
+  const own = key.mode === 'minor' ? MINOR_STEPS : MAJOR_STEPS;
+  const borrowed = key.mode === 'minor' ? HARMONIC_MINOR : MINOR_STEPS;
+  const fits = (...ivs: number[]) => [own, borrowed].find((sc) => ivs.every((i) => has(sc, c.semis + i)));
+  switch (c.quality) {
+    case 'maj': {
+      // Home turned major (in a minor key, the bright ending): maj9, the brightest
+      if (pc(c.semis) === 0) return c.sus ? 'add9' : 'maj9';
+      for (const sc of [own, borrowed]) {
+        if (has(sc, c.semis + 11) && has(sc, c.semis + 2)) return c.sus ? 'add9' : 'maj9';
+        if (has(sc, c.semis + 10) && has(sc, c.semis + 2)) return 'dom9';
+      }
+      // The major V of a minor key leans home as a 7♭9
+      return key.mode === 'minor' && pc(c.semis) === 7 && !c.sus ? 'dom7b9' : 'add9';
+    }
+    case 'min':
+      return fits(10, 2) ? 'min9' : fits(10) ? 'min7' : 'minAdd9';
+    case 'dom7':
+      return key.mode === 'minor' ? 'dom7b9' : 'dom13';
+    case 'halfDim7':
+    case 'dim':
+      return 'halfDim7';
+    case 'maj7':
+      return 'maj9';
+    case 'min7':
+      return 'min9';
+    default:
+      return c.quality === 'dom9' ? 'dom9' : 'min9';
+  }
+}
+
+/** A rich chord's notes over its root, in semitones (the added tones 12 or more). */
+export const richIntervals = (q: RichQuality): readonly number[] => RICH[q].ivs;
+
+/** A chord's pitch classes as voiced (`voicing`): plain, its chord as written; rich, its rich chord. Root first. */
+export function chillsChordPcs(key: Pick<SongKey, 'root' | 'mode'>, c: ChillsChord, voicing: ChillsVoicingStyle = 'plain'): number[] {
+  if (voicing === 'plain') return chillsPcs(key, c);
+  const root = pc(key.root + c.semis + (c.up ?? 0));
+  return RICH[richQuality(key, c)].ivs.map((i) => pc(root + i));
+}
+
+// ---------- Spelling: flats in flat keys, sharps in sharp ones ----------
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+const LETTER_PC = [0, 2, 4, 5, 7, 9, 11] as const;
+/** Each home note as keys on it are written (D♭ major, C♯ minor, F♯ both ways). */
+const MAJOR_HOME = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
+const MINOR_HOME = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'] as const;
+/** The scale step a note `semis` over home is written on (♭II, ii, ♭III, III, IV, ♯IV, V, ♭VI, VI, ♭VII, VII). */
+const STEP_OF = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6] as const;
+const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
+const SHARP_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'] as const;
+
+/** The home note's name as a key on `root` in `mode` is written. */
+export const homeName = (root: number, mode: 'major' | 'minor'): string => (mode === 'minor' ? MINOR_HOME : MAJOR_HOME)[pc(root)];
+
+/** A key's name as it's written: "B♭ major", "C♯ minor". */
+export const chillsKeyName = (key: Pick<SongKey, 'root' | 'mode'>): string => `${homeName(key.root, key.mode)} ${key.mode}`;
+
+/**
+ * The name of the note `semis` over the home note of a key on `root` in `mode`, spelled by the
+ * scale step it stands on: in F major ♭VI is D♭ and IV is B♭; in A minor ♭III is C. (Where a step
+ * would need a double flat or sharp, the plain flat or sharp of the key's kind.)
+ */
+export function spellNote(root: number, mode: 'major' | 'minor', semis: number): string {
+  const home = homeName(root, mode);
+  const letter = (LETTERS.indexOf(home[0] as (typeof LETTERS)[number]) + STEP_OF[pc(semis)]) % 7;
+  const target = pc(root + semis);
+  const acc = ((target - LETTER_PC[letter] + 18) % 12) - 6;
+  if (acc === 0) return LETTERS[letter];
+  if (acc === -1) return `${LETTERS[letter]}♭`;
+  if (acc === 1) return `${LETTERS[letter]}♯`;
+  return (home.includes('♯') ? SHARP_NAMES : FLAT_NAMES)[target];
+}
+
+/** A chord's name after its root, as chordName (smartTools) writes it, with ♭ and ♯ for b and #. */
+const plainSuffix = (pcs: readonly number[]) => chordName(pcs).slice(NOTE_NAMES[pcs[0]].length).replace(/b(?=\d)/g, '♭').replace(/#(?=\d)/g, '♯');
+
+/** A rich chord's name after its root, held on its 4th: "9sus4", "sus4(add9)". */
+function susSuffix(q: RichQuality): string {
+  const ivs = RICH[q].ivs as readonly number[];
+  if (ivs.includes(10)) return ivs.includes(21) ? '13sus4' : ivs.includes(14) ? '9sus4' : '7sus4';
+  return ivs.includes(14) ? 'sus4(add9)' : 'sus4';
+}
+
+/**
+ * The chords' names in the key, as voiced: "C – F/C – Am/C" plain, "Gm9 – C13 – Fmaj9" rich, a
+ * suspended one "Gsus4 G" ("G9sus4 G9"). Each root spelled by its step in the key (D♭ in F, not C♯).
+ */
+export function chillsNames(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, voicing?: ChillsVoicingStyle | null, range?: readonly [number, number]): string[] {
+  const style = voicingOf(prog, voicing);
+  // (on an instrument without room for a rich chord, the chord it plays: the plain one)
+  const voiced = style === 'rich' && range ? chillsVoicings(key, prog, { range, voicing: style }) : null;
+  return chillsChords(key, prog).map((c, i) => {
+    const up = c.up ?? 0;
+    const root = pc(key.root + up);
+    const name = (semis: number) => spellNote(root, key.mode, semis);
+    const rich = style === 'rich' && !voiced?.[i]?.plain ? richQuality(key, c) : null;
     const pcs = chillsPcs(key, c);
-    const name = chordName(pcs);
+    const chord = `${name(c.semis)}${rich ? RICH[rich].name : plainSuffix(pcs)}`;
     const b = prog.pedal ? pc(key.root) : bassPc(key, c);
-    const slash = b !== pcs[0] ? `${name}/${NOTE_NAMES[b]}` : name;
-    return c.sus ? `${chordName([pcs[0], pc(pcs[0] + 5), pc(pcs[0] + 7)])} ${slash}` : slash;
+    const slash = b !== pcs[0] ? `${chord}/${prog.pedal ? spellNote(key.root, key.mode, 0) : name(c.bass ?? c.semis)}` : chord;
+    if (!c.sus) return slash;
+    const held = rich ? susSuffix(rich) : plainSuffix([pcs[0], pc(pcs[0] + 5), pc(pcs[0] + 7)]);
+    return `${name(c.semis)}${held} ${slash}`;
   });
 }
 
@@ -202,11 +381,171 @@ export function registerOf(range: readonly [number, number] = [0, 127]): { kind:
 export interface ChillsVoicing {
   bass: number[];
   upper: number[];
+  /** Asked for rich, but the instrument had no room for it: the plain chord (and named so) */
+  plain?: boolean;
 }
 
 export interface ChillsVoiceOptions {
   /** The lowest and highest notes the instrument plays */
   range?: readonly [number, number];
+  /** Plain or rich chords (not given: the progression's own, voicingOf) */
+  voicing?: ChillsVoicingStyle | null;
+}
+
+/** The highest a rich chord's top note goes (MIDI, A5): above it a pad's 9ths and 13ths turn shrill. */
+export const RICH_TOP = 81;
+/** How far past RICH_TOP the chords over a climbing bass may go (to D6), as they climb with it. */
+export const RICH_CLIMB_ROOM = 5;
+/** How far past RICH_TOP a chord may go (to E6) where the instrument's bass sits so high there's no room under A5. */
+export const RICH_HIGH_ROOM = 7;
+/** Whole steps between neighbouring notes of a rich chord only from here up (MIDI, A3): lower, they blur. */
+export const RICH_STEP_FLOOR = 57;
+/** The most a voice of a rich chord moves to the next chord, where it can (semitones: a 4th). */
+export const RICH_MOST_MOVE = 5;
+
+interface RichPlace {
+  floor: number;
+  top: number;
+  center: number;
+  /** Whether a low note plays the root under the chord (then the chord may leave its own root out) */
+  bassUnder: boolean;
+  /** The most from the chord's lowest note to its top (the close first chord of chords that open out) */
+  maxSpan?: number;
+  /** Chords that open out: gaps up to an octave between neighbours */
+  open?: boolean;
+}
+
+/** The total movement from `prev` to `notes`: each note to the nearest of the other chord's, both ways (a common tone moves 0). */
+export function richMove(prev: readonly number[], notes: readonly number[]): { total: number; most: number } {
+  let total = 0;
+  let most = 0;
+  for (const [a, b] of [[notes, prev], [prev, notes]] as const)
+    for (const n of a) {
+      const d = minOf(b.map((p) => Math.abs(p - n)));
+      total += d;
+      most = Math.max(most, d);
+    }
+  return { total, most };
+}
+
+/** What moving from one rich chord to the next costs: the total movement, and much more for any voice past a 4th. */
+const richStep = (prev: readonly number[], notes: readonly number[]) => {
+  const move = richMove(prev, notes);
+  return move.total + (move.most > RICH_MOST_MOVE ? 12 * (move.most - RICH_MOST_MOVE) : 0);
+};
+
+interface RichCandidate {
+  notes: number[];
+  /** Its own cost: how far from the middle, how high, a note left out, a wide gap */
+  cost: number;
+}
+
+/**
+ * Every way to place a rich chord's notes (`ivs` over the pitch class `root`) between `floor` and
+ * `top`: no two a half step apart (nor a minor 9th, but a ♭9 over its root), whole steps only from
+ * A3 up, a 9th, 11th or 13th never the lowest, no gap wider than a 6th between neighbours (an
+ * octave for chords that open out), four or five notes: where all of them won't go, the 5th, or
+ * the root the bass plays, is left out. Each with its own cost: near `center`, a gap over a 5th,
+ * a note left out and a top above G5 cost more.
+ */
+function richCandidates(root: number, ivs: readonly number[], place: RichPlace): RichCandidate[] {
+  const { floor, top } = place;
+  const sets: number[][] = [];
+  const without = (...drop: number[]) => ivs.filter((i) => !drop.includes(i));
+  if (ivs.length <= 5) sets.push([...ivs]);
+  if (place.bassUnder && ivs.length >= 6) sets.push(without(0));
+  if (ivs.length >= 5 && ivs.includes(7)) sets.push(without(7));
+  if (place.bassUnder && ivs.length === 5) sets.push(without(0));
+  if (place.bassUnder && ivs.length >= 6) sets.push(without(0, 7));
+  const widest = place.open ? 12 : 9;
+  const out: RichCandidate[] = [];
+  sets.forEach((set, k) => {
+    if (set.length > 5 || set.length < 4) return;
+    const ivOf = new Map(set.map((iv) => [pc(root + iv), iv] as const));
+    const options = set.map((iv) => {
+      const at: number[] = [];
+      for (let m = floor + pc(root + iv - floor); m <= top; m += 12) at.push(m);
+      return at;
+    });
+    const pick: number[] = [];
+    const walk = (d: number) => {
+      if (d < set.length) {
+        for (const m of options[d]) {
+          pick.push(m);
+          walk(d + 1);
+          pick.pop();
+        }
+        return;
+      }
+      const notes = [...pick].sort((x, y) => x - y);
+      const span = notes[notes.length - 1] - notes[0];
+      if (place.maxSpan !== undefined && span > place.maxSpan) return;
+      if ((ivOf.get(pc(notes[0])) ?? 0) >= 12) return;
+      let gapCost = 0;
+      for (let i = 0; i < notes.length; i++)
+        for (let j = i + 1; j < notes.length; j++) {
+          const gap = notes[j] - notes[i];
+          if (gap === 1) return;
+          if (gap === 13 && !(ivOf.get(pc(notes[i])) === 0 && ivOf.get(pc(notes[j])) === 13)) return;
+          if (j === i + 1) {
+            if (gap <= 2 && notes[i] < RICH_STEP_FLOOR) return;
+            if (gap > widest) return;
+            if (gap > 7 && !place.open) gapCost += 2;
+          }
+        }
+      const mean = notes.reduce((x, y) => x + y, 0) / notes.length;
+      out.push({ notes, cost: 0.4 * Math.abs(mean - place.center) + Math.max(0, notes[notes.length - 1] - (RICH_TOP - 2)) + gapCost + 2 * k });
+    };
+    walk(0);
+  });
+  return out;
+}
+
+/**
+ * The rich chords of a run of chords, each from its candidates, together moving least: the
+ * total movement from one to the next (from `start`, the chord before the run, if any), plus each
+ * one's own cost, the smallest over the whole run (so a chord leaves room for the one after it).
+ * `wider`: each must spread wider than the one before (chords that open out), given each chord's
+ * low notes. Ties go to the first found: always the same answer.
+ */
+function richRun(run: ReadonlyArray<{ cands: RichCandidate[]; bass: readonly number[] }>, start: readonly number[] | null, wider: boolean): number[][] {
+  if (!run.length) return [];
+  const total = (k: number, notes: readonly number[]) => notes[notes.length - 1] - Math.min(notes[0], ...run[k].bass);
+  let cost = run[0].cands.map((c) => c.cost + (start ? richStep(start, c.notes) : 0));
+  const back: number[][] = [];
+  for (let k = 1; k < run.length; k++) {
+    const next: number[] = [];
+    const from: number[] = [];
+    for (const c of run[k].cands) {
+      let best = Infinity;
+      let at = -1;
+      run[k - 1].cands.forEach((p, a) => {
+        if (!Number.isFinite(cost[a])) return;
+        if (wider && total(k, c.notes) <= total(k - 1, p.notes)) return;
+        const v = cost[a] + richStep(p.notes, c.notes);
+        if (v < best - EPS) {
+          best = v;
+          at = a;
+        }
+      });
+      next.push(best + c.cost);
+      from.push(at);
+    }
+    back.push(from);
+    cost = next;
+  }
+  let end = -1;
+  cost.forEach((v, a) => {
+    if (Number.isFinite(v) && (end < 0 || v < cost[end] - EPS)) end = a;
+  });
+  // (nothing spreads wider each time: as wide as they come, in order)
+  if (end < 0) return wider ? richRun(run, start, false) : [];
+  const picks: number[][] = [];
+  for (let k = run.length - 1; k >= 0; k--) {
+    picks.unshift(run[k].cands[end].notes);
+    if (k > 0) end = back[k - 1][end];
+  }
+  return picks;
 }
 
 /** The voicings of a progression's chords (one per chord, in order). */
@@ -224,11 +563,70 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
   const home = prog.climb ? climbLo + pc(key.root - climbLo) : bassLo + pc(key.root - bassLo);
   // (a climb needs its octave and a chord over its top: where the instrument hasn't the room, chords alone)
   const hasBass = reg.kind === 'full' && (!prog.climb || home + 12 + 7 + 7 <= hi);
+  const rich = voicingOf(prog, opts.voicing) === 'rich';
+  // The same chord before the key change: a chord after it is that one moved up, the music lifting as a whole
+  const copyOf = (c: ChillsChord, i: number) => (c.up ? chords.findIndex((d, k) => k < i && !d.up && d.semis === c.semis && d.quality === c.quality && !!d.sus === !!c.sus && d.bass === c.bass && d.rich === c.rich) : -1);
+  // Under each chord: the bass (the home note under a pedal is held separately), the chord's own bass note, or its root; and how low the chord above may go
+  const lowPart = (c: ChillsChord, i: number) => {
+    const pcs = chillsPcs(key, c);
+    const level = prog.widen ? Math.round((3 * i) / Math.max(1, chords.length - 1)) : 1;
+    const bass: number[] = [];
+    if (hasBass && !prog.pedal && level >= 1) {
+      const b = c.bass !== undefined ? home + c.bass : bassLo + pc(bassPc(key, c) - bassLo);
+      bass.push(b);
+      // Wide open: the 5th over the bass too
+      if (level >= 3 && pcs.includes(pc(b + 7))) bass.push(b + 7);
+    }
+    const lowest = prog.pedal && hasBass ? home : (bass[0] ?? -Infinity);
+    // The chord above: at least a 5th over everything under it (a 4th over a doubled 5th), and out of the low register
+    const floor = Math.max(lo, LOW_REGISTER, lowest + 7, bass.length > 1 ? bass[1] + (bass[1] < LOW_REGISTER ? 7 : 5) : -Infinity);
+    return { pcs, level, bass, floor };
+  };
+  // Rich: every chord's 4 or 5 notes chosen together, a run at a time, to move least (richRun)
+  const plan: Array<number[] | null> = chords.map(() => null);
+  if (rich) {
+    let run: Array<{ i: number; cands: RichCandidate[]; bass: number[] }> = [];
+    let start: number[] | null = null;
+    const flush = () => {
+      richRun(run, start, !!prog.widen).forEach((notes, k) => (plan[run[k].i] = notes));
+      run = [];
+    };
+    chords.forEach((c, i) => {
+      const j = copyOf(c, i);
+      if (j >= 0) {
+        flush();
+        start = plan[j] ? plan[j]!.map((m) => m + c.up!) : null;
+        return;
+      }
+      const { pcs, level, bass, floor } = lowPart(c, i);
+      const place: RichPlace = {
+        floor,
+        // (chords that open out keep opening as in plain; over a climbing bass the chords climb a few notes past A5)
+        // (a chord already up a key, and the first after the lifted ones, as high as those reach)
+        top: Math.max((prog.widen ? hi : Math.min(hi, RICH_TOP + (prog.climb ? RICH_CLIMB_ROOM : 0))) - (c.up ? 0 : lift), !run.length && start ? Math.min(hi - (c.up ? 0 : lift), maxOf(start)) : -Infinity),
+        center: Math.max(65, floor + 8),
+        bassUnder: bass.length > 0 && pc(bass[0]) === pcs[0],
+        ...(prog.widen ? { open: true, ...(level === 0 ? { maxSpan: 12 } : {}) } : {}),
+      };
+      const root = pc(key.root + c.semis + (c.up ?? 0));
+      const ivs = RICH[richQuality(key, c)].ivs;
+      // (where the bass sits high, an instrument starting at C3, the top may go up to E6 to make room)
+      let cands = richCandidates(root, ivs, place);
+      if (!cands.length && place.top < hi - lift) cands = richCandidates(root, ivs, { ...place, top: Math.min(hi, RICH_TOP + RICH_HIGH_ROOM) - (c.up ? 0 : lift) });
+      if (!cands.length) {
+        flush();
+        start = null;
+        return;
+      }
+      run.push({ i, cands, bass });
+    });
+    flush();
+  }
   const out: ChillsVoicing[] = [];
   let prev: number[] | null = null;
   chords.forEach((c, i) => {
     // The same chord before the key change, moved up: the music lifts as a whole
-    const j = c.up ? chords.findIndex((d, k) => k < i && !d.up && d.semis === c.semis && d.quality === c.quality && !!d.sus === !!c.sus && d.bass === c.bass) : -1;
+    const j = copyOf(c, i);
     if (j >= 0 && out[j]) {
       const was = out[j];
       const moved = { bass: was.bass.map((m) => m + c.up!), upper: was.upper.map((m) => m + c.up!) };
@@ -236,19 +634,17 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
       prev = moved.upper;
       return;
     }
-    const pcs = chillsPcs(key, c);
-    const level = prog.widen ? Math.round((3 * i) / Math.max(1, chords.length - 1)) : 1;
-    // The bass: the home note (pedal: held separately), the chord's own bass note, or its root
-    let bass: number[] = [];
-    if (hasBass && !prog.pedal && level >= 1) {
-      const b = c.bass !== undefined ? home + c.bass : bassLo + pc(bassPc(key, c) - bassLo);
-      bass = [b];
-      // Wide open: the 5th over the bass too
-      if (level >= 3 && pcs.includes(pc(b + 7))) bass.push(b + 7);
+    const low = lowPart(c, i);
+    const { pcs, level, floor } = low;
+    let bass = low.bass;
+    const planned = plan[i];
+    if (planned) {
+      prev = planned;
+      out.push({ bass: bass.filter((m) => m >= lo && m <= hi - (c.up ? 0 : lift)), upper: planned });
+      return;
     }
-    const lowest = prog.pedal && hasBass ? home : (bass[0] ?? -Infinity);
-    // The chord above: at least a 5th over everything under it (a 4th over a doubled 5th), and out of the low register
-    const floor = Math.max(lo, LOW_REGISTER, lowest + 7, bass.length > 1 ? bass[1] + (bass[1] < LOW_REGISTER ? 7 : 5) : -Infinity);
+    // (rich chords that didn't fit are played, and named, plain)
+    const fellBack = rich ? { plain: true as const } : {};
     let upper = voiceLead(pcs, prev, Math.max(center, floor + 4));
     while (minOf(upper) < floor) upper = upper.map((m) => m + 12);
     while (maxOf(upper) > hi - lift && minOf(upper) - 12 >= floor) upper = upper.map((m) => m - 12);
@@ -283,7 +679,7 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
       if (bass.length && minOf(upper) - maxOf(bass) < 7) bass = [];
       prev = upper;
     }
-    out.push({ bass, upper });
+    out.push({ bass, upper, ...fellBack });
   });
   return out;
 }
@@ -311,6 +707,10 @@ function rootsOnly(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression,
   });
 }
 
+/** A rich chord's own notes (root, 3rd, 5th, 7th) play at this much of the velocity; its added 9th, 11th or 13th at this (measured on pads: within 1.5 dB of the plain chord). */
+export const RICH_TONE_VELOCITY = 0.9;
+export const RICH_ADDED_VELOCITY = 0.75;
+
 export interface ChillsNoteOptions extends ChillsVoiceOptions {
   velocity?: number;
 }
@@ -329,6 +729,7 @@ export function chillsNotes(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
   const out: NoteEvent[] = [];
   const add = (m: number, at: number, len: number, vel: number) =>
     out.push({ id: newId(), note: nameOf(m), startOffset: round(at), duration: barsToDuration(Math.max(1 / 64, len)), velocity: Math.round(Math.max(0.1, Math.min(1, vel)) * 100) / 100 });
+  const rich = voicingOf(prog, opts.voicing) === 'rich';
   spans.forEach((span, k) => {
     const c = chords[k % chords.length];
     const v = voiced[k % chords.length];
@@ -337,13 +738,17 @@ export function chillsNotes(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
     for (const m of v.bass) add(m, span.start, span.length, vel * 0.9);
     const resolveAt = round(span.start + span.length * 0.75);
     const third = chillsPcs(key, c)[1];
+    // Rich: the chord's own notes a little softer, its added 9th, 11th or 13th softer still, so it's no louder than the plain chord
+    const root = chillsPcs(key, c)[0];
+    const added = rich && !v.plain ? new Set(RICH[richQuality(key, c)].ivs.filter((iv) => iv >= 12).map((iv) => pc(root + iv))) : null;
     for (const m of v.upper) {
-      const sus = m + (5 - pc(third - chillsPcs(key, c)[0]));
+      const sus = m + (5 - pc(third - root));
+      const at = added ? vel * (added.has(pc(m)) ? RICH_ADDED_VELOCITY : RICH_TONE_VELOCITY) : vel;
       // (a suspension the instrument can't reach is played as the chord)
       if (c.sus && pc(m) === third && span.length >= 1 / 8 && resolveAt > span.start + EPS && sus <= (opts.range ?? [0, 127])[1]) {
-        add(sus, span.start, resolveAt - span.start, vel);
-        add(m, resolveAt, span.start + span.length - resolveAt, vel);
-      } else add(m, span.start, span.length, vel);
+        add(sus, span.start, resolveAt - span.start, at);
+        add(m, resolveAt, span.start + span.length - resolveAt, at);
+      } else add(m, span.start, span.length, at);
     }
   });
   if (prog.pedal) {
@@ -366,7 +771,7 @@ export function chillsNotes(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
 
 /** The progression filling [from, to) of the song (a clip or a section), as notes from `from`. */
 export function chillsFill(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, from: number, to: number, map: MeterMap, newId: () => string, opts: ChillsNoteOptions = {}): NoteEvent[] {
-  const spans = chillsSpans(from, to, chillsChords(key, prog).length, map, !!prog.lift);
+  const spans = chillsSpans(from, to, chillsChords(key, prog).length, map, playsOnce(prog));
   return chillsNotes(key, prog, spans, newId, opts);
 }
 
