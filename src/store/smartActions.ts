@@ -8,7 +8,7 @@ import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, chordSpans, clipChordSpans, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
+import { accompany, ACCOMP_STYLES, bassFromChords, chordNameIn, chordNotesFor, chordSpans, clipChordSpans, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
 import { addMeasures, isPlainMeter, measureAt, measureCount, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
@@ -88,14 +88,14 @@ function trackWithClip(afterId: string, instrument: InstrumentKey, name: string,
 }
 
 /** A chord progression clip on a track. */
-export function makeChordClip(trackId: string, atBar: number, chords: number[][], chordBars: number, style: ChordStyle): string | null {
+export function makeChordClip(trackId: string, atBar: number, chords: number[][], chordBars: number, style: ChordStyle, key?: SongKey): string | null {
   if (onDropPad(trackId)) return null;
   // A chord lasts chordBars measures as the ruler counts them (three beats a bar in 3/4)
   const map = songMeterOf(tl());
   const { spans, length } = chordSpans(atBar, chords.length, chordBars, map);
   const notes = chordNotesFor(chords, chordBars, style, newId, spans, { map, atBar });
-  // Named after one pass of the progression
-  const names = chords.map(chordName);
+  // Named after one pass of the progression (spelled as the key writes them)
+  const names = chords.map((c) => chordNameIn(key, c));
   const period = names.findIndex((_, p) => p > 0 && names.length % p === 0 && names.every((n, i) => n === names[i % p]));
   return placeClip(trackId, atBar, length, notes, names.slice(0, period > 0 ? period : names.length).join(' '));
 }
@@ -190,9 +190,10 @@ export function chordsForMelody(clipId: string, instrument: InstrumentKey = 'key
   // (In a song not in 4/4 a "bar" is a measure as the ruler counts it: three beats in 3/4)
   const chordBars = (plain ? clip.lengthBars : measureCount(clip.startBar, clip.startBar + clip.lengthBars, map)) <= 2 ? 0.5 : 1;
   const spans = plain ? undefined : clipChordSpans(clip.startBar, clip.lengthBars, chordBars, map);
-  const { chords } = harmonize(melody, songKey(), clip.lengthBars, chordBars, spans);
+  const key = songKey();
+  const { chords } = harmonize(melody, key, clip.lengthBars, chordBars, spans);
   const notes = chordNotesFor(chords, chordBars, 'sustain', newId, spans).filter((n) => n.startOffset < clip.lengthBars - 1e-6);
-  const names = chords.map(chordName);
+  const names = chords.map((c) => chordNameIn(key, c));
   if (trackWithClip(clip.trackId, instrument, 'Chords', { name: names.join(' '), startBar: clip.startBar, lengthBars: clip.lengthBars, notes }) === false) return false;
   return names;
 }

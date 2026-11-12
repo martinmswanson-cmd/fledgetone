@@ -17,7 +17,7 @@ import { songMeterOf, useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { meterAt } from '../audio/tempoMap';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
-import { NOTE_NAMES, type SongKey } from '../store/songKey';
+import { spellNote, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
 import { STEPS_PER_WHOLE, midiToNote, noteToMidi, rollLengths, scaleRows, stepsPerBar } from './pocketGrid';
 import { audition, padsOf } from './pocketSound';
@@ -483,7 +483,7 @@ export function keyChords(key: SongKey, track: Track, centre: number): Array<{ n
     const third = b - a, fifth = c - a;
     const quality = third === 4 ? '' : fifth === 6 ? '°' : 'm';
     const roman = quality === '' ? ROMAN[d] : quality === '°' ? `${ROMAN[d].toLowerCase()}°` : ROMAN[d].toLowerCase();
-    out.push({ name: `${NOTE_NAMES[((a % 12) + 12) % 12]}${quality === '' ? '' : quality === '°' ? 'dim' : 'm'}`, roman, notes: tri });
+    out.push({ name: `${spellNote(key.root, key.mode, a - key.root)}${quality === '' ? '' : quality === '°' ? 'dim' : 'm'}`, roman, notes: tri });
   }
   return out;
 }

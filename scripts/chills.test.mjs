@@ -20,6 +20,7 @@ register(
 }`)
 );
 const X = await import('../src/store/chills.ts');
+const { plainHashes } = await import('./chills-plain-snapshot.mjs');
 const B = await import('../src/store/chillsBuild.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 const { midiOf } = await import('../src/store/noteTools.ts');
@@ -38,9 +39,9 @@ const RANGES = [[36, 96], [48, 96], [24, 108], [36, 88], [21, 108]];
 
 test('the chords are right in several keys, major and minor', () => {
   const names = (root, mode, p) => X.chillsNames(keyOf(root, mode), prog(p)).join(' ');
-  assert.equal(names(0, 'major', 'mediant'), 'C G# C E');
+  assert.equal(names(0, 'major', 'mediant'), 'C A♭ C E');
   assert.equal(names(0, 'major', 'borrowedIv'), 'C G F Fm');
-  assert.equal(names(0, 'major', 'deceptive'), 'C F G7 G#');
+  assert.equal(names(0, 'major', 'deceptive'), 'C F G7 A♭');
   assert.equal(names(9, 'minor', 'deceptive'), 'Am Dm E7 F');
   assert.equal(names(9, 'minor', 'mediant'), 'Am F Dm A');
   assert.equal(names(7, 'major', 'borrowedIv'), 'G D C Cm');
@@ -51,14 +52,14 @@ test('the chords are right in several keys, major and minor', () => {
   assert.equal(names(0, 'major', 'risingBass'), 'C Dm C/E F G Am G/B C');
   assert.equal(names(9, 'minor', 'risingBass'), 'Am G/B C Dm E F G Am');
   assert.equal(names(0, 'major', 'liftStep'), 'C G Am A7 D A Bm G');
-  assert.equal(names(9, 'minor', 'liftStep'), 'Am F C F#7 Bm G D A');
-  assert.equal(names(5, 'major', 'liftHalf'), 'F C Dm A# F# C# D#m B');
+  assert.equal(names(9, 'minor', 'liftStep'), 'Am F C F♯7 Bm G D A');
+  assert.equal(names(5, 'major', 'liftHalf'), 'F C Dm B♭ F♯ C♯ D♯m B');
   // Every chord's notes are its chord in the key, in every key and mode
   for (const mode of ['major', 'minor'])
     for (let root = 0; root < 12; root++)
       for (const p of X.CHILLS) {
         const key = keyOf(root, mode);
-        const v = X.chillsVoicings(key, p, { range: [36, 96] });
+        const v = X.chillsVoicings(key, p, { range: [36, 96], voicing: 'plain' });
         X.chillsChords(key, p).forEach((c, i) => {
           const pcs = X.chillsPcs(key, c);
           for (const m of v[i].upper) assert.ok(pcs.includes(pc(m)), `${p.id} ${key.name} chord ${i}: ${m} is in ${pcs}`);
@@ -408,4 +409,317 @@ test('the guide says how far the breath drops truthfully: the tracks, with rever
   const build = guide.slice(guide.indexOf('- **Build into a peak…**'));
   assert.doesNotMatch(build.slice(0, build.indexOf('\n')), /near-silence \(18 dB down\)/);
   assert.match(build.slice(0, build.indexOf('\n')), /the tracks drop 18 dB/);
+});
+
+// ---------- Plain and rich chords ----------
+
+/** The Plain output of every progression there was before rich chords came (2026.11.12), hashed over every key, both modes, a dozen ranges, two meters, four spans and two velocities */
+const PLAIN_BEFORE = {
+  mediant: '367e92fb715210a5',
+  borrowedIv: '77415d8639f715c3',
+  deceptive: 'f4650e2e21298bb4',
+  suspended: 'ff73c4e1e8cf271c',
+  pedal: '2c557f0cd307c183',
+  liftStep: 'aa69c99f0bf513a3',
+  liftHalf: '385f59d6df9fc542',
+  risingBass: 'f41a473ca2c965d3',
+  widening: 'cbe8a0f8979dee96',
+};
+
+test('plain chords are exactly as they were, by default and when picked', () => {
+  const ids = Object.keys(PLAIN_BEFORE);
+  assert.deepEqual(plainHashes(ids), PLAIN_BEFORE);
+  assert.deepEqual(plainHashes(ids, { voicing: 'plain' }), PLAIN_BEFORE);
+  for (const p of X.CHILLS) assert.equal(X.voicingOf(p), ids.includes(p.id) ? 'plain' : 'rich', p.id);
+});
+
+const RICH_RANGES = [[36, 96], [48, 96], [24, 108], [21, 108], [36, 88]];
+const sounding = (v) => [...v.bass, ...v.upper];
+/** Each chord's notes over its root stacked up from the first root out of the low register: the plain way to play them */
+const naive = (key, c) => {
+  const root = pc(key.root + c.semis + (c.up ?? 0));
+  const ivs = X.richIntervals(X.richQuality(key, c));
+  const r = X.LOW_REGISTER + pc(root - X.LOW_REGISTER);
+  return ivs.map((iv) => r + iv);
+};
+
+test('rich chords: one low note, 4 or 5 notes above it, in range, no low clusters, the top no higher than A5', () => {
+  for (const range of RICH_RANGES)
+    for (const mode of ['major', 'minor'])
+      for (let root = 0; root < 12; root++)
+        for (const p of X.CHILLS) {
+          const key = keyOf(root, mode);
+          const v = X.chillsVoicings(key, p, { range, voicing: 'rich' });
+          v.forEach((c, i) => {
+            const where = `${p.id} ${key.name} ${range} chord ${i}: ${c.bass}|${c.upper}`;
+            // (a bass climbing from F♯3 on an instrument starting at C3 leaves no room for rich chords up there: those play plain, and are named so)
+            if (c.plain) {
+              assert.ok(p.climb && range[0] > X.BASS_FLOOR, `${where}: rich fits`);
+              assert.ok(!/(maj|m)?(9|11|13)/.test(X.chillsNames(key, p, 'rich', range)[i]), `${where}: named plain`);
+              return;
+            }
+            assert.ok(c.upper.length >= 4 && c.upper.length <= 5, where);
+            // (chords that open out keep opening, as in plain; over the climbing bass they climb a little higher)
+            // (on an instrument whose bass starts as high as C3, up to E6 where there's no room under A5)
+            if (!p.widen) assert.ok(Math.max(...c.upper) <= X.RICH_TOP + (range[0] > X.BASS_FLOOR ? X.RICH_HIGH_ROOM : p.climb ? X.RICH_CLIMB_ROOM : 0), where);
+            assert.ok(Math.min(...c.upper) >= X.LOW_REGISTER, where);
+            for (const m of sounding(c)) assert.ok(m >= range[0] && m <= range[1], where);
+            assert.ok(c.bass.length <= (p.widen ? 2 : 1), where);
+            const up = [...c.upper].sort((a, b) => a - b);
+            for (let k = 1; k < up.length; k++) {
+              const d = up[k] - up[k - 1];
+              assert.ok(d !== 1, `${where}: no half step`);
+              if (d <= 2) assert.ok(up[k - 1] >= X.RICH_STEP_FLOOR, `${where}: a whole step only from A3 up`);
+            }
+          });
+        }
+});
+
+test('rich chords lead smoothly: each voice moves a 4th at most, and less in all than chords stacked from their roots', () => {
+  for (const range of RICH_RANGES)
+    for (const mode of ['major', 'minor'])
+      for (let root = 0; root < 12; root++)
+        for (const p of X.CHILLS.filter((q) => !q.widen)) {
+          const key = keyOf(root, mode);
+          const chords = X.chillsChords(key, p);
+          const v = X.chillsVoicings(key, p, { range, voicing: 'rich' });
+          let total = 0;
+          let plainTotal = 0;
+          for (let i = 1; i < v.length; i++) {
+            // (into the key change the whole chord moves up as one: that's the lift)
+            if (chords[i].up && !chords[i - 1].up) continue;
+            // (nor to or from a chord with no room to be rich, played plain)
+            if (v[i].plain || v[i - 1].plain) continue;
+            const move = X.richMove(v[i - 1].upper, v[i].upper);
+            // (on an instrument starting at C3, where the chords have less room under A5, a voice may move up to a 5th)
+            assert.ok(move.most <= X.RICH_MOST_MOVE + (range[0] > X.BASS_FLOOR ? 2 : 0), `${p.id} ${key.name} ${range} ${i}: ${v[i - 1].upper} to ${v[i].upper} moves ${move.most}`);
+            total += move.total;
+            plainTotal += X.richMove(naive(key, chords[i - 1]), naive(key, chords[i])).total;
+          }
+          // Played again, the last chord leads back to the first too (but the climb, which goes back down its octave)
+          if (!X.playsOnce(p) && !p.climb) {
+            const back = X.richMove(v[v.length - 1].upper, v[0].upper);
+            if (!range.includes(48)) assert.ok(back.most <= X.RICH_MOST_MOVE, `${p.id} ${key.name} ${range}: back to the first moves ${back.most}`);
+            total += back.total;
+            plainTotal += X.richMove(naive(key, chords[chords.length - 1]), naive(key, chords[0])).total;
+          }
+          assert.ok(total < plainTotal, `${p.id} ${key.name}: ${total} vs ${plainTotal} stacked from the roots`);
+        }
+});
+
+test('rich chords hold the notes they are named for; common tones stay put', () => {
+  for (const mode of ['major', 'minor'])
+    for (let root = 0; root < 12; root++)
+      for (const p of X.CHILLS) {
+        const key = keyOf(root, mode);
+        const v = X.chillsVoicings(key, p, { range: [36, 96], voicing: 'rich' });
+        X.chillsChords(key, p).forEach((c, i) => {
+          const pcs = X.chillsChordPcs(key, c, 'rich');
+          const ivs = X.richIntervals(X.richQuality(key, c));
+          for (const m of v[i].upper) assert.ok(pcs.includes(pc(m)), `${p.id} ${key.name} ${i}: ${m} in ${pcs}`);
+          // Every note but the 5th (and the root, where the bass plays it) is there: the 3rd, the 7th, the 9th...
+          pcs.forEach((q, k) => {
+            if (ivs[k] === 7 || (ivs[k] === 0 && v[i].bass.length)) return;
+            if (ivs[k] === 0 && p.pedal) return;
+            assert.ok(v[i].upper.some((m) => pc(m) === q), `${p.id} ${key.name} ${i}: has ${ivs[k]}`);
+          });
+        });
+      }
+  // Gm9 to C13 in F major: the F and A stay, the others move a step
+  const key = keyOf(5, 'major');
+  const v = X.chillsVoicings(key, prog('soulTurn'), { range: [36, 96] });
+  const shared = v[2].upper.filter((m) => v[3].upper.includes(m));
+  assert.ok(shared.length >= 2, `${v[2].upper} ${v[3].upper}`);
+});
+
+test('chord names: what is written, flats in flat keys and sharps in sharp ones, plain and rich', () => {
+  const names = (root, mode, p, voicing) => X.chillsNames(keyOf(root, mode), prog(p), voicing).join(' ');
+  assert.equal(names(5, 'major', 'soulTurn'), 'Fmaj9 Dm9 Gm9 C13 Am7 Dm9 Gm9 C13 D♭maj9 B♭m9 Am7 D7♯9 D7♭9 Gm9 C7♭9 Fmaj9');
+  assert.equal(names(5, 'major', 'soulTurn', 'plain'), 'F Dm Gm C7 Am Dm Gm C7 D♭ B♭m Am D D7 Gm C7 F');
+  assert.equal(names(0, 'minor', 'soulTurn'), 'Cm9 Fm9 Dm7♭5 G7♭9 E♭maj9 Cm9 Dm7♭5 G7♭9 A♭maj9 Fm9 E♭maj9 A7♯9 A7♭9 Dm7♭5 G7♭9 Cm9');
+  assert.equal(names(0, 'minor', 'soulTurn', 'plain'), 'Cm Fm Dm7♭5 G7 E♭ Cm Dm7♭5 G7 A♭ Fm E♭ A A7 Dm7♭5 G7 Cm');
+  assert.equal(names(11, 'minor', 'minorHome'), 'Em9 Bm11 Em9 Bm11 Em9 Bm11 Em9 B6');
+  assert.equal(names(11, 'minor', 'minorHome', 'plain'), 'Em Bm Em Bm Em Bm Em B');
+  assert.equal(names(2, 'major', 'minorHome'), 'Gm9 Dm11 Gm9 Dm11 Gm9 Dm11 Gm9 D6');
+  // Minor keys on flat notes spell flats; sharp keys sharps
+  assert.equal(names(0, 'minor', 'deceptive'), 'Cm Fm G7 A♭');
+  assert.equal(names(7, 'minor', 'mediant'), 'Gm E♭ Cm G');
+  assert.equal(names(5, 'minor', 'suspended'), 'Fm D♭ E♭sus4 E♭ Fsus4 Fm');
+  assert.equal(names(1, 'minor', 'mediant'), 'C♯m A F♯m C♯');
+  assert.equal(names(10, 'major', 'borrowedIv'), 'B♭ F E♭ E♭m');
+  assert.equal(names(3, 'major', 'deceptive'), 'E♭ A♭ B♭7 C♭');
+  assert.equal(names(0, 'major', 'deceptive', 'rich'), 'Cmaj9 Fmaj9 G13 A♭maj9');
+  assert.equal(names(0, 'major', 'suspended', 'rich'), 'Am9 Fmaj9 G9sus4 G9 Csus4(add9) Cadd9');
+  assert.equal(names(0, 'major', 'pedal', 'rich'), 'Cmaj9 Fmaj9/C Am9/C G9/C');
+  assert.equal(X.chillsKeyName(keyOf(10, 'minor')), 'B♭ minor');
+  assert.equal(X.chillsKeyName(keyOf(8, 'minor')), 'G♯ minor');
+  // No flat key's plain names have a sharp, nor a sharp key's a flat (but a key change's new key)
+  for (const p of X.CHILLS.filter((q) => !q.lift))
+    for (const [root, mode] of [[5, 'major'], [10, 'major'], [3, 'major'], [8, 'major'], [0, 'minor'], [2, 'minor'], [5, 'minor'], [7, 'minor'], [10, 'minor']]) {
+      const n = X.chillsNames(keyOf(root, mode), p, 'plain').join(' ');
+      assert.ok(!n.includes('♯') && !n.includes('#'), `${p.id} ${X.chillsKeyName(keyOf(root, mode))}: ${n}`);
+    }
+  for (const p of X.CHILLS.filter((q) => !q.lift && q.id !== 'mediant' && q.id !== 'borrowedIv' && q.id !== 'deceptive' && q.id !== 'soulTurn' && q.id !== 'minorHome'))
+    for (const [root, mode] of [[2, 'major'], [4, 'major'], [9, 'major'], [11, 'major'], [4, 'minor'], [11, 'minor'], [1, 'minor']]) {
+      const n = X.chillsNames(keyOf(root, mode), p, 'plain').join(' ');
+      assert.ok(!n.includes('♭') && !/[A-G]b/.test(n), `${p.id} ${X.chillsKeyName(keyOf(root, mode))}: ${n}`);
+    }
+  // On an instrument with no room for a rich chord, it's played and named plain
+  const tiny = X.chillsVoicings(keyOf(0, 'major'), prog('deceptive'), { range: [60, 72], voicing: 'rich' });
+  if (tiny.some((v) => v.plain)) assert.notEqual(X.chillsNames(keyOf(0, 'major'), prog('deceptive'), 'rich', [60, 72]).join(' '), names(0, 'major', 'deceptive', 'rich'));
+});
+
+test('the soul turnaround: ii–V loops, a borrowed ♭VI maj9 and iv m9, a V of ii bending ♯9 to ♭9, ending ii–V7♭9–Imaj9', () => {
+  const p = prog('soulTurn');
+  assert.equal(p.major.length, 16);
+  assert.equal(p.minor.length, 16);
+  const key = keyOf(5, 'major');
+  const q = X.chillsChords(key, p).map((c) => [c.semis, X.richQuality(key, c)]);
+  assert.deepEqual(q.slice(8, 10), [[8, 'maj9'], [5, 'min9']]);
+  assert.deepEqual(q.slice(11, 13), [[9, 'dom7s9'], [9, 'dom7b9']]);
+  assert.deepEqual(q.slice(13), [[2, 'min9'], [7, 'dom7b9'], [0, 'maj9']]);
+  // At 60 BPM, two beats a chord: 16 chords in 8 bars, half a bar each, once round
+  const spans = X.chillsSpans(1, 9, 16, FOUR, X.playsOnce(p));
+  assert.equal(spans.length, 16);
+  for (const s of spans) close(s.length, 0.5);
+  // The ♯9 falls a half step to the ♭9 over the same root and 3rd
+  const v = X.chillsVoicings(key, p, { range: [36, 96] });
+  const sharp9 = v[11].upper.find((m) => pc(m) === pc(5 + 9 + 3));
+  assert.ok(v[12].upper.includes(sharp9 - 2) || v[12].upper.some((m) => pc(m) === pc(5 + 9 + 1)), `${v[11].upper} ${v[12].upper}`);
+});
+
+test('two minor chords, then a major home: iv–i four times, home major the last time, played once', () => {
+  const p = prog('minorHome');
+  assert.ok(X.playsOnce(p));
+  for (const mode of ['major', 'minor']) {
+    const key = keyOf(11, mode);
+    const ch = X.chillsChords(key, p);
+    assert.equal(ch.length, 8);
+    ch.slice(0, 7).forEach((c, i) => assert.deepEqual([c.semis, c.quality], i % 2 ? [0, 'min'] : [5, 'min']));
+    assert.deepEqual([ch[7].semis, ch[7].quality], [0, 'maj']);
+    const v = X.chillsVoicings(key, p, { range: [36, 96] });
+    // The home minor 11th over its root: the 3rd, 5th, 7th, 9th and 11th above (D F♯ A C♯ E over B)
+    assert.deepEqual(v[1].upper.map((m) => pc(m - 11)).sort((a, b) => a - b), [2, 3, 5, 7, 10]);
+    // The last chord bright: the major 3rd and the 6th
+    assert.ok(v[7].upper.some((m) => pc(m - 11) === 4) && v[7].upper.some((m) => pc(m - 11) === 9));
+  }
+  assert.equal(X.chillsFill(keyOf(11, 'minor'), p, 1, 33, FOUR, id, { range: [36, 96] }).filter((n) => n.startOffset === 0).length > 0, true);
+  assert.equal(X.chillsSpans(1, 33, 8, FOUR, true).length, 8);
+});
+
+test('a rich chord is no louder than the plain one: its added notes softer', () => {
+  for (const p of X.CHILLS)
+    for (const mode of ['major', 'minor']) {
+      const key = keyOf(2, mode);
+      const spans = X.chillsChords(key, p).map((_, i) => ({ start: i, length: 1 }));
+      const plain = X.chillsNotes(key, p, spans, id, { range: [36, 96], voicing: 'plain' });
+      const rich = X.chillsNotes(key, p, spans, id, { range: [36, 96], voicing: 'rich' });
+      const power = (notes, t) => notes.filter((x) => x.startOffset === t).reduce((s, x) => s + x.velocity ** 2, 0);
+      for (const s of spans) {
+        const db = 10 * Math.log10(power(rich, s.start) / power(plain, s.start));
+        assert.ok(db <= 1.5, `${p.id} ${key.name} at ${s.start}: ${db.toFixed(2)} dB`);
+      }
+    }
+});
+
+test('rich chords that open out: each wider than the last', () => {
+  for (const mode of ['major', 'minor'])
+    for (let root = 0; root < 12; root++) {
+      const v = X.chillsVoicings(keyOf(root, mode), prog('widening'), { range: [36, 96], voicing: 'rich' });
+      const span = v.map((c) => Math.max(...sounding(c)) - Math.min(...sounding(c)));
+      for (let i = 1; i < span.length; i++) assert.ok(span[i] > span[i - 1], `${root} ${mode}: ${span}`);
+    }
+});
+
+test('plain or rich is offered in the studio dialog, the piano roll and Pocket, and written as chosen', () => {
+  for (const file of ['src/components/timeline/SmartDialog.tsx', 'src/components/timeline/ChordRiffBar.tsx', 'src/pocket/PocketSheets.tsx']) {
+    const text = src(file);
+    assert.ok(text.includes('CHILLS_VOICINGS'), `${file} offers the choice`);
+    assert.ok(/voicing/.test(text) && /chillsNames\([^)]*voicing/.test(text), `${file} names the chords as voiced`);
+  }
+  assert.ok(/makeChillsClip\([^)]*voicing/.test(src('src/components/timeline/SmartDialog.tsx')));
+  assert.ok(/chillsFill\([^;]*voicing/.test(src('src/components/timeline/ChordRiffBar.tsx')));
+  assert.ok(/chillsFill\([^;]*voicing/.test(src('src/pocket/PocketSheets.tsx')));
+});
+
+test('a key change keeps a chord played plain for want of room plain, and named so', () => {
+  // Brass-like stabs (C3 to C6): no room for some rich chords; moved up a key, they stay plain
+  for (const range of [[48, 84], [36, 64 + 12], [52, 84]])
+    for (const [root, mode] of [[0, 'major'], [9, 'minor'], [2, 'minor']])
+      for (const pid of ['liftStep', 'liftHalf']) {
+        const key = keyOf(root, mode);
+        const p = prog(pid);
+        const v = X.chillsVoicings(key, p, { range, voicing: 'rich' });
+        const names = X.chillsNames(key, p, 'rich', range);
+        X.chillsChords(key, p).forEach((c, i) => {
+          const rich = !v[i].plain;
+          // A chord named rich has 4 or 5 notes over its bass; one named plain is the plain chord
+          if (rich) assert.ok(v[i].upper.length >= 4, `${pid} ${key.name} ${range} ${i}: ${names[i]} = ${v[i].upper}`);
+          else assert.ok(!/(maj|m)?(9|11|13)/.test(names[i]), `${pid} ${key.name} ${range} ${i}: ${names[i]} is plain`);
+        });
+        const notes = X.chillsNotes(key, p, X.chillsChords(key, p).map((_, i) => ({ start: i, length: 1 })), id, { range, voicing: 'rich' });
+        const plainNotes = X.chillsNotes(key, p, X.chillsChords(key, p).map((_, i) => ({ start: i, length: 1 })), id, { range, voicing: 'plain' });
+        // (a chord played plain plays at the plain velocities)
+        v.forEach((c, i) => {
+          if (!c.plain) return;
+          const at = notes.filter((x) => x.startOffset === i).map((x) => x.velocity);
+          const was = plainNotes.filter((x) => x.startOffset === i).map((x) => x.velocity);
+          assert.ok(Math.max(...at) <= Math.max(...was) + 1e-9, `${pid} ${i}: ${at} vs ${was}`);
+        });
+      }
+  const v = X.chillsVoicings(keyOf(0, 'major'), prog('liftStep'), { range: [48, 84], voicing: 'rich' });
+  v.forEach((c, i) => {
+    if (i >= 4 && i < 7) assert.equal(!!c.plain, !!v[i - 4].plain, `chord ${i} moved up keeps how chord ${i - 4} was played`);
+  });
+});
+
+test('across a key change the new key is spelled to agree with the chord that leads to it', () => {
+  const names = (root, mode, id) => X.chillsNames(keyOf(root, mode), prog(id), 'plain');
+  assert.deepEqual(names(8, 'minor', 'liftStep').slice(3, 5), ['E♯7', 'A♯m']);
+  assert.deepEqual(names(11, 'major', 'liftStep').slice(3, 5), ['G♯7', 'C♯']);
+  assert.deepEqual(names(1, 'minor', 'liftStep').slice(3, 5), ['A♯7', 'D♯m']);
+  assert.deepEqual(names(10, 'major', 'liftStep').slice(3, 5), ['G7', 'C']);
+  // Every key: the pivot's root is a 5th over the new home, letter for letter
+  const LET = 'CDEFGAB';
+  for (const mode of ['major', 'minor'])
+    for (let root = 0; root < 12; root++) {
+      const n = names(root, mode, 'liftStep');
+      assert.equal((LET.indexOf(n[3][0]) + 3) % 7, LET.indexOf(n[4][0]), `${root} ${mode}: ${n[3]} to ${n[4]}`);
+    }
+  // A half step up: no more than one sharp or flat on the new home, and its own name with it
+  for (const mode of ['major', 'minor'])
+    for (let root = 0; root < 12; root++) {
+      const n = names(root, mode, 'liftHalf');
+      assert.ok(/^[A-G][♭♯]?m?$/.test(n[4]), `${root} ${mode}: ${n[4]}`);
+    }
+});
+
+test('key names are spelled the way the key is written, everywhere they are shown', () => {
+  assert.equal(keyOf(10, 'major').name, 'B♭ major');
+  assert.equal(keyOf(3, 'minor').name, 'E♭ minor');
+  assert.equal(keyOf(1, 'minor').name, 'C♯ minor');
+  assert.equal(keyOf(1, 'major').name, 'D♭ major');
+  assert.equal(keyOf(6, 'major').name, 'F♯ major');
+  for (const file of ['src/components/timeline/SmartDialog.tsx', 'src/components/timeline/ArrangeDialog.tsx']) assert.ok(!/<option key=\{n\} value=\{i\}>\{n\}<\/option>/.test(src(file)), `${file}: the key menu spells its keys`);
+  assert.ok(src('src/pocket/PocketPads.tsx').includes('spellNote('));
+});
+
+test('up a half step from a flat key lands on a key as it is written: G minor to G♯ minor, not A♭ minor', () => {
+  const names = (root, mode, id) => X.chillsNames(keyOf(root, mode), prog(id), 'plain');
+  assert.deepEqual(names(7, 'minor', 'liftHalf').slice(4), ['G♯m', 'E', 'B', 'F♯']);
+  assert.deepEqual(names(0, 'minor', 'liftHalf').slice(4), ['C♯m', 'A', 'E', 'B']);
+  assert.deepEqual(names(5, 'minor', 'liftHalf').slice(4), ['F♯m', 'D', 'A', 'E']);
+  const { keyHomeName, liftedHome } = X.keySpelling;
+  for (const id of ['liftStep', 'liftHalf'])
+    for (const mode of ['major', 'minor'])
+      for (let root = 0; root < 12; root++) {
+        const n = names(root, mode, id);
+        for (const c of n) assert.ok(!/[♭♯].*[♭♯]|[♭♯]{2}|[A-G]b|#/.test(c.split('/')[0].replace(/7?[♭♯]9|m7♭5/, '')), `${id} ${root} ${mode}: ${c}`);
+        const up = prog(id).lift;
+        const home = liftedHome(keyHomeName(root, mode), root, up, mode);
+        // A new home with a flat is always one a key in that mode is written on
+        if (home.includes('♭')) assert.equal(home, keyHomeName(root + up, mode), `${root} ${mode} +${up}`);
+        // Up a whole step its letter is the next: the chord before it agrees (its root a 5th under, letter for letter)
+        if (up === 2) assert.equal('CDEFGAB'.indexOf(home[0]), ('CDEFGAB'.indexOf(keyHomeName(root, mode)[0]) + 1) % 7, `${root} ${mode}`);
+      }
 });

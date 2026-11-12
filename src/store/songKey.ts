@@ -32,10 +32,66 @@ export interface SongKey {
   steps: readonly number[];
 }
 
+// ---------- Spelling: flats in flat keys, sharps in sharp ones ----------
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+const LETTER_PC = [0, 2, 4, 5, 7, 9, 11] as const;
+/** Each home note as keys on it are written (D♭ major, C♯ minor, F♯ both ways). */
+const MAJOR_HOME = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
+const MINOR_HOME = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'] as const;
+/** The scale step a note `semis` over home is written on (♭II, ii, ♭III, III, IV, ♯IV, V, ♭VI, VI, ♭VII, VII). */
+const STEP_OF = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6] as const;
+const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
+const SHARP_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'] as const;
+const pcOf = (m: number) => ((m % 12) + 12) % 12;
+
+/** The home note's name as a key on `root` in `mode` is written: B♭ major, C♯ minor. */
+export const keyHomeName = (root: number, mode: 'major' | 'minor'): string => (mode === 'minor' ? MINOR_HOME : MAJOR_HOME)[pcOf(root)];
+
+/** A note on `letter` (0 C … 6 B) with pitch class `target`: "E♭", "F♯", or null past a single flat or sharp. */
+function onLetter(letter: number, target: number): string | null {
+  const acc = ((target - LETTER_PC[letter] + 18) % 12) - 6;
+  return acc === 0 ? LETTERS[letter] : acc === -1 ? `${LETTERS[letter]}♭` : acc === 1 ? `${LETTERS[letter]}♯` : null;
+}
+
+/**
+ * The name of the note `semis` over a home note named `home` (as keyHomeName gives, or a key a
+ * change moves to), spelled by the scale step it stands on: in F major ♭VI is D♭ and IV is B♭; in
+ * A minor ♭III is C. (Where a step would need a double flat or sharp, the plain flat or sharp of the
+ * key's kind.)
+ */
+export function spellFrom(home: string, root: number, semis: number): string {
+  const letter = (LETTERS.indexOf(home[0] as (typeof LETTERS)[number]) + STEP_OF[pcOf(semis)]) % 7;
+  const target = pcOf(root + semis);
+  return onLetter(letter, target) ?? (home.includes('♯') ? SHARP_NAMES : FLAT_NAMES)[target];
+}
+
+/** The name of the note `semis` over the home note of a key on `root` in `mode`, spelled by its step (spellFrom). */
+export const spellNote = (root: number, mode: 'major' | 'minor', semis: number): string => spellFrom(keyHomeName(root, mode), root, semis);
+
+/**
+ * The home note of the key `up` semitones over the key named `home` (in `mode`), written to agree
+ * with it: up a whole step the next letter (G♯ minor to A♯ minor, so its V7 before is E♯7); up a
+ * half step the next letter or the same one raised, whichever needs no sharp or flat, else the kind
+ * the key had (B♭ to B, F♯ to G). A flat home no key in that mode is written on (D♭ minor, F♭, C♭)
+ * is written as keys on it are (C♯ minor, E, B).
+ */
+export function liftedHome(home: string, root: number, up: number, mode: 'major' | 'minor'): string {
+  const letter = LETTERS.indexOf(home[0] as (typeof LETTERS)[number]);
+  const target = pcOf(root + up);
+  const next = onLetter((letter + 1) % 7, target);
+  const same = onLetter(letter, target);
+  let out: string;
+  if (up === 2 || (next && !/[♭♯]/.test(next))) out = next ?? SHARP_NAMES[target];
+  else if (same && !/[♭♯]/.test(same)) out = same;
+  else out = home.includes('♯') ? (same ?? next ?? SHARP_NAMES[target]) : (next ?? same ?? FLAT_NAMES[target]);
+  return out.includes('♭') && out !== keyHomeName(target, mode) ? keyHomeName(target, mode) : out;
+}
+
 export const keyOf = (root: number, mode: 'major' | 'minor'): SongKey => ({
   root,
   mode,
-  name: `${NOTE_NAMES[root]} ${mode}`,
+  name: `${keyHomeName(root, mode)} ${mode}`,
   steps: mode === 'major' ? MAJOR_STEPS : MINOR_STEPS,
 });
 
