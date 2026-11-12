@@ -23,7 +23,7 @@ import { DRUM_STYLES, FILLS, drummer, type DrumStyle } from '../store/smartTools
 import { fillClipBar } from '../store/smartActions';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
-import { CHILLS, chillsFill, chillsNames, registerOf, type ChillsProgression } from '../store/chills';
+import { CHILLS, CHILLS_VOICINGS, chillsFill, chillsNames, registerOf, voicingOf, type ChillsProgression, type ChillsVoicingStyle } from '../store/chills';
 import { BUILD_DEFAULTS, buildForChills, nameAfterChills } from '../store/chillsActions';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
@@ -345,7 +345,10 @@ const ChordsSheet: React.FC = () => {
   const songKey = useSongKey();
   const meter = useSongMeter();
   const [style, setStyle] = useState<ChordStyle>('sustain');
+  // For chills, plain or rich chords: each progression's own until one is picked for all
+  const [voicing, setVoicing] = useState<ChillsVoicingStyle | null>(null);
   if (!track || !sec) return null;
+  const range = INSTRUMENTS[track.instrumentKey].range;
   const write = (prog: Progression) => {
     const chords = progressionChords(songKey, prog);
     // A chord a bar (a measure as the ruler counts them) in a section of 4 bars or more, two in one of 8 or more
@@ -358,10 +361,10 @@ const ChordsSheet: React.FC = () => {
   // (Held chords filling the section, as the studio's piano roll fills a clip with one: chills.ts
   // chillsFill; and, as there, the clip named after the progression unless its name was typed)
   const writeChills = (prog: ChillsProgression) => {
-    const notes = chillsFill(songKey, prog, sec.from, sec.to, meter, pocketNoteId, { range: INSTRUMENTS[track.instrumentKey].range });
+    const notes = chillsFill(songKey, prog, sec.from, sec.to, meter, pocketNoteId, { range, voicing: voicingOf(prog, voicing) });
     editCell(track.id, sec, () => notes, true, (id) => nameAfterChills(id, prog.name));
     close();
-    showToast(`${prog.name}: ${chillsNames(songKey, prog).join(' – ')}. Undo takes it out.`);
+    showToast(`${prog.name}: ${chillsNames(songKey, prog, voicingOf(prog, voicing), range).join(' – ')}. Undo takes it out.`);
   };
   return (
     <Sheet title={`Chords in ${songKey.name}`} onClose={close}>
@@ -377,9 +380,17 @@ const ChordsSheet: React.FC = () => {
         <SheetItem key={p.id} title={p.name} onClick={() => write(p)} />
       ))}
       <p className="text-xs font-semibold text-forge-text px-2 mt-3 mb-1">For chills</p>
-      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: {registerOf(INSTRUMENTS[track.instrumentKey].range).kind === 'roots' ? 'on this bass instrument, each chord’s root (or the held home note), inside its range.' : 'held chords for synths and pads, one low note and the chord in the middle.'}</p>
+      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: {registerOf(range).kind === 'roots' ? 'on this bass instrument, each chord’s root (or the held home note), inside its range.' : 'held chords for synths and pads, one low note and the chord in the middle.'}</p>
+      <div className="flex gap-1.5 flex-wrap mb-1 px-1" role="group" aria-label="Plain or rich chords">
+        {CHILLS_VOICINGS.map((v) => (
+          <button key={v.id} type="button" aria-pressed={voicing === v.id} title={v.detail} className={`${pill} !h-9 !px-3 text-xs ${voicing === v.id ? pillOn : ''}`} onClick={() => setVoicing(voicing === v.id ? null : v.id)}>
+            {v.name}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-forge-muted px-2 mb-1">{voicing ? `${CHILLS_VOICINGS.find((v) => v.id === voicing)?.detail} Tap again for each as written.` : 'Each as written: pick Plain or Rich chords for all.'}</p>
       {CHILLS.map((p) => (
-        <SheetItem key={p.id} title={p.name} detail={`${chillsNames(songKey, p).join(' – ')}. ${p.detail}`} onClick={() => writeChills(p)} />
+        <SheetItem key={p.id} title={p.name} detail={`${chillsNames(songKey, p, voicingOf(p, voicing), range).join(' – ')}. ${p.detail}`} onClick={() => writeChills(p)} />
       ))}
     </Sheet>
   );

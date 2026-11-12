@@ -11,7 +11,7 @@ import { Modal } from './Modal';
 import { showToast } from './toastStore';
 import { TOTAL_BARS, useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { barNumberAt, barNumberNear, barNumberStart, barSpan, rulerBarsLength } from '../../store/timelineTypes';
-import { NOTE_NAMES } from '../../store/songKey';
+import { keyHomeName, NOTE_NAMES } from '../../store/songKey';
 import { songKey } from '../../store/smartActions';
 import { DARK_SCALES, DARK_SOUNDS, DARK_STYLES, darkKeyFor, type DarkRegister, type DarkScale, type DarkSound, type DarkStyle } from '../../store/darkMelody';
 import { ROLE_NAMES, SWITCH_MODES, trackRole, type SwitchMode } from '../../store/beatSwitch';
@@ -104,7 +104,7 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
     if (typeof result === 'string') return showToast(result);
     written.current = result.clipId;
     setTarget(result.trackId);
-    showToast(`Dark melody in ${NOTE_NAMES[root]} ${DARK_SCALES.find((s) => s.id === o.scale)!.name.toLowerCase()}, idea ${seed}. Press Play to hear it; Undo takes it back.`);
+    showToast(`Dark melody in ${keyHomeName(root, 'minor')} ${DARK_SCALES.find((s) => s.id === o.scale)!.name.toLowerCase()}, idea ${seed}. Press Play to hear it; Undo takes it back.`);
   };
   return (
     <div className="flex flex-col gap-3">
@@ -119,7 +119,7 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
           Key {root === detected.root && <span className="text-cyan-300">({detected.note})</span>}
           <div className="flex gap-1 min-w-0">
             <select className={`${control} min-w-0`} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
-              {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{n}</option>)}
+              {NOTE_NAMES.map((n, i) => <option key={n} value={i}>{keyHomeName(i, 'minor')}</option>)}
             </select>
             <select className={`${control} min-w-0 flex-1`} value={o.scale} onChange={(e) => set({ scale: e.target.value as DarkScale })} aria-label="Scale">
               {DARK_SCALES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

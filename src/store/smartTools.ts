@@ -2,7 +2,7 @@ import type { InstrumentKey, NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
-import { NOTE_NAMES } from './songKey';
+import { NOTE_NAMES, spellNote } from './songKey';
 import { maxOf, minOf } from '../support/minMax';
 import { addMeasures, isPlainMeter, measureCount, measuresBetween } from '../audio/tempoMap';
 import type { MeterMap } from '../audio/tempoMap';
@@ -120,6 +120,17 @@ export function chordName(pcs: readonly number[]): string {
   }
   if (has.has(2) && has.has(7)) return `${root}sus2`;
   return root;
+}
+
+/**
+ * A chord's name in `key`, its root spelled as the key writes it (D♭ in F major, B♭ in C minor) and
+ * ♭ and ♯ in its suffix: "B♭m7♭5". Without a key, as chordName.
+ */
+export function chordNameIn(key: Pick<SongKey, 'root' | 'mode'> | null | undefined, pcs: readonly number[]): string {
+  const name = chordName(pcs);
+  if (!key) return name;
+  const pcOf = (m: number) => ((m % 12) + 12) % 12;
+  return `${spellNote(key.root, key.mode, pcOf(pcs[0] - key.root))}${name.slice(NOTE_NAMES[pcs[0]].length).replace(/b(?=\d)/g, '♭').replace(/#(?=\d)/g, '♯')}`;
 }
 
 export interface Progression {

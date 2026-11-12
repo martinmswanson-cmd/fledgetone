@@ -12,6 +12,13 @@
 //   npx vite --port 5200                 (in another terminal; restart it after editing src/)
 //   node scripts/ui-check/chills.cjs
 //
+// Plain or rich chords: the choice in the dialog, the piano roll and Pocket (each starting on the
+// progression's own, the notes written as chosen, the names shown matching them, one exact undo).
+// PART=rich runs only those checks. RENDER=<folder> also exports the soul turnaround in F major at
+// 60 BPM, half a bar a chord, on a Wavetable pad over a Sub-Bass playing the roots, through the
+// Export dialog as MP3s at the Streaming target (new-plain.mp3, new-rich.mp3), and measures each
+// chord's loudness in them and on the pad alone (plain against rich).
+//
 // APP_URL overrides http://localhost:5200/; SHOTS=<folder> saves screenshots of the dialogs, the
 // piano roll's chords row, the lanes the build writes and Pocket's sheets there. Needs Playwright
 // with Chromium. Exit code 0 when every step passes.
@@ -24,6 +31,8 @@ try {
 
 const APP = process.env.APP_URL || 'http://localhost:5200/';
 const SHOTS = process.env.SHOTS || '';
+const ONLY_RICH = process.env.PART === 'rich';
+const RENDER = process.env.RENDER || '';
 /** The most a build may raise the level, dB (chillsBuild.ts BUILD_MOST_RISE_DB) */
 const CAP_DB = 6;
 let failures = 0;
@@ -145,6 +154,263 @@ const exported = (name, m) => {
   step(`${name}: no level jump over ${CAP_DB} dB`, j <= CAP_DB, `largest rise over the 3 s before: ${j.toFixed(1)} dB`);
 };
 
+/** In the page: what the chills tools should write, to compare with what they did */
+const EXPECT = async ({ id, voicing, from, to, chordBars, root, mode, range, repeats }) => {
+  const X = await import('/src/store/chills.ts');
+  const T = await import('/src/store/timelineStore.ts');
+  const K = await import('/src/store/songKey.ts');
+  const ST = await import('/src/store/smartTools.ts');
+  const s = T.useTimelineStore.getState();
+  const key = root === undefined ? (K.detectKey(s.clips.filter((c) => c.trackId !== 't4'), s.tracks) ?? K.keyOf(0, 'major')) : K.keyOf(root, mode);
+  const prog = X.chillsById(id);
+  let n = 0;
+  const notes = chordBars
+    ? X.chillsNotes(key, prog, ST.chordSpans(from, X.chillsChords(key, prog).length * (X.playsOnce(prog) ? 1 : repeats ?? 1), chordBars, T.songMeterOf(s)).spans, () => `x${n++}`, { range, voicing })
+    : X.chillsFill(key, prog, from, to, T.songMeterOf(s), () => `x${n++}`, { range, voicing });
+  return { notes: notes.map((x) => `${x.note}@${x.startOffset}/${x.duration}/${x.velocity}`).sort(), names: X.chillsNames(key, prog, voicing, range).join(' – ') };
+};
+const notesOf = (p, trackId) =>
+  p.evaluate(async (t) => {
+    const s = (await import('/src/store/timelineStore.ts')).useTimelineStore.getState();
+    const c = s.clips.find((x) => x.trackId === t);
+    return c ? { name: c.name, notes: c.notes.map((x) => `${x.note}@${x.startOffset}/${x.duration}/${x.velocity}`).sort() } : null;
+  }, trackId);
+const toastText = (p) => p.evaluate(async () => (await import('/src/components/timeline/toastStore.ts')).useToast.getState().text ?? '');
+
+/** Plain or rich chords, in the studio's dialog, the piano roll and Pocket */
+async function richChecks({ browser, page, store, load, shot, oneStep }) {
+  const WT = [36, 96];
+  // ---- the dialog ----
+  for (const [id, pick] of [['soulTurn', null], ['soulTurn', 'plain'], ['mediant', 'rich'], ['minorHome', null]]) {
+    await load(page);
+    await page.waitForTimeout(300);
+    const before = await page.evaluate(SNAP);
+    await page.evaluate(async () => (await import('/src/store/smartActions.ts')).useSmartDialog.setState({ open: { mode: 'chills', trackId: 't4', bar: 9 } }));
+    await page.waitForTimeout(250);
+    const dialog = page.getByRole('dialog');
+    const name = await page.evaluate(async (i) => (await import('/src/store/chills.ts')).chillsById(i).name, id);
+    // (another progression first: picking this one goes back to its own way of being voiced)
+    await dialog.locator('label', { hasText: id === 'mediant' ? 'The minor iv' : 'A major chord a third away' }).first().click();
+    await dialog.getByLabel('Plain or rich chords').selectOption(id === 'mediant' ? 'rich' : 'plain');
+    await dialog.locator('label', { hasText: name }).first().click();
+    const own = await dialog.getByLabel('Plain or rich chords').inputValue();
+    step(`dialog ${id}: starts on its own way (${id === 'mediant' ? 'plain' : 'rich'})`, own === (id === 'mediant' ? 'plain' : 'rich'), own);
+    if (pick) await dialog.getByLabel('Plain or rich chords').selectOption(pick);
+    const voicing = pick ?? own;
+    const shown = await dialog.locator('p', { hasText: ' chords, ' }).last().innerText();
+    if (id === 'soulTurn' && !pick) await shot(page, 'studio-chills-rich-dialog');
+    const chordBars = id === 'soulTurn' ? 0.5 : 1;
+    await dialog.locator('select').filter({ has: page.locator('option[value="0.5"]') }).selectOption(String(chordBars));
+    // (the key the dialog shows: the song's)
+    const key = await page.evaluate(async () => {
+      const K = await import('/src/store/songKey.ts');
+      const T = await import('/src/store/timelineStore.ts');
+      const s = T.useTimelineStore.getState();
+      const k = K.detectKey(s.clips, s.tracks) ?? K.keyOf(0, 'major');
+      return { root: k.root, mode: k.mode };
+    });
+    const want = await page.evaluate(EXPECT, { id, voicing, from: 9, chordBars, ...key, range: WT });
+    step(`dialog ${id} ${voicing}: the names shown are the chords written`, shown.startsWith(want.names), `${shown} | ${want.names}`);
+    await dialog.getByRole('button', { name: /Make clip at bar/ }).click();
+    await page.waitForTimeout(300);
+    const got = await notesOf(page, 't4');
+    step(`dialog ${id} ${voicing}: the notes as chosen`, !!got && JSON.stringify(got.notes) === JSON.stringify(want.notes) && got.name === name, `${got?.notes.length} notes vs ${want.notes.length}`);
+    const t = await toastText(page);
+    step(`dialog ${id} ${voicing}: the message names them`, t.includes(want.names), t);
+    if (voicing === 'rich') step(`dialog ${id}: rich names`, /maj9|m9|13|m11|7♭9/.test(want.names), want.names);
+    await oneStep(page, `dialog ${id} ${voicing}`, before);
+  }
+  // ---- the piano roll ----
+  await load(page);
+  await page.waitForTimeout(300);
+  for (const [id, pick] of [['soulTurn', null], ['soulTurn', 'plain'], ['pedal', 'rich']]) {
+    const clipId = await store((S) => S.getState().createEmptyClip('t4', 9, 8));
+    const before = await page.evaluate(SNAP);
+    await store((S, i) => S.getState().openEditor(i), clipId);
+    await page.waitForSelector('select[aria-label="Chills progression"]', { timeout: 20000 });
+    await page.selectOption('select[aria-label="Chills progression"]', 'widening');
+    await page.selectOption('select[aria-label="Plain or rich chords"]', id === 'pedal' ? 'rich' : 'plain');
+    await page.selectOption('select[aria-label="Chills progression"]', id);
+    const own = await page.locator('select[aria-label="Plain or rich chords"]').inputValue();
+    step(`piano roll ${id}: starts on its own way`, own === (id === 'pedal' ? 'plain' : 'rich'), own);
+    if (pick) await page.selectOption('select[aria-label="Plain or rich chords"]', pick);
+    const voicing = pick ?? own;
+    if (id === 'soulTurn' && !pick) await shot(page, 'studio-piano-roll-rich');
+    await page.locator('[data-search="chills progression peak shiver"] button', { hasText: 'Write' }).click();
+    await page.waitForTimeout(300);
+    const got = await store((S, i) => S.getState().clips.find((c) => c.id === i).notes.map((x) => `${x.note}@${x.startOffset}/${x.duration}/${x.velocity}`).sort(), clipId);
+    // (the piano roll's key: the clip's scale, else the song's; its velocity the roll's)
+    const want = await page.evaluate(async ([i, v]) => {
+      const X = await import('/src/store/chills.ts');
+      const t = (await import('/src/components/timeline/toastStore.ts')).useToast.getState().text ?? '';
+      return { t, prog: X.chillsById(i).name, v };
+    }, [id, voicing]);
+    const names = (want.t.split(': ')[1] ?? '').replace(/\.( Undo| These).*$/, '');
+    const keyName = want.t.slice(want.prog.length + 4).split(':')[0];
+    const k = await page.evaluate(async (kn) => {
+      const names = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+      const minor = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'];
+      const [n, mode] = kn.split(' ');
+      return { root: (mode === 'minor' ? minor : names).indexOf(n), mode };
+    }, keyName);
+    const exp = await page.evaluate(EXPECT, { id, voicing, from: 9, to: 17, ...k, range: WT });
+    step(`piano roll ${id} ${voicing}: names in the message match the notes`, names === exp.names, `${names} | ${exp.names}`);
+    const pitches = (a) => JSON.stringify(a.map((x) => x.split('/').slice(0, 2).join('/')));
+    step(`piano roll ${id} ${voicing}: the notes as chosen`, pitches(got) === pitches(exp.notes), `${got.length} vs ${exp.notes.length}`);
+    await oneStep(page, `piano roll ${id} ${voicing}`, before);
+    await store((S) => S.getState().closeEditor?.());
+    await page.keyboard.press('Escape');
+    await store((S) => {
+      S.getState().undo();
+      S.getState().undo();
+    });
+  }
+  // ---- Pocket ----
+  const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+  await pctx.addInitScript(() => {
+    try {
+      localStorage.setItem('bosBeatbox.welcomeSeen', 'true');
+    } catch {}
+  });
+  const pk = await pctx.newPage();
+  pk.on('pageerror', (e) => step('Pocket: no page error', false, e.message));
+  await pk.goto(APP + '?pocket');
+  await pk.waitForTimeout(3000);
+  const cont = pk.getByRole('button', { name: 'Continue' });
+  if (await cont.count()) await cont.first().click();
+  await load(pk);
+  await pk.waitForTimeout(800);
+  if (await cont.count()) await cont.first().click();
+  const pocket = (patch) => pk.evaluate(async (p) => (await import('/src/pocket/pocketStore.ts')).usePocket.getState().set(p), patch);
+  for (const [id, chip] of [['soulTurn', null], ['mediant', 'Rich chords'], ['soulTurn', 'Plain chords']]) {
+    const before = await pk.evaluate(SNAP);
+    await pocket({ trackId: 't4', section: 2, sheet: 'chords' });
+    await pk.waitForTimeout(300);
+    const d = pk.getByRole('dialog');
+    if (chip) await d.getByRole('button', { name: chip, exact: true }).click();
+    const name = await pk.evaluate(async (i) => (await import('/src/store/chills.ts')).chillsById(i).name, id);
+    const voicing = chip === 'Rich chords' ? 'rich' : chip === 'Plain chords' ? 'plain' : id === 'mediant' ? 'plain' : 'rich';
+    const want = await pk.evaluate(EXPECT, { id, voicing, from: 9, to: 13, range: WT });
+    const item = d.getByText(name, { exact: true });
+    await item.scrollIntoViewIfNeeded();
+    const detail = await d.locator('button', { hasText: name }).first().innerText();
+    step(`Pocket ${id} ${voicing}: the item names the chords written`, detail.includes(want.names), `${detail.slice(0, 160)} | ${want.names}`);
+    if (id === 'mediant') await shot(pk, 'pocket-chills-rich');
+    await item.click();
+    await pk.waitForTimeout(300);
+    const got = await notesOf(pk, 't4');
+    step(`Pocket ${id} ${voicing}: the notes as chosen, the same the studio writes`, !!got && JSON.stringify(got.notes) === JSON.stringify(want.notes) && got.name === name, `${got?.notes.length} vs ${want.notes.length}`);
+    await oneStep(pk, `Pocket ${id} ${voicing}`, before);
+    await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().undo());
+  }
+  await pctx.close();
+}
+
+/** The soul turnaround in F major at 60 BPM, plain and rich, exported as MP3s at the Streaming target, measured */
+async function renderNew({ browser }) {
+  const fs = require('fs');
+  const rows = {};
+  for (const voicing of ['plain', 'rich']) {
+    const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
+    await ctx.addInitScript(() => {
+      try {
+        localStorage.setItem('bosBeatbox.welcomeSeen', 'true');
+        localStorage.setItem('bos-beat-box.export-settings', JSON.stringify({ range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, format: 'mp3', normalize: true, target: 'streaming', bypassMaster: true }));
+      } catch {}
+    });
+    const p = await ctx.newPage();
+    p.on('pageerror', (e) => step('render: no page error', false, e.message));
+    await p.goto(APP + '?studio');
+    await p.waitForFunction(() => !!document.querySelector('#menu-file'), null, { timeout: 90000 });
+    const song = {
+      format: 'fledgetone-project', version: 1, name: `Soul turnaround ${voicing}`, bpm: 60, swing: 0,
+      loopRegion: { inBar: 1, outBar: 9, enabled: false }, markers: [],
+      tracks: [
+        { id: 'pad', name: 'Pad', instrumentKey: 'wavetable', volume: -10, pan: 0, reverbSend: 0.15, delaySend: 0 },
+        { id: 'sub', name: 'Bass', instrumentKey: 'subBass', volume: -8, pan: 0, reverbSend: 0, delaySend: 0 },
+      ],
+      clips: [],
+    };
+    await p.evaluate(async ([sg, v]) => {
+      const T = await import('/src/store/timelineStore.ts');
+      const P = await import('/src/store/project.ts');
+      const A = await import('/src/store/chillsActions.ts');
+      const K = await import('/src/store/songKey.ts');
+      T.useTimelineStore.getState().loadProject(P.parseProject(sg));
+      for (const t of ['pad', 'sub']) A.makeChillsClip(t, 1, 'soulTurn', K.keyOf(5, 'major'), 0.5, 1, v);
+    }, [song, voicing]);
+    await p.waitForTimeout(500);
+    // The pad alone, plain against rich: each chord's loudness (no target), from the app's render
+    rows[voicing] = await p.evaluate(async () => {
+      const ex = await import('/src/audio/exportWav.ts');
+      const { measureLoudness } = await import('/src/audio/loudness.ts');
+      const s = (await import('/src/store/timelineStore.ts')).useTimelineStore.getState();
+      const sr = 44100;
+      const render = async (tracks) => ex.channelsOf(await ex.renderArrangement({ tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: s.swing, startBar: 1, endBar: 9, masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback }, master: s.master, ending: 'exact', sampleRate: sr, markers: s.markers, intensity: { value: s.intensity, curves: s.intensityCurves }, peakCeilingDbtp: -1 }));
+      const perChord = async (ch) => {
+        const out = [];
+        for (let k = 0; k < 16; k++) {
+          // (2 s a chord; its last 1.5 s, past the attack, and the 3 s up to its end: short-term)
+          const a = Math.round((k * 2 + 0.5) * sr);
+          const z = Math.round((k + 1) * 2 * sr);
+          const st = Math.max(0, z - 3 * sr);
+          out.push({ chord: (await measureLoudness(ch.map((c) => c.slice(a, z)), sr)).integrated, shortTerm: (await measureLoudness(ch.map((c) => c.slice(st, z)), sr)).integrated });
+        }
+        return out;
+      };
+      const pad = await render(s.tracks.filter((t) => t.id === 'pad'));
+      return { pad: await perChord(pad) };
+    });
+    // The export, through the dialog: MP3 at the Streaming target
+    await p.getByRole('button', { name: /Export/ }).filter({ hasText: 'Export' }).first().click();
+    await p.waitForTimeout(500);
+    const d = p.getByRole('dialog');
+    const dl = p.waitForEvent('download', { timeout: 300000 });
+    await d.getByRole('button', { name: 'Export', exact: true }).click();
+    const file = await dl;
+    const out = `${RENDER}/new-${voicing}.mp3`;
+    await file.saveAs(out);
+    const b64 = fs.readFileSync(out).toString('base64');
+    rows[voicing].file = await p.evaluate(async (data) => {
+      const { measureLoudness } = await import('/src/audio/loudness.ts');
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const ac = new OfflineAudioContext(2, 44100, 44100);
+      const buf = await ac.decodeAudioData(bytes.buffer);
+      const sr = buf.sampleRate;
+      const ch = [buf.getChannelData(0), buf.getChannelData(1)];
+      let peak = 0;
+      for (const c of ch) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i]));
+      const whole = await measureLoudness(ch, sr);
+      const chords = [];
+      for (let k = 0; k < 16; k++) {
+        const a = Math.round((k * 2 + 0.5) * sr);
+        const z = Math.round((k + 1) * 2 * sr);
+        const st = Math.max(0, z - 3 * sr);
+        chords.push({ chord: (await measureLoudness(ch.map((c) => c.slice(a, z)), sr)).integrated, shortTerm: (await measureLoudness(ch.map((c) => c.slice(st, z)), sr)).integrated });
+      }
+      return { seconds: buf.duration, integrated: whole.integrated, truePeak: whole.truePeakMax, peak, chords };
+    }, b64);
+    rows[voicing].toast = await toastText(p);
+    await ctx.close();
+  }
+  const f = (v) => v.toFixed(1);
+  for (const v of ['plain', 'rich']) {
+    const r = rows[v].file;
+    console.log(`${v}: ${RENDER}/new-${v}.mp3 ${r.seconds.toFixed(1)} s, ${f(r.integrated)} LUFS, true peak ${f(r.truePeak)} dBTP, sample peak ${r.peak.toFixed(3)}`);
+    console.log(`  per chord (LUFS over each chord): ${r.chords.map((c) => f(c.chord)).join(' ')}`);
+    console.log(`  short-term (3 s to each chord's end): ${r.chords.map((c) => f(c.shortTerm)).join(' ')}`);
+    console.log(`  pad alone per chord: ${rows[v].pad.map((c) => f(c.chord)).join(' ')}`);
+    step(`render ${v}: no clipping`, r.peak < 1 && r.truePeak <= -0.9, `${r.peak.toFixed(3)}, ${f(r.truePeak)} dBTP`);
+    // (short-term loudness, 3 s, at each chord's end: no chord more than 1.5 dB over the one before)
+    const rise = Math.max(...r.chords.slice(1).map((c, k) => c.shortTerm - r.chords[k].shortTerm));
+    step(`render ${v}: no chord more than 1.5 dB over the one before (short-term)`, rise <= 1.5, `${f(rise)} dB`);
+    step(`render ${v}: at the Streaming target`, Math.abs(r.integrated + 14) <= 1, `${f(r.integrated)} LUFS`);
+  }
+  const diffs = rows.rich.pad.map((c, k) => c.chord - rows.plain.pad[k].chord);
+  console.log(`  pad alone, rich minus plain per chord, dB: ${diffs.map(f).join(' ')}`);
+  step('render: on the pad, no rich chord more than 1.5 dB over the plain one', Math.max(...diffs) <= 1.5, `${f(Math.max(...diffs))} dB most`);
+}
+
 (async () => {
   const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
@@ -179,6 +445,14 @@ const exported = (name, m) => {
     step(`${name}: Redo gives it again`, (await p.evaluate(SNAP)) === after);
   };
   const ids = await page.evaluate(async () => (await import('/src/store/chills.ts')).CHILLS.map((p) => ({ id: p.id, name: p.name })));
+
+  if (!process.env.SKIP_RICH_UI) await richChecks({ browser, page, store, load, shot, oneStep });
+  if (RENDER) await renderNew({ browser, store, load });
+  if (ONLY_RICH) {
+    await browser.close();
+    console.log(failures ? `${failures} failed` : 'all passed');
+    process.exit(failures ? 1 : 0);
+  }
 
   // ---------- Studio: each chills progression from the dialog ----------
   for (const [i, prog] of ids.entries()) {

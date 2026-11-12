@@ -14,13 +14,13 @@ import { clipMeasures } from '../../audio/tempoMap';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { uid } from '../../store/timelineTypes';
 import { SCALES, type Scale } from '../../store/noteTools';
-import { detectKey, keyOf, MAJOR_STEPS, MINOR_STEPS, NOTE_NAMES, type SongKey } from '../../store/songKey';
+import { detectKey, keyHomeName, keyOf, MAJOR_STEPS, MINOR_STEPS, type SongKey } from '../../store/songKey';
 import { chordChanges } from '../../store/smartTools';
 import { ARP_STYLES, arpeggiateChords, degreeChordName, degreeLabels, riff, RIFF_STYLES, stampDegree, type ArpStyle, type RiffStyle } from '../../store/chordTools';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { patternLabelOf, patternSize } from '../../store/patterns';
 import { showToast } from './toastStore';
-import { CHILLS, chillsById, chillsFill, chillsNames } from '../../store/chills';
+import { CHILLS, CHILLS_VOICINGS, chillsById, chillsFill, chillsKeyName, chillsNames, voicingOf, type ChillsVoicingStyle } from '../../store/chills';
 
 const select = 'bg-forge-bg border border-forge-border rounded px-1.5 py-0.5 text-forge-text';
 const button = 'h-6 px-2 rounded border border-forge-border text-forge-text hover:border-cyan-400 hover:text-cyan-200 disabled:opacity-40';
@@ -28,7 +28,7 @@ const button = 'h-6 px-2 rounded border border-forge-border text-forge-text hove
 /** The clip's key: the piano roll's scale when it has seven notes (major or minor by its third), else the song's. */
 export function keyFor(scale: Scale | null, clips: readonly Clip[], tracks: Parameters<typeof detectKey>[1]): SongKey {
   const steps = scale ? (SCALES[scale.id].steps as readonly number[]) : null;
-  if (scale && steps && steps.length === 7) return { ...keyOf(scale.root, steps[2] === 3 ? 'minor' : 'major'), steps, name: `${NOTE_NAMES[scale.root]} ${SCALES[scale.id].name.toLowerCase()}` };
+  if (scale && steps && steps.length === 7) return { ...keyOf(scale.root, steps[2] === 3 ? 'minor' : 'major'), steps, name: `${keyHomeName(scale.root, steps[2] === 3 ? 'minor' : 'major')} ${SCALES[scale.id].name.toLowerCase()}` };
   return detectKey(clips, tracks) ?? keyOf(0, 'major');
 }
 
@@ -91,6 +91,8 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
   const [arp, setArp] = useState<{ style: ArpStyle; octaves: number; rate: number; gate: number }>({ style: 'up', octaves: 1, rate: 0, gate: 0.8 });
   // (A bass instrument starts on bass lines)
   const [chills, setChills] = useState<string>(CHILLS[0].id);
+  // Plain or rich chords: the progression's own until another is picked
+  const [chillsVoicing, setChillsVoicing] = useState<ChillsVoicingStyle | null>(null);
   const [riffStyle, setRiffStyle] = useState<RiffStyle>(INSTRUMENTS[instrument].range[1] <= 64 ? 'bass' : 'pluck');
   // The last chord stamped (for smooth voicing), per clip
   const last = useRef<{ clipId: string; voiced: number[] } | null>(null);
@@ -147,16 +149,17 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
   /** A chills progression over the whole clip, in place of its notes (one undo step). */
   const writeChills = () => {
     const prog = chillsById(chills) ?? CHILLS[0];
-    const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity });
+    const voicing = voicingOf(prog, chillsVoicing);
+    const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity, voicing });
     if (!out.length) return;
     // (named after the progression, as the Chills progression dialog names its clip, unless the name was typed)
     apply(out, undefined, prog.name);
     // They're written in major or minor (their surprises are against those): a clip in another
     // seven-note scale is told which, as its own notes aren't all followed
-    const plainKey = `${NOTE_NAMES[key.root]} ${key.mode}`;
+    const plainKey = chillsKeyName(key);
     const plain = (key.mode === 'minor' ? MINOR_STEPS : MAJOR_STEPS) as readonly number[];
     const other = key.steps.length !== 7 || key.steps.some((st, i) => st !== plain[i]);
-    showToast(`${prog.name} in ${plainKey}: ${chillsNames(key, prog).join(' – ')}.${other ? ` These are written for major and minor keys, so with this clip's ${key.name} scale some of their notes fall outside it.` : ''} Undo for the last.`);
+    showToast(`${prog.name} in ${plainKey}: ${chillsNames(key, prog, voicing, [lo, hi]).join(' – ')}.${other ? ` These are written for major and minor keys, so with this clip's ${key.name} scale some of their notes fall outside it.` : ''} Undo for the last.`);
   };
 
   if (!pitched && links < 2) return null;
@@ -219,9 +222,17 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
       </span>
       <span data-search="chills progression peak shiver" className="flex items-center gap-1.5" title="Chord moves that give listeners chills at an emotional peak, held over the whole clip (in place of its notes), voiced for synths and pads. Written in major or minor: the SCALE's root and whether its third is major or minor.">
         CHILLS
-        <select className={select} value={chills} onChange={(e) => setChills(e.target.value)} aria-label="Chills progression">
+        <select className={select} value={chills} onChange={(e) => {
+            setChills(e.target.value);
+            setChillsVoicing(null);
+          }} aria-label="Chills progression">
           {CHILLS.map((p) => (
             <option key={p.id} value={p.id} title={p.detail}>{p.name}</option>
+          ))}
+        </select>
+        <select className={select} value={voicingOf(chillsById(chills) ?? CHILLS[0], chillsVoicing)} onChange={(e) => setChillsVoicing(e.target.value as ChillsVoicingStyle)} aria-label="Plain or rich chords" title={CHILLS_VOICINGS.map((v) => `${v.name}: ${v.detail}`).join(' ')}>
+          {CHILLS_VOICINGS.map((v) => (
+            <option key={v.id} value={v.id} title={v.detail}>{v.id === 'plain' ? 'plain' : 'rich'}</option>
           ))}
         </select>
         <button type="button" className={button} onClick={writeChills}>

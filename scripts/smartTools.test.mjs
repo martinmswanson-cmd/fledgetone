@@ -263,7 +263,7 @@ test('the syncopated bass plays its push in each measure of a chord, and the dro
 test('the studio and Pocket pass the song’s meter to the chord, bass and drum tools', () => {
   const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
   const actions = src('src/store/smartActions.ts');
-  assert.match(actions, /harmonize\(melody, songKey\(\), clip\.lengthBars, chordBars, spans\)/);
+  assert.match(actions, /const key = songKey\(\);\s+const \{ chords \} = harmonize\(melody, key, clip\.lengthBars, chordBars, spans\)/);
   assert.match(actions, /chordNotesFor\(chords, chordBars, style, newId, spans, \{ map, atBar \}\)/);
   assert.match(actions, /bassFromChords\(clip\.notes, clip\.lengthBars, style, newId, 33, meter\.num \/ meter\.den\)/);
   const pocket = src('src/pocket/PocketSheets.tsx');

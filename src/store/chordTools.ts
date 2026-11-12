@@ -2,7 +2,7 @@ import type { NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
-import { chordName, degreeChord, seeded, voiceLead } from './smartTools';
+import { chordNameIn, degreeChord, seeded, voiceLead } from './smartTools';
 import { maxOf } from '../support/minMax';
 
 /**
@@ -31,7 +31,7 @@ export function degreeLabels(key: SongKey): string[] {
 }
 
 /** A degree's chord name in the key ("Am", "G7"…). */
-export const degreeChordName = (key: SongKey, degree: number, seventh = false): string => chordName(degreeChord(key, { degree }, seventh));
+export const degreeChordName = (key: SongKey, degree: number, seventh = false): string => chordNameIn(key, degreeChord(key, { degree }, seventh));
 
 /**
  * The notes of the key's chord on `degree` (0 = I), `lengthBars` long from `at`, voiced close to
