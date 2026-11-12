@@ -672,7 +672,7 @@ function watchBendBack(inst: TrackInstrument): void {
     if (!bendsBack.size) return;
     bendBack(inst, Math.max(liveMix.bus.context.currentTime, time - BACK_BEFORE_NOTE));
   };
-  const { play, noteOn, noteVoice, bend } = inst;
+  const { play, noteOn, noteVoice, glideVoice, bend } = inst;
   inst.play = (notes, time) => {
     if (notes.length) before(time);
     play(notes, time);
@@ -686,6 +686,11 @@ function watchBendBack(inst: TrackInstrument): void {
     inst.noteVoice = (note, time) => {
       before(time);
       return noteVoice(note, time);
+    };
+  if (glideVoice)
+    inst.glideVoice = (note, time) => {
+      before(time);
+      return glideVoice(note, time);
     };
   // Any bend but the song's back at rest (a jump's too: it leaves a live bend where it is) takes over
   inst.bend = (cents, time, live, cut, sent) => {

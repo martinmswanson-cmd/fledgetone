@@ -13,6 +13,8 @@ import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { StepLanes } from './StepLanes';
 import { stepLanesHeight } from './stepTargets';
 import { bendSupport, diveNotes, withSlide, slideOf, MAX_SLIDE } from '../../store/slides';
+import { chordGlideSupport, glidePairs } from '../../store/chordGlide';
+import { ChordGlidePicker } from './ChordGlidePicker';
 import { noteValueAt, withNoteLength } from '../../store/noteExpression';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -425,6 +427,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const stepsH = stepLanesHeight(clip, stepsOpen);
   /** Whether this track's instrument plays slides and dives (see slides.ts) */
   const bends = fullTrack ? bendSupport(fullTrack, INSTRUMENTS[instrument]?.kind) : 'no';
+  /** Whether this track's instrument glides between chords (see chordGlide.ts), and which notes glide into which */
+  const glides = !!fullTrack && chordGlideSupport(fullTrack);
+  const glidePairList = useMemo(() => (clip.glide ? glidePairs(clip.notes, clip.lengthBars) : []), [clip.glide, clip.notes, clip.lengthBars]);
   const bendNotice = () => {
     if (bends === 'no') showToast(`${INSTRUMENTS[instrument]?.name ?? 'This instrument'} doesn't bend: slides and dives play at the note's own pitch. Fledge Synth, the basses, Analog Lead and the recorded instruments play them.`);
     else if (bends === 'maybe') showToast('A plugin gets slides and dives as MIDI pitch bend over ±2 semitones, which it may or may not follow.');
@@ -1293,6 +1298,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </label>
         )}
         {!clip.audio && <GrooveFeelPicker clip={clip} className={select} />}
+        {!clip.audio && !namedRows && <ChordGlidePicker clip={clip} glides={glides} instrumentName={INSTRUMENTS[instrument]?.name ?? 'This instrument'} />}
         {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={drumRowsOf(instrument)} />}
         {!clip.audio && isDrumKind(instrument) && (
           <button
@@ -1620,6 +1626,25 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                       return `${((start + (len * k) / 32) * unitW).toFixed(1)},${((idx - noteValueAt(n.expr!.bend, at, 'bend')) * rowH + rowH / 2).toFixed(1)}`;
                     });
                     return <polyline key={n.id} points={pts.join(' ')} fill="none" stroke={bends === 'no' ? 'rgba(255,255,255,0.35)' : 'rgb(250,204,21)'} strokeWidth={2} strokeDasharray={bends === 'no' ? '3 3' : undefined} strokeLinecap="round" />;
+                  })}
+                </svg>
+              )}
+              {/* Glide between chords: a line from each note into the note it glides to (yellow where the instrument glides) */}
+              {!namedRows && glidePairList.length > 0 && (
+                <svg data-glide-lines="" className="absolute inset-0 pointer-events-none z-[11]" width={gridW} height={gridH} aria-hidden>
+                  {glidePairList.map((p) => {
+                    const a = rowIndexOf(rows, p.from.note);
+                    const b = rowIndexOf(rows, p.to.note);
+                    if (a < 0 || b < 0) return null;
+                    const x = unitsOf(p.at) * unitW;
+                    // (as long as the glide, at the song's tempo there; never shorter than a few pixels)
+                    const ms = p.bass ? (clip.glide!.bassMs ?? clip.glide!.ms) : clip.glide!.ms;
+                    const bars = ms / 1000 / (240 / tempoAt(clip.startBar + p.at, songTempo(useTimelineStore.getState())));
+                    const w = Math.max(8, unitsOf(bars) * unitW);
+                    const y0 = a * rowH + rowH / 2;
+                    const y1 = b * rowH + rowH / 2;
+                    const x0 = Math.max(0, x - 4);
+                    return <path key={`${p.from.id}>${p.to.id}`} data-glide={`${p.from.note}>${p.to.note}`} d={`M${x0.toFixed(1)},${y0.toFixed(1)} C${(x0 + w / 2).toFixed(1)},${y0.toFixed(1)} ${(x0 + w / 2).toFixed(1)},${y1.toFixed(1)} ${(x0 + w).toFixed(1)},${y1.toFixed(1)}`} fill="none" stroke={glides ? 'rgb(250,204,21)' : 'rgba(255,255,255,0.35)'} strokeWidth={2} strokeDasharray={glides ? undefined : '3 3'} strokeLinecap="round" />;
                   })}
                 </svg>
               )}

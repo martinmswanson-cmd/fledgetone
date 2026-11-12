@@ -55,6 +55,12 @@ export function normalizeClipGlide(raw: unknown): ClipGlide | undefined {
 /** The instruments whose voices glide on their own (the chord synths built on a pool of voices). */
 const GLIDING: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['wavetable', 'keys', 'brass'] as InstrumentKey[]);
 
+/** What glide between chords does, in plain words (the studio's piano roll and Pocket say it). */
+export const GLIDE_ABOUT = 'Each note of a chord slides into its note in the next chord, the bass on its own, like separate voices moving. A note with its own bend, one that plays only sometimes, and a leap bigger than a fifth start afresh.';
+
+/** Said where a track's instrument plays the chords without gliding. */
+export const glideNotHere = (instrumentName: string) => `${instrumentName} plays the chords as written, without gliding: Wavetable, Keys and Brass glide.`;
+
 /** Whether `track`'s instrument glides between chords (the others play the chords as written). */
 export const chordGlideSupport = (track: Pick<Track, 'instrumentKey'>): boolean => GLIDING.has(track.instrumentKey);
 

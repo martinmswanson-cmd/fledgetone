@@ -76,6 +76,12 @@ export function createBrassVoice(output: Tone.InputNode) {
         swellAt(t);
         return synth.attack(note, t, velocity);
       }),
+    // A voice gliding between chords (see chordGlide.ts): struck with the swell, as a held key is
+    glide: (note: string, time: number, velocity: number) =>
+      strikeWhole(filter.context, notLate(filter.context, time), (t) => {
+        swellAt(t);
+        return synth.glide(note, t, velocity);
+      }),
     bend: synth.bend,
   };
 }
