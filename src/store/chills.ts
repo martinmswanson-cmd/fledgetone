@@ -274,6 +274,8 @@ export const homeName = keyHomeName;
 export const chillsKeyName = (key: Pick<SongKey, 'root' | 'mode'>): string => `${keyHomeName(key.root, key.mode)} ${key.mode}`;
 
 export { spellNote };
+/** The key-spelling helpers (songKey.ts), for the tests */
+export const keySpelling = { keyHomeName, liftedHome };
 
 /** A chord's name after its root, as chordName (smartTools) writes it, with ♭ and ♯ for b and #. */
 const plainSuffix = (pcs: readonly number[]) => chordNameIn(keyOf(pcs[0], 'major'), pcs).replace(/^[A-G][♭♯]?/, '');
@@ -297,7 +299,7 @@ export function chillsNames(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
     const up = c.up ?? 0;
     const root = pc(key.root + up);
     // (after a key change, the new key written to agree with the chord that led to it)
-    const home = up ? liftedHome(keyHomeName(key.root, key.mode), key.root, up) : keyHomeName(key.root, key.mode);
+    const home = up ? liftedHome(keyHomeName(key.root, key.mode), key.root, up, key.mode) : keyHomeName(key.root, key.mode);
     const name = (semis: number) => spellFrom(home, root, semis);
     const rich = style === 'rich' && !voiced?.[i]?.plain ? richQuality(key, c) : null;
     const pcs = chillsPcs(key, c);

@@ -53,7 +53,7 @@ test('the chords are right in several keys, major and minor', () => {
   assert.equal(names(9, 'minor', 'risingBass'), 'Am G/B C Dm E F G Am');
   assert.equal(names(0, 'major', 'liftStep'), 'C G Am A7 D A Bm G');
   assert.equal(names(9, 'minor', 'liftStep'), 'Am F C F♯7 Bm G D A');
-  assert.equal(names(5, 'major', 'liftHalf'), 'F C Dm B♭ G♭ D♭ E♭m C♭');
+  assert.equal(names(5, 'major', 'liftHalf'), 'F C Dm B♭ F♯ C♯ D♯m B');
   // Every chord's notes are its chord in the key, in every key and mode
   for (const mode of ['major', 'minor'])
     for (let root = 0; root < 12; root++)
@@ -702,4 +702,24 @@ test('key names are spelled the way the key is written, everywhere they are show
   assert.equal(keyOf(6, 'major').name, 'F♯ major');
   for (const file of ['src/components/timeline/SmartDialog.tsx', 'src/components/timeline/ArrangeDialog.tsx']) assert.ok(!/<option key=\{n\} value=\{i\}>\{n\}<\/option>/.test(src(file)), `${file}: the key menu spells its keys`);
   assert.ok(src('src/pocket/PocketPads.tsx').includes('spellNote('));
+});
+
+test('up a half step from a flat key lands on a key as it is written: G minor to G♯ minor, not A♭ minor', () => {
+  const names = (root, mode, id) => X.chillsNames(keyOf(root, mode), prog(id), 'plain');
+  assert.deepEqual(names(7, 'minor', 'liftHalf').slice(4), ['G♯m', 'E', 'B', 'F♯']);
+  assert.deepEqual(names(0, 'minor', 'liftHalf').slice(4), ['C♯m', 'A', 'E', 'B']);
+  assert.deepEqual(names(5, 'minor', 'liftHalf').slice(4), ['F♯m', 'D', 'A', 'E']);
+  const { keyHomeName, liftedHome } = X.keySpelling;
+  for (const id of ['liftStep', 'liftHalf'])
+    for (const mode of ['major', 'minor'])
+      for (let root = 0; root < 12; root++) {
+        const n = names(root, mode, id);
+        for (const c of n) assert.ok(!/[♭♯].*[♭♯]|[♭♯]{2}|[A-G]b|#/.test(c.split('/')[0].replace(/7?[♭♯]9|m7♭5/, '')), `${id} ${root} ${mode}: ${c}`);
+        const up = prog(id).lift;
+        const home = liftedHome(keyHomeName(root, mode), root, up, mode);
+        // A new home with a flat is always one a key in that mode is written on
+        if (home.includes('♭')) assert.equal(home, keyHomeName(root + up, mode), `${root} ${mode} +${up}`);
+        // Up a whole step its letter is the next: the chord before it agrees (its root a 5th under, letter for letter)
+        if (up === 2) assert.equal('CDEFGAB'.indexOf(home[0]), ('CDEFGAB'.indexOf(keyHomeName(root, mode)[0]) + 1) % 7, `${root} ${mode}`);
+      }
 });

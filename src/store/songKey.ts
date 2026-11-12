@@ -70,19 +70,22 @@ export function spellFrom(home: string, root: number, semis: number): string {
 export const spellNote = (root: number, mode: 'major' | 'minor', semis: number): string => spellFrom(keyHomeName(root, mode), root, semis);
 
 /**
- * The home note of the key `up` semitones over the key named `home`, written to agree with it: up a
- * whole step the next letter (G♯ minor to A♯ minor, so its V7 before is E♯7); up a half step the
- * next letter or the same one raised, whichever needs no sharp or flat, else the kind the key had
- * (F to G♭, F♯ to G, B♭ to B).
+ * The home note of the key `up` semitones over the key named `home` (in `mode`), written to agree
+ * with it: up a whole step the next letter (G♯ minor to A♯ minor, so its V7 before is E♯7); up a
+ * half step the next letter or the same one raised, whichever needs no sharp or flat, else the kind
+ * the key had (B♭ to B, F♯ to G). A flat home no key in that mode is written on (D♭ minor, F♭, C♭)
+ * is written as keys on it are (C♯ minor, E, B).
  */
-export function liftedHome(home: string, root: number, up: number): string {
+export function liftedHome(home: string, root: number, up: number, mode: 'major' | 'minor'): string {
   const letter = LETTERS.indexOf(home[0] as (typeof LETTERS)[number]);
   const target = pcOf(root + up);
   const next = onLetter((letter + 1) % 7, target);
-  if (up === 2 || (next && !/[♭♯]/.test(next))) return next ?? SHARP_NAMES[target];
   const same = onLetter(letter, target);
-  if (same && !/[♭♯]/.test(same)) return same;
-  return home.includes('♯') ? (same ?? next ?? SHARP_NAMES[target]) : (next ?? same ?? FLAT_NAMES[target]);
+  let out: string;
+  if (up === 2 || (next && !/[♭♯]/.test(next))) out = next ?? SHARP_NAMES[target];
+  else if (same && !/[♭♯]/.test(same)) out = same;
+  else out = home.includes('♯') ? (same ?? next ?? SHARP_NAMES[target]) : (next ?? same ?? FLAT_NAMES[target]);
+  return out.includes('♭') && out !== keyHomeName(target, mode) ? keyHomeName(target, mode) : out;
 }
 
 export const keyOf = (root: number, mode: 'major' | 'minor'): SongKey => ({
