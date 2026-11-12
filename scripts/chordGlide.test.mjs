@@ -45,9 +45,9 @@ test('a note both chords share is held, not glided: only the voices that change 
   // A block shift up a third: E4 and G4 are in both, so they hold; C4 can't reach B4 (11 semitones)
   const shift = [...chord(['C4', 'E4', 'G4'], 0), ...chord(['E4', 'G4', 'B4'], 0.5)];
   assert.deepEqual(names(G.glidePairs(shift, 1)), ['E4>E4', 'G4>G4']);
-  // Gm9 (G2 | A#3 D4 F4 A4) to C13 (C2 | A#3 E4 A4 D5): A#3 and A4 held, F4 down a semitone to E4 (the least movement), D4 ends, D5 starts
+  // Gm9 (G2 | A#3 D4 F4 A4) to C13 (C2 | A#3 E4 A4 D5): A#3 and A4 held, F4 down a semitone to E4 (the least movement), D4 ends, D5 starts (the bass a 4th: afresh)
   const gc = [...chord(['G2', 'A#3', 'D4', 'F4', 'A4'], 0), ...chord(['C2', 'A#3', 'E4', 'A4', 'D5'], 0.5)];
-  assert.deepEqual(names(G.glidePairs(gc, 1)), ['G2>C2 bass', 'A#3>A#3', 'F4>E4', 'A4>A4']);
+  assert.deepEqual(names(G.glidePairs(gc, 1)), ['A#3>A#3', 'F4>E4', 'A4>A4']);
   // A held voice is one note through both chords: no glide in its curve
   const held = G.glideChains(gc, 1).find((c) => c.notes[0].note === 'A4');
   assert.equal(G.chainSound(held, 0, { ms: 150 }, 1, 120).expr, undefined);
@@ -92,16 +92,64 @@ test('the lines are drawn from the notes as they play: the sustain pedal stops a
   assert.equal(G.clipGlidePairs({ notes, lengthBars: 1, expression: pedal }).length, 0);
 });
 
-test('the bass pairs with the bass, on its own', () => {
-  // Gm9 (G2 | G3 Bb3 D4 F4 A4) to C13 (C2 | E4 Bb4 D5 A5)
-  const notes = [...chord(['G2', 'G3', 'A#3', 'D4', 'F4', 'A4'], 0), ...chord(['C2', 'E4', 'A#4', 'D5', 'A5'], 0.5)];
-  const pairs = G.glidePairs(notes, 1);
-  assert.deepEqual(pairs.filter((p) => p.bass).map((p) => `${p.from.note}>${p.to.note}`), ['G2>C2']);
-  // (the upper voices never take the bass, nor the bass an upper note)
-  for (const p of pairs.filter((q) => !q.bass)) assert.ok(p.from.note !== 'G2' && p.to.note !== 'C2');
-  // A bass a fifth down glides; one an octave away starts afresh
+test('no voice zig-zags: one that has just glided up never glides straight back down (nor down then up)', () => {
+  // The top line E5 F5 E5 F5 (as the soul turnaround's top voice goes): F5 glided up from E5, so it ends and E5 starts afresh
+  const top = [N('E5', 0), N('F5', 0.5), N('E5', 1), N('F5', 1.5)];
+  assert.deepEqual(names(G.glidePairs(top, 2)), ['E5>F5', 'E5>F5']);
+  // A voice that held in between may turn: up, held, down
+  assert.equal(G.glidePairs([N('E5', 0), N('F5', 0.5), N('F5', 1), N('E5', 1.5)], 2).length, 3);
+  // The bass too: down a fifth, then not straight back up
+  const bass = [...chord(['D3', 'C4', 'F4'], 0), ...chord(['G2', 'B3', 'F4'], 0.5), ...chord(['C3', 'C4', 'E4'], 1)];
+  assert.ok(!G.glidePairs(bass, 1.5).some((p) => p.from.note === 'G2' && p.to.note === 'C3'));
+});
+
+test('the soul turnaround in F (rich, a chord each half bar): no voice leaps, none zig-zags', async () => {
+  const X = await import('../src/store/chills.ts');
+  const { keyOf } = await import('../src/store/songKey.ts');
+  const { midiOf } = await import('../src/store/noteTools.ts');
+  const key = keyOf(5, 'major');
+  const prog = X.chillsById('soulTurn');
+  const count = X.chillsChords(key, prog).length;
+  let id = 0;
+  const notes = X.chillsNotes(key, prog, Array.from({ length: count }, (_, i) => ({ start: i / 2, length: 0.5 })), () => `s${++id}`, { range: [36, 96], voicing: 'rich' });
+  const pairs = G.glidePairs(notes, count / 2);
+  for (const p of pairs) {
+    const d = Math.abs(midiOf(p.to.note) - midiOf(p.from.note));
+    assert.ok(d <= (p.bass ? G.GLIDE_MAX_BASS : G.GLIDE_MAX_UPPER), `${p.from.note} to ${p.to.note}`);
+  }
+  for (const c of G.glideChains(notes, count / 2)) {
+    const m = c.notes.map((n) => midiOf(n.note));
+    for (let i = 2; i < m.length; i++) assert.ok(Math.sign(m[i - 1] - m[i - 2]) * Math.sign(m[i] - m[i - 1]) >= 0, `zig-zag in ${c.notes.map((n) => n.note).join(' ')}`);
+  }
+  // (before: D4 up a 4th to G4, then F4, then G4; the top E5 F5 E5 E5 E5 F5 E5 F5 F5 E5 F5 as one voice; A4 up a 4th to D5)
+  assert.ok(!pairs.some((p) => p.from.note === 'D4' && p.to.note === 'G4'));
+  assert.ok(!pairs.some((p) => p.from.note === 'A4' && p.to.note === 'D5'));
+});
+
+test('the bass glides a whole step at most, on its own; along the roots (ii, V, I) it starts each note fresh', () => {
+  // A ii–V–I in F with its roots under it: D3, G2, C3, F2 move a 4th or a 5th: no bass glide at all (it swooped low and high)
+  const iiVI = [...chord(['D3', 'C4', 'F4', 'A4'], 0), ...chord(['G2', 'A#3', 'F4', 'A4'], 0.5), ...chord(['C3', 'A#3', 'E4', 'G4'], 1), ...chord(['F2', 'A3', 'F4', 'A4'], 1.5)];
+  assert.deepEqual(G.glidePairs(iiVI, 2).filter((p) => p.bass), []);
+  // (and the upper voices never take the bass, nor the bass an upper note)
+  for (const p of G.glidePairs(iiVI, 2)) for (const b of ['D3', 'G2', 'C3', 'F2']) assert.ok(p.from.note !== b && p.to.note !== b);
+  // A whole step and a half step still glide, in the bass's own time
+  const steps = [...chord(['C3', 'A#3', 'E4'], 0), ...chord(['D3', 'A3', 'F4'], 0.5), ...chord(['C#3', 'A3', 'E4'], 1)];
+  assert.deepEqual(G.glidePairs(steps, 1.5).filter((p) => p.bass).map((p) => `${p.from.note}>${p.to.note}`), ['C3>D3']);
+  assert.deepEqual(G.glidePairs([...chord(['C3', 'A#3', 'E4'], 0), ...chord(['A#2', 'A3', 'F4'], 0.5)], 1).filter((p) => p.bass).map((p) => `${p.from.note}>${p.to.note}`), ['C3>A#2']);
+  assert.equal(G.GLIDE_MAX_BASS, 2);
+  // An octave away starts afresh too
   const far = [...chord(['G2', 'D4', 'G4'], 0), ...chord(['G1', 'D4', 'G4'], 0.5)];
   assert.deepEqual(names(G.glidePairs(far, 1)), ['D4>D4', 'G4>G4']);
+});
+
+test('a voice leaping a 4th while its neighbours hold starts fresh (the soul turnaround at 8 s and 22 s)', () => {
+  // C13 (C3 | A#3 C4 D4 A4 E5) to Am7 (A2 | C4 G4 A4 E5): D4 doesn't go up to G4
+  const at8 = [...chord(['C3', 'A#3', 'C4', 'D4', 'A4', 'E5'], 0), ...chord(['A2', 'C4', 'G4', 'A4', 'E5'], 0.5)];
+  assert.deepEqual(names(G.glidePairs(at8, 1)), ['C4>C4', 'A4>A4', 'E5>E5']);
+  // Am7 (A2 | C4 G4 A4 E5) to D7#9 (D3 | C4 F#4 D5 F5): A4 doesn't go up to D5
+  const at22 = [...chord(['A2', 'C4', 'G4', 'A4', 'E5'], 0), ...chord(['D3', 'C4', 'F#4', 'D5', 'F5'], 0.5)];
+  assert.ok(!G.glidePairs(at22, 1).some((p) => p.from.note === 'A4'));
+  assert.ok(G.glidePairs(at22, 1).every((p) => p.from.note !== 'A2'));
 });
 
 test('chords of different sizes: the extra voices start or end as written', () => {
@@ -128,10 +176,14 @@ test('a suspension resolves: the 4th glides to the 3rd, the held notes left alon
   assert.ok(!pairs.some((p) => p.from === pedal || p.to === pedal));
 });
 
-test('a leap of more than a fifth starts afresh', () => {
+test('a voice glides a step or two at most (a minor 3rd); a bigger leap starts afresh, as a choir\u2019s voices move', () => {
   assert.deepEqual(G.glidePairs([N('C4', 0), N('C5', 0.5)], 1), []);
   assert.deepEqual(G.glidePairs([N('C4', 0), N('G#4', 0.5)], 1), []);
-  assert.equal(G.glidePairs([N('C4', 0), N('G4', 0.5)], 1).length, 1);
+  assert.deepEqual(G.glidePairs([N('C4', 0), N('G4', 0.5)], 1), []);
+  assert.deepEqual(G.glidePairs([N('C4', 0), N('F4', 0.5)], 1), []);
+  assert.deepEqual(G.glidePairs([N('C4', 0), N('E4', 0.5)], 1), []);
+  assert.equal(G.glidePairs([N('C4', 0), N('D#4', 0.5)], 1).length, 1);
+  assert.equal(G.GLIDE_MAX_UPPER, 3);
   // Notes that don't meet (a gap) don't glide
   assert.deepEqual(G.glidePairs([N('C4', 0, '4n'), N('D4', 0.5)], 1), []);
 });
@@ -150,11 +202,11 @@ test('notes with their own bend, pressure or chance are never paired', () => {
 });
 
 test('a voice glides through three chords and more, as one held note', () => {
-  const notes = [...chord(['C4', 'E4', 'G4'], 0, '4n'), ...chord(['B3', 'D4', 'G4'], 0.25, '4n'), ...chord(['C4', 'E4', 'A4'], 0.5, '4n'), ...chord(['C4', 'F4', 'A4'], 0.75, '4n')];
+  const notes = [...chord(['C4', 'E4', 'G4'], 0, '4n'), ...chord(['B3', 'D4', 'G4'], 0.25, '4n'), ...chord(['A3', 'C4', 'F4'], 0.5, '4n'), ...chord(['A3', 'C4', 'E4'], 0.75, '4n')];
   const chains = G.glideChains(notes, 1);
   assert.equal(chains.length, 3);
   for (const c of chains) assert.equal(c.notes.length, 4);
-  assert.deepEqual(chains.map((c) => c.notes.map((n) => n.note).join(' ')), ['C4 B3 C4 C4', 'E4 D4 E4 F4', 'G4 G4 A4 A4']);
+  assert.deepEqual(chains.map((c) => c.notes.map((n) => n.note).join(' ')), ['C4 B3 A3 A3', 'E4 D4 C4 C4', 'G4 G4 F4 E4']);
   // As it sounds: one note from the first chord's start to the last's end, gliding at each change
   const s = G.chainSound(chains[0], 0, { ms: 120 }, 1, 120);
   assert.equal(s.startOffset, 0);
@@ -174,7 +226,7 @@ test('a voice glides through three chords and more, as one held note', () => {
   close(from.startOffset, 0.25);
   close(durationToBars(from.duration), 0.75);
   assert.equal(from.expr.bend[0].value, 0);
-  assert.ok(from.expr.bend.some((p) => Math.abs(p.value - 1) < 1e-9), 'B3 up to C4: +1');
+  assert.ok(from.expr.bend.some((p) => Math.abs(p.value + 2) < 1e-9), 'B3 down to A3: -2');
 });
 
 test('a softer chord: the voice’s pressure follows it, from the loudest, never up past it', () => {
@@ -209,7 +261,7 @@ test('the glide time is in milliseconds whatever the tempo, and the bass has its
   close(later.spb, 4);
   close(later.expr.bend[later.expr.bend.length - 1].at - 1, 0.2 / 4);
   // The bass's own time
-  const bassy = [...chord(['G2', 'G3', 'B3'], 0), ...chord(['C2', 'G3', 'C4'], 0.5)];
+  const bassy = [...chord(['G2', 'G3', 'B3'], 0), ...chord(['A2', 'G3', 'C4'], 0.5)];
   const bassChain = G.glideChains(bassy, 1).find((c) => c.bass[0]);
   const b = G.chainSound(bassChain, 0, { ms: 100, bassMs: 300 }, 1, 120);
   close(b.expr.bend[b.expr.bend.length - 1].at, 0.5 + 0.3 / 2);

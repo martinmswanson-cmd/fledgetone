@@ -18,7 +18,9 @@ import type { Clip } from './timelineTypes';
  * Pairs: where notes end and others start at the same place, the notes ending are paired with
  * those starting. A note both chords share is held first (the same pitch: one voice, no glide, no
  * new attack), so the fewest voices move; the rest pair so they move the least in all, never
- * crossing each other nor a held note, none further than GLIDE_MAX_SEMIS. The lowest note of each side, when
+ * crossing each other nor a held note, none further than GLIDE_MAX_UPPER (a step or two), the bass no further than
+ * GLIDE_MAX_BASS (a whole step), none straight
+ * back the way it just came (no zig-zag: it ends and a new voice starts instead). The lowest note of each side, when
  * it sits a fifth or more below the next, is the bass and pairs only with the other side's bass.
  * A note with a bend or pressure of its own, or one that plays only some of the time, is never
  * paired; a note left over (the chords have different sizes) starts or ends as written; a note
@@ -31,8 +33,16 @@ export type { ClipGlide };
 export const GLIDE_MS_MIN = 30;
 export const GLIDE_MS_MAX = 400;
 export const GLIDE_MS_DEFAULT = 120;
-/** The furthest a voice glides (semitones): a bigger leap starts the note afresh. */
-export const GLIDE_MAX_SEMIS = 7;
+/**
+ * The furthest the bass glides (semitones: a whole step): a bass moving further (along the roots, a
+ * 4th or a 5th) ends and the next starts fresh, as written; gliding there swooped low and high.
+ */
+export const GLIDE_MAX_BASS = 2;
+/**
+ * The furthest any other voice glides (semitones: a step or two, a minor 3rd at most), as a choir's
+ * voices move: a bigger leap is that voice ending and a new one starting instead.
+ */
+export const GLIDE_MAX_UPPER = 3;
 /** A bass sits at least this far (semitones) below the next note up. */
 const BASS_GAP = 7;
 /** Notes meet when one ends within this of the other's start (bars: half a tick). */
@@ -60,7 +70,7 @@ export function normalizeClipGlide(raw: unknown): ClipGlide | undefined {
 const GLIDING: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['wavetable', 'keys', 'brass'] as InstrumentKey[]);
 
 /** What glide between chords does, in plain words (the studio's piano roll and Pocket say it). */
-export const GLIDE_ABOUT = 'Each note of a chord slides into its note in the next chord, the bass on its own, like separate voices moving; a note both chords share is held. A note with its own bend, one that plays only sometimes, and a leap bigger than a fifth start afresh.';
+export const GLIDE_ABOUT = 'Each note of a chord slides into its note in the next chord, the bass on its own, like separate voices moving; a note both chords share is held. Voices slide a step or two (the bass a whole step at most) and never straight back the way they came: a bigger move, a turn back, a note with its own bend or one that plays only sometimes starts afresh.';
 
 /** Said where a track's instrument plays the chords without gliding. */
 export const glideNotHere = (instrumentName: string) => `${instrumentName} plays the chords as written, without gliding: Wavetable, Keys and Brass glide.`;
@@ -102,11 +112,12 @@ function splitBass(side: Side[]): { bass: Side | null; upper: Side[] } {
 /**
  * The pairs between two sides, both low to high. First every note both have is held (a pair that
  * doesn't move): the fewest voices move. Then the rest, between the held notes around them, as
- * many as can glide, the least movement in all, none further than GLIDE_MAX_SEMIS (on a line the
+ * many as can glide, the least movement in all, none further than GLIDE_MAX_UPPER and none straight
+ * back the way it came (`back`) (on a line the
  * least movement never crosses two voices, so going through both in order finds it). The same
  * notes always give the same pairs.
  */
-function matchSides(a: Side[], b: Side[]): Array<[Side, Side]> {
+function matchSides(a: Side[], b: Side[], back: (x: Side, y: Side) => boolean): Array<[Side, Side]> {
   // Every note both sides have stays where it is (the lowest of a repeated pitch with the lowest)
   const held: Array<[Side, Side]> = [];
   const usedB = new Set<Side>();
@@ -119,11 +130,10 @@ function matchSides(a: Side[], b: Side[]): Array<[Side, Side]> {
     } else restA.push(x);
   }
   const restB = b.filter((s) => !usedB.has(s));
-  if (!held.length) return moveSides(a, b);
-  // The rest never glide across a held note
+  // The rest never glide across a held note, nor straight back the way they came (see glidePairs)
   const heldPitches = held.map(([x]) => x.midi);
-  const across = (x: Side, y: Side) => heldPitches.some((m) => m > Math.min(x.midi, y.midi) && m < Math.max(x.midi, y.midi));
-  return [...held, ...moveSides(restA, restB, across)].sort((p, q) => bySide(p[0], q[0]));
+  const barred = (x: Side, y: Side) => back(x, y) || heldPitches.some((m) => m > Math.min(x.midi, y.midi) && m < Math.max(x.midi, y.midi));
+  return [...held, ...moveSides(restA, restB, barred)].sort((p, q) => bySide(p[0], q[0]));
 }
 
 /** Voices that move (no shared notes among them): as many as can glide, the least movement in all, in order (never crossing). */
@@ -143,7 +153,7 @@ function moveSides(a: Side[], b: Side[], across: (x: Side, y: Side) => boolean =
       let h = 0;
       if (i && j) {
         const d = Math.abs(a[i - 1].midi - b[j - 1].midi);
-        if (d <= GLIDE_MAX_SEMIS && !across(a[i - 1], b[j - 1])) {
+        if (d <= GLIDE_MAX_UPPER && !across(a[i - 1], b[j - 1])) {
           c = count[i - 1][j - 1] + 1;
           k = cost[i - 1][j - 1] + d;
           h = 1;
@@ -186,6 +196,11 @@ export function glidePairs(notes: readonly NoteEvent[], clipLength: number): Gli
     (starts.get(start) ?? starts.set(start, []).get(start)!).push(s);
   }
   const out: GlidePair[] = [];
+  // Which way each voice last moved into its note (1 up, -1 down; held or begun there: none): a voice
+  // that has just glided up never glides straight back down, nor down then up (a zig-zag that sounds
+  // like a wobble, not a voice moving): it ends there and a new one starts
+  const came = new Map<NoteEvent, number>();
+  const back = (x: Side, y: Side) => (came.get(x.note) ?? 0) * Math.sign(y.midi - x.midi) < 0;
   for (const key of [...starts.keys()].sort((x, y) => x - y)) {
     const a = ends.get(key);
     const b = starts.get(key)!;
@@ -195,12 +210,13 @@ export function glidePairs(notes: readonly NoteEvent[], clipLength: number): Gli
     const sb = splitBass(b);
     const pairs: GlidePair[] = [];
     if (sa.bass && sb.bass) {
-      if (Math.abs(sa.bass.midi - sb.bass.midi) <= GLIDE_MAX_SEMIS) pairs.push({ from: sa.bass.note, to: sb.bass.note, bass: true, at });
-      for (const [x, y] of matchSides(sa.upper, sb.upper)) pairs.push({ from: x.note, to: y.note, bass: false, at });
+      if (Math.abs(sa.bass.midi - sb.bass.midi) <= GLIDE_MAX_BASS && !back(sa.bass, sb.bass)) pairs.push({ from: sa.bass.note, to: sb.bass.note, bass: true, at });
+      for (const [x, y] of matchSides(sa.upper, sb.upper, back)) pairs.push({ from: x.note, to: y.note, bass: false, at });
     } else {
       const all = (s: { bass: Side | null; upper: Side[] }) => (s.bass ? [s.bass, ...s.upper] : s.upper);
-      for (const [x, y] of matchSides(all(sa), all(sb))) pairs.push({ from: x.note, to: y.note, bass: false, at });
+      for (const [x, y] of matchSides(all(sa), all(sb), back)) pairs.push({ from: x.note, to: y.note, bass: false, at });
     }
+    for (const p of pairs) came.set(p.to, Math.sign(midiOf(p.to.note) - midiOf(p.from.note)));
     out.push(...pairs.sort((p, q) => midiOf(p.to.note) - midiOf(q.to.note)));
   }
   return out;
