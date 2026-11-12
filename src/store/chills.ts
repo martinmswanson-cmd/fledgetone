@@ -2,8 +2,8 @@ import type { Clip, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration } from './timelineTypes';
 import { nameOf } from './noteTools';
 import type { SongKey } from './songKey';
-import { NOTE_NAMES, MAJOR_STEPS, MINOR_STEPS } from './songKey';
-import { chordName, CHORD_QUALITIES, voiceLead, type ChordQuality } from './smartTools';
+import { MAJOR_STEPS, MINOR_STEPS, keyHomeName, keyOf, liftedHome, spellFrom, spellNote } from './songKey';
+import { chordNameIn, CHORD_QUALITIES, voiceLead, type ChordQuality } from './smartTools';
 import { addMeasures, measureCount, type MeterMap } from '../audio/tempoMap';
 import { maxOf, minOf } from '../support/minMax';
 
@@ -267,42 +267,16 @@ export function chillsChordPcs(key: Pick<SongKey, 'root' | 'mode'>, c: ChillsCho
   return RICH[richQuality(key, c)].ivs.map((i) => pc(root + i));
 }
 
-// ---------- Spelling: flats in flat keys, sharps in sharp ones ----------
-
-const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
-const LETTER_PC = [0, 2, 4, 5, 7, 9, 11] as const;
-/** Each home note as keys on it are written (D♭ major, C♯ minor, F♯ both ways). */
-const MAJOR_HOME = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
-const MINOR_HOME = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'] as const;
-/** The scale step a note `semis` over home is written on (♭II, ii, ♭III, III, IV, ♯IV, V, ♭VI, VI, ♭VII, VII). */
-const STEP_OF = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6] as const;
-const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
-const SHARP_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'] as const;
-
-/** The home note's name as a key on `root` in `mode` is written. */
-export const homeName = (root: number, mode: 'major' | 'minor'): string => (mode === 'minor' ? MINOR_HOME : MAJOR_HOME)[pc(root)];
+/** The home note's name as a key on `root` in `mode` is written (songKey.ts keyHomeName). */
+export const homeName = keyHomeName;
 
 /** A key's name as it's written: "B♭ major", "C♯ minor". */
-export const chillsKeyName = (key: Pick<SongKey, 'root' | 'mode'>): string => `${homeName(key.root, key.mode)} ${key.mode}`;
+export const chillsKeyName = (key: Pick<SongKey, 'root' | 'mode'>): string => `${keyHomeName(key.root, key.mode)} ${key.mode}`;
 
-/**
- * The name of the note `semis` over the home note of a key on `root` in `mode`, spelled by the
- * scale step it stands on: in F major ♭VI is D♭ and IV is B♭; in A minor ♭III is C. (Where a step
- * would need a double flat or sharp, the plain flat or sharp of the key's kind.)
- */
-export function spellNote(root: number, mode: 'major' | 'minor', semis: number): string {
-  const home = homeName(root, mode);
-  const letter = (LETTERS.indexOf(home[0] as (typeof LETTERS)[number]) + STEP_OF[pc(semis)]) % 7;
-  const target = pc(root + semis);
-  const acc = ((target - LETTER_PC[letter] + 18) % 12) - 6;
-  if (acc === 0) return LETTERS[letter];
-  if (acc === -1) return `${LETTERS[letter]}♭`;
-  if (acc === 1) return `${LETTERS[letter]}♯`;
-  return (home.includes('♯') ? SHARP_NAMES : FLAT_NAMES)[target];
-}
+export { spellNote };
 
 /** A chord's name after its root, as chordName (smartTools) writes it, with ♭ and ♯ for b and #. */
-const plainSuffix = (pcs: readonly number[]) => chordName(pcs).slice(NOTE_NAMES[pcs[0]].length).replace(/b(?=\d)/g, '♭').replace(/#(?=\d)/g, '♯');
+const plainSuffix = (pcs: readonly number[]) => chordNameIn(keyOf(pcs[0], 'major'), pcs).replace(/^[A-G][♭♯]?/, '');
 
 /** A rich chord's name after its root, held on its 4th: "9sus4", "sus4(add9)". */
 function susSuffix(q: RichQuality): string {
@@ -322,7 +296,9 @@ export function chillsNames(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
   return chillsChords(key, prog).map((c, i) => {
     const up = c.up ?? 0;
     const root = pc(key.root + up);
-    const name = (semis: number) => spellNote(root, key.mode, semis);
+    // (after a key change, the new key written to agree with the chord that led to it)
+    const home = up ? liftedHome(keyHomeName(key.root, key.mode), key.root, up) : keyHomeName(key.root, key.mode);
+    const name = (semis: number) => spellFrom(home, root, semis);
     const rich = style === 'rich' && !voiced?.[i]?.plain ? richQuality(key, c) : null;
     const pcs = chillsPcs(key, c);
     const chord = `${name(c.semis)}${rich ? RICH[rich].name : plainSuffix(pcs)}`;
@@ -419,12 +395,21 @@ interface RichPlace {
 export function richMove(prev: readonly number[], notes: readonly number[]): { total: number; most: number } {
   let total = 0;
   let most = 0;
-  for (const [a, b] of [[notes, prev], [prev, notes]] as const)
-    for (const n of a) {
-      const d = minOf(b.map((p) => Math.abs(p - n)));
-      total += d;
-      most = Math.max(most, d);
-    }
+  const near = (n: number, b: readonly number[]) => {
+    let d = Infinity;
+    for (const p of b) d = Math.min(d, Math.abs(p - n));
+    return d;
+  };
+  for (const n of notes) {
+    const d = near(n, prev);
+    total += d;
+    most = Math.max(most, d);
+  }
+  for (const n of prev) {
+    const d = near(n, notes);
+    total += d;
+    most = Math.max(most, d);
+  }
   return { total, most };
 }
 
@@ -506,50 +491,91 @@ function richCandidates(root: number, ivs: readonly number[], place: RichPlace):
  * total movement from one to the next (from `start`, the chord before the run, if any), plus each
  * one's own cost, the smallest over the whole run (so a chord leaves room for the one after it).
  * `wider`: each must spread wider than the one before (chords that open out), given each chord's
- * low notes. Ties go to the first found: always the same answer.
+ * low notes. `round`: the run is played again, so the last chord leads back to the first too.
+ * Ties go to the first found: always the same answer.
  */
-function richRun(run: ReadonlyArray<{ cands: RichCandidate[]; bass: readonly number[] }>, start: readonly number[] | null, wider: boolean): number[][] {
+function richRun(run: ReadonlyArray<{ cands: RichCandidate[]; bass: readonly number[] }>, start: readonly number[] | null, wider: boolean, round = false): number[][] {
   if (!run.length) return [];
-  const total = (k: number, notes: readonly number[]) => notes[notes.length - 1] - Math.min(notes[0], ...run[k].bass);
-  let cost = run[0].cands.map((c) => c.cost + (start ? richStep(start, c.notes) : 0));
-  const back: number[][] = [];
-  for (let k = 1; k < run.length; k++) {
-    const next: number[] = [];
-    const from: number[] = [];
-    for (const c of run[k].cands) {
-      let best = Infinity;
-      let at = -1;
-      run[k - 1].cands.forEach((p, a) => {
-        if (!Number.isFinite(cost[a])) return;
-        if (wider && total(k, c.notes) <= total(k - 1, p.notes)) return;
-        const v = cost[a] + richStep(p.notes, c.notes);
-        if (v < best - EPS) {
-          best = v;
-          at = a;
-        }
-      });
-      next.push(best + c.cost);
-      from.push(at);
+  const total = (k: number, notes: readonly number[]) => notes[notes.length - 1] - minOf([notes[0], ...run[k].bass]);
+  /** The best path with the first chord limited to `first` (all when null), and what it costs */
+  const solve = (first: number | null): { cost: number; picks: number[] } | null => {
+    let cost = run[0].cands.map((c, a) => (first !== null && a !== first ? Infinity : c.cost + (start ? richStep(start, c.notes) : 0)));
+    const back: number[][] = [];
+    for (let k = 1; k < run.length; k++) {
+      const next: number[] = [];
+      const from: number[] = [];
+      for (const c of run[k].cands) {
+        let best = Infinity;
+        let at = -1;
+        run[k - 1].cands.forEach((p, a) => {
+          if (!Number.isFinite(cost[a])) return;
+          if (wider && total(k, c.notes) <= total(k - 1, p.notes)) return;
+          const v = cost[a] + richStep(p.notes, c.notes);
+          if (v < best - EPS) {
+            best = v;
+            at = a;
+          }
+        });
+        next.push(best + c.cost);
+        from.push(at);
+      }
+      back.push(from);
+      cost = next;
     }
-    back.push(from);
-    cost = next;
+    // (played again: back from the last chord to the first)
+    if (first !== null && run.length > 1) cost = cost.map((v, a) => v + richStep(run[run.length - 1].cands[a].notes, run[0].cands[first].notes));
+    let end = -1;
+    cost.forEach((v, a) => {
+      if (Number.isFinite(v) && (end < 0 || v < cost[end] - EPS)) end = a;
+    });
+    if (end < 0) return null;
+    const sum = cost[end];
+    const picks: number[] = [];
+    for (let k = run.length - 1; k >= 0; k--) {
+      picks.unshift(end);
+      if (k > 0) end = back[k - 1][end];
+    }
+    return { cost: sum, picks };
+  };
+  let best = solve(null);
+  // Played again: the last chord leads back to the first too. Tried with the first chord limited to
+  // the few that sit closest to the last one found, the whole way round counted; the best kept
+  if (round && !wider && best && run.length > 1 && !start) {
+    const wrap = (p: { picks: number[] }) => richStep(run[run.length - 1].cands[p.picks[p.picks.length - 1]].notes, run[0].cands[p.picks[0]].notes);
+    let around = best.cost + wrap(best);
+    const last = run[run.length - 1].cands[best.picks[best.picks.length - 1]].notes;
+    const firsts = run[0].cands.map((c, a) => ({ a, v: c.cost + richStep(last, c.notes) })).sort((x, y) => x.v - y.v || x.a - y.a).slice(0, 6);
+    for (const { a } of firsts) {
+      const got = solve(a);
+      if (got && got.cost < around - EPS) {
+        around = got.cost;
+        best = got;
+      }
+    }
   }
-  let end = -1;
-  cost.forEach((v, a) => {
-    if (Number.isFinite(v) && (end < 0 || v < cost[end] - EPS)) end = a;
-  });
   // (nothing spreads wider each time: as wide as they come, in order)
-  if (end < 0) return wider ? richRun(run, start, false) : [];
-  const picks: number[][] = [];
-  for (let k = run.length - 1; k >= 0; k--) {
-    picks.unshift(run[k].cands[end].notes);
-    if (k > 0) end = back[k - 1][end];
-  }
-  return picks;
+  if (!best) return wider ? richRun(run, start, false, round) : [];
+  const chosen: { cost: number; picks: number[] } = best;
+  return chosen.picks.map((a, k) => run[k].cands[a].notes);
 }
+
+/** The last rich voicings worked out, by key, progression and range (the dialogs and Pocket name every progression on each render). */
+const richMemo = new Map<string, ChillsVoicing[]>();
 
 /** The voicings of a progression's chords (one per chord, in order). */
 export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, opts: ChillsVoiceOptions = {}): ChillsVoicing[] {
+  if (voicingOf(prog, opts.voicing) !== 'rich') return voicingsOf(key, prog, opts);
+  const id = `${key.root} ${key.mode} ${prog.id} ${opts.range?.join(' ') ?? ''}`;
+  let got = richMemo.get(id);
+  if (!got || CHILLS.find((p) => p.id === prog.id) !== prog) {
+    got = voicingsOf(key, prog, opts);
+    if (richMemo.size > 200) richMemo.clear();
+    if (CHILLS.includes(prog)) richMemo.set(id, got);
+  }
+  return got.map((v) => ({ ...v, bass: [...v.bass], upper: [...v.upper] }));
+}
+
+function voicingsOf(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression, opts: ChillsVoiceOptions): ChillsVoicing[] {
   const chords = chillsChords(key, prog);
   const [lo, hi] = opts.range ?? [0, 127];
   const reg = registerOf([lo, hi]);
@@ -588,9 +614,31 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
     let run: Array<{ i: number; cands: RichCandidate[]; bass: number[] }> = [];
     let start: number[] | null = null;
     const flush = () => {
-      richRun(run, start, !!prog.widen).forEach((notes, k) => (plan[run[k].i] = notes));
+      // (a progression played again goes from its last chord back to its first: led smoothly too)
+      const round = !playsOnce(prog) && run.length === chords.length;
+      richRun(run, start, !!prog.widen, round).forEach((notes, k) => (plan[run[k].i] = notes));
       run = [];
     };
+    const candidatesOf = (c: ChillsChord, i: number, high: boolean, first: readonly number[] | null) => {
+      const { pcs, level, bass, floor } = lowPart(c, i);
+      const place: RichPlace = {
+        floor,
+        // (chords that open out keep opening as in plain; over a climbing bass the chords climb a few notes past A5)
+        // (a chord already up a key, and the first after the lifted ones, as high as those reach)
+        top: Math.max((prog.widen ? hi : Math.min(hi, RICH_TOP + (high ? RICH_HIGH_ROOM : prog.climb ? RICH_CLIMB_ROOM : 0))) - (c.up ? 0 : lift), first ? Math.min(hi - (c.up ? 0 : lift), maxOf(first)) : -Infinity),
+        center: Math.max(65, floor + 8),
+        bassUnder: bass.length > 0 && pc(bass[0]) === pcs[0],
+        ...(prog.widen ? { open: true, ...(level === 0 ? { maxSpan: 12 } : {}) } : {}),
+      };
+      const root = pc(key.root + c.semis + (c.up ?? 0));
+      const ivs = RICH[richQuality(key, c)].ivs;
+      let cands = richCandidates(root, ivs, place);
+      if (!cands.length && !high && place.top < hi - lift) cands = richCandidates(root, ivs, { ...place, top: Math.min(hi, RICH_TOP + RICH_HIGH_ROOM) - (c.up ? 0 : lift) });
+      return { cands, bass };
+    };
+    // Where the bass sits so high (an instrument starting at C3) that a chord needs room up to E6,
+    // every chord gets that room, so they can all sit together there and not jump up and down
+    const high = chords.some((c, i) => copyOf(c, i) < 0 && !richCandidates(pc(key.root + c.semis + (c.up ?? 0)), RICH[richQuality(key, c)].ivs, { floor: lowPart(c, i).floor, top: Math.min(hi, RICH_TOP + (prog.climb ? RICH_CLIMB_ROOM : 0)) - (c.up ? 0 : lift), center: 65, bassUnder: lowPart(c, i).bass.length > 0, ...(prog.widen ? { open: true } : {}) }).length);
     chords.forEach((c, i) => {
       const j = copyOf(c, i);
       if (j >= 0) {
@@ -598,21 +646,7 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
         start = plan[j] ? plan[j]!.map((m) => m + c.up!) : null;
         return;
       }
-      const { pcs, level, bass, floor } = lowPart(c, i);
-      const place: RichPlace = {
-        floor,
-        // (chords that open out keep opening as in plain; over a climbing bass the chords climb a few notes past A5)
-        // (a chord already up a key, and the first after the lifted ones, as high as those reach)
-        top: Math.max((prog.widen ? hi : Math.min(hi, RICH_TOP + (prog.climb ? RICH_CLIMB_ROOM : 0))) - (c.up ? 0 : lift), !run.length && start ? Math.min(hi - (c.up ? 0 : lift), maxOf(start)) : -Infinity),
-        center: Math.max(65, floor + 8),
-        bassUnder: bass.length > 0 && pc(bass[0]) === pcs[0],
-        ...(prog.widen ? { open: true, ...(level === 0 ? { maxSpan: 12 } : {}) } : {}),
-      };
-      const root = pc(key.root + c.semis + (c.up ?? 0));
-      const ivs = RICH[richQuality(key, c)].ivs;
-      // (where the bass sits high, an instrument starting at C3, the top may go up to E6 to make room)
-      let cands = richCandidates(root, ivs, place);
-      if (!cands.length && place.top < hi - lift) cands = richCandidates(root, ivs, { ...place, top: Math.min(hi, RICH_TOP + RICH_HIGH_ROOM) - (c.up ? 0 : lift) });
+      const { cands, bass } = candidatesOf(c, i, high && !prog.widen, !run.length ? start : null);
       if (!cands.length) {
         flush();
         start = null;
@@ -629,7 +663,8 @@ export function chillsVoicings(key: Pick<SongKey, 'root' | 'mode'>, prog: Chills
     const j = copyOf(c, i);
     if (j >= 0 && out[j]) {
       const was = out[j];
-      const moved = { bass: was.bass.map((m) => m + c.up!), upper: was.upper.map((m) => m + c.up!) };
+      // (a chord played plain for want of room stays plain, and named so, moved up)
+      const moved: ChillsVoicing = { bass: was.bass.map((m) => m + c.up!), upper: was.upper.map((m) => m + c.up!), ...(was.plain ? { plain: true as const } : {}) };
       out.push(moved);
       prev = moved.upper;
       return;
@@ -707,9 +742,15 @@ function rootsOnly(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsProgression,
   });
 }
 
-/** A rich chord's own notes (root, 3rd, 5th, 7th) play at this much of the velocity; its added 9th, 11th or 13th at this (measured on pads: within 1.5 dB of the plain chord). */
-export const RICH_TONE_VELOCITY = 0.9;
-export const RICH_ADDED_VELOCITY = 0.75;
+/**
+ * A rich chord's velocities: the whole chord (its low note too) at the velocity times (plain
+ * chord's notes / rich chord's notes) to this power, times RICH_TONE_VELOCITY; its added 9th, 11th
+ * or 13th at RICH_ADDED_VELOCITY of that (measured on pads and keys: each chord within about 1 dB of the
+ * plain one, scripts/ui-check/chills.cjs).
+ */
+export const RICH_COUNT_POWER = 0.7;
+export const RICH_TONE_VELOCITY = 1;
+export const RICH_ADDED_VELOCITY = 0.8;
 
 export interface ChillsNoteOptions extends ChillsVoiceOptions {
   velocity?: number;
@@ -735,15 +776,19 @@ export function chillsNotes(key: Pick<SongKey, 'root' | 'mode'>, prog: ChillsPro
     const v = voiced[k % chords.length];
     const count = v.bass.length + v.upper.length;
     const vel = prog.widen ? base * (3 / Math.max(3, count)) ** 0.4 : base;
-    for (const m of v.bass) add(m, span.start, span.length, vel * 0.9);
+    // Rich: the whole chord softer as it has more notes than the plain one (low note too: many
+    // instruments play a chord at its loudest note's velocity), its added 9th, 11th or 13th softer
+    // still, so it's no louder than the plain chord
+    const richNow = rich && !v.plain;
+    const shared = richNow ? RICH_TONE_VELOCITY * ((chillsPcs(key, c).length + v.bass.length) / Math.max(1, v.upper.length + v.bass.length)) ** RICH_COUNT_POWER : 1;
+    for (const m of v.bass) add(m, span.start, span.length, vel * 0.9 * shared);
     const resolveAt = round(span.start + span.length * 0.75);
     const third = chillsPcs(key, c)[1];
-    // Rich: the chord's own notes a little softer, its added 9th, 11th or 13th softer still, so it's no louder than the plain chord
     const root = chillsPcs(key, c)[0];
-    const added = rich && !v.plain ? new Set(RICH[richQuality(key, c)].ivs.filter((iv) => iv >= 12).map((iv) => pc(root + iv))) : null;
+    const added = richNow ? new Set(RICH[richQuality(key, c)].ivs.filter((iv) => iv >= 12).map((iv) => pc(root + iv))) : null;
     for (const m of v.upper) {
       const sus = m + (5 - pc(third - root));
-      const at = added ? vel * (added.has(pc(m)) ? RICH_ADDED_VELOCITY : RICH_TONE_VELOCITY) : vel;
+      const at = added ? vel * shared * (added.has(pc(m)) ? RICH_ADDED_VELOCITY : 1) : vel;
       // (a suspension the instrument can't reach is played as the chord)
       if (c.sus && pc(m) === third && span.length >= 1 / 8 && resolveAt > span.start + EPS && sus <= (opts.range ?? [0, 127])[1]) {
         add(sus, span.start, resolveAt - span.start, at);

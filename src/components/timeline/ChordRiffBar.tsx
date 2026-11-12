@@ -14,7 +14,7 @@ import { clipMeasures } from '../../audio/tempoMap';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { uid } from '../../store/timelineTypes';
 import { SCALES, type Scale } from '../../store/noteTools';
-import { detectKey, keyOf, MAJOR_STEPS, MINOR_STEPS, NOTE_NAMES, type SongKey } from '../../store/songKey';
+import { detectKey, keyHomeName, keyOf, MAJOR_STEPS, MINOR_STEPS, type SongKey } from '../../store/songKey';
 import { chordChanges } from '../../store/smartTools';
 import { ARP_STYLES, arpeggiateChords, degreeChordName, degreeLabels, riff, RIFF_STYLES, stampDegree, type ArpStyle, type RiffStyle } from '../../store/chordTools';
 import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
@@ -28,7 +28,7 @@ const button = 'h-6 px-2 rounded border border-forge-border text-forge-text hove
 /** The clip's key: the piano roll's scale when it has seven notes (major or minor by its third), else the song's. */
 export function keyFor(scale: Scale | null, clips: readonly Clip[], tracks: Parameters<typeof detectKey>[1]): SongKey {
   const steps = scale ? (SCALES[scale.id].steps as readonly number[]) : null;
-  if (scale && steps && steps.length === 7) return { ...keyOf(scale.root, steps[2] === 3 ? 'minor' : 'major'), steps, name: `${NOTE_NAMES[scale.root]} ${SCALES[scale.id].name.toLowerCase()}` };
+  if (scale && steps && steps.length === 7) return { ...keyOf(scale.root, steps[2] === 3 ? 'minor' : 'major'), steps, name: `${keyHomeName(scale.root, steps[2] === 3 ? 'minor' : 'major')} ${SCALES[scale.id].name.toLowerCase()}` };
   return detectKey(clips, tracks) ?? keyOf(0, 'major');
 }
 

@@ -6,8 +6,8 @@ import { GROOVE_FEELS } from '../../store/grooveFeels';
 import React, { useMemo, useState } from 'react';
 import { Modal } from './Modal';
 import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
-import { keyOf, NOTE_NAMES } from '../../store/songKey';
-import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
+import { keyHomeName, keyOf, NOTE_NAMES } from '../../store/songKey';
+import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordNameIn, progressionChords } from '../../store/smartTools';
 import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
 import { formatBarPosition, formatBarRange, type InstrumentKey } from '../../store/timelineTypes';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
@@ -60,8 +60,8 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
   const make = () => {
     rememberChords({ ...opts, progression: prog.id });
     const all = Array.from({ length: opts.repeats }, () => chords).flat();
-    const id = makeChordClip(trackId, bar, all, opts.chordBars, opts.style);
-    if (id) showToast(`Chords in ${key.name}: ${chords.map(chordName).join(' – ')}`);
+    const id = makeChordClip(trackId, bar, all, opts.chordBars, opts.style, key);
+    if (id) showToast(`Chords in ${key.name}: ${chords.map((c) => chordNameIn(key, c)).join(' – ')}`);
     onClose();
   };
   return (
@@ -73,7 +73,7 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
             <div className="flex gap-1">
               <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
                 {NOTE_NAMES.map((n, i) => (
-                  <option key={n} value={i}>{n}</option>
+                  <option key={n} value={i}>{keyHomeName(i, mode)}</option>
                 ))}
               </select>
               <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
@@ -120,7 +120,7 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
           </label>
         </div>
         <p className="text-xs text-forge-text">
-          {chords.map(chordName).join(' – ')} <span className="text-forge-muted">· voiced so each chord moves as little as it can from the last</span>
+          {chords.map((c) => chordNameIn(key, c)).join(' – ')} <span className="text-forge-muted">· voiced so each chord moves as little as it can from the last</span>
         </p>
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
@@ -390,7 +390,7 @@ const MathForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> 
             <div className="flex gap-1">
               <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
                 {NOTE_NAMES.map((n, i) => (
-                  <option key={n} value={i}>{n}</option>
+                  <option key={n} value={i}>{keyHomeName(i, mode)}</option>
                 ))}
               </select>
               <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
@@ -477,7 +477,7 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
             <div className="flex gap-1">
               <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
                 {NOTE_NAMES.map((n, i) => (
-                  <option key={n} value={i}>{n}</option>
+                  <option key={n} value={i}>{keyHomeName(i, mode)}</option>
                 ))}
               </select>
               <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
