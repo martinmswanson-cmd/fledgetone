@@ -11,7 +11,7 @@ import { MAX_STEP_LANES, stepBars } from '../store/stepLanes';
 const EPS = 1e-6;
 
 /** What a cell's one clip takes from its pieces. */
-export type MergedContent = Pick<Clip, 'notes' | 'expression' | 'stepLanes' | 'groove' | 'wobble'>;
+export type MergedContent = Pick<Clip, 'notes' | 'expression' | 'stepLanes' | 'groove' | 'wobble' | 'glide'>;
 
 /** Said when the pieces can't become one clip as they sound. */
 const ASK = 'edit it on a computer, or join its clips there first';
@@ -27,6 +27,7 @@ export function mergePieces(pieces: readonly Clip[], from: number, newId: (() =>
   const first = pieces[0];
   if (pieces.some((p) => p.takes?.length)) return `This part has recorded takes in it: ${ASK}.`;
   if (pieces.some((p) => JSON.stringify(p.groove) !== JSON.stringify(first.groove) || p.wobble !== first.wobble)) return `This part's clips have different feels: ${ASK}.`;
+  if (pieces.some((p) => JSON.stringify(p.glide) !== JSON.stringify(first.glide))) return `This part's clips glide between chords differently: ${ASK}.`;
   const off = (p: Clip) => p.startBar - from;
   const notes = pieces.flatMap((p) => p.notes.filter((n) => n.startOffset >= -EPS && n.startOffset < p.lengthBars - EPS).map((n) => ({ ...n, id: newId ? newId() : n.id, startOffset: n.startOffset + off(p) })));
 
@@ -77,6 +78,7 @@ export function mergePieces(pieces: readonly Clip[], from: number, newId: (() =>
     ...(stepLanes.length ? { stepLanes } : {}),
     ...(first.groove ? { groove: first.groove } : {}),
     ...(first.wobble ? { wobble: first.wobble } : {}),
+    ...(first.glide ? { glide: first.glide } : {}),
   };
 }
 

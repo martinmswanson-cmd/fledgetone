@@ -150,6 +150,7 @@ export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip |
     notes,
     ...(clips[0].wobble ? { wobble: clips[0].wobble } : {}),
     ...(clips[0].groove ? { groove: clips[0].groove } : {}),
+    ...(clips[0].glide ? { glide: clips[0].glide } : {}),
     ...(one?.expression ? { expression: one.expression } : {}),
     ...(one?.stepLanes ? { stepLanes: one.stepLanes } : {}),
   };

@@ -766,7 +766,7 @@ export interface Track {
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */
-export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression' | 'stepLanes' | 'nameFromFile'>>;
+export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression' | 'stepLanes' | 'nameFromFile' | 'glide'>>;
 
 /** A track's clip in the clip launcher, in scene (row) `scene` (0 is the first). */
 export interface LauncherSlot {
@@ -1188,6 +1188,16 @@ export interface Clip {
   pattern?: string;
   /** Step lanes: a value per grid step for one of the track's settings (see stepLanes.ts) */
   stepLanes?: StepLane[];
+  /** Glide between chords: each note of a chord slides into its note in the next (see chordGlide.ts; absent: off) */
+  glide?: ClipGlide;
+}
+
+/** A clip's glide between chords (see chordGlide.ts): each glide's time, the bass's its own. */
+export interface ClipGlide {
+  /** How long each glide takes (milliseconds) */
+  ms: number;
+  /** The bass's own glide time (milliseconds; absent: the same) */
+  bassMs?: number;
 }
 
 /**

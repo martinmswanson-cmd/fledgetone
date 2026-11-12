@@ -784,6 +784,14 @@ function diffMaster(a: MasterSettings | undefined, b: MasterSettings | undefined
   if (!!a.monoLow !== !!b.monoLow) add({ text: `${b.monoLow ? 'Keeps' : 'Stops keeping'} the master's low end in the middle.` });
 }
 
+/** A clip's glide between chords switched on or off, or its time changed, in plain words (`n`: the clip as worded). */
+function glideWords(a: Clip['glide'], b: Clip['glide'], n: string): string {
+  const time = (g: NonNullable<Clip['glide']>) => (g.bassMs !== undefined && g.bassMs !== g.ms ? `${g.ms} ms, the bass ${g.bassMs} ms` : `${g.ms} ms`);
+  if (!a && b) return `Makes the chords of the clip ${n} glide into each other (${time(b)}).`;
+  if (a && !b) return `Stops the chords of the clip ${n} gliding into each other.`;
+  return `Changes how long the chords of the clip ${n} take to glide into each other (${time(a!)} to ${time(b!)}).`;
+}
+
 /** " (sub layer, ring)": settings by their plain names, those not plain left out (nothing when none is). */
 const settingList = (keys: readonly string[]): string => {
   const words = keys.map(settingWord).filter((w): w is string => !!w);
@@ -970,9 +978,9 @@ function diffClip(a: Clip, b: Clip, trackName: (id: string) => string, add: (c: 
     const passes = playsPasses(a.trackId) || playsPasses(b.trackId);
     add({ text: b.pattern ? `Links the clip ${n} to its copies.` : `Unlinks the clip ${n} from its copies.`, ...at, ...(passes ? { fromBar: Math.min(a.startBar, b.startBar), toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) } : { hear: 'silent' as HearWhere }) });
   }
-  for (const k of ['expression', 'groove', 'wobble', 'stepLanes'] as const) if (!same(a[k], b[k])) add({ text: `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
+  for (const k of ['expression', 'groove', 'wobble', 'stepLanes', 'glide'] as const) if (!same(a[k], b[k])) add({ text: k === 'glide' ? glideWords(a.glide, b.glide, n) : `Changes the ${k === 'stepLanes' ? 'step lanes' : k} of the clip ${n}.`, ...at, fromBar: b.startBar, toBar: Math.max(clipSoundEnd(a), clipSoundEnd(b)) });
   // (anything else about a clip, not known here: heard anywhere, for all that's known)
-  const known = new Set(['id', 'trackId', 'startBar', 'lengthBars', 'name', 'notes', 'pattern', 'expression', 'groove', 'wobble', 'stepLanes', 'isSelected']);
+  const known = new Set(['id', 'trackId', 'startBar', 'lengthBars', 'name', 'notes', 'pattern', 'expression', 'groove', 'wobble', 'stepLanes', 'glide', 'isSelected']);
   const other = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => !known.has(k) && !same((a as unknown as Record<string, unknown>)[k], (b as unknown as Record<string, unknown>)[k]));
   if (other.length) add({ text: `Changes other settings of the clip ${n}${settingList(other)}.`, trackId: b.trackId, clipId: b.id, hear: 'song' });
 }

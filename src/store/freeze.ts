@@ -134,6 +134,8 @@ const clipContent = (c: Clip) => ({
   lengthBars: c.lengthBars,
   wobble: c.wobble,
   audio: c.audio,
+  // (Glide between chords only when on, so freezes made before it existed stay current)
+  ...(c.glide ? { glide: c.glide } : {}),
   // (A note's own expression and the clip's groove only when present, so freezes made before they counted stay current)
   notes: c.notes.map((n) => {
     const base = n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity];
