@@ -173,7 +173,7 @@ export const CHILLS: readonly ChillsProgression[] = [
   {
     id: 'soulTurn',
     name: 'A soul turnaround with a turn away',
-    detail: 'Rich 9th and 13th chords go round ii, V and home, every voice moving a step or so. Halfway they turn away to a major chord borrowed from the minor key and the minor iv, then a tense chord whose sharp note slips down a half step pulls them back to the ii, the V and home. In a minor key, the same in minor.',
+    detail: 'The chords go round ii, V and home, every voice moving a step or so (written with rich 9th and 13th chords). Halfway they turn away to a major chord borrowed from the minor key and the minor iv, then a tense chord whose sharp note slips down a half step pulls them back to the ii, the V and home. In a minor key, the same in minor.',
     major: [
       C(0, 'maj'), C(9, 'min'), C(2, 'min'), C(7, 'dom7', { rich: 'dom13' }),
       C(4, 'min', { rich: 'min7' }), C(9, 'min'), C(2, 'min'), C(7, 'dom7', { rich: 'dom13' }),
@@ -191,7 +191,7 @@ export const CHILLS: readonly ChillsProgression[] = [
   {
     id: 'minorHome',
     name: 'Two minor chords, then a major home',
-    detail: 'Two rich minor chords rock back and forth, the minor iv and home, four times, and the last time home turns major: that bright last chord is the chill. In a major key it borrows the minor iv and a minor home, and ends on the song’s own major home.',
+    detail: 'Two minor chords rock back and forth, the minor iv and home (written rich, a minor 9th and 11th), four times, and the last time home turns major: that bright last chord is the chill. In a major key it borrows the minor iv and a minor home, and ends on the song’s own major home.',
     major: [...Array.from({ length: 3 }, () => [C(5, 'min', { rich: 'min9' }), C(0, 'min', { rich: 'min11' })]).flat(), C(5, 'min', { rich: 'min9' }), C(0, 'maj', { rich: 'six' })],
     minor: [...Array.from({ length: 3 }, () => [C(5, 'min', { rich: 'min9' }), C(0, 'min', { rich: 'min11' })]).flat(), C(5, 'min', { rich: 'min9' }), C(0, 'maj', { rich: 'six' })],
     once: true,
