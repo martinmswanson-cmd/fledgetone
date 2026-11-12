@@ -41,6 +41,24 @@ test('each voice goes to the nearest note: the least movement in all', () => {
   assert.deepEqual(names(G.glidePairs(v, 1)), ['G3>G3', 'B3>C4', 'D4>C4', 'F4>E4']);
 });
 
+test('a note both chords share is held, not glided: only the voices that change move', () => {
+  // A block shift up a third: E4 and G4 are in both, so they hold; C4 can't reach B4 (11 semitones)
+  const shift = [...chord(['C4', 'E4', 'G4'], 0), ...chord(['E4', 'G4', 'B4'], 0.5)];
+  assert.deepEqual(names(G.glidePairs(shift, 1)), ['E4>E4', 'G4>G4']);
+  // Gm9 (G2 | A#3 D4 F4 A4) to C13 (C2 | A#3 E4 A4 D5): A#3 and A4 held, F4 down a semitone to E4 (the least movement), D4 ends, D5 starts
+  const gc = [...chord(['G2', 'A#3', 'D4', 'F4', 'A4'], 0), ...chord(['C2', 'A#3', 'E4', 'A4', 'D5'], 0.5)];
+  assert.deepEqual(names(G.glidePairs(gc, 1)), ['G2>C2 bass', 'A#3>A#3', 'F4>E4', 'A4>A4']);
+  // A held voice is one note through both chords: no glide in its curve
+  const held = G.glideChains(gc, 1).find((c) => c.notes[0].note === 'A4');
+  assert.equal(G.chainSound(held, 0, { ms: 150 }, 1, 120).expr, undefined);
+  // The moving voices never cross a held one: E4 G4 to G4 C5 holds G4, and E4 doesn't jump over it to C5
+  assert.deepEqual(names(G.glidePairs([...chord(['E4', 'G4'], 0), ...chord(['G4', 'C5'], 0.5)], 1)), ['G4>G4']);
+  // ...but moves beside it: C4 G4 to D4 G4
+  assert.deepEqual(names(G.glidePairs([...chord(['C4', 'G4'], 0), ...chord(['D4', 'G4'], 0.5)], 1)), ['C4>D4', 'G4>G4']);
+  // The same notes in any order, the same pairs
+  assert.deepEqual(names(G.glidePairs([...gc].reverse(), 1)), names(G.glidePairs(gc, 1)));
+});
+
 test('the bass pairs with the bass, on its own', () => {
   // Gm9 (G2 | G3 Bb3 D4 F4 A4) to C13 (C2 | E4 Bb4 D5 A5)
   const notes = [...chord(['G2', 'G3', 'A#3', 'D4', 'F4', 'A4'], 0), ...chord(['C2', 'E4', 'A#4', 'D5', 'A5'], 0.5)];

@@ -13,8 +13,9 @@ import { barToSeconds, tempoAt, type Tempo } from '../audio/tempoMap';
  * (scripts/chordGlide.test.mjs).
  *
  * Pairs: where notes end and others start at the same place, the notes ending are paired with
- * those starting so the voices move the least in all (a voice moves to the nearest free note,
- * never crossing another), no further than GLIDE_MAX_SEMIS; the lowest note of each side, when
+ * those starting. A note both chords share is held first (the same pitch: one voice, no glide, no
+ * new attack), so the fewest voices move; the rest pair so they move the least in all, never
+ * crossing each other nor a held note, none further than GLIDE_MAX_SEMIS. The lowest note of each side, when
  * it sits a fifth or more below the next, is the bass and pairs only with the other side's bass.
  * A note with a bend or pressure of its own, or one that plays only some of the time, is never
  * paired; a note left over (the chords have different sizes) starts or ends as written; a note
@@ -56,7 +57,7 @@ export function normalizeClipGlide(raw: unknown): ClipGlide | undefined {
 const GLIDING: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['wavetable', 'keys', 'brass'] as InstrumentKey[]);
 
 /** What glide between chords does, in plain words (the studio's piano roll and Pocket say it). */
-export const GLIDE_ABOUT = 'Each note of a chord slides into its note in the next chord, the bass on its own, like separate voices moving. A note with its own bend, one that plays only sometimes, and a leap bigger than a fifth start afresh.';
+export const GLIDE_ABOUT = 'Each note of a chord slides into its note in the next chord, the bass on its own, like separate voices moving; a note both chords share is held. A note with its own bend, one that plays only sometimes, and a leap bigger than a fifth start afresh.';
 
 /** Said where a track's instrument plays the chords without gliding. */
 export const glideNotHere = (instrumentName: string) => `${instrumentName} plays the chords as written, without gliding: Wavetable, Keys and Brass glide.`;
@@ -93,11 +94,36 @@ function splitBass(side: Side[]): { bass: Side | null; upper: Side[] } {
 }
 
 /**
- * The pairs between two sides, both low to high: the most voices gliding, then the least movement
- * in all, no voice moving further than GLIDE_MAX_SEMIS. (On a line the least movement never
- * crosses two voices, so going through both in order finds it.)
+ * The pairs between two sides, both low to high. First every note both have is held (a pair that
+ * doesn't move): the fewest voices move. Then the rest, between the held notes around them, as
+ * many as can glide, the least movement in all, none further than GLIDE_MAX_SEMIS (on a line the
+ * least movement never crosses two voices, so going through both in order finds it). The same
+ * notes always give the same pairs.
  */
 function matchSides(a: Side[], b: Side[]): Array<[Side, Side]> {
+  // Every note both sides have stays where it is (the lowest of a repeated pitch with the lowest)
+  const held: Array<[Side, Side]> = [];
+  const usedB = new Set<Side>();
+  const restA: Side[] = [];
+  for (const x of a) {
+    const y = b.find((s) => s.midi === x.midi && !usedB.has(s));
+    if (y) {
+      usedB.add(y);
+      held.push([x, y]);
+    } else restA.push(x);
+  }
+  const restB = b.filter((s) => !usedB.has(s));
+  if (!held.length) return moveSides(a, b);
+  // The rest move only between the held notes around them (never across one)
+  const heldPitches = held.map(([x]) => x.midi).sort((p, q) => p - q);
+  const region = (s: Side) => heldPitches.filter((m) => m < s.midi).length;
+  const out = [...held];
+  for (let r = 0; r <= heldPitches.length; r++) out.push(...moveSides(restA.filter((s) => region(s) === r), restB.filter((s) => region(s) === r)));
+  return out.sort((p, q) => p[0].midi - q[0].midi);
+}
+
+/** Voices that move (no shared notes among them): as many as can glide, the least movement in all, in order (never crossing). */
+function moveSides(a: Side[], b: Side[]): Array<[Side, Side]> {
   const m = a.length;
   const n = b.length;
   // best[i][j]: the most pairs and least movement among a's first i and b's first j
