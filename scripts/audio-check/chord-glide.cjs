@@ -552,6 +552,61 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
     let liveOff = 0;
     for (let i = 20; i < n0; i++) liveOff = Math.max(liveOff, Math.min(...[-2, -1, 0, 1, 2].map((d) => Math.abs(ll.rms[i] - lx.rms[i + shift + d]))));
     report(liveOff < 1.5, `Glide Pad live as in the export: its level within ${liveOff.toFixed(2)} dB every 10 ms (load ${load()})`);
+
+    // At full velocity: what reaches its saturation (the signal after its low-pass, before the curve) stays inside the curve's
+    // reach (SHAPER_ROOM: a shaper holds flat past its curve's end, a hard clip), for six-note chords and a 16-note cluster
+    const SHAPED = async ({ notes, vel }) => {
+      const engine = await (await fetch('/src/audio/engine.ts')).text();
+      const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
+      const G = await import('/src/audio/presets/glidePad.ts');
+      const proto = T.Filter.prototype;
+      const connect = proto.connect;
+      const buf = await T.Offline(({ destination }) => {
+        // (the low-pass, as it's connected into the saturation, heard at the destination too; the pad's own output silent)
+        proto.connect = function (to, ...rest) {
+          if (this.frequency.value > 1300 && this.frequency.value < 1500) connect.call(this, new T.Gain({ gain: 1 }).connect(destination));
+          return connect.call(this, to, ...rest);
+        };
+        const pad = G.createGlidePad(new T.Gain(0).toDestination());
+        proto.connect = connect;
+        pad.trigger(notes, 3, 0.05, vel);
+      }, 4, 2, 44100);
+      proto.connect = connect;
+      let peak = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) for (const v of buf.getChannelData(c)) peak = Math.max(peak, Math.abs(v));
+      return { peak, room: G.SHAPER_ROOM };
+    };
+    const cluster = ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'C3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
+    for (const [label, notes] of [['F2 A3 C4 E4 G4 C5', ['F2', 'A3', 'C4', 'E4', 'G4', 'C5']], ['C2 A#3 E4 G4 C5 E5', ['C2', 'A#3', 'E4', 'G4', 'C5', 'E5']], ['a 16-note cluster', cluster]]) {
+      const r = await page.evaluate(SHAPED, { notes, vel: 1 });
+      report(r.peak < r.room, `Glide Pad at full velocity, ${label}: into its saturation at most ${r.peak.toFixed(2)} (its curve reaches ${r.room}: nothing clipped)`);
+    }
+    // Six-note chords at full velocity, gliding (60 to 300 ms) and as written. Each note is three copies a few cents apart that
+    // beat slowly: struck afresh, they start in step under the attack and drift apart through the chord, the same way each
+    // chord; gliding on, they keep whatever place in the beat they've reached, and there's no dip where a chord is struck
+    // again. So gliding comes out a little louder over the clip (about 0.3 dB), and its highest sample, where copies happen to
+    // line up, moves with the glide time alone (about 0.7 dB, some glide times under the chords as written): held to 0.35 dB
+    // over the chords as written over the clip, 0.4 dB in its loudest 400 ms, 0.5 dB in its highest sample
+    const SIX = [['F2', 'A3', 'C4', 'E4', 'G4', 'C5'], ['D2', 'A3', 'C4', 'F4', 'A4', 'D5'], ['G2', 'A#3', 'D4', 'F4', 'A4', 'D5'], ['C2', 'A#3', 'E4', 'G4', 'C5', 'E5']];
+    const six = (glide) => song('glidePad', [clip(SIX.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', 1))), 2, glide)]);
+    const levels = (rr) => {
+      const lin = rr.rms.map((v) => 10 ** (v / 10));
+      const whole = 10 * Math.log10(lin.reduce((t, v) => t + v, 0) / lin.length);
+      let loud = -Infinity;
+      for (let i = 0; i + 40 <= lin.length; i++) loud = Math.max(loud, 10 * Math.log10(lin.slice(i, i + 40).reduce((t, v) => t + v, 0) / 40));
+      return { whole, loud };
+    };
+    const sp = await render({ text: text(six()), toBar: 3, rms: { t0: 0.05, t1: 4 } });
+    const lp = levels(sp);
+    const gl = [];
+    for (const ms of [60, 100, 150, 200, 300]) {
+      const sg = await render({ text: text(six({ ms })), toBar: 3, rms: { t0: 0.05, t1: 4 } });
+      gl.push({ ms, peak: sg.peakDb, ...levels(sg) });
+    }
+    report(
+      gl.every((g) => g.whole <= lp.whole + 0.35 && g.loud <= lp.loud + 0.4 && g.peak <= sp.peakDb + 0.5) && gl.some((g) => g.peak <= sp.peakDb),
+      `Glide Pad, six-note chords at full velocity: as written level ${lp.whole.toFixed(2)} dB, loudest 400 ms ${lp.loud.toFixed(2)} dB, peak ${sp.peakDb.toFixed(2)} dB; gliding ${gl.map((g) => `${g.ms} ms: ${g.whole.toFixed(2)}, ${g.loud.toFixed(2)}, ${g.peak.toFixed(2)}`).join('; ')} dB`
+    );
   }
 
   // An instrument whose voices don't glide: the chords as written, the very same render

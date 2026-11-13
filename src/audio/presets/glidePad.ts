@@ -4,7 +4,7 @@
  * few cents apart (-7, 0, +7) and spread left, centre and right, held still (no chorus wobble);
  * a low note (under E3) plays once, plainer (the sine alone) and in the centre, so the bottom
  * stays solid. A slow eased attack (about a quarter second), a soft release, a 24 dB/octave
- * low-pass at 1.8 kHz, a touch of saturation and its own long, dark room (3.5 s, its tail dulled
+ * low-pass at 1.4 kHz, a touch of saturation (smooth, never clipping) and its own long, dark room (3.5 s, its tail dulled
  * towards 2.5 kHz). Built on voice pools (poly.ts), one per copy, so every voice glides on its own,
  * live and in the export the same.
  */
@@ -28,6 +28,8 @@ const COPY_DB = -17;
 const LOW_DB = -11;
 /** The attack's shape: x² over its length */
 const EASE_IN = Array.from({ length: 65 }, (_, i) => (i / 64) ** 2);
+/** How far past full scale the saturation's curve reaches (see createGlidePad) */
+export const SHAPER_ROOM = 16;
 /** Voices per copy: chords of six notes a couple of seconds apart, each ringing out about two seconds */
 const VOICES = 14;
 
@@ -52,11 +54,20 @@ export function createGlidePad(output: Tone.InputNode, opts: { room?: boolean } 
   const dark = new Tone.Filter({ type: 'lowpass', frequency: 2500, rolloff: -12, Q: 0.5 });
   const wet = new Tone.Gain(opts.room === false ? 0 : 0.45).connect(out);
   reverb.chain(dark, wet);
-  const warmth = new Tone.WaveShaper((x) => Math.tanh(x * 1.2) / 1.2, 1024);
-  // (Not oversampled: what it shapes is low-passed at 1.4 kHz before it and the curve is gentle, so nothing it adds folds back
+  // The saturation: tanh(1.2 x) / 1.2 for any level the pad can reach. A shaper's curve covers -1 to 1 and holds flat past it
+  // (a hard clip: six notes at full velocity went in at up to 1.5 and fizzed), so the signal goes in SHAPER_ROOM times
+  // smaller, the curve stretched as much, and comes out as much louder: the same curve, now to +-SHAPER_ROOM, past what even a
+  // 16-note cluster at full velocity reaches
+  const into = new Tone.Gain(1 / SHAPER_ROOM);
+  const warmth = new Tone.WaveShaper((u) => Math.tanh(1.2 * SHAPER_ROOM * u) / (1.2 * SHAPER_ROOM), 8192);
+  const back = new Tone.Gain(SHAPER_ROOM);
+  into.connect(warmth);
+  warmth.connect(back);
+  // (Not oversampled: what it shapes is low-passed at 1.4 kHz before it and the curve is smooth, so what it adds is a few
+  // harmonics of what's under 1.4 kHz, far below where they'd fold back; and an oversampled shaper is late by a different
   // down; and an oversampled shaper is late by a different time at each rate, see shaperLag.ts)
-  warmth.fan(dry, reverb);
-  const lowpass = new Tone.Filter({ type: 'lowpass', frequency: 1400, rolloff: -24, Q: 0.5 }).connect(warmth);
+  back.fan(dry, reverb);
+  const lowpass = new Tone.Filter({ type: 'lowpass', frequency: 1400, rolloff: -24, Q: 0.5 }).connect(into);
 
   // (eased in, slow at first: a quarter second rising along x², no click and no sudden start; Tone's own curves rise fastest at first)
   const envelope = { attack: 0.25, attackCurve: EASE_IN, decay: 0.01, sustain: 1, release: 2, releaseCurve: 'exponential' as const };
@@ -105,7 +116,9 @@ export function createGlidePad(output: Tone.InputNode, opts: { room?: boolean } 
       all.forEach((p) => p.dispose());
       panners.forEach((p) => p.dispose());
       lowpass.dispose();
+      into.dispose();
       warmth.dispose();
+      back.dispose();
       reverb.dispose();
       dark.dispose();
       wet.dispose();
