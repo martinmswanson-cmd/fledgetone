@@ -72,7 +72,7 @@ export interface NoteMemory {
 export const LEGATO_INSTRUMENTS: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['bass', 'subBass', 'lead', 'bass808', 'wobbleBass', 'growlBass', 'reeseBass']);
 
 /** The synths that play from a pool of voices with a limit (presets/poly.ts createVoicePool): when every voice is busy, a new note takes one still sounding. */
-export const VOICE_POOL_INSTRUMENTS: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['keys', 'wavetable', 'brass']);
+export const VOICE_POOL_INSTRUMENTS: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['keys', 'wavetable', 'brass', 'glidePad']);
 
 /** The kinds of instrument that play recordings through the sampler (samplerManager.ts), each able to fade out a note still sounding for a newer one. */
 const SAMPLER_KINDS: ReadonlySet<string> = new Set(['sampled', 'custom', 'multi', 'rack', 'slicer']);

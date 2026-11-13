@@ -20,6 +20,9 @@
 // - Live, the track given Keys while a voice glides: the next chords sound (they were silent).
 // - The song's swing: the glide into a swung chord starts where that chord sounds (it started on the
 //   written place, about 85 ms early at a slow tempo).
+// - The Glide Pad: the same export twice, its glides in the time set, dark and wide on the soul turnaround (little over 3 kHz,
+//   the centroid low, side over mid over -7 dB), no peak above the Wavetable's, no rise at a change over 1 dB nor over its
+//   chords as written (or its own level's movement in the middle of a chord), a note from silence without a click, live as in the export.
 // - An instrument whose voices don't glide (Pluck; a Wavetable track given Supersaw): the very
 //   same render as the chords without glide.
 //
@@ -42,7 +45,7 @@ const cents = (a, b) => 1200 * Math.log2(a / b);
 
 // One voice, a chord each half bar (1 s at 120 BPM): C4 D4 E4 F4 (steps up: each glides)
 const LINE = ['C4', 'D4', 'E4', 'F4'];
-const line = (glide, extra) => song('wavetable', [clip(LINE.map((m, i) => n(m, i / 2)), 2, glide)], extra);
+const line = (glide, extra, key = 'wavetable') => song(key, [clip(LINE.map((m, i) => n(m, i / 2)), 2, glide)], extra);
 // Four chords voiced to move by steps, a bass under them, the third chord softer
 const CHORDS = [
   ['F2', 'A3', 'C4', 'E4', 'G4'],
@@ -57,14 +60,14 @@ const STEP_CHORDS = [
   ['D2', 'A3', 'C4', 'F4', 'A4'],
   ['C#2', 'A3', 'C#4', 'G4', 'A4'],
 ];
-const stepChords = (glide) => song('wavetable', [clip(STEP_CHORDS.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', i === 2 ? 0.5 : 0.8))), 2, glide)]);
+const stepChords = (glide, key = 'wavetable') => song(key, [clip(STEP_CHORDS.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', i === 2 ? 0.5 : 0.8))), 2, glide)]);
 const chords = (glide, key = 'wavetable') => song(key, [clip(CHORDS.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', i === 2 ? 0.5 : 0.8))), 2, glide)]);
 
 // In the page: render `text` (from `startBar`, to `toBar`; `restart`: notes held over it begun again there, as the agent's
 // listening does) as Export does, and measure: `pitch` (autocorrelation, 20 ms, every 2 ms over [t0, t1] in band [lo, hi] Hz),
 // `peakIn` (the strongest frequency in a band, every 5 ms with `win`-second windows), `rms` (dB over 10 ms windows over [t0, t1]),
 // the peak and a hash of the samples
-const RENDER = async ({ text, startBar = 1, toBar, restart, pitch, peakIn, rms }) => {
+const RENDER = async ({ text, startBar = 1, toBar, restart, pitch, peakIn, rms, bands }) => {
   const P = await import('/src/store/project.ts');
   const X = await import('/src/audio/exportWav.ts');
   const T = await import('/src/store/timelineTypes.ts');
@@ -129,6 +132,37 @@ const RENDER = async ({ text, startBar = 1, toBar, restart, pitch, peakIn, rms }
       }
       out.peakIn.push(bf);
     }
+  }
+  if (bands) {
+    // The band balance (energy share per band, dB, over 8192-point frames of the mid), the spectral centroid and side over mid (dB), as tone.py measures it
+    const N = 8192;
+    const L = audio.getChannelData(0), Rr = audio.getChannelData(audio.numberOfChannels > 1 ? 1 : 0);
+    const { fftInPlace } = await import('/src/audio/fft.ts');
+    const S = new Float64Array(N / 2 + 1);
+    let es = 0, em = 0;
+    for (let i = 0; i < L.length; i++) {
+      const m = (L[i] + Rr[i]) / 2, d = (L[i] - Rr[i]) / 2;
+      em += m * m;
+      es += d * d;
+    }
+    for (let f0 = 0; f0 + N <= L.length; f0 += N) {
+      const re = new Float64Array(N), im = new Float64Array(N);
+      for (let i = 0; i < N; i++) re[i] = ((L[f0 + i] + Rr[f0 + i]) / 2) * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+      fftInPlace(re, im);
+      for (let k = 0; k <= N / 2; k++) S[k] += re[k] * re[k] + im[k] * im[k];
+    }
+    const hz = (k) => (k * sr) / N;
+    let tot = 0, cen = 0;
+    for (let k = 0; k <= N / 2; k++) {
+      tot += S[k];
+      cen += S[k] * hz(k);
+    }
+    const band = (a, b) => {
+      let e = 0;
+      for (let k = 0; k <= N / 2; k++) if (hz(k) >= a && hz(k) < b) e += S[k];
+      return 10 * Math.log10(e / tot + 1e-12);
+    };
+    out.bands = { '20-80': band(20, 80), '80-250': band(80, 250), '250-1k': band(250, 1000), '1-3k': band(1000, 3000), '3-6k': band(3000, 6000), '6-12k': band(6000, 12000), centroid: cen / tot, sideOverMid: 10 * Math.log10(es / em) };
   }
   if (rms) {
     // (each 10 ms, the level over the 50 ms around it: a pad's lowest notes beat inside a shorter window)
@@ -224,12 +258,15 @@ const LIVE = async ({ text, seconds, loop, pitch, rms, from = 1, actions = [], l
     });
   }
   if (rms) {
+    // (as RENDER's: each 10 ms, the level of both ears over the 50 ms around it)
     out.rms = [];
-    const w = Math.round(0.01 * sr);
-    for (let i = onset + Math.round(rms.t0 * sr); i + w <= Math.min(x.length, onset + Math.round(rms.t1 * sr)); i += w) {
+    const xs = Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+    const w = Math.round(0.05 * sr);
+    const hop = Math.round(0.01 * sr);
+    for (let i = onset + Math.round((rms.t0 - 0.02) * sr); i + w <= Math.min(x.length, onset + Math.round((rms.t1 + 0.03) * sr)); i += hop) {
       let e = 0;
-      for (let j = i; j < i + w; j++) e += x[j] * x[j];
-      out.rms.push(10 * Math.log10(e / w + 1e-20));
+      for (const ch of xs) for (let j = Math.max(0, i); j < i + w; j++) e += ch[j] * ch[j];
+      out.rms.push(10 * Math.log10(e / (w * xs.length) + 1e-20));
     }
   }
   return out;
@@ -419,6 +456,157 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
     // (the 10% point of an eased 40 ms glide comes 0.196 of it in; the 20 ms window shows it about 10 ms sooner)
     const off1 = g1 ? g1.starts * 1000 - 0.196 * 40 : NaN, off2 = g2 ? g2.starts * 1000 - 0.196 * 40 : NaN;
     report(Math.abs(off1) < 15 && Math.abs(off2) < 15, `swing: the glide into the swung chord starts ${off1.toFixed(0)} ms from where it sounds (${(late * 1000).toFixed(0)} ms late), into the next on-beat one ${off2.toFixed(0)} ms from its place`);
+  }
+
+  // The Glide Pad: the same export twice; its voices glide in the time set; dark and wide (the band balance of the soul
+  // turnaround on it); no peak above the Wavetable's at the same velocity; at the chord changes no rise in level over 1 dB nor
+  // over its chords as written; a note from silence with no click; live as in the export
+  {
+    const gp = (glide) => line(glide, undefined, 'glidePad');
+    const g1 = await render({ text: text(stepChords({ ms: 150 }, 'glidePad')), toBar: 3 });
+    const g2 = await render({ text: text(stepChords({ ms: 150 }, 'glidePad')), toBar: 3 });
+    report(g1.hash === g2.hash, `Glide Pad: the same export twice: ${g1.hash} ${g2.hash}`);
+    // Its voice glides (all three copies, the low copy too), followed without its room (the room's tail plays the old pitch on):
+    // C4 to D4 and A2 to B2 over an eased 150 ms at 1 s, the steps given as the scheduler gives them (every 4 ms)
+    const dryGlide = (note, cents, band2) =>
+      page.evaluate(
+        async ({ note, cents, band2 }) => {
+          const engine = await (await fetch('/src/audio/engine.ts')).text();
+          const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
+          const { createGlidePad } = await import('/src/audio/presets/glidePad.ts');
+          const buf = await T.Offline(() => {
+            const pad = createGlidePad(T.getDestination(), { room: false });
+            const v = pad.glide(note, 0.1, 0.8);
+            for (let t = 1; t <= 1.15 + 1e-9; t += 0.004) {
+              const u = Math.min(1, (t - 1) / 0.15);
+              v.bend(cents * u * u * (3 - 2 * u), t);
+            }
+            v.off(2.4);
+          }, 2.6, 2, 44100);
+          const L0 = buf.getChannelData(0), R0 = buf.getChannelData(1), sr = 44100, w = Math.round(0.02 * sr);
+          // (the mid: the copies left and right, a few cents either way, even out)
+          const x = L0.map((v, i) => (v + R0[i]) / 2);
+          const out = [];
+          for (let t = 0.7; t < 1.6; t += 0.002) {
+            const i0 = Math.round(t * sr);
+            let best = -Infinity, at = 0;
+            const corr = (L) => { let c = 0, e1 = 0, e2 = 0; for (let i = 0; i < w; i++) { c += x[i0 + i] * x[i0 + i + L]; e1 += x[i0 + i] ** 2; e2 += x[i0 + i + L] ** 2; } return c / Math.sqrt(e1 * e2 + 1e-30); };
+            for (let L = Math.floor(sr / band2[1]); L <= Math.ceil(sr / band2[0]); L++) { const c = corr(L); if (c > best) [best, at] = [c, L]; }
+            const l = corr(at - 1), r = corr(at + 1);
+            out.push(sr / (at + Math.max(-1, Math.min(1, (l - r) / (2 * (l - 2 * best + r) || 1)))));
+          }
+          return out;
+        },
+        { note, cents, band2 }
+      );
+    const up = glideTime(await dryGlide('C4', 200, [240, 320]), 0.7, 0.002, 1, hz('C4'), hz('D4'));
+    const low = glideTime(await dryGlide('A2', 200, [100, 130]), 0.7, 0.002, 1, hz('A2'), hz('B2'));
+    report(!!up && !!low && Math.abs(up.ms - 150) <= 25 && Math.abs(low.ms - 150) <= 25 && Math.abs(up.endCents) < 5 && Math.abs(low.endCents) < 5, `Glide Pad: a voice gliding 150 ms (without its room): ${up ? `${up.ms.toFixed(0)} ms, ending ${up.endCents.toFixed(1)} cents off` : '?'}; a low one ${low ? `${low.ms.toFixed(0)} ms, ending ${low.endCents.toFixed(1)} cents off` : '?'}`);
+    // The soul turnaround (rich, F major, 60 BPM, a chord every 2 s), on the Glide Pad and on the Wavetable, each at velocity as written
+    const soul = await page.evaluate(async () => {
+      const X = await import('/src/store/chills.ts');
+      const { keyOf } = await import('/src/store/songKey.ts');
+      const { INSTRUMENTS } = await import('/src/audio/instrumentCatalog.ts');
+      const key = keyOf(5, 'major');
+      const prog = X.chillsById('soulTurn');
+      const count = X.chillsChords(key, prog).length;
+      let k = 0;
+      const notes = (pad) => X.chillsNotes(key, prog, Array.from({ length: count }, (_, i) => ({ start: i / 2, length: 0.5 })), () => `s${++k}`, { range: INSTRUMENTS[pad].range, voicing: 'rich' });
+      return { count, glidePad: notes('glidePad'), wavetable: notes('wavetable') };
+    });
+    const soulSong = (pad, glide) => ({ ...song(pad, [{ ...clip(soul[pad], soul.count / 2, glide) }]), bpm: 60 });
+    const toBar = 1 + soul.count / 2;
+    const on = await render({ text: text(soulSong('glidePad', { ms: 150 })), toBar, bands: true, rms: { t0: 0.5, t1: soul.count * 2 } });
+    const off = await render({ text: text(soulSong('glidePad')), toBar, rms: { t0: 0.5, t1: soul.count * 2 } });
+    const wt = await render({ text: text(soulSong('wavetable', { ms: 150 })), toBar, bands: true });
+    const b = on.bands;
+    report(b['3-6k'] < -45 && b['6-12k'] < -55 && b.centroid < 600 && b.sideOverMid > -7, `Glide Pad, dark and wide: bands ${Object.entries(b).filter(([k]) => k.includes('-')).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')} dB, centroid ${b.centroid.toFixed(0)} Hz, side over mid ${b.sideOverMid.toFixed(1)} dB (Wavetable: 3-6k ${wt.bands['3-6k'].toFixed(1)} dB, centroid ${wt.bands.centroid.toFixed(0)} Hz, side over mid ${wt.bands.sideOverMid.toFixed(1)} dB)`);
+    report(on.peakDb <= wt.peakDb && off.peakDb <= wt.peakDb, `Glide Pad's peak ${on.peakDb.toFixed(2)} dB gliding, ${off.peakDb.toFixed(2)} dB as written; the Wavetable's ${wt.peakDb.toFixed(2)} dB`);
+    // (the biggest rise in level, 50 ms windows every 10 ms, from 0.1 s before each change to 0.3 s after)
+    // (and, as a measure of how much its level moves by itself, the same over 0.4 s in the middle of each chord: three copies a
+    // few cents apart beat slowly, and the room swirls)
+    const rise = (rr, from = 0) => {
+      let most = 0;
+      for (let c = 1; c < soul.count; c++) {
+        const i0 = Math.round((c * 2 + from - 0.1 - 0.5) / 0.01);
+        for (let i = i0 + 1; i < i0 + 40; i++) most = Math.max(most, rr.rms[i] - rr.rms[i - 1]);
+      }
+      return most;
+    };
+    const own = rise(on, 1);
+    report(rise(on) <= 1 && rise(on) <= Math.max(rise(off), own) + 0.1, `Glide Pad, the biggest rise in level at a chord change: ${rise(on).toFixed(2)} dB gliding, ${rise(off).toFixed(2)} dB as written (in the middle of a chord, by itself, up to ${own.toFixed(2)} dB)`);
+    // One note from silence: its first 10 ms far under its level a quarter second in (an eased attack: no click)
+    const one = await render({ text: text(song('glidePad', [clip([n('C4', 0, '1m', 1)], 1)])), toBar: 2, rms: { t0: 0.02, t1: 0.6 } });
+    const startDb = one.rms[0], heldDb = one.rms[Math.round((0.35 - 0.02) / 0.01)];
+    report(heldDb - startDb > 20, `Glide Pad, a note from silence: ${startDb.toFixed(1)} dB in its first moments, ${heldDb.toFixed(1)} dB a third of a second in`);
+    // Live as in the export: the chords stepping, gliding, their level every 10 ms (50 ms windows) from the first sound, and the
+    // spectral peak in the band of the voice that glides C4, D4 (a recording's place is a few ms off: the largest difference
+    // over 30 ms either way)
+    const lx = await render({ text: text(stepChords({ ms: 150 }, 'glidePad')), toBar: 3, rms: { t0: 0.05, t1: 3.5 } });
+    const ll = await page.evaluate(LIVE, { text: text(stepChords({ ms: 150 }, 'glidePad')), seconds: 4.5, rms: { t0: 0.05, t1: 3.5 } });
+    // (the live recording lined up with the export where their levels match best, within 0.3 s)
+    const n0 = Math.min(ll.rms.length, lx.rms.length) - 40;
+    const meanOff = (d) => { let e = 0; for (let i = 20; i < n0; i++) e += Math.abs(ll.rms[i] - (lx.rms[i + d] ?? -200)); return e / (n0 - 20); };
+    let shift = 0;
+    for (let d = 0; d <= 30; d++) if (meanOff(d) < meanOff(shift)) shift = d;
+    let liveOff = 0;
+    for (let i = 20; i < n0; i++) liveOff = Math.max(liveOff, Math.min(...[-2, -1, 0, 1, 2].map((d) => Math.abs(ll.rms[i] - lx.rms[i + shift + d]))));
+    report(liveOff < 1.5, `Glide Pad live as in the export: its level within ${liveOff.toFixed(2)} dB every 10 ms (load ${load()})`);
+
+    // At full velocity: what reaches its saturation (the signal after its low-pass, before the curve) stays inside the curve's
+    // reach (SHAPER_ROOM: a shaper holds flat past its curve's end, a hard clip), for six-note chords and a 16-note cluster
+    const SHAPED = async ({ notes, vel }) => {
+      const engine = await (await fetch('/src/audio/engine.ts')).text();
+      const T = await import(engine.match(/from "([^"]*\/deps\/tone\.js[^"]*)"/)[1]);
+      const G = await import('/src/audio/presets/glidePad.ts');
+      const proto = T.Filter.prototype;
+      const connect = proto.connect;
+      const buf = await T.Offline(({ destination }) => {
+        // (the low-pass, as it's connected into the saturation, heard at the destination too; the pad's own output silent)
+        proto.connect = function (to, ...rest) {
+          if (this.frequency.value > 1300 && this.frequency.value < 1500) connect.call(this, new T.Gain({ gain: 1 }).connect(destination));
+          return connect.call(this, to, ...rest);
+        };
+        const pad = G.createGlidePad(new T.Gain(0).toDestination());
+        proto.connect = connect;
+        pad.trigger(notes, 3, 0.05, vel);
+      }, 4, 2, 44100);
+      proto.connect = connect;
+      let peak = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) for (const v of buf.getChannelData(c)) peak = Math.max(peak, Math.abs(v));
+      return { peak, room: G.SHAPER_ROOM };
+    };
+    const cluster = ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'C3', 'C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'];
+    for (const [label, notes] of [['F2 A3 C4 E4 G4 C5', ['F2', 'A3', 'C4', 'E4', 'G4', 'C5']], ['C2 A#3 E4 G4 C5 E5', ['C2', 'A#3', 'E4', 'G4', 'C5', 'E5']], ['a 16-note cluster', cluster]]) {
+      const r = await page.evaluate(SHAPED, { notes, vel: 1 });
+      report(r.peak < r.room, `Glide Pad at full velocity, ${label}: into its saturation at most ${r.peak.toFixed(2)} (its curve reaches ${r.room}: nothing clipped)`);
+    }
+    // Six-note chords at full velocity, gliding (60 to 300 ms) and as written. Each note is three copies a few cents apart that
+    // beat slowly: struck afresh, they start in step under the attack and drift apart through the chord, the same way each
+    // chord; gliding on, they keep whatever place in the beat they've reached, and there's no dip where a chord is struck
+    // again. So gliding comes out a little louder over the clip (about 0.3 dB), and its highest sample, where copies happen to
+    // line up, moves with the glide time alone (about 0.7 dB, some glide times under the chords as written): held to 0.35 dB
+    // over the chords as written over the clip, 0.4 dB in its loudest 400 ms, 0.5 dB in its highest sample
+    const SIX = [['F2', 'A3', 'C4', 'E4', 'G4', 'C5'], ['D2', 'A3', 'C4', 'F4', 'A4', 'D5'], ['G2', 'A#3', 'D4', 'F4', 'A4', 'D5'], ['C2', 'A#3', 'E4', 'G4', 'C5', 'E5']];
+    const six = (glide) => song('glidePad', [clip(SIX.flatMap((ch, i) => ch.map((m) => n(m, i / 2, '2n', 1))), 2, glide)]);
+    const levels = (rr) => {
+      const lin = rr.rms.map((v) => 10 ** (v / 10));
+      const whole = 10 * Math.log10(lin.reduce((t, v) => t + v, 0) / lin.length);
+      let loud = -Infinity;
+      for (let i = 0; i + 40 <= lin.length; i++) loud = Math.max(loud, 10 * Math.log10(lin.slice(i, i + 40).reduce((t, v) => t + v, 0) / 40));
+      return { whole, loud };
+    };
+    const sp = await render({ text: text(six()), toBar: 3, rms: { t0: 0.05, t1: 4 } });
+    const lp = levels(sp);
+    const gl = [];
+    for (const ms of [60, 100, 150, 200, 300]) {
+      const sg = await render({ text: text(six({ ms })), toBar: 3, rms: { t0: 0.05, t1: 4 } });
+      gl.push({ ms, peak: sg.peakDb, ...levels(sg) });
+    }
+    report(
+      gl.every((g) => g.whole <= lp.whole + 0.35 && g.loud <= lp.loud + 0.4 && g.peak <= sp.peakDb + 0.5) && gl.some((g) => g.peak <= sp.peakDb),
+      `Glide Pad, six-note chords at full velocity: as written level ${lp.whole.toFixed(2)} dB, loudest 400 ms ${lp.loud.toFixed(2)} dB, peak ${sp.peakDb.toFixed(2)} dB; gliding ${gl.map((g) => `${g.ms} ms: ${g.whole.toFixed(2)}, ${g.loud.toFixed(2)}, ${g.peak.toFixed(2)}`).join('; ')} dB`
+    );
   }
 
   // An instrument whose voices don't glide: the chords as written, the very same render
