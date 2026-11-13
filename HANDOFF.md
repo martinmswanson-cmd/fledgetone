@@ -297,6 +297,14 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Rich chords, glide and Glide Pad** (2026.11.13): chills progressions can be voiced Plain or Rich
+  (src/store/chills.ts, voice leading with wrap-around, velocity scaled to keep loudness), two new
+  progressions (a soul turnaround with a turn away; two minor chords, then a major home), key names
+  spelled with flats and sharps (songKey.ts). Glide between chords (src/store/chordGlide.ts, Clip.glide,
+  scheduler groupClipNotes, poly.ts glideVoice): common tones held, bass glides at most a whole step,
+  upper voices at most a minor 3rd, no zig-turn. Glide Pad (src/audio/presets/glidePad.ts, glidePadRoom.ts):
+  three detuned pools, 1.4 kHz low-pass, saturation that never clamps, its own fixed-seed stereo room;
+  the build into a peak's peak pad uses it. Checks: scripts/audio-check/chord-glide.cjs, glidePad.test.mjs.
 - **Hand-played hits and chills follow-ups** (2026.11.12): one strike rule for hits played by
   hand (soundLead.ts strikeWhole, toneStart.ts strikeTogether, strikeLive for native voices): every
   part of a hit is set together in the last step; a strike found late before it is heard is undone
