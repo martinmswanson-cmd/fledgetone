@@ -228,7 +228,8 @@ function planBuild(o: BuildChoices, tracks: readonly Track[], map: ReturnType<ty
     const chords = end > o.peak + EPS ? chordsOver(o.peak, end) : [];
     plan.noChords = !chords.length;
     if (chords.length) {
-      const track = { ...makeTrack('wavetable', made, 'Peak pad'), volume: -60 };
+      // (the Glide Pad: soft, wide and dark, its chords gliding into each other)
+      const track = { ...makeTrack(PEAK_PAD, made, 'Peak pad'), volume: -60 };
       const range = rangeOf(track);
       let prev: number[] | null = null;
       const notes: NoteEvent[] = chords.flatMap((c) => {
@@ -236,12 +237,16 @@ function planBuild(o: BuildChoices, tracks: readonly Track[], map: ReturnType<ty
         prev = voiced.upper;
         return [...voiced.bass, ...voiced.upper].map((m) => ({ id: newId(), note: nameOf(m), startOffset: Math.round(c.at * 192) / 192, duration: barsToDuration(c.end - c.at), velocity: 0.5 }));
       });
-      plan.pad = { track, clip: { id: uid('clip'), trackId: track.id, name: 'Peak pad', startBar: o.peak, lengthBars: end - o.peak, notes, isSelected: false } };
+      plan.pad = { track, clip: { id: uid('clip'), trackId: track.id, name: 'Peak pad', startBar: o.peak, lengthBars: end - o.peak, notes, isSelected: false, glide: { ms: PEAK_PAD_GLIDE_MS } } };
       plan.padEnd = end;
     }
   }
   return plan;
 }
+
+/** The instrument the build's pad at the peak plays, and how long its chords take to glide into each other (ms) */
+export const PEAK_PAD = 'glidePad' as const;
+export const PEAK_PAD_GLIDE_MS = 150;
 
 /** A build being measured: one at a time. */
 let measuring = false;

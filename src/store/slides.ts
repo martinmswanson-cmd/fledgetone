@@ -74,7 +74,7 @@ export const diveNotes = (notes: readonly NoteEvent[], semis = DIVE_SEMIS, bars 
  * others (drum kits, the FX and chip sounds, Supersaw, Pluck...) play the note at its own pitch.
  */
 const BENDING: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>([
-  'bass', 'subBass', 'bass808', 'lead', 'wobbleBass', 'growlBass', 'reeseBass', 'synthDesigner', 'keys', 'brass', 'wavetable',
+  'bass', 'subBass', 'bass808', 'lead', 'wobbleBass', 'growlBass', 'reeseBass', 'synthDesigner', 'keys', 'brass', 'wavetable', 'glidePad',
 ] as InstrumentKey[]);
 
 /**

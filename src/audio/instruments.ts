@@ -18,6 +18,7 @@ import { createBassVoice } from './presets/bass';
 import { createKeysVoice } from './presets/keys';
 import { createBrassVoice } from './presets/brass';
 import { create808, createDrumMachine, createLead, createSubBass, createWavetable } from './presets/synths';
+import { createGlidePad } from './presets/glidePad';
 import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
 import { createPluck, createSupersaw, HELD_NOTE } from './presets/edmSynths';
 import { createFx } from './presets/fx';
@@ -877,6 +878,15 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         play: (notes, time) => pad.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
         releaseAll: pad.releaseAll,
         ready: Promise.resolve(),
+        dispose: pad.dispose,
+      });
+    }
+    case 'glidePad': {
+      const pad = createGlidePad(output);
+      return poly(pad, {
+        play: (notes, time) => pad.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
+        releaseAll: pad.releaseAll,
+        ready: pad.ready,
         dispose: pad.dispose,
       });
     }

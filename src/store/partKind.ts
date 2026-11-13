@@ -10,7 +10,7 @@ import type { InstrumentKey, Track } from './timelineTypes';
 export type PartKind = 'drums' | 'bass' | 'pad' | 'lead' | 'fx' | 'other';
 
 /** The synths and recordings that play pads and chords, past the Pads & Atmospheres group. */
-const PADS: ReadonlySet<string> = new Set(['supersaw', 'wavetable', 'synthStrings', 'synthStrings2']);
+const PADS: ReadonlySet<string> = new Set(['supersaw', 'wavetable', 'glidePad', 'synthStrings', 'synthStrings2']);
 /** The leads (and the pluck, which plays hooks and arpeggios like one). */
 const LEADS: ReadonlySet<string> = new Set(['lead', 'pluck', 'squareLead', 'sawLead', 'calliope', 'chiffLead', 'charang', 'voiceLead', 'fifthsLead']);
 
