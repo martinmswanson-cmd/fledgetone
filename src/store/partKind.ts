@@ -31,11 +31,31 @@ export const START_REVERB: Record<PartKind, number> = { drums: 0, bass: 0, pad: 
 /** A new lead's echo: a dotted eighth, low in the mix, so its phrases ring on between notes. */
 export const LEAD_ECHO = { time: '1/8d', feedback: 0.3, mix: 0.15 } as const;
 
+/**
+ * Instruments with a room of their own (the Glide Pad's long, dark room): they start dry of the
+ * song's shared reverb, which would put a second room around theirs.
+ */
+export const OWN_ROOM: ReadonlySet<InstrumentKey> = new Set<InstrumentKey>(['glidePad']);
+
+/** The reverb send a new track of `key` starts with: its kind of part's, none for an instrument with its own room. */
+export const startReverbSend = (key: InstrumentKey): number => (OWN_ROOM.has(key) ? 0 : START_REVERB[partKind(key)]);
+
+/**
+ * A track's reverb send when its instrument changes from `from` to `to` (its send now `send`):
+ * none for an instrument with its own room; leaving one, its kind of part's again if it's still at
+ * none (a send set by hand is kept); any other change keeps the send as it is.
+ */
+export function switchedReverbSend(from: InstrumentKey, to: InstrumentKey, send: number): number {
+  if (OWN_ROOM.has(to)) return 0;
+  if (OWN_ROOM.has(from) && send === 0) return startReverbSend(to);
+  return send;
+}
+
 /** The sends and effects a new track of `key` starts with, over its defaults. */
 export function startSends(key: InstrumentKey, fx: Track['fx']): { reverbSend: number; fx: Track['fx'] } {
   const kind = partKind(key);
   return {
-    reverbSend: START_REVERB[kind],
+    reverbSend: startReverbSend(key),
     fx: kind === 'lead' ? { ...fx, echo: { ...fx.echo, on: true, ...LEAD_ECHO } } : fx,
   };
 }

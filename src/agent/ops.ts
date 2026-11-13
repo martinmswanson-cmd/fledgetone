@@ -18,6 +18,7 @@
  */
 import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../store/project';
 import { makeTrack } from '../store/trackFactory';
+import { switchedReverbSend } from '../store/partKind';
 import { syncPatterns, unlinked } from '../store/patterns';
 import { retimeAudioClips } from '../store/audioClips';
 import { cleanMarkerName, createMarker, MARKER_NAME_MAX, nextMarkerName, placeMarker, retimeMarkers } from '../store/markers';
@@ -716,7 +717,8 @@ function applyMarked(base: ProjectSnapshot, doc: unknown, opts: { idBase: string
         if (isDropKind(key) !== isDropKind(track.instrumentKey) && w.clips.some((c) => c.trackId === track.id))
           throw new OpFail(`${at}.instrument`, `${nm(track.name)} has clips: they can't switch between the Drop pad and an instrument`);
         const meta = INSTRUMENTS[key];
-        const next: Track = { ...track, instrumentKey: key, name: meta.name, color: meta.color, ...(key === 'designedKit' ? designedKitStart(track) : {}) };
+        // (its reverb send as the studio's switch sets it: none for an instrument with its own room, see partKind.ts)
+        const next: Track = { ...track, instrumentKey: key, name: meta.name, color: meta.color, reverbSend: switchedReverbSend(track.instrumentKey, key, track.reverbSend), ...(key === 'designedKit' ? designedKitStart(track) : {}) };
         // (The instrument's own name: none made from a file, see ownFiles.ts)
         delete next.nameFromFile;
         delete next.plugin;
