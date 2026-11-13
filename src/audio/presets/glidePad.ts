@@ -53,7 +53,8 @@ export function createGlidePad(output: Tone.InputNode, opts: { room?: boolean } 
   const wet = new Tone.Gain(opts.room === false ? 0 : 0.45).connect(out);
   reverb.chain(dark, wet);
   const warmth = new Tone.WaveShaper((x) => Math.tanh(x * 1.2) / 1.2, 1024);
-  warmth.oversample = '2x';
+  // (Not oversampled: what it shapes is low-passed at 1.4 kHz before it and the curve is gentle, so nothing it adds folds back
+  // down; and an oversampled shaper is late by a different time at each rate, see shaperLag.ts)
   warmth.fan(dry, reverb);
   const lowpass = new Tone.Filter({ type: 'lowpass', frequency: 1400, rolloff: -24, Q: 0.5 }).connect(warmth);
 

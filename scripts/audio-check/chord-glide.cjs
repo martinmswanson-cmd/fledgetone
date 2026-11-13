@@ -22,7 +22,7 @@
 //   written place, about 85 ms early at a slow tempo).
 // - The Glide Pad: the same export twice, its glides in the time set, dark and wide on the soul turnaround (little over 3 kHz,
 //   the centroid low, side over mid over -7 dB), no peak above the Wavetable's, no rise at a change over 1 dB nor over its
-//   chords as written, a note from silence without a click, live as in the export.
+//   chords as written (or its own level's movement in the middle of a chord), a note from silence without a click, live as in the export.
 // - An instrument whose voices don't glide (Pluck; a Wavetable track given Supersaw): the very
 //   same render as the chords without glide.
 //
@@ -523,15 +523,18 @@ const load = () => require('fs').readFileSync('/proc/loadavg', 'utf8').split(' '
     report(b['3-6k'] < -45 && b['6-12k'] < -55 && b.centroid < 600 && b.sideOverMid > -7, `Glide Pad, dark and wide: bands ${Object.entries(b).filter(([k]) => k.includes('-')).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')} dB, centroid ${b.centroid.toFixed(0)} Hz, side over mid ${b.sideOverMid.toFixed(1)} dB (Wavetable: 3-6k ${wt.bands['3-6k'].toFixed(1)} dB, centroid ${wt.bands.centroid.toFixed(0)} Hz, side over mid ${wt.bands.sideOverMid.toFixed(1)} dB)`);
     report(on.peakDb <= wt.peakDb && off.peakDb <= wt.peakDb, `Glide Pad's peak ${on.peakDb.toFixed(2)} dB gliding, ${off.peakDb.toFixed(2)} dB as written; the Wavetable's ${wt.peakDb.toFixed(2)} dB`);
     // (the biggest rise in level, 50 ms windows every 10 ms, from 0.1 s before each change to 0.3 s after)
-    const rise = (rr) => {
+    // (and, as a measure of how much its level moves by itself, the same over 0.4 s in the middle of each chord: three copies a
+    // few cents apart beat slowly, and the room swirls)
+    const rise = (rr, from = 0) => {
       let most = 0;
       for (let c = 1; c < soul.count; c++) {
-        const i0 = Math.round((c * 2 - 0.1 - 0.5) / 0.01);
+        const i0 = Math.round((c * 2 + from - 0.1 - 0.5) / 0.01);
         for (let i = i0 + 1; i < i0 + 40; i++) most = Math.max(most, rr.rms[i] - rr.rms[i - 1]);
       }
       return most;
     };
-    report(rise(on) <= 1 && rise(on) <= rise(off) + 0.1, `Glide Pad, the biggest rise in level at a chord change: ${rise(on).toFixed(2)} dB gliding, ${rise(off).toFixed(2)} dB as written`);
+    const own = rise(on, 1);
+    report(rise(on) <= 1 && rise(on) <= Math.max(rise(off), own) + 0.1, `Glide Pad, the biggest rise in level at a chord change: ${rise(on).toFixed(2)} dB gliding, ${rise(off).toFixed(2)} dB as written (in the middle of a chord, by itself, up to ${own.toFixed(2)} dB)`);
     // One note from silence: its first 10 ms far under its level a quarter second in (an eased attack: no click)
     const one = await render({ text: text(song('glidePad', [clip([n('C4', 0, '1m', 1)], 1)])), toBar: 2, rms: { t0: 0.02, t1: 0.6 } });
     const startDb = one.rms[0], heldDb = one.rms[Math.round((0.35 - 0.02) / 0.01)];
