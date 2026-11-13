@@ -103,6 +103,7 @@ import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { makeTrack } from './trackFactory';
+import { switchedReverbSend } from './trackFactory';
 import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, barSpan, durationToBars, formatBarCount, formatBarPosition, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
@@ -2590,6 +2591,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           color: meta.color,
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
+          // Its reverb send: none for an instrument with its own room, back to its kind's leaving one (partKind.ts)
+          reverbSend: switchedReverbSend(current.instrumentKey, instrumentKey, current.reverbSend),
           // A Designed Kit starts from the synthesized kit it was (Edit in Drum Designer), else from its own design or a new one
           ...(instrumentKey === 'designedKit' ? designedKitStart(current, opts?.fromKit) : {}),
         }),
@@ -2605,7 +2608,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (!current || isMixTrack(current) || isAudioKind(current.instrumentKey)) return;
       updateTrack(
         id,
-        () => ({ instrumentKey: 'plugin', name, color: INSTRUMENTS.plugin.color, plugin: { id: uid('plugin'), url, name, ...(state !== undefined ? { state } : {}) } }),
+        // (its reverb send as a switch of instrument sets it: from the Glide Pad, a new plugin track's, see switchedReverbSend)
+        () => ({ instrumentKey: 'plugin', name, color: INSTRUMENTS.plugin.color, reverbSend: switchedReverbSend(current.instrumentKey, 'plugin', current.reverbSend), plugin: { id: uid('plugin'), url, name, ...(state !== undefined ? { state } : {}) } }),
         true
       );
     },
