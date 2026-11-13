@@ -494,6 +494,16 @@ function realKit(folder: string, rows: Record<string, number>): SampleSource {
   return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release: 0.2, layers: LAYER_TOPS[set.layers], version: set.hash };
 }
 
+/** A kit's row (every loudness and take of it) `db` louder or softer (SampleSource.gains). */
+function withRowGain(source: SampleSource, row: string, db: number): SampleSource {
+  const gains: Record<string, number> = { ...source.gains };
+  for (const name of Object.keys(source.samples)) if (name.startsWith(`${row}|`)) gains[name] = Math.round(((gains[name] ?? 0) + db) * 100) / 100;
+  return { ...source, gains };
+}
+
+/** How much the Brush Kit's closed hat is raised (dB): to the Session and Studio Kits' hats, against the rest of their kits */
+export const BRUSH_HAT_DB = 4;
+
 // ---------- the catalog ----------
 
 const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
@@ -916,7 +926,9 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   brushKit: {
     key: 'brushKit', name: 'Brush Kit (Real)', blurb: 'A recorded drum kit played with brushes, soft and warm: jazz, lounge, ballads', color: '#92400e', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
-    samples: realKit('brush-kit', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 6.5,
+    // (Its closed hat recorded about 4 dB under the other kits' against their snares and kicks, at every velocity: soft ones
+    // all but lost under anything else, so it's raised to sit with theirs)
+    samples: withRowGain(realKit('brush-kit', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), 'F#1', BRUSH_HAT_DB), gain: 6.5,
     rowLabels: { 'D#1': 'Rimshot', 'G#2': 'Woodblock' },
   },
   latinPercussion: {

@@ -6,7 +6,7 @@
  */
 import { INSTRUMENTS, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { newKitDesign } from './drumDesign';
-import { startSends } from './partKind';
+import { OWN_ROOM, startReverbSend, startSends } from './partKind';
 import { defaultTrackFx, uid } from './timelineTypes';
 import type { InstrumentKey, Track } from './timelineTypes';
 
@@ -32,7 +32,7 @@ export function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?
     fx: start.fx,
     // An orchestral instrument plays in the hall (a recording of one has as much of the room as of
     // the instrument); anything else as its kind of part starts
-    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : start.reverbSend,
+    reverbSend: newTrackReverbSend(instrumentKey),
     delaySend: 0,
     expressive: true,
     // A new Designed Kit starts on the modern kick and snare (NEW_KIT_PRESETS)
@@ -41,6 +41,25 @@ export function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?
 }
 /** A new orchestral track's reverb send (its distance adds to it: see distance.ts) */
 export const SEATED_SEND = 0.35;
+
+/**
+ * The reverb send a new track of `key` starts with (makeTrack): an orchestral instrument's seat in
+ * the hall, else its kind of part's (none for an instrument with its own room, see partKind.ts).
+ */
+export const newTrackReverbSend = (key: InstrumentKey): number => (seatOf(key) ? SEATED_SEND : startReverbSend(key));
+
+/**
+ * A track's reverb send when its instrument changes from `from` to `to` (its send now `send`), in
+ * the studio, Pocket, an agent's set_instrument, a costume and a plugin put in its place: none for
+ * an instrument with its own room (the Glide Pad); leaving one with the send still at none, what a
+ * new track of `to` starts with (newTrackReverbSend, its seat included; a send set by hand is
+ * kept); any other change keeps the send as it is.
+ */
+export function switchedReverbSend(from: InstrumentKey, to: InstrumentKey, send: number): number {
+  if (OWN_ROOM.has(to)) return 0;
+  if (OWN_ROOM.has(from) && send === 0) return newTrackReverbSend(to);
+  return send;
+}
 
 /** A recorded instrument starts with a player's feel (the Human insert, see playerFeel in the catalog). */
 export function withHumanFeel(key: InstrumentKey, fx: Track['fx']): Track['fx'] {

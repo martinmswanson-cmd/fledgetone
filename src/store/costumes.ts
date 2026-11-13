@@ -3,6 +3,7 @@ import { uid } from './timelineTypes';
 import { currentInstrumentKey, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 import { kitNameKey, oneLineName } from './kitNames';
+import { switchedReverbSend } from './trackFactory';
 
 /**
  * Costumes and state options: the game music's second tier.
@@ -144,7 +145,8 @@ export function applyCostume(tracks: readonly Track[], clips: readonly Clip[], c
     // Nor to or from the Drop pad: its notes are moves on the whole mix, an instrument's are notes
     if ((INSTRUMENTS[t.instrumentKey]?.kind === 'drop') !== (INSTRUMENTS[to].kind === 'drop')) return t;
     swapped.set(t.id, to);
-    return { ...t, instrumentKey: to };
+    // (its reverb send as the studio's switch sets it: none for the Glide Pad, which has its own room, see switchedReverbSend)
+    return { ...t, instrumentKey: to, reverbSend: switchedReverbSend(t.instrumentKey, to, t.reverbSend) };
   });
   const outClips = clips.map((c) => {
     const to = swapped.get(c.trackId);
