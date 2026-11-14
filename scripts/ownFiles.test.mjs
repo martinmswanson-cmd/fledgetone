@@ -433,7 +433,7 @@ test('every flow that makes a name from another carries its mark', () => {
     }
   }
   // The store: a new song is marked, an opened one checked, and both go out saying so
-  has('src/store/timelineStore.ts', 'fileMarks: FILE_MARKS, tracks', 'const nameOf = songFileNames(opened.sounds, soundFileNames);', 'const p = withFileMarks(withOldMarks(opened, nameOf), nameOf);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
+  has('src/store/timelineStore.ts', 'get().loadProject({ ...song, fileMarks: FILE_MARKS, fps, dropFrame });', 'const nameOf = songFileNames(opened.sounds, soundFileNames);', 'const p = withFileMarks(withOldMarks(opened, nameOf), nameOf);', 'fileMarks: !!p.fileMarks,', "...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),");
   has('src/components/timeline/gameKitSong.ts', '...(s.fileMarks ? { fileMarks: FILE_MARKS } : {}),');
 });
 

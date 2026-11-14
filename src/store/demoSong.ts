@@ -1,11 +1,12 @@
 import { DRUM_NOTES } from './drumNotes';
 import { compatibleInstruments, FX_NOTES } from '../audio/instrumentCatalog';
 import type { Clip, InstrumentKey, NoteEvent, Track, WobbleRate } from './timelineTypes';
-import { defaultTrackFx, uid } from './timelineTypes';
+import { DEFAULT_MASTER_FX, asNewSong, defaultTrackFx, uid } from './timelineTypes';
 
 /**
- * Default tracks, and the stock patterns offered by "Insert pattern" on an empty lane (among them
- * a mellow neo-soul groove in C major, Fmaj9 - Em7 - Dm9 - G13). Steps are 16th notes: offset = step / 16 bars.
+ * Default tracks, the blank song made of them (the one the app opens with and the one New makes),
+ * and the stock patterns offered by "Insert pattern" on an empty lane (among them a mellow
+ * neo-soul groove in C major, Fmaj9 - Em7 - Dm9 - G13). Steps are 16th notes: offset = step / 16 bars.
  */
 
 export const INITIAL_TRACKS: Track[] = [
@@ -70,6 +71,27 @@ export const INITIAL_TRACKS: Track[] = [
     delaySend: 0.2,
   },
 ];
+
+/**
+ * The blank song: the default tracks with nothing on them, set up as a new song (asNewSong:
+ * Expressive playing on every track, Mono below 120 Hz and Headroom on the master). The store
+ * starts in it and New makes it, both from here, so the song a first visit opens with is the one
+ * New gives. Each call makes its own tracks.
+ */
+export function blankSong() {
+  return asNewSong(
+    {
+      name: 'Untitled',
+      bpm: 122,
+      swing: 0.2,
+      loopRegion: { inBar: 1, outBar: 5, enabled: true },
+      tracks: INITIAL_TRACKS.map((t): Track => ({ ...t, fx: defaultTrackFx() })),
+      clips: [] as Clip[],
+      masterFx: DEFAULT_MASTER_FX,
+    },
+    true
+  );
+}
 
 /** [step, note(s), velocity, duration] */
 export type Step = [step: number, notes: string | string[], velocity: number, duration?: string];

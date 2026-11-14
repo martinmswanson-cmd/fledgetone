@@ -74,7 +74,7 @@ import { MAX_STEP_LANES, moveStepLanes, splitStepLanes, stepMemo, withStepLanes 
 import { onParamNames } from '../audio/plugins/paramNames';
 import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
-import { createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
+import { blankSong, createPatternClip, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
@@ -129,12 +129,12 @@ import {
   stretchRatio,
 } from './audioClips';
 import { FILE_MARKS, fileMade, songFileNames, soundWithFileMarks, typedName, withFileMarks, withName, withOldMarks, withUnknownSoundsMarked, type FileMade, type FileNameOf } from './ownFiles';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
 import { withFeel } from './drumGroove';
 import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, LoudSettings, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
-import { DEFAULT_WOBBLE, NEW_SONG_HEADROOM, TOTAL_BARS, defaultLoud, defaultMasterSettings, newSongMaster, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
+import { DEFAULT_WOBBLE, TOTAL_BARS, asNewSong, defaultLoud, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
   anchorMarker,
@@ -1786,22 +1786,26 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     rafId = 0;
   };
 
+  // The app opens in the blank song New makes (blankSong: the same tracks, tempo and master), until
+  // a previous session or a file takes its place
+  const opening = blankSong();
+
   return {
-    tracks: INITIAL_TRACKS.map((t) => ({ ...t })),
-    clips: [],
+    tracks: opening.tracks,
+    clips: opening.clips,
     playheadPosition: 1,
     isPlaying: false,
     loadingToPlay: false,
     isRecording: false,
-    bpm: 122,
+    bpm: opening.bpm,
     tempoPoints: [],
     meter: FOUR_FOUR,
     meterPoints: [],
-    swing: 0.2,
+    swing: opening.swing,
     zoom: 160,
     activeTool: 'select',
     snapGrid: '1/16',
-    loopRegion: { inBar: 1, outBar: 5, enabled: true },
+    loopRegion: opening.loopRegion,
     markers: [],
     fps: DEFAULT_FRAME_RATE,
     dropFrame: false,
@@ -1809,18 +1813,17 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     viewLeft: 0,
     viewWidth: 1200,
     viewJumps: 0,
-    projectName: 'Untitled',
+    projectName: opening.name,
     songId: newSongId(),
     fileMarks: true,
-    selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
+    selectedTrackId: opening.tracks[0]?.id ?? null,
     isInspectorOpen: false,
-    masterReverbDecay: 2.4,
-    masterDelayTime: '8n',
-    masterDelayFeedback: 0.35,
+    masterReverbDecay: opening.masterFx.reverbDecay,
+    masterDelayTime: opening.masterFx.delayTime,
+    masterDelayFeedback: opening.masterFx.delayFeedback,
     masterReverbRoom: null,
     masterRoomStyle: 'hall',
-    // The song the app opens with is a blank new one: Headroom ahead of the master, as New gives it
-    master: { ...defaultMasterSettings(), headroom: NEW_SONG_HEADROOM },
+    master: opening.master,
     past: [],
     future: [],
 
@@ -3619,26 +3622,13 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     newProject: (template) => {
       // A new arrangement keeps the frame rate you're working in
       const { fps, dropFrame } = get();
-      // A new song plays expressively (older projects opened later keep their sound)
-      // ...and keeps its lows in the middle (Mono below 120 Hz), as a club or a phone needs
-      // ...and a blank one leaves Headroom ahead of the master (a starter keeps the levels it was mixed at: newSongMaster)
-      // (and every name made from a file in it is marked as it's made: see ownFiles.ts)
-      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: newSongMaster(p.master, !isStarterId(template)) });
-      get().loadProject(expressive(
-        isStarterId(template)
-          ? { ...createStarter(template), fps, dropFrame }
-          : {
-            name: 'Untitled',
-            bpm: 122,
-            swing: 0.2,
-            loopRegion: { inBar: 1, outBar: 5, enabled: true },
-            tracks: INITIAL_TRACKS.map((t) => ({ ...t, fx: defaultTrackFx() })),
-            clips: [],
-            masterFx: DEFAULT_MASTER_FX,
-            fps,
-            dropFrame,
-          }
-      ));
+      // A new song plays expressively, keeps its lows in the middle (Mono below 120 Hz), and a blank
+      // one leaves Headroom ahead of the master (a starter keeps the levels it was mixed at): see
+      // asNewSong. Older projects opened later keep their sound. The blank one is the song the app
+      // opens with (blankSong).
+      // (And every name made from a file in it is marked as it's made: see ownFiles.ts)
+      const song: ProjectSnapshot = isStarterId(template) ? asNewSong(createStarter(template), false) : blankSong();
+      get().loadProject({ ...song, fileMarks: FILE_MARKS, fps, dropFrame });
     },
 
     loadProject: (opened: ProjectSnapshot) => {

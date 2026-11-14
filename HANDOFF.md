@@ -325,8 +325,17 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   sees `master.headroomDb` and words a change of it, but has no op to set it. Checked by
   scripts/headroom.test.mjs and scripts/audio-check/headroom.cjs. Reading a gain's `.value` in
   Chromium only follows its automation while sound runs through the node: check it with a song
-  playing. Not looked at: the song the app opens with still lacks the other new-song settings
-  (Mono below 120 Hz, Expressive playing), which only New gives.
+  playing. The song the app opens with lacked the other new-song settings (Mono below 120 Hz,
+  Expressive playing), which only New gave: the store's initial state was written out by hand
+  beside `newProject`. Both now come from one place: `blankSong()` (demoSong.ts) builds the blank
+  song and `asNewSong` (timelineTypes.ts) says what a new song has, for starters too; the store
+  starts in `blankSong()` and `newProject('blank')` loads it. Songs from an autosave or a file
+  never go through either. Checked by scripts/blankSong.test.mjs, and in the app by headroom.cjs
+  (the opening song and a blank new one are the same song but for the id). In a fresh checkout
+  run `npm run build:runtime` before starting the dev server for the sound checks: without
+  `dist-runtime/` the app's own modules fail to load (a 500 for runtimeKit.ts in the server's
+  log) and headroom.cjs's live line fails with the gain staying at 1; start the server afresh
+  after building.
   (3) Open: 25 pitched instruments change only in volume with velocity (brightness moves under 50
   cents), and 22 recorded ones repeat a note as a near-identical copy (pianos, nylon guitar,
   saxes, mbira, marimba, kalimba, banjo...). Sound design, instrument by instrument; needs the

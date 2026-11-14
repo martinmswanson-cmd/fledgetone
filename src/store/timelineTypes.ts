@@ -635,6 +635,16 @@ export function newSongMaster(master: MasterSettings | undefined, blank: boolean
   return { ...(master ?? defaultMasterSettings()), monoLow: true, ...(blank ? { headroom: NEW_SONG_HEADROOM } : {}) };
 }
 
+/**
+ * A song as it starts when it's made new, blank or from a starter: every track plays expressively
+ * and its master is a new song's (newSongMaster). The one place that says what a new song has, for
+ * New and for the song the app opens with (blankSong in demoSong.ts). A song opened from a file or
+ * a previous session never comes through here: it keeps what it saved.
+ */
+export function asNewSong<P extends { tracks: Track[]; master?: MasterSettings }>(song: P, blank: boolean): P & { master: MasterSettings } {
+  return { ...song, tracks: song.tracks.map((t) => ({ ...t, expressive: true })), master: newSongMaster(song.master, blank) };
+}
+
 export function defaultMasterSettings(): MasterSettings {
   return {
     glue: 'standard',

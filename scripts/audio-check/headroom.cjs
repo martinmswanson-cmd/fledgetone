@@ -16,6 +16,8 @@
 //    least 2 dB more than without Headroom.
 // 4. Songs: the one the app opens with and a blank new one have 6 dB; a starter has none (it keeps
 //    the levels it was mixed at); a file saved without it opens without it, and with it, with it.
+//    The song the app opens with is the blank new one in everything else too (Mono below 120 Hz,
+//    Expressive playing on every track: nothing of the two songs apart).
 // 5. Live, with a starter playing: the gain ahead of the compressor follows the slider (none, 12,
 //    3, none again), and Undo takes the last recorded change back.
 // It exits with 1 when any of these fails. APP_URL overrides http://localhost:5200/. Needs
@@ -93,9 +95,16 @@ const LIVE = async () => {
   const s = store.useTimelineStore;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const has = () => s.getState().master.headroom ?? 0;
-  const out = { opening: has() };
+  // What else a new song has: its lows in the middle, every track playing expressively
+  const asNew = () => s.getState().master.monoLow === true && s.getState().tracks.every((t) => t.expressive === true);
+  // The whole song as text, but for its id (every song has its own)
+  const song = () => JSON.stringify({ ...store.currentProject(), songId: '' });
+  const out = { opening: has(), openingAsNew: asNew() };
+  const opening = song();
   s.getState().newProject('blank');
   out.blank = has();
+  out.blankAsNew = asNew();
+  out.same = song() === opening;
   const file = JSON.parse(JSON.stringify(P.serializeProject(store.currentProject())));
   const older = JSON.parse(JSON.stringify(file));
   delete older.master.headroom;
@@ -163,6 +172,7 @@ const LIVE = async () => {
     const r = await page.evaluate(LIVE);
     await page.close();
     say(r.opening === 6 && r.blank === 6, `the song the app opens with has ${r.opening} dB, a blank new one ${r.blank} dB`);
+    say(r.openingAsNew && r.blankAsNew && r.same, `the song the app opens with ${r.openingAsNew ? 'has' : 'lacks'} Mono below 120 Hz and Expressive playing on every track, a blank new one ${r.blankAsNew ? 'has' : 'lacks'} them, and the two are ${r.same ? 'the same song' : 'apart'}`);
     say(r.starter === 0, `a starter has ${r.starter || 'none'}`);
     say(r.olderFile === 0 && r.savedFile === 6, `a file saved without it opens with ${r.olderFile || 'none'}, one saved with 6 dB opens with ${r.savedFile} dB`);
     const want = [1, 10 ** (-12 / 20), 10 ** (-3 / 20), 1, 10 ** (-3 / 20)];
