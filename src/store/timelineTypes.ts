@@ -540,6 +540,13 @@ export interface MasterSettings {
    * Absent: off (projects from before it existed); new songs start with it on.
    */
   monoLow?: boolean;
+  /**
+   * Headroom: dB the mix is turned down where it enters the master section, ahead of the compressor
+   * (up to HEADROOM_MAX), so the compressor and the limiter are fed a mix that isn't over full
+   * scale. Absent: none (projects from before it existed, and the starters, mixed without it);
+   * blank new songs start with NEW_SONG_HEADROOM (see newSongMaster).
+   */
+  headroom?: number;
   /** The Loud master (effects/loudMaster.ts): mono lows, a sub tilt, the clipper and the limiter pushed to a loudness target. Absent: off. */
   loud?: LoudSettings;
 }
@@ -607,6 +614,27 @@ export const REVERB_SEND_MAX = 3;
 export const LEVEL_MIN = -24;
 export const LEVEL_MAX = 12;
 
+/** The most Headroom, dB. */
+export const HEADROOM_MAX = 12;
+/**
+ * The Headroom a blank new song starts with, dB. A plain five-track song at the faders' default
+ * reaches the master 4 to 6 dB over full scale (measured on built-in synths and on recorded
+ * instruments), and the compressor and limiter then take about 6 dB off its peaks.
+ */
+export const NEW_SONG_HEADROOM = 6;
+
+/** The gain the Headroom puts ahead of the master compressor (exactly 1 without it, so a song without it sounds as it did). */
+export const headroomGain = (m: Pick<MasterSettings, 'headroom'>): number => (m.headroom ? Math.pow(10, -m.headroom / 20) : 1);
+
+/**
+ * A new song's master. Its lows are kept in the middle (Mono below 120 Hz), as a club or a phone
+ * needs. A `blank` one gets Headroom too; a starter (`master` is its own) keeps the levels it was
+ * mixed and measured at.
+ */
+export function newSongMaster(master: MasterSettings | undefined, blank: boolean): MasterSettings {
+  return { ...(master ?? defaultMasterSettings()), monoLow: true, ...(blank ? { headroom: NEW_SONG_HEADROOM } : {}) };
+}
+
 export function defaultMasterSettings(): MasterSettings {
   return {
     glue: 'standard',
@@ -646,6 +674,8 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
     ...(r.glueMix !== undefined && normalizeGlueRecord(r.glueMix) ? { glueMix: normalizeGlueRecord(r.glueMix) } : {}),
     // Absent in projects from before it existed: off, as they sounded
     ...(r.monoLow === true ? { monoLow: true } : {}),
+    // Absent in projects from before it existed: none, as they sounded
+    ...(num(r.headroom, 0, 0, HEADROOM_MAX) > 0 ? { headroom: num(r.headroom, 0, 0, HEADROOM_MAX) } : {}),
     ...(r.loud !== undefined ? { loud: normalizeLoud(r.loud) } : {}),
   };
 }
@@ -677,6 +707,7 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
     a.level === b.level &&
     sameClipper(a.clipper, b.clipper) &&
     !!a.monoLow === !!b.monoLow &&
+    (a.headroom ?? 0) === (b.headroom ?? 0) &&
     sameLoud(a.loud, b.loud)
   );
 }

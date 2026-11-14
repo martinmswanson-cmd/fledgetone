@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Download, Ear, Flame, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { defaultLoud, defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, LOUD_TARGET_IDS, LOUD_TILT_MAX, LOUD_TILT_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX, type LoudTargetId } from '../../store/timelineTypes';
+import { defaultLoud, defaultMasterSettings, GLUE_STYLE_IDS, HEADROOM_MAX, NEW_SONG_HEADROOM, LEVEL_MAX, LEVEL_MIN, LOUD_TARGET_IDS, LOUD_TILT_MAX, LOUD_TILT_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX, type LoudTargetId } from '../../store/timelineTypes';
 import { LOUD_TARGETS, type LoudMatch } from '../../audio/effects/loudMaster';
 import { matchLoudMaster, useMixStudio } from '../../audio/mixStudio';
 import { MONITOR_TARGET_LUFS, setListeningMatched } from '../../audio/monitor';
@@ -283,6 +283,25 @@ export const LoudPanel: React.FC = () => {
         </span>
       </div>
     </InsertPanel>
+  );
+};
+
+/** The master's Headroom: the mix turned down where it enters the master section, ahead of the compressor. */
+export const HeadroomPanel: React.FC = () => {
+  const headroom = useTimelineStore((s) => s.master.headroom ?? 0);
+  const accent = '#38bdf8';
+  return (
+    <div data-search="headroom master input trim room peaks squashed" className="rounded-md border border-forge-border bg-forge-panel/60 p-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-forge-text">
+        <Gauge className="w-3.5 h-3.5" style={{ color: accent }} />
+        Headroom
+      </div>
+      <FxSlider label="Headroom" value={headroom} min={0} max={HEADROOM_MAX} step={0.5} format={(v) => (v ? `${v} dB` : 'None')} onChange={(v) => useTimelineStore.getState().setMasterHeadroom(v)} reset={NEW_SONG_HEADROOM} accent={accent} disabled={false} />
+      <p className="text-[10px] text-forge-muted">
+        Turns the mix down where it enters the master, before the compressor and the limiter. A few tracks at their usual levels add up to more than full scale, and the master then squashes every hit to fit; with room, the hits keep their attack. The song comes out quieter by about as much as the master was taking off: make it up with the Level, or with a loudness target when you export.{' '}
+        {headroom ? '' : 'This song has none (it was made before Headroom, or is a starter mixed without it), so it sounds as it did; new songs start with 6 dB.'}
+      </p>
+    </div>
   );
 };
 
@@ -576,6 +595,7 @@ export const OfflinePanel: React.FC = () => {
 export const MasterPanels: React.FC = () => (
   <div className="flex flex-col gap-3">
     <LoudnessPanel />
+    <HeadroomPanel />
     <GluePanel />
     <OttPanel />
     <WidthPanel />

@@ -134,7 +134,7 @@ import type { ClipFeel } from './grooveFeels';
 import type { GlueBusStyle } from './timelineTypes';
 import { withFeel } from './drumGroove';
 import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, LoudSettings, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
-import { DEFAULT_WOBBLE, TOTAL_BARS, defaultLoud, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
+import { DEFAULT_WOBBLE, NEW_SONG_HEADROOM, TOTAL_BARS, defaultLoud, defaultMasterSettings, newSongMaster, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
   anchorMarker,
@@ -698,6 +698,8 @@ interface TimelineState {
   setMasterClipper: (patch: Partial<ClipperSettings>, record?: boolean) => void;
   /** Mono below 120 Hz on or off, whatever the Width (recorded for undo). */
   setMasterMonoLow: (on: boolean) => void;
+  /** The master's Headroom, dB (0: none). `record`: an undo step (a slider's first move). */
+  setMasterHeadroom: (db: number, record?: boolean) => void;
   /** Change the Loud master (effects/loudMaster.ts), recorded like setMasterOtt. */
   setMasterLoud: (patch: Partial<LoudSettings>, record?: boolean) => void;
 
@@ -1817,7 +1819,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     masterDelayFeedback: 0.35,
     masterReverbRoom: null,
     masterRoomStyle: 'hall',
-    master: defaultMasterSettings(),
+    // The song the app opens with is a blank new one: Headroom ahead of the master, as New gives it
+    master: { ...defaultMasterSettings(), headroom: NEW_SONG_HEADROOM },
     past: [],
     future: [],
 
@@ -2889,6 +2892,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     setMasterLevel: (db, record = false) => setMaster((m) => ({ ...m, level: db }), record),
     setMasterClipper: (patch, record = false) => setMaster((m) => ({ ...m, clipper: { ...(m.clipper ?? defaultClipper()), ...patch } }), record),
     setMasterMonoLow: (on) => setMaster((m) => ({ ...m, monoLow: on }), true),
+    setMasterHeadroom: (db, record = false) => setMaster((m) => ({ ...m, headroom: db }), record),
     setMasterLoud: (patch, record = false) => setMaster((m) => ({ ...m, loud: { ...(m.loud ?? defaultLoud()), ...patch } }), record),
 
     // ---------- Clips ----------
@@ -3617,8 +3621,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const { fps, dropFrame } = get();
       // A new song plays expressively (older projects opened later keep their sound)
       // ...and keeps its lows in the middle (Mono below 120 Hz), as a club or a phone needs
+      // ...and a blank one leaves Headroom ahead of the master (a starter keeps the levels it was mixed at: newSongMaster)
       // (and every name made from a file in it is marked as it's made: see ownFiles.ts)
-      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: { ...(p.master ?? defaultMasterSettings()), monoLow: true } });
+      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: newSongMaster(p.master, !isStarterId(template)) });
       get().loadProject(expressive(
         isStarterId(template)
           ? { ...createStarter(template), fps, dropFrame }

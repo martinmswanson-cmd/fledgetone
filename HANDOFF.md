@@ -297,7 +297,8 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
-- **Sound quality audit, first fix: level matching no longer boosts into the safety limiter**
+- **Sound quality audit: level matching no longer boosts into the safety limiter, and new songs
+  leave Headroom before the master**
   (unreleased, branch `claude/new-session-ozd6g9`). The owner said the sounds "feel distinctly lower
   quality than ones from flagship DAWs"; an audit of release 2026.11.13 measured three causes.
   (1) Fixed here: live only, level matching (`monitor.ts`) turned quiet songs up by as much as 6 dB into the
@@ -308,11 +309,24 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   0 dB it still pushes a full mix into the safety limiter. What's left of it: the first play of a
   song with a quiet opening still has its first tall peaks cut (no look-ahead; Ambient: 3 cuts in
   the first 19 s, none after). Whether matching should turn songs up at all is the owner's call.
-  (2) Open: songs reach the master over full scale. A plain five-track song at default faders
+  (2) Fixed here: songs reach the master over full scale. A plain five-track song at default faders
   peaks at +4.2 dBFS (synths) to +5.9 dBFS (recorded) into the glue compressor and limiter, which
-  take off about 6 dB; `BUS_GAIN` in engine.ts leaves 0.9 dB. This is in exports too. Saved songs
-  must keep their sound, so the fix has to be for new songs only (a trim ahead of the compressor
-  that old projects load without), not a change to `BUS_GAIN` or the catalog's gains.
+  took about 6 dB off its peaks, in exports too. `MasterSettings.headroom` (dB, absent: none) is a
+  plain gain where the mix enters the master section (`masterIn` in createMixChain: bus ->
+  Headroom -> compressor; an export's parts are fed to it too), set with the inserts
+  (`liveMix.inserts.apply`). `newSongMaster` (timelineTypes.ts) gives a blank new song
+  `NEW_SONG_HEADROOM` (6 dB), and so does the song the app opens with; saved songs and the
+  starters have none and render byte for byte as before (the starters reach the master between
+  -11.7 and +4 dBFS and are levelled by their own Level trims, see `STARTER_LEVELS`: giving them
+  Headroom would mean re-levelling all eight). `BUS_GAIN` and the catalog's gains are untouched,
+  so stems, freezes and renders with the master bypassed don't change. The owner picked it by
+  ear from a loudness-matched pair. Costs: such a song comes out about 4 dB quieter (-16 LUFS
+  where it was -12). Pocket has no slider for it (new songs there get the 6 dB). The assistant
+  sees `master.headroomDb` and words a change of it, but has no op to set it. Checked by
+  scripts/headroom.test.mjs and scripts/audio-check/headroom.cjs. Reading a gain's `.value` in
+  Chromium only follows its automation while sound runs through the node: check it with a song
+  playing. Not looked at: the song the app opens with still lacks the other new-song settings
+  (Mono below 120 Hz, Expressive playing), which only New gives.
   (3) Open: 25 pitched instruments change only in volume with velocity (brightness moves under 50
   cents), and 22 recorded ones repeat a note as a near-identical copy (pianos, nylon guitar,
   saxes, mbira, marimba, kalimba, banjo...). Sound design, instrument by instrument; needs the
@@ -324,7 +338,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   add 40 dB (`renderArrangement` and `renderStems` scale down to the peak). Make tracks with
   `makeTrack` (trackFactory.ts), not `mkTrack` in lib.js, which has no Expressive playing, Human
   insert or sends. Still unanswered by the owner: do exported files sound cheap too, or mainly
-  playback in the app? That decides whether (2) or (3) comes next.
+  playback in the app? (3) is what's left.
 - **Rich chords, glide and Glide Pad** (2026.11.13): chills progressions can be voiced Plain or Rich
   (src/store/chills.ts, voice leading with wrap-around, velocity scaled to keep loudness), two new
   progressions (a soul turnaround with a turn away; two minor chords, then a major home), key names

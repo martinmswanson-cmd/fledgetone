@@ -33,7 +33,6 @@ import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, trackInstrumentOptions } from './instruments';
 import { exactSumsIn, settleSums } from './exactSums';
 import { deliverEnded, endedOnTimeIn } from './endedOnTime';
-import { nativeInputOf } from './nativeNodes';
 import { renderParts, trackCost } from './renderParts';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
@@ -1049,7 +1048,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   source.connect(split);
   split.connect(dry, 0, 0);
   split.connect(dry, 1, 1);
-  dry.connect(nativeInputOf(mix.compressor));
+  dry.connect(mix.masterIn);
   source.start(0);
   const rendered = await abortable(native.startRendering(), opts.signal).finally(() => {
     source.disconnect();

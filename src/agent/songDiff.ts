@@ -782,6 +782,8 @@ function diffMaster(a: MasterSettings | undefined, b: MasterSettings | undefined
   part('Loud', a.loud, b.loud, (v) => ({ crunch: 0, split: false, ...defaultLoud(), ...(v as MasterSettings['loud']) }));
   part('clipper', a.clipper, b.clipper, (v) => v ?? defaultClipper());
   if (!!a.monoLow !== !!b.monoLow) add({ text: `${b.monoLow ? 'Keeps' : 'Stops keeping'} the master's low end in the middle.` });
+  const [roomA, roomB] = [a.headroom ?? 0, b.headroom ?? 0];
+  if (roomA !== roomB) add({ text: roomB ? `Leaves ${rd(roomB, 1)} dB of headroom ahead of the master compressor${roomA ? ` (it was ${rd(roomA, 1)} dB)` : ''}.` : 'Leaves no headroom ahead of the master compressor.' });
 }
 
 /** A clip's glide between chords switched on or off, or its time changed, in plain words (`n`: the clip as worded). */

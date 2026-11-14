@@ -11,11 +11,12 @@ import './toneFixes';
 // Must run before any buffer is started: every one starts on a whole frame, live and exported alike
 import './wholeFrameStarts';
 import { createBusEffects } from './effects/busEffects';
-import { createMasterInserts } from './effects/masterChain';
+import { createMasterInserts, type MasterInserts } from './effects/masterChain';
+import { paramSetter } from './effects/smoothParam';
 import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';
 import { createWorkletNode, loadWorklet } from './worklets';
 import { installMonitor, listeningVolume, setListeningVolume } from './monitor';
-import { DEFAULT_MASTER_FX, defaultMasterSettings, defaultTrackFx } from '../store/timelineTypes';
+import { DEFAULT_MASTER_FX, defaultMasterSettings, defaultTrackFx, headroomGain } from '../store/timelineTypes';
 import { prepareFirstRooms } from './effects/roomIR';
 import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
@@ -28,12 +29,14 @@ export const BUS_GAIN = 0.9;
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> (OTT, stereo width) -> Level -> (clipper) -> look-ahead limiter -> destination
+ *   track strips -> master bus -> Headroom -> compressor -> (OTT, stereo width) -> Level -> (clipper) -> look-ahead limiter -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
  * The master section's inserts (`master`, see masterChain.ts) are only built while switched on;
- * the Level (a plain gain, MasterSettings.level) is always there.
+ * the Level (a plain gain, MasterSettings.level) is always there, and so is the Headroom
+ * (`masterIn`, a plain gain where the mix enters the master section, MasterSettings.headroom:
+ * unity without it, so a song saved before it sounds as it did).
  *
  * In an export's offline context the graph ends after the compressor (`limitsAfter`): the export
  * runs the OTT, width, Level and the same look-ahead limiter over the rendered sound
@@ -52,17 +55,31 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   // Where the inserts end and the limiter begins: the Level, a plain gain (unity in an export, whose
   // Level is applied after the render, see masterAfter.ts)
   const context = bus.context;
-  const level = (context.rawContext as unknown as BaseAudioContext).createGain();
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  // Where the mix enters the master section: the Headroom, a plain gain ahead of the compressor
+  const masterIn = raw.createGain();
+  masterIn.gain.value = headroomGain(master);
+  const level = raw.createGain();
   // Where the limiter's input is: after the clipper, which sits between it and the Level while it's on
-  const limiterIn = (context.rawContext as unknown as BaseAudioContext).createGain();
+  const limiterIn = raw.createGain();
   // The stand-in limiter until the look-ahead one (effects/limiter.ts, an AudioWorklet) has
   // loaded, and where AudioWorklets can't run: a hard-knee compressor (Tone.Limiter keeps a 30 dB
   // soft knee, which barely limits) and a ceiling that rounds off what its 20:1 ratio lets through
   const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
   const ceiling = new Tone.WaveShaper(ceilingCurve());
-  bus.connect(compressor);
+  Tone.connect(bus, masterIn);
+  Tone.connect(masterIn, compressor);
   // Patches compressor -> level itself, with the OTT and width in between while they're on
-  const inserts = createMasterInserts(compressor, level, master, limiterIn);
+  const built = createMasterInserts(compressor, level, master, limiterIn);
+  const ramped = paramSetter(() => raw.currentTime);
+  // (The Headroom follows the settings with the inserts: live, glided like the Level)
+  const inserts: MasterInserts = {
+    ...built,
+    apply: (next, ramp = 0.03) => {
+      if (!released) ramped(masterIn.gain, headroomGain(next), ramp);
+      built.apply(next, ramp);
+    },
+  };
   let lookahead: AudioWorkletNode | null = null;
   const limitsAfter = context.isOffline;
   let released = false;
@@ -100,6 +117,7 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
     released = true;
     lookahead?.port.postMessage('dispose');
     lookahead?.disconnect();
+    masterIn.disconnect();
     level.disconnect();
     limiterIn.disconnect();
     limiter.dispose();
@@ -111,6 +129,8 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   return {
     bus,
     busFx,
+    /** Where the mix enters the master section (the Headroom, a plain gain ahead of the compressor): what feeds the master without the bus feeds this */
+    masterIn,
     compressor,
     inserts,
     limiter,

@@ -210,6 +210,7 @@ node scripts/audio-check/live-controllers.cjs    # live: a plugin's held control
 node scripts/audio-check/bends.cjs              # bends in renders and live: overlapping bent notes, long curves, wide bends, loops, cost, releases, Stop, stalls
 node scripts/audio-check/rack-levels.cjs        # a Drum Rack pad as loud live as in the export (one- and two-channel sounds, panned)
 node scripts/audio-check/rates.cjs              # the same sound, at the same moment, at 44.1, 48, 96 and 32 kHz: driven sounds, amps and inserts, rooms, both reverbs
+node scripts/audio-check/headroom.cjs           # the master's Headroom: the same as the faders down, in one piece and in parts; which songs have it; the live gain following the slider
 node scripts/audio-check/fledge-undo.cjs        # Fledge Synth: undo and redo of a preset, in its window and in Pocket, a held note playing on
 node scripts/audio-check/switch-sweep.cjs       # every built-in plugin with presets and Surge XT: presets, undo, redo, Reset all on held notes and bright sounds; the worst burst and click per plugin
 ```

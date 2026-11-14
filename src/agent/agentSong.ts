@@ -92,7 +92,7 @@ export interface AgentSong {
   sections: Array<{ name: string; fromBar: number; toBar: number }>;
   tracks: AgentTrack[];
   clips: AgentClip[];
-  master: { levelDb: number; glue: string; ott: Record<string, unknown>; width: Record<string, unknown>; loud?: Record<string, unknown>; clipper?: Record<string, unknown>; monoLow: boolean };
+  master: { levelDb: number; glue: string; ott: Record<string, unknown>; width: Record<string, unknown>; loud?: Record<string, unknown>; clipper?: Record<string, unknown>; monoLow: boolean; headroomDb: number };
   /** What was left out to keep it small, in plain words (get_notes and get_automation give everything). */
   omitted: string[];
 }
@@ -228,6 +228,7 @@ export function toAgentSong(p: ProjectSnapshot, opts: { revision?: number; appVe
       ...(master.loud ? { loud: { ...master.loud } } : {}),
       ...(master.clipper ? { clipper: { ...master.clipper } } : {}),
       monoLow: master.monoLow === true,
+      headroomDb: master.headroom ?? 0,
     },
     omitted: [],
   };
