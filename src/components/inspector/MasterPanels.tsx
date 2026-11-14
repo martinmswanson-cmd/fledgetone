@@ -416,7 +416,7 @@ const ListeningSetting: React.FC = () => {
   const { reading, matched, wanted, status } = useListening();
   return (
     <div className="flex flex-col gap-1 pt-1 border-t border-forge-border/60" data-search="listening level matched loudness volume ear safe">
-      <label className="flex items-center gap-2 text-[11px] text-white cursor-pointer" title="You hear every song at about the same loudness (about -15 LUFS), however loud the master makes it; the exported file isn't changed. The level comes up slowly, never with a jump, and a safety limiter keeps your ears safe.">
+      <label className="flex items-center gap-2 text-[11px] text-white cursor-pointer" title="You hear every song at about the same loudness (about -15 LUFS), however loud the master makes it; the exported file isn't changed. The level comes up slowly, never with a jump, and a quiet song is turned up only as far as its tallest peaks leave room, so they stay whole. A safety limiter keeps your ears safe.">
         <input type="checkbox" checked={wanted} disabled={status === 'off'} onChange={(e) => setListeningMatched(e.target.checked)} className="accent-emerald-400" />
         <Ear className="w-3 h-3 text-emerald-300" />
         Listening level-matched
@@ -425,7 +425,7 @@ const ListeningSetting: React.FC = () => {
         {status === 'off'
           ? "This browser couldn't start level matching or the safety limiter (it needs a secure https address or localhost): you hear the master as it is, so keep the volume down. The Loud master's push isn't heard here. Exports are never changed by it."
           : matched
-          ? `What you hear is kept at about ${MONITOR_TARGET_LUFS} LUFS${reading ? `: ${reading.gainDb > 0 ? '+' : ''}${reading.gainDb.toFixed(1)} dB now` : ''}. Exports are never changed by it, or by the volume slider.`
+          ? `What you hear is kept at about ${MONITOR_TARGET_LUFS} LUFS${reading ? `: ${reading.gainDb > 0 ? '+' : ''}${reading.gainDb.toFixed(1)} dB now` : ''}. A quiet song comes up only as far as its peaks leave room. Exports are never changed by it, or by the volume slider.`
           : !wanted
           ? 'Off: you hear the master as loud as it is (the safety limiter stays on). Exports are never changed by the volume slider.'
           : 'Starting…'}

@@ -297,6 +297,34 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Sound quality audit, first fix: level matching no longer boosts into the safety limiter**
+  (unreleased, branch `claude/new-session-ozd6g9`). The owner said the sounds "feel distinctly lower
+  quality than ones from flagship DAWs"; an audit of release 2026.11.13 measured three causes.
+  (1) Fixed here: live only, level matching (`monitor.ts`) turned quiet songs up by as much as 6 dB into the
+  no-look-ahead safety limiter. The kernel now keeps each sounding 100 ms block's tallest sample
+  for `MONITOR_PEAK_HOLD_S` (30 s) and holds the boost to the room the tallest leaves under the
+  ceiling; a taller peak brings the gain down at once (the 32-sample check), never under 0 dB.
+  Silent blocks don't age the peaks, so Stop keeps them. The LISTEN volume is not counted: over
+  0 dB it still pushes a full mix into the safety limiter. What's left of it: the first play of a
+  song with a quiet opening still has its first tall peaks cut (no look-ahead; Ambient: 3 cuts in
+  the first 19 s, none after). Whether matching should turn songs up at all is the owner's call.
+  (2) Open: songs reach the master over full scale. A plain five-track song at default faders
+  peaks at +4.2 dBFS (synths) to +5.9 dBFS (recorded) into the glue compressor and limiter, which
+  take off about 6 dB; `BUS_GAIN` in engine.ts leaves 0.9 dB. This is in exports too. Saved songs
+  must keep their sound, so the fix has to be for new songs only (a trim ahead of the compressor
+  that old projects load without), not a change to `BUS_GAIN` or the catalog's gains.
+  (3) Open: 25 pitched instruments change only in volume with velocity (brightness moves under 50
+  cents), and 22 recorded ones repeat a note as a near-identical copy (pianos, nylon guitar,
+  saxes, mbira, marimba, kalimba, banjo...). Sound design, instrument by instrument; needs the
+  owner's ear. Found fine: no synth aliasing at C6/C7, sample files (top VBR quality, 20 kHz),
+  re-pitching (decoded at twice the rate), the glue compressor when not overloaded.
+  Measuring it: render through the export path with `scripts/audio-check/run.cjs`, and run the
+  kernel in Node over the result (import `monitor.ts` as scripts/monitor.test.mjs does). To read
+  the level reaching the master, render with every fader at -40 dB and `bypassMaster: true` and
+  add 40 dB (`renderArrangement` and `renderStems` scale down to the peak). Make tracks with
+  `makeTrack` (trackFactory.ts), not `mkTrack` in lib.js, which has no Expressive playing, Human
+  insert or sends. Still unanswered by the owner: do exported files sound cheap too, or mainly
+  playback in the app? That decides whether (2) or (3) comes next.
 - **Rich chords, glide and Glide Pad** (2026.11.13): chills progressions can be voiced Plain or Rich
   (src/store/chills.ts, voice leading with wrap-around, velocity scaled to keep loudness), two new
   progressions (a soul turnaround with a turn away; two minor chords, then a major home), key names

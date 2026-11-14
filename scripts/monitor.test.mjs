@@ -38,18 +38,38 @@ function part(seconds, amp) {
   return x;
 }
 
-/** Run the kernel over `x` (both sides) in 128-sample blocks; returns the output and the gain read every 100 ms. */
+/**
+ * A quiet, sparse song, `seconds` long: a short pluck every half second over a soft held note, its
+ * peaks at exactly `peak` (each pluck starts on the held note's crest). About -23 LUFS at 0.89.
+ */
+function plucks(seconds, peak) {
+  const n = Math.round(seconds * SR);
+  const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const b = t % 0.5;
+    x[i] = peak * (0.9 * Math.exp(-b * 120) * Math.cos(2 * Math.PI * 440 * b) + 0.1 * Math.cos(2 * Math.PI * 220 * t));
+  }
+  return x;
+}
+
+/** Run the kernel over `x` (both sides) in 128-sample blocks; returns the output, and the gain and the most the safety limiter took off (dB), read every 100 ms. */
 function run(k, x, params = { match: 1, volume: 1, target: M.MONITOR_TARGET_LUFS }) {
   const out = new Float32Array(x.length);
   const outR = new Float32Array(x.length);
   const gains = [];
+  const safety = [];
   const every = SR / 10;
   for (let at = 0; at < x.length; at += 128) {
     const n = Math.min(128, x.length - at);
     k.process(x.subarray(at, at + n), x.subarray(at, at + n), out.subarray(at, at + n), outR.subarray(at, at + n), n, params);
-    if (Math.floor((at + n) / every) > Math.floor(at / every)) gains.push(k.read().gainDb);
+    if (Math.floor((at + n) / every) > Math.floor(at / every)) {
+      const r = k.read();
+      gains.push(r.gainDb);
+      safety.push(r.safetyDb);
+    }
   }
-  return { out, gains };
+  return { out, gains, safety };
 }
 
 const lufsOf = (x) => {
@@ -142,6 +162,60 @@ test('the safety limiter holds every sample under its ceiling, whatever the volu
   const { out } = run(k, x, { match: 0, volume: 4, target: -15 });
   const ceiling = 10 ** (M.MONITOR_CEILING_DB / 20);
   for (let i = 0; i < out.length; i++) assert.ok(Math.abs(out[i]) <= ceiling + 1e-7, `sample ${i}: ${out[i]}`);
+});
+
+test("a quiet song whose peaks are already at the ceiling isn't turned up into the safety limiter", () => {
+  const k = kernel();
+  const { gains, safety } = run(k, plucks(30, 0.89));
+  // Left alone, the matching would add its full 6 dB and the limiter would take 6 dB off every pluck
+  assert.ok(Math.max(...safety) < 0.1, `the safety limiter took off ${Math.max(...safety).toFixed(2)} dB`);
+  assert.ok(Math.max(...gains) < 0.1, `the gain reached ${Math.max(...gains).toFixed(2)} dB`);
+  assert.ok(Math.abs(gains[gains.length - 1]) < 0.1, `it settles at the song's own level: ${gains[gains.length - 1].toFixed(2)} dB`);
+});
+
+test('a quiet song with room over its peaks is turned up by that room and no further', () => {
+  const k = kernel();
+  // Peaks at -6 dBFS: 5 dB under the -1 dBFS ceiling
+  const { gains, safety } = run(k, plucks(30, 0.5012));
+  assert.ok(Math.max(...safety) < 0.1, `the safety limiter took off ${Math.max(...safety).toFixed(2)} dB`);
+  const end = gains[gains.length - 1];
+  assert.ok(end > 4.7 && end < 5.05, `settled at ${end.toFixed(2)} dB`);
+});
+
+test('a louder hit after a quiet stretch brings the gain down at once: only that first hit meets the safety limiter', () => {
+  const k = kernel();
+  const x = new Float32Array(SR * 30);
+  x.set(plucks(20, 0.05), 0);
+  x.set(plucks(10, 0.89), SR * 20);
+  const { gains, safety } = run(k, x);
+  assert.ok(gains[199] > 5.9, `the quiet stretch was turned all the way up: ${gains[199].toFixed(2)} dB`);
+  // 300 ms after the first loud pluck (its own cut has let go by then) the limiter has nothing more to do
+  const later = safety.slice(203);
+  assert.ok(Math.max(...later) < 0.1, `the safety limiter still took off ${Math.max(...later).toFixed(2)} dB`);
+  assert.ok(gains[203] < 0.1, `the gain 300 ms after the hit: ${gains[203].toFixed(2)} dB`);
+});
+
+test('once the loud peaks are well behind, a quiet part is turned up again', () => {
+  const k = kernel();
+  const x = new Float32Array(SR * 60);
+  x.set(plucks(10, 0.89), 0);
+  x.set(plucks(50, 0.05), SR * 10);
+  const { gains, safety } = run(k, x);
+  assert.ok(gains[gains.length - 1] > 5.9, `the gain at the end: ${gains[gains.length - 1].toFixed(2)} dB`);
+  assert.ok(Math.max(...safety) < 0.1);
+});
+
+test('with level matching off the gain is 0 dB whatever the peaks: the song plays as loud as it is', () => {
+  const k = kernel();
+  // Over full scale coming in: the safety limiter holds it, the gain doesn't duck under 0 dB for it
+  const { gains } = run(k, plucks(20, 1.4), { match: 0, volume: 1, target: M.MONITOR_TARGET_LUFS });
+  assert.ok(Math.abs(gains[gains.length - 1]) < 0.01, `${gains[gains.length - 1]}`);
+});
+
+test('peaks over the ceiling coming in: the matching stops at 0 dB, it never turns a quiet song down for them', () => {
+  const k = kernel();
+  const { gains } = run(k, plucks(30, 1.4));
+  assert.ok(Math.abs(gains[gains.length - 1]) < 0.1, `settled at ${gains[gains.length - 1].toFixed(2)} dB`);
 });
 
 test('exports leave the listening volume out: the render never reads it', () => {

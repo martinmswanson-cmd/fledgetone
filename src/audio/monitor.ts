@@ -8,7 +8,10 @@
  *      3 s loudness slowly: it never rises faster than MONITOR_RISE_DB_PER_S (a quiet part is
  *      brought up gently), falls faster, fast when the last 400 ms are far too loud, and at once
  *      when the last 50 ms are (a drop after a quiet intro). It holds still in silence, so it
- *      doesn't creep up between songs.
+ *      doesn't creep up between songs. It never turns the song up further than its recent peaks
+ *      (the last MONITOR_PEAK_HOLD_S of sound) leave room for under the ceiling, so a quiet song
+ *      with tall peaks isn't pushed into the safety limiter; a taller peak arriving brings it
+ *      down at once to the room that peak leaves (never under 0 dB for it).
  *   2. The listening volume (the LISTEN slider in the header and the mixer), after the matching.
  *   3. A hard safety limiter with no look-ahead (no added delay): whatever the volume, nothing
  *      leaves louder than MONITOR_CEILING_DB.
@@ -39,6 +42,8 @@ export const MONITOR_START_DB = -6;
 export const MONITOR_SILENCE_LUFS = -50;
 /** The safety limiter's ceiling, dBFS. */
 export const MONITOR_CEILING_DB = -1;
+/** How long a peak holds the matching gain under the room it leaves below the ceiling, seconds of sound. */
+export const MONITOR_PEAK_HOLD_S = 30;
 
 export interface MonitorParams {
   /** 1: level matching on; 0: off (the gain glides back to 0 dB, rising no faster than its limit) */
@@ -74,7 +79,7 @@ export function createMonitorKernel(
   sampleRate: number,
   shelf: readonly number[],
   highpass: readonly number[],
-  c: { rise: number; fall: number; fastFall: number; headroom: number; fastHeadroom: number; min: number; max: number; start: number; silence: number; ceiling: number }
+  c: { rise: number; fall: number; fastFall: number; headroom: number; fastHeadroom: number; min: number; max: number; start: number; silence: number; ceiling: number; peakHold: number }
 ): MonitorKernel {
   const HOP = Math.round(sampleRate / 10);
   const SHORT = 30;
@@ -112,6 +117,12 @@ export function createMonitorKernel(
   let safety = 1;
   const safetyRelease = 1 - Math.exp(-1 / (0.05 * sampleRate));
   let safetyMost = 1;
+  // The tallest sample of each of the last sounding 100 ms blocks, and of the one being measured:
+  // the matching never turns up past the room they leave under the ceiling
+  const PEAKS = Math.max(1, Math.round(c.peakHold * 10));
+  const peaks = new Float64Array(PEAKS);
+  let peakAt = 0;
+  let peak = 0;
   let shortTerm = -Infinity;
   let sounding = false;
   const blockSeconds = HOP / sampleRate;
@@ -138,8 +149,19 @@ export function createMonitorKernel(
     let wanted = gainDb;
     const silent = !(lufs(power) >= c.silence);
     sounding = !silent;
+    if (!silent) {
+      peaks[peakAt] = peak;
+      peakAt = (peakAt + 1) % PEAKS;
+    }
+    peak = 0;
     if (!p.match) wanted = 0;
-    else if (!silent && Number.isFinite(shortTerm)) wanted = Math.max(c.min, Math.min(c.max, p.target - shortTerm));
+    else if (!silent && Number.isFinite(shortTerm)) {
+      wanted = Math.max(c.min, Math.min(c.max, p.target - shortTerm));
+      // No further up than the recent peaks leave room for (and never down for them)
+      let held = 0;
+      for (let k = 0; k < PEAKS; k++) if (peaks[k] > held) held = peaks[k];
+      if (wanted > 0 && held * Math.pow(10, wanted / 20) > ceiling) wanted = Math.max(0, 20 * Math.log10(ceiling / held));
+    }
     let fall = c.fall;
     if (p.match && !silent && Number.isFinite(momentary) && momentary + gainDb > p.target + c.headroom) {
       wanted = Math.min(wanted, p.target + c.headroom - momentary);
@@ -159,6 +181,8 @@ export function createMonitorKernel(
       const kl = filt(filt(l, shelf, 0), highpass, 4);
       const kr = filt(filt(r, shelf, 8), highpass, 12);
       const pw = kl * kl + kr * kr;
+      const tall = Math.max(l < 0 ? -l : l, r < 0 ? -r : r);
+      if (tall > peak) peak = tall;
       acc += pw;
       fast += (pw - fast) * fastCoef;
       if (++count === HOP) {
@@ -172,6 +196,11 @@ export function createMonitorKernel(
         const now = lufs(fast);
         if (p.match && now > c.silence && now + gainDb > p.target + c.fastHeadroom) gainDb = Math.max(c.min, p.target + c.fastHeadroom - now);
         gLin = Math.pow(10, gainDb / 20);
+        // A peak taller than the gain leaves room for: down at once to the room it leaves (never under 0 dB for it)
+        if (p.match && gLin > 1 && peak * gLin > ceiling) {
+          gLin = Math.max(1, ceiling / peak);
+          gainDb = 20 * Math.log10(gLin);
+        }
       }
       g += (gLin - g) * gCoef;
       vol += (p.volume - vol) * volCoef;
@@ -214,6 +243,7 @@ export const MONITOR_CONSTANTS = {
   start: MONITOR_START_DB,
   silence: MONITOR_SILENCE_LUFS,
   ceiling: MONITOR_CEILING_DB,
+  peakHold: MONITOR_PEAK_HOLD_S,
 };
 
 export const MONITOR_PROCESSOR = 'bbx-monitor';
