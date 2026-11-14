@@ -25,6 +25,9 @@ if (!existsSync(join(OUT, 'app', 'index.html'))) {
   process.exit(1);
 }
 cpSync(join(ROOT, 'site'), OUT, { recursive: true });
+// The home page's song plays from its project file through this player (src/runtime/sitePlayer.ts,
+// built by npm run build:runtime), loaded only when its button is pressed
+cpSync(join(ROOT, 'dist-runtime', 'fledgetone-site-player.js'), join(OUT, 'player', 'fledgetone-site-player.js'));
 // Netlify reads the cache rules from the top of the site only
 const appHeaders = join(OUT, 'app', '_headers');
 // (Run again over the same build, as when re-making the lessons, the rules have moved already)

@@ -260,6 +260,7 @@ scored.forEach((fig) => {
   btn.addEventListener('click', () => {
     const on = v.muted;
     if (on) scored.forEach((other) => { if (other !== fig) { const ov = other.querySelector('video'); if (!ov.muted) other.querySelector('.sound-btn').click(); } });
+    if (on) songOff();
     v.muted = !on;
     if (on) { v.currentTime = 0; v.loop = false; v.preload = 'auto'; v.play().catch(() => {}); }
     btn.setAttribute('aria-pressed', String(on));
@@ -270,6 +271,94 @@ scored.forEach((fig) => {
     v.play().catch(() => {});
   });
 });
+
+// The song made in Fledgetone: no audio file, it's made in the browser from its project file by the
+// studio's own export (the player, /player/fledgetone-site-player.js from src/runtime/sitePlayer.ts,
+// with the recordings from /app/), and only once the button is pressed. It fades in and out, and
+// plays a little under the films' loudness, never louder than the export. Starting it turns a film's
+// sound off; a film's sound stops it.
+const FILMS_LUFS = -16.1; // the two films' soundtracks, measured (EBU R128)
+const FADE_IN = 0.12, FADE_OUT = 0.6;
+let songOff = () => {};
+const songFig = document.querySelector('.scored-song[data-song]');
+if (songFig) {
+  const btn = songFig.querySelector('.sound-btn'), label = btn.querySelector('span'), status = songFig.querySelector('.song-status');
+  let ctx = null, song = null, level = 1, out = null, src = null, startedAt = 0, offset = 0, busy = false, want = false;
+  const say = (text, error = false) => { status.textContent = text; status.classList.toggle('is-error', error); };
+  const show = (text, pressed) => { label.textContent = text; btn.setAttribute('aria-pressed', String(pressed)); };
+  const fadeTo = (value, secs) => {
+    const g = out.gain, now = ctx.currentTime;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(value, now + secs);
+  };
+  const start = () => {
+    out = ctx.createGain();
+    out.gain.value = 0;
+    out.connect(ctx.destination);
+    const node = (src = ctx.createBufferSource());
+    node.buffer = song.audio;
+    node.connect(out);
+    // (played to the end: a pause has already let go of it)
+    node.onended = () => {
+      if (src !== node) return;
+      src = null; offset = 0;
+      show('Play again with sound', false);
+    };
+    startedAt = ctx.currentTime;
+    src.start(0, offset);
+    fadeTo(level, FADE_IN);
+    show('Pause', true);
+    say('');
+  };
+  // Pause: fade out, then stop where it got to (Play carries on from there)
+  const pause = () => {
+    want = false;
+    if (!src) return;
+    const s = src, o = out;
+    src = null;
+    offset = Math.min(song.audio.duration, offset + ctx.currentTime - startedAt);
+    fadeTo(0, FADE_OUT);
+    s.stop(ctx.currentTime + FADE_OUT + 0.02);
+    setTimeout(() => o.disconnect(), (FADE_OUT + 0.1) * 1000);
+    show('Play with sound', false);
+  };
+  songOff = pause;
+  btn.addEventListener('click', async () => {
+    // (pressed again while it loads: it won't start by itself when ready, and the other way round)
+    if (busy) { want = !want; show(want ? 'Loading…' : 'Play with sound', false); return; }
+    if (src) { pause(); return; }
+    want = true;
+    // (made and resumed inside the click, so a phone lets it sound)
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume().catch(() => {});
+    scored.forEach((fig) => { const v = fig.querySelector('video'); if (!v.muted) fig.querySelector('.sound-btn').click(); });
+    if (song) { start(); return; }
+    busy = true;
+    btn.setAttribute('aria-busy', 'true');
+    show('Loading…', false);
+    say('Loading the instruments…');
+    try {
+      const player = await import('/player/fledgetone-site-player.js');
+      song = await player.renderForPage(songFig.dataset.song, {
+        samples: '/app/',
+        onProgress: (f) => say(f >= 0.97 ? 'Almost ready…' : `Loading the instruments and making the song… ${Math.round(f * 100)}%`),
+      });
+      // Never louder than the export (the Streaming target); half a dB under the films
+      level = Math.min(1, 10 ** ((FILMS_LUFS - 0.5 - song.lufs) / 20));
+      offset = 0;
+      if (want) start();
+      else { show('Play with sound', false); say('Ready to play.'); }
+    } catch (e) {
+      song = null;
+      show('Try again', false);
+      say(`The song couldn't be loaded (${e && e.message ? e.message : e}). Check your connection and try again.`, true);
+    } finally {
+      busy = false;
+      btn.removeAttribute('aria-busy');
+    }
+  });
+}
 
 // Install: Chrome and Edge hand the page their install prompt (the studio's manifest covers the
 // whole site), so the button opens it; other browsers get a sentence saying how, the same advice as

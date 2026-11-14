@@ -584,6 +584,14 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .scored-link { font-size: 14px; }
 .scored .ai-note { margin-top: 0; }
 .scored-tip { margin: 16px 0 0; font-size: 14px; color: var(--muted); }
+/* The song: across both columns, its picture beside the words; it plays from its project file (main.js) */
+.scored-song { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 24px; }
+.scored-song img { display: block; width: 100%; height: auto; }
+.scored-song figcaption { padding-top: 4px; }
+.scored .song-status { font-size: 14px; color: var(--muted); flex: none; }
+.scored .song-status:empty { display: none; }
+.scored .song-status.is-error { color: #fca5a5; }
+.sound-btn[aria-busy="true"] { cursor: progress; opacity: .85; }
 
 /* Cut to length: one song and its shorter versions, each bar as long as the version lasts */
 .cutdown { margin-top: 72px; }
@@ -609,7 +617,7 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .cut-short { display: inline; }
 }
 @media (max-width: 900px) {
-  .scored-grid { grid-template-columns: minmax(0, 1fr); }
+  .scored-grid, .scored-song { grid-template-columns: minmax(0, 1fr); }
   .scored-set { margin-top: 48px; }
 }
 
