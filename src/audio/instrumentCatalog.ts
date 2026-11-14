@@ -378,11 +378,25 @@ function loopsOf(loops: Record<string, [number, number]>): Record<string, [numbe
  * Sections of an orchestra as one instrument: each part plays its set's recordings from `from` up
  * to the next part's `from` (MIDI), `gain` dB against the others so the sections match. A part
  * recorded at fewer loudnesses than the most of them spreads its takes across the loudnesses.
+ *
+ * The sections were recorded apart, each at levels of its own, and each gets louder or quieter
+ * towards the end of its range: where the cellos handed over to the violas the level fell 8 dB
+ * from one note to the next, where the trombone handed over to the horn 7 dB. So the recordings
+ * are evened across the whole keyboard (evenLevels over every part's measured levels with its
+ * gain, ENSEMBLE_REACH semitones either side), each raised or lowered onto one smooth curve, the
+ * instrument as loud as it was on average. Parts without measured levels (setLevels.ts) keep
+ * their plain gains.
  */
+/** How far either side (semitones) a section instrument's recordings are evened against: wide enough to carry the curve across a whole section's part of the keyboard. */
+const ENSEMBLE_REACH = 12;
 function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, release: number): SampleSource {
   const samples: Record<string, string> = {};
   const gains: Record<string, number> = {};
   const loops: Record<string, [number, number]> = {};
+  // Each recording's level as it plays (measured, with its part's gain), by "<midi>_<layer>_<take>", and its name
+  const levels: Record<string, number> = {};
+  const nameOf: Record<string, string> = {};
+  let measured = true;
   const sets = parts.map((p) => HOSTED_SETS[p.folder]);
   const layers = maxOf(sets.map((x) => x.layers));
   parts.forEach((part, i) => {
@@ -396,12 +410,26 @@ function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, 
         for (let t = 0; t < set.takes; t++) {
           samples[`${n}|${l}|${t}`] = `${part.folder}/${n.replace('#', 's')}_${own}_${t}.mp3`;
           if (part.gain) gains[`${n}|${l}|${t}`] = part.gain;
+          const level = SET_LEVELS[part.folder]?.levels[`${m}_${own}_${t}`];
+          if (level === undefined) measured = false;
+          else levels[`${m}_${l}_${t}`] = level + part.gain;
+          nameOf[`${m}_${l}_${t}`] = `${n}|${l}|${t}`;
           const loop = set.loops?.[`${m}_${own}_${t}`];
           if (loop) loops[`${n}|${l}|${t}`] = loop;
         }
       }
     }
   });
+  if (measured) {
+    const even = evenLevels(levels, ENSEMBLE_REACH);
+    const all = Object.values(even);
+    const mean = all.reduce((a, b) => a + b, 0) / Math.max(1, all.length);
+    for (const [key, db] of Object.entries(even)) {
+      const gain = Math.round(((gains[nameOf[key]] ?? 0) + db - mean) * 100) / 100;
+      if (gain) gains[nameOf[key]] = gain;
+      else delete gains[nameOf[key]];
+    }
+  }
   return {
     baseUrl: 'fledgetone-samples/',
     fallbackUrl: SITE_SAMPLES,

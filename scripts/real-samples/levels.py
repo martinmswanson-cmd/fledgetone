@@ -14,7 +14,10 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 SAMPLES = os.path.join(ROOT, 'public', 'fledgetone-samples')
 OUT = os.path.join(ROOT, 'src', 'audio', 'samplers', 'setLevels.ts')
-SETS = ['grand-piano']
+# The grand piano (evened and retuned by itself), and the sets the section instruments are made of
+# (String Section: cellos, violas, violins; Brass Section: trombones, French horn, trumpet), which
+# the catalog's ensemble() evens across the whole keyboard so the sections meet at their handovers
+SETS = ['grand-piano', 'cello-sustain', 'violas-sustain', 'violins-sustain', 'bass-trombone', 'tenor-trombone', 'french-horn', 'trumpet-vib']
 SR = 48000
 NOTES = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 

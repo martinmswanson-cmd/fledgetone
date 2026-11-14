@@ -327,7 +327,28 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   Chromium only follows its automation while sound runs through the node: check it with a song
   playing. Not looked at: the song the app opens with still lacks the other new-song settings
   (Mono below 120 Hz, Expressive playing), which only New gives.
-  (3) Open: 25 pitched instruments change only in volume with velocity (brightness moves under 50
+  (3) Strings and brass (the owner: "they sound so fake"; then, of a String Section scale, "at
+  note 5 it gets noticeably quieter and farther away": C♯3, the cellos' handover to the violas).
+  Fixed here: the two section instruments (`ensemble()` in instrumentCatalog.ts) are evened across
+  the whole keyboard with `evenLevels` (`ENSEMBLE_REACH` 12 semitones) over their parts' measured
+  levels (scripts/real-samples/levels.py now measures the seven sets they use into setLevels.ts);
+  the mean gain is taken out so the instrument is as loud as before. The handover steps went from
+  8.6 and 7.4 dB to 1.0 and 0.6 dB as played. This changes how existing songs with String Section
+  or Brass Section sound. Not fixed, measured (every note of the range at velocity 0.8, and a
+  phrase test: scripts are not in the repo): the sections still differ in tone and stereo width
+  at the handovers (brightness 300 Hz to 660 Hz and left/right likeness 0.85 to 0.67 at C3/C♯3:
+  the "farther away"; an overlap of the sections there would hide it and needs the sampler to
+  play two recordings a note by pitch, as it does by loudness); Violin (Real) is very uneven
+  (G♯3 about 24 dB quieter than its neighbours, 21 of 45 steps over 3 dB) and Violins steps up to
+  5 dB between recordings (`evened()` would do for both, with their sets measured); the trumpet's
+  notes speak in 20 to 155 ms from one note to the next; the string sets have two loudnesses with
+  one step in tone at velocity 0.55 and the soft one speaks in 300 to 740 ms; and many notes have
+  the same file at every loudness (French horn: only 12 of 43 notes have a recording of their own
+  at each of the three; tuba 5 of 32; the solo violin, viola, cello and contrabass about two
+  thirds), so their tone can't follow velocity there. The owner also said "in every song the note
+  is the same": a note always plays the same recording (one take a note in the sustained sets;
+  repeats measure 0.94 to 0.997 alike). Not started.
+  Earlier survey of all instruments: 25 pitched instruments change only in volume with velocity (brightness moves under 50
   cents), and 22 recorded ones repeat a note as a near-identical copy (pianos, nylon guitar,
   saxes, mbira, marimba, kalimba, banjo...). Sound design, instrument by instrument; needs the
   owner's ear. Found fine: no synth aliasing at C6/C7, sample files (top VBR quality, 20 kHz),
