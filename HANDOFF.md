@@ -297,6 +297,13 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Frisson tool, front-page song, lofi fixes** (2026.11.15): the chills tools are shown as the Frisson
+  tool (internal ids and saved data still say chills; search keywords keep "chills"). Home page counts
+  come from the catalogs (scripts/guide-tables.mjs siteCounts, data-count, guideTables test); a third
+  showcase plays "Lofi soul, after hours" live from its project via src/runtime/sitePlayer.ts (built to
+  /player/, Export's render, nothing loads before Play, no audio committed). Known limit: ~1.3 GB peak
+  memory while it renders (render in time slices to lower it). Glide Pad starts with reverb send 0
+  (trackFactory newTrackReverbSend, also costumes and plugins); Brush Kit closed hat +4 dB.
 - **Rich chords, glide and Glide Pad** (2026.11.13): chills progressions can be voiced Plain or Rich
   (src/store/chills.ts, voice leading with wrap-around, velocity scaled to keep loudness), two new
   progressions (a soul turnaround with a turn away; two minor chords, then a major home), key names
