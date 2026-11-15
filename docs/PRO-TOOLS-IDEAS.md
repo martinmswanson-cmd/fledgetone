@@ -73,6 +73,36 @@ have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. 
 - A polarity flip and phase alignment control on every channel strip (`lineUp.ts` may cover part).
 - A transient shaper with a proper display (Faust's Transient has only sliders).
 
+## Written in Rust, reusable by other GPL projects
+
+Fledge Synth (`engine/fledge-synth`) already shows the pattern: a Rust crate under
+GPL-3.0-or-later with no dependencies, built as `rlib` (a plain Rust library) and as `cdylib` (the
+WebAssembly module the app loads through the `bb_*` interface in `src/abi.rs`). The new plugins
+follow it, in one Cargo workspace under `engine/`:
+
+- **`fledge-dsp`**: the shared building blocks (oversampling, filters, FFT, envelopes, LFOs,
+  band-limited tables), moved out of Fledge Synth's `dsp.rs`, `fx.rs` and `tables.rs`.
+- **One crate per plugin** (`fledge-fm`, `fledge-additive`, `fledge-soothe`, `fledge-eq`, ...): DSP
+  only, with no browser or host code. Each takes parameters, MIDI events and audio buffers, so
+  anyone can add it to `Cargo.toml` and use it.
+- **`fledge-wasm`**: the `bb_*` adapter, generalised from Fledge Synth's `abi.rs`, which builds the
+  `.wasm` files the app loads.
+- **A VST3/CLAP wrapper** (for example with nih-plug), optional, so the same plugins run in Ableton,
+  FL Studio, Bitwig or Reaper.
+- **Publishing**: put the crates on crates.io as GPL-3.0-or-later, and keep every dependency
+  GPL-compatible.
+
+What goes where:
+
+- **Rust plugin crates**: #1, #2, #4, #5, #7, #8, #9, #15, #16 (a Scala-file and tuning crate),
+  #17, the transient shaper, and the engines inside #3 (the measurements) and #11 (the patch graph
+  that runs the sound).
+- **Mostly host features in the app's TypeScript**: #6 (the plugin interface gets sidechain
+  buffers, and the Rust adapter supports them), #10, and #12 to #14 (racks hold instruments
+  written in every language), plus the screens for #3 and #11.
+- **No rewrite**: the existing C++ families (Airwindows, MDA, Mutable, Surge and the rest) stay as
+  they are.
+
 ## Suggested order
 
 1. Instrument Rack / Layer (#12): mostly TypeScript in the host, and it makes every existing
