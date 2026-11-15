@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **On the website, the song starts in about a second**: **Lofi soul, after hours** on the home page now plays its export as a small MP3 (about 2 MB, 128 kbps) instead of being made in the browser first, which took about half a minute and about 20 MB of downloads. Nothing of it loads until you press **Play with sound**; it still fades in and out, plays a little under the films' level, pauses and carries on where it was, turns a film's sound off (and a film's sound pauses it), says so plainly if it can't load and tries again for real. Its project is still there to download.
+
 ## 2026.11.15 — The frisson tool, a song on the front page, and a clearer Brush Kit
 
 - **The chills tools are now the Frisson tool**: frisson is the shiver you get from music, and the dialog, the guide and the tutorial now say so the first time the word comes up. The track's right-click **Chills progression…** is now **Frisson tool…**, the piano roll's **CHILLS** is **FRISSON**, and Pocket's **For chills** is **Frisson**. **Build into a peak…** keeps its name and is now presented as part of the Frisson tool: its dialog says so, the Frisson tool's dialog and Pocket's Frisson say how to reach it, and in Pocket a section's **Build for chills into it** and **Build for chills from the music's level** are now **Build into a peak here** and **Build into a peak from the music's level**; the build's message now starts "A build into the peak over…". The progressions, their names and what they write are the same, songs saved before open exactly as they were, and clip names already saved stay as they are. Search (Ctrl+K) finds the Frisson tool by "chills" too, and the guide says it's also known as chills progressions.

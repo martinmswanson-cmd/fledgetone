@@ -5,7 +5,7 @@ import { defineConfig, type Plugin } from 'vite';
 // line serves it to a headless browser (tools/cli/src/browserRender.ts). Built like the game runtime:
 // the plugins' WebAssembly is found next to it (VITE_BOS_RUNTIME), and it knows the GPL-licensed
 // families too. It must never hold the studio's store: the renders take the song they're given.
-export const noStore: Plugin = {
+const noStore: Plugin = {
   name: 'no-timeline-store',
   enforce: 'pre',
   resolveId(source, importer) {
