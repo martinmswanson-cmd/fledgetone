@@ -224,8 +224,10 @@ export interface InstrumentDef {
    * `hz`, coming in after the note has started and differing a little from note to note (see
    * samplerManager.ts). A note under a third of a second plays straight. `body`: the frequencies
    * (Hz) of the instrument's body resonances the vibrato moves its harmonics across (bodyChain).
+   * `living`: its depth and rate on a track with Living notes (see samplers/heldNote.ts): quicker,
+   * as measured on real players (6.6 to 7 Hz), where the plain one stays as it always was.
    */
-  vibrato?: { cents: number; hz: number; body?: readonly number[] };
+  vibrato?: { cents: number; hz: number; body?: readonly number[]; living?: { cents: number; hz: number } };
   /**
    * Recorded in a dead (anechoic) room: the instrument plays in a small stage's early reflections
    * and short tail, `room` dB under the direct sound, as the other recordings have their room in
@@ -633,19 +635,19 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   // section's; the viola and bass, measured, are as dark as the sections as they are
   realViolin: {
     key: 'realViolin', name: 'Violin (Real)', blurb: 'One recorded violin, every note at three loudnesses, with a player\'s vibrato: melodies', color: '#fca5a5', category: 'Orchestra', kind: 'sampled', range: realRange('violin', 0),
-    samples: real('violin', 0.45), shaping: 'hall', gain: 8.4, taper: [74, 3], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 15, hz: 5.6, body: VIOLIN_BODY }, room: -9, dynamics: true,
+    samples: real('violin', 0.45), shaping: 'hall', gain: 8.4, taper: [74, 3], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 15, hz: 5.6, body: VIOLIN_BODY, living: { cents: 19, hz: 6.8 } }, room: -9, dynamics: true,
   },
   realViola: {
     key: 'realViola', name: 'Viola (Real)', blurb: 'One recorded viola, every note at three loudnesses, with a player\'s vibrato: warm middle lines', color: '#fdba74', category: 'Orchestra', kind: 'sampled', range: realRange('viola', 0),
-    samples: real('viola', 0.5), gain: -0.2, taper: [69, 1.5], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 14, hz: 5.4, body: bodyOf(BODY_SCALE.viola) }, room: -9, dynamics: true,
+    samples: real('viola', 0.5), gain: -0.2, taper: [69, 1.5], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 14, hz: 5.4, body: bodyOf(BODY_SCALE.viola), living: { cents: 14, hz: 6.2 } }, room: -9, dynamics: true,
   },
   realSoloCello: {
     key: 'realSoloCello', name: 'Cello (Real)', blurb: 'One recorded cello, every note at three loudnesses, with a player\'s vibrato: singing lines', color: '#fb923c', category: 'Orchestra', kind: 'sampled', range: realRange('cello', 0),
-    samples: real('cello', 0.6), gain: 4.2, tone: { presence: -3 }, taper: [65, 3], bowed: { skip: 0.05, solo: true, attack: 0.35 }, vibrato: { cents: 13, hz: 5.2, body: bodyOf(BODY_SCALE.cello) }, room: -9, dynamics: true,
+    samples: real('cello', 0.6), gain: 4.2, tone: { presence: -3 }, taper: [65, 3], bowed: { skip: 0.05, solo: true, attack: 0.35 }, vibrato: { cents: 13, hz: 5.2, body: bodyOf(BODY_SCALE.cello), living: { cents: 11, hz: 6.5 } }, room: -9, dynamics: true,
   },
   realContrabass: {
     key: 'realContrabass', name: 'Contrabass (Real)', blurb: 'One recorded double bass, every note at three loudnesses, bowed: deep held lines', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: realRange('contrabass', 0),
-    samples: real('contrabass', 0.6), gain: 10.1, taper: [51, 1.5], bowed: { skip: 0.06, attack: 0.4 }, vibrato: { cents: 10, hz: 5, body: bodyOf(BODY_SCALE.contrabass) }, room: -9, dynamics: true,
+    samples: real('contrabass', 0.6), gain: 10.1, taper: [51, 1.5], bowed: { skip: 0.06, attack: 0.4 }, vibrato: { cents: 10, hz: 5, body: bodyOf(BODY_SCALE.contrabass), living: { cents: 10, hz: 5.6 } }, room: -9, dynamics: true,
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),
@@ -1221,6 +1223,15 @@ const BREATH: Partial<Record<InstrumentKey, number>> = {
   realSopranoSax: 8,
   realDidgeridoo: 9,
 };
+/**
+ * Whether `key`'s held notes move with Living notes (Track.living, see samplers/heldNote.ts): the
+ * bowed strings, and the winds and brass recorded sustained at several loudnesses.
+ */
+export const livesWhenHeld = (key: InstrumentKey): boolean => {
+  const def = INSTRUMENTS[key];
+  return !!def && def.kind === 'sampled' && !!(def.bowed || def.dynamics || def.vibrato);
+};
+
 /** How long a player of `key` can hold a note before it starts to fade (seconds), if they breathe. */
 export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];
 

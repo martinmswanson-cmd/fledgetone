@@ -348,6 +348,25 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   thirds), so their tone can't follow velocity there. The owner also said "in every song the note
   is the same": a note always plays the same recording (one take a note in the sustained sets;
   repeats measure 0.94 to 0.997 alike). Not started.
+  Fixed after that: **Living notes** (`Track.living`, a switch in the Ring panel; on for tracks of
+  a blank new song and tracks added, off for older tracks and starters, which render byte for
+  byte as before). Found by remaking MusicNet recordings (CC BY 4.0: Bach solo violin and cello,
+  the Brahms horn trio, a Mozart quartet) from their aligned note labels and comparing each long
+  note's harmonics with the real one's: real held notes move (level 5 to 6 dB, pitch drifting 9 to
+  31 cents, notes 12 to 18 cents apart, vibrato 6.6 to 7 Hz from the note's start); the app's were
+  still. The owner heard a trial and said it "sounds so much fuller". The maths is pure
+  (`samplers/heldNote.ts`: `levelCurve`, `pitchCurve`, `pitchOffset`, `vibratoOnset`; each note's
+  numbers from `noteJitter`, so exports repeat) and samplerManager.ts plays it: a gain of its own
+  after the note's for the level, a ConstantSource into the sources' playbackRate for the pitch,
+  `InstrumentDef.vibrato.living` for the quicker vibrato. It is read from `PlayFeel` as each note
+  starts (no rebuild). Limits, on purpose: the pitch only moves on voices whose copies keep their
+  recordings' rate (`bendy`: bowed strings); wind and brass get the level shape alone, as their
+  copies are at the context's rate and a moving pitch read between frames dulls the top. A note
+  held by hand has no known end, so it gets vibrato and drift but no level shape. Section
+  instruments' vibrato is in their recordings and can't be changed. Amounts are about half of
+  what was measured (one player an instrument). Not done: the level shape is gentle (a long violin
+  note moves about 3 dB, a real one 5.5); nothing in Pocket shows the switch. The measuring
+  scripts (remake from labels, per-note harmonic tracking) are not in the repo.
   Earlier survey of all instruments: 25 pitched instruments change only in volume with velocity (brightness moves under 50
   cents), and 22 recorded ones repeat a note as a near-identical copy (pianos, nylon guitar,
   saxes, mbira, marimba, kalimba, banjo...). Sound design, instrument by instrument; needs the

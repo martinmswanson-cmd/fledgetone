@@ -442,6 +442,8 @@ export function parseTrack(raw: unknown): Track {
     // Optional: a recorded instrument's ring (seconds) and breath
     ...(isNum(v.ring) ? { ring: Math.max(0, Math.min(RING_MAX, v.ring)) } : {}),
     ...(v.breathe === false ? { breathe: false as const } : {}),
+    // Optional: Living notes (absent in projects from before it: they keep their sound)
+    ...(v.living === true ? { living: true } : {}),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
     // Optional: the track a bounce was rendered from

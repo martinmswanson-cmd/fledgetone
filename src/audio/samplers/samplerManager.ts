@@ -19,6 +19,7 @@ import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTL
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
+import { levelCurve, LIVING_HELD_SECONDS, LIVING_SHORTEST, pitchCurve, vibratoOnset, type Jitter } from './heldNote';
 import { decodedBytes, decodedOf, setDecodedBytes } from './setSizes';
 import { BLEND_ZONE, chooseExportDecodes, COPY_SEMITONES, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, layersInReach, lowMemoryDevice, neededPitches, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes, TrackPlan } from './songSamples';
@@ -1577,14 +1578,16 @@ const VIBRATO_SHORTEST = 0.33;
 /** How much the vibrato moves the level too (a share of it, either way): the bow's contact and the body's resonances follow the hand */
 const VIBRATO_LEVEL = 0.035;
 /**
- * How a track plays its recorded instrument (Track.ring, Track.breathe), read as each note starts
- * and ends so a change is heard from the next note: `ring` seconds for a note to die away once
- * it's let go (when longer than the instrument's own release), `breathe` false for wind and brass
- * players who never run out of breath.
+ * How a track plays its recorded instrument (Track.ring, Track.breathe, Track.living), read as each
+ * note starts and ends so a change is heard from the next note: `ring` seconds for a note to die
+ * away once it's let go (when longer than the instrument's own release), `breathe` false for wind
+ * and brass players who never run out of breath, `living` for held notes that move (Living notes,
+ * see heldNote.ts).
  */
 export interface PlayFeel {
   ring?: number;
   breathe?: boolean;
+  living?: boolean;
 }
 
 /** Out of breath, a held note fades towards this share of its level, with this time constant (s) */
@@ -1656,6 +1659,10 @@ function samplerVoice(
    * bend by design, or (a render's) its track's notes bend, vibrate or drift in pitch (prepare).
    */
   let wide = !!(vibrato || bowed);
+  /** A bowed string (its notes bend by design, so its copies keep their recordings' rate): a living note's pitch may drift */
+  const bendy = wide;
+  /** Its held notes are sustained by the player (a bow, a breath): what Living notes moves (as livesWhenHeld in instrumentCatalog.ts) */
+  const sustains = !!(bowed || vibrato || bank.layer);
   /**
    * What plays `buffer` `interval` semitones up (and `frac` more, a detuned note's): its copy at
    * that interval where there's one, at the rate `frac` leaves (exactly 1 for a note in tune), and
@@ -1942,7 +1949,22 @@ function samplerVoice(
     }
     // (played hard enough, or not expressively: as recorded, no filter)
     const cutoff = expressive ? expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency()) : OPEN_CUTOFF;
-    gain.connect(cutoff < OPEN_CUTOFF ? filterFor(cutoff) : into);
+    // Living notes (the track's switch, see heldNote.ts): a held note of a bowed or blown instrument
+    // moves while it sounds (not a short stroke, which is over before it could)
+    const living = !!feel?.living && sustains && mode !== 'short';
+    const jitter: Jitter = (salt) => noteJitter(note, at, salt);
+    // Its level: up to its loudest part of the way in, then easing off, through a gain of its own
+    // after the note's (which keeps the note's attack, breath and release). A song's note, whose
+    // length is known: one held by hand has no end to shape towards
+    let shape: GainNode | null = null;
+    if (living && hold < Infinity && hold - when >= LIVING_SHORTEST) {
+      const curve = levelCurve(hold - when, jitter);
+      shape = raw.createGain();
+      shape.gain.setValueAtTime(curve[0], when);
+      shape.gain.setValueCurveAtTime(curve, when + 0.005, hold - when - 0.01);
+      gain.connect(shape);
+      shape.connect(cutoff < OPEN_CUTOFF ? filterFor(cutoff) : into);
+    } else gain.connect(cutoff < OPEN_CUTOFF ? filterFor(cutoff) : into);
     /**
      * A source of `buffer` (a recording, or its copy `k` times as fast) at `rate` into `to`,
      * started `offset` seconds of the recording in; returns it and when it runs out
@@ -1996,7 +2018,8 @@ function samplerVoice(
     // (its key-release sound's take: its turn at the loudness it plays, see releaseSound)
     const turn = turns?.[low >= 0 ? low : blend ? blend.layer : bank.tops ? loudnessOf(velocity, bank.tops) : 0];
     if (turn !== undefined) s.turn = turn;
-    if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
+    if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness, living);
+    if (living && (shape || (bendy && hold - when >= LIVING_SHORTEST))) addLife(s, when, hold, shape, jitter);
     // The same string picked again as it was let go: no damping sound (see comingReleases)
     // (only one not yet begun, so nothing already sounding is cut off)
     for (let i = comingReleases.length - 1; i >= 0; i--) {
@@ -2014,26 +2037,65 @@ function samplerVoice(
   };
 
   /**
+   * A living note's pitch (see heldNote.ts): a few cents off true if it is a soloist's, and drifting
+   * slowly while it sounds, added to its sources' speed as its vibrato is. Only where the voice's
+   * copies keep their recordings' rate (a bowed string: `bendy`), which a moving pitch reads well
+   * from; a wind or brass note keeps its pitch and has its level shaped (`shape`) alone. A note
+   * held by hand drifts for LIVING_HELD_SECONDS and holds there. Let go with the note.
+   */
+  const addLife = (s: Sounding, when: number, hold: number, shape: GainNode | null, jitter: Jitter) => {
+    const nodes: AudioNode[] = [];
+    let drift: ConstantSourceNode | null = null;
+    if (bendy) {
+      const seconds = hold < Infinity ? hold - when + afterRelease() : LIVING_HELD_SECONDS;
+      const curve = pitchCurve(seconds, !!(bowed?.solo || vibrato), jitter);
+      drift = raw.createConstantSource();
+      drift.offset.setValueAtTime(curve[0], when);
+      drift.offset.setValueCurveAtTime(curve, when + 0.005, seconds - 0.01);
+      nodes.push(drift);
+      for (const [src, base] of [[s.src, s.base], ...(s.pair ? [[s.pair.src, s.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
+        // (cents to speed: 2^(c/1200) - 1 is c ln2 / 1200 to within a thousandth of a cent at these sizes)
+        const k = raw.createGain();
+        k.gain.value = (base * Math.LN2) / 1200;
+        drift.connect(k).connect(src.playbackRate);
+        nodes.push(k);
+      }
+      drift.start(when);
+    }
+    let left = sourcesOf(s).length;
+    for (const src of sourcesOf(s))
+      src.addEventListener('ended', () => {
+        if (--left) return;
+        drift?.stop();
+        for (const n of nodes) n.disconnect();
+        shape?.disconnect();
+      });
+  };
+
+  /**
    * A player's vibrato on `s` (InstrumentDef.vibrato), for recordings made without one: a sine
    * swinging the pitch `cents` either way, deeper the louder it's played. It comes in a fifth of a
    * second or so after the note starts and grows over half a second (at once on a legato change, as
    * the hand keeps going), starting a little slower than its rate and settling into it; and its
    * rate and depth differ a little from note to note (seeded, so an export comes out the same). The
-   * level follows the pitch a little (VIBRATO_LEVEL), as a string's does.
+   * level follows the pitch a little (VIBRATO_LEVEL), as a string's does. `living` (the track's
+   * Living notes): at the instrument's quicker living rate and depth, and there from the start of
+   * the note, as measured on real players (vibratoOnset in heldNote.ts).
    */
-  const addVibrato = (s: Sounding, note: string, at: number, when: number, legato: boolean, loudness: number) => {
-    const { cents, hz } = vibrato!;
+  const addVibrato = (s: Sounding, note: string, at: number, when: number, legato: boolean, loudness: number, living = false) => {
+    const { cents, hz } = (living && vibrato!.living) || vibrato!;
     const rate = hz * (1 + 0.07 * noteJitter(note, at, 71));
+    const on = vibratoOnset(legato, living, noteJitter(note, at, 79));
     const osc = raw.createOscillator();
     // (Its frequency from the first sample, so its phase is the same live and in the export)
-    osc.frequency.value = rate * (legato ? 0.95 : 0.82);
-    osc.frequency.setValueAtTime(rate * (legato ? 0.95 : 0.82), when);
-    osc.frequency.linearRampToValueAtTime(rate, when + (legato ? 0.3 : 0.9));
+    osc.frequency.value = rate * on.from;
+    osc.frequency.setValueAtTime(rate * on.from, when);
+    osc.frequency.linearRampToValueAtTime(rate, when + on.settle);
     const depth = raw.createGain();
-    const delay = legato ? 0.03 : 0.2 + 0.06 * noteJitter(note, at, 79);
+    const delay = on.delay;
     depth.gain.setValueAtTime(0, when);
     depth.gain.setValueAtTime(0, when + delay);
-    depth.gain.linearRampToValueAtTime(legato ? 0.8 : 1, when + delay + (legato ? 0.25 : 0.5));
+    depth.gain.linearRampToValueAtTime(on.first, when + delay + on.ramp);
     if (legato) depth.gain.linearRampToValueAtTime(1, when + delay + 0.6);
     osc.connect(depth);
     const swing = cents * (0.75 + 0.35 * Math.max(0, Math.min(1, loudness))) * (1 + 0.12 * noteJitter(note, at, 83));

@@ -52,7 +52,7 @@ const RENDER = async ({ c, runs, threads }) => {
   const sr = 44100;
   const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const name = (m) => NAMES[m % 12] + (Math.floor(m / 12) - 1);
-  const track = (id, key, extra = {}) => ({ id, name: id, color: '#888', instrumentKey: key, isMuted: false, isSoloed: false, isArmed: false, volume: -6, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: T.defaultTrackFx(), reverbSend: 0.15, delaySend: 0.1, expressive: true, ...extra });
+  const track = (id, key, extra = {}) => ({ id, name: id, color: '#888', instrumentKey: key, isMuted: false, isSoloed: false, isArmed: false, volume: -6, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: T.defaultTrackFx(), reverbSend: 0.15, delaySend: 0.1, expressive: true, living: true, ...extra });
   let n = 0;
   const note = (m, startOffset, duration, velocity) => ({ id: 'n' + n++, note: typeof m === 'number' ? name(m) : m, startOffset, duration, velocity });
   // A phrase over 4 bars (positions in bars): a line up the range, a held chord, legato steps, repeats

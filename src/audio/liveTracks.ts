@@ -261,7 +261,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.instrument.setBass808?.(track.bass808);
       lt.instrument.setGlide?.(track.glide);
       lt.instrument.setSubLayer?.(track.subLayer);
-      lt.instrument.setFeel?.(track.ring, track.breathe);
+      lt.instrument.setFeel?.(track.ring, track.breathe, track.living);
       lt.instrument.setRack?.(track.rack);
       lt.instrument.setMulti?.(track.multi);
       lt.instrument.setDrumDesign?.(track.drumDesign);

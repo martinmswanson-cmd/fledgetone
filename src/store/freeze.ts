@@ -248,6 +248,7 @@ function computeFingerprint(track: Track, all: Arrangement): string {
       ...(track.subLayer ? { subLayer: track.subLayer } : {}),
       ...(track.ring !== undefined ? { ring: track.ring } : {}),
       ...(track.breathe === false ? { breathe: false } : {}),
+      ...(track.living ? { living: true } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,

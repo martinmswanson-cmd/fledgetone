@@ -48,6 +48,7 @@ const SOUND_FIELDS = [
   'glide',
   'ring',
   'breathe',
+  'living',
   'subLayer',
 ] as const satisfies ReadonlyArray<keyof Track>;
 

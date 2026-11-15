@@ -658,7 +658,7 @@ interface TimelineState {
   /** The heavy bass tools on a track: the 808 designer, legato glide, the Sub enhancer (undefined: off / back to the original). */
   setTrackBass: (trackId: string, edit: Partial<Pick<Track, 'bass808' | 'glide' | 'subLayer'>>, record?: boolean) => void;
   /** A recorded instrument's ring and breath (Track.ring, Track.breathe) */
-  setTrackFeel: (trackId: string, edit: Partial<Pick<Track, 'ring' | 'breathe'>>, record?: boolean) => void;
+  setTrackFeel: (trackId: string, edit: Partial<Pick<Track, 'ring' | 'breathe' | 'living'>>, record?: boolean) => void;
   /** A Designed Kit's drum sounds (see drumDesign.ts); `record`: its own undo step (a slider records once per drag itself). */
   setTrackDrumDesign: (trackId: string, design: DrumDesign | undefined, record?: boolean) => void;
   /**
@@ -3619,11 +3619,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     newProject: (template) => {
       // A new arrangement keeps the frame rate you're working in
       const { fps, dropFrame } = get();
-      // A new song plays expressively (older projects opened later keep their sound)
+      // A new song plays expressively (older projects opened later keep their sound), and a blank
+      // one's held notes move (Living notes: a starter keeps the playing it was made and levelled with)
       // ...and keeps its lows in the middle (Mono below 120 Hz), as a club or a phone needs
       // ...and a blank one leaves Headroom ahead of the master (a starter keeps the levels it was mixed at: newSongMaster)
       // (and every name made from a file in it is marked as it's made: see ownFiles.ts)
-      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: newSongMaster(p.master, !isStarterId(template)) });
+      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, fileMarks: FILE_MARKS, tracks: p.tracks.map((t) => ({ ...t, expressive: true, ...(isStarterId(template) ? {} : { living: true }) })), master: newSongMaster(p.master, !isStarterId(template)) });
       get().loadProject(expressive(
         isStarterId(template)
           ? { ...createStarter(template), fps, dropFrame }

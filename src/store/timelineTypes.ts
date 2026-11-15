@@ -792,6 +792,13 @@ export interface Track {
   ring?: number;
   /** False: a wind or brass player who never runs out of breath (held notes hold at full level); absent: they breathe */
   breathe?: false;
+  /**
+   * Living notes (see samplers/heldNote.ts): a bowed or blown recorded instrument's held notes
+   * move as a player's do: vibrato from the start of the note, the level coming up and easing off,
+   * the pitch drifting a few cents, each note a little differently. On for tracks made since it
+   * existed; older tracks keep their sound until it's switched on. Absent: off.
+   */
+  living?: boolean;
   /** The Sub enhancer: a clean sine under every note (see bassTools.ts); absent: off */
   subLayer?: SubLayer;
 }

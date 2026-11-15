@@ -35,6 +35,8 @@ export function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?
     reverbSend: seatOf(instrumentKey) ? SEATED_SEND : start.reverbSend,
     delaySend: 0,
     expressive: true,
+    // ...and its held notes move as a player's do (Living notes: heard on bowed and blown instruments)
+    living: true,
     // A new Designed Kit starts on the modern kick and snare (NEW_KIT_PRESETS)
     ...(instrumentKey === 'designedKit' ? { drumDesign: newKitDesign() } : {}),
   };

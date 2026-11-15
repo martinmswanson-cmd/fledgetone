@@ -190,8 +190,8 @@ export interface TrackInstrument {
   oneNote?: () => boolean;
   /** A pitched instrument's Sub enhancer as it changes (undefined: off), without a rebuild. */
   setSubLayer?: (sub: SubLayer | undefined) => void;
-  /** A recorded instrument's ring and breath (Track.ring, Track.breathe) as they change, from the next note, without a rebuild. */
-  setFeel?: (ring: number | undefined, breathe: boolean | undefined) => void;
+  /** A recorded instrument's ring, breath and Living notes (Track.ring, Track.breathe, Track.living) as they change, from the next note, without a rebuild. */
+  setFeel?: (ring: number | undefined, breathe: boolean | undefined, living?: boolean) => void;
   /** The Drum Rack's: its pads as they change, without a rebuild. */
   setRack?: (rack: DrumRack | undefined) => void;
   /** The Multi Sampler's: its sounds and shape as they change, without a rebuild. */
@@ -229,6 +229,8 @@ export interface InstrumentOptions {
   ring?: number;
   /** False: wind and brass players never run out of breath (Track.breathe) */
   breathe?: boolean;
+  /** Living notes (Track.living) */
+  living?: boolean;
   /** (Built by createInstrument) where a recorded instrument reads its ring and breath, kept up to date by setFeel */
   feel?: PlayFeel;
 }
@@ -239,7 +241,7 @@ export interface GlideRef {
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'drumDesign' | 'expressive' | 'bass808' | 'glide' | 'subLayer' | 'ring' | 'breathe'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'drumDesign' | 'expressive' | 'bass808' | 'glide' | 'subLayer' | 'ring' | 'breathe' | 'living'> | null | undefined): InstrumentOptions {
   if (!track) return {};
   return {
     sample: track.sample,
@@ -257,6 +259,7 @@ export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'sli
     ...(track.subLayer ? { subLayer: track.subLayer } : {}),
     ...(track.ring !== undefined ? { ring: track.ring } : {}),
     ...(track.breathe === false ? { breathe: false } : {}),
+    ...(track.living ? { living: true } : {}),
   };
 }
 
@@ -641,7 +644,7 @@ const MONO_KEYS = new Set<InstrumentKey>(['bass', 'subBass', 'lead', 'bass808', 
  */
 function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const glideRef: GlideRef = { seconds: options.glide };
-  const feel: PlayFeel = { ring: options.ring, breathe: options.breathe };
+  const feel: PlayFeel = { ring: options.ring, breathe: options.breathe, living: options.living };
   const inst = buildGained(key, output, { ...options, glideRef, feel });
   // A one-note-at-a-time instrument plays a chord's loudest note: the sub goes under that one
   // (The Synth Designer's patch as it is now: it changes without a rebuild)
@@ -650,7 +653,7 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
   const withGlide: TrackInstrument = {
     ...inst,
     setGlide: (seconds) => void (glideRef.seconds = seconds),
-    setFeel: (ring, breathe) => Object.assign(feel, { ring, breathe }),
+    setFeel: (ring, breathe, living) => Object.assign(feel, { ring, breathe, living }),
     oneNote: monoNow,
   };
   if (!takesSubLayer(key)) return withGlide;
