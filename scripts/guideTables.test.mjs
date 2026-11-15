@@ -16,3 +16,10 @@ test("the guide's instrument list and credits are up to date", () => {
   const text = readFileSync(GUIDE, 'utf8');
   assert.equal(text, generatedGuide(text), 'run: npm run guide-tables');
 });
+
+test("the home page's counts are up to date", async () => {
+  const { HOME, generatedHome } = await import('./guide-tables.mjs');
+  const text = readFileSync(HOME, 'utf8');
+  assert.ok((text.match(/data-count="/g) ?? []).length >= 5, 'the home page has lost its counted numbers');
+  assert.equal(text, generatedHome(text), 'run: npm run guide-tables');
+});

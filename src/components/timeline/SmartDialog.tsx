@@ -1,5 +1,5 @@
 /**
- * The Chord progression, Chills progression and Drummer dialogs: make a clip from a few choices at
+ * The Chord progression, Frisson tool (chills progressions) and Drummer dialogs: make a clip from a few choices at
  * the right-clicked bar (smartTools.ts and chills.ts write the notes); and Build into a peak.
  */
 import { GROOVE_FEELS } from '../../store/grooveFeels';
@@ -424,7 +424,7 @@ const rememberChills = (o: typeof lastChills) => {
   lastChills = o;
 };
 
-/** Chills progressions: a clip of one, in the song's key (or one picked), at the bar right-clicked. */
+/** The Frisson tool's chills progressions: a clip of one, in the song's key (or one picked), at the bar right-clicked. */
 const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> = ({ trackId, bar, onClose }) => {
   const detected = useMemo(() => songKey(), []);
   const [root, setRoot] = useState(detected.root);
@@ -446,11 +446,12 @@ const ChillsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
     onClose();
   };
   return (
-    <Modal title={`Chills progression${track ? ` on ${track.name}` : ''}`} onClose={onClose}>
+    <Modal title={`Frisson tool${track ? ` on ${track.name}` : ''}`} onClose={onClose}>
       <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
         <p className="text-[11px] text-forge-muted">
-          Chord moves that give listeners chills at an emotional peak.{' '}
-          {track && registerOf(INSTRUMENTS[track.instrumentKey]?.range).kind === 'roots' ? 'On this bass instrument it plays each chord’s root (or the held home note), inside its range.' : 'Held chords, voiced for synths and pads: one low note, the chord in the middle.'}
+          Frisson is the shiver you get from music. These chord moves give listeners that shiver at an emotional peak.{' '}
+          {track && registerOf(INSTRUMENTS[track.instrumentKey]?.range).kind === 'roots' ? 'On this bass instrument it plays each chord’s root (or the held home note), inside its range.' : 'Held chords, voiced for synths and pads: one low note, the chord in the middle.'}{' '}
+          To build into the peak too, select the clips leading into it, right-click and choose Build into a peak….
         </p>
         <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Progression">
           {CHILLS.map((p) => (
@@ -557,7 +558,7 @@ const BuildForm: React.FC<{ range: { from: number; to: number }; trackIds?: stri
     <Modal title="Build into a peak" onClose={onClose}>
       <div className="flex flex-col gap-3 p-4 w-[32rem] max-w-full">
         <p className="text-[11px] text-forge-muted">
-          Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. No track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
+          Part of the frisson tool. Over {formatBarRange(range.from, range.to, meter)}, into bar {formatBarPosition(range.to, meter)}. No track already there is turned up past its level. A riser and a pad are set under the music by measuring it first, and the build is measured again afterwards: you're told what the peak comes out at, with a caution if anything is much louder.
         </p>
         <div className="flex flex-col gap-2" role="radiogroup" aria-label="How the build starts">
           {way('dip', 'Dip, then swell', 'The tracks start a little quieter and darker and grow back to where they were by the peak (the swell and the filter below).')}

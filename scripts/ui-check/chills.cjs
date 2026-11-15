@@ -1,5 +1,5 @@
 // Chills progressions and the build into a peak, in a real browser, in the studio and in Pocket:
-// each progression is inserted from the studio's Chills progression dialog (the first through the
+// each progression is inserted from the studio's Frisson tool dialog (the first through the
 // lane's right-click menu), one through the piano roll's CHILLS, each in Pocket's Chords sheet
 // (the clip named after the progression), "New empty clip" from the lane's menu (made where the
 // dialogs make theirs), and a build from the clips' right-click menu and from Pocket's section
@@ -227,16 +227,16 @@ async function richChecks({ browser, page, store, load, shot, oneStep }) {
     const clipId = await store((S) => S.getState().createEmptyClip('t4', 9, 8));
     const before = await page.evaluate(SNAP);
     await store((S, i) => S.getState().openEditor(i), clipId);
-    await page.waitForSelector('select[aria-label="Chills progression"]', { timeout: 20000 });
-    await page.selectOption('select[aria-label="Chills progression"]', 'widening');
+    await page.waitForSelector('select[aria-label="Frisson progression"]', { timeout: 20000 });
+    await page.selectOption('select[aria-label="Frisson progression"]', 'widening');
     await page.selectOption('select[aria-label="Plain or rich chords"]', id === 'pedal' ? 'rich' : 'plain');
-    await page.selectOption('select[aria-label="Chills progression"]', id);
+    await page.selectOption('select[aria-label="Frisson progression"]', id);
     const own = await page.locator('select[aria-label="Plain or rich chords"]').inputValue();
     step(`piano roll ${id}: starts on its own way`, own === (id === 'pedal' ? 'plain' : 'rich'), own);
     if (pick) await page.selectOption('select[aria-label="Plain or rich chords"]', pick);
     const voicing = pick ?? own;
     if (id === 'soulTurn' && !pick) await shot(page, 'studio-piano-roll-rich');
-    await page.locator('[data-search="chills progression peak shiver"] button', { hasText: 'Write' }).click();
+    await page.locator('[data-search="frisson chills progression peak shiver"] button', { hasText: 'Write' }).click();
     await page.waitForTimeout(300);
     const got = await store((S, i) => S.getState().clips.find((c) => c.id === i).notes.map((x) => `${x.note}@${x.startOffset}/${x.duration}/${x.velocity}`).sort(), clipId);
     // (the piano roll's key: the clip's scale, else the song's; its velocity the roll's)
@@ -464,7 +464,7 @@ async function renderNew({ browser }) {
       await page.mouse.click(box.x + 40, box.y + box.height / 2, { button: 'right' });
       await page.waitForTimeout(300);
       await shot(page, 'studio-lane-menu');
-      await page.getByRole('menuitem', { name: /Chills progression/ }).click();
+      await page.getByRole('menuitem', { name: /Frisson tool/ }).click();
     } else {
       // (the dialog at bar 9 on Keys, as the lane's right-click menu opens it there)
       await page.evaluate(async () => (await import('/src/store/smartActions.ts')).useSmartDialog.setState({ open: { mode: 'chills', trackId: 't4', bar: 9 } }));
@@ -497,7 +497,7 @@ async function renderNew({ browser }) {
       await page.waitForTimeout(300);
     };
     await at();
-    await page.getByRole('menuitem', { name: /Chills progression/ }).click();
+    await page.getByRole('menuitem', { name: /Frisson tool/ }).click();
     await page.waitForTimeout(250);
     const says = await page.getByRole('dialog').getByRole('button', { name: /Make clip at bar/ }).innerText();
     await page.keyboard.press('Escape');
@@ -518,9 +518,9 @@ async function renderNew({ browser }) {
     const clipId = await store((S) => S.getState().createEmptyClip('t4', 9, 4));
     const before = await page.evaluate(SNAP);
     await store((S, id) => S.getState().openEditor(id), clipId);
-    await page.waitForSelector('select[aria-label="Chills progression"]', { timeout: 20000 });
-    await page.selectOption('select[aria-label="Chills progression"]', 'liftStep');
-    await page.locator('[data-search="chills progression peak shiver"] button', { hasText: 'Write' }).click();
+    await page.waitForSelector('select[aria-label="Frisson progression"]', { timeout: 20000 });
+    await page.selectOption('select[aria-label="Frisson progression"]', 'liftStep');
+    await page.locator('[data-search="frisson chills progression peak shiver"] button', { hasText: 'Write' }).click();
     await page.waitForTimeout(300);
     const notes = await store((S, id) => S.getState().clips.find((c) => c.id === id).notes.length, clipId);
     step('piano roll CHILLS: the clip is filled', notes >= 32, `${notes} notes`);
@@ -564,8 +564,8 @@ async function renderNew({ browser }) {
     for (let i = 0; i < Math.min(5, n); i++) await boxes.nth(i).check();
     await page.getByRole('dialog').getByRole('button', { name: 'Make the build' }).click();
     // (the music is measured first, then the build measured again)
-    await page.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
-    const toast = await page.evaluate(() => document.body.innerText.match(/A build for chills[^\n]*/)?.[0] ?? '');
+    await page.waitForFunction(() => /A build into the peak/.test(document.body.innerText), null, { timeout: 180000 });
+    const toast = await page.evaluate(() => document.body.innerText.match(/A build into the peak[^\n]*/)?.[0] ?? '');
     step('studio build: says what it did, and what the peak measures', /swell/.test(toast) && /Measured, the peak comes out/.test(toast) && /Undo takes it out/.test(toast), toast);
     const lanes = await store((S) => S.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => `${l.param}:${l.points.length}`) })));
     const lane = (id, p) => lanes.find((t) => t.id === id)?.lanes.some((l) => l.startsWith(`${p}:`));
@@ -637,8 +637,8 @@ async function renderNew({ browser }) {
     await pocket({ sheet: 'section', sheetSection: 2, section: 2 });
     await pk.waitForTimeout(300);
     await shot(pk, 'pocket-section-sheet');
-    await pk.getByRole('dialog').getByText('Build for chills into it', { exact: true }).click();
-    await pk.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
+    await pk.getByRole('dialog').getByText('Build into a peak here', { exact: true }).click();
+    await pk.waitForFunction(() => /A build into the peak/.test(document.body.innerText), null, { timeout: 180000 });
     await shot(pk, 'pocket-after-build');
     const lanes = await pk.evaluate(async () => (await import('/src/store/timelineStore.ts')).useTimelineStore.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => l.param) })));
     step('Pocket build: volume lanes, a riser and a pad', ['t1', 't2', 't3'].every((id) => lanes.find((t) => t.id === id).lanes.includes('volume')) && lanes.some((t) => t.name === 'Peak pad'), JSON.stringify(lanes));
@@ -686,8 +686,8 @@ async function renderNew({ browser }) {
     const boxes = d.locator('input[type="checkbox"]');
     step('studio level build: Swell and Filter opens are off for it', (await boxes.nth(0).isDisabled()) && (await boxes.nth(1).isDisabled()));
     await d.getByRole('button', { name: 'Make the build' }).click();
-    await page.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
-    const toast = await page.evaluate(() => document.body.innerText.match(/A build for chills[^\n]*/)?.[0] ?? '');
+    await page.waitForFunction(() => /A build into the peak/.test(document.body.innerText), null, { timeout: 180000 });
+    const toast = await page.evaluate(() => document.body.innerText.match(/A build into the peak[^\n]*/)?.[0] ?? '');
     step('studio level build: says nothing dips first, and what the peak measures', /nothing dips first/.test(toast) && !/swell/.test(toast) && /Measured, the peak comes out/.test(toast), toast);
     const lanes = await store((S) => S.getState().tracks.map((t) => ({ id: t.id, name: t.name, lanes: (t.automation ?? []).map((l) => l.param) })));
     step('studio level build: only volume lanes for the breath, no filter lanes', ['t1', 't2', 't3'].every((id) => { const l = lanes.find((t) => t.id === id).lanes; return l.includes('volume') && !l.includes('filterCutoff'); }), JSON.stringify(lanes));
@@ -704,8 +704,8 @@ async function renderNew({ browser }) {
     await pocket({ sheet: 'section', sheetSection: 2, section: 2 });
     await pk.waitForTimeout(300);
     await shot(pk, 'pocket-section-sheet-level');
-    await pk.getByRole('dialog').getByText('Build for chills from the music’s level', { exact: true }).click();
-    await pk.waitForFunction(() => /A build for chills/.test(document.body.innerText), null, { timeout: 180000 });
+    await pk.getByRole('dialog').getByText('Build into a peak from the music’s level', { exact: true }).click();
+    await pk.waitForFunction(() => /A build into the peak/.test(document.body.innerText), null, { timeout: 180000 });
     const studioLanes = await store((S) => JSON.stringify(S.getState().tracks.filter((t) => ['t1', 't2', 't3'].includes(t.id)).map((t) => t.automation)));
     const pocketLanes = await pk.evaluate(async () => JSON.stringify((await import('/src/store/timelineStore.ts')).useTimelineStore.getState().tracks.filter((t) => ['t1', 't2', 't3'].includes(t.id)).map((t) => t.automation)));
     step('Pocket level build: the same lanes as the studio\'s', studioLanes === pocketLanes);

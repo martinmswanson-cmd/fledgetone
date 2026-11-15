@@ -67,3 +67,19 @@ test('snippet shows the text around the match', () => {
   const s = snippet('a '.repeat(100) + 'the metronome clicks on every beat ' + 'b '.repeat(100), 'metronome', 60);
   assert.ok(s.includes('metronome') && s.startsWith('…') && s.endsWith('…'));
 });
+
+test('"chills" still finds the Frisson tool, in the palette and the guide', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/search/paletteEntries.ts', import.meta.url), 'utf8');
+  const m = src.match(/\{ title: 'Frisson tool', keywords: '([^']+)', detail: '([^']+)'/);
+  assert.ok(m, 'the palette has a Frisson tool entry');
+  const entry = { title: 'Frisson tool', keywords: m[1], detail: m[2] };
+  const others = [{ title: 'Chord progression', keywords: 'chords key', detail: '' }, { title: 'Export', keywords: 'render', detail: '' }];
+  for (const q of ['chills', 'chills progression', 'frisson', 'shiver'])
+    assert.equal(rank([...others, entry], q, (e) => e)[0]?.title, 'Frisson tool', q);
+  // The guide's section on it says it too, so the guide's own search finds it
+  const guide = readFileSync(new URL('../GUIDE.md', import.meta.url), 'utf8');
+  const line = guide.split('\n').find((l) => l.startsWith('- **Frisson tool…**'));
+  assert.ok(line && /chills progressions/.test(line));
+  assert.ok(matchScore('chills progression', { title: 'Smart tools', keywords: '', detail: line }) > 0);
+});

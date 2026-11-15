@@ -52,7 +52,7 @@ export function makeChillsClip(trackId: string, atBar: number, progId: string, k
 }
 
 /**
- * After a chills progression is written over a clip (the piano roll's CHILLS, Pocket's For chills):
+ * After a chills progression is written over a clip (the piano roll's FRISSON, Pocket's Frisson):
  * the clip, and those linked to it, named after it where their names are the app's
  * (chills.ts namedForChills). No undo step of its own: part of the edit's.
  */
@@ -362,7 +362,7 @@ export async function buildForChills(o: BuildChoices): Promise<string> {
     plan.resonant.length ? `the filter on ${plan.resonant.join(', ')} has a resonant peak, so it isn't swept` : '',
   ].filter(Boolean);
   const list = what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]}` : (what[0] ?? 'nothing more');
-  const head = `A build for chills over ${formatBarRange(o.from, o.peak, map)} into bar ${formatBarPosition(o.peak, map)}: ${list}. No track already there is turned up past where it was.${measured}`;
+  const head = `A build into the peak over ${formatBarRange(o.from, o.peak, map)} into bar ${formatBarPosition(o.peak, map)}: ${list}. No track already there is turned up past where it was.${measured}`;
   return `${head}${cautions.length ? ` ${cautions.join(' ')}` : ''} Undo takes it out.`;
 }
 

@@ -342,7 +342,7 @@ export function nearestMeasureStart(bar: number, map: MeterMap): number {
 /**
  * Where a clip made from a right-click at `bar` (a snapped spot on a lane) starts: the start of the
  * bar clicked in, as the ruler counts bars (a hair under a bar line counts as on it). The lane's
- * right-click menu's dialogs (Chord progression, Chills progression, Drummer…) and its "New empty
+ * right-click menu's dialogs (Chord progression, Frisson tool, Drummer…) and its "New empty
  * clip" all start their clip here.
  */
 export const clickedBarStart = (bar: number, map: MeterMap): number => measureAt(Math.max(1, bar) + 1e-6, map).start;

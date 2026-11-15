@@ -86,7 +86,7 @@ export function inOneStep<T>(edit: () => T): T | undefined {
  * Makes the cell one clip first when it isn't. `undo`: make this its own undo step (false for the
  * moves of a gesture that checkpointed when it began). Either way, making the clip and the change
  * are one step; notes given back unchanged change nothing. `then` runs on the clip after a change,
- * inside the same step (For chills names it after the progression).
+ * inside the same step (Frisson names it after the progression).
  */
 export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, edit: (notes: NoteEvent[]) => NoteEvent[], undo = true, then?: (clipId: string) => void): void {
   inOneStep(() => {

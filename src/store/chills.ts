@@ -8,7 +8,9 @@ import { addMeasures, measureCount, type MeterMap } from '../audio/tempoMap';
 import { maxOf, minOf } from '../support/minMax';
 
 /**
- * Chord progressions for chills: the shiver some music gives at an emotional peak. Each leans on
+ * Chord progressions for chills: the shiver some music gives at an emotional peak. The app calls
+ * them the Frisson tool (the Studio's menu and dialog, the piano roll's FRISSON, Pocket's Frisson);
+ * the code, the dialog's mode and anything saved keep the word chills, so older songs open as they were. Each leans on
  * one of the devices that do it reliably (a major chord a third away, the borrowed minor iv, a
  * cadence that goes somewhere else, suspensions that resolve late, a held pedal note, a key change
  * up, a bass that climbs, chords that open out), in the song's or the clip's key, major or minor,
@@ -852,7 +854,7 @@ export function wideChord(pcs: readonly number[], prev: readonly number[] | null
 
 /**
  * Whether a clip's name is one the app gave it, so a chills progression written over the clip may
- * name it after the progression (as the Chills progression dialog names the clip it makes). The
+ * name it after the progression (as the Frisson tool dialog names the clip it makes). The
  * app keeps no mark of a name the person typed, so only names it surely made count: none at all,
  * the name a new empty clip gets on its track ("Pad 2"), a chills progression's name, or a name
  * made from a file's. Anything else (a name typed, or another tool's) is kept as it is.

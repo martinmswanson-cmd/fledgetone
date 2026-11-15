@@ -273,7 +273,12 @@ test('the build is one undo step, with the app\'s cautions, and reachable in the
   assert.match(build.length ? actions : '', /filter\.resonance > RESONANT_Q/);
   assert.match(actions, /plural\(plan\.swelled, 'track swells', 'tracks swell'\)/);
   assert.match(src('src/components/timeline/ClipContextMenu.tsx'), /Build into a peak…/);
-  assert.match(src('src/components/timeline/ClipContextMenu.tsx'), /Chills progression…/);
+  // Shown as the Frisson tool (the mode, ids and saved data keep "chills")
+  assert.match(src('src/components/timeline/ClipContextMenu.tsx'), /label: 'Frisson tool…'.*openSmart\('chills'\)/);
+  assert.match(src('src/components/timeline/ChordRiffBar.tsx'), /\n\s*FRISSON\n/);
+  assert.match(src('src/pocket/PocketSheets.tsx'), />Frisson<\/p>/);
+  for (const f of ['src/components/timeline/ClipContextMenu.tsx', 'src/components/timeline/ChordRiffBar.tsx', 'src/components/timeline/SmartDialog.tsx', 'src/pocket/PocketSheets.tsx', 'src/tour/lessons.ts', 'GUIDE.md'])
+    assert.doesNotMatch(src(f), /Chills progression…|For chills|Build for chills|\*\*CHILLS\*\*|^\s*CHILLS$/m, f);
   assert.match(src('src/components/timeline/ChordRiffBar.tsx'), /chillsFill\(/);
   const pocket = src('src/pocket/PocketSheets.tsx');
   assert.match(pocket, /chillsFill\(/);
