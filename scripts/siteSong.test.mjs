@@ -44,9 +44,14 @@ test('the site has no audio file: the song is made in the browser', () => {
 test('the player is fetched only when Play is pressed, and the site build copies it', () => {
   const main = src('site/main.js');
   const click = main.indexOf("btn.addEventListener('click', async () => {");
-  const load = main.indexOf("import('/player/fledgetone-site-player.js')");
+  const load = main.indexOf('import(`/player/fledgetone-site-player.js');
   assert.ok(click > 0 && load > click, 'the import is inside the click');
-  assert.equal(main.split("import('/player/").length, 2, 'loaded from one place only');
+  assert.equal(main.split('import(`/player/').length, 2, 'loaded from one place only');
+  // A failed import is remembered by the browser for the page's life: each try asks afresh
+  assert.match(main, /import\(`\/player\/fledgetone-site-player\.js\$\{tries \? `\?r=\$\{tries\}` : ''\}`\)/);
+  // One plain message, never the browser's own words
+  assert.match(main, /say\(FAILED, true\)/);
+  assert.doesNotMatch(main, /e\.message/);
   assert.ok(!home.includes('fledgetone-site-player'), 'the page itself never names the player');
   assert.match(src('scripts/build-site.mjs'), /dist-runtime', 'fledgetone-site-player\.js'\), join\(OUT, 'player', 'fledgetone-site-player\.js'\)/);
   assert.match(src('package.json'), /vite build -c vite\.site\.config\.ts/);

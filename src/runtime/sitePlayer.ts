@@ -14,6 +14,7 @@ import { exportCeilingDbtp } from '../audio/effects/limiter';
 import { renderMixdown } from '../audio/exportMix';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { targetById } from '../audio/loudnessTarget';
+import { releaseAllRecordings } from '../audio/samplers/samplerManager';
 import { exportRenderOptions, prepare, songEnd } from './render';
 
 export interface PageRender {
@@ -40,21 +41,35 @@ function samplesFrom(base: string): void {
 
 let based = '';
 
-/** Load a project file and render the whole song as Export does (WAV's ceiling, the Streaming target). */
-export async function renderForPage(url: string, opts: { samples: string; onProgress?: (fraction: number) => void }): Promise<PageRender> {
+/**
+ * Load a project file and render the whole song as Export does (WAV's ceiling, the Streaming
+ * target). `onProgress` hears 0 to 1 while the instruments load and the song is made, then
+ * 'finishing' while it's measured and matched. Aborting `signal` stops it (an AbortError). Done
+ * or not, every recording and everything made from them is let go at the end, so the page keeps
+ * only the finished song.
+ */
+export async function renderForPage(url: string, opts: { samples: string; onProgress?: (fraction: number | 'finishing') => void; signal?: AbortSignal }): Promise<PageRender> {
   if (based !== opts.samples) {
     if (based) throw new Error('The recordings already come from another folder');
     samplesFrom(opts.samples);
     based = opts.samples;
   }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Couldn't load ${url}: ${res.status} ${res.statusText}`);
-  const p = await prepare(await res.json());
-  const ceilingDbtp = exportCeilingDbtp('wav');
-  const render = exportRenderOptions(p, { fromBar: 1, toBar: songEnd(p), ending: 'ringOut', sampleRate: 44100, ceilingDbtp });
-  const loudOn = !!p.master?.loud?.on;
-  const target = targetById(loudOn ? p.master!.loud!.target : 'streaming');
-  const { audio, reading } = await renderMixdown(render, { normalize: true, target, loudMaster: loudOn, ceilingDbtp }, (f) => opts.onProgress?.(Math.min(0.97, f)));
-  opts.onProgress?.(1);
-  return { audio, lufs: reading.integrated };
+  try {
+    const res = await fetch(url, { signal: opts.signal });
+    if (!res.ok) throw new Error(`Couldn't load ${url}: ${res.status} ${res.statusText}`);
+    const p = await prepare(await res.json());
+    const ceilingDbtp = exportCeilingDbtp('wav');
+    const render = { ...exportRenderOptions(p, { fromBar: 1, toBar: songEnd(p), ending: 'ringOut', sampleRate: 44100, ceilingDbtp }), signal: opts.signal };
+    const loudOn = !!p.master?.loud?.on;
+    const target = targetById(loudOn ? p.master!.loud!.target : 'streaming');
+    const { audio, reading } = await renderMixdown(
+      render,
+      { normalize: true, target, loudMaster: loudOn, ceilingDbtp },
+      (f) => opts.onProgress?.(Math.min(0.97, f)),
+      () => opts.onProgress?.('finishing')
+    );
+    return { audio, lufs: reading.integrated };
+  } finally {
+    releaseAllRecordings();
+  }
 }

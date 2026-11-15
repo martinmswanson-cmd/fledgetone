@@ -275,24 +275,56 @@ scored.forEach((fig) => {
 // The song made in Fledgetone: no audio file, it's made in the browser from its project file by the
 // studio's own export (the player, /player/fledgetone-site-player.js from src/runtime/sitePlayer.ts,
 // with the recordings from /app/), and only once the button is pressed. It fades in and out, and
-// plays a little under the films' loudness, never louder than the export. Starting it turns a film's
-// sound off; a film's sound stops it.
+// plays a little under the films' loudness, never louder than the export. Starting it fades a
+// film's sound out; a film's sound pauses it (or stops it loading).
 const FILMS_LUFS = -16.1; // the two films' soundtracks, measured (EBU R128)
-const FADE_IN = 0.12, FADE_OUT = 0.6;
+const FADE_IN = 0.12, FADE_OUT = 0.6, FILM_FADE = 0.3;
+const WAIT_NOTE = 'Takes about half a minute to get ready the first time; about 20 MB.';
+const FAILED = 'The song couldn’t load. Check your connection and try again.';
 let songOff = () => {};
+// A film's sound faded out over FILM_FADE, then turned off as its own button does (iPhones don't let
+// a page set a video's volume: there it goes off at the end of the fade)
+const filmOff = (fig) => {
+  const v = fig.querySelector('video'), b = fig.querySelector('.sound-btn');
+  if (v.muted) return;
+  const from = v.volume, t0 = performance.now();
+  const step = () => {
+    const f = Math.min(1, (performance.now() - t0) / (FILM_FADE * 1000));
+    try { v.volume = from * (1 - f); } catch { /* read-only */ }
+    if (f < 1 && !v.muted) requestAnimationFrame(step);
+    else { if (!v.muted) b.click(); v.volume = from; }
+  };
+  requestAnimationFrame(step);
+};
 const songFig = document.querySelector('.scored-song[data-song]');
 if (songFig) {
   const btn = songFig.querySelector('.sound-btn'), label = btn.querySelector('span'), status = songFig.querySelector('.song-status');
-  let ctx = null, song = null, level = 1, out = null, src = null, startedAt = 0, offset = 0, busy = false, want = false;
+  let ctx = null, song = null, level = 1;
+  // The one copy playing (src through out), where it started in the song and when; `stopping`: the
+  // timer that stops it once its fade-out ends (a Play before then fades the same copy back up)
+  let src = null, out = null, offset = 0, startedAt = 0, stopping = 0;
+  let loading = null, tries = 0;
   const say = (text, error = false) => { status.textContent = text; status.classList.toggle('is-error', error); };
   const show = (text, pressed) => { label.textContent = text; btn.setAttribute('aria-pressed', String(pressed)); };
+  const idle = (text = 'Play with sound', note = '') => { show(text, false); say(note); };
+  idle('Play with sound', WAIT_NOTE);
   const fadeTo = (value, secs) => {
     const g = out.gain, now = ctx.currentTime;
     g.cancelScheduledValues(now);
     g.setValueAtTime(g.value, now);
     g.linearRampToValueAtTime(value, now + secs);
   };
+  const position = () => offset + ctx.currentTime - startedAt;
   const start = () => {
+    if (src && stopping) {
+      // Still fading out: the same copy fades back up (never two at once)
+      clearTimeout(stopping);
+      stopping = 0;
+      fadeTo(level, FADE_IN);
+      show('Pause', true);
+      say('');
+      return;
+    }
     out = ctx.createGain();
     out.gain.value = 0;
     out.connect(ctx.destination);
@@ -301,61 +333,78 @@ if (songFig) {
     node.connect(out);
     // (played to the end: a pause has already let go of it)
     node.onended = () => {
-      if (src !== node) return;
+      if (src !== node || stopping) return;
       src = null; offset = 0;
-      show('Play again with sound', false);
+      idle('Play again with sound');
     };
     startedAt = ctx.currentTime;
-    src.start(0, offset);
+    node.start(0, offset);
     fadeTo(level, FADE_IN);
     show('Pause', true);
     say('');
   };
-  // Pause: fade out, then stop where it got to (Play carries on from there)
+  // Pause: fade out, then stop where the pause was pressed (Play carries on from there)
   const pause = () => {
-    want = false;
-    if (!src) return;
-    const s = src, o = out;
-    src = null;
-    offset = Math.min(song.audio.duration, offset + ctx.currentTime - startedAt);
+    if (!src || stopping) return;
+    const at = Math.min(song.audio.duration, position());
     fadeTo(0, FADE_OUT);
-    s.stop(ctx.currentTime + FADE_OUT + 0.02);
-    setTimeout(() => o.disconnect(), (FADE_OUT + 0.1) * 1000);
-    show('Play with sound', false);
+    const s = src, o = out;
+    stopping = setTimeout(() => {
+      stopping = 0;
+      try { s.stop(); } catch { /* already ended */ }
+      o.disconnect();
+      if (src === s) { src = null; out = null; offset = at; }
+    }, (FADE_OUT + 0.05) * 1000);
+    idle();
   };
-  songOff = pause;
+  const cancelLoad = () => {
+    if (!loading) return;
+    loading.abort();
+    loading = null;
+    btn.removeAttribute('aria-busy');
+    idle('Play with sound', WAIT_NOTE);
+  };
+  songOff = () => (loading ? cancelLoad() : pause());
   btn.addEventListener('click', async () => {
-    // (pressed again while it loads: it won't start by itself when ready, and the other way round)
-    if (busy) { want = !want; show(want ? 'Loading…' : 'Play with sound', false); return; }
-    if (src) { pause(); return; }
-    want = true;
-    // (made and resumed inside the click, so a phone lets it sound)
+    // (pressed again while it loads: it carries on loading, and plays when ready)
+    if (loading) return;
+    if (src && !stopping) { pause(); return; }
+    // (made and resumed inside the press, so a phone lets it sound)
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     ctx.resume().catch(() => {});
-    scored.forEach((fig) => { const v = fig.querySelector('video'); if (!v.muted) fig.querySelector('.sound-btn').click(); });
+    scored.forEach(filmOff);
     if (song) { start(); return; }
-    busy = true;
+    const job = (loading = new AbortController());
     btn.setAttribute('aria-busy', 'true');
-    show('Loading…', false);
+    show('Loading…', true);
     say('Loading the instruments…');
     try {
-      const player = await import('/player/fledgetone-site-player.js');
-      song = await player.renderForPage(songFig.dataset.song, {
+      // (a failed import is remembered for the page's life: each try asks for it afresh)
+      const player = await import(`/player/fledgetone-site-player.js${tries ? `?r=${tries}` : ''}`);
+      if (job.signal.aborted) return;
+      const made = await player.renderForPage(songFig.dataset.song, {
         samples: '/app/',
-        onProgress: (f) => say(f >= 0.97 ? 'Almost ready…' : `Loading the instruments and making the song… ${Math.round(f * 100)}%`),
+        signal: job.signal,
+        onProgress: (f) => {
+          if (loading !== job) return;
+          say(f === 'finishing' || f >= 0.85 ? 'Putting the song together…' : `Loading the instruments and making the song… ${Math.round(f * 100)}%`);
+        },
       });
+      if (loading !== job) return;
+      loading = null;
+      btn.removeAttribute('aria-busy');
+      song = made;
       // Never louder than the export (the Streaming target); half a dB under the films
       level = Math.min(1, 10 ** ((FILMS_LUFS - 0.5 - song.lufs) / 20));
       offset = 0;
-      if (want) start();
-      else { show('Play with sound', false); say('Ready to play.'); }
-    } catch (e) {
-      song = null;
-      show('Try again', false);
-      say(`The song couldn't be loaded (${e && e.message ? e.message : e}). Check your connection and try again.`, true);
-    } finally {
-      busy = false;
+      start();
+    } catch {
+      if (loading !== job) return;
+      loading = null;
       btn.removeAttribute('aria-busy');
+      tries++;
+      show('Try again', false);
+      say(FAILED, true);
     }
   });
 }

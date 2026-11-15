@@ -2574,6 +2574,23 @@ export function forgetSampleSets(keys: InstrumentKey[]): void {
   }
 }
 
+/**
+ * Let go of every recording, live and rendered, and everything made from them (re-pitched copies,
+ * renders' own sets, decoders, rooms), at once: for a page that renders one song and then only
+ * plays the result (the home page's player, runtime/sitePlayer.ts), so the tab keeps nothing but
+ * that. Anything needed again loads again.
+ */
+export function releaseAllRecordings(): void {
+  for (const entry of atRate.values()) clearTimeout(entry.timer);
+  atRate.clear();
+  forgetUnusedSamples(new Set());
+  decoded.clear();
+  decoding.clear();
+  decoders.clear();
+  studioResponses.clear();
+  stageResponses.clear();
+}
+
 export function releaseAuditionSamplers(): void {
   Object.values(auditionVoices).forEach((v) => v?.releaseAll());
 }
