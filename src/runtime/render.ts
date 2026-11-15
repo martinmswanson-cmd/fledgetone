@@ -126,7 +126,7 @@ export function release(id: string): void {
 }
 
 /** The song from its JSON, with its plugins loaded and its sounds in place. */
-export async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
+async function prepare(projectJson: unknown): Promise<ProjectSnapshot> {
   const raw = typeof projectJson === 'string' ? (JSON.parse(projectJson) as unknown) : projectJson;
   // (each sound it carries checked against its id, and the song pointed at the right one: see checkSounds)
   const p = await withCheckedSounds(parseProject(raw));
@@ -161,7 +161,7 @@ export function outsidePluginsMessage(list: ReturnType<typeof outsidePlugins>): 
 }
 
 /** Where the music ends, as Export's whole song: the end of the last clip of a track that sounds (bar 1: nothing). */
-export function songEnd(p: ProjectSnapshot): number {
+function songEnd(p: ProjectSnapshot): number {
   const ids = new Set(audibleTracks(p.tracks).map((t) => t.id));
   return maxOf(1, p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
 }
@@ -169,26 +169,6 @@ export function songEnd(p: ProjectSnapshot): number {
 const tempoOf = (p: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: p.bpm, points: p.tempoPoints ?? [] });
 /** The song's meter: its groove feels count from its measures (there's no store here to keep the studio's). */
 const meterOf = (p: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): MeterMap => ({ base: p.meter ?? FOUR_FOUR, points: p.meterPoints ?? [] });
-
-/** What Export renders of a prepared song: bars [fromBar, toBar), with its master and markers. */
-export function exportRenderOptions(p: ProjectSnapshot, o: { fromBar: number; toBar: number; ending: ExportEnding; sampleRate: SampleRate; ceilingDbtp: number }): RenderOptions {
-  return {
-    tracks: p.tracks,
-    clips: p.clips,
-    bpm: p.bpm,
-    tempoPoints: p.tempoPoints,
-    meter: meterOf(p),
-    swing: p.swing,
-    startBar: o.fromBar,
-    endBar: o.toBar,
-    masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
-    master: p.master ?? defaultMasterSettings(),
-    ending: o.ending,
-    sampleRate: o.sampleRate,
-    markers: p.markers ?? [],
-    peakCeilingDbtp: o.ceilingDbtp,
-  };
-}
 
 /** Render a song (its JSON as saved) as Export makes it, keeping the files for take. */
 export async function renderSong(projectJson: unknown, opts: RenderSongOptions = {}): Promise<RenderSongResult> {
@@ -209,7 +189,22 @@ export async function renderSong(projectJson: unknown, opts: RenderSongOptions =
   if (targetId && !LOUDNESS_TARGETS.some((t) => t.id === targetId)) throw new Error(`There's no loudness target "${targetId}": ${LOUDNESS_TARGETS.map((t) => t.id).join(', ')}`);
   const target = targetById(targetId ?? DEFAULT_TARGET);
   const ceilingDbtp = exportCeilingDbtp(format);
-  const render = exportRenderOptions(p, { fromBar, toBar, ending, sampleRate, ceilingDbtp });
+  const render: RenderOptions = {
+    tracks: p.tracks,
+    clips: p.clips,
+    bpm: p.bpm,
+    tempoPoints: p.tempoPoints,
+    meter: meterOf(p),
+    swing: p.swing,
+    startBar: fromBar,
+    endBar: toBar,
+    masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
+    master,
+    ending,
+    sampleRate,
+    markers: p.markers ?? [],
+    peakCeilingDbtp: ceilingDbtp,
+  };
   const base = safeFileName(p.name);
   const notes: string[] = [];
   let held: HeldReport = { trimDb: 0, peakDbtp: null };

@@ -584,7 +584,7 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .scored-link { font-size: 14px; }
 .scored .ai-note { margin-top: 0; }
 .scored-tip { margin: 16px 0 0; font-size: 14px; color: var(--muted); }
-/* The song: across both columns, its picture beside the words; it plays from its project file (main.js) */
+/* The song: across both columns, its picture beside the words; it plays its MP3 through main.js */
 .scored-song { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 24px; }
 .scored-song img { display: block; width: 100%; height: auto; }
 .scored-song figcaption { padding-top: 4px; }

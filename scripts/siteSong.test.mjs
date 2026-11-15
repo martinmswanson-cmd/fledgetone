@@ -1,9 +1,9 @@
-// The home page's song (site/index.html, .scored-song): it plays from its project file through the
-// site player (src/runtime/sitePlayer.ts), so the site carries no audio file of it, and the player
-// is fetched only when Play is pressed.
+// The home page's song (site/index.html, .scored-song): its export as one small MP3, the only audio
+// file on the site (an exception made for this showcase), fetched only when Play is pressed; and
+// its project to download.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { register } from 'node:module';
 
 register(
@@ -19,7 +19,8 @@ register(
 );
 const src = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const home = src('site/index.html');
-const song = home.match(/<figure class="scored scored-song" data-song="([^"]+)"/)?.[1];
+const audio = home.match(/<figure class="scored scored-song" data-audio="([^"]+)"/)?.[1];
+const song = home.match(/<figure class="scored scored-song"[\s\S]*?<a class="scored-link" href="([^"]+)" download>/)?.[1];
 
 test('the song card points at a project file the site has, and offers it to download', () => {
   assert.ok(song, 'the home page has a song card');
@@ -35,24 +36,23 @@ test("every instrument the song plays is one the player knows", async () => {
   assert.ok(p.tracks.every((t) => !t.plugin), 'no plugins (the site player has none)');
 });
 
-test('the site has no audio file: the song is made in the browser', () => {
+test("the song's MP3 is small, and the only audio file on the site", () => {
+  assert.ok(audio, 'the song card names its MP3');
+  const file = new URL(`../site${audio}`, import.meta.url);
+  assert.ok(existsSync(file), `site${audio}`);
+  assert.ok(statSync(file).size < 3 * 1024 * 1024, `${statSync(file).size} bytes`);
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
-  const audio = walk(new URL('../site', import.meta.url).pathname).filter((f) => /\.(mp3|wav|ogg|oga|flac|m4a|aac|opus)$/i.test(f));
-  assert.deepEqual(audio, []);
+  const root = new URL('../site', import.meta.url).pathname;
+  const files = walk(root).filter((f) => /\.(mp3|wav|ogg|oga|flac|m4a|aac|opus|weba)$/i.test(f)).map((f) => f.slice(root.length));
+  assert.deepEqual(files, [audio]);
 });
 
-test('the player is fetched only when Play is pressed, and the site build copies it', () => {
+test('nothing of the song loads before Play', () => {
   const main = src('site/main.js');
-  const click = main.indexOf("btn.addEventListener('click', async () => {");
-  const load = main.indexOf('import(`/player/fledgetone-site-player.js');
-  assert.ok(click > 0 && load > click, 'the import is inside the click');
-  assert.equal(main.split('import(`/player/').length, 2, 'loaded from one place only');
-  // A failed import is remembered by the browser for the page's life: each try asks afresh
-  assert.match(main, /import\(`\/player\/fledgetone-site-player\.js\$\{tries \? `\?r=\$\{tries\}` : ''\}`\)/);
-  // One plain message, never the browser's own words
-  assert.match(main, /say\(FAILED, true\)/);
-  assert.doesNotMatch(main, /e\.message/);
-  assert.ok(!home.includes('fledgetone-site-player'), 'the page itself never names the player');
-  assert.match(src('scripts/build-site.mjs'), /dist-runtime', 'fledgetone-site-player\.js'\), join\(OUT, 'player', 'fledgetone-site-player\.js'\)/);
-  assert.match(src('package.json'), /vite build -c vite\.site\.config\.ts/);
+  assert.ok(!/<audio/.test(home), 'no audio element in the page');
+  assert.match(main, /audio\.preload = 'none';/);
+  // The address is given only inside play(), which only the button's press calls
+  const set = main.indexOf('audio.src = url;');
+  assert.ok(set > main.indexOf('const play = () => {') && set < main.indexOf('const pause = () => {'));
+  assert.ok(!existsSync(new URL('../src/runtime/sitePlayer.ts', import.meta.url)), 'the live player is gone');
 });
