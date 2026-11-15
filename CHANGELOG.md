@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **On the website, songs made in Fledgetone get their own section**: **Lofi soul, after hours** moves out of the scoring-to-video part (which is about the two films again) into a section of its own, **Songs made in Fledgetone**, before Features. Its card now shows a video of the studio playing the song, in time with the music: the playhead crossing the tracks, the Glide Pad's chords gliding in the piano roll, and the mixer's meters. Like the films it plays muted while it's on screen, its first frame showing before it loads, and **Play with sound** plays it from the start with its sound, fading in and out, a little under the films' level; a film's sound pauses it and it turns a film's sound off. The video (8 MB) carries the song's sound, so the MP3 and the still picture are gone. Its project is still there to download.
+
 ## 2026.11.15-2 — The front-page song starts in about a second
 
 - **On the website, the song starts in about a second**: **Lofi soul, after hours** on the home page now plays its export as a small MP3 (about 2 MB, 128 kbps) instead of being made in the browser first, which took about half a minute and about 20 MB of downloads. Nothing of it loads until you press **Play with sound**; it still fades in and out, plays a little under the films' level, pauses and carries on where it was, turns a film's sound off (and a film's sound pauses it), says so plainly if it can't load and tries again for real. Its project is still there to download.

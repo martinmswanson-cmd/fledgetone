@@ -584,10 +584,11 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .scored-link { font-size: 14px; }
 .scored .ai-note { margin-top: 0; }
 .scored-tip { margin: 16px 0 0; font-size: 14px; color: var(--muted); }
-/* The song: across both columns, its picture beside the words; it plays its MP3 through main.js */
-.scored-song { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 24px; }
-.scored-song img { display: block; width: 100%; height: auto; }
-.scored-song figcaption { padding-top: 4px; }
+/* Songs made in Fledgetone (#songs): a card per song in the films' grid; with an odd one out (one
+   song, for now) the last spans the row, its video beside the words. main.js plays it */
+.songs-grid { margin-top: 40px; }
+.songs-grid > .scored-song:last-child:nth-child(odd) { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; gap: 24px; }
+.songs-grid > .scored-song:last-child:nth-child(odd) figcaption { padding-top: 4px; }
 .scored .song-status { font-size: 14px; color: var(--muted); flex: none; }
 .scored .song-status:empty { display: none; }
 .scored .song-status.is-error { color: #fca5a5; }
@@ -617,7 +618,7 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .cut-short { display: inline; }
 }
 @media (max-width: 900px) {
-  .scored-grid, .scored-song { grid-template-columns: minmax(0, 1fr); }
+  .scored-grid, .songs-grid > .scored-song:last-child:nth-child(odd) { grid-template-columns: minmax(0, 1fr); }
   .scored-set { margin-top: 48px; }
 }
 

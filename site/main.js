@@ -15,6 +15,8 @@ if (reduce) {
 } else {
   const io = seen((e) => {
     const v = e.target;
+    // (a song played with sound is left to its own button: see the songs below)
+    if (v.dataset.held) return;
     if (e.isIntersecting) { v.preload = 'auto'; v.play().catch(() => { v.controls = true; }); }
     else v.pause();
   }, 0.35);
@@ -253,7 +255,7 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
 
 // The scored films: muted until asked (browsers only play sound after a click). A button plays its
 // film with sound from the start (and mutes the other), or turns the sound off again.
-const scored = [...document.querySelectorAll('.scored')].filter((fig) => fig.querySelector('video') && fig.querySelector('.sound-btn'));
+const scored = [...document.querySelectorAll('.scored:not(.scored-song)')].filter((fig) => fig.querySelector('video') && fig.querySelector('.sound-btn'));
 scored.forEach((fig) => {
   const v = fig.querySelector('video'), btn = fig.querySelector('.sound-btn'), label = btn?.querySelector('span');
   if (!v || !btn) return;
@@ -272,12 +274,13 @@ scored.forEach((fig) => {
   });
 });
 
-// The song made in Fledgetone: its export as an MP3 (/video/lofi-soul-after-hours.mp3, about 2 MB),
-// fetched only when Play is pressed. It plays through Web Audio so it can fade in and out and sit
-// at its level everywhere (an iPhone ignores a media element's own volume): a little under the
-// films' loudness. Starting it fades a film's sound out; a film's sound pauses it.
+// Songs made in Fledgetone (#songs): each card's video is the studio playing the song, its sound
+// the song's export. Like the films it loops muted while on screen; Play with sound plays it from
+// the start through Web Audio, so it can fade in and out and sit at its level everywhere (an iPhone
+// ignores a video's own volume): a little under the films' loudness. Starting it fades a film's
+// sound out; a film's sound pauses it.
 const FILMS_LUFS = -16.1; // the two films' soundtracks, measured (EBU R128)
-const SONG_FILE_LUFS = -14.5; // the song's MP3, measured (EBU R128): its export at the Streaming target, encoded
+const SONG_FILE_LUFS = -14.0; // the song video's soundtrack (AAC 128 kbps), measured (EBU R128): its export at the Streaming target
 const FADE_IN = 0.12, FADE_OUT = 0.6, FILM_FADE = 0.3;
 const FAILED = 'The song couldn’t load. Check your connection and try again.';
 let songOff = () => {};
@@ -295,14 +298,15 @@ const filmOff = (fig) => {
   };
   requestAnimationFrame(step);
 };
-const songFig = document.querySelector('.scored-song[data-audio]');
+const songFig = document.querySelector('.scored-song');
 if (songFig) {
-  const btn = songFig.querySelector('.sound-btn'), label = btn.querySelector('span'), status = songFig.querySelector('.song-status');
+  const video = songFig.querySelector('video'), btn = songFig.querySelector('.sound-btn'), label = btn.querySelector('span'), status = songFig.querySelector('.song-status');
+  const src = video.getAttribute('src');
   // Half a dB under the films, never louder than the file
   const level = Math.min(1, 10 ** ((FILMS_LUFS - 0.5 - SONG_FILE_LUFS) / 20));
-  let ctx = null, audio = null, out = null, tries = 0;
+  let ctx = null, out = null, tries = 0;
   // playing: Play pressed and not paused since; stopping: the timer that pauses it once its
-  // fade-out ends (a Play before then fades it back up: one copy, never two)
+  // fade-out ends (a Play before then fades it back up: one playing, never two)
   let playing = false, stopping = 0;
   const say = (text, error = false) => { status.textContent = text; status.classList.toggle('is-error', error); };
   const show = (text, pressed) => { label.textContent = text; btn.setAttribute('aria-pressed', String(pressed)); };
@@ -313,27 +317,30 @@ if (songFig) {
     g.setValueAtTime(g.value, now);
     g.linearRampToValueAtTime(value, now + secs);
   };
-  const failed = () => {
+  // Back to the muted loop the films play (at the end, or after a failure)
+  const toLoop = () => {
     playing = false;
     clearTimeout(stopping);
     stopping = 0;
-    if (out) out.gain.value = 0;
-    audio.pause();
+    if (out) { out.gain.cancelScheduledValues(ctx.currentTime); out.gain.value = 0; }
+    video.muted = true;
+    video.loop = true;
+    delete video.dataset.held;
     busy(false);
+  };
+  const failed = () => {
+    toLoop();
     show('Try again', false);
     say(FAILED, true);
     tries++;
   };
   const setup = () => {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    audio = new Audio();
-    audio.preload = 'none';
-    audio.crossOrigin = 'anonymous';
     out = ctx.createGain();
     out.gain.value = 0;
-    ctx.createMediaElementSource(audio).connect(out).connect(ctx.destination);
+    ctx.createMediaElementSource(video).connect(out).connect(ctx.destination);
     // Sound only once it really plays (after any loading): from silence, faded in
-    audio.addEventListener('playing', () => {
+    video.addEventListener('playing', () => {
       if (!playing) return;
       busy(false);
       show('Pause', true);
@@ -341,18 +348,19 @@ if (songFig) {
       fadeTo(level, FADE_IN);
     });
     // (run out of what's downloaded: says so until it plays on)
-    audio.addEventListener('waiting', () => { if (playing) { busy(true); say('Loading…'); } });
-    audio.addEventListener('ended', () => {
-      playing = false;
-      out.gain.value = 0;
-      busy(false);
+    video.addEventListener('waiting', () => { if (playing) { busy(true); say('Loading…'); } });
+    video.addEventListener('ended', () => {
+      if (!playing) return;
+      toLoop();
       show('Play again with sound', false);
       say('');
+      video.play().catch(() => {});
     });
-    audio.addEventListener('error', () => { if (playing) failed(); });
+    video.addEventListener('error', () => { if (playing) failed(); });
   };
-  const play = () => {
+  const play = (fromStart) => {
     playing = true;
+    video.dataset.held = '1';
     if (stopping) {
       // Still fading out: the same playing fades back up
       clearTimeout(stopping);
@@ -363,13 +371,17 @@ if (songFig) {
     }
     out.gain.cancelScheduledValues(ctx.currentTime);
     out.gain.value = 0;
-    const url = songFig.dataset.audio + (tries ? `?r=${tries}` : '');
-    if (audio.error || !audio.src || (tries && !audio.src.endsWith(url))) {
-      audio.src = url;
-      audio.load();
+    if (tries || video.error) {
+      // (afresh after a failure: a new address, so nothing failed is reused)
+      video.src = `${src}?r=${tries}`;
+      video.load();
     }
-    if (audio.readyState < 3) { busy(true); show('Loading…', true); say('Loading…'); }
-    audio.play().catch(() => { if (playing) failed(); });
+    video.preload = 'auto';
+    video.loop = false;
+    video.muted = false;
+    if (fromStart) video.currentTime = 0;
+    if (video.readyState < 3) { busy(true); show('Loading…', true); say('Loading…'); }
+    video.play().catch(() => { if (playing) failed(); });
   };
   // Pause: fade out, then pause there (Play carries on from that point)
   const pause = () => {
@@ -378,9 +390,9 @@ if (songFig) {
     busy(false);
     show('Play with sound', false);
     say('');
-    if (audio.paused || audio.readyState < 3) { audio.pause(); out.gain.value = 0; return; }
+    if (video.paused || video.readyState < 3) { video.pause(); out.gain.value = 0; return; }
     fadeTo(0, FADE_OUT);
-    stopping = setTimeout(() => { stopping = 0; audio.pause(); }, (FADE_OUT + 0.05) * 1000);
+    stopping = setTimeout(() => { stopping = 0; video.pause(); }, (FADE_OUT + 0.05) * 1000);
   };
   songOff = pause;
   btn.addEventListener('click', () => {
@@ -389,7 +401,8 @@ if (songFig) {
     if (!ctx) setup();
     ctx.resume().catch(() => {});
     scored.forEach(filmOff);
-    play();
+    // From the start unless it was paused with sound (then from there)
+    play(!video.dataset.held);
   });
 }
 

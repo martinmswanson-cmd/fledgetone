@@ -297,6 +297,23 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Songs made in Fledgetone, with a studio video** (Unreleased): "Lofi soul, after hours" has its own
+  home-page section (#songs, before Features; a card grid in the films' style, one wide card for now:
+  it can move to a page of its own once there are several songs). Its card plays
+  site/video/lofi-soul-after-hours.mp4 (1280x720 H.264 at 24 fps, AAC 128 kbps, 8.1 MB; the audio is
+  the app's export at the Streaming target, the one file for this song, replacing the MP3) like the
+  films: a muted loop in view, Play with sound from the start through a Web Audio gain (fades, and
+  SONG_FILE_LUFS = -14.0 in site/main.js puts it half a dB under the films). The films' section is back
+  to two films. How the video was made, to redo it: the built studio (dist-site/app) at 1600x900 plays
+  the song three times in Playwright, each time in one view (the timeline; the Glide Pad clip's piano
+  roll with its glide lines, which doesn't follow the playhead, so it's used for bars 4 to 10; the
+  mixer), while a CDP screencast (Page.startScreencast, 1280x720) keeps every frame with its time and
+  the page reads the studio's timecode every animation frame. A straight-line fit of timecode against
+  time places each frame in the song (within about 35 ms: the timecode shows 30 fps), and the 24 fps
+  video takes the nearest frame at each song time: timeline 0-10 s, roll 10-27 s, mixer 27-56 s,
+  timeline to the end, with 0.8 s crossfades at the same song time. Encoded with libx264 -crf 24 -g 48,
+  faststart, under the export's WAV. Known limit: made by hand, so a change to the song or the studio's
+  look needs a new recording.
 - **Front-page song as one MP3** (2026.11.15-2): "Lofi soul, after hours" plays
   site/video/lofi-soul-after-hours.mp3 (1.9 MB, the app's export, the owner's one-off exception to the
   no-demo-audio rule) through an <audio> element and a Web Audio gain; the live site player is removed.
