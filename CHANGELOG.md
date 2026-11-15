@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.15-2 — The front-page song starts in about a second
 
 - **On the website, the song starts in about a second**: **Lofi soul, after hours** on the home page now plays its export as a small MP3 (about 2 MB, 128 kbps) instead of being made in the browser first, which took about half a minute and about 20 MB of downloads. Nothing of it loads until you press **Play with sound**; it still fades in and out, plays a little under the films' level, pauses and carries on where it was, turns a film's sound off (and a film's sound pauses it), says so plainly if it can't load and tries again for real. Its project is still there to download.
 

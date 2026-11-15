@@ -297,6 +297,10 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Front-page song as one MP3** (2026.11.15-2): "Lofi soul, after hours" plays
+  site/video/lofi-soul-after-hours.mp3 (1.9 MB, the app's export, the owner's one-off exception to the
+  no-demo-audio rule) through an <audio> element and a Web Audio gain; the live site player is removed.
+  A change to the song needs a new export and encode, and SONG_FILE_LUFS in site/main.js updated.
 - **Frisson tool, front-page song, lofi fixes** (2026.11.15): the chills tools are shown as the Frisson
   tool (internal ids and saved data still say chills; search keywords keep "chills"). Home page counts
   come from the catalogs (scripts/guide-tables.mjs siteCounts, data-count, guideTables test); a third
