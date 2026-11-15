@@ -281,12 +281,12 @@
           <figcaption class="ai-note">The film is AI-generated. The studio and the music are Fledgetone.</figcaption>
         </figure>
 
-        <!-- Made in Fledgetone: two films scored with sound, and a song that plays from its project file (main.js) -->
+        <!-- Two films scored in Fledgetone, with sound -->
         <div class="scored-set reveal">
           <div class="scored-head">
-            <p class="show-eyebrow">Made in Fledgetone</p>
-            <h3>Two films and a song</h3>
-            <p>Each film was loaded into the studio, its cuts found and the tempo fitted to them. The music and the sound effects were then made, mixed and exported in Fledgetone. The song was written, mixed and exported in the studio too.</p>
+            <p class="show-eyebrow">Scored in Fledgetone</p>
+            <h3>Two films, scored and sound-designed</h3>
+            <p>Each film was loaded into the studio, its cuts found and the tempo fitted to them. The music and the sound effects were then made, mixed and exported in Fledgetone.</p>
           </div>
           <div class="scored-grid">
             <figure class="scored">
@@ -321,22 +321,6 @@
               </button>
                 <a class="scored-link" href="/video/courier.fledgetone.json" download>Download the project</a>
                 <span class="ai-note">Film: AI-generated. Music: made in Fledgetone.</span>
-              </figcaption>
-            </figure>
-            <figure class="scored scored-song" data-audio="/video/lofi-soul-after-hours.mp3">
-              <div class="shot-frame">
-                <img src="/img/lofi-soul.webp" width="1280" height="720" loading="lazy"
-                     alt="The Fledgetone studio with Lofi soul, after hours open: Glide Pad, Sub, Upright bass, Brushes, Vibes and Muted trumpet tracks on the timeline, with the section markers Intro, Bass in, Brushes and vibes and Trumpet solo." />
-              </div>
-              <figcaption>
-                <h4>Lofi soul, after hours <span>Lofi jazz &middot; 78 BPM &middot; F major</span></h4>
-                <p>A walking upright bass, brushes, vibes and a muted trumpet over a dark gliding pad, as the studio exports it.</p>
-                <button class="btn btn-primary sound-btn" type="button" aria-pressed="false">
-                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M19 5.5a9 9 0 0 1 0 13"/></svg>
-                <span>Play with sound</span>
-              </button>
-                <p class="song-status" role="status" aria-live="polite"></p>
-                <a class="scored-link" href="/video/lofi-soul-after-hours.fledgetone.json" download>Download the project</a>
               </figcaption>
             </figure>
           </div>
@@ -445,6 +429,39 @@
     </section>
 
     <!-- Writing and mixing -->
+    <!-- Songs made in Fledgetone: each card plays a screen recording of the studio playing the song
+         (muted in view, with sound from the start when pressed: main.js), and offers its project.
+         A grid, so more songs can join it -->
+    <section id="songs" class="showcase" style="--c: var(--red)" aria-labelledby="songs-title" data-ruler="Songs" data-ruler-color="--red">
+      <div class="wrap">
+        <div class="show-head reveal">
+          <p class="show-eyebrow">Made in Fledgetone</p>
+          <h2 id="songs-title">Songs made in Fledgetone.</h2>
+          <p class="show-lede">Whole songs written, played and mixed in the studio. Open any of them and see how it was made.</p>
+        </div>
+        <div class="scored-grid songs-grid reveal">
+          <figure class="scored scored-song">
+            <div class="shot-frame">
+              <video class="clip" src="/video/lofi-soul-after-hours.mp4" poster="/video/lofi-soul-after-hours-poster.webp" width="1280" height="720"
+                     muted loop playsinline preload="none" data-autoplay
+                     aria-label="The Fledgetone studio playing Lofi soul, after hours: the playhead crossing the Glide Pad, Sub, Upright bass, Brushes, Vibes and Muted trumpet tracks, the Glide Pad's chords gliding into each other in the piano roll, and the mixer's meters moving."></video>
+            </div>
+            <figcaption>
+              <h4>Lofi soul, after hours <span>Lofi jazz &middot; 78 BPM &middot; F major</span></h4>
+              <p>A walking upright bass, brushes, vibes and a muted trumpet over a dark gliding pad. The video is the studio playing it.</p>
+              <button class="btn btn-primary sound-btn" type="button" aria-pressed="false">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M19 5.5a9 9 0 0 1 0 13"/></svg>
+                <span>Play with sound</span>
+              </button>
+              <p class="song-status" role="status" aria-live="polite"></p>
+              <a class="scored-link" href="/video/lofi-soul-after-hours.fledgetone.json" download>Download the project</a>
+            </figcaption>
+          </figure>
+        </div>
+        <p class="scored-tip">Open a downloaded project in the studio with File &rsaquo; Open.</p>
+      </div>
+    </section>
+
     <section id="features" class="features wrap" aria-labelledby="features-title" data-ruler="Features" data-ruler-color="--amber">
       <h2 id="features-title" class="section-title"><span class="mono-label">Features</span>Writing and mixing</h2>
 
