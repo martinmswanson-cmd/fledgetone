@@ -2,7 +2,7 @@
  * The piano roll's second toolbar for pitched clips: chords by scale degree (click I, V, vi, IV
  * and the progression builds from the playhead, voiced smoothly), the arpeggiator (pattern,
  * octaves, speed, note length) and the riff generator (a riff, lead line or bass line in the key
- * that follows the chords on the other tracks; New riff gives another) and the chills progressions
+ * that follows the chords on the other tracks; New riff gives another) and the frisson tool's chills progressions
  * (chord moves for an emotional peak, over the whole clip, which takes the progression's name if
  * its own was the app's). The maths is in store/chordTools.ts and store/chills.ts; linked clips
  * follow every change (see store/patterns.ts).
@@ -152,7 +152,7 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
     const voicing = voicingOf(prog, chillsVoicing);
     const out = chillsFill(key, prog, clip.startBar, clip.startBar + clip.lengthBars, songMeterOf(useTimelineStore.getState()), () => uid('note'), { range: [lo, hi], velocity, voicing });
     if (!out.length) return;
-    // (named after the progression, as the Chills progression dialog names its clip, unless the name was typed)
+    // (named after the progression, as the Frisson tool dialog names its clip, unless the name was typed)
     apply(out, undefined, prog.name);
     // They're written in major or minor (their surprises are against those): a clip in another
     // seven-note scale is told which, as its own notes aren't all followed
@@ -220,12 +220,12 @@ export const ChordRiffBar: React.FC<Props> = ({ clip, instrument, scale, gridBar
           Apply
         </button>
       </span>
-      <span data-search="chills progression peak shiver" className="flex items-center gap-1.5" title="Chord moves that give listeners chills at an emotional peak, held over the whole clip (in place of its notes), voiced for synths and pads. Written in major or minor: the SCALE's root and whether its third is major or minor.">
-        CHILLS
+      <span data-search="frisson chills progression peak shiver" className="flex items-center gap-1.5" title="The frisson tool (frisson is the shiver you get from music): chord moves that give listeners that shiver at an emotional peak, held over the whole clip (in place of its notes), voiced for synths and pads. Written in major or minor: the SCALE's root and whether its third is major or minor.">
+        FRISSON
         <select className={select} value={chills} onChange={(e) => {
             setChills(e.target.value);
             setChillsVoicing(null);
-          }} aria-label="Chills progression">
+          }} aria-label="Frisson progression">
           {CHILLS.map((p) => (
             <option key={p.id} value={p.id} title={p.detail}>{p.name}</option>
           ))}

@@ -386,7 +386,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
             {
               key: 'build-peak',
               label: 'Build into a peak…',
-              shortcut: 'swell, chills',
+              shortcut: 'swell, frisson',
               icon: <ChevronsRight className="w-3.5 h-3.5" />,
               onClick: () => {
                 onClose();
@@ -463,7 +463,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(track && !audioLane ? [newClip(1), newClip(2), newClip(4)] : []),
         ...(drumLane ? [{ key: 'drummer', label: 'Drummer…', shortcut: 'make a beat', icon: <Drum className="w-3.5 h-3.5" />, onClick: openSmart('drummer') }] : []),
         ...(pitchedLane ? [{ key: 'chords', label: 'Chord progression…', shortcut: 'in key', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chords') }] : []),
-        ...(pitchedLane ? [{ key: 'chills', label: 'Chills progression…', shortcut: 'for a peak', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chills') }] : []),
+        ...(pitchedLane ? [{ key: 'chills', label: 'Frisson tool…', shortcut: 'for a peak', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chills') }] : []),
         ...(pitchedLane ? [{ key: 'math', label: 'Math patterns…', shortcut: 'formulas', icon: <Sigma className="w-3.5 h-3.5" />, onClick: openSmart('math') }] : []),
         ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'bells, piano', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', clickedBar, menu.trackId)) }] : []),
         ...(track

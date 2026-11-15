@@ -297,7 +297,7 @@ const SectionSheet: React.FC = () => {
       )}
       {i > 0 && (
         <SheetItem
-          title="Build for chills into it"
+          title="Build into a peak here"
           detail={`${sections[i - 1].letter} swells into it: the parts start a little quieter and darker and grow back to their level (no part already there is turned up), a riser, a breath of near-silence, then a pad joins on its first beat, the riser and pad set under the music by measuring it.`}
           onClick={() => {
             close();
@@ -308,7 +308,7 @@ const SectionSheet: React.FC = () => {
       )}
       {i > 0 && (
         <SheetItem
-          title="Build for chills from the music’s level"
+          title="Build into a peak from the music’s level"
           detail={`The same build into it with nothing dipping first: the parts of ${sections[i - 1].letter} keep their level all through it (no filter sweep), and the lift comes from the riser, the breath of near-silence and the pad on its first beat.`}
           onClick={() => {
             close();
@@ -345,7 +345,7 @@ const ChordsSheet: React.FC = () => {
   const songKey = useSongKey();
   const meter = useSongMeter();
   const [style, setStyle] = useState<ChordStyle>('sustain');
-  // For chills, plain or rich chords: each progression's own until one is picked for all
+  // Frisson, plain or rich chords: each progression's own until one is picked for all
   const [voicing, setVoicing] = useState<ChillsVoicingStyle | null>(null);
   if (!track || !sec) return null;
   const range = INSTRUMENTS[track.instrumentKey].range;
@@ -379,8 +379,8 @@ const ChordsSheet: React.FC = () => {
       {PROGRESSIONS.filter((p) => p.mode === songKey.mode).map((p) => (
         <SheetItem key={p.id} title={p.name} onClick={() => write(p)} />
       ))}
-      <p className="text-xs font-semibold text-forge-text px-2 mt-3 mb-1">For chills</p>
-      <p className="text-xs text-forge-muted px-2 mb-1">Chord moves that give listeners chills at a peak: {registerOf(range).kind === 'roots' ? 'on this bass instrument, each chord’s root (or the held home note), inside its range.' : 'held chords for synths and pads, one low note and the chord in the middle.'}</p>
+      <p className="text-xs font-semibold text-forge-text px-2 mt-3 mb-1">Frisson</p>
+      <p className="text-xs text-forge-muted px-2 mb-1">Frisson is the shiver you get from music. These chord moves give listeners that shiver at a peak: {registerOf(range).kind === 'roots' ? 'on this bass instrument, each chord’s root (or the held home note), inside its range.' : 'held chords for synths and pads, one low note and the chord in the middle.'} To build into the peak too, use the section’s ⋯, Build into a peak here.</p>
       <div className="flex gap-1.5 flex-wrap mb-1 px-1" role="group" aria-label="Plain or rich chords">
         {CHILLS_VOICINGS.map((v) => (
           <button key={v.id} type="button" aria-pressed={voicing === v.id} title={v.detail} className={`${pill} !h-9 !px-3 text-xs ${voicing === v.id ? pillOn : ''}`} onClick={() => setVoicing(voicing === v.id ? null : v.id)}>
