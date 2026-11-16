@@ -1,0 +1,19 @@
+[package]
+name = "fledge-compressor"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Fledge Compressor: a clean stereo compressor that can be keyed from a sidechain. Built to WebAssembly for Fledgetone, and as a Rust library."
+repository = "https://github.com/martinmswanson-cmd/fledgetone"
+
+[lib]
+# cdylib: the WebAssembly family the app loads; rlib: the compressor as a Rust library
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fledge-dsp = { path = "../fledge-dsp", version = "0.1.0" }
+fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+fledge-wasm = { path = "../fledge-wasm", version = "0.1.0" }
+
+[lints]
+workspace = true

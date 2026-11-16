@@ -3,6 +3,15 @@
 version = 4
 
 [[package]]
+name = "fledge-compressor"
+version = "0.1.0"
+dependencies = [
+ "fledge-dsp",
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-dsp"
 version = "0.1.0"
 

@@ -21,6 +21,8 @@ export interface BuiltinPluginInfo {
   about: string;
   /** Plays notes (a new track's instrument) rather than processing a track's sound */
   instrument?: boolean;
+  /** Listens to a sidechain when a track is picked for it (another track's sound, to follow rather than to treat) */
+  sidechain?: boolean;
   /** The family's own groupings ("Recommended", "Basic", "Latest") */
   tags?: string[];
   /**

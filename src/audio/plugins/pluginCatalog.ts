@@ -26,6 +26,29 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-compressor",
+  "label": "Fledge Compressor",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-compressor.wasm",
+  "bytes": 81988,
+  "hash": "00239c4ee8e5",
+  "plugins": [
+   {
+    "name": "Fledge Compressor",
+    "category": "Dynamics",
+    "about": "A clean stereo compressor with a sidechain: pick another track under \"Sidechain from\" and this one ducks to it (a bass under the kick, the music under a voice). With no sidechain it follows its own sound. Soft knee, a high-pass on what it listens to, parallel mix, no added delay.",
+    "sidechain": true,
+    "tags": [
+     "compressor",
+     "sidechain",
+     "ducking",
+     "glue"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",

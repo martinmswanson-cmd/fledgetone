@@ -190,7 +190,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     savedTable ? unpackUserTable(savedTable) : null,
   ]);
   const node = new AudioWorkletNode(ctx, BUILTIN_PROCESSOR, {
-    numberOfInputs: ref.info.instrument ? 0 : 1,
+    // (A second input for a plugin that listens to a sidechain: another track's sound, see setSidechain)
+    numberOfInputs: ref.info.instrument ? 0 : ref.info.sidechain ? 2 : 1,
     numberOfOutputs: 1,
     outputChannelCount: [2],
     channelCount: 2,
@@ -370,6 +371,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     ...(userTable ? { table: userTable } : {}),
   });
   const audioNode = Object.assign(node, {
+    /** Whether another track's sound is connected to the second input now (a plugin that listens to a sidechain) */
+    setSidechain: (connected: boolean) => node.port.postMessage({ type: 'sidechain', connected }),
     getParameterInfo: async () =>
       Object.fromEntries(params.map((p, i) => [String(i), { id: String(i), label: p.name, type: 'float', minValue: 0, maxValue: 1, defaultValue: p.defaultValue }])),
     getParameterValues: async () => Object.fromEntries(own.map((v, i) => [String(i), { id: String(i), value: v, normalized: true }])),
@@ -619,7 +622,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   return {
     audioNode,
     controls,
-    descriptor: { name: ref.info.name, vendor: ref.family.label, isInstrument: !!ref.info.instrument, hasAudioInput: !ref.info.instrument },
+    descriptor: { name: ref.info.name, vendor: ref.family.label, isInstrument: !!ref.info.instrument, hasAudioInput: !ref.info.instrument, hasSidechain: !!ref.info.sidechain },
     createGui: async () => {
       if (!guiFactory) throw new Error('no panel for built-in plugins');
       const { element, destroy } = guiFactory(controls);

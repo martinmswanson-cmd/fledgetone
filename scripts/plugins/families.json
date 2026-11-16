@@ -8,6 +8,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-compressor",
+    "label": "Fledge Compressor",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-compressor (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",
