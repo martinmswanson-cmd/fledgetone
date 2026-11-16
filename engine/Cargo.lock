@@ -25,6 +25,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fledge-harmony"
+version = "0.1.0"
+dependencies = [
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-plugin"
 version = "0.1.0"
 

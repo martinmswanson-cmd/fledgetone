@@ -121,6 +121,30 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-harmony",
+  "label": "Fledge Harmony",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-harmony.wasm",
+  "bytes": 89622,
+  "hash": "f02f563923d9",
+  "plugins": [
+   {
+    "name": "Fledge Harmony",
+    "category": "Effects",
+    "about": "Harmony voices from one sung or played line: it follows the pitch of a voice or a lead (one note at a time) and adds up to two voices above or below it, in the song's key, so a \"third above\" stays in the scale at every note. The added voices keep the original's character (a voice shifted up doesn't turn into a chipmunk); Formant changes it on purpose, for a bigger or smaller voice. Set Key and Scale to the song's. The added voices come a few milliseconds behind the line and rest where it has no clear pitch.",
+    "tags": [
+     "harmony",
+     "harmoniser",
+     "pitch shift",
+     "vocal",
+     "formant",
+     "double"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",

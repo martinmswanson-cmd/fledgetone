@@ -2,7 +2,7 @@
 # the build settings below.
 [workspace]
 resolver = "2"
-members = ["fledge-dsp", "fledge-plugin", "fledge-wasm", "fledge-synth", "fledge-compressor", "fledge-gate", "fledge-vocoder", "fledge-repeat"]
+members = ["fledge-dsp", "fledge-plugin", "fledge-wasm", "fledge-synth", "fledge-compressor", "fledge-gate", "fledge-vocoder", "fledge-repeat", "fledge-harmony"]
 
 # Clippy must pass with no warnings (see .github/workflows/checks.yml). These it may leave alone:
 [workspace.lints.clippy]
