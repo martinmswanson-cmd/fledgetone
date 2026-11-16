@@ -169,6 +169,31 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-spectral",
+  "label": "Fledge Spectral",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-spectral.wasm",
+  "bytes": 90646,
+  "hash": "dbec52d59fc7",
+  "plugins": [
+   {
+    "name": "Fledge Spectral",
+    "category": "Effects",
+    "about": "Works on a sound by its spectrum, each frequency on its own. Gate takes out what's quieter than a threshold (hiss under a held note goes, the note stays). Blur smooths each frequency over time, into a wash that lingers. Smear spreads each frequency over its neighbours, turning pitches breathy. Freeze is a switch: while it's on, the sound of that moment is held and goes on sounding. The sound comes out a frame late (43 ms at 48 kHz).",
+    "tags": [
+     "spectral",
+     "freeze",
+     "blur",
+     "denoise",
+     "gate",
+     "smear",
+     "wash"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",

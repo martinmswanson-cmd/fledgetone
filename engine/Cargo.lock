@@ -54,6 +54,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fledge-spectral"
+version = "0.1.0"
+dependencies = [
+ "fledge-dsp",
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-synth"
 version = "0.1.0"
 dependencies = [

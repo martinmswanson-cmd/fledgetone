@@ -56,6 +56,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-spectral",
+    "label": "Fledge Spectral",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-spectral (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",
