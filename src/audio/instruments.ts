@@ -209,6 +209,8 @@ export interface InstrumentOptions {
   plugin?: WamPlugin;
   /** WAM effects between the instrument and the track's strip */
   pluginFx?: WamPlugin[];
+  /** Another track's sound, for a plugin effect's sidechain (the track's strip's keyTap; see sidechain.ts) */
+  keyOf?: (trackId: string) => AudioNode | null | undefined;
   rack?: DrumRack;
   multi?: MultiSample;
   /** The Designed Kit's drum sounds */
@@ -536,7 +538,7 @@ export function createInstrument(key: InstrumentKey, output: Tone.InputNode, opt
   const fx = options.pluginFx?.filter((p) => !p.bypass) ?? [];
   if (!fx.length) return withDynamics(output, (to) => withTaper(key, withBassTools(key, to, options)));
   // The track's plugin effects come first, between the instrument and its strip
-  const chain = createPluginChain(output, fx);
+  const chain = createPluginChain(output, fx, options.keyOf);
   const inst = withDynamics(chain.input, (to) => withTaper(key, withBassTools(key, to, options)));
   return {
     ...inst,

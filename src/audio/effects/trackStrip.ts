@@ -6,6 +6,7 @@
  */
 import { controlRun, planControlEvents, type ControlRun } from '../controlEvents';
 import * as Tone from 'tone';
+import { nativeOutputOf } from '../nativeNodes';
 import { pumpHears, type AutomationParam, type GateRate, type PumpTrigger, type Track } from '../../store/timelineTypes';
 import { shapePoints } from './duckShape';
 import { GATE_TICKS } from '../../store/timelineTypes';
@@ -131,6 +132,12 @@ export interface TrackStrip {
    * a while (see liveTracks.ts). Only for a channel that is silent: anything still ringing is cut.
    */
   sleep: (asleep: boolean) => void;
+  /**
+   * The track's sound for another track's sidechain: after its own effects and pan, before its
+   * fader (as a pre-fader send hears it), so its volume doesn't change what a compressor keyed
+   * from it hears. Silent while the track is soloed out.
+   */
+  keyTap: () => AudioNode;
   /**
    * Its sends to return tracks: each to `target` (the return's input) at `level`, taken after the
    * fader or (`pre`) before it. Sends not named go; a level changes smoothly. `muted`: the track
@@ -990,6 +997,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
       if (awake) dryLink.retarget(target);
       output = target;
     },
+    // (The browser's own node: a plugin's node, which it plays into, is one too)
+    keyTap: () => nativeOutputOf(merge as unknown as Tone.ToneAudioNode),
     sleep: (asleep) => {
       // Live only: an export plays every track from the start
       if (!barrier || asleep === !awake) return;

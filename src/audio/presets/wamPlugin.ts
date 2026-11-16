@@ -345,10 +345,13 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
 /**
  * The WAM effects on a track, in order, between `input` and `output`: `input` plays straight into
  * `output` until they're in (or if none load), then through each one that isn't bypassed.
+ * A plugin with a sidechain (WamPlugin.sidechain, and a node with a second input for one) also
+ * takes in the sound `keyOf` gives for that track, for as long as the chain lasts.
  */
 export function createPluginChain(
   output: Tone.InputNode,
-  plugins: WamPlugin[]
+  plugins: WamPlugin[],
+  keyOf?: (trackId: string) => AudioNode | null | undefined
 ): { input: Tone.Gain; ready: Promise<unknown>; dispose: () => void; setPluginParam: (pluginId: string, paramId: string, value: number, time: number) => boolean } {
   const input = new Tone.Gain(1);
   input.connect(output);
@@ -357,6 +360,8 @@ export function createPluginChain(
   const unkeep = keepActive(sink);
   const ctx = nativeContextOf(input.context);
   const loaded: Array<{ plugin: WamPlugin; inst: WamInstance }> = [];
+  /** The sidechains connected: the other track's sound into a plugin's second input */
+  const keys: Array<{ from: AudioNode; inst: WamInstance }> = [];
   let disposed = false;
   const active = plugins.filter((p) => !p.bypass);
   const ready = Promise.all(
@@ -386,6 +391,12 @@ export function createPluginChain(
       prev.connect(inst.audioNode);
       prev = inst.audioNode;
       if (isLive(ctx)) registerLiveWam(plugin.id, inst);
+      const key = plugin.sidechain && inst.descriptor?.hasSidechain ? keyOf?.(plugin.sidechain) : null;
+      if (key) {
+        key.connect(inst.audioNode, 0, 1);
+        inst.audioNode.setSidechain?.(true);
+        keys.push({ from: key, inst });
+      }
     }
     prev.connect(to);
   });
@@ -400,6 +411,13 @@ export function createPluginChain(
     },
     dispose: () => {
       disposed = true;
+      for (const { from, inst } of keys) {
+        try {
+          from.disconnect(inst.audioNode, 0, 1);
+        } catch {
+          // The other track went first
+        }
+      }
       loaded.forEach(({ plugin, inst }) => release(plugin, inst, ctx));
       try {
         nativeOutputOf(input).disconnect();

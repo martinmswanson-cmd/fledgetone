@@ -151,6 +151,7 @@ import {
 import { rippleRules, type RippleEdit } from './ripple';
 import { placeSongTime, rippleSongTime, tidyMeters, type PlacedStretch, type SongTime } from './rippleMeters';
 import { breakLoops, isBus, isMixTrack, isReturn, sendWouldLoop, tidyRoutes, tidySends, wouldLoop } from './buses';
+import { canSidechain } from './sidechain';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { fitClipsCurves, tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
@@ -554,6 +555,8 @@ interface TimelineState {
   removeTrackPluginFx: (trackId: string, pluginId: string) => void;
   /** Bypass a plugin effect, or put it back in (one undo step). */
   setPluginBypass: (trackId: string, pluginId: string, bypass: boolean) => void;
+  /** The track a plugin effect listens to (its sidechain: sidechain.ts), or none (null). One that would loop is refused. */
+  setPluginSidechain: (trackId: string, pluginId: string, sourceId: string | null) => void;
   /** Plugins' settings as read from them (not an undo step: they're the plugins' own). */
   setPluginStates: (states: ReadonlyMap<string, unknown>) => void;
   /**
@@ -2224,6 +2227,19 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         ),
         ...pushPast(s),
       })),
+
+    setPluginSidechain: (trackId, pluginId, sourceId) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        const plugin = track?.pluginFx?.find((p) => p.id === pluginId);
+        if (!track || !plugin || (plugin.sidechain ?? null) === sourceId) return s;
+        if (sourceId !== null && !canSidechain(track, pluginId, sourceId, s.tracks)) return s;
+        const next = (p: WamPlugin): WamPlugin => {
+          const { sidechain: _was, ...rest } = p;
+          return sourceId === null ? rest : { ...rest, sidechain: sourceId };
+        };
+        return { tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, pluginFx: t.pluginFx!.map((p) => (p.id === pluginId ? next(p) : p)) } : t)), ...pushPast(s) };
+      }),
 
     setPluginStates: (states) =>
       set((s) => {

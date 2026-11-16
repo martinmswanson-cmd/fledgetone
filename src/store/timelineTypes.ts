@@ -802,6 +802,8 @@ export interface WamPlugin {
   state?: unknown;
   /** Skipped: the sound passes it by */
   bypass?: boolean;
+  /** The track (its id) a plugin effect listens to rather than treats: its sidechain (see sidechain.ts) */
+  sidechain?: string;
 }
 
 /** The reference video a project scores to (see videoStore): kept in the browser by `key`. */

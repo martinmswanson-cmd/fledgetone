@@ -2,7 +2,7 @@
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
 have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
-started (steps 1 to 4 and 6 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
+started (steps 1 to 4 and 6 are done), and M1 (#6) is done for the Rust plugins; nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
 ## The list
@@ -24,7 +24,7 @@ use.
 | 3 | Stereo and phase meter | Vectorscope, a live correlation bar, loudness history, PSR/PLR (dynamic range left), a mono-compatibility warning on the master | Both | M | 0 |
 | 4 | Vocal cleanup | Noise reduction learned from a quiet stretch of the take, de-hum, de-click, de-plosive | Rust | L | 0 |
 | 5 | Audio to MIDI | Turn a recorded melody, bass line or hummed tune into notes (the pitch tracking in `vocalTune.ts` is a start) | Both | M | 0 |
-| 6 | Sidechain input for any plugin | `scripts/plugins/bbplug.h` has stereo in and out only. Add sidechain buffers and a "Sidechain from…" picker so any compressor, gate or vocoder can be keyed from another track | Host + adapter | M | 0 |
+| 6 | Sidechain input for any plugin (done for Rust plugins) | `scripts/plugins/bbplug.h` had stereo in and out only. Add sidechain buffers and a "Sidechain from…" picker so any compressor, gate or vocoder can be keyed from another track | Host + adapter | M | 0 |
 
 ### Making your own sounds from sine waves (Operator, Sytrus, Harmor)
 
@@ -142,7 +142,7 @@ into a home for many:
 | Milestone | Items | Why here |
 |-----------|-------|----------|
 | M0 Foundations | Phase 0 | Everything else builds on it |
-| M1 Sidechain | #6 | Improves hundreds of existing plugins; goes into the adapter while it's new |
+| M1 Sidechain | #6 | Goes into the adapter while it's new. *Done 2026-11-16 for Rust plugins: a "Sidechain from" picker on any plugin that listens to one, live, in exports, stems and freezes, and Fledge Compressor (`engine/fledge-compressor`) as the first. The C families are not rebuilt (their compressors have no key input), so the existing plugins don't listen yet.* |
 | M2 Racks | #12, then #13 and #14 | Layering for every existing instrument; the Effect Rack and pads reuse it |
 | M3 Harmonic editor | #8 first step | Sine-wave sound design for little work, into Fledge Synth |
 | M4 FM operator synth | #7 | The first new Rust instrument; proves the per-plugin workflow |

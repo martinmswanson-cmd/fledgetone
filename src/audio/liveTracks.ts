@@ -15,6 +15,7 @@ import type { NativeBus } from './presets/native';
 import type { AutomationPoint, DrumHit, Track, WamPlugin } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import { bounceStandIns, type LiveTrackView } from '../store/freeze';
+import { withSidechains } from '../store/sidechain';
 import { isSamplerKey, loadQuick, loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
@@ -81,7 +82,9 @@ const liveAutomation = () =>
  * What the instrument is built from that a change of means building it again: the Sampler's
  * sound, and the plugins (which, not their settings: those change inside them), as allowed now.
  */
-const pluginKey = (p: WamPlugin) => `${p.id}@${p.url}${p.bypass ? '~' : ''}`;
+// (A sidechain too: the other track's sound is connected as the plugins are made; only the ones in
+// effect are left on the tracks by then, see withSidechains)
+const pluginKey = (p: WamPlugin) => `${p.id}@${p.url}${p.bypass ? '~' : ''}${p.sidechain ? `>${p.sidechain}` : ''}`;
 const sampleKey = (track: Track) => {
   const sample = track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : '';
   const plugins = [track.plugin, ...(track.pluginFx ?? [])].filter((p): p is WamPlugin => !!p);
@@ -194,6 +197,8 @@ export function syncLiveTracks(tracks: Track[]): void {
     return;
   }
   pendingSync = null;
+  // Only the sidechains in effect (the other track there, no loop) are built
+  tracks = withSidechains(tracks);
   const keep = new Set(tracks.map((t) => t.id));
   // Tracks playing into a bus that's going go back to the master first
   for (const lt of live.values()) {
@@ -484,9 +489,11 @@ function retireInstrument(trackId: string, lt: LiveTrack): void {
   });
 }
 
+/** A plugin on it listens to another track: it goes on following that track while this one is silent, as it does in an export */
+const keyed = (lt: LiveTrack) => !!lt.applied?.pluginFx?.some((p) => p.sidechain && !p.bypass);
 const canSleep = (lt: LiveTrack) => {
   const kind = INSTRUMENTS[lt.instrumentKey]?.kind;
-  return !lt.instrument.clipBus && kind !== 'bus' && kind !== 'return' && !lt.applied?.fx.pump.on && !lt.applied?.isArmed;
+  return !lt.instrument.clipBus && kind !== 'bus' && kind !== 'return' && !lt.applied?.fx.pump.on && !lt.applied?.isArmed && !keyed(lt);
 };
 
 /** What the scheduler plays on a track, at `time` for `seconds`: it stays awake until that's over and has rung out. */
@@ -571,7 +578,8 @@ function letGoOf(inst: TrackInstrument): void {
  * wheel is back once that note ends), as a plugin does it itself (wamPlugin.ts).
  */
 function liveInstrument(...args: Parameters<typeof createInstrument>): TrackInstrument {
-  const inst = createInstrument(...args);
+  // (A plugin's sidechain hears the other track's strip: strips are made before any plugin is in)
+  const inst = createInstrument(args[0], args[1], { ...args[2], keyOf: (trackId) => live.get(trackId)?.strip.keyTap() });
   const dispose = inst.dispose;
   inst.dispose = () => {
     letGoOf(inst);

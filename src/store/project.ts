@@ -472,6 +472,7 @@ function parsePlugin(v: unknown): WamPlugin | null {
     ...(v.nameFromFile === true ? { nameFromFile: true as const } : {}),
     ...(v.state !== undefined && v.state !== null ? { state: pluginState(v.state) } : {}),
     ...(v.bypass === true ? { bypass: true } : {}),
+    ...(isStr(v.sidechain) && v.sidechain ? { sidechain: v.sidechain.slice(0, 200) } : {}),
   };
 }
 

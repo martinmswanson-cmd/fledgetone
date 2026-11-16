@@ -20,10 +20,13 @@
  * - The Pump and ducking under a proxy track follow notes and clips, not sound: every part
  *   schedules the triggering notes (playing no instrument) and works out the same duck curve from
  *   the whole song, so they are the same in every part and need no grouping.
+ * - A plugin with a sidechain hears another track's sound itself, not its notes: the two go in one
+ *   part (a bus or a return listened to, with every track that plays into it).
  * The groups that are left are packed into parts of about the same rough cost (trackCost).
  */
 import { durationToBars, type Clip, type Track } from '../store/timelineTypes';
 import { audibleIds, busChain, isMixTrack, liveSends } from '../store/buses';
+import { sidechainSources } from '../store/sidechain';
 import { INSTRUMENTS, type InstrumentKind } from './instrumentCatalog';
 import { maxOf, minOf } from '../support/minMax';
 
@@ -123,6 +126,8 @@ export function renderParts(
     const rb = find(b);
     if (ra !== rb) parent.set(ra, rb);
   };
+  /** Each player's buses and returns (below), for the sidechains after */
+  const reached = new Map<string, Set<string>>();
   for (const t of players) {
     find(t.id);
     // Every bus and return the track's sound reaches: its buses, the returns it or any of its
@@ -140,6 +145,15 @@ export function renderParts(
     // Not for the sound but the speed: plugins run as AudioWorklets, and Chromium renders every
     // offline context with one on a single shared thread, so they'd take turns in any part
     if ([t, ...reaches].some(usesWorklet)) union(t.id, WORKLET);
+    reached.set(t.id, new Set(reaches.map((m) => m.id)));
+  }
+  // A plugin that listens to another track (a sidechain: sidechain.ts) hears that track's sound,
+  // so the two render together; listening to a bus or a return, with every track that plays into it
+  for (const t of players) {
+    for (const source of sidechainSources(t, tracks)) {
+      union(t.id, source);
+      for (const p of players) if (reached.get(p.id)?.has(source)) union(p.id, source);
+    }
   }
 
   const groups = new Map<string, { tracks: Track[]; cost: number }>();
