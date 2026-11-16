@@ -1,0 +1,14 @@
+# Fledgetone's Rust engines: one workspace, so they share a lock file, a target directory and
+# the build settings below.
+[workspace]
+resolver = "2"
+members = ["fledge-dsp", "fledge-synth"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

@@ -113,7 +113,7 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | Inspector (track and master panels) | `src/components/inspector/` |
 | Drop a project file to open it / phone notice | `src/components/ProjectDrop.tsx`, `MobileNotice.tsx` |
 | Drop pad: the effects (one kernel, live worklet and export), the moves from the Drop track's notes, live control, Pocket's pads | `src/audio/effects/dropFx.ts`, `src/store/dropMoves.ts`, `src/audio/dropLive.ts`, `src/pocket/PocketDrop.tsx`; in the master chain (`masterChain.ts`, setDrop) and the export's master pass (`masterAfter.ts`, `exportWav.ts` dropFramesOf) |
-| Fledge Synth engine (Rust, GPL): parameters, voices, modulation, effects, presets, the bb_* interface | `engine/fledge-synth/src/` (`params.rs`, `synth.rs`, `dsp.rs`, `fx.rs`, `tables.rs`, `presets.rs`, `abi.rs`); built to `public/fledgetone-plugins/fledge.wasm` by `engine/fledge-synth/build.sh` |
+| Fledge Synth engine (Rust, GPL): parameters, voices, modulation, effects, presets, the bb_* interface | `engine/fledge-synth/src/` (`params.rs`, `synth.rs`, `fx.rs`, `tables.rs`, `presets.rs`, `abi.rs`), on the shared building blocks in `engine/fledge-dsp/src/` (filters, oversampling, shapers, envelopes, LFO shapes, delay line, OTT, FFT, wavetables); both in the Cargo workspace `engine/`; built to `public/fledgetone-plugins/fledge.wasm` by `engine/fledge-synth/build.sh` |
 | Fledge Synth window | `src/components/timeline/FledgeSynthPanel.tsx`, `src/audio/plugins/fledgeLayout.ts` (controls by parameter name), `fledgeWave.ts` (wave pictures from a main-thread copy of the engine) |
 | Built-in plugin host (Fledge Synth and every other built-in plugin) | `src/audio/plugins/builtinHost.ts` (main thread), `processor.ts` (the worklet), `src/audio/wamHost.ts` (live instances, settings reads, retiring) |
 
@@ -532,7 +532,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   phaser/flanger, an 8 s delay, reverb, drive and an OTT, and 35 level-matched presets. After 23
   rounds of bug hunting the engine has 80 tests (`cargo test --release`), including the voice
   handling (repeated, very short and pedal-held notes, the same key struck twice, mono and legato
-  retriggers, stealing). To change it: edit `engine/fledge-synth/src/`, run `cargo test --release`,
+  retriggers, stealing). To change it: edit `engine/fledge-synth/src/` (or `engine/fledge-dsp/src/`), run `cargo test --release --workspace`,
   then `./build.sh` and `node scripts/plugins/catalog.mjs > /dev/null` (don't pipe it to `head`:
   that stops it before it writes), then `node --test scripts/plugins.test.mjs` (checks the window's
   layout against the engine and that every preset plays).

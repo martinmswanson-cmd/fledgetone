@@ -84,6 +84,10 @@ node ../../scripts/plugins/catalog.mjs      # refresh the plugin catalog
 cargo test --release -- --include-ignored   # engine tests
 ```
 
+The filters, shapers, envelopes, delay line, OTT and the wavetable machinery are in
+[`../fledge-dsp`](../fledge-dsp), shared with Fledgetone's other Rust plugins; both crates are
+members of the workspace in `engine/` (one `Cargo.lock`, one `target/`).
+
 Needs Rust with the `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`).
 The module has no imports and exports the `bb_*` plugin interface (see `src/abi.rs` and
 `scripts/plugins/bbplug.h`). Parameters keep their order: new ones are only ever added at the

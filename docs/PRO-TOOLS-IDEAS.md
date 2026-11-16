@@ -1,8 +1,8 @@
 # Pro tools to build: the list and the workflow plan
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
-have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Nothing here is
-started. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
+have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
+started (steps 1 and 2 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
 ## The list
@@ -63,11 +63,12 @@ GPL-3.0-or-later with no dependencies. It builds as `rlib` (a plain library) and
 `.wasm` the app loads through the `bb_*` interface in `src/abi.rs`). Phase 0 turns that one crate
 into a home for many:
 
-1. **Cargo workspace** in `engine/`, with Fledge Synth as its first member.
+1. **Cargo workspace** in `engine/`, with Fledge Synth as its first member. *Done 2026-11-16.*
 2. **`fledge-dsp`**: move the shared building blocks out of Fledge Synth's `dsp.rs`, `fx.rs` and
    `tables.rs` (oversampling, filters, FFT, envelopes, LFOs, band-limited tables).
    `tests/legacy_sound.rs` and `scripts/audio-check/repeat.cjs` prove Fledge Synth sounds exactly
-   as before.
+   as before. *Done 2026-11-16: `engine/fledge-dsp`. Every preset rendered through the old and
+   the new `fledge.wasm` at 44.1, 48 and 96 kHz came out the same sample for sample.*
 3. **A `Plugin` trait** that every plugin crate implements. It covers:
    - describing its parameters;
    - processing a block of audio, with an optional sidechain;

@@ -193,7 +193,7 @@ export const choiceIndex = (v: number, count: number, cap: number, exact = count
 export const bipolarValue = (x: number) => (Math.max(-1, Math.min(1, x)) + 1) / 2;
 export const bipolarOf = (v: number) => v * 2 - 1;
 
-// --- Pictures of the LFO shapes (as the engine draws them: engine/fledge-synth/src/dsp.rs) ---
+// --- Pictures of the LFO shapes (as the engine draws them: engine/fledge-dsp/src/lfo.rs) ---
 
 /**
  * LFO shape `shape` at `phase` (0..1), -1..1. Steps and Drift show a fixed example of their

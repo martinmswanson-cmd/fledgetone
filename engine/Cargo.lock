@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "fledge-dsp"
+version = "0.1.0"
+
+[[package]]
 name = "fledge-synth"
 version = "0.1.0"
+dependencies = [
+ "fledge-dsp",
+]

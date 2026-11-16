@@ -2,15 +2,15 @@
  * Fledge Synth's user table: a sound made into a wavetable. Single cycles are cut from the sound
  * (one cycle long at the pitch found in it, or a length chosen), N of them spread across it, each
  * resampled to 2048 samples, joined end to start and freed of DC; the synth then band-limits them
- * into its octave levels and levels them (engine/fledge-synth/src/tables.rs, user_table). The
+ * into its octave levels and levels them (engine/fledge-dsp/src/wavetable.rs, user_table). The
  * table travels in the synth's saved settings as 16-bit samples, deflated, in base64 (a share
  * link carries a lighter copy: 8 cycles of 256 samples in 8 bits). Plain maths, so Node can
  * unit-test it.
  */
 
-/** Samples per cycle the synth takes in (tables.rs USER_CYCLE) */
+/** Samples per cycle the synth takes in (wavetable.rs USER_CYCLE) */
 export const USER_CYCLE = 2048;
-/** The most cycles a table may have (tables.rs USER_FRAMES_MAX) */
+/** The most cycles a table may have (wavetable.rs USER_FRAMES_MAX) */
 export const USER_FRAMES_MAX = 64;
 /** "User table" in the oscillators' table menu (params.rs USER_TABLE) */
 export const USER_TABLE_INDEX = 16;

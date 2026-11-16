@@ -97,7 +97,9 @@ These parameters are choices. Set them by the option's name, for example
 
 ## Build fledge.wasm yourself
 
-The synth is written in Rust, with no dependencies. In `source/`:
+The synth is written in Rust, with no dependencies from anyone else: `source/fledge-synth` is the
+synth, built on `source/fledge-dsp` (its filters, shapers, envelopes and wavetables, a library
+you can use on its own). In `source/fledge-synth`:
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -106,7 +108,8 @@ cargo test --release       # the synth's tests
 ```
 
 Outside Fledgetone's repository, run the build line from `build.sh` and take the file from
-`target/wasm32-unknown-unknown/release/fledge_synth.wasm`. The module has no imports and exports
-the plain C functions listed in `source/src/abi.rs`, which `fledge-processor.js` calls.
+`source/target/wasm32-unknown-unknown/release/fledge_synth.wasm`. The module has no imports and
+exports the plain C functions listed in `source/fledge-synth/src/abi.rs`, which
+`fledge-processor.js` calls.
 
 {{LICENCE}}
