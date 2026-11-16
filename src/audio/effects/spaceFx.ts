@@ -5,6 +5,9 @@ import { writeTime } from './lightFx';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 import { INSERT_ROOM, insertRoomChannels, insertRoomChannelsSoon, ROOM_STYLES } from './roomIR';
 import { keepOn } from '../keepOn';
+import { decodeSound, useSoundLibrary } from '../soundLibrary';
+import { roomImpulse } from './busEffects';
+import { knowRecordedRooms } from '../effectTails';
 
 /**
  * The Delay and Reverb inserts: a track's own echoes and room, as against the shared master
@@ -144,7 +147,38 @@ export interface ReverbUnit extends SpaceUnit {
 /** Seconds a live Reverb insert's tail takes to come in once its first room is made (see createReverb). */
 const FIRST_TAIL_FADE = 0.03;
 
-/** input -> dry, plus input -> pre-delay -> convolver (the tail) -> tone low-pass -> wet. */
+// A recorded room's length, for how long a Reverb insert rings (effectTails.ts has no audio in it)
+knowRecordedRooms((soundId) => useSoundLibrary.getState().metas[soundId]?.seconds);
+
+/** Recorded rooms decoded ahead of an export, by sound and rate: an export's reverbs take theirs at once */
+const recordedReady = new Map<string, AudioBuffer>();
+
+/**
+ * Decode the recorded rooms an export's Reverb inserts play through, before its graph is built
+ * (which takes each at once). One that can't be read is left out: its reverb plays its designed
+ * room. Call the returned function once the render is over.
+ */
+export async function prepareRecordedRooms(soundIds: readonly string[], rate: number): Promise<() => void> {
+  const keys: string[] = [];
+  await Promise.all(
+    [...new Set(soundIds)].map(async (id) => {
+      try {
+        const key = `${id}@${rate}`;
+        recordedReady.set(key, await decodeSound(id, rate));
+        keys.push(key);
+      } catch {
+        // Not in this browser: the designed room stands in
+      }
+    })
+  );
+  return () => keys.forEach((k) => recordedReady.delete(k));
+}
+
+/**
+ * input -> dry, plus input -> pre-delay -> convolver (the tail) -> tone low-pass -> wet. The tail
+ * is a designed room `decay` long, or a recorded one (`room`: an impulse response in the sound
+ * library, played at the level the browser's convolver sets for it).
+ */
 export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   const input = new Tone.Gain(1);
   input.channelCount = 2;
@@ -181,31 +215,57 @@ export function createReverb(settings: TrackFx['reverb']): ReverbUnit {
   tone.connect(wet);
   wet.connect(out);
   let decay = -1;
+  let recorded: string | undefined;
+  let made = 0;
   let gone = false;
+  const play = (buffer: AudioBuffer, normalize: boolean) => {
+    const first = !convolver.buffer;
+    // (The level is the convolver's to set for a recording, ours for a designed room)
+    convolver.normalize = normalize;
+    convolver.buffer = buffer;
+    if (first && gate) {
+      const at = raw.currentTime;
+      gate.gain.setValueAtTime(0, at);
+      gate.gain.linearRampToValueAtTime(1, at + FIRST_TAIL_FADE);
+    }
+  };
   const set: ReverbUnit['set'] = (s, ramp) => {
-    // A new tail only when its length changes (to the nearest 50 ms)
+    // A new tail only when its room changes: another recording, or a designed room of another
+    // length (to the nearest 50 ms)
     const d = Math.round(s.decay * 20) / 20;
-    if (d !== decay) {
-      decay = d;
-      // At once for an export (its rooms made beforehand, a little at a time: prepareRooms in
-      // exportWav.ts); live, a few milliseconds at a time (a long room takes a few tenths of a
-      // second, more away from 44.1 kHz, where it's resampled), the tail before playing on until
-      // it's ready (Play waits for a first one, see liveTracks.ts liveSoundsReady)
-      if (offline) convolver.buffer = reverbImpulse(raw, d);
-      else
-        void reverbImpulseSoon(raw, d).then((buffer) => {
-          if (decay !== d || gone) return;
-          const first = !convolver.buffer;
-          convolver.buffer = buffer;
-          if (first && gate) {
-            const at = raw.currentTime;
-            gate.gain.setValueAtTime(0, at);
-            gate.gain.linearRampToValueAtTime(1, at + FIRST_TAIL_FADE);
+    if (s.room !== recorded || (!s.room && d !== decay)) {
+      recorded = s.room;
+      decay = s.room ? -1 : d;
+      const mine = ++made;
+      // At once for an export (its rooms made beforehand, a little at a time: prepareRooms and
+      // prepareRecordedRooms in exportWav.ts); live, a few milliseconds at a time (a long room
+      // takes a few tenths of a second, more away from 44.1 kHz, where it's resampled), the tail
+      // before playing on until it's ready (Play waits for a first one, see liveTracks.ts liveSoundsReady)
+      const designed = () => {
+        if (offline) play(reverbImpulse(raw, d), false);
+        else
+          void reverbImpulseSoon(raw, d).then((buffer) => {
+            if (mine === made && !gone) play(buffer, false);
+          });
+      };
+      if (!s.room) designed();
+      else if (offline) {
+        const source = recordedReady.get(`${s.room}@${raw.sampleRate}`);
+        if (source) play(roomImpulse(source, input.context), true);
+        else designed();
+      } else
+        void decodeSound(s.room, raw.sampleRate).then(
+          (source) => {
+            if (mine === made && !gone) play(roomImpulse(source, input.context), true);
+          },
+          // Not in this browser any more: the designed room stands in
+          () => {
+            if (mine === made && !gone) designed();
           }
-        });
+        );
     }
     // (The room answers after its own short pre-delay: the knob's is the whole of it, where it can be)
-    setParam(pre.delayTime, Math.max(0, Math.min(0.2, s.preDelay / 1000) - ROOM_STYLES[INSERT_ROOM].preDelay), ramp);
+    setParam(pre.delayTime, Math.max(0, Math.min(0.2, s.preDelay / 1000) - (s.room ? 0 : ROOM_STYLES[INSERT_ROOM].preDelay)), ramp);
     setParam(tone.frequency, s.tone, ramp);
     const [w, dr] = mixGains(s.mix);
     setParam(wet.gain, w, ramp);

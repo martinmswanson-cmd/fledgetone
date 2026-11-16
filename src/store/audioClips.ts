@@ -218,10 +218,12 @@ export function audioLengthLimitAt(clip: Pick<Clip, 'startBar' | 'audio'>, sound
 }
 
 /** The sounds a project refers to: audio clips (in the clip launcher's slots too), Slicer tracks and Sampler tracks (each id once). */
-export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi' | 'slots'>>; masterFx?: { room?: string } }): string[] {
+export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi' | 'slots'> & { fx?: { reverb?: { room?: string } } }>; masterFx?: { room?: string } }): string[] {
   const ids = new Set<string>();
   // The recorded room the master reverb plays through
   if (p.masterFx?.room) ids.add(p.masterFx.room);
+  // ...and the ones the tracks' own Reverb inserts play through
+  for (const t of p.tracks) if (t.fx?.reverb?.room) ids.add(t.fx.reverb.room);
   const clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>> = [...p.clips, ...p.tracks.flatMap((t) => (t.slots ?? []).map((s) => s.clip))];
   for (const c of clips) {
     // A take folder keeps every take's sound, not only the one its comp starts with
@@ -248,7 +250,7 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
 }
 
 /** What can play sounds from the library: a song, or a saved sound's settings as a track. */
-export type SoundHolders = { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi' | 'slots'>>; masterFx?: { room?: string } };
+export type SoundHolders = { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi' | 'slots'> & { fx?: { reverb?: { room?: string } } }>; masterFx?: { room?: string } };
 
 /**
  * `p` with every sound it refers to by an id in `moved` pointed at the id `moved` gives it
@@ -278,6 +280,8 @@ export function withSoundsMoved<T extends SoundHolders>(p: T, moved: ReadonlyMap
     const next = { ...t };
     if (t.sample?.soundId !== undefined && moved.has(t.sample.soundId)) next.sample = { ...t.sample, soundId: to(t.sample.soundId) };
     if (t.slicer && moved.has(t.slicer.soundId)) next.slicer = { ...t.slicer, soundId: to(t.slicer.soundId) };
+    const room = t.fx?.reverb?.room;
+    if (room !== undefined && moved.has(room)) next.fx = { ...t.fx, reverb: { ...t.fx!.reverb, room: to(room) } };
     if (t.rack?.pads.some((pad) => pad.soundId !== undefined && moved.has(pad.soundId))) {
       next.rack = { ...t.rack, pads: t.rack.pads.map((pad) => (pad.soundId !== undefined && moved.has(pad.soundId) ? { ...pad, soundId: to(pad.soundId) } : pad)) };
     }

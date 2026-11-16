@@ -28,6 +28,12 @@ export function delaySeconds(subdivision: string, bpm: number): number {
   return ((BEATS[subdivision] ?? 0.5) * 60) / bpm;
 }
 
+/** How long a recorded room's recording is (seconds), where that's known: set by the sound library's side (spaceFx.ts), since this file has no audio in it. */
+let recordedRoomSeconds: (soundId: string) => number | undefined = () => undefined;
+export function knowRecordedRooms(seconds: (soundId: string) => number | undefined): void {
+  recordedRoomSeconds = seconds;
+}
+
 /** How many repeats an echo fed back by `feedback` takes to fall 60 dB (at least one). */
 export const echoRepeats = (feedback: number): number => (feedback > 0.001 ? Math.max(1, Math.log(0.001) / Math.log(Math.min(0.999, feedback))) : 1);
 
@@ -39,7 +45,10 @@ export const echoRepeats = (feedback: number): number => (feedback > 0.001 ? Mat
  */
 export function insertTailSeconds(fx: Partial<TrackFx>, bpm: number, max = 60, varies: ReadonlySet<string> = new Set()): number {
   let tail = 0;
-  if (fx.reverb?.on && (fx.reverb.mix > 0 || varies.has('reverb.mix'))) tail = Math.max(tail, roomSeconds(INSERT_ROOM, fx.reverb.decay) + (varies.has('reverb.preDelay') ? 0.2 : fx.reverb.preDelay / 1000));
+  // (A recorded room rings as long as its recording, up to ROOM_MAX_SECONDS: taken as that long
+  // where the recording's length isn't known here)
+  if (fx.reverb?.on && (fx.reverb.mix > 0 || varies.has('reverb.mix')))
+    tail = Math.max(tail, (fx.reverb.room ? Math.min(ROOM_MAX_SECONDS, recordedRoomSeconds(fx.reverb.room) ?? ROOM_MAX_SECONDS) : roomSeconds(INSERT_ROOM, fx.reverb.decay)) + (varies.has('reverb.preDelay') ? 0.2 : fx.reverb.preDelay / 1000));
   if (fx.echo?.on && (fx.echo.mix > 0 || varies.has('echo.mix'))) {
     const step = (ECHO_BEATS[fx.echo.time] ?? 0.5) * (60 / Math.max(1, bpm));
     const fb = Math.min(ECHO_FEEDBACK_MAX, varies.has('echo.feedback') ? ECHO_FEEDBACK_MAX : fx.echo.feedback);

@@ -150,6 +150,12 @@ export interface TrackFx {
     tone: number;
     /** Wet mix, 0 to 1 */
     mix: number;
+    /**
+     * A recorded room (an impulse response in the sound library) the track's reverb plays through,
+     * in place of its designed one; absent: designed, `decay` long. The recording sets the tail's
+     * length, so `decay` is set aside while one is in use.
+     */
+    room?: string;
   };
   /** Parametric EQ: up to PEQ_MAX_BANDS bands of any shape, drawn and dragged on a graph. */
   peq: {
@@ -386,6 +392,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       preDelay: num(rev.preDelay, d.reverb.preDelay, 0, REVERB_PREDELAY_MAX),
       tone: num(rev.tone, d.reverb.tone, ECHO_TONE_MIN, ECHO_TONE_MAX),
       mix: num(rev.mix, d.reverb.mix, 0, 1),
+      ...(typeof rev.room === 'string' && rev.room ? { room: rev.room } : {}),
     },
     human: {
       on: hum.on === true,

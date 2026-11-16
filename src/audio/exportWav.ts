@@ -26,7 +26,7 @@ import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds, designedDecay, ROOM_MAX_SECONDS } from './effects/busEffects';
 import { prepareRooms, roomSeconds, STUDIO_DECAY, type RoomWish } from './effects/roomIR';
-import { insertRoomDecay } from './effects/spaceFx';
+import { insertRoomDecay, prepareRecordedRooms } from './effects/spaceFx';
 import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
 import { releaseSeconds, soundingNotes } from './auditionMath';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
@@ -1269,6 +1269,8 @@ async function renderGraphHeld(
   // The rooms its reverbs and instruments take, made first a little at a time (prepareRooms), so
   // building the graph, which takes them at once, doesn't hold up the page
   const releaseRooms = await prepareRooms(sampleRate, roomWishes(tracks, masterFx), signal);
+  // ...and the recorded rooms its tracks' Reverb inserts play through, decoded
+  const releaseRecorded = await prepareRecordedRooms(tracks.flatMap((t) => (t.fx?.reverb?.on && t.fx.reverb.room ? [t.fx.reverb.room] : [])), sampleRate);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
   // The global context is this render's while its graph is built (a cancel before then still lets go of the rooms)
@@ -1280,6 +1282,7 @@ async function renderGraphHeld(
     throw err;
   } finally {
     releaseRooms();
+    releaseRecorded();
   }
   // The sound comes out as late as the limiter actually in place makes it
   if (withMaster) plan = await settleLatency(plan, graph.lookahead);

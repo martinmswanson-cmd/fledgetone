@@ -398,7 +398,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
  * keeps its first two), its leading silence taken off so the hall answers on time, and no longer
  * than ROOM_MAX_SECONDS, faded at the cut.
  */
-function roomImpulse(source: AudioBuffer, context: Tone.BaseContext): AudioBuffer {
+export function roomImpulse(source: AudioBuffer, context: Tone.BaseContext): AudioBuffer {
   const rate = source.sampleRate;
   const channels = Math.min(2, source.numberOfChannels);
   let peak = 0;
