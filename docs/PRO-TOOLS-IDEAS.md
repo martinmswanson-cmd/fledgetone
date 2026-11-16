@@ -63,7 +63,7 @@ last two are probable gaps: the app's own inserts were not checked feature by fe
 | # | Item | What it does | Where | Size | Needs |
 |---|------|--------------|-------|------|-------|
 | 20 | Sidechain gate (done 2026-11-16: Fledge Gate, `engine/fledge-gate`) | A gate that opens on another track's sound (a pad chopped by the hats, a bass that only sounds with the kick). Only Fledge Compressor listens to a sidechain today | Rust | S | 6 |
-| 21 | Vocoder with a carrier from another track | The two vocoders in the catalog are in the C families and can't take a second input, which is what a vocoder is normally used for: a voice on one track shaping a synth on another. A new one on the sidechain input | Rust | M | 6 |
+| 21 | Vocoder with a carrier from another track (done 2026-11-16: Fledge Vocoder, `engine/fledge-vocoder`; the voice comes from the sidechain) | The two vocoders in the catalog are in the C families and can't take a second input, which is what a vocoder is normally used for: a voice on one track shaping a synth on another. A new one on the sidechain input | Rust | M | 6 |
 | 22 | Spectrum analyser | A frequency display to put on any track or the master, with a held peak and a comparison against another track. Item 3 covers stereo and loudness metering, not this | Both | S | 0 |
 | 23 | Tuner | Shows the note and how many cents off, for a guitar, a bass or a voice before recording (the pitch tracking in `vocalTune.ts` is a start) | Host | S | — |
 | 24 | Beat repeat / stutter | Tempo-synced repeats, gates and tape stops played live or drawn in a lane (Ableton's Beat Repeat, FL's Gross Beat). The catalog has glitch shifters and doublers, nothing in time with the song | Rust | M | 0 |

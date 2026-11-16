@@ -24,6 +24,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-vocoder",
+    "label": "Fledge Vocoder",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-vocoder (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",

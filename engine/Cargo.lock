@@ -38,6 +38,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fledge-vocoder"
+version = "0.1.0"
+dependencies = [
+ "fledge-dsp",
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-wasm"
 version = "0.1.0"
 dependencies = [

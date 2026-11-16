@@ -104,6 +104,19 @@ test('a gate opens on its sidechain, and shuts without one sounding', () => {
   p.message({ type: 'destroy' });
 });
 
+test('a vocoder plays its track shaped by the sidechain, and passes it untouched without one', () => {
+  assert.equal(family('fledge-vocoder').plugins[0].sidechain, true);
+  const { p } = make('fledge-vocoder', 'Fledge Vocoder');
+  // No voice connected: the track as it is
+  assert.ok(Math.abs(gain(p, 0.3, 'loud')) < 0.01);
+  p.message({ type: 'sidechain', connected: true });
+  // The voice (60 Hz) and the track (1 kHz) are in different bands: next to nothing comes out
+  assert.ok(gain(p, 1, 'loud') < -20);
+  // ...and nothing at all under a silent voice
+  assert.ok(gain(p, 2, 'silent') < -80);
+  p.message({ type: 'destroy' });
+});
+
 test('a sidechain connected from the start, and kept through a preset switch', () => {
   const { p } = make('fledge-compressor', 'Fledge Compressor', { sidechain: true });
   assert.ok(gain(p, 1, 'loud') < -6);
