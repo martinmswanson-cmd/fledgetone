@@ -16,6 +16,15 @@ name = "fledge-dsp"
 version = "0.1.0"
 
 [[package]]
+name = "fledge-gate"
+version = "0.1.0"
+dependencies = [
+ "fledge-dsp",
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-plugin"
 version = "0.1.0"
 

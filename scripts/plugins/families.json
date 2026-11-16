@@ -16,6 +16,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-gate",
+    "label": "Fledge Gate",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-gate (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",

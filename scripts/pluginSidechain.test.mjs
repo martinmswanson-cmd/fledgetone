@@ -93,6 +93,17 @@ test('a compressor ducks to its sidechain only while one is connected', () => {
   p.message({ type: 'destroy' });
 });
 
+test('a gate opens on its sidechain, and shuts without one sounding', () => {
+  assert.equal(family('fledge-gate').plugins[0].sidechain, true);
+  const { p } = make('fledge-gate', 'Fledge Gate', { sidechain: true });
+  // The quiet tone (-40 dBFS) is at the threshold; the loud 60 Hz key opens the gate fully
+  assert.ok(Math.abs(gain(p, 0.5, 'loud')) < 0.05);
+  // The other track goes silent: shut
+  assert.ok(gain(p, 2, 'silent') < -60);
+  assert.ok(Math.abs(gain(p, 0.5, 'loud')) < 0.05);
+  p.message({ type: 'destroy' });
+});
+
 test('a sidechain connected from the start, and kept through a preset switch', () => {
   const { p } = make('fledge-compressor', 'Fledge Compressor', { sidechain: true });
   assert.ok(gain(p, 1, 'loud') < -6);
@@ -124,8 +135,8 @@ test('the same sidechain gives the same output every time', () => {
 });
 
 test('a plugin that does not listen ignores a sidechain', () => {
-  const fam = PLUGIN_FAMILIES.find((f) => f.family !== 'fledge-compressor' && f.plugins.some((p) => !p.instrument));
-  const info = fam.plugins.find((p) => !p.instrument);
+  const fam = PLUGIN_FAMILIES.find((f) => f.plugins.some((p) => !p.instrument && !p.sidechain));
+  const info = fam.plugins.find((p) => !p.instrument && !p.sidechain);
   const run = (connected) => {
     scope.currentFrame = 0;
     const { p } = make(fam.family, info.name, { followInput: true });

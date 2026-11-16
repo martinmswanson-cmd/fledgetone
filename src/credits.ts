@@ -178,6 +178,7 @@ export interface PluginCredit {
 const MIT = '[MIT](https://opensource.org/license/mit)';
 export const PLUGIN_CREDITS: PluginCredit[] = [
   { family: 'fledge', made: "Fledge Synth, Fledgetone's own synthesizer (its Rust source is in engine/fledge-synth and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
+  { family: 'fledge-gate', made: "Fledge Gate, Fledgetone's own gate with a sidechain (its Rust source is in engine/fledge-gate and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
   { family: 'fledge-compressor', made: "Fledge Compressor, Fledgetone's own compressor with a sidechain (its Rust source is in engine/fledge-compressor and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
   {
     family: 'airwindows',

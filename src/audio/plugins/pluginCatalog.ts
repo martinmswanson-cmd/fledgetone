@@ -49,6 +49,29 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-gate",
+  "label": "Fledge Gate",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-gate.wasm",
+  "bytes": 81597,
+  "hash": "559f0fc7b7dc",
+  "plugins": [
+   {
+    "name": "Fledge Gate",
+    "category": "Dynamics",
+    "about": "A gate with a sidechain: it lets this track through while what it listens to is over the threshold, and turns it down by the Range while it isn't. By itself it cleans up a recording. Pick another track under \"Sidechain from\" and this track is chopped to that one's rhythm (a pad on the hats, a bass with the kick); Flip silences it under the other track instead. Hold and hysteresis keep it from chattering; no added delay.",
+    "sidechain": true,
+    "tags": [
+     "gate",
+     "sidechain",
+     "chop",
+     "noise gate"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",
