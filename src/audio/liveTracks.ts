@@ -372,6 +372,11 @@ export function liveTrackSpectrum(trackId: string, out: Float32Array): number {
   return live.get(trackId)?.strip.spectrum(out) ?? 0;
 }
 
+/** A track's sound now (its last samples, after its fader) into `out`; how many, or 0 if the track isn't live or is resting. */
+export function liveTrackWaveform(trackId: string, out: Float32Array): number {
+  return live.get(trackId)?.strip.waveform(out) ?? 0;
+}
+
 /** A track's multiband compressor gain reduction per band (dB), or null. */
 export function liveMbcReduction(trackId: string): [number, number, number] | null {
   return live.get(trackId)?.strip.mbcReduction() ?? null;

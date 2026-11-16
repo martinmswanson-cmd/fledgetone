@@ -120,6 +120,8 @@ export interface TrackStrip {
   peak: () => number;
   /** The track's spectrum now, in dB per bin, into `out` (at least 2048 long); returns the bin count. Built on first use. */
   spectrum: (out: Float32Array) => number;
+  /** The track's sound now, its last samples into `out` (as many as fit, up to 4096); returns how many (0 while asleep). */
+  waveform: (out: Float32Array) => number;
   /** The multiband compressor's gain reduction per band now (dB), or null when it's off. */
   mbcReduction: () => [number, number, number] | null;
   /** The song's tempo, which the Delay insert's echoes follow. */
@@ -1265,6 +1267,13 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects, opts: {
       const node = spectrumTap();
       if (out.length >= node.frequencyBinCount) node.getFloatFrequencyData(out.subarray(0, node.frequencyBinCount) as Float32Array<ArrayBuffer>);
       return node.frequencyBinCount;
+    },
+    waveform: (out) => {
+      if (!awake) return 0;
+      const node = spectrumTap();
+      const n = Math.min(out.length, node.fftSize);
+      node.getFloatTimeDomainData(out.subarray(0, n) as Float32Array<ArrayBuffer>);
+      return n;
     },
     mbcReduction: () => mbc?.reduction() ?? null,
     peak: () => {

@@ -24,6 +24,8 @@ import { ClipContextMenu } from './ClipContextMenu';
 import { TakesDialog } from './TakesDialog';
 import { Modal } from './Modal';
 import { PluginPermissionBar, PluginUrlDialog, PluginWindow } from './PluginDialogs';
+import { AnalyserWindow } from './AnalyserWindow';
+import { TunerWindow } from './TunerWindow';
 import { PluginBrowser } from './PluginBrowser';
 // Registers the built-in plugins' window
 import './BuiltinPluginPanel';
@@ -69,6 +71,8 @@ onPluginError((message) => showToast(message));
 const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"], [data-agent-panel] button:focus-visible';
 
 const closePluginWindow = () => useUiStore.getState().setPluginWindow(null);
+const closeAnalyser = () => useUiStore.getState().setAnalyserOpen(false);
+const closeTuner = () => useUiStore.getState().setTunerOpen(false);
 
 interface Marquee {
   x0: number;
@@ -189,6 +193,8 @@ export const Timeline: React.FC = () => {
   const tuneClipId = useUiStore((s) => s.tuneClipId);
   const takesClipId = useUiStore((s) => s.takesClipId);
   const pluginWindow = useUiStore((s) => s.pluginWindow);
+  const analyserOpen = useUiStore((s) => s.analyserOpen);
+  const tunerOpen = useUiStore((s) => s.tunerOpen);
   const pluginBrowser = useUiStore((s) => s.pluginBrowser);
   const pluginDialog = useUiStore((s) => s.pluginDialog);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -581,6 +587,8 @@ export const Timeline: React.FC = () => {
         />
       )}
       {pluginDialog && <PluginUrlDialog trackId={pluginDialog.trackId} onClose={() => useUiStore.getState().setPluginDialog(null)} />}
+      {analyserOpen && <AnalyserWindow onClose={closeAnalyser} />}
+      {tunerOpen && <TunerWindow onClose={closeTuner} />}
       {pluginWindow && (
         <PluginWindow key={pluginWindow.pluginId} trackId={pluginWindow.trackId} pluginId={pluginWindow.pluginId} onClose={closePluginWindow} />
       )}

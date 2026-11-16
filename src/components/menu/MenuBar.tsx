@@ -347,6 +347,8 @@ const MENUS: MenuDef[] = [
           ui().setInspectorTab('track');
           void reveal('[aria-label="Drum Designer"]');
         } },
+        { label: 'Spectrum analyser', run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setAnalyserOpen(!ui().analyserOpen)), checked: ui().analyserOpen, title: 'How loud a track, or everything, is at each frequency: with held peaks, and a second sound to compare', divider: true },
+        { label: 'Tuner', run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setTunerOpen(!ui().tunerOpen)), checked: ui().tunerOpen, title: 'The note a sound is nearest to and how far off: for a guitar, a bass or a voice, from the microphone or a track' },
         { label: 'Record from the microphone', run: () => press('button[title^="Record from the microphone"], button[title^="Stop recording"]'), divider: true },
         { label: 'Piano (play and type notes with the keyboard)', run: () => usePianoPanel.getState().setOpen(!usePianoPanel.getState().open) },
         { label: 'MIDI keyboard…', run: () => press('button[title^="MIDI input"]') },

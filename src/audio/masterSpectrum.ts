@@ -50,3 +50,18 @@ export function readMasterBands(out: Float32Array): boolean {
   bandsFromBins(bins, bins.length, analyser.context.sampleRate, out);
   return true;
 }
+
+/** The master's spectrum as the analyser has it (dB per bin) into `out`; the bin count, or 0 when not watching. */
+export function readMasterBins(out: Float32Array): number {
+  if (!analyser || out.length < analyser.frequencyBinCount) return 0;
+  analyser.getFloatFrequencyData(out.subarray(0, analyser.frequencyBinCount) as Float32Array<ArrayBuffer>);
+  return analyser.frequencyBinCount;
+}
+
+/** The master's sound now (its last samples) into `out`; how many, or 0 when not watching. */
+export function readMasterWaveform(out: Float32Array): number {
+  if (!analyser) return 0;
+  const n = Math.min(out.length, analyser.fftSize);
+  analyser.getFloatTimeDomainData(out.subarray(0, n) as Float32Array<ArrayBuffer>);
+  return n;
+}
