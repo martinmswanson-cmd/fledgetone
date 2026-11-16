@@ -19,6 +19,8 @@ import {
 } from '../../audio/plugins/fledgeLayout';
 import { fledgeWave, setPictureTable, type FledgeWave } from '../../audio/plugins/fledgeWave';
 import { unpackUserTable, userTableKb, USER_TABLE_INDEX, TABLE_FRAME_COUNTS } from '../../audio/plugins/userTable';
+import { defaultHarmonics, harmonicUserTable, type Harmonics } from '../../audio/plugins/harmonicTable';
+import { HarmonicEditor } from './HarmonicEditor';
 import { userTableFromSound } from '../../store/resampleActions';
 import { tempoAt } from '../../audio/tempoMap';
 import { audioSourceSeconds } from '../../store/audioClips';
@@ -355,6 +357,29 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
       setMaking(false);
     }
   };
+  // The table drawn as harmonics (HarmonicEditor): which oscillator's row has the drawing open, and
+  // the drawing as it's being changed (the synth takes it when a change is finished)
+  const [drawFor, setDrawFor] = useState<'A' | 'B' | null>(null);
+  const [draft, setDraft] = useState<Harmonics | null>(null);
+  const giving = useRef<Promise<unknown>>(Promise.resolve());
+  const pending = useRef(0);
+  useEffect(() => {
+    // (The table changed elsewhere, an undo say: the drawing follows it)
+    if (!pending.current) setDraft(null);
+  }, [userTable]);
+  const harmonics = draft ?? userTable?.harmonics ?? null;
+  const draw = (next: Harmonics, done: boolean, o: 'A' | 'B') => {
+    setDraft(next);
+    if (!done) return;
+    pending.current++;
+    // (One after another, so the last change is the one the synth ends up with)
+    giving.current = giving.current
+      .then(async () => editPluginTable(controls, await harmonicUserTable(next), o))
+      .catch(() => {})
+      .finally(() => {
+        pending.current--;
+      });
+  };
   // Matrix slots 9 to 16, shown on request (or while one is used)
   const [moreSlots, setMoreSlots] = useState(false);
   useEffect(() => {
@@ -432,12 +457,24 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
             <button type="button" disabled={making} onClick={() => void makeTable(o)} className="h-6 px-2 rounded border border-forge-border hover:text-forge-text hover:border-fuchsia-400 disabled:opacity-50" title="Make the table from the selected audio clip: single cycles at its pitch, spread from its start to its end">
               {making ? 'Making…' : 'From the selected clip'}
             </button>
+            <button
+              type="button"
+              onClick={() => setDrawFor(drawFor === o ? null : o)}
+              aria-expanded={drawFor === o}
+              className={`h-6 px-2 rounded border hover:text-forge-text hover:border-fuchsia-400 ${drawFor === o ? 'border-fuchsia-400 text-forge-text' : 'border-forge-border'}`}
+              title="Build the table from sine waves: draw the level of each harmonic, up to four drawings that Position morphs through"
+            >
+              Draw harmonics
+            </button>
             {userTable && (
               <button type="button" onClick={() => void editPluginTable(controls, null)} className="h-6 px-2 rounded border border-forge-border hover:text-forge-text hover:border-red-400" title="Take the table away (Undo brings it back)">
                 Remove
               </button>
             )}
           </div>
+        )}
+        {pick(c.table) === USER_TABLE_INDEX && drawFor === o && (
+          <HarmonicEditor value={harmonics ?? defaultHarmonics()} replaces={userTable && !userTable.harmonics && !draft ? userTable.name : undefined} onChange={(next, done) => draw(next, done, o)} onClose={() => setDrawFor(null)} />
         )}
         {row(c.tone)}
         <div className="flex flex-wrap gap-x-0.5">

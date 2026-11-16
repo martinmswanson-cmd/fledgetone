@@ -26,6 +26,24 @@ const MAX_DATA = Math.ceil((USER_FRAMES_MAX * USER_CYCLE * 2 * 4) / 3) + 64;
 export const LINK_FRAMES = 8;
 export const LINK_CYCLE = 256;
 
+/** The most harmonics a drawn table's drawing has, and the most drawings (see harmonicTable.ts) */
+export const HARMONICS_MAX = 64;
+export const DRAWINGS_MAX = 4;
+/**
+ * Where each harmonic of a drawn table starts in its cycle: all together (the classic saw and
+ * square shapes), every second one turned over, or spread out (the same tone; a drawing with
+ * strong high harmonics then has lower peaks, instead of piling up into a spike once a cycle).
+ */
+export type HarmonicPhase = 'together' | 'alternate' | 'spread';
+const PHASES: readonly HarmonicPhase[] = ['together', 'alternate', 'spread'];
+
+/** A table drawn as harmonics (harmonicTable.ts): each drawing a list of bar heights (0 silent, 1 full), the 1st harmonic first. */
+export interface Harmonics {
+  v: 1;
+  drawings: number[][];
+  phase: HarmonicPhase;
+}
+
 /** A user table as the synth's settings keep it. */
 export interface UserTable {
   v: 1;
@@ -41,12 +59,26 @@ export interface UserTable {
   bits: 8 | 16;
   /** The samples, cycle after cycle, little-endian, deflated, in base64 */
   data: string;
+  /** The harmonics it was drawn as, for a table made that way (harmonicTable.ts): opened again to change it */
+  harmonics?: Harmonics;
 }
 
 /** How the table is cut from the sound: one cycle at its pitch, or this many samples a cycle. */
 export type CycleChoice = 'pitch' | number;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+
+/** A drawn table's drawings from a saved file or link, tidied, or undefined if they aren't any. */
+export function normalizeHarmonics(raw: unknown): Harmonics | undefined {
+  if (!isObj(raw) || raw.v !== 1 || !Array.isArray(raw.drawings) || !raw.drawings.length) return undefined;
+  const drawings: number[][] = [];
+  for (const d of raw.drawings.slice(0, DRAWINGS_MAX)) {
+    if (!Array.isArray(d) || !d.length) return undefined;
+    drawings.push(d.slice(0, HARMONICS_MAX).map((h) => (typeof h === 'number' && Number.isFinite(h) ? Math.round(Math.max(0, Math.min(1, h)) * 1000) / 1000 : 0)));
+  }
+  const phase = PHASES.includes(raw.phase as HarmonicPhase) ? (raw.phase as HarmonicPhase) : 'together';
+  return { v: 1, drawings, phase };
+}
 
 /** A table from a saved file or link, tidied, or undefined if it isn't one (it's then left out). */
 export function normalizeUserTable(raw: unknown): UserTable | undefined {
@@ -58,7 +90,8 @@ export function normalizeUserTable(raw: unknown): UserTable | undefined {
   if (raw.bits !== 8 && raw.bits !== 16) return undefined;
   if (typeof raw.data !== 'string' || !raw.data || raw.data.length > MAX_DATA || !/^[A-Za-z0-9+/]+=*$/.test(raw.data)) return undefined;
   const name = typeof raw.name === 'string' && raw.name ? raw.name.slice(0, 60) : 'User table';
-  return { v: 1, name, ...(raw.nameFromFile === true ? { nameFromFile: true as const } : {}), frames, size, bits: raw.bits, data: raw.data };
+  const harmonics = normalizeHarmonics(raw.harmonics);
+  return { v: 1, name, ...(raw.nameFromFile === true ? { nameFromFile: true as const } : {}), frames, size, bits: raw.bits, data: raw.data, ...(harmonics ? { harmonics } : {}) };
 }
 
 // --- An FFT, for resampling cycles without aliasing ---
@@ -405,8 +438,9 @@ export async function linkUserTable(table: UserTable): Promise<UserTable | null>
     picked.set(cycles.subarray(f * USER_CYCLE, (f + 1) * USER_CYCLE), k * USER_CYCLE);
   }
   const light = await packUserTable(picked, n, table.name, LINK_CYCLE, 8);
-  // (Its name's mark goes with it: the link leaves out a name made from a file's, see ownFiles.ts)
-  return table.nameFromFile ? { ...light, nameFromFile: true } : light;
+  // (Its name's mark goes with it: the link leaves out a name made from a file's, see ownFiles.ts;
+  // and its drawing, a few numbers)
+  return { ...light, ...(table.nameFromFile ? { nameFromFile: true as const } : {}), ...(table.harmonics ? { harmonics: table.harmonics } : {}) };
 }
 
 /** How big a table is in a saved song, in kB (for the panel). */

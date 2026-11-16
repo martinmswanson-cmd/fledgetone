@@ -2,7 +2,7 @@
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
 have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
-started (steps 1 to 4 and 6 are done), and M1 (#6) is done for the Rust plugins; nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
+started (steps 1 to 4 and 6 are done), and M1 (#6, for the Rust plugins) and M3 (the harmonic editor) are done; nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
 ## The list
@@ -144,7 +144,7 @@ into a home for many:
 | M0 Foundations | Phase 0 | Everything else builds on it |
 | M1 Sidechain | #6 | Goes into the adapter while it's new. *Done 2026-11-16 for Rust plugins: a "Sidechain from" picker on any plugin that listens to one, live, in exports, stems and freezes, and Fledge Compressor (`engine/fledge-compressor`) as the first. The C families are not rebuilt (their compressors have no key input), so the existing plugins don't listen yet.* |
 | M2 Racks | #12, then #13 and #14 | Layering for every existing instrument; the Effect Rack and pads reuse it |
-| M3 Harmonic editor | #8 first step | Sine-wave sound design for little work, into Fledge Synth |
+| M3 Harmonic editor | #8 first step | Sine-wave sound design for little work, into Fledge Synth. *Done 2026-11-16: **Draw harmonics** on the User table (up to 64 harmonics, four drawings that Position morphs through; levels, with three ways to line the phases up rather than a phase for each).* |
 | M4 FM operator synth | #7 | The first new Rust instrument; proves the per-plugin workflow |
 | M5 Modulators | #10 | Brings LFOs and followers to every setting; the patcher needs it |
 | M6 Bass-music mixing | #1, #2, #18 | The core of dubstep and EDM mixes |
