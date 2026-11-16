@@ -8,8 +8,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge.wasm",
-  "bytes": 273322,
-  "hash": "470911435202",
+  "bytes": 273397,
+  "hash": "87b0557c790e",
   "plugins": [
    {
     "name": "Fledge Synth",
@@ -31,8 +31,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-compressor.wasm",
-  "bytes": 81988,
-  "hash": "00239c4ee8e5",
+  "bytes": 82071,
+  "hash": "4887fce34725",
   "plugins": [
    {
     "name": "Fledge Compressor",
@@ -54,8 +54,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-gate.wasm",
-  "bytes": 81597,
-  "hash": "559f0fc7b7dc",
+  "bytes": 81672,
+  "hash": "c4eb566c119b",
   "plugins": [
    {
     "name": "Fledge Gate",
@@ -77,8 +77,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-vocoder.wasm",
-  "bytes": 83201,
-  "hash": "e561583407df",
+  "bytes": 83284,
+  "hash": "8f2beecb07e4",
   "plugins": [
    {
     "name": "Fledge Vocoder",
@@ -91,6 +91,31 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
      "voice",
      "robot",
      "talking synth"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-repeat",
+  "label": "Fledge Repeat",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-repeat.wasm",
+  "bytes": 83411,
+  "hash": "0e4c4bad8266",
+  "plugins": [
+   {
+    "name": "Fledge Repeat",
+    "category": "Effects",
+    "about": "A beat repeat in time with the song: while it's on, the slice of sound that comes in next (a 16th note, say) plays again and again in place of the track. A stutter, a drum roll, a glitch. Switch it on with Repeat (draw it in an automation lane), or let Every do it by itself at the end of every bar or every few bars, as a fill into the next phrase. Gate cuts each repeat short, Decay fades them, Pitch moves each one up or down. No added delay.",
+    "transport": true,
+    "tags": [
+     "beat repeat",
+     "stutter",
+     "glitch",
+     "roll",
+     "fill",
+     "tempo"
     ]
    }
   ]

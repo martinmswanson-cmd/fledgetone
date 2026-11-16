@@ -29,6 +29,14 @@ name = "fledge-plugin"
 version = "0.1.0"
 
 [[package]]
+name = "fledge-repeat"
+version = "0.1.0"
+dependencies = [
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
 name = "fledge-synth"
 version = "0.1.0"
 dependencies = [

@@ -23,6 +23,8 @@ export interface BuiltinPluginInfo {
   instrument?: boolean;
   /** Listens to a sidechain when a track is picked for it (another track's sound, to follow rather than to treat) */
   sidechain?: boolean;
+  /** An effect that follows the song: it's told the tempo and the position on every beat (see createPluginChain) */
+  transport?: boolean;
   /** The family's own groupings ("Recommended", "Basic", "Latest") */
   tags?: string[];
   /**

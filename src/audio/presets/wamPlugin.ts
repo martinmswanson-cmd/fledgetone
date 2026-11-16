@@ -362,6 +362,8 @@ export function createPluginChain(
   const loaded: Array<{ plugin: WamPlugin; inst: WamInstance }> = [];
   /** The sidechains connected: the other track's sound into a plugin's second input */
   const keys: Array<{ from: AudioNode; inst: WamInstance }> = [];
+  /** Taking the song's beat away from the effects that follow it (below) */
+  let unfollow: (() => void) | null = null;
   let disposed = false;
   const active = plugins.filter((p) => !p.bypass);
   const ready = Promise.all(
@@ -399,6 +401,32 @@ export function createPluginChain(
       }
     }
     prev.connect(to);
+    // An effect that follows the song (a beat repeat) is told the tempo and where the song is on
+    // every beat, at that beat's exact time, and when the song stops: an instrument gets these
+    // with its notes, an effect has none. On this context's own transport, so an export's effects
+    // follow the export.
+    const followers = ok.filter(({ inst }) => inst.descriptor?.followsSong).map(({ inst }) => inst);
+    if (followers.length) {
+      const transport = input.context.transport;
+      const tell = (time: number, playing: boolean) => {
+        const bpm = transport.bpm.getValueAtTime(time);
+        const beat = playing ? transport.getTicksAtTime(time) / transport.PPQ : undefined;
+        for (const inst of followers) {
+          if (playing) sendTempo(inst, bpm, time, beat);
+          else inst.audioNode.scheduleEvents?.({ type: 'wam-transport', time, data: { tempo: bpm, playing: false } });
+        }
+      };
+      const each = transport.scheduleRepeat((time) => tell(time, true), '4n', 0);
+      const stopped = (time: number) => tell(Number.isFinite(time) ? time : input.context.currentTime, false);
+      transport.on('stop', stopped);
+      transport.on('pause', stopped);
+      tell(input.context.currentTime, false);
+      unfollow = () => {
+        transport.clear(each);
+        transport.off('stop', stopped);
+        transport.off('pause', stopped);
+      };
+    }
   });
   return {
     input,
@@ -411,6 +439,7 @@ export function createPluginChain(
     },
     dispose: () => {
       disposed = true;
+      unfollow?.();
       for (const { from, inst } of keys) {
         try {
           from.disconnect(inst.audioNode, 0, 1);

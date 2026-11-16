@@ -32,6 +32,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-repeat",
+    "label": "Fledge Repeat",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-repeat (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",

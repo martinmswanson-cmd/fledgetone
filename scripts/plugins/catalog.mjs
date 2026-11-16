@@ -82,6 +82,7 @@ for (const f of families) {
       about: info.about,
       ...(info.instrument ? { instrument: true } : {}),
       ...(info.sidechain ? { sidechain: true } : {}),
+      ...(info.transport ? { transport: true } : {}),
       ...(info.tags?.length ? { tags: info.tags } : {}),
       ...(presets ? { presetFiles: presetFiles(presets) } : {}),
     });

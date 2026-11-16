@@ -162,6 +162,7 @@ impl Plugin for Vocoder {
             about: "A vocoder that takes its voice from another track: put it on a synth, a pad or a saw bass (the carrier), pick the track with speech, singing or drums under \"Sidechain from\" (the voice), and the synth's notes come out shaped like the voice's words. 8 to 32 bands, a formant shift for bigger and smaller voices, and the voice's own consonants let through for clear words. With no sidechain the track passes through as it is.",
             instrument: false,
             sidechain: true,
+            transport: false,
             tags: &["vocoder", "sidechain", "voice", "robot", "talking synth"],
         }
     }

@@ -14,7 +14,7 @@ struct Beep {
 
 impl Plugin for Beep {
     fn info() -> Info {
-        Info { name: "Beep", category: "Synth", about: "A \"sine\"\nper note.", instrument: true, sidechain: false, tags: &["sine", "test"] }
+        Info { name: "Beep", category: "Synth", about: "A \"sine\"\nper note.", instrument: true, sidechain: false, transport: false, tags: &["sine", "test"] }
     }
     fn new(sample_rate: f32) -> Self {
         Beep { sr: sample_rate, level: 0.5, note: None, phase: 0.0, tempo: 120.0 }
@@ -76,7 +76,7 @@ struct Duck {
 
 impl Plugin for Duck {
     fn info() -> Info {
-        Info { name: "Duck", category: "Dynamics", about: "Ducks under the sidechain.", instrument: false, sidechain: true, tags: &[] }
+        Info { name: "Duck", category: "Dynamics", about: "Ducks under the sidechain.", instrument: false, sidechain: true, transport: false, tags: &[] }
     }
     fn new(_sample_rate: f32) -> Self {
         Duck { amount: 1.0 }

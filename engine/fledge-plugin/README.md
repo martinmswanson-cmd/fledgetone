@@ -16,7 +16,7 @@ struct Gain {
 
 impl Plugin for Gain {
     fn info() -> Info {
-        Info { name: "Gain", category: "Utility", about: "Turns it up or down.", instrument: false, sidechain: false, tags: &[] }
+        Info { name: "Gain", category: "Utility", about: "Turns it up or down.", instrument: false, sidechain: false, transport: false, tags: &[] }
     }
     fn new(_sample_rate: f32) -> Self {
         Gain { level: 0.5 }

@@ -46,6 +46,7 @@ BB_EXPORT int bb_load(int h, int ptr, int bytes);
  *
  *   void bb_tempo(int h, float bpm);          the song's tempo
  *   void bb_position(int h, double beats);    where the song is at the start of the next block
+ *                                             (under 0: the song has stopped, there is none)
  *   void bb_legacy(int h, int count);         an older saved sound with `count` values was just
  *                                             loaded: set the newer parameters as it sounded then
  *   void bb_settle(int h);                    the whole sound was just switched with the output

@@ -18,6 +18,7 @@ impl Plugin for Synth {
             about: "Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean mono sub, filters including comb and formant, antialiased drive before and after the filters and on the mids and highs, LFOs in time with the song or restarting with each note, per-note random and chaos sources, a 16-slot mod matrix and an OTT. Its presets are made for dubstep, bass music and leads, with basses that change with every note.",
             instrument: true,
             sidechain: false,
+            transport: false,
             tags: &["wavetable", "bass", "dubstep", "lead"],
         }
     }

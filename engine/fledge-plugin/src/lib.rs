@@ -35,6 +35,9 @@ pub struct Info {
     pub instrument: bool,
     /// It listens to a sidechain when one is connected (see `Block::sidechain`)
     pub sidechain: bool,
+    /// An effect that follows the song (a beat repeat, a synced delay): the host tells it the
+    /// tempo and the position on every beat, not only with notes as an instrument gets them
+    pub transport: bool,
     /// Words a search finds it by
     pub tags: &'static [&'static str],
 }
@@ -93,7 +96,8 @@ pub trait Plugin: 'static {
     /// The song's tempo (120 until told otherwise).
     fn set_tempo(&mut self, _bpm: f32) {}
 
-    /// Where the song is, in beats, at the start of the next block.
+    /// Where the song is, in beats, at the start of the next block. Under 0: the song has stopped,
+    /// and there is no position to follow until the next one comes.
     fn set_position(&mut self, _beats: f64) {}
 
     /// An older saved sound with only its first `count` parameters was just loaded: set the ones
@@ -156,7 +160,7 @@ mod tests {
 
     impl Plugin for Gain {
         fn info() -> Info {
-            Info { name: "Gain", category: "Utility", about: "Turns it up or down.", instrument: false, sidechain: false, tags: &[] }
+            Info { name: "Gain", category: "Utility", about: "Turns it up or down.", instrument: false, sidechain: false, transport: false, tags: &[] }
         }
         fn new(_sample_rate: f32) -> Self {
             Gain { values: [0.5, 1.0] }

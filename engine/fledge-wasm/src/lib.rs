@@ -158,17 +158,19 @@ fn json_text(s: &str) -> String {
 }
 
 /// A plugin as the host's catalog reads it: {"name","category","about","instrument","params","tags"},
-/// and "sidechain": true for one that listens to a sidechain.
+/// "sidechain": true for one that listens to a sidechain, and "transport": true for an effect that
+/// follows the song.
 pub fn info_json(info: &Info, params: usize) -> String {
     let tags: Vec<String> = info.tags.iter().map(|t| json_text(t)).collect();
     format!(
-        "{{\"name\":{},\"category\":{},\"about\":{},\"instrument\":{},\"params\":{}{},\"tags\":[{}]}}",
+        "{{\"name\":{},\"category\":{},\"about\":{},\"instrument\":{},\"params\":{}{}{},\"tags\":[{}]}}",
         json_text(info.name),
         json_text(info.category),
         json_text(info.about),
         info.instrument,
         params,
         if info.sidechain { ",\"sidechain\":true" } else { "" },
+        if info.transport { ",\"transport\":true" } else { "" },
         tags.join(",")
     )
 }

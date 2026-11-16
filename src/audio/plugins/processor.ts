@@ -652,6 +652,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (ev.data.tempo > 0) this.bpm = ev.data.tempo;
       if (this.e.bb_tempo && ev.data.tempo > 0) this.e.bb_tempo(this.h, ev.data.tempo);
       if (this.e.bb_position && Number.isFinite(ev.data.beat) && ev.data.beat >= 0) this.e.bb_position(this.h, ev.data.beat);
+      // (The song has stopped: an effect that follows it, a beat repeat, has no position to follow)
+      else if (this.e.bb_position && ev.data.playing === false) this.e.bb_position(this.h, -1);
     }
   }
 

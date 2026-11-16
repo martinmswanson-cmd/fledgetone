@@ -132,6 +132,7 @@ impl Plugin for Compressor {
             about: "A clean stereo compressor with a sidechain: pick another track under \"Sidechain from\" and this one ducks to it (a bass under the kick, the music under a voice). With no sidechain it follows its own sound. Soft knee, a high-pass on what it listens to, parallel mix, no added delay.",
             instrument: false,
             sidechain: true,
+            transport: false,
             tags: &["compressor", "sidechain", "ducking", "glue"],
         }
     }

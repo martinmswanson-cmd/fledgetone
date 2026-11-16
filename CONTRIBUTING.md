@@ -224,6 +224,7 @@ node scripts/audio-check/rack-levels.cjs        # a Drum Rack pad as loud live a
 node scripts/audio-check/rates.cjs              # the same sound, at the same moment, at 44.1, 48, 96 and 32 kHz: driven sounds, amps and inserts, rooms, both reverbs
 node scripts/audio-check/fledge-undo.cjs        # Fledge Synth: undo and redo of a preset, in its window and in Pocket, a held note playing on
 APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/sidechain.js   # a plugin's sidechain: the dips in a mix, a stem, a freeze and a mix in parts, and live against the export
+APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/beat-repeat.js   # an effect that follows the song (Fledge Repeat): which beats of an export it changes, the export twice, and live against it
 node scripts/audio-check/switch-sweep.cjs       # every built-in plugin with presets and Surge XT: presets, undo, redo, Reset all on held notes and bright sounds; the worst burst and click per plugin
 ```
 

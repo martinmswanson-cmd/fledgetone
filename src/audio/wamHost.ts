@@ -33,7 +33,7 @@ export interface WamInstance {
     setSidechain?: (connected: boolean) => void;
     destroy?: () => void;
   };
-  descriptor?: { name?: string; vendor?: string; isInstrument?: boolean; hasMidiInput?: boolean; hasAudioInput?: boolean; /** Its node has a second input for a sidechain (see setSidechain) */ hasSidechain?: boolean };
+  descriptor?: { name?: string; vendor?: string; isInstrument?: boolean; hasMidiInput?: boolean; hasAudioInput?: boolean; /** Its node has a second input for a sidechain (see setSidechain) */ hasSidechain?: boolean; /** An effect that follows the song: sent the tempo and the position on every beat */ followsSong?: boolean };
   /** A built-in plugin's controls, as its panel has them (Pocket's Sound tool works them too) */
   controls?: BuiltinControls;
   createGui?: () => Promise<Element>;

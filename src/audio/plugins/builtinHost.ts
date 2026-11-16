@@ -622,7 +622,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   return {
     audioNode,
     controls,
-    descriptor: { name: ref.info.name, vendor: ref.family.label, isInstrument: !!ref.info.instrument, hasAudioInput: !ref.info.instrument, hasSidechain: !!ref.info.sidechain },
+    descriptor: { name: ref.info.name, vendor: ref.family.label, isInstrument: !!ref.info.instrument, hasAudioInput: !ref.info.instrument, hasSidechain: !!ref.info.sidechain, followsSong: !!ref.info.transport },
     createGui: async () => {
       if (!guiFactory) throw new Error('no panel for built-in plugins');
       const { element, destroy } = guiFactory(controls);

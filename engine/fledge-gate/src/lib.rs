@@ -129,6 +129,7 @@ impl Plugin for Gate {
             about: "A gate with a sidechain: it lets this track through while what it listens to is over the threshold, and turns it down by the Range while it isn't. By itself it cleans up a recording. Pick another track under \"Sidechain from\" and this track is chopped to that one's rhythm (a pad on the hats, a bass with the kick); Flip silences it under the other track instead. Hold and hysteresis keep it from chattering; no added delay.",
             instrument: false,
             sidechain: true,
+            transport: false,
             tags: &["gate", "sidechain", "chop", "noise gate"],
         }
     }
