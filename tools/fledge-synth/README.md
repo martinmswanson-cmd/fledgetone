@@ -99,15 +99,16 @@ These parameters are choices. Set them by the option's name, for example
 
 The synth is written in Rust, with no dependencies from anyone else: `source/fledge-synth` is the
 synth, built on `source/fledge-dsp` (its filters, shapers, envelopes and wavetables, a library
-you can use on its own). In `source/fledge-synth`:
+you can use on its own), `source/fledge-plugin` (what a plugin is) and `source/fledge-wasm`
+(which makes one a WebAssembly module). In `source/fledge-synth`:
 
 ```sh
 rustup target add wasm32-unknown-unknown
-./build.sh                 # writes ../../public/fledgetone-plugins/fledge.wasm in Fledgetone's repository
+./build.sh                 # builds it; in Fledgetone's repository, also puts it in public/fledgetone-plugins/
 cargo test --release       # the synth's tests
 ```
 
-Outside Fledgetone's repository, run the build line from `build.sh` and take the file from
+Outside Fledgetone's repository, take the file from
 `source/target/wasm32-unknown-unknown/release/fledge_synth.wasm`. The module has no imports and
 exports the plain C functions listed in `source/fledge-synth/src/abi.rs`, which
 `fledge-processor.js` calls.

@@ -616,7 +616,7 @@ export const CHOICES = ${JSON.stringify(choices, null, 2)};
       { name: 'index.html', data: read('tools/fledge-synth/index.html') },
       ...source,
     ],
-    notice: notice('Fledge Synth', 'Everything in this zip is Fledgetone\'s own code. The synth uses no libraries from anyone else (see source/fledge-synth/Cargo.toml: only fledge-dsp, which is in source/ too).'),
+    notice: notice('Fledge Synth', 'Everything in this zip is Fledgetone\'s own code. The synth uses no libraries from anyone else (see source/fledge-synth/Cargo.toml: only fledge-dsp, fledge-plugin and fledge-wasm, which are in source/ too).'),
   };
 }
 

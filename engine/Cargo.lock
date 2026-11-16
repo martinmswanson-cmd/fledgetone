@@ -7,8 +7,21 @@ name = "fledge-dsp"
 version = "0.1.0"
 
 [[package]]
+name = "fledge-plugin"
+version = "0.1.0"
+
+[[package]]
 name = "fledge-synth"
 version = "0.1.0"
 dependencies = [
  "fledge-dsp",
+ "fledge-plugin",
+ "fledge-wasm",
+]
+
+[[package]]
+name = "fledge-wasm"
+version = "0.1.0"
+dependencies = [
+ "fledge-plugin",
 ]

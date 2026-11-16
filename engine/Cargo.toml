@@ -2,7 +2,7 @@
 # the build settings below.
 [workspace]
 resolver = "2"
-members = ["fledge-dsp", "fledge-synth"]
+members = ["fledge-dsp", "fledge-plugin", "fledge-wasm", "fledge-synth"]
 
 [profile.release]
 opt-level = 3

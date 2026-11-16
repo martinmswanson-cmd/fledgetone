@@ -85,12 +85,15 @@ cargo test --release -- --include-ignored   # engine tests
 ```
 
 The filters, shapers, envelopes, delay line, OTT and the wavetable machinery are in
-[`../fledge-dsp`](../fledge-dsp), shared with Fledgetone's other Rust plugins; both crates are
-members of the workspace in `engine/` (one `Cargo.lock`, one `target/`).
+[`../fledge-dsp`](../fledge-dsp), shared with Fledgetone's other Rust plugins. The synth is a
+`Plugin` ([`../fledge-plugin`](../fledge-plugin)), and [`../fledge-wasm`](../fledge-wasm) exports
+it as the `bb_*` interface (`fledge_wasm::export!(Synth)` in `src/abi.rs`). All four crates are
+members of the workspace in `engine/` (one `Cargo.lock`, one `target/`); `../build.sh` builds
+every plugin family, `./build.sh` this one.
 
 Needs Rust with the `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`).
-The module has no imports and exports the `bb_*` plugin interface (see `src/abi.rs` and
-`scripts/plugins/bbplug.h`). Parameters keep their order: new ones are only ever added at the
+The module has no imports and exports the `bb_*` plugin interface (see `src/abi.rs`,
+`../fledge-wasm` and `scripts/plugins/bbplug.h`). Parameters keep their order: new ones are only ever added at the
 end, so saved songs keep their sound.
 
 ## Licence

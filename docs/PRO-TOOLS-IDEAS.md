@@ -2,7 +2,7 @@
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
 have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
-started (steps 1 and 2 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
+started (steps 1 to 4 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
 ## The list
@@ -76,10 +76,14 @@ into a home for many:
    - saving and loading its state.
 
    The project's rule that parameters are only ever added at the end (so saved songs keep their
-   sound) is written into the trait's documentation.
+   sound) is written into the trait's documentation. *Done 2026-11-16: `engine/fledge-plugin`.*
 4. **`fledge-wasm`**: one adapter, generalised from Fledge Synth's `abi.rs`, that turns any
    `Plugin` into a `bb_*` `.wasm`, plus one build script for every family. The sidechain buffers
    (#6) go into the interface here, so every new plugin supports them from day one.
+   *Done 2026-11-16: `engine/fledge-wasm` (`fledge_wasm::export!`) and `engine/build.sh`. Fledge
+   Synth runs through it and sounds the same sample for sample. The sidechain is in the
+   interface (`bb_sidechain`, buffers 4 and 5; see `scripts/plugins/bbplug.h`); the app doesn't
+   feed it yet, which is M1.*
 5. **Native wrapper spike**: build Fledge Synth as CLAP and VST3 (for example with nih-plug) and
    open it in Reaper or Bitwig. This decides whether native builds are part of each plugin's
    workflow.

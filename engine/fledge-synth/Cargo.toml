@@ -12,3 +12,5 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 fledge-dsp = { path = "../fledge-dsp", version = "0.1.0" }
+fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+fledge-wasm = { path = "../fledge-wasm", version = "0.1.0" }
