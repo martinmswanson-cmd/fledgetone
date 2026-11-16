@@ -1,7 +1,8 @@
 # Pro tools to build: the list and the workflow plan
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
-have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
+have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15 (items 20 to 28 on
+2026-11-16). Phase 0 is
 started (steps 1 to 4 and 6 are done), and M1 (#6, for the Rust plugins) and M3 (the harmonic editor) are done; nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
@@ -53,6 +54,23 @@ use.
 | 17 | Granular instrument | Play your own sample as grains (Ableton's Granulator, FL's Granulizer); Clouds exists only as an effect | Rust | M | 0 |
 | 18 | Transient shaper | Attack and sustain with a display that shows what it does (Faust's Transient has only sliders) | Rust | S | 0 |
 | 19 | Polarity and phase alignment | A polarity flip and a phase alignment control on every channel strip (`lineUp.ts` may cover part) | Host | S | — |
+
+### More gaps, found on 2026-11-16
+
+Found by searching the 647 built-in plugins by name and description, and the guide's headings. The
+last two are probable gaps: the app's own inserts were not checked feature by feature.
+
+| # | Item | What it does | Where | Size | Needs |
+|---|------|--------------|-------|------|-------|
+| 20 | Sidechain gate | A gate that opens on another track's sound (a pad chopped by the hats, a bass that only sounds with the kick). Only Fledge Compressor listens to a sidechain today | Rust | S | 6 |
+| 21 | Vocoder with a carrier from another track | The two vocoders in the catalog are in the C families and can't take a second input, which is what a vocoder is normally used for: a voice on one track shaping a synth on another. A new one on the sidechain input | Rust | M | 6 |
+| 22 | Spectrum analyser | A frequency display to put on any track or the master, with a held peak and a comparison against another track. Item 3 covers stereo and loudness metering, not this | Both | S | 0 |
+| 23 | Tuner | Shows the note and how many cents off, for a guitar, a bass or a voice before recording (the pitch tracking in `vocalTune.ts` is a start) | Host | S | — |
+| 24 | Beat repeat / stutter | Tempo-synced repeats, gates and tape stops played live or drawn in a lane (Ableton's Beat Repeat, FL's Gross Beat). The catalog has glitch shifters and doublers, nothing in time with the song | Rust | M | 0 |
+| 25 | Harmoniser | Clean harmony voices in the song's key, and a pitch shift that keeps the formants. 18 plugins touch pitch (glitch shifters, pitch delays); none does either | Rust | L | 0 |
+| 26 | Frequency shifter | Moves every frequency by the same number of Hz (not a ratio), from slow phasing to metallic tones (Ableton's Frequency Shifter). Ring modulators exist; this doesn't | Rust | S | 0 |
+| 27 | Convolution reverb with your own impulse responses (probable) | A reverb on a track that loads an impulse response you record or drop in. The catalog has three convolvers and the master reverb takes a recorded room; no per-track one that loads a file was found | Both | M | 0 |
+| 28 | Spectral tools (probable) | Freeze, blur and gate a sound by its spectrum. One denoiser exists; nothing else spectral was found | Rust | L | 0 |
 
 ## Workflow plan
 
@@ -126,7 +144,7 @@ into a home for many:
 8. **Native build** (if Phase 0 says yes): CLAP and VST3, opened in another DAW.
 9. **Publish**: version the crate and release it on crates.io with a usage example.
 
-### The workflow for each host feature (#6, #10, #12 to #14, #19)
+### The workflow for each host feature (#6, #10, #12 to #14, #19, #23)
 
 1. **Spec**: what the user sees, what is saved, how it sounds live and in an export.
 2. **Data**: new fields in `timelineTypes.ts`, optional with defaults, repaired by `parseProject`
@@ -151,6 +169,7 @@ into a home for many:
 | M7 Recording tools | #4, #5, #3 | For vocals and recorded parts |
 | M8 Staples | #9, #15, #16, #17, #19 | Each one stands alone |
 | M9 Modular patcher | #11, full additive engine (#8) | The largest; builds on M3 to M5 |
+| M10 More gaps | #20 and #21 first (the sidechain is there), then #22 and #23 (small, and expected), then #24, #26, #27, #25, #28 | Each one stands alone; #20 to #23 can be done any time after M1 |
 
 Each milestone ends with a release: the checks pass, GUIDE.md and CHANGELOG.md are updated, and the
 crates are published.
