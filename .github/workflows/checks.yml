@@ -1,0 +1,63 @@
+# The checks every change must pass: the app's (types, lint, tests, build) and the Rust engines'
+# (lint, tests, the WebAssembly build). They are the same commands CONTRIBUTING.md asks for.
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: App (types, lint, tests, build)
+    # A branch in this repository is checked when it's pushed; a pull request only when it comes
+    # from a fork (so nothing runs twice)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Types
+        run: npx tsc -b
+      - name: Lint
+        run: npx oxlint src
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  engine:
+    name: Engine (Rust lint, tests, WebAssembly build)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The Rust the engines are checked with (clippy's lints change from version to version)
+      RUST_VERSION: 1.97.0
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy --target wasm32-unknown-unknown
+          rustup default "$RUST_VERSION"
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --release -- -D warnings
+      - name: Tests
+        run: cargo test --release --workspace
+      - name: WebAssembly build
+        run: ./build.sh

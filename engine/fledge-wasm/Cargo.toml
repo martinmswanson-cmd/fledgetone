@@ -8,3 +8,6 @@ repository = "https://github.com/martinmswanson-cmd/fledgetone"
 
 [dependencies]
 fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+
+[lints]
+workspace = true

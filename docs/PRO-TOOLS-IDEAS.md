@@ -2,7 +2,7 @@
 
 Plugins and features that professional producers expect, especially those Ableton Live and FL Studio
 have, that Fledgetone doesn't have yet. Checked against the code on 2026-11-15. Phase 0 is
-started (steps 1 to 4 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
+started (steps 1 to 4 and 6 are done); nothing else is. The new plugins are written in Rust as GPL-3.0-or-later crates that other GPL projects can
 use.
 
 ## The list
@@ -89,7 +89,9 @@ into a home for many:
    workflow.
 6. **CI**: there is none today (`.github/` has only templates). Add a GitHub Actions workflow that
    runs `cargo test`, `cargo clippy` and the wasm build, next to the app's checks
-   (`tsc -b`, `oxlint`, `npm test`, `npm run build`).
+   (`tsc -b`, `oxlint`, `npm test`, `npm run build`). *Done 2026-11-16:
+   `.github/workflows/checks.yml`; clippy passes with no warnings (the lints left alone are
+   listed in `engine/Cargo.toml`).*
 7. **Decisions to make**:
    - the crate names on crates.io;
    - whether native builds ship with each release;

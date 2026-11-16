@@ -200,6 +200,18 @@ npm run build          # production build (what fledgetone.com publishes)
 npm run build:single   # the one-file build (dist-single/index.html)
 ```
 
+When a change touches the Rust engines (`engine/`), also run these there:
+
+```sh
+cargo clippy --workspace --all-targets --release -- -D warnings   # lint: no warnings
+cargo test --release --workspace                                  # the engines' tests
+./build.sh                                                        # the WebAssembly the app loads (then: node ../scripts/plugins/catalog.mjs > /dev/null)
+```
+
+GitHub runs the type check, the lint, the tests and the build, and the three engine checks, on
+every push and on pull requests from forks (`.github/workflows/checks.yml`). It doesn't run the
+sound checks below: those are yours to run.
+
 When a change touches sound, also run the sound checks (they need the dev server on port 5200,
 `npx vite --port 5200`, and Playwright; see [Checking sound](#checking-sound)):
 

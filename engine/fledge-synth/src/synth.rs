@@ -3717,8 +3717,8 @@ mod tests {
             }
             ups
         };
-        assert!((pitch_of(0.0) as i32 - 110).abs() <= 2);
-        assert!((pitch_of(2.0) as i32 - 110).abs() <= 2);
+        assert!((pitch_of(0.0) - 110i32).abs() <= 2);
+        assert!((pitch_of(2.0) - 110i32).abs() <= 2);
     }
 
 

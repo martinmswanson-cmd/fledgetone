@@ -7,3 +7,6 @@ description = "The DSP building blocks of Fledgetone's plugins: filters, oversam
 repository = "https://github.com/martinmswanson-cmd/fledgetone"
 
 [dependencies]
+
+[lints]
+workspace = true

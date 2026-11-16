@@ -4,6 +4,20 @@
 resolver = "2"
 members = ["fledge-dsp", "fledge-plugin", "fledge-wasm", "fledge-synth"]
 
+# Clippy must pass with no warnings (see .github/workflows/checks.yml). These it may leave alone:
+[workspace.lints.clippy]
+# DSP loops index several arrays by the same counter: clearer than zipped iterators
+needless_range_loop = "allow"
+manual_memcpy = "allow"
+# Filter coefficients are written out as designed, to more digits than an f32 holds
+excessive_precision = "allow"
+# `SafetyClip::default()` reads like every other building block's
+default_constructed_unit_structs = "allow"
+# `Rng::next` is not an iterator
+should_implement_trait = "allow"
+# `x % n != 0` builds on older Rust than `is_multiple_of` does
+manual_is_multiple_of = "allow"
+
 [profile.release]
 opt-level = 3
 lto = true

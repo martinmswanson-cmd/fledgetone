@@ -59,7 +59,7 @@ fn main() {
         );
         if let Some(d) = &dir {
             std::fs::create_dir_all(d).unwrap();
-            wav(&d.join(format!("{}.wav", p.name.replace('/', "_").replace(' ', "_"))), &l, &r, 48000);
+            wav(&d.join(format!("{}.wav", p.name.replace(['/', ' '], "_"))), &l, &r, 48000);
         }
     }
 }
