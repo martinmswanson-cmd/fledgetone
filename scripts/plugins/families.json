@@ -48,6 +48,14 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-shifter",
+    "label": "Fledge Shifter",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-shifter (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",

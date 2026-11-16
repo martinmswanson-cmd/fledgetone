@@ -145,6 +145,30 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-shifter",
+  "label": "Fledge Shifter",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-shifter.wasm",
+  "bytes": 84981,
+  "hash": "94f73cdda871",
+  "plugins": [
+   {
+    "name": "Fledge Shifter",
+    "category": "Effects",
+    "about": "A frequency shifter: every frequency is moved by the same number of hertz (a pitch shifter multiplies them), so a note's overtones go out of tune with it and it turns bell-like and metallic. A hertz or less, mixed half and half, is a phasing that only ever rises or falls; Spread shifts the right side the other way; Feedback through the Delay shifts each echo again, spiralling up or down.",
+    "tags": [
+     "frequency shifter",
+     "shift",
+     "phasing",
+     "barber pole",
+     "metallic",
+     "bell"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",
