@@ -2,7 +2,7 @@
 // their own programs, built from the repository on every site build (so they're always current)
 // into dist-site/tools/: the game music players, Fledge Synth (WebAssembly with a Web Audio
 // wrapper), the Fledge effects (the same way), the Drop pad's effects and the song player (the web runtime). Each zip has its README
-// (tools/<tool>/README.md, with parts filled in here), the GPL's text and a notice; each README is
+// (tools/<tool>/README.md, with parts filled in here), the MIT licence's text (tools/LICENSE) and a notice; each README is
 // also a page at /tools/<tool>/. The hand-written parts of the packages (wrappers, examples,
 // READMEs) are in tools/; the rest comes from src/, engine/ and public/.
 import { createHash } from 'node:crypto';
@@ -106,25 +106,26 @@ export function formatSize(bytes) {
 
 // --- What every README says ---
 
-export const HEADER = `Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+export const HEADER = `Part of Fledgetone (https://fledgetone.com), © Martin Swanson, MIT licence.
 Source code: ${SOURCE_URL}`;
 
 export const LICENCE = `## Licence
 
-These files are free software under the GNU General Public License, version 3 or (at your choice)
-any later version: GPL-3.0-or-later. The full text is in \`LICENSE\`. In plain words:
+These files are free software under the MIT licence. The full text is in \`LICENSE\`. In plain
+words:
 
 - **Free to use, change and share.** You can use them for anything, for free, change them, and
   give them to others, changed or not.
-- **A program that includes them is GPL too.** If you share a program that includes these files,
-  or code made from them, you must release that whole program under the GPL as well, and give the
-  people you share it with its source code (or a way to get it).
-- **Keep the notices.** Keep this licence and the copyright notice with the files.
+- **In any program, open or closed.** You can put them in your own site, app or game, paid ones
+  too, under any licence you choose. Your own code stays yours, with no need to share it.
+- **Keep the notice.** Keep the copyright notice and the licence text (\`LICENSE\`) with the files,
+  or with whatever you build them into.
 - **No warranty.** They come as they are, with no promise that they work for your purpose.
 - **Your music is yours.** The licence covers this code, not what you make with it: the music,
   sounds and songs you make with these tools are yours, to use and share on any terms you like.
 
-This is a summary to help you; the licence text in \`LICENSE\` is what counts. Questions or
+This is a summary to help you; the licence text in \`LICENSE\` is what counts. The Fledgetone
+studio itself is under a different licence, the GNU General Public License. Questions or
 concerns: email martin@twobirdsworkshop.com.`;
 
 /** The NOTICE that goes in every zip. */
@@ -133,14 +134,11 @@ ${'='.repeat(title.length)}
 
 ${HEADER}
 
-This program is free software: you can redistribute it and/or modify it under the terms of the
-GNU General Public License as published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version. It is distributed in the hope that it will be
-useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-FOR A PARTICULAR PURPOSE. See the GNU General Public License (LICENSE) for more details.
+These files are free software under the MIT licence (LICENSE). They are provided "as is",
+without warranty of any kind.
 
-In plain words: you can use, change and share it for free. If you share a program that includes
-it, that program must be released under the GPL too, with its source code.
+In plain words: you can use, change and share them for free, in any program, open or closed.
+Keep the copyright notice and the licence text with them.
 
 ${credits}
 `;
@@ -313,8 +311,8 @@ export const TOOLS = [
 
 const PLAIN_LICENCE = `<ul class="ticks tool-terms" style="--c: var(--cyan)">
           <li><strong>Free to use, change and share.</strong> Use them for anything, for free, change them, and give them to others.</li>
-          <li><strong>A program that includes them is GPL too.</strong> If you share a program that includes them, or code made from them, you must release that whole program under the GPL as well, with its source code.</li>
-          <li><strong>Keep the notices.</strong> The licence and the copyright notice stay with the files.</li>
+          <li><strong>In any program, open or closed.</strong> Put them in your own site, app or game, paid ones too, under any licence you choose. Your own code stays yours, with no need to share it.</li>
+          <li><strong>Keep the notice.</strong> The copyright notice and the licence text stay with the files, or with what you build them into.</li>
           <li><strong>No warranty.</strong> They come as they are.</li>
           <li><strong>Your music is yours.</strong> The licence covers the tools' code, not what you make with them: the music, sounds and songs you make are yours, on any terms you like.</li>
         </ul>
@@ -337,7 +335,7 @@ export function toolsPage(tools, zips) {
             <a class="btn btn-primary btn-sm" href="/tools/${z.file}" download>${DOWNLOAD_ICON} Download</a>
             <a class="btn btn-ghost btn-sm" href="/tools/${t.id}/">${DOC_ICON} README</a>
           </div>
-          <p class="tool-meta"><span>${escape(z.file)}</span><span>${formatSize(z.size)}</span><span>GPL-3.0-or-later</span></p>
+          <p class="tool-meta"><span>${escape(z.file)}</span><span>${formatSize(z.size)}</span><span>MIT</span></p>
         </article>`;
   };
   return `<!doctype html>
@@ -350,12 +348,12 @@ export function toolsPage(tools, zips) {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fledgetone tools: players, synth and effects for your own programs</title>
-  <meta name="description" content="Download Fledgetone's own tools to use in your own programs: the game music players for the web, Godot and Unity, Fledge Synth as WebAssembly, the Drop pad effects and the song player. Free software under the GPL." />
+  <meta name="description" content="Download Fledgetone's own tools to use in your own programs: the game music players for the web, Godot and Unity, Fledge Synth as WebAssembly, the Drop pad effects and the song player. Free software under the MIT licence." />
   <link rel="canonical" href="https://fledgetone.com/tools/" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Fledgetone" />
   <meta property="og:title" content="Fledgetone tools" />
-  <meta property="og:description" content="Fledgetone's game music players, synth and effects, to use in your own programs. Free software under the GPL." />
+  <meta property="og:description" content="Fledgetone's game music players, synth and effects, to use in your own programs. Free software under the MIT licence." />
   <meta property="og:url" content="https://fledgetone.com/tools/" />
   <meta property="og:image" content="https://fledgetone.com/img/og.jpg" />
   <meta property="og:image:width" content="1200" />
@@ -404,7 +402,7 @@ export function toolsPage(tools, zips) {
         </p>
         <h1>Take Fledgetone's parts into your own programs.</h1>
         <p class="lede">The players, the synth and the effects inside Fledgetone, packed to use in your own games, sites and apps. Each download has the code, an example and a README that shows how to use it.</p>
-        <p class="fineprint">Free software under the GNU General Public License, version 3 or later. Made fresh from the source code every time the site is updated.</p>
+        <p class="fineprint">Free software under the MIT licence. Made fresh from the source code every time the site is updated.</p>
       </div>
     </section>
 
@@ -418,9 +416,9 @@ export function toolsPage(tools, zips) {
     <section id="licence" class="wrap page-section tools" aria-labelledby="licence-title" data-ruler="Licence" data-ruler-color="--amber">
       <h2 id="licence-title" class="section-title"><span class="mono-label">Licence</span>What you can do with them</h2>
       <div class="tool-licence">
-        <p>Every tool here is free software under the <a href="/tools/LICENSE.txt">GNU General Public License, version 3</a> or (at your choice) any later version: GPL-3.0-or-later. In plain words:</p>
+        <p>Every tool here is free software under the <a href="/tools/LICENSE.txt">MIT licence</a>. In plain words:</p>
         ${PLAIN_LICENCE}
-        <p class="note-line">This is a summary; the licence text is what counts. The game music players and the song player also come inside the game kits and runtime kits you export from the studio, and there they carry an extra permission: they can ship inside any game, closed-source too, but changes to the players themselves stay under the GPL (see the kit's LICENSE-exported-files.txt). The source code of all of Fledgetone is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
+        <p class="note-line">This is a summary; the licence text is what counts. The song player downloads a few plugins that others made under the GPL when a song plays them (its README says which). The Fledgetone studio itself is free software under the GNU General Public License, version 3; its source code is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
       </div>
     </section>
   </main>
@@ -599,7 +597,7 @@ async function fledgeSynth() {
   if (synth.presets.join('\n') !== macros.FLEDGE_PRESETS.join('\n')) throw new Error('fledge.wasm\'s presets differ from fledgeMacros.ts: rebuild the synth (engine/fledge-synth/build.sh)');
   const choicesJs = `// The options of Fledge Synth's parameters that are choices, and the room each list keeps to
 // grow (an option's value is its place / (cap - 1)). Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, GPL-3.0-or-later. Written from the studio's own list (fledgeLayout.ts).
+// © Martin Swanson, MIT licence. Written from the studio's own list (fledgeLayout.ts).
 export const CHOICES = ${JSON.stringify(choices, null, 2)};
 `;
   const kindOf = (name) => (choices[name] ? 'choice' : switches.has(name) ? 'switch' : 'knob');
@@ -723,7 +721,7 @@ async function dropEffects() {
   if (packages.size) throw new Error(`dropFx.ts now takes in npm packages (${[...packages.keys()].join(', ')}): list their licences`);
   const kernel = await importCode(code);
   if (kernel.DROP_PROCESSOR !== 'bbx-drop') throw new Error('tools/drop-effects/drop-effects.js names the processor bbx-drop: update it');
-  const top = '// The Drop pad\'s effects. Part of Fledgetone (https://fledgetone.com), © Martin Swanson,\n// GPL-3.0-or-later. Bundled from src/audio/effects/dropFx.ts';
+  const top = '// The Drop pad\'s effects. Part of Fledgetone (https://fledgetone.com), © Martin Swanson,\n// MIT licence. Bundled from src/audio/effects/dropFx.ts';
   return {
     readme: fill(readText('tools/drop-effects/README.md'), {}),
     files: [
@@ -788,8 +786,8 @@ export async function writeTools(outDir) {
   const dir = join(outDir, 'tools');
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  const licence = read('LICENSE');
-  cpSync(join(ROOT, 'LICENSE'), join(dir, 'LICENSE.txt'));
+  const licence = read('tools/LICENSE');
+  cpSync(join(ROOT, 'tools/LICENSE'), join(dir, 'LICENSE.txt'));
   const date = versionDate();
   const zips = {};
   for (const tool of TOOLS) {

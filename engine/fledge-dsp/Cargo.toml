@@ -2,7 +2,7 @@
 name = "fledge-dsp"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 description = "The DSP building blocks of Fledgetone's plugins: filters, oversampling, antialiased shapers, envelopes, LFOs, a delay line, multiband compression, an FFT and band-limited wavetables."
 repository = "https://github.com/martinmswanson-cmd/fledgetone"
 

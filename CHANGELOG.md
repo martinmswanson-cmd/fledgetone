@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **The tools are MIT now**: everything on fledgetone.com/tools (the game music players, Fledge Synth, the Fledge effects, the Drop pad effects and the song player) is under the MIT licence in place of the GPL, so you can put them in any site, app or game, open or closed, without sharing your own code; keep the copyright notice with them. Fledgetone's own plugins and their Rust source (the `engine` folder) are MIT too. The studio itself stays under the GPL.
+
 ## 2026.11.17-2 — The new effects on the Tools page
 
 - **The new effects on the Tools page**: fledgetone.com/tools now has **Fledge effects**, a download for web developers: the seven effects from the last release (the compressor and gate you can sidechain, the vocoder, the beat repeat, the harmoniser, the frequency shifter and the spectral effect) as WebAssembly, with a small wrapper for the Web Audio API, an example page, and their source code.

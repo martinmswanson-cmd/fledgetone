@@ -92,6 +92,10 @@ FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
 
 Copyright (C) 2026 the Fledgetone authors.
 
+Two parts are under the MIT licence instead, so they can go in any program, open or closed: the
+downloads on the [Tools page](https://fledgetone.com/tools/) (`tools/`, see [tools/LICENSE](tools/LICENSE))
+and Fledgetone's own plugins and DSP in Rust (`engine/`, see [engine/LICENSE](engine/LICENSE)).
+
 The recorded sounds and built-in plugins keep their own licences (see Credits above).
 
 Taking part in the project (issues, pull requests, discussions) is covered by the

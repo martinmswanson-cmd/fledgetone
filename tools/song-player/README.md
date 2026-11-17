@@ -19,7 +19,7 @@ kit instead and use the game music players.
 | `bos-player.d.ts`, `adaptive-music.d.ts` | TypeScript types |
 | `index.html` | An example page: choose a saved song and play it |
 | `THIRD-PARTY-LICENSES.txt` | The licences of the open-source libraries inside `bos-player.js` |
-| `LICENSE` | The GNU General Public License, version 3 |
+| `LICENSE` | The MIT licence |
 
 ## Try it
 
@@ -70,6 +70,12 @@ player downloads while it makes the music:
 If a plugin the song plays can't be loaded, `loadSong` rejects with an error that names it, rather
 than play that part silent.
 
+Four of those plugins are other people's work under the GPL, not the MIT licence: **Surge XT**,
+the **Dragonfly** and **Plateau** reverbs and the **Tonewheel Organ** (setBfree). They are not in
+this download; the player fetches one only when a song plays it, and it keeps its own licence. If
+you host or ship those plugin files yourself, the GPL's terms for them apply (a runtime kit that
+carries one includes its notice and licence).
+
 So a song that uses recorded instruments needs an internet connection the first time, and your
 players' browsers will contact those sites. If that matters for your game, use only synth
 instruments, host the recordings yourself, or export a game kit (plain audio files) instead.
@@ -79,11 +85,9 @@ The recordings have their own licences: see the credits at https://fledgetone.co
 
 ### Inside a runtime kit
 
-When `bos-player.js` comes inside a web runtime kit you export from the studio, it comes with an
-extra permission (the kit's `LICENSE-exported-files.txt`, and section 3 of Fledgetone's terms):
-there it can ship inside any game, closed-source and paid games too, with no need to share your
-own code; but if you change the player itself and distribute it, the changed file stays under the
-GPL, with its source. The files in this download are offered under the GPL, as above.
+The same `bos-player.js` comes inside the web runtime kits you export from the studio. Those
+copies carry the kit's own permission (`LICENSE-exported-files.txt`); the files in this download
+are under the MIT licence, as above, and you may use either.
 
 ## Open-source libraries inside
 

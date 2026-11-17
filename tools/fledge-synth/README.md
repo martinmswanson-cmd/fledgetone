@@ -21,7 +21,7 @@ web page or browser game through the Web Audio API.
 | `fledge.wasm` | The synth itself, compiled to WebAssembly |
 | `index.html` | An example page that plays a few notes |
 | `source/` | The synth's Rust source code, to build `fledge.wasm` yourself |
-| `LICENSE` | The GNU General Public License, version 3 |
+| `LICENSE` | The MIT licence |
 
 ## Try it
 

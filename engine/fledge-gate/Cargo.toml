@@ -2,7 +2,7 @@
 name = "fledge-gate"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 description = "Fledge Gate: a noise gate that can open on a sidechain, or duck under it. Built to WebAssembly for Fledgetone, and as a Rust library."
 repository = "https://github.com/martinmswanson-cmd/fledgetone"
 

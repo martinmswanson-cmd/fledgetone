@@ -1,5 +1,5 @@
 // Fledge Synth for the Web Audio API. Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, GPL-3.0-or-later. No libraries: Web Audio and WebAssembly only.
+// © Martin Swanson, MIT licence. No libraries: Web Audio and WebAssembly only.
 //
 //   import { FledgeSynth } from './fledge-synth.js';
 //   const context = new AudioContext();

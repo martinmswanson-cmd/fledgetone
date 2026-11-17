@@ -75,12 +75,14 @@ test('tools: every README has the header, the licence in plain words, and nothin
     assert.match(template, /\{\{HEADER\}\}/, t.id);
     assert.match(template, /\{\{LICENCE\}\}/, t.id);
   }
-  assert.match(HEADER, /Part of Fledgetone \(https:\/\/fledgetone\.com\), © Martin Swanson, GPL-3\.0-or-later/);
+  assert.match(HEADER, /Part of Fledgetone \(https:\/\/fledgetone\.com\), © Martin Swanson, MIT licence/);
   assert.match(HEADER, /github\.com\/martinmswanson-cmd\/fledgetone/);
   assert.match(LICENCE, /free to use, change and share/i);
-  assert.match(LICENCE, /must release that whole program under the GPL/);
-  assert.match(LICENCE, /source code/);
-  assert.match(notice('X'), /GNU General Public License/);
+  assert.match(LICENCE, /under the MIT licence/);
+  assert.match(LICENCE, /In any program, open or closed/);
+  assert.doesNotMatch(LICENCE, /must release/);
+  assert.match(notice('X'), /under the MIT licence/);
+  assert.doesNotMatch(notice('X'), /General Public/);
   assert.equal(fill('a {{HEADER}} b {{X}}', { X: 'x' }), `a ${HEADER} b x`);
   assert.throws(() => fill('{{NOPE}}', {}), /NOPE/);
 });
@@ -107,8 +109,8 @@ test('tools: the page has a card per tool with its download, size, README and li
     assert.match(page, new RegExp(`href="/tools/${t.id}/"`));
     assert.ok(page.includes(`<span>${formatSize(1000 * (i + 2))}</span>`));
   }
-  assert.equal(page.split('<span>GPL-3.0-or-later</span>').length - 1, TOOLS.length);
-  assert.match(page, /must release that whole program under the GPL/);
+  assert.equal(page.split('<span>MIT</span>').length - 1, TOOLS.length);
+  assert.match(page, /In any program, open or closed/);
   assert.match(page, /href="\/tools\/LICENSE\.txt"/);
   assert.match(page, /<link rel="stylesheet" href="\/styles\.css" \/>/);
   assert.match(page, /<a href="\/tools\/">Tools<\/a>/);

@@ -1,5 +1,5 @@
 // The Fledge effects' AudioWorklet processor. Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, GPL-3.0-or-later. Loaded by fledge-effects.js (context.audioWorklet.addModule).
+// © Martin Swanson, MIT licence. Loaded by fledge-effects.js (context.audioWorklet.addModule).
 //
 // It makes one effect in one of the .wasm files (the module comes from the main thread, already
 // compiled) and talks to it through the module's plain C functions (the bb_* interface, see
