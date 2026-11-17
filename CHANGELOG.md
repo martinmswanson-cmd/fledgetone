@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.17-2 — The new effects on the Tools page
 
 - **The new effects on the Tools page**: fledgetone.com/tools now has **Fledge effects**, a download for web developers: the seven effects from the last release (the compressor and gate you can sidechain, the vocoder, the beat repeat, the harmoniser, the frequency shifter and the spectral effect) as WebAssembly, with a small wrapper for the Web Audio API, an example page, and their source code.
 - **The guide's menu list is up to date**: Tools now lists the Spectrum analyser, the Tuner, Resample and the Piano, and the Plugins section names all of Fledgetone's own effects.
