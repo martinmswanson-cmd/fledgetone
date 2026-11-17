@@ -354,6 +354,14 @@ export const TOOLS = [
     inZip: ['The effects as an AudioWorklet, with a helper to turn them on and off', 'The same effects as a plain JavaScript module', 'An example page with a beat and a pad for each effect'],
   },
   {
+    id: 'instrument-lines',
+    title: 'Instrument lines',
+    color: '--cyan',
+    who: 'For web developers and music app makers',
+    what: 'The studio\'s Lines video picture for any web page: a song drawn on a canvas as one glowing line per instrument, rising, falling and changing colour with its notes. Give it the notes and a time; it draws that moment.',
+    inZip: ['The lines as a JavaScript module, with a helper for a canvas', 'An example page: a small song whose lines follow the audio clock', 'Its TypeScript source'],
+  },
+  {
     id: 'song-player',
     title: 'Song player',
     color: '--purple',
@@ -791,6 +799,25 @@ async function dropEffects() {
   };
 }
 
+export async function instrumentLines() {
+  const { code, packages } = await bundle('src/audio/linesKit.ts');
+  if (packages.size) throw new Error(`linesKit.ts now takes in npm packages (${[...packages.keys()].join(', ')}): list their licences`);
+  const kit = await importCode(code);
+  for (const name of ['linesData', 'drawLines', 'DEFAULT_LINES_LOOK']) if (!(name in kit)) throw new Error(`tools/instrument-lines/instrument-lines.js imports ${name} from lines-draw.js: linesKit.ts no longer exports it`);
+  const top = '// Instrument lines. Part of Fledgetone (https://fledgetone.com), © Martin Swanson,\n// MIT licence. Bundled from src/store/lines.ts and src/audio/linesDraw.ts';
+  return {
+    readme: fill(readText('tools/instrument-lines/README.md'), {}),
+    files: [
+      { name: 'instrument-lines.js', data: read('tools/instrument-lines/instrument-lines.js') },
+      { name: 'lines-draw.js', data: `${top}.\n${code}` },
+      { name: 'lines.ts', data: read('src/store/lines.ts') },
+      { name: 'linesDraw.ts', data: read('src/audio/linesDraw.ts') },
+      { name: 'index.html', data: read('tools/instrument-lines/index.html') },
+    ],
+    notice: notice('Instrument lines'),
+  };
+}
+
 async function songPlayer() {
   // As the site's own studio: with the GPL plugins (songs made on the site can use them)
   const { code, packages } = await bundle('src/runtime/player.ts', { config: 'vite.runtime.config.ts', env: { VITE_GPL_PLUGINS: '1' } });
@@ -831,7 +858,7 @@ async function songPlayer() {
   };
 }
 
-const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'fledge-effects': fledgeEffects, 'drop-effects': dropEffects, 'song-player': songPlayer };
+const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'fledge-effects': fledgeEffects, 'drop-effects': dropEffects, 'instrument-lines': instrumentLines, 'song-player': songPlayer };
 
 /** The date the zips' files carry: the version's (package.json's version is the release date). */
 function versionDate() {

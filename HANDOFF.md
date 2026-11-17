@@ -304,15 +304,21 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
-- **Lines video picture** (Unreleased): a third Picture for the MP4 export, built from the notes
+- **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no
   pitch to follow). `lines.ts` and `linesDraw.ts` read no app state, so they can be lifted into a
-  download for the Tools page later (the owner asked; not done). Fixed values, tuned by eye on the
+  download: the Tools page's **Instrument lines** (`tools/instrument-lines/`, bundled from
+  `src/audio/linesKit.ts` by `instrumentLines()` in `scripts/tools-site.mjs`; MIT; it takes chord
+  names as given, it doesn't work them out). Height is shared between the instruments playing (bands,
+  lowest part at the bottom), not pitch across the song's range: the owner's 16-track song was
+  unreadable that way. A roll (the same note 3 or more times, each within 0.13 s) draws as teeth.
+  The picture has no waveform and its chord lies over the lines. Fixed values, tuned by eye on the
   starters: allowance 1.5 s, bend 0.16 s, rise 1.1 s, a fast passage (4 or more lead notes under
   0.22 s apart) follows its average over 0.45 s. Chords are checked by unit tests on built chords,
   not against the starters' progressions (the starters don't state theirs as names). Not built:
   thickness from loudness, camera moves, names only as a line comes in, a live view, lines for
-  audio clips.
+  audio clips. A stutter made by an effect (not written as notes) isn't seen; many lines' names
+  can crowd beside the dots.
 
 - **Songs made in Fledgetone, with a studio video** (Unreleased): "Lofi soul, after hours" has its own
   home-page section (#songs, before Features; a card grid in the films' style, one wide card for now:

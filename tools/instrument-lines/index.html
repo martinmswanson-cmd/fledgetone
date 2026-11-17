@@ -1,0 +1,108 @@
+<!doctype html>
+<!-- Instrument lines example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, MIT licence.
+     Serve this folder (for example "npx serve") and open it: modules don't load from a file. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instrument lines example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; background: #121214; color: #e4e4e7; }
+    canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #0a0b10; border-radius: 6px; }
+    button { font: inherit; padding: .5rem 1rem; margin: .5rem .5rem .5rem 0; }
+    label { margin-right: 1rem; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <h1>Instrument lines</h1>
+  <p>A made-up song of four parts and drums, played with plain oscillators (quietly: turn your speakers down first anyway). Each part draws a line; tick what comes with the lines.</p>
+  <canvas id="picture" width="1920" height="1080"></canvas>
+  <p>
+    <button id="play">Play</button>
+    <span id="looks"></span>
+  </p>
+  <script type="module">
+    import { createLines } from './instrument-lines.js';
+
+    // --- A small song: 16 bars at 100 BPM, as plain notes ---
+    const BAR = 2.4, BEAT = 0.6, BARS = 16;
+    const TRACKS = ['Pad', 'Bass', 'Lead', 'Arp'];
+    const CHORDS = [['Am', 57, [64, 60, 57]], ['F', 53, [65, 60, 57]], ['C', 48, [67, 64, 60]], ['G', 55, [62, 59, 55]]];
+    const notes = [], chords = [], bars = [];
+    const add = (track, bar, beat, beats, pitch, extra) => notes.push({ track, start: bar * BAR + beat * BEAT, end: bar * BAR + (beat + beats) * BEAT, pitch, ...extra });
+    const tune = [69, 72, 76, 74, 72, 69, 67, 72, 76, 79, 77, 76, 72, 74, 72, 69];
+    for (let b = 0; b < BARS; b++) {
+      bars.push(b * BAR);
+      const [name, root, tones] = CHORDS[Math.floor(b / 2) % 4];
+      if (b % 2 === 0) {
+        chords.push({ at: b * BAR, end: (b + 2) * BAR, name });
+        for (const p of tones) add(0, b, 0, 7.6, p);
+      }
+      if (b >= 2) for (const q of [0, 2.5]) add(1, b, q, 1.4, root - 12);
+      if (b >= 4 && b !== 11) for (let q = 0; q < 4; q++) if ((b * 4 + q) % 5 !== 3) add(2, b, q, 0.9, tune[(b * 3 + q * 5) % 16]);
+      // A stutter into bar 12: the same note, faster and faster
+      if (b === 11) [0, 1, 2, 2.5, 3, 3.25, 3.5, 3.75].forEach((q, i, all) => add(2, b, q, ((all[i + 1] ?? 4) - q) * 0.8, 76));
+      if (b >= 8 && b < 14) for (let k = 0; k < 8; k++) add(3, b, k / 2, 0.4, tones[k % 3] + 12 + (k % 4 === 3 ? 12 : 0));
+      if (b >= 4) {
+        for (const q of [0, 2]) add(0, b, q, 0.1, 36, { kick: true });
+        for (const q of [1, 3]) add(0, b, q, 0.1, 38, { drum: true });
+      }
+    }
+    const sections = [{ at: 0, name: 'Intro' }, { at: 4 * BAR, name: 'Verse' }, { at: 8 * BAR, name: 'Build' }, { at: 12 * BAR, name: 'Drop' }];
+    const DURATION = BARS * BAR;
+
+    const canvas = document.getElementById('picture');
+    const look = { map: true, chord: true, drums: true, rings: true, ahead: true };
+    const lines = createLines(canvas, { notes, tracks: TRACKS, bars, sections, chords, duration: DURATION }, { look });
+
+    for (const [key, label] of [['map', 'Song map'], ['chord', 'Chord'], ['drums', 'Drum pulse'], ['rings', 'Rings on notes'], ['ahead', "What's coming"]]) {
+      const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: true });
+      box.onchange = () => { look[key] = box.checked; lines.set({ look }); if (!context) lines.draw(8); };
+      const wrap = document.createElement('label');
+      wrap.append(box, ' ' + label);
+      document.getElementById('looks').append(wrap);
+    }
+
+    // --- The sound: an oscillator per note, started on the audio clock, and the picture drawn from that clock ---
+    let context = null, began = 0, frame = 0;
+    const WAVES = ['triangle', 'sine', 'square', 'triangle'], LEVELS = [0.03, 0.12, 0.035, 0.02];
+    function play() {
+      context = new AudioContext();
+      began = context.currentTime + 0.1;
+      for (const n of notes) {
+        const at = began + n.start, drum = n.kick || n.drum;
+        const osc = new OscillatorNode(context, { type: drum ? 'sine' : WAVES[n.track], frequency: drum ? (n.kick ? 110 : 220) : 440 * 2 ** ((n.pitch - 69) / 12) });
+        const gain = new GainNode(context, { gain: 0 });
+        const level = drum ? (n.kick ? 0.25 : 0.06) : LEVELS[n.track], end = drum ? at + 0.12 : began + n.end;
+        if (n.kick) osc.frequency.exponentialRampToValueAtTime(45, at + 0.1);
+        gain.gain.setValueAtTime(0, at);
+        gain.gain.linearRampToValueAtTime(level, at + 0.01);
+        gain.gain.setValueAtTime(level, Math.max(at + 0.01, end - 0.03));
+        gain.gain.linearRampToValueAtTime(0, end);
+        osc.connect(gain).connect(context.destination);
+        osc.start(at);
+        osc.stop(end + 0.02);
+      }
+      const tick = () => {
+        const time = context.currentTime - began;
+        lines.draw(time);
+        if (time < DURATION + 1) frame = requestAnimationFrame(tick);
+        else stop();
+      };
+      frame = requestAnimationFrame(tick);
+    }
+    function stop() {
+      cancelAnimationFrame(frame);
+      context?.close();
+      context = null;
+      document.getElementById('play').textContent = 'Play';
+    }
+    document.getElementById('play').onclick = (e) => {
+      if (context) return stop();
+      play();
+      e.target.textContent = 'Stop';
+    };
+    lines.draw(8);
+  </script>
+</body>
+</html>

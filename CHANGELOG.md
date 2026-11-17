@@ -4,9 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.17-4 — Lines, a new video picture
 
-- **Lines, a new video picture**: in Export › Video (MP4), **Picture** has a third choice beside Showcase and the spectrum styles. **Lines: each instrument's path** draws a glowing line for every instrument, rising, falling and changing colour with the notes it plays; a line ends when its instrument falls silent and a new one rises from the bottom when it comes back. Six things can be drawn with the lines, each its own tick box: the **Song map**, the **Section** name, the **Chord** sounding and the next, a **Drum pulse**, **Rings on notes** and **What's coming**. Widescreen and portrait, 30 or 60 fps, as the other pictures.
+- **Lines, a new video picture**: in Export › Video (MP4), **Picture** has a third choice beside Showcase and the spectrum styles. **Lines: each instrument's path** draws a glowing line for every instrument, rising, falling and changing colour with the notes it plays, a dot at its head. The instruments playing share the picture's height, the lowest part at the bottom, so parts in the same octave stay lines you can tell apart; a line ends when its instrument falls silent and a new one rises from the bottom when it comes back. A stutter written as notes (the same note struck fast, again and again) draws as a row of teeth. Widescreen and portrait, 30 or 60 fps, as the other pictures; search *lines video* to open Export set to it.
+- **What comes with the lines**: six things, each its own tick box: the **Song map** (your sections as a strip that fills as the song plays), the **Section** name, the **Chord** sounding and the next (worked out from the notes; nothing shows where they don't make a clear chord), a **Drum pulse** (a mark for every hit and a soft flash on each kick), **Rings on notes** and **What's coming** (a faint line ahead of each dot). This picture has no waveform under it, so the lines have the room.
+- **Instrument lines on the Tools page**: fledgetone.com/tools has the same picture as a download for web developers, under the MIT licence: a small JavaScript module that draws a song's lines on a canvas from a list of notes, for any moment you ask for, with an example page that follows the audio clock.
 
 ## 2026.11.17-3 — The tools are MIT now
 
