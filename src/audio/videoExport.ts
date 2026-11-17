@@ -4,6 +4,9 @@ import { openVideo, seekVideo } from '../store/videoStore';
 import fledgetoneLogo from '../assets/fledgetone.png';
 import { drawShowcase, type ShowcaseLook } from './showcaseDraw';
 import type { ShowcaseData } from '../store/showcase';
+import { drawLines, type LinesLook } from './linesDraw';
+import type { LinesData } from '../store/lines';
+import type { ChordSpan } from '../store/linesChords';
 import { BLIND_TRIM_DB, holdDecodedPeak, streamingTruePeak, type HeldReport } from './decodedPeak';
 import { LIMITER_CEILING_DBTP } from './effects/limiter';
 
@@ -24,7 +27,8 @@ import { LIMITER_CEILING_DBTP } from './effects/limiter';
  *
  * Made to survive a social site's own re-encoding: a high bitrate, and a background with a fine
  * grain baked in (drawn once), so its dark gradient can't break into bands or blocks.
- * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts).
+ * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts);
+ * Lines draws a glowing line per instrument, bending with its pitch (linesDraw.ts).
  */
 
 export type VideoShape = 'wide' | 'tall';
@@ -84,6 +88,12 @@ export interface VideoOptions {
   showcase?: ShowcaseData;
   /** How Showcase lays out the tracks and lights the notes it hits */
   showcaseLook?: ShowcaseLook;
+  /**
+   * Each instrument's line, the chords, and which of its extras to draw: draws the Lines picture in
+   * place of the spectrum. It shows the section's name itself (marks.sections), so the footer doesn't,
+   * and has no waveform (marks.waveform is ignored).
+   */
+  lines?: { data: LinesData; chords: ChordSpan[]; look: LinesLook };
   /** Frames a second (30 if not given) */
   fps?: VideoFps;
   /** What's drawn around the picture (all of it if not given) */
@@ -414,12 +424,16 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     // video keeps its top clear anyway: phone video apps put their tabs there)
     const marks = opts.marks ?? DEFAULT_VIDEO_MARKS;
     const heading = marks.title || marks.subtitle;
-    const footer = marks.sections || marks.time;
+    // (the Lines picture draws the section's name itself, at its top)
+    const footSection = marks.sections && !opts.lines;
+    const footer = footSection || marks.time;
     const titleY = tall ? 150 : 64;
     const footY = H - 60;
     const waveY = footer ? footY - 70 : footY - 40;
     const pictureY = heading ? titleY + (tall ? 120 : 106) : tall ? titleY : 48;
-    const pictureEnd = marks.waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
+    // (nor the waveform: its song map shows where the song is, and the lines want the room)
+    const waveform = marks.waveform && !opts.lines;
+    const pictureEnd = waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
     const picture = { x: stripX, y: pictureY, w: stripW, h: pictureEnd - pictureY };
     const logo = await loadImage(fledgetoneLogo);
     const background = grainedBackground(size.w, size.h);
@@ -482,7 +496,10 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
         }
       }
 
-      if (opts.showcase) {
+      if (opts.lines) {
+        // A line per instrument, scrolling past its dot (linesDraw.ts)
+        drawLines(g, opts.lines.data, picture, t, { secondsShown: tall ? 6 : 11, headAt: tall ? 0.6 : 0.7, look: opts.lines.look, section: marks.sections, sections: opts.sections, chords: opts.lines.chords, duration: seconds });
+      } else if (opts.showcase) {
         // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
         drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28, look: opts.showcaseLook });
       } else {
@@ -491,7 +508,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       }
 
       // Waveform of the whole song, with the playhead
-      if (marks.waveform) {
+      if (waveform) {
         const waveH = 56;
         const played = (t / seconds) * stripW;
         for (let c = 0; c < wave.length; c++) {
@@ -505,7 +522,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       }
 
       // Section and time
-      const section = marks.sections ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
+      const section = footSection ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
       g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
       g.fillStyle = '#f59e0b';
       if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);

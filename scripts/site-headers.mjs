@@ -37,6 +37,10 @@ const SITE_RULES = `
   Content-Type: application/zip
   Content-Disposition: attachment
   Cache-Control: no-cache
+/tools/fledgetone-instrument-lines.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
 /tools/fledgetone-song-player.zip
   Content-Type: application/zip
   Content-Disposition: attachment
@@ -48,6 +52,8 @@ const SITE_RULES = `
 /tools/fledge-effects/README.md
   Content-Type: text/plain; charset=utf-8
 /tools/drop-effects/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/instrument-lines/README.md
   Content-Type: text/plain; charset=utf-8
 /tools/song-player/README.md
   Content-Type: text/plain; charset=utf-8

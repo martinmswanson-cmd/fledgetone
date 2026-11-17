@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
-import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS, gameMusicPlayers } from './tools-site.mjs';
+import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS, gameMusicPlayers, instrumentLines } from './tools-site.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -240,7 +240,7 @@ test('tools: every page of the site links to the Tools page in its footer, and i
   const { siteHeaders } = await import('./site-headers.mjs');
   const out = siteHeaders('');
   // (Each zip by name: the host matches a * only at the end of an address)
-  for (const name of ['game-music-players', 'fledge-synth', 'fledge-effects', 'drop-effects', 'song-player'])
+  for (const name of ['game-music-players', 'fledge-synth', 'fledge-effects', 'drop-effects', 'instrument-lines', 'song-player'])
     assert.match(out, new RegExp(`/tools/fledgetone-${name}\\.zip\\n {2}Content-Type: application/zip\\n {2}Content-Disposition: attachment`));
   assert.doesNotMatch(out, /\/tools\/\*/);
 });
@@ -254,4 +254,41 @@ test('tools: the Godot example scene finds its scripts wherever its folder is co
     assert.ok(!p.includes('://'), `${p} is relative to the scene`);
     assert.ok(files.some((f) => f.name === `godot/${p}`), `godot/${p} is in the zip`);
   }
+});
+
+test('tools: the instrument lines bundle draws a song with the helper, with no library inside', async () => {
+  const { files } = await instrumentLines();
+  assert.deepEqual(files.map((f) => f.name), ['instrument-lines.js', 'lines-draw.js', 'lines.ts', 'linesDraw.ts', 'index.html']);
+  const text = (name) => files.find((f) => f.name === name).data.toString();
+  assert.doesNotMatch(text('lines-draw.js'), /^import /m);
+  // The helper, with its import pointed at the bundle
+  const url = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+  const helper = await import(url(text('instrument-lines.js').replace("'./lines-draw.js'", JSON.stringify(url(text('lines-draw.js'))))));
+  // A canvas that counts what's drawn on it
+  let strokes = 0;
+  const texts = [];
+  const gradient = { addColorStop() {} };
+  const g = new Proxy({}, {
+    get: (_, key) => (key === 'stroke' ? () => strokes++ : key === 'fillText' ? (t) => texts.push(t) : key === 'measureText' ? () => ({ width: 10 }) : /^create.*Gradient$/.test(key) ? () => gradient : () => {}),
+    set: () => true,
+  });
+  const canvas = { width: 1920, height: 1080, getContext: () => g };
+  const lines = helper.createLines(canvas, {
+    tracks: ['Bass', 'Lead'],
+    notes: [{ track: 0, start: 0, end: 2, pitch: 45 }, { track: 1, start: 1, end: 3, pitch: 72 }, { track: 0, start: 0, end: 0.1, pitch: 36, kick: true }, { track: 1, start: 'x', pitch: 60 }],
+    sections: [{ at: 0, name: 'Intro' }],
+    chords: [{ at: 0, end: 4, name: 'Am' }],
+  });
+  assert.equal(lines.duration, 3);
+  assert.deepEqual(lines.data.tracks.map((t) => t.name), ['Bass', 'Lead']);
+  assert.deepEqual(lines.data.hits, [{ t: 0, kick: true }]);
+  lines.draw(1.5);
+  assert.ok(strokes >= 6, `strokes: ${strokes}`);
+  for (const word of ['Bass', 'Lead', 'Drums', 'Am', 'INTRO']) assert.ok(texts.includes(word), word);
+  // Extras left out aren't drawn; an empty song still draws
+  texts.length = 0;
+  lines.set({ look: { chord: false, drums: false }, section: false });
+  lines.draw(1.5);
+  assert.deepEqual(texts.sort(), ['Bass', 'Lead']);
+  helper.createLines(canvas, { notes: [] }).draw(0);
 });

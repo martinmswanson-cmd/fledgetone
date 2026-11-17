@@ -13,6 +13,8 @@ import { audibleIds } from './buses';
 import { isDrumKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../audio/instrumentCatalog';
 import { maxOf, minOf } from '../support/minMax';
 import { isPlainMeter, measuresBetween, type MeterMap } from '../audio/tempoMap';
+import { isPitched } from './keyChange';
+import { DRUM_NOTES } from './drumNotes';
 
 export interface ShowcaseNote {
   /** Seconds from the start of the video */
@@ -24,6 +26,10 @@ export interface ShowcaseNote {
   track: number;
   /** A drum hit (drum kits, the Drum Rack, the Slicer, sound effects): drawn in the drum band */
   drum: boolean;
+  /** A drum kit's kick (the Lines picture draws it fat and flashes on it) */
+  kick?: true;
+  /** Not a drum hit as Showcase draws them, but an instrument without a pitch to follow (congas, timpani, a sound effect) */
+  perc?: true;
 }
 
 export interface ShowcaseData {
@@ -62,6 +68,8 @@ export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], s
   const notes: ShowcaseNote[] = [];
   for (const t of shown) {
     const drum = hitsTrack(t);
+    const kickMidi = isDrumKind(t.instrumentKey) ? midiOf(DRUM_NOTES.kick) : NaN;
+    const perc = !drum && !isPitched(t.instrumentKey);
     for (const c of clips) {
       if (c.trackId !== t.id || c.audio || !c.notes.length) continue;
       const clipEnd = c.startBar + c.lengthBars;
@@ -83,6 +91,8 @@ export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], s
           color: t.color,
           track: index.get(t.id)!,
           drum,
+          ...(midi === kickMidi ? { kick: true as const } : {}),
+          ...(perc ? { perc: true as const } : {}),
         });
       }
     }

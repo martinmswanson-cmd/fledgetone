@@ -1,0 +1,403 @@
+<title>Instrument Lines Sketch</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+  /* Layout: one stage (the picture, 16:9) with a strip of controls under it and short notes below. Single dark look, like the video it stands in for. */
+  :root {
+    color-scheme: dark;
+    --bg: #0d0f14;
+    --stage: #07080c;
+    --fg: #e9ecf3;
+    --muted: #8d95a8;
+    --rule: #232734;
+    --accent: #6fd3ff;
+    --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --body: Inter, "Segoe UI", system-ui, sans-serif;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.5;
+    padding-block: 24px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-family: var(--display); font-weight: 600; font-size: 22px; margin: 0; text-wrap: balance; }
+  .lede { color: var(--muted); margin: 0; max-width: 65ch; }
+  .stage { background: var(--stage); border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  button {
+    font: 500 14px var(--body); color: var(--fg); background: #1a1e29; border: 1px solid var(--rule);
+    border-radius: 6px; padding: 8px 14px; cursor: pointer;
+  }
+  button:hover { background: #222736; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  label { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; min-width: 0; }
+  label output { color: var(--fg); font-variant-numeric: tabular-nums; min-width: 4.5ch; }
+  input[type="range"] { accent-color: var(--accent); width: 150px; max-width: 40vw; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+  .toggles label { color: var(--fg); cursor: pointer; gap: 8px; }
+  .toggles input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+  .notes { color: var(--muted); max-width: 65ch; margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .notes strong { color: var(--fg); font-weight: 500; }
+</style>
+
+<div class="wrap">
+  <h1>Instrument lines, a throwaway sketch</h1>
+  <p class="lede">A made-up five-part song, not a Fledgetone project. Each instrument draws a line whose height and colour follow the pitch it plays, with a glowing dot at its head.</p>
+
+  <div class="stage"><canvas id="c" aria-label="Animated sketch: one glowing line per instrument, bending with pitch"></canvas></div>
+
+  <div class="controls">
+    <button id="play" type="button">Pause</button>
+    <button id="restart" type="button">Restart</button>
+    <label for="gap">Silence before a line ends
+      <input id="gap" type="range" min="0" max="4" step="0.1" value="1.5">
+      <output id="gapOut" for="gap">1.5 s</output>
+    </label>
+    <label for="glide">Bend time
+      <input id="glide" type="range" min="0.02" max="0.5" step="0.01" value="0.16">
+      <output id="glideOut" for="glide">0.16 s</output>
+    </label>
+  </div>
+
+  <div class="toggles" role="group" aria-label="What the picture adds">
+    <label for="oInfo"><input id="oInfo" type="checkbox" checked> Song map, section and chord</label>
+    <label for="oDrums"><input id="oDrums" type="checkbox" checked> Drum pulse</label>
+    <label for="oHits"><input id="oHits" type="checkbox" checked> Rings on each note</label>
+    <label for="oAhead"><input id="oAhead" type="checkbox" checked> What's coming next</label>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Stopping:</strong> when an instrument is silent longer than the slider allows, its line ends and its dot stays behind at the end.</li>
+    <li><strong>Coming back:</strong> a new line rises from the bottom and reaches the pitch as the first note sounds.</li>
+    <li><strong>Short rests:</strong> anything under the allowance keeps the line going flat, so it doesn't flicker. Drag the slider to 0 to see the jitter it prevents.</li>
+    <li><strong>Additions to try:</strong> the four tick boxes each turn one idea on or off, so you can judge them one at a time.</li>
+    <li><strong>Still guessed:</strong> an instrument playing a chord follows its top note.</li>
+  </ul>
+</div>
+
+<script>
+(() => {
+  const W = 1280, H = 720;                 // design units, as the real export draws in
+  const BEAT = 0.6, BAR = BEAT * 4;        // 100 BPM
+  const BARS = 32, TOTAL = BARS * BAR;
+  const HEAD_X = 0.72 * W;                 // where "now" sits
+  const PPS = 95;                          // design units per second
+  const ENTRY = 1.1;                       // seconds a new line takes to rise from the bottom
+  const TOP = 160, BOTTOM = H - 150, FLOOR = H - 62;
+
+  // --- a small made-up song -------------------------------------------------
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const tracks = [];
+  const add = (name, notes) => tracks.push({ name, notes: notes.sort((a, b) => a.s - b.s) });
+  const n = (bar, beat, beats, p) => ({ s: bar * BAR + beat * BEAT, e: bar * BAR + (beat + beats) * BEAT, p });
+  const chordOf = (bar) => Math.floor(bar / 2) % 4;       // Am F C G, two bars each
+
+  { // Pad: top note of each chord, a break in the middle
+    const tops = [64, 65, 67, 62], out = [];
+    for (let b = 0; b < BARS; b += 2) if (b < 14 || b >= 18) out.push(n(b, 0, 7.6, tops[chordOf(b)] + (b >= 24 ? 5 : 0)));
+    add('Pad', out);
+  }
+  { // Bass: roots, one a bar
+    const roots = [45, 41, 48, 43], out = [];
+    for (let b = 2; b < 30; b++) if (b < 13 || b >= 17) {
+      out.push(n(b, 0, 2.5, roots[chordOf(b)]));
+      out.push(n(b, 3, 0.8, roots[chordOf(b)] + (b % 2 ? 7 : 0)));
+    }
+    add('Bass', out);
+  }
+  { // Lead: a wandering tune with one-beat rests
+    const scale = [69, 72, 74, 76, 79, 81, 84], out = [];
+    let i = 2;
+    for (let b = 4; b < BARS; b++) {
+      if (b >= 15 && b < 20) continue;
+      for (let q = 0; q < 4; q++) {
+        if (rnd() < 0.22) continue;
+        i = Math.max(0, Math.min(scale.length - 1, i + Math.round(rnd() * 4 - 2)));
+        const long = rnd() < 0.3 && q < 3;
+        out.push(n(b, q, long ? 1.8 : 0.85, scale[i]));
+        if (long) q++;
+      }
+    }
+    add('Lead', out);
+  }
+  { // Arp: fast chord tones, in and out
+    const tones = [[57, 60, 64, 69], [53, 57, 60, 65], [55, 60, 64, 67], [55, 59, 62, 67]], out = [];
+    for (let b = 8; b < BARS; b++) {
+      if (!((b >= 8 && b < 12) || (b >= 18 && b < 24) || b >= 28)) continue;
+      for (let k = 0; k < 8; k++) out.push(n(b, k * 0.5, 0.42, tones[chordOf(b)][[0, 1, 2, 3, 2, 1, 2, 3][k]] + 12));
+    }
+    add('Arp', out);
+  }
+  { // Keys: slow answers
+    const picks = [57, 60, 59, 55, 57, 62, 60, 59], out = [];
+    for (let b = 11; b < 28; b++) {
+      if (!((b >= 11 && b < 16) || (b >= 21 && b < 28))) continue;
+      out.push(n(b, 0, 1.8, picks[b % 8]));
+      out.push(n(b, 2, 1.7, picks[(b + 3) % 8] + 2));
+    }
+    add('Keys', out);
+  }
+
+  const CHORDS = ['Am', 'F', 'C', 'G'];
+  const SECTIONS = [['Intro', 0], ['Verse', 4], ['Build', 12], ['Break', 16], ['Drop', 20], ['Outro', 28]].map(([name, from], i, all) => ({ name, from, to: i + 1 < all.length ? all[i + 1][1] : BARS }));
+  const drums = [];
+  for (let b = 4; b < 30; b++) {
+    if (b >= 14 && b < 18) continue;
+    const busy = b >= 20 && b < 28;
+    for (const q of busy ? [0, 1.5, 2, 2.5] : [0, 2]) drums.push({ t: b * BAR + q * BEAT, kick: true });
+    for (const q of [1, 3]) drums.push({ t: b * BAR + q * BEAT, kick: false });
+  }
+  drums.sort((a, b) => a.t - b.t);
+
+  let pMin = Infinity, pMax = -Infinity;
+  for (const t of tracks) for (const x of t.notes) { pMin = Math.min(pMin, x.p); pMax = Math.max(pMax, x.p); }
+  const yOf = (p) => BOTTOM - ((p - pMin) / (pMax - pMin)) * (BOTTOM - TOP);
+  const hueOf = (p) => 22 + ((p - pMin) / (pMax - pMin)) * 268;   // low: amber, high: violet
+  const colour = (p, a = 1, l = 64) => `hsl(${hueOf(p).toFixed(1)} 92% ${l}% / ${a})`;
+
+  // --- runs: stretches of playing with no silence longer than the allowance --
+  let allowance = 1.5, glide = 0.16;
+  function buildRuns() {
+    for (const t of tracks) {
+      t.runs = [];
+      let run = null;
+      for (const note of t.notes) {
+        if (!run || note.s - run.end > allowance) { run = { start: note.s, end: note.e, notes: [] }; t.runs.push(run); }
+        run.notes.push(note);
+        run.end = Math.max(run.end, note.e);
+      }
+    }
+  }
+  const ease = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
+
+  /** The pitch a run's line shows at time t (bending from each note to the next) */
+  function pitchAt(run, t) {
+    const ns = run.notes;
+    let lo = 0, hi = ns.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (ns[m].s <= t) lo = m; else hi = m - 1; }
+    if (lo === 0) return ns[0].p;
+    const from = ns[lo - 1].p, to = ns[lo].p;
+    return from + (to - from) * ease((t - ns[lo].s) / glide);
+  }
+  /** Where the line is at time t: rising from the bottom before its first note, then on its pitch */
+  function pointAt(run, t) {
+    if (t < run.start) {
+      const u = 1 - (run.start - t) / ENTRY;                // 0 at the bottom, 1 at the first note
+      const y0 = H + 30, y1 = yOf(run.notes[0].p);
+      return { y: y0 + (y1 - y0) * ease(u), p: run.notes[0].p, entering: true };
+    }
+    const p = pitchAt(run, t);
+    return { y: yOf(p), p };
+  }
+  const soundingAt = (run, t) => { for (const x of run.notes) { if (x.s > t) break; if (x.e > t) return x; } return null; };
+
+  // --- drawing: every frame from the time alone -----------------------------
+  const canvas = document.getElementById('c');
+  const g = canvas.getContext('2d');
+  function fit() {
+    const r = canvas.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.max(2, Math.round(r.width * d));
+    canvas.height = Math.max(2, Math.round(r.width * d * 9 / 16));
+  }
+
+  function draw(T) {
+    const k = canvas.width / W;
+    g.setTransform(k, 0, 0, k, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#0b0d13'); bg.addColorStop(1, '#050609');
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+
+    const xOf = (t) => HEAD_X + (t - T) * PPS;
+    const tLeft = T - HEAD_X / PPS - 0.5, tRight = T + (W - HEAD_X) / PPS + 0.5;
+    const opt = { info: oInfo.checked, drums: oDrums.checked, hits: oHits.checked, ahead: oAhead.checked };
+    const rings = [];
+
+    // the drums: a flash of the whole picture on each kick
+    let kickFlash = 0, snareFlash = 0;
+    if (opt.drums) {
+      for (const d of drums) { if (d.t > T) break; if (T - d.t < 0.6) { const f = Math.exp(-(T - d.t) * 9); if (d.kick) kickFlash = Math.max(kickFlash, f); else snareFlash = Math.max(snareFlash, f); } }
+      const bloom = g.createRadialGradient(HEAD_X, H + 40, 0, HEAD_X, H + 40, 620);
+      bloom.addColorStop(0, `rgba(150,175,255,${(0.16 * kickFlash).toFixed(3)})`); bloom.addColorStop(1, 'rgba(150,175,255,0)');
+      g.fillStyle = bloom; g.fillRect(0, 0, W, H);
+    }
+
+    // bar lines, faint
+    g.strokeStyle = 'rgba(255,255,255,0.045)'; g.lineWidth = 1;
+    for (let b = Math.ceil(tLeft / BAR); b * BAR < T + (W - HEAD_X) / PPS; b++) {
+      const x = Math.round(xOf(b * BAR)) + 0.5;
+      g.beginPath(); g.moveTo(x, TOP - 30); g.lineTo(x, BOTTOM + 40); g.stroke();
+    }
+
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    const heads = [];
+    for (const tr of tracks) {
+      for (const run of tr.runs) {
+        if (opt.ahead) {
+          const fa = Math.max(run.start - ENTRY, T), fb = Math.min(run.end, tRight);
+          if (fb > fa) {
+            g.beginPath();
+            const cnt = Math.max(1, Math.ceil((fb - fa) * 60));
+            for (let i = 0; i <= cnt; i++) { const t = Math.min(fb, fa + i / 60), pt = pointAt(run, t); if (i === 0) g.moveTo(xOf(t), pt.y); else g.lineTo(xOf(t), pt.y); }
+            g.strokeStyle = 'rgba(190,200,225,0.2)'; g.lineWidth = 1.5; g.stroke();
+          }
+        }
+        if (opt.hits) for (const note of run.notes) { if (note.s > T) break; if (T - note.s < 0.7) rings.push({ x: xOf(note.s), y: pointAt(run, note.s).y, p: note.p, u: (T - note.s) / 0.7 }); }
+        const a = Math.max(run.start - ENTRY, tLeft), b = Math.min(run.end, T);
+        if (b <= a) continue;
+        const xa = xOf(a), xb = xOf(b);
+        const grad = g.createLinearGradient(xa, 0, Math.max(xb, xa + 0.01), 0);
+        const glow = g.createLinearGradient(xa, 0, Math.max(xb, xa + 0.01), 0);
+        g.beginPath();
+        const step = 1 / 60, count = Math.max(1, Math.ceil((b - a) / step));
+        for (let i = 0; i <= count; i++) {
+          const t = Math.min(b, a + i * step), pt = pointAt(run, t);
+          const x = xOf(t);
+          if (i === 0) g.moveTo(x, pt.y); else g.lineTo(x, pt.y);
+          if (i % 6 === 0 || i === count) {
+            const u = Math.min(1, Math.max(0, (t - a) / (b - a)));
+            const age = Math.min(1, (T - t) / 9);            // older line is dimmer
+            const rise = pt.entering ? ease(1 - (run.start - t) / ENTRY) : 1;
+            grad.addColorStop(u, colour(pt.p, (0.95 - 0.5 * age) * rise));
+            glow.addColorStop(u, colour(pt.p, (0.22 - 0.14 * age) * rise));
+          }
+        }
+        g.globalCompositeOperation = 'lighter';
+        g.strokeStyle = glow; g.lineWidth = 16; g.stroke();
+        g.lineWidth = 8; g.stroke();
+        g.globalCompositeOperation = 'source-over';
+        g.strokeStyle = grad; g.lineWidth = 3; g.stroke();
+
+        const live = T >= run.start - ENTRY && T <= run.end;
+        const tHead = live ? T : run.end;
+        if (tHead >= tLeft && tHead <= T) {
+          const pt = pointAt(run, tHead), note = live ? soundingAt(run, T) : null;
+          heads.push({ x: xOf(tHead), y: pt.y, p: pt.p, live, note, name: tr.name, since: note ? T - note.s : 99, gone: T - run.end });
+        }
+      }
+    }
+
+    // fade the oldest stretch into the left edge
+    const fade = g.createLinearGradient(0, 0, 220, 0);
+    fade.addColorStop(0, 'rgba(7,8,12,1)'); fade.addColorStop(1, 'rgba(7,8,12,0)');
+    g.fillStyle = fade; g.fillRect(0, 0, 220, H);
+
+    // a ring where each note began
+    g.globalCompositeOperation = 'lighter';
+    for (const r of rings) {
+      g.strokeStyle = colour(r.p, 0.7 * (1 - r.u) * (1 - r.u)); g.lineWidth = 2.5 * (1 - r.u) + 0.5;
+      g.beginPath(); g.arc(r.x, r.y, 9 + 38 * ease(r.u), 0, 6.2832); g.stroke();
+    }
+    g.globalCompositeOperation = 'source-over';
+
+    // the drum floor: a fat tick for each kick, a thin tall one for each snare
+    if (opt.drums) {
+      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(0, FLOOR, HEAD_X, 1);
+      for (const d of drums) {
+        if (d.t > T) break; if (d.t < tLeft) continue;
+        const x = xOf(d.t), a = Math.max(0.16, 0.85 - (T - d.t) * 0.11);
+        g.fillStyle = `rgba(225,232,255,${a.toFixed(3)})`;
+        if (d.kick) g.fillRect(x - 3, FLOOR - 9, 6, 18); else g.fillRect(x - 1, FLOOR - 17, 2, 34);
+      }
+      g.fillStyle = fade; g.fillRect(0, FLOOR - 20, 220, 40);
+      const f = Math.max(kickFlash, snareFlash * 0.7), r = 6 + 9 * kickFlash;
+      g.globalCompositeOperation = 'lighter';
+      const halo = g.createRadialGradient(HEAD_X, FLOOR, 0, HEAD_X, FLOOR, 70);
+      halo.addColorStop(0, `rgba(200,215,255,${(0.6 * f).toFixed(3)})`); halo.addColorStop(1, 'rgba(200,215,255,0)');
+      g.fillStyle = halo; g.beginPath(); g.arc(HEAD_X, FLOOR, 70, 0, 6.2832); g.fill();
+      g.globalCompositeOperation = 'source-over';
+      g.fillStyle = `rgba(235,240,255,${(0.45 + 0.55 * f).toFixed(3)})`;
+      g.fillRect(HEAD_X - r / 2, FLOOR - 9 - 14 * snareFlash, r, 18 + 28 * snareFlash);
+      g.font = '500 15px Inter, system-ui, sans-serif'; g.textBaseline = 'middle'; g.textAlign = 'left';
+      g.fillStyle = 'rgba(233,236,243,0.6)'; g.fillText('Drums', HEAD_X + 20, FLOOR);
+    }
+
+    // the song map, the section and the chord
+    if (opt.info) {
+      const bar = Math.floor(T / BAR), bx = 40, bw = W - 80, by = 30;
+      let here = SECTIONS[0];
+      for (const s of SECTIONS) {
+        const x0 = bx + bw * s.from / BARS, x1 = bx + bw * s.to / BARS - 4, on = bar >= s.from && bar < s.to;
+        if (on) here = s;
+        g.fillStyle = on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)'; g.fillRect(x0, by, x1 - x0, 4);
+        if (on) { g.fillStyle = 'rgba(255,255,255,0.9)'; g.fillRect(x0, by, Math.max(0, Math.min(x1, bx + bw * T / TOTAL) - x0), 4); }
+        else if (bar >= s.to) { g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(x0, by, x1 - x0, 4); }
+        g.font = '600 12px Inter, system-ui, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+        g.fillStyle = on ? 'rgba(233,236,243,0.95)' : 'rgba(233,236,243,0.38)';
+        g.fillText(s.name.toUpperCase(), x0, by + 22);
+      }
+      const since = T - Math.floor(bar / 2) * 2 * BAR, pop = Math.exp(-since * 4);
+      g.font = `600 ${(60 + 8 * pop).toFixed(1)}px "Space Grotesk", system-ui, sans-serif`;
+      g.fillStyle = `rgba(255,255,255,${(0.82 + 0.18 * pop).toFixed(3)})`;
+      const name = CHORDS[chordOf(bar)];
+      g.fillText(name, 40, 126);
+      const wide = g.measureText(name).width;
+      g.font = '500 24px "Space Grotesk", system-ui, sans-serif'; g.fillStyle = 'rgba(233,236,243,0.36)';
+      g.fillText('then ' + CHORDS[chordOf(bar + 2)], 40 + wide + 22, 126);
+      g.textAlign = 'right'; g.font = '500 15px Inter, system-ui, sans-serif'; g.fillStyle = 'rgba(233,236,243,0.5)';
+      g.fillText('A minor  ·  100 BPM  ·  bar ' + (bar + 1), W - 40, 126);
+      g.textAlign = 'left';
+    }
+
+    // the dots
+    g.font = '500 15px Inter, system-ui, sans-serif'; g.textBaseline = 'middle';
+    for (const h of heads) {
+      if (h.live) {
+        const hit = Math.exp(-h.since * 7);                  // a kick as each note starts
+        const r = (h.note ? 7 : 5) + 7 * hit;
+        g.globalCompositeOperation = 'lighter';
+        const halo = g.createRadialGradient(h.x, h.y, 0, h.x, h.y, r * 4.5);
+        halo.addColorStop(0, colour(h.p, h.note ? 0.55 : 0.25)); halo.addColorStop(1, colour(h.p, 0));
+        g.fillStyle = halo; g.beginPath(); g.arc(h.x, h.y, r * 4.5, 0, 6.2832); g.fill();
+        g.globalCompositeOperation = 'source-over';
+        g.fillStyle = colour(h.p, 1, h.note ? 88 : 72);
+        g.beginPath(); g.arc(h.x, h.y, r, 0, 6.2832); g.fill();
+        g.fillStyle = h.note ? 'rgba(233,236,243,0.92)' : 'rgba(233,236,243,0.5)';
+        g.fillText(h.name, h.x + 20, h.y);
+      } else {
+        const a = Math.max(0.25, 0.8 - h.gone * 0.12);       // left behind where the line ended
+        g.fillStyle = colour(h.p, a, 60);
+        g.beginPath(); g.arc(h.x, h.y, 5, 0, 6.2832); g.fill();
+      }
+    }
+  }
+
+  // --- running it ------------------------------------------------------------
+  const playBtn = document.getElementById('play');
+  const gapIn = document.getElementById('gap'), gapOut = document.getElementById('gapOut');
+  const glideIn = document.getElementById('glide'), glideOut = document.getElementById('glideOut');
+  const oInfo = document.getElementById('oInfo'), oDrums = document.getElementById('oDrums'), oHits = document.getElementById('oHits'), oAhead = document.getElementById('oAhead');
+  for (const box of [oInfo, oDrums, oHits, oAhead]) box.addEventListener('change', () => { if (!playing) draw(T); });
+  let T = 26, playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches, last = 0;
+
+  function frame(now) {
+    if (playing) {
+      if (last) T = (T + Math.min(0.1, (now - last) / 1000)) % TOTAL;
+      last = now;
+      draw(T);
+      requestAnimationFrame(frame);
+    }
+  }
+  function setPlaying(on) {
+    playing = on; last = 0;
+    playBtn.textContent = on ? 'Pause' : 'Play';
+    if (on) requestAnimationFrame(frame); else draw(T);
+  }
+  playBtn.addEventListener('click', () => setPlaying(!playing));
+  document.getElementById('restart').addEventListener('click', () => { T = 0; last = 0; if (!playing) draw(T); });
+  gapIn.addEventListener('input', () => { allowance = +gapIn.value; gapOut.textContent = allowance.toFixed(1) + ' s'; buildRuns(); if (!playing) draw(T); });
+  glideIn.addEventListener('input', () => { glide = +glideIn.value; glideOut.textContent = glide.toFixed(2) + ' s'; if (!playing) draw(T); });
+  window.addEventListener('resize', () => { fit(); if (!playing) draw(T); });
+
+  buildRuns(); fit();
+  setPlaying(playing);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (!playing) draw(T); });
+})();
+</script>

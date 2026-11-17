@@ -60,6 +60,7 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | Export (offline render, stems, intro + loop) | `src/audio/exportWav.ts`, `ExportDialog.tsx` |
 | MP3 / OGG encoding (wasm-media-encoders), WAV loop chunk | `src/audio/encoders.ts`, `wavCues.ts` |
 | MP4 video (WebCodecs + Mediabunny) | `src/audio/videoExport.ts` |
+| Lines video picture (a line per instrument; its song map, section, chord, drum pulse, rings and what's coming) | `src/store/lines.ts` (runs, the path each line follows, hits; pure), `src/store/linesChords.ts` (the chord named per half measure; pure), `src/audio/linesDraw.ts` (stateless drawing), `lines` in `videoExport.ts`, `linesLook` in `ExportDialog.tsx`; design and plan in `docs/superpowers/` |
 | Spectrum readouts (bars and character styles), master analyser, Mixer view | `src/audio/spectrumSkins.ts`, `masterSpectrum.ts`, `src/components/timeline/SpectrumView.tsx` |
 | Share link (`#s=`; older `#song=` still opens), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
 | Synth Designer (patch, presets, engine, panel) | `src/store/synthPatch.ts`, `src/audio/presets/designer.ts`, `src/components/inspector/SynthPanel.tsx` |
@@ -302,6 +303,22 @@ shaping for the Erhu, Electric and Acoustic Guitar, Violin and Cello and a quiet
 Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time notice for phone users.
 
 ## Recently finished
+
+- **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
+  `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no
+  pitch to follow). `lines.ts` and `linesDraw.ts` read no app state, so they can be lifted into a
+  download: the Tools page's **Instrument lines** (`tools/instrument-lines/`, bundled from
+  `src/audio/linesKit.ts` by `instrumentLines()` in `scripts/tools-site.mjs`; MIT; it takes chord
+  names as given, it doesn't work them out). Height is shared between the instruments playing (bands,
+  lowest part at the bottom), not pitch across the song's range: the owner's 16-track song was
+  unreadable that way. A roll (the same note 3 or more times, each within 0.13 s) draws as teeth.
+  The picture has no waveform and its chord lies over the lines. Fixed values, tuned by eye on the
+  starters: allowance 1.5 s, bend 0.16 s, rise 1.1 s, a fast passage (4 or more lead notes under
+  0.22 s apart) follows its average over 0.45 s. Chords are checked by unit tests on built chords,
+  not against the starters' progressions (the starters don't state theirs as names). Not built:
+  thickness from loudness, camera moves, names only as a line comes in, a live view, lines for
+  audio clips. A stutter made by an effect (not written as notes) isn't seen; many lines' names
+  can crowd beside the dots.
 
 - **Songs made in Fledgetone, with a studio video** (Unreleased): "Lofi soul, after hours" has its own
   home-page section (#songs, before Features; a card grid in the films' style, one wide card for now:

@@ -45,6 +45,10 @@ import { canExportVideo, DEFAULT_VIDEO_MARKS, renderVideo, VIDEO_SIZES, type Vid
 import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
+import { DEFAULT_LINES_LOOK, type LinesLook } from '../../audio/linesDraw';
+import { linesData } from '../../store/lines';
+import { lineChords } from '../../store/linesChords';
+import { detectKey } from '../../store/songKey';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, formatBarRange, formatBarSpan, frameRateLabel } from '../../store/timelineTypes';
 import { Modal } from './Modal';
@@ -72,8 +76,8 @@ interface ExportSettings {
   format: AudioFormat;
   /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
   loopFile: boolean;
-  /** Video: the picture (Showcase, the notes on a piano roll, or a spectrum style) and its shape */
-  picture: 'showcase' | SkinId;
+  /** Video: the picture (Showcase, the notes on a piano roll; Lines, a line per instrument; or a spectrum style) and its shape */
+  picture: 'showcase' | 'lines' | SkinId;
   shape: VideoShape;
   /** Video: frames a second (60: smooth scrolling notes) */
   fps: VideoFps;
@@ -82,12 +86,14 @@ interface ExportSettings {
   /** Showcase: the tracks on one roll or a lane each (Auto: lanes for a big arrangement), and what a hit note does */
   showcaseLayout: ShowcaseLayout;
   showcaseHits: ShowcaseHits;
+  /** Lines: which of its extras it draws (the section's name is marks.sections) */
+  linesLook: LinesLook;
   /** Mixdown: also the version without the lead melody, and the one without drums (songVersions.ts) */
   underscore: boolean;
   noDrums: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, marks: DEFAULT_VIDEO_MARKS, showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, marks: DEFAULT_VIDEO_MARKS, showcaseLayout: 'auto', showcaseHits: 'sparkles', linesLook: DEFAULT_LINES_LOOK, underscore: false, noDrums: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -99,6 +105,13 @@ function readMarks(raw: unknown): VideoMarks {
   const r = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
   const on = (k: keyof VideoMarks) => (typeof r[k] === 'boolean' ? (r[k] as boolean) : DEFAULT_VIDEO_MARKS[k]);
   return { title: on('title'), subtitle: on('subtitle'), sections: on('sections'), time: on('time'), waveform: on('waveform') };
+}
+
+/** Saved Lines extras, each falling back to drawn */
+function readLinesLook(raw: unknown): LinesLook {
+  const r = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const on = (k: keyof LinesLook) => (typeof r[k] === 'boolean' ? (r[k] as boolean) : DEFAULT_LINES_LOOK[k]);
+  return { map: on('map'), chord: on('chord'), drums: on('drums'), rings: on('rings'), ahead: on('ahead') };
 }
 
 /** The options of the last export in this browser (a per-browser convenience, not part of the project). */
@@ -119,12 +132,13 @@ function loadSettings(): ExportSettings {
       target: oneOf(r.target, LOUDNESS_TARGETS.map((t) => t.id), d.target),
       format: oneOf(r.format, AUDIO_FORMATS, d.format),
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
-      picture: r.picture === 'showcase' || isSkin(r.picture) ? r.picture : d.picture,
+      picture: r.picture === 'showcase' || r.picture === 'lines' || isSkin(r.picture) ? r.picture : d.picture,
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
       fps: oneOf(r.fps, [30, 60] as const, d.fps),
       marks: readMarks(r.marks),
       showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
       showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
+      linesLook: readLinesLook(r.linesLook),
       underscore: typeof r.underscore === 'boolean' ? r.underscore : d.underscore,
       noDrums: typeof r.noDrums === 'boolean' ? r.noDrums : d.noDrums,
     };
@@ -136,11 +150,12 @@ function loadSettings(): ExportSettings {
 /**
  * Open Export set up for a Showcase video (the notes playing on a piano roll), of the whole song,
  * in the shape asked for: what File › Showcase video… and the search do. Other settings are kept.
+ * With `picture` 'lines', set up for a Lines video (a line per instrument) instead.
  */
-export function presetShowcaseExport(shape: VideoShape = 'wide'): void {
+export function presetShowcaseExport(shape: VideoShape = 'wide', picture: 'showcase' | 'lines' = 'showcase'): void {
   const s = loadSettings();
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...s, range: 'song', what: 'video', picture: 'showcase', shape }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...s, range: 'song', what: 'video', picture, shape }));
   } catch {
     // Storage blocked: the dialog opens with its usual settings
   }
@@ -541,9 +556,13 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         // Showcase: the notes of the range, timed by the song's tempo map, its measure lines in the song's time signatures
         const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
+        // Lines: the same notes as each instrument's line, and the chords they make (spelled in the song's key)
+        const linesNotes = !footage && settings.picture === 'lines' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
+        const lines = linesNotes ? { data: linesData(linesNotes), chords: settings.linesLook.chord ? lineChords(linesNotes, detectKey(clips, tracks)) : [], look: settings.linesLook } : undefined;
         const blob = await renderVideo({
           footage,
-          skin: settings.picture === 'showcase' ? 'bars' : settings.picture,
+          skin: settings.picture === 'showcase' || settings.picture === 'lines' ? 'bars' : settings.picture,
+          lines,
           shape: settings.shape,
           fps: settings.fps,
           showcase,
@@ -816,8 +835,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {settings.fps} fps) of the mix: the project's name,{' '}
                 {settings.picture === 'showcase'
                   ? 'the notes of every track on a piano roll that scrolls past the playhead, each lighting up as it plays, the tracks playing'
-                  : 'a spectrum that moves with the music'}
-                , the whole song's waveform with a playhead, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
+                  : settings.picture === 'lines'
+                    ? 'a glowing line for each instrument that bends and changes colour with the notes it plays'
+                    : 'a spectrum that moves with the music'}
+                {settings.picture === 'lines' ? '' : ", the whole song's waveform with a playhead"}, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
               </p>
             )}
             {!(refVideo && useFootage) && (
@@ -827,9 +848,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={settings.picture}
                   onChange={(e) => update({ picture: e.target.value as ExportSettings['picture'] })}
                   className="h-7 bg-forge-bg border border-forge-border rounded px-1"
-                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
+                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
                 >
                   <option value="showcase">Showcase: the notes playing</option>
+                  <option value="lines">Lines: each instrument's path</option>
                   {SPECTRUM_SKINS.map((k) => (
                     <option key={k.id} value={k.id}>
                       Spectrum: {k.name}
@@ -874,7 +896,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                       ['time', 'Time', 'The time played and the length'],
                       ['waveform', 'Waveform', "The whole song's waveform with a playhead"],
                     ] as const
-                  ).map(([key, label, title]) => (
+                  )
+                    // (Lines draws the section's name in its picture: its tick box is with Lines' own, below; and it has no waveform)
+                    .filter(([key]) => !((key === 'sections' || key === 'waveform') && settings.picture === 'lines'))
+                    .map(([key, label, title]) => (
                     <label key={key} className="flex items-center gap-1.5 cursor-pointer" title={title}>
                       <input type="checkbox" checked={settings.marks[key]} onChange={(e) => update({ marks: { ...settings.marks, [key]: e.target.checked } })} className="accent-cyan-400" />
                       {label}
@@ -882,6 +907,34 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   ))}
                 </div>
                 <span className="text-forge-muted">What you leave out gives its room to the picture. A small fledgetone.com mark stays at the bottom.</span>
+              </div>
+            )}
+            {!(refVideo && useFootage) && settings.picture === 'lines' && (
+              <div className="grid gap-1.5" role="group" aria-label="What the lines come with">
+                <span className="text-forge-text">With the lines</span>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {(
+                    [
+                      ['map', 'Song map', "A strip across the top: the song's sections (from your markers), filling as it plays"],
+                      ['section', 'Section', 'The name of the section the song is in, from your markers'],
+                      ['chord', 'Chord', "The chord sounding and the next one, worked out from the notes. Nothing shows where the notes don't make a clear chord"],
+                      ['drums', 'Drum pulse', 'A row of drum hits along the bottom, and a soft flash on each kick'],
+                      ['rings', 'Rings on notes', 'A ring bursts from a line where each note starts'],
+                      ['ahead', "What's coming", 'A faint line ahead of each dot: where that instrument goes next'],
+                    ] as const
+                  ).map(([key, label, title]) => (
+                    <label key={key} className="flex items-center gap-1.5 cursor-pointer" title={title}>
+                      <input
+                        type="checkbox"
+                        checked={key === 'section' ? settings.marks.sections : settings.linesLook[key]}
+                        onChange={(e) => update(key === 'section' ? { marks: { ...settings.marks, sections: e.target.checked } } : { linesLook: { ...settings.linesLook, [key]: e.target.checked } })}
+                        className="accent-cyan-400"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <span className="text-forge-muted">Each instrument with notes draws a line. Audio clips have no notes, so they have no line.</span>
               </div>
             )}
             {!(refVideo && useFootage) && settings.picture === 'showcase' && (

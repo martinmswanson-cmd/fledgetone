@@ -396,7 +396,7 @@ have the right to contribute it.
 
 Two parts are under the MIT licence instead: `engine/` (Fledgetone's own plugins and DSP) and the
 downloads on the Tools page other than the song player (`tools/` but `tools/song-player/`, and
-the files of `src/` that go into them: `src/gameKit/` and `src/audio/effects/dropFx.ts`). A contribution to those
+the files of `src/` that go into them: `src/gameKit/`, `src/audio/effects/dropFx.ts`, and the Lines picture's `src/store/lines.ts`, `src/audio/linesDraw.ts` and `src/audio/linesKit.ts`). A contribution to those
 is licensed under MIT, and code you didn't write that goes into them must be under MIT or a
 licence as permissive (BSD, Apache-2.0, ISC), not the GPL or LGPL.
 
