@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Lines, a new video picture**: in Export › Video (MP4), **Picture** has a third choice beside Showcase and the spectrum styles. **Lines: each instrument's path** draws a glowing line for every instrument, rising, falling and changing colour with the notes it plays; a line ends when its instrument falls silent and a new one rises from the bottom when it comes back. Six things can be drawn with the lines, each its own tick box: the **Song map**, the **Section** name, the **Chord** sounding and the next, a **Drum pulse**, **Rings on notes** and **What's coming**. Widescreen and portrait, 30 or 60 fps, as the other pictures.
+
 ## 2026.11.17-3 — The tools are MIT now
 
 - **The tools are MIT now**: the game music players, Fledge Synth, the Fledge effects and the Drop pad effects on fledgetone.com/tools are under the MIT licence in place of the GPL, so you can put them in any site, app or game, open or closed, without sharing your own code; keep the copyright notice with them. Fledgetone's own plugins and their Rust source (the `engine` folder) are MIT too.
