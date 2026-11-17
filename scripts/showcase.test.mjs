@@ -90,3 +90,14 @@ test("the rhythm game's sound is on the written beat, as its notes are", () => {
   assert.equal('groove' in out.clips[0], false);
   assert.equal(out.clips[1], clips[1]);
 });
+
+test('a drum kit\'s kick is marked, and an instrument without a pitch to follow', () => {
+  const tracks = [track('piano', 'piano'), track('kit', 'drums')];
+  const clips = [clip('a', 'piano', 1, 1, [note('C4', 0)]), clip('b', 'kit', 1, 1, [note('C1', 0, '16n'), note('D1', 0.5, '16n')])];
+  const d = showcaseData(tracks, clips, 1, 2, toSeconds);
+  assert.equal(d.notes.find((n) => n.midi === 24).kick, true);
+  assert.equal(d.notes.find((n) => n.midi === 26).kick, undefined);
+  const piano = d.notes.find((n) => n.midi === 60);
+  assert.equal(piano.kick, undefined);
+  assert.equal(piano.perc, undefined);
+});
