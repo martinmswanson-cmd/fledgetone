@@ -838,7 +838,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   : settings.picture === 'lines'
                     ? 'a glowing line for each instrument that bends and changes colour with the notes it plays'
                     : 'a spectrum that moves with the music'}
-                , the whole song's waveform with a playhead, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
+                {settings.picture === 'lines' ? '' : ", the whole song's waveform with a playhead"}, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
               </p>
             )}
             {!(refVideo && useFootage) && (
@@ -897,8 +897,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                       ['waveform', 'Waveform', "The whole song's waveform with a playhead"],
                     ] as const
                   )
-                    // (Lines draws the section's name in its picture: its tick box is with Lines' own, below)
-                    .filter(([key]) => !(key === 'sections' && settings.picture === 'lines'))
+                    // (Lines draws the section's name in its picture: its tick box is with Lines' own, below; and it has no waveform)
+                    .filter(([key]) => !((key === 'sections' || key === 'waveform') && settings.picture === 'lines'))
                     .map(([key, label, title]) => (
                     <label key={key} className="flex items-center gap-1.5 cursor-pointer" title={title}>
                       <input type="checkbox" checked={settings.marks[key]} onChange={(e) => update({ marks: { ...settings.marks, [key]: e.target.checked } })} className="accent-cyan-400" />

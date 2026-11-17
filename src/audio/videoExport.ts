@@ -90,7 +90,8 @@ export interface VideoOptions {
   showcaseLook?: ShowcaseLook;
   /**
    * Each instrument's line, the chords, and which of its extras to draw: draws the Lines picture in
-   * place of the spectrum. It shows the section's name itself (marks.sections), so the footer doesn't.
+   * place of the spectrum. It shows the section's name itself (marks.sections), so the footer doesn't,
+   * and has no waveform (marks.waveform is ignored).
    */
   lines?: { data: LinesData; chords: ChordSpan[]; look: LinesLook };
   /** Frames a second (30 if not given) */
@@ -430,7 +431,9 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const footY = H - 60;
     const waveY = footer ? footY - 70 : footY - 40;
     const pictureY = heading ? titleY + (tall ? 120 : 106) : tall ? titleY : 48;
-    const pictureEnd = marks.waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
+    // (nor the waveform: its song map shows where the song is, and the lines want the room)
+    const waveform = marks.waveform && !opts.lines;
+    const pictureEnd = waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
     const picture = { x: stripX, y: pictureY, w: stripW, h: pictureEnd - pictureY };
     const logo = await loadImage(fledgetoneLogo);
     const background = grainedBackground(size.w, size.h);
@@ -505,7 +508,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       }
 
       // Waveform of the whole song, with the playhead
-      if (marks.waveform) {
+      if (waveform) {
         const waveH = 56;
         const played = (t / seconds) * stripW;
         for (let c = 0; c < wave.length; c++) {
