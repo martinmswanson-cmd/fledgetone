@@ -7,7 +7,8 @@
  * processor cores at once where that sounds exactly the same (see renderTracks and renderParts.ts).
  */
 import { truePeakOf } from './loudness';
-import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
+import { audibleIds, busChain, busFirst, busOf, isBus, isReturn, liveSends } from '../store/buses';
+import { sidechainSources, withSidechains } from '../store/sidechain';
 import { bounceStandIns } from '../store/freeze';
 import { chainTail, feedsMasterDelay, feedsMasterReverb, ownInsertTail, playedTracks, slowestBpm } from './effectTails';
 import { secondsBetween, tempoAt, type MeterMap, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
@@ -25,7 +26,7 @@ import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds, designedDecay, ROOM_MAX_SECONDS } from './effects/busEffects';
 import { prepareRooms, roomSeconds, STUDIO_DECAY, type RoomWish } from './effects/roomIR';
-import { insertRoomDecay } from './effects/spaceFx';
+import { insertRoomDecay, prepareRecordedRooms } from './effects/spaceFx';
 import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
 import { releaseSeconds, soundingNotes } from './auditionMath';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
@@ -1202,9 +1203,23 @@ async function renderGraphHeld(
   const returns = opts.tracks.filter((r) => !soundingIds.has(r.id) && heard.has(r.id) && senders.some((t) => liveSends(t, opts.tracks).some((x) => x.to === r.id)));
   const withReturns = [...sounding, ...returns];
   const busIds = new Set(withReturns.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
+  // ...and the tracks their plugins listen to (a sidechain: sidechain.ts) that this render leaves
+  // out (a stem, a freeze): built and played too, heard by those plugins only, so a stem of the
+  // bass ducks under the kick as it does in the mix. A muted track ducks nothing, as live; a bus
+  // or a return left out isn't built for this (its sound is its tracks')
+  const keyed = withSidechains(opts.tracks);
+  const fxOf = new Map(keyed.map((t) => [t.id, t.pluginFx]));
+  const builtIds = new Set([...withReturns.map((t) => t.id), ...busIds]);
+  const keyIds = new Set(
+    keyed
+      .filter((t) => builtIds.has(t.id))
+      .flatMap((t) => sidechainSources(t, keyed))
+      .filter((id) => !builtIds.has(id) && heard.has(id) && opts.tracks.some((t) => t.id === id && !isBus(t) && !isReturn(t)))
+  );
+  const keyOnly = opts.tracks.filter((t) => keyIds.has(t.id));
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;
   // Clips' controller lanes and step lanes play as their tracks' automation (see ccLanes.ts, stepLanes.ts)
-  const tracks = withStepLanes(withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips), clips, renderTempo(opts));
+  const tracks = withStepLanes(withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...keyOnly, ...opts.tracks.filter((t) => busIds.has(t.id))]), clips), clips, renderTempo(opts));
   const ending = opts.ending ?? 'ringOut';
   const bypassMaster = opts.bypassMaster || !!premaster;
   // Every track is held back to the slowest path through the mix (see delayCompensation.ts),
@@ -1254,6 +1269,8 @@ async function renderGraphHeld(
   // The rooms its reverbs and instruments take, made first a little at a time (prepareRooms), so
   // building the graph, which takes them at once, doesn't hold up the page
   const releaseRooms = await prepareRooms(sampleRate, roomWishes(tracks, masterFx), signal);
+  // ...and the recorded rooms its tracks' Reverb inserts play through, decoded
+  const releaseRecorded = await prepareRecordedRooms(tracks.flatMap((t) => (t.fx?.reverb?.on && t.fx.reverb.room ? [t.fx.reverb.room] : [])), sampleRate);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
   // The global context is this render's while its graph is built (a cancel before then still lets go of the rooms)
@@ -1265,6 +1282,7 @@ async function renderGraphHeld(
     throw err;
   } finally {
     releaseRooms();
+    releaseRecorded();
   }
   // The sound comes out as late as the limiter actually in place makes it
   if (withMaster) plan = await settleLatency(plan, graph.lookahead);
@@ -1410,21 +1428,26 @@ async function renderGraphHeld(
     const strips: TrackStrip[] = [];
     const stripOf = new Map<string, TrackStrip>();
     const instruments = new Map<string, TrackInstrument>();
+    // Where a track only built for a sidechain plays: nowhere (and it sends nothing to the rooms)
+    const unheard = keyOnly.length ? new Tone.Gain(0).connect(context.destination) : null;
     for (const track of tracks) {
       // Into its bus's strip (made already: buses come first), or the master
       const bus = busOf(track, opts.tracks);
-      const strip = createTrackStrip((bus && stripOf.get(bus.id)?.input) || mixBus, busFx);
+      const key = keyIds.has(track.id);
+      const strip = createTrackStrip((key && unheard) || (bus && stripOf.get(bus.id)?.input) || mixBus, busFx);
       strip.setTempo(bpm);
-      strip.apply(track, { ramp: 0, muteOverride: false });
+      strip.apply(key ? { ...track, reverbSend: 0, delaySend: 0 } : track, { ramp: 0, muteOverride: false });
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);
       stripOf.set(track.id, strip);
-      const instrument = createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track));
+      // (Its plugins with the sidechains in effect, each hearing the other track's strip)
+      const instrument = createInstrument(track.instrumentKey, strip.input, { ...trackInstrumentOptions(track), pluginFx: fxOf.get(track.id) ?? track.pluginFx, keyOf: (id) => stripOf.get(id)?.keyTap() });
       strip.setPluginParams(instrument.setPluginParam ?? null);
       instruments.set(track.id, instrument);
     }
     // Sends into the returns (made already: returns come before the tracks that send to them)
     for (const track of tracks) {
+      if (keyIds.has(track.id)) continue;
       const sends = liveSends(track, opts.tracks).flatMap((x) => {
         const ret = stripOf.get(x.to);
         return ret ? [{ id: x.to, target: instruments.get(x.to)?.sendInput ?? ret.input, level: x.level, pre: !!x.pre }] : [];

@@ -3,128 +3,10 @@
 //! Written from the textbook forms (the RBJ cookbook biquads, a feedback delay network reverb
 //! with a Hadamard mixing matrix), not from anyone's code.
 
-use crate::dsp::{fast_tanh, flush};
+use fledge_dsp::delay::Line;
+use fledge_dsp::filter::{lp, one_pole, Biquad};
+use fledge_dsp::math::{fast_tanh, flush};
 use std::f32::consts::PI;
-
-// ---------- EQ ----------
-
-#[derive(Clone, Copy, Default)]
-pub struct Biquad {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    z1: f32,
-    z2: f32,
-}
-
-impl Biquad {
-    /// 0 low shelf, 1 peak (Q 0.9), 2 high shelf, at `f` Hz with `db` of gain.
-    pub fn set(&mut self, kind: u32, f: f32, db: f32, sr: f32) {
-        let a = 10f32.powf(db / 40.0);
-        let w = 2.0 * PI * f.clamp(10.0, sr * 0.45) / sr;
-        let (cw, sw) = (w.cos(), w.sin());
-        let (b0, b1, b2, a0, a1, a2);
-        match kind {
-            1 => {
-                let alpha = sw / (2.0 * 0.9);
-                b0 = 1.0 + alpha * a;
-                b1 = -2.0 * cw;
-                b2 = 1.0 - alpha * a;
-                a0 = 1.0 + alpha / a;
-                a1 = -2.0 * cw;
-                a2 = 1.0 - alpha / a;
-            }
-            _ => {
-                // Shelves with a slope of 1
-                let alpha = sw / 2.0 * 2f32.sqrt();
-                let sa = 2.0 * a.sqrt() * alpha;
-                // (+1 makes the low shelf of these formulas, -1 the high)
-                let s = if kind == 0 { 1.0 } else { -1.0 };
-                b0 = a * ((a + 1.0) - s * (a - 1.0) * cw + sa);
-                b1 = 2.0 * s * a * ((a - 1.0) - s * (a + 1.0) * cw);
-                b2 = a * ((a + 1.0) - s * (a - 1.0) * cw - sa);
-                a0 = (a + 1.0) + s * (a - 1.0) * cw + sa;
-                a1 = -2.0 * s * ((a - 1.0) + s * (a + 1.0) * cw);
-                a2 = (a + 1.0) + s * (a - 1.0) * cw - sa;
-            }
-        }
-        self.b0 = b0 / a0;
-        self.b1 = b1 / a0;
-        self.b2 = b2 / a0;
-        self.a1 = a1 / a0;
-        self.a2 = a2 / a0;
-    }
-    #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.z1;
-        self.z1 = flush(self.b1 * x - self.a1 * y + self.z2);
-        self.z2 = flush(self.b2 * x - self.a2 * y);
-        y
-    }
-}
-
-// ---------- a delay line ----------
-
-#[derive(Clone)]
-pub struct Line {
-    buf: Vec<f32>,
-    w: usize,
-}
-
-impl Line {
-    pub fn new(len: usize) -> Self {
-        Line { buf: vec![0.0; len.max(4)], w: 0 }
-    }
-    #[inline]
-    pub fn push(&mut self, x: f32) {
-        self.buf[self.w] = x;
-        self.w = (self.w + 1) % self.buf.len();
-    }
-    /// The sample `d` samples ago (fractional, linear), the one just pushed being 1 ago.
-    #[inline]
-    pub fn read(&self, d: f32) -> f32 {
-        let n = self.buf.len();
-        let d = d.clamp(1.0, (n - 2) as f32);
-        let rp = self.w as f32 + n as f32 - d;
-        let i = rp as usize;
-        let t = rp - i as f32;
-        let a = self.buf[i % n];
-        let b = self.buf[(i + 1) % n];
-        a + (b - a) * t
-    }
-    /// The same, read through a 4-point Hermite curve: for a line whose length keeps moving (the
-    /// chorus, the flanger), where a straight line between samples dulls the highs by a different
-    /// amount every sample, which came out as a grainy hiss over bright sounds
-    #[inline]
-    pub fn read_cubic(&self, d: f32) -> f32 {
-        let n = self.buf.len();
-        let d = d.clamp(2.0, (n - 3) as f32);
-        let rp = self.w as f32 + n as f32 - d;
-        let i = rp as usize;
-        let t = rp - i as f32;
-        let (xm, x0, x1, x2) = (self.buf[(i + n - 1) % n], self.buf[i % n], self.buf[(i + 1) % n], self.buf[(i + 2) % n]);
-        let c1 = 0.5 * (x1 - xm);
-        let c2 = xm - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
-        let c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
-        ((c3 * t + c2) * t + c1) * t + x0
-    }
-    pub fn clear(&mut self) {
-        self.buf.iter_mut().for_each(|x| *x = 0.0);
-    }
-}
-
-/// One step of a one-pole low pass with coefficient `c` (0..1).
-#[inline]
-fn lp(state: &mut f32, x: f32, c: f32) -> f32 {
-    *state = flush(*state + (x - *state) * c);
-    *state
-}
-
-fn one_pole(f: f32, sr: f32) -> f32 {
-    1.0 - (-2.0 * PI * f / sr).exp()
-}
 
 // ---------- settings ----------
 
@@ -377,7 +259,7 @@ impl Effects {
         }
 
         if c.delay {
-            let target = (c.delay_time * sr).clamp(1.0, (self.delay[0].buf.len() - 4) as f32);
+            let target = (c.delay_time * sr).clamp(1.0, (self.delay[0].capacity() - 4) as f32);
             let glide = 1.0 - (-1.0 / (0.05 * sr)).exp();
             let tone = one_pole(c.delay_tone, sr);
             let fb = c.delay_fb.min(0.95);
@@ -476,28 +358,6 @@ fn hadamard(mut x: [f32; 8]) -> [f32; 8] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A bright tone read from a line between samples, as the chorus and the flanger read it: the
-    /// Hermite read is far closer to the tone itself than a straight line between samples
-    #[test]
-    fn a_moving_read_stays_close_to_the_tone() {
-        let (sr, hz) = (48000.0f32, 10000.0f32);
-        let mut line = Line::new(4800);
-        let (mut cubic, mut straight, mut all) = (0.0f64, 0.0f64, 0.0f64);
-        for i in 0..20000 {
-            line.push((2.0 * PI * hz * i as f32 / sr).sin());
-            if i > 1000 {
-                // A delay sweeping across fractions of a sample, as a chorus's does
-                let d = 200.0 + 50.0 * (i as f32 * 0.001).sin();
-                let want = (2.0 * PI * hz * (i as f32 + 1.0 - d) / sr).sin() as f64;
-                cubic += (line.read_cubic(d) as f64 - want).powi(2);
-                straight += (line.read(d) as f64 - want).powi(2);
-                all += want * want;
-            }
-        }
-        let (c, s) = (10.0 * (cubic / all).log10(), 10.0 * (straight / all).log10());
-        assert!(c < -24.0 && c < s - 10.0, "cubic {c:.1} dB, straight {s:.1} dB");
-    }
 
     fn cfg() -> FxCfg {
         FxCfg {

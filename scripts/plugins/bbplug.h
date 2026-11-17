@@ -39,3 +39,22 @@ BB_EXPORT int bb_get_program(int h);
 BB_EXPORT int bb_alloc(int bytes);
 BB_EXPORT void bb_free(int ptr);
 BB_EXPORT int bb_load(int h, int ptr, int bytes);
+
+/*
+ * A family may also export these; the host calls the ones that are there. The Rust families
+ * export them all (engine/fledge-wasm, which implements this interface for any Rust plugin):
+ *
+ *   void bb_tempo(int h, float bpm);          the song's tempo
+ *   void bb_position(int h, double beats);    where the song is at the start of the next block
+ *                                             (under 0: the song has stopped, there is none)
+ *   void bb_legacy(int h, int count);         an older saved sound with `count` values was just
+ *                                             loaded: set the newer parameters as it sounded then
+ *   void bb_settle(int h);                    the whole sound was just switched with the output
+ *                                             faded out: go straight to the new settings
+ *   int bb_sidechain(int h, int connected);   whether a sidechain is connected now; returns 1 if
+ *                                             the plugin listens to one. While one is connected
+ *                                             the host fills bb_buffer(h, 4) and bb_buffer(h, 5)
+ *                                             (left, right) before each bb_process
+ *   const uint8_t *bb_state(int h);           the plugin's state, to hand back through bb_alloc
+ *   int bb_state_bytes(int h);                and bb_load; how many bytes the last one is
+ */

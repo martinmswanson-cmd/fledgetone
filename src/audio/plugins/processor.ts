@@ -12,7 +12,9 @@
  * (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
  * `legacy` (an older saved sound with only its first `count` values went in: the plugin sets the
  * rest as it sounded then; answered with `params`), `table` (Fledge Synth's user table: `frames`
- * cycles of 2048 samples, or none; see userTable.ts), `destroy`.
+ * cycles of 2048 samples, or none; see userTable.ts), `sidechain` (whether another track's sound
+ * is connected to the second input: a plugin that listens to one, bb_sidechain, then gets it in
+ * its buffers 4 and 5 before each block, and follows its own input while none is), `destroy`.
  * `program` and `noProgram` carry `asked`, the host's count of preset changes, which every `params`
  * answer gives back: an answer from before the latest change says nothing about the preset.
  * `switch` and `switched` go round a change of the whole sound (a preset chosen, a patch loaded or
@@ -89,7 +91,7 @@ const SWITCH_IN = ${SWITCH_IN_S};
 /** Quieter than this (-100 dBFS) in its last render, a plugin is silent: a switch needs no fade out, only the fade in */
 const SILENT = 1e-5;
 /** The messages a switch never holds back (timed events go in at their own time; sync answers at once) */
-const NOT_HELD = new Set(['events', 'clear', 'dropBends', 'sync', 'destroy', 'switch']);
+const NOT_HELD = new Set(['events', 'clear', 'dropBends', 'sync', 'destroy', 'switch', 'sidechain']);
 /** Messages the host waits on for an answer: one among a switch's starts its fade out at once */
 const ANSWERED = new Set(['load', 'fresh', 'legacy', 'describe']);
 const families = new Map();
@@ -216,6 +218,10 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     // A switch begun with the plugin silent: made at once when its messages are all there, with
     // no fade out (see startSwitch)
     this.quietSwitch = false;
+    // A sidechain is connected to the second input (the host says so: a connected track that is
+    // silent hands in no channels, as nothing connected does), and the plugin listens to one
+    this.keyed = !!o.sidechain;
+    this.listens = false;
     try {
       this.fam = this.ownMemory ? null : familyOf(o.family, o.module);
       this.e = (this.fam || instantiate(o.family, o.module)).e;
@@ -239,6 +245,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // Fledge Synth's user table, made from a sound
       if (o.table) this.loadTable(o.table, o.tableFrames);
       this.alive = true;
+      this.setKey();
       this.views();
       const programs = [];
       for (let i = 0; i < this.programs; i++) programs.push(readString(this.e, this.e.bb_program_name(this.h, i)));
@@ -254,7 +261,13 @@ class BuiltinPlugin extends AudioWorkletProcessor {
   views() {
     const e = this.e;
     this.mem = e.memory.buffer;
-    this.buf = [0, 1, 2, 3].map((w) => new Float32Array(this.mem, e.bb_buffer(this.h, w), BLOCK));
+    this.buf = (this.listens ? [0, 1, 2, 3, 4, 5] : [0, 1, 2, 3]).map((w) => new Float32Array(this.mem, e.bb_buffer(this.h, w), BLOCK));
+  }
+
+  /** Tell the plugin whether a sidechain is connected (after it's made, and when that changes) */
+  setKey() {
+    const e = this.e;
+    this.listens = !!(e.bb_sidechain && e.bb_sidechain(this.h, this.keyed ? 1 : 0)) && this.keyed;
   }
 
   /** Hand the plugin a preset file (bb_load): through its own memory */
@@ -344,6 +357,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     for (let i = 0; i < this.n && i < values.length; i++) this.setParam(i, values[i]);
     if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
     if (this.bpm > 0 && this.e.bb_tempo) this.e.bb_tempo(this.h, this.bpm);
+    this.setKey();
     this.views();
     // (Made afresh in a switch: the controllers, pressure, bend and pedal as they were, so the next
     // notes play as the last did)
@@ -400,6 +414,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.programs = e.bb_programs ? e.bb_programs(this.h) : 0;
     if (this.tableData) this.loadTable(this.tableData, this.tableFrames);
     if (this.bpm > 0 && e.bb_tempo) e.bb_tempo(this.h, this.bpm);
+    this.setKey();
     this.views();
   }
 
@@ -496,6 +511,10 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program(), asked: this.asked });
     } else if (d.type === 'table') {
       this.loadTable(d.data, d.frames);
+    } else if (d.type === 'sidechain') {
+      this.keyed = !!d.connected;
+      this.setKey();
+      this.views();
     } else if (d.type === 'describe') {
       // (Automation already due first: a sleeping track's queue still says what it plays now)
       this.dueAutomation();
@@ -633,6 +652,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (ev.data.tempo > 0) this.bpm = ev.data.tempo;
       if (this.e.bb_tempo && ev.data.tempo > 0) this.e.bb_tempo(this.h, ev.data.tempo);
       if (this.e.bb_position && Number.isFinite(ev.data.beat) && ev.data.beat >= 0) this.e.bb_position(this.h, ev.data.beat);
+      // (The song has stopped: an effect that follows it, a beat repeat, has no position to follow)
+      else if (this.e.bb_position && ev.data.playing === false) this.e.bb_position(this.h, -1);
     }
   }
 
@@ -640,6 +661,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     if (!this.alive) return false;
     const out = outputs[0];
     const input = inputs[0] || [];
+    const key = inputs[1] || [];
     const frames = out[0] ? out[0].length : BLOCK;
     // A switch: faded out now, it's made (before this render's events); silent too long waiting
     // for its end (a lost 'switched'), back in
@@ -696,6 +718,16 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       } else {
         inL.fill(0, 0, n);
         inR.fill(0, 0, n);
+      }
+      if (this.listens) {
+        const kl = key[0], kr = key[1] || key[0];
+        if (kl) {
+          this.buf[4].set(kl.subarray(pos, end));
+          this.buf[5].set(kr.subarray(pos, end));
+        } else {
+          this.buf[4].fill(0, 0, n);
+          this.buf[5].fill(0, 0, n);
+        }
       }
       let blown = false;
       try {

@@ -1,5 +1,7 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
+import { isMixTrack } from './buses';
+import { sidechainSources } from './sidechain';
 import { INSTRUMENTS, isDrumKind, pumpHitOf, type InstrumentKey, type SampleSource } from '../audio/instrumentCatalog';
 import { DRUM_RENDER_VERSION } from '../audio/drumSynth';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
@@ -189,7 +191,7 @@ function runsOf(clips: Clip[]): { runs?: Array<[number, number, string]> } {
   return { runs: [...clips].sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id)).map((c) => [c.startBar, c.lengthBars, contentKey(c)]) };
 }
 
-function computeFingerprint(track: Track, all: Arrangement): string {
+function computeFingerprint(track: Track, all: Arrangement, depth = 0): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && pumpFollowsDrums(track.fx.pump.trigger);
   // A kick-triggered Pump ducks on the kicks of the drum tracks that sound (as live playback
@@ -224,6 +226,17 @@ function computeFingerprint(track: Track, all: Arrangement): string {
   const meter = { base: all.meter ?? FOUR_FOUR, points: all.meterPoints ?? [] };
   const feelMeter = own.some((c) => c.groove?.feel) && !isPlainMeter(meter);
   const recordings = samplesPrint(track.instrumentKey);
+  // A plugin that listens to another track (a sidechain: sidechain.ts) is moved by that track's
+  // sound, so what makes that sound is part of this one's: whether it sounds, its pan (it's heard
+  // after it) and everything its own freeze would hold. (A bus or a return listened to isn't
+  // built for a freeze, so nothing of it counts.)
+  const keys =
+    depth < 4
+      ? sidechainSources(track, all.tracks).map((id) => {
+          const from = all.tracks.find((t) => t.id === id)!;
+          return isMixTrack(from) ? [id] : [id, sounds.has(id), from.pan, computeFingerprint(from, all, depth + 1)];
+        })
+      : [];
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
@@ -260,6 +273,7 @@ function computeFingerprint(track: Track, all: Arrangement): string {
       swing: all.swing,
       kicks,
       sourceNotes,
+      ...(keys.length ? { keys } : {}),
       ...(heardRuns ? { heardRuns } : {}),
       ...(feelMeter ? { meter: [meter.base.num, meter.base.den, ...meter.points.map((p) => [p.bar, p.num, p.den])] } : {}),
     })

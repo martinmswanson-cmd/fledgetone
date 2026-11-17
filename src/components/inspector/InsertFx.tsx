@@ -3,8 +3,10 @@
  * its on/off switch (InsertPanel), labelled sliders (FxSlider), and the Human, dialogue proxy,
  * Distortion, Compressor, Chorus, Lo-fi, Filter, Pump and Gate panels.
  */
-import React from 'react';
-import { Disc3, Repeat, Sparkle, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
+import React, { useState } from 'react';
+import { Disc3, Repeat, Sparkle, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves, X } from 'lucide-react';
+import { importSoundFile, SoundError, useSoundLibrary } from '../../audio/soundLibrary';
+import { pickAudioFiles } from '../timeline/audioFiles';
 import { useTimelineStore } from '../../store/timelineStore';
 import { DuckShapeEditor } from './DuckShapeEditor';
 import { depthDb } from '../../audio/effects/duckShape';
@@ -377,11 +379,63 @@ const ReverbPanel: React.FC<{ track: Track }> = ({ track }) => {
   const decayS = (x: number) => Math.round(REVERB_DECAY_MIN * (REVERB_DECAY_MAX / REVERB_DECAY_MIN) ** x * 20) / 20;
   return (
     <InsertPanel title="Reverb" icon={<Sparkle className="w-3.5 h-3.5" style={{ color: accent }} />} on={r.on} onToggle={() => set(r.on ? { on: false } : switchOn(track, r.mix, d.reverb.mix), true)} accent={accent}>
-      <FxSlider label="Decay" value={decayPos(r.decay)} min={0} max={1} step={0.001} format={(x) => `${decayS(x).toFixed(2)} s`} onChange={(x) => set({ decay: decayS(x) })} reset={decayPos(d.reverb.decay)} accent={accent} disabled={!r.on} />
+      <FxSlider label="Decay" value={decayPos(r.decay)} min={0} max={1} step={0.001} format={(x) => `${decayS(x).toFixed(2)} s`} onChange={(x) => set({ decay: decayS(x) })} reset={decayPos(d.reverb.decay)} accent={accent} disabled={!r.on || !!r.room} />
       <FxSlider label="Pre-delay" value={r.preDelay} min={0} max={REVERB_PREDELAY_MAX} step={1} format={(v) => `${Math.round(v)} ms`} onChange={(preDelay) => set({ preDelay })} reset={d.reverb.preDelay} accent={accent} disabled={!r.on} />
       <FxSlider label="Tone" value={toneLog(r.tone)} min={0} max={1} step={0.001} format={(x) => formatHz(toneHz(x))} onChange={(x) => set({ tone: Math.round(toneHz(x)) })} reset={toneLog(d.reverb.tone)} accent={accent} disabled={!r.on} />
       <FxSlider label="Mix" value={r.mix} min={0} max={1} step={0.01} format={pct} onChange={(mix) => set({ mix })} reset={d.reverb.mix} accent={accent} disabled={!r.on} />
+      <ReverbRoom room={r.room} disabled={!r.on} onChange={(room) => set({ room }, true)} />
     </InsertPanel>
+  );
+};
+
+/**
+ * The Reverb insert's room: its designed one, or a recording of a real room (an impulse response:
+ * a WAV of a clap or a sweep dying away in a hall, a stairwell, a spring tank) loaded from a file.
+ * The recording goes into the sound library and is saved inside project files, as samples are.
+ */
+const ReverbRoom: React.FC<{ room: string | undefined; disabled: boolean; onChange: (room: string | undefined) => void }> = ({ room, disabled, onChange }) => {
+  const name = useSoundLibrary((s) => (room ? s.metas[room]?.name : undefined));
+  const [error, setError] = useState<string | null>(null);
+  const load = async () => {
+    const [file] = await pickAudioFiles(false);
+    if (!file) return;
+    setError(null);
+    try {
+      const meta = await importSoundFile(file, file.name);
+      if (meta.seconds !== undefined && meta.seconds > 20) return setError(`${file.name} is ${Math.round(meta.seconds)} s long: a room recording is a few seconds of a clap or sweep dying away.`);
+      onChange(meta.id);
+    } catch (err) {
+      setError(err instanceof SoundError ? err.message : `Couldn't read ${file.name} as audio. Try a WAV file.`);
+    }
+  };
+  return (
+    <div className={`flex flex-col gap-1 text-[10px] font-mono ${disabled ? 'opacity-50' : ''}`} aria-label="The reverb's room">
+      <div className="flex items-center gap-1.5">
+        <span className="w-16 shrink-0 text-forge-muted uppercase">Room</span>
+        <span className="flex-1 truncate text-forge-text" title={room ? `${name ?? 'A recorded room'}: its recording sets the length of the tail, so Decay is set aside` : 'A designed room, as long as Decay says'}>
+          {room ? (name ?? 'Recorded room') : 'Designed'}
+        </span>
+        {room && (
+          <button type="button" disabled={disabled} onClick={() => onChange(undefined)} title="Back to the designed room (Decay works again)" aria-label="Use the designed room" className="p-0.5 rounded border border-forge-border text-forge-muted hover:text-white">
+            <X className="w-3 h-3" />
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => void load()}
+          title="Load a recording of a real room or a piece of gear (an impulse response WAV): this track's reverb then sounds like it. It's saved with the project. The recording sets the length of the tail, so Decay is set aside while it's in use."
+          className="h-6 px-2 rounded border border-forge-border text-forge-muted hover:text-forge-text hover:border-cyan-400"
+        >
+          Use a recording…
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="text-red-300 leading-snug font-sans">
+          {error}
+        </p>
+      )}
+    </div>
   );
 };
 

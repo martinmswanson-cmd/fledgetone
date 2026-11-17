@@ -17,7 +17,13 @@
 //! that doesn't join the last starts afresh (the last fading out on a spare voice), so a riff
 //! that repeats repeats exactly; "Mono below" sets where the low end is kept in the middle.
 
-use crate::dsp::*;
+use fledge_dsp::dynamics::*;
+use fledge_dsp::envelope::*;
+use fledge_dsp::filter::*;
+use fledge_dsp::lfo::*;
+use fledge_dsp::math::*;
+use fledge_dsp::oversample::*;
+use fledge_dsp::shaper::*;
 use crate::fx::{Effects, FxCfg, FxMods};
 use crate::params::{self as p, db_gain, param, COUNT};
 use crate::tables::{level_blend, level_for, table, Level, Table, LEVELS};
@@ -3711,8 +3717,8 @@ mod tests {
             }
             ups
         };
-        assert!((pitch_of(0.0) as i32 - 110).abs() <= 2);
-        assert!((pitch_of(2.0) as i32 - 110).abs() <= 2);
+        assert!((pitch_of(0.0) - 110i32).abs() <= 2);
+        assert!((pitch_of(2.0) - 110i32).abs() <= 2);
     }
 
 

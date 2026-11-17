@@ -8,6 +8,62 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-compressor",
+    "label": "Fledge Compressor",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-compressor (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-gate",
+    "label": "Fledge Gate",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-gate (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-vocoder",
+    "label": "Fledge Vocoder",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-vocoder (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-repeat",
+    "label": "Fledge Repeat",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-repeat (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-harmony",
+    "label": "Fledge Harmony",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-harmony (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-shifter",
+    "label": "Fledge Shifter",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-shifter (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-spectral",
+    "label": "Fledge Spectral",
+    "licence": "GPL-3.0-or-later (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-spectral (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",

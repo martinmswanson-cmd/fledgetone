@@ -604,7 +604,8 @@ export const CHOICES = ${JSON.stringify(choices, null, 2)};
   const CHOICES = Object.entries(choices)
     .map(([name, c]) => `- **${name}**: ${c.options.join(', ')}`)
     .join('\n');
-  const source = filesUnder('engine/fledge-synth', ['target']).map((p) => ({ name: `source/${relative('engine/fledge-synth', p)}`, data: read(p), executable: p.endsWith('.sh') }));
+  // The whole Rust workspace: the synth is built from engine/fledge-synth on engine/fledge-dsp
+  const source = filesUnder('engine', ['target']).map((p) => ({ name: `source/${relative('engine', p)}`, data: read(p), executable: p.endsWith('.sh') }));
   return {
     readme: fill(readText('tools/fledge-synth/README.md'), { PRESET_COUNT: String(synth.presets.length), PARAMS, PRESETS, CHOICES }),
     files: [
@@ -615,7 +616,7 @@ export const CHOICES = ${JSON.stringify(choices, null, 2)};
       { name: 'index.html', data: read('tools/fledge-synth/index.html') },
       ...source,
     ],
-    notice: notice('Fledge Synth', 'Everything in this zip is Fledgetone\'s own code. The synth uses no other libraries (see source/Cargo.toml).'),
+    notice: notice('Fledge Synth', 'Everything in this zip is Fledgetone\'s own code. The synth uses no libraries from anyone else (see source/fledge-synth/Cargo.toml: only fledge-dsp, fledge-plugin and fledge-wasm, which are in source/ too).'),
   };
 }
 

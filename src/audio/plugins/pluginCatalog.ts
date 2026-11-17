@@ -8,8 +8,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge.wasm",
-  "bytes": 262495,
-  "hash": "224aa104515c",
+  "bytes": 273397,
+  "hash": "87b0557c790e",
   "plugins": [
    {
     "name": "Fledge Synth",
@@ -21,6 +21,174 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
      "bass",
      "dubstep",
      "lead"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-compressor",
+  "label": "Fledge Compressor",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-compressor.wasm",
+  "bytes": 82071,
+  "hash": "4887fce34725",
+  "plugins": [
+   {
+    "name": "Fledge Compressor",
+    "category": "Dynamics",
+    "about": "A clean stereo compressor with a sidechain: pick another track under \"Sidechain from\" and this one ducks to it (a bass under the kick, the music under a voice). With no sidechain it follows its own sound. Soft knee, a high-pass on what it listens to, parallel mix, no added delay.",
+    "sidechain": true,
+    "tags": [
+     "compressor",
+     "sidechain",
+     "ducking",
+     "glue"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-gate",
+  "label": "Fledge Gate",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-gate.wasm",
+  "bytes": 81672,
+  "hash": "c4eb566c119b",
+  "plugins": [
+   {
+    "name": "Fledge Gate",
+    "category": "Dynamics",
+    "about": "A gate with a sidechain: it lets this track through while what it listens to is over the threshold, and turns it down by the Range while it isn't. By itself it cleans up a recording. Pick another track under \"Sidechain from\" and this track is chopped to that one's rhythm (a pad on the hats, a bass with the kick); Flip silences it under the other track instead. Hold and hysteresis keep it from chattering; no added delay.",
+    "sidechain": true,
+    "tags": [
+     "gate",
+     "sidechain",
+     "chop",
+     "noise gate"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-vocoder",
+  "label": "Fledge Vocoder",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-vocoder.wasm",
+  "bytes": 83284,
+  "hash": "8f2beecb07e4",
+  "plugins": [
+   {
+    "name": "Fledge Vocoder",
+    "category": "Effects",
+    "about": "A vocoder that takes its voice from another track: put it on a synth, a pad or a saw bass (the carrier), pick the track with speech, singing or drums under \"Sidechain from\" (the voice), and the synth's notes come out shaped like the voice's words. 8 to 32 bands, a formant shift for bigger and smaller voices, and the voice's own consonants let through for clear words. With no sidechain the track passes through as it is.",
+    "sidechain": true,
+    "tags": [
+     "vocoder",
+     "sidechain",
+     "voice",
+     "robot",
+     "talking synth"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-repeat",
+  "label": "Fledge Repeat",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-repeat.wasm",
+  "bytes": 83411,
+  "hash": "0e4c4bad8266",
+  "plugins": [
+   {
+    "name": "Fledge Repeat",
+    "category": "Effects",
+    "about": "A beat repeat in time with the song: while it's on, the slice of sound that comes in next (a 16th note, say) plays again and again in place of the track. A stutter, a drum roll, a glitch. Switch it on with Repeat (draw it in an automation lane), or let Every do it by itself at the end of every bar or every few bars, as a fill into the next phrase. Gate cuts each repeat short, Decay fades them, Pitch moves each one up or down. No added delay.",
+    "transport": true,
+    "tags": [
+     "beat repeat",
+     "stutter",
+     "glitch",
+     "roll",
+     "fill",
+     "tempo"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-harmony",
+  "label": "Fledge Harmony",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-harmony.wasm",
+  "bytes": 89622,
+  "hash": "f02f563923d9",
+  "plugins": [
+   {
+    "name": "Fledge Harmony",
+    "category": "Effects",
+    "about": "Harmony voices from one sung or played line: it follows the pitch of a voice or a lead (one note at a time) and adds up to two voices above or below it, in the song's key, so a \"third above\" stays in the scale at every note. The added voices keep the original's character (a voice shifted up doesn't turn into a chipmunk); Formant changes it on purpose, for a bigger or smaller voice. Set Key and Scale to the song's. The added voices come a few milliseconds behind the line and rest where it has no clear pitch.",
+    "tags": [
+     "harmony",
+     "harmoniser",
+     "pitch shift",
+     "vocal",
+     "formant",
+     "double"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-shifter",
+  "label": "Fledge Shifter",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-shifter.wasm",
+  "bytes": 84981,
+  "hash": "94f73cdda871",
+  "plugins": [
+   {
+    "name": "Fledge Shifter",
+    "category": "Effects",
+    "about": "A frequency shifter: every frequency is moved by the same number of hertz (a pitch shifter multiplies them), so a note's overtones go out of tune with it and it turns bell-like and metallic. A hertz or less, mixed half and half, is a phasing that only ever rises or falls; Spread shifts the right side the other way; Feedback through the Delay shifts each echo again, spiralling up or down.",
+    "tags": [
+     "frequency shifter",
+     "shift",
+     "phasing",
+     "barber pole",
+     "metallic",
+     "bell"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-spectral",
+  "label": "Fledge Spectral",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-spectral.wasm",
+  "bytes": 90646,
+  "hash": "dbec52d59fc7",
+  "plugins": [
+   {
+    "name": "Fledge Spectral",
+    "category": "Effects",
+    "about": "Works on a sound by its spectrum, each frequency on its own. Gate takes out what's quieter than a threshold (hiss under a held note goes, the note stays). Blur smooths each frequency over time, into a wash that lingers. Smear spreads each frequency over its neighbours, turning pitches breathy. Freeze is a switch: while it's on, the sound of that moment is held and goes on sounding. The sound comes out a frame late (43 ms at 48 kHz).",
+    "tags": [
+     "spectral",
+     "freeze",
+     "blur",
+     "denoise",
+     "gate",
+     "smear",
+     "wash"
     ]
    }
   ]

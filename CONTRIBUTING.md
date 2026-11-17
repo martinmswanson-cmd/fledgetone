@@ -200,6 +200,18 @@ npm run build          # production build (what fledgetone.com publishes)
 npm run build:single   # the one-file build (dist-single/index.html)
 ```
 
+When a change touches the Rust engines (`engine/`), also run these there:
+
+```sh
+cargo clippy --workspace --all-targets --release -- -D warnings   # lint: no warnings
+cargo test --release --workspace                                  # the engines' tests
+./build.sh                                                        # the WebAssembly the app loads (then: node ../scripts/plugins/catalog.mjs > /dev/null)
+```
+
+GitHub runs the type check, the lint, the tests and the build, and the three engine checks, on
+every push and on pull requests from forks (`.github/workflows/checks.yml`). It doesn't run the
+sound checks below: those are yours to run.
+
 When a change touches sound, also run the sound checks (they need the dev server on port 5200,
 `npx vite --port 5200`, and Playwright; see [Checking sound](#checking-sound)):
 
@@ -211,6 +223,9 @@ node scripts/audio-check/bends.cjs              # bends in renders and live: ove
 node scripts/audio-check/rack-levels.cjs        # a Drum Rack pad as loud live as in the export (one- and two-channel sounds, panned)
 node scripts/audio-check/rates.cjs              # the same sound, at the same moment, at 44.1, 48, 96 and 32 kHz: driven sounds, amps and inserts, rooms, both reverbs
 node scripts/audio-check/fledge-undo.cjs        # Fledge Synth: undo and redo of a preset, in its window and in Pocket, a held note playing on
+APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/sidechain.js   # a plugin's sidechain: the dips in a mix, a stem, a freeze and a mix in parts, and live against the export
+APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/beat-repeat.js   # an effect that follows the song (Fledge Repeat): which beats of an export it changes, the export twice, and live against it
+APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/reverb-room.js   # a recorded room on a track's Reverb insert: an export, a freeze and live play a made-up room of three clicks as three hits
 node scripts/audio-check/switch-sweep.cjs       # every built-in plugin with presets and Surge XT: presets, undo, redo, Reset all on held notes and bright sounds; the worst burst and click per plugin
 ```
 

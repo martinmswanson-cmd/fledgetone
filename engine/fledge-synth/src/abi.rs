@@ -1,226 +1,110 @@
-//! The interface Fledgetone's plugin host calls (scripts/plugins/bbplug.h): plain C functions
-//! over handles, parameters as 0..1, buffers in this module's memory. Plus four that hosts
-//! may call: `bb_tempo` (the song's tempo, for tempo-synced LFOs; else 120), `bb_position`
-//! (where in the song it is, in beats: free LFOs, chaos and random values follow the song, so
-//! live playback and an export match), `bb_legacy` (an older saved sound with fewer values
-//! was just loaded: the parameters it didn't have are set as it sounded then) and `bb_settle`
-//! (the whole sound was just switched with the output faded out: the level goes straight to the new one).
+//! Fledge Synth as a plugin: the `Plugin` every host adapter runs, exported here as the interface
+//! Fledgetone's plugin host calls (`fledge_wasm::export!`: scripts/plugins/bbplug.h, plus
+//! `bb_tempo`, `bb_position`, `bb_legacy`, `bb_settle` and the others listed in fledge-wasm).
+//! After those, the synth's own exports, which aren't part of the plugin interface: the user
+//! table, a parameter's value in its own units, and the editor's picture of an oscillator.
 
 use crate::params::{param, COUNT};
 use crate::presets::PRESETS;
 use crate::synth::Synth;
-use std::ffi::{c_char, CString};
+use fledge_plugin::{Block, Info, Plugin};
+use fledge_wasm::host;
 
-struct Instance {
-    synth: Synth,
-    program: i32,
-    /// A user table on its way in (fledge_table_buffer, then fledge_table_set)
-    staging: Vec<f32>,
-    /// Texts handed out (kept until the next call asks for another)
-    text: CString,
-}
-
-static mut INSTANCES: Vec<Option<Box<Instance>>> = Vec::new();
-static mut INFO: Option<CString> = None;
-
-#[allow(static_mut_refs)]
-fn instances() -> &'static mut Vec<Option<Box<Instance>>> {
-    // One audio thread calls in (the worklet), never two at once
-    unsafe { &mut INSTANCES }
-}
-
-fn get(h: i32) -> Option<&'static mut Instance> {
-    instances().get_mut((h - 1) as usize).and_then(|x| x.as_deref_mut())
-}
-
-fn hand(inst: &mut Instance, s: String) -> *const c_char {
-    inst.text = CString::new(s.replace('\0', "")).unwrap_or_default();
-    inst.text.as_ptr()
-}
-
-#[no_mangle]
-pub extern "C" fn bb_count() -> i32 {
-    1
-}
-
-#[no_mangle]
-#[allow(static_mut_refs)]
-pub extern "C" fn bb_info(_index: i32) -> *const c_char {
-    let json = format!(
-        "{{\"name\":\"Fledge Synth\",\"category\":\"Synth\",\"about\":\"Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean mono sub, filters including comb and formant, antialiased drive before and after the filters and on the mids and highs, LFOs in time with the song or restarting with each note, per-note random and chaos sources, a 16-slot mod matrix and an OTT. Its presets are made for dubstep, bass music and leads, with basses that change with every note.\",\"instrument\":true,\"params\":{},\"tags\":[\"wavetable\",\"bass\",\"dubstep\",\"lead\"]}}",
+impl Plugin for Synth {
+    fn info() -> Info {
+        Info {
+            name: "Fledge Synth",
+            category: "Synth",
+            about: "Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean mono sub, filters including comb and formant, antialiased drive before and after the filters and on the mids and highs, LFOs in time with the song or restarting with each note, per-note random and chaos sources, a 16-slot mod matrix and an OTT. Its presets are made for dubstep, bass music and leads, with basses that change with every note.",
+            instrument: true,
+            sidechain: false,
+            transport: false,
+            tags: &["wavetable", "bass", "dubstep", "lead"],
+        }
+    }
+    fn new(sample_rate: f32) -> Self {
+        Synth::new(sample_rate.max(8000.0))
+    }
+    fn param_count() -> usize {
         COUNT
-    );
-    unsafe {
-        INFO = CString::new(json).ok();
-        INFO.as_ref().map_or(std::ptr::null(), |c| c.as_ptr())
+    }
+    fn param_name(i: usize) -> &'static str {
+        param(i).name
+    }
+    fn get(&self, i: usize) -> f32 {
+        self.params[i]
+    }
+    fn set(&mut self, i: usize, value: f32) {
+        self.params[i] = value;
+    }
+    fn param_display(&self, i: usize) -> String {
+        param(i).kind.display(self.params[i])
+    }
+    fn process(&mut self, block: &mut Block) {
+        let n = block.frames();
+        Synth::process(self, n);
+        block.output[0].copy_from_slice(&self.out[0][..n]);
+        block.output[1].copy_from_slice(&self.out[1][..n]);
+    }
+    fn midi(&mut self, status: u8, data1: u8, data2: u8) {
+        Synth::midi(self, status, data1, data2);
+    }
+    fn set_tempo(&mut self, bpm: f32) {
+        Synth::set_tempo(self, bpm);
+    }
+    fn set_position(&mut self, beats: f64) {
+        Synth::set_position(self, beats);
+    }
+    fn legacy(&mut self, count: usize) {
+        Synth::legacy(self, count);
+    }
+    fn settle(&mut self) {
+        Synth::settle(self);
+    }
+    fn program_count() -> usize {
+        PRESETS.len()
+    }
+    fn program_name(i: usize) -> &'static str {
+        PRESETS[i].name
+    }
+    fn set_program(&mut self, i: usize) {
+        self.params = PRESETS[i].values();
     }
 }
 
-#[no_mangle]
-pub extern "C" fn bb_create(_index: i32, sample_rate: f32) -> i32 {
-    let inst = Box::new(Instance { synth: Synth::new(sample_rate.max(8000.0)), program: -1, staging: Vec::new(), text: CString::default() });
-    let list = instances();
-    if let Some(i) = list.iter().position(|x| x.is_none()) {
-        list[i] = Some(inst);
-        return i as i32 + 1;
-    }
-    list.push(Some(inst));
-    list.len() as i32
-}
+fledge_wasm::export!(Synth);
 
-#[no_mangle]
-pub extern "C" fn bb_destroy(h: i32) {
-    if let Some(slot) = instances().get_mut((h - 1) as usize) {
-        *slot = None;
-    }
-}
+/// User tables on their way in, by plugin handle (fledge_table_buffer, then fledge_table_set)
+static mut STAGING: Vec<(i32, Vec<f32>)> = Vec::new();
 
-#[no_mangle]
-pub extern "C" fn bb_params(_h: i32) -> i32 {
-    COUNT as i32
-}
-
-#[no_mangle]
-pub extern "C" fn bb_get(h: i32, i: i32) -> f32 {
-    get(h).and_then(|x| x.synth.params.get(i as usize).copied()).unwrap_or(0.0)
-}
-
-#[no_mangle]
-pub extern "C" fn bb_set(h: i32, i: i32, v: f32) {
-    if let Some(x) = get(h) {
-        if let Some(p) = x.synth.params.get_mut(i as usize) {
-            if v.is_finite() {
-                *p = v.clamp(0.0, 1.0);
-            }
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_param_name(h: i32, i: i32) -> *const c_char {
-    match get(h) {
-        Some(x) if (i as usize) < COUNT => hand(x, param(i as usize).name.to_string()),
-        _ => std::ptr::null(),
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_param_display(h: i32, i: i32) -> *const c_char {
-    match get(h) {
-        Some(x) if (i as usize) < COUNT => {
-            let s = param(i as usize).kind.display(x.synth.params[i as usize]);
-            hand(x, s)
-        }
-        _ => std::ptr::null(),
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_buffer(h: i32, which: i32) -> *mut f32 {
-    match get(h) {
-        Some(x) => match which {
-            0 => x.synth.input[0].as_mut_ptr(),
-            1 => x.synth.input[1].as_mut_ptr(),
-            2 => x.synth.out[0].as_mut_ptr(),
-            _ => x.synth.out[1].as_mut_ptr(),
-        },
-        None => std::ptr::null_mut(),
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_process(h: i32, frames: i32) {
-    if let Some(x) = get(h) {
-        x.synth.process(frames.max(0) as usize);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_midi(h: i32, status: i32, d1: i32, d2: i32) {
-    if let Some(x) = get(h) {
-        x.synth.midi(status as u8, (d1 & 0x7f) as u8, (d2 & 0x7f) as u8);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_tempo(h: i32, bpm: f32) {
-    if let Some(x) = get(h) {
-        x.synth.set_tempo(bpm);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_position(h: i32, beats: f64) {
-    if let Some(x) = get(h) {
-        x.synth.set_position(beats);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_legacy(h: i32, count: i32) {
-    if let Some(x) = get(h) {
-        x.synth.legacy(count.max(0) as usize);
-    }
-}
-
-/// The host has switched the whole sound while it held the output faded out (see Synth::settle):
-/// what eases toward a setting goes straight to it.
-#[no_mangle]
-pub extern "C" fn bb_settle(h: i32) {
-    if let Some(x) = get(h) {
-        x.synth.settle();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_programs(_h: i32) -> i32 {
-    PRESETS.len() as i32
-}
-
-#[no_mangle]
-pub extern "C" fn bb_program_name(h: i32, i: i32) -> *const c_char {
-    match (get(h), PRESETS.get(i as usize)) {
-        (Some(x), Some(p)) => hand(x, p.name.to_string()),
-        _ => std::ptr::null(),
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_set_program(h: i32, i: i32) {
-    if let (Some(x), Some(p)) = (get(h), PRESETS.get(i as usize)) {
-        x.synth.params = p.values();
-        x.program = i;
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn bb_get_program(h: i32) -> i32 {
-    get(h).map_or(-1, |x| x.program)
+#[allow(static_mut_refs)]
+fn staging() -> &'static mut Vec<(i32, Vec<f32>)> {
+    // One audio thread calls in (the worklet), never two at once
+    unsafe { &mut STAGING }
 }
 
 /// Room for a user table of `frames` cycles (USER_CYCLE samples each), to be written by the host
 /// and then taken in by `fledge_table_set` (not part of the plugin interface). Null for too many.
 #[no_mangle]
 pub extern "C" fn fledge_table_buffer(h: i32, frames: i32) -> *mut f32 {
-    match get(h) {
-        Some(x) if frames > 0 && frames as usize <= crate::tables::USER_FRAMES_MAX => {
-            x.staging = vec![0.0; frames as usize * crate::tables::USER_CYCLE];
-            x.staging.as_mut_ptr()
-        }
-        _ => std::ptr::null_mut(),
+    staging().retain(|(k, _)| *k != h);
+    if host().plugin::<Synth>(h).is_none() || frames <= 0 || frames as usize > crate::tables::USER_FRAMES_MAX {
+        return std::ptr::null_mut();
     }
+    staging().push((h, vec![0.0; frames as usize * crate::tables::USER_CYCLE]));
+    staging().last_mut().map_or(std::ptr::null_mut(), |(_, v)| v.as_mut_ptr())
 }
 
 /// Make the user table from the `frames` cycles written to fledge_table_buffer (0: no user table,
 /// "User table" plays "Basic shapes"). 1 if a table is in place now.
 #[no_mangle]
 pub extern "C" fn fledge_table_set(h: i32, frames: i32) -> i32 {
-    match get(h) {
-        Some(x) => {
-            let t = if frames > 0 { crate::tables::user_table(&x.staging, frames as usize) } else { None };
-            x.staging = Vec::new();
+    let staged = staging().iter().position(|(k, _)| *k == h).map(|i| staging().swap_remove(i).1).unwrap_or_default();
+    match host().plugin::<Synth>(h) {
+        Some(synth) => {
+            let t = if frames > 0 { crate::tables::user_table(&staged, frames as usize) } else { None };
             let ok = t.is_some();
-            x.synth.set_user_table(t);
+            synth.set_user_table(t);
             ok as i32
         }
         None => 0,

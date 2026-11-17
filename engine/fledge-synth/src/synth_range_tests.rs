@@ -132,10 +132,10 @@ fn the_detune_narrows_above_middle_c() {
 #[test]
 fn older_sounds_keep_their_stepped_tables_and_cents() {
     let mut s = Synth::new(SR);
-    assert_eq!(s.cfg().even_keys, true);
+    assert!(s.cfg().even_keys);
     assert!((s.cfg().detune_key - 0.5).abs() < 1e-6);
     s.legacy(p::COUNT_V2);
-    assert_eq!(s.cfg().even_keys, false);
+    assert!(!s.cfg().even_keys);
     assert_eq!(s.cfg().detune_key, 0.0);
-    assert!(s.cfg().fx.chorus_spread == false);
+    assert!(!s.cfg().fx.chorus_spread);
 }

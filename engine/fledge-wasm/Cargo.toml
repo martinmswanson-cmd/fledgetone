@@ -1,0 +1,13 @@
+[package]
+name = "fledge-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Turns any fledge-plugin Plugin into the WebAssembly module Fledgetone's plugin host loads (the bb_* interface)."
+repository = "https://github.com/martinmswanson-cmd/fledgetone"
+
+[dependencies]
+fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+
+[lints]
+workspace = true

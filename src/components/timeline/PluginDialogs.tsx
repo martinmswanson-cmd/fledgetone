@@ -20,6 +20,7 @@ import { freezeIsCurrent } from '../../store/freeze';
 import { useSoundLibrary } from '../../audio/soundLibrary';
 import { GplTag } from '../GplTag';
 import { findBuiltin } from '../../audio/plugins/builtinHost';
+import { sidechainChoices, sidechainOf } from '../../store/sidechain';
 
 /**
  * Web Audio Module plugins in the app: the dialog that adds one by URL (as a new Plugin track's
@@ -156,6 +157,7 @@ export const PluginUrlDialog: React.FC<{ trackId: string | null; onClose: () => 
 export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose: () => void }> = ({ trackId, pluginId, onClose }) => {
   useWamVersion();
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId));
+  const allTracks = useTimelineStore((s) => s.tracks);
   const plugin = track?.plugin?.id === pluginId ? track.plugin : track?.pluginFx?.find((p) => p.id === pluginId);
   const inst = liveWam(pluginId);
   // Frozen by hand (the snowflake): it plays its render, and the plugin isn't running
@@ -243,6 +245,10 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
     window.addEventListener('pointercancel', up);
   };
   const isFx = track?.plugin?.id !== pluginId;
+  // A plugin that listens to a sidechain: the tracks it may listen to (not ones this track's sound goes into)
+  const listens = isFx && !!findBuiltin(plugin.url)?.info.sidechain;
+  const keyChoices = listens && track ? sidechainChoices(track, pluginId, allTracks) : [];
+  const keyNow = listens && track ? sidechainOf({ ...plugin, bypass: false }, track, allTracks) : null;
 
   return (
     // A window you work beside, not a dialog: shortcuts and the keyboard piano keep working
@@ -261,6 +267,24 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
         {findBuiltin(plugin.url)?.family.gpl && <GplTag />}
         <span className="text-[10px] text-forge-muted truncate">on {track?.name}</span>
         <div className="ml-auto flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+          {listens && (
+            <label className="flex items-center gap-1 text-[10px] text-forge-muted" title="Sidechain: this plugin listens to the track you pick, and works on this track's sound by it (a compressor ducks this track under that one). It hears that track before its fader; a muted track ducks nothing. None: it follows this track's own sound.">
+              <span className="uppercase whitespace-nowrap">Sidechain from</span>
+              <select
+                value={keyNow ?? ''}
+                onChange={(e) => useTimelineStore.getState().setPluginSidechain(trackId, pluginId, e.target.value || null)}
+                className={`h-6 max-w-[9rem] rounded border bg-forge-bg px-1 text-[10px] ${keyNow ? 'border-fuchsia-400/70 text-forge-text' : 'border-forge-border text-forge-muted'}`}
+                aria-label="Sidechain from track"
+              >
+                <option value="">None</option>
+                {keyChoices.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {isFx && (
             <button
               type="button"

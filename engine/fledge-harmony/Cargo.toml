@@ -1,0 +1,18 @@
+[package]
+name = "fledge-harmony"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Fledge Harmony: harmony voices in the key of the song from one sung or played line, keeping the voice's character. Built to WebAssembly for Fledgetone, and as a Rust library."
+repository = "https://github.com/martinmswanson-cmd/fledgetone"
+
+[lib]
+# cdylib: the WebAssembly family the app loads; rlib: the harmoniser as a Rust library
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+fledge-wasm = { path = "../fledge-wasm", version = "0.1.0" }
+
+[lints]
+workspace = true

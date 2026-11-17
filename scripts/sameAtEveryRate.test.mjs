@@ -496,7 +496,11 @@ test('live, no room is made at once: the song reverb, a Reverb insert and the fi
   // From the lush reverb to a room still being made: the lush plays on until it's ready
   assert.match(bus, /if \(!\(lushOn && !wantsLush\(next\) && roomComing === roomToken\)\) setLush\(wantsLush\(next\)\);/);
   const space = source('effects/spaceFx.ts');
-  assert.match(space, /if \(offline\) convolver\.buffer = reverbImpulse\(raw, d\);\s*else\s*void reverbImpulseSoon\(raw, d\)/);
+  // (A designed room at once in an export, a little at a time live; a recorded one, decoded before
+  // an export builds its graph: prepareRecordedRooms)
+  assert.match(space, /if \(offline\) play\(reverbImpulse\(raw, d\), false\);\s*else\s*void reverbImpulseSoon\(raw, d\)/);
+  assert.match(space, /const source = recordedReady\.get\(/);
+  assert.ok(source('exportWav.ts').indexOf('await prepareRecordedRooms(') < source('exportWav.ts').indexOf('graph = await withContext(context, () => buildGraph(context));'));
   // ...and its first tail comes in through a gate, not all at once
   assert.match(space, /gate\.gain\.linearRampToValueAtTime\(1, at \+ FIRST_TAIL_FADE\)/);
   assert.match(source('liveTracks.ts'), /roomsMaking\(\)\.length > 0/);

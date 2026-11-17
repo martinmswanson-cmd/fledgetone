@@ -239,7 +239,7 @@ fn smooth_rounds_off_a_square_lfo() {
             }
             let now = if smooth > 0.0 { s.voices[0].lfo_sm[0] } else { voice_lfo(&s, 0) };
             if let Some(l) = last {
-                worst = worst.max((now - l as f32).abs());
+                worst = worst.max(f32::abs(now - l));
             }
             last = Some(now);
         }

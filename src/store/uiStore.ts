@@ -99,6 +99,11 @@ interface UiState {
   /** The take folder whose Takes dialog is open */
   takesClipId: string | null;
   setTakesClip: (clipId: string | null) => void;
+  /** The spectrum analyser's and the tuner's windows are open */
+  analyserOpen: boolean;
+  setAnalyserOpen: (open: boolean) => void;
+  tunerOpen: boolean;
+  setTunerOpen: (open: boolean) => void;
   /** The plugin whose window is open */
   pluginWindow: { trackId: string; pluginId: string } | null;
   setPluginWindow: (target: { trackId: string; pluginId: string } | null) => void;
@@ -157,6 +162,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   setTuneClip: (tuneClipId, hard = false) => set({ tuneClipId, tuneHard: hard }),
   takesClipId: null,
   setTakesClip: (takesClipId) => set({ takesClipId }),
+  analyserOpen: false,
+  setAnalyserOpen: (analyserOpen) => set({ analyserOpen }),
+  tunerOpen: false,
+  setTunerOpen: (tunerOpen) => set({ tunerOpen }),
   pluginWindow: null,
   setPluginWindow: (pluginWindow) => set({ pluginWindow }),
   pluginDialog: null,
