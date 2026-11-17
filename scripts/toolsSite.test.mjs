@@ -124,6 +124,105 @@ test('tools: Fledge Synth\'s parameters and presets come from fledge.wasm, and i
   assert.ok(s.peak > 0.001 && s.peak < 1, `peak ${s.peak}`);
 });
 
+test('tools: every Fledge effect is in the effects package, described from its own .wasm, and passes sound', async () => {
+  const { FLEDGE_EFFECTS, readEffect } = await import('./tools-site.mjs');
+  const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
+  // Every one of Fledgetone's own effect families in the studio is offered here too (a new one
+  // must be added to FLEDGE_EFFECTS in tools-site.mjs and EFFECTS in tools/fledge-effects/fledge-effects.js)
+  const own = PLUGIN_FAMILIES.filter((f) => f.family.startsWith('fledge-')).map((f) => f.file).sort();
+  assert.deepEqual(Object.values(FLEDGE_EFFECTS).sort(), own);
+  const wrapper = readFileSync(join(ROOT, 'tools/fledge-effects/fledge-effects.js'), 'utf8');
+  const names = [];
+  for (const [kind, file] of Object.entries(FLEDGE_EFFECTS)) {
+    assert.ok(wrapper.includes(`${kind}: '${file}'`), `${kind} is in the wrapper's EFFECTS`);
+    const e = readEffect(readFileSync(join(ROOT, 'public/fledgetone-plugins', file)));
+    names.push(e.info.name);
+    assert.ok(e.info.about.length > 40 && !e.info.instrument, file);
+    assert.ok(e.params.length >= 5 && e.params.every((p) => p.name && p.text && p.value >= 0 && p.value <= 1), file);
+    assert.ok(e.presets.length >= 5, file);
+    assert.ok(e.finite && e.peak < 4, `${file}: peak ${e.peak}`);
+  }
+  assert.deepEqual(names, ['Fledge Compressor', 'Fledge Gate', 'Fledge Vocoder', 'Fledge Repeat', 'Fledge Harmony', 'Fledge Shifter', 'Fledge Spectral']);
+  // The three that listen to a sidechain say so, and the beat repeat says it follows the song
+  const say = (file) => readEffect(readFileSync(join(ROOT, 'public/fledgetone-plugins', file))).info;
+  for (const kind of ['compressor', 'gate', 'vocoder']) assert.equal(say(FLEDGE_EFFECTS[kind]).sidechain, true, kind);
+  assert.equal(say(FLEDGE_EFFECTS.repeat).transport, true);
+  assert.ok(!say(FLEDGE_EFFECTS.shifter).sidechain && !say(FLEDGE_EFFECTS.shifter).transport);
+});
+
+test('tools: the effects\' worklet processor runs an effect, hears its sidechain only when told to, and follows the song', () => {
+  const src = readFileSync(join(ROOT, 'tools/fledge-effects/fledge-effects-processor.js'), 'utf8');
+  const sr = 48000;
+  const scope = { frame: 0 };
+  let Proc;
+  const sent = [];
+  new Function('scope', 'sampleRate', 'AudioWorkletProcessor', 'registerProcessor', src.replace(/\bcurrentFrame\b/g, 'scope.frame'))(scope, sr, class { constructor() { this.port = { postMessage: (m) => sent.push(m) }; } }, (_, c) => (Proc = c));
+  const make = (file, opts = {}) => {
+    sent.length = 0;
+    const p = new Proc({ processorOptions: { module: new WebAssembly.Module(readFileSync(join(ROOT, 'public/fledgetone-plugins', file))), ...opts } });
+    const ready = sent.find((m) => m.type === 'ready');
+    assert.ok(ready, `${file} started: ${JSON.stringify(sent)}`);
+    return { p, ready };
+  };
+  const tone = (hz, amp) => Float32Array.from({ length: 128 }, (_, k) => amp * Math.sin((2 * Math.PI * hz * (scope.frame + k)) / sr));
+  /** A quiet tone through it for `seconds`, a loud low one on the second input; the gain over the last tenth, dB */
+  const gain = (p, seconds) => {
+    let [inE, outE] = [0, 0];
+    const blocks = Math.round((seconds * sr) / 128);
+    for (let b = 0; b < blocks; b++) {
+      const [x, k] = [tone(1000, 0.01), tone(60, 0.5)];
+      const out = [new Float32Array(128), new Float32Array(128)];
+      p.process([[x], [k, k]], [out]);
+      assert.ok(out[0].every(Number.isFinite));
+      assert.deepEqual(out[0], out[1], 'a one-channel sound goes to both sides');
+      if (b >= blocks - 38) for (let i = 0; i < 128; i++) (inE += x[i] * x[i]), (outE += out[0][i] * out[0][i]);
+      scope.frame += 128;
+    }
+    return 10 * Math.log10(outE / inE);
+  };
+  const { p, ready } = make('fledge-compressor.wasm', { preset: 1 });
+  assert.equal(ready.info.name, 'Fledge Compressor');
+  assert.equal(ready.info.sidechain, true);
+  assert.equal(ready.presets[ready.preset], 'Duck under the kick');
+  assert.equal(ready.params[0].name, 'Threshold');
+  // Not told of a sidechain: what's on the second input is not listened to
+  assert.ok(Math.abs(gain(p, 0.5)) < 0.05);
+  p.port.onmessage({ data: { type: 'sidechain', connected: true } });
+  assert.ok(gain(p, 1) < -6);
+  p.port.onmessage({ data: { type: 'sidechain', connected: false } });
+  assert.ok(Math.abs(gain(p, 2)) < 0.05);
+  // A parameter set at a time, a preset chosen, and what it then shows
+  p.port.onmessage({ data: { type: 'set', index: 0, value: 1, time: scope.frame / sr } });
+  gain(p, 0.1);
+  p.port.onmessage({ data: { type: 'describe', id: 7 } });
+  assert.equal(sent.find((m) => m.id === 7).params[0].text, '0.0 dB');
+  p.port.onmessage({ data: { type: 'preset', index: 0, id: 8 } });
+  assert.equal(sent.find((m) => m.id === 8).preset, 0);
+  p.port.onmessage({ data: { type: 'destroy' } });
+  assert.equal(p.process([[]], [[new Float32Array(128), new Float32Array(128)]]), false);
+
+  // The beat repeat, told where the song is on each beat, fills each bar's last beat (and no other)
+  scope.frame = 0;
+  const repeat = make('fledge-repeat.wasm', { tempo: 117.1875 }).p;
+  assert.equal(sent.find((m) => m.type === 'ready').info.transport, true);
+  repeat.port.onmessage({ data: { type: 'set', index: 1, value: 0.3, time: 0 } });
+  const changed = [];
+  for (let beat = 0; beat < 8; beat++) {
+    repeat.port.onmessage({ data: { type: 'position', beats: beat, time: scope.frame / sr } });
+    let differs = false;
+    // (A beat of 192 blocks at this tempo)
+    for (let b = 0; b < 192; b++) {
+      const x = Float32Array.from({ length: 128 }, (_, k) => 0.3 * Math.sin((scope.frame + k) * 0.01) + 0.2 * ((((scope.frame + k) % 977) / 977) - 0.5));
+      const out = [new Float32Array(128), new Float32Array(128)];
+      repeat.process([[x, x], []], [out]);
+      for (let i = 0; i < 128; i++) if (Math.abs(out[0][i] - x[i]) > 1e-5) differs = true;
+      scope.frame += 128;
+    }
+    if (differs) changed.push(beat + 1);
+  }
+  assert.deepEqual(changed, [4, 8]);
+});
+
 test('tools: every page of the site links to the Tools page in its footer, and its zips download', async () => {
   for (const page of ['site/index.html', 'site/games/index.html', 'site/creators/index.html', 'site/scoring/index.html', 'site/404.html']) {
     const html = readFileSync(join(ROOT, page), 'utf8');
@@ -135,7 +234,7 @@ test('tools: every page of the site links to the Tools page in its footer, and i
   const { siteHeaders } = await import('./site-headers.mjs');
   const out = siteHeaders('');
   // (Each zip by name: the host matches a * only at the end of an address)
-  for (const name of ['game-music-players', 'fledge-synth', 'drop-effects', 'song-player'])
+  for (const name of ['game-music-players', 'fledge-synth', 'fledge-effects', 'drop-effects', 'song-player'])
     assert.match(out, new RegExp(`/tools/fledgetone-${name}\\.zip\\n {2}Content-Type: application/zip\\n {2}Content-Disposition: attachment`));
   assert.doesNotMatch(out, /\/tools\/\*/);
 });

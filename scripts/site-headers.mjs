@@ -29,6 +29,10 @@ const SITE_RULES = `
   Content-Type: application/zip
   Content-Disposition: attachment
   Cache-Control: no-cache
+/tools/fledgetone-fledge-effects.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
 /tools/fledgetone-drop-effects.zip
   Content-Type: application/zip
   Content-Disposition: attachment
@@ -40,6 +44,8 @@ const SITE_RULES = `
 /tools/game-music-players/README.md
   Content-Type: text/plain; charset=utf-8
 /tools/fledge-synth/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/fledge-effects/README.md
   Content-Type: text/plain; charset=utf-8
 /tools/drop-effects/README.md
   Content-Type: text/plain; charset=utf-8

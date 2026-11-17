@@ -1,7 +1,7 @@
 // The Tools page for fledgetone.com (/tools/): Fledgetone's own tools as zips people can use in
 // their own programs, built from the repository on every site build (so they're always current)
 // into dist-site/tools/: the game music players, Fledge Synth (WebAssembly with a Web Audio
-// wrapper), the Drop pad's effects and the song player (the web runtime). Each zip has its README
+// wrapper), the Fledge effects (the same way), the Drop pad's effects and the song player (the web runtime). Each zip has its README
 // (tools/<tool>/README.md, with parts filled in here), the GPL's text and a notice; each README is
 // also a page at /tools/<tool>/. The hand-written parts of the packages (wrappers, examples,
 // READMEs) are in tools/; the rest comes from src/, engine/ and public/.
@@ -283,6 +283,14 @@ export const TOOLS = [
     who: 'For web developers and music app makers',
     what: 'Fledgetone\'s own synthesizer, compiled to WebAssembly, with a small wrapper to play it through the Web Audio API: notes, presets and every parameter by name.',
     inZip: ['The synth (WebAssembly) and its Web Audio wrapper', 'An example page that plays a few notes', 'Its Rust source code, to build it yourself'],
+  },
+  {
+    id: 'fledge-effects',
+    title: 'Fledge effects',
+    color: '--amber',
+    who: 'For web developers and music app makers',
+    what: 'Fledgetone\'s own effects, compiled to WebAssembly, with a small wrapper for the Web Audio API: a compressor and a gate you can sidechain, a vocoder that takes its voice from another sound, a beat repeat, a harmoniser, a frequency shifter and a spectral freeze, blur and gate.',
+    inZip: ['Seven effects (WebAssembly) and their Web Audio wrapper', 'An example page: a chord and a kick through each effect', 'Their Rust source code, to build them yourself'],
   },
   {
     id: 'drop-effects',
@@ -620,6 +628,96 @@ export const CHOICES = ${JSON.stringify(choices, null, 2)};
   };
 }
 
+/** The Fledge effects' files in the zip, by the name the wrapper's create() takes (as tools/fledge-effects/fledge-effects.js has them). */
+export const FLEDGE_EFFECTS = {
+  compressor: 'fledge-compressor.wasm',
+  gate: 'fledge-gate.wasm',
+  vocoder: 'fledge-vocoder.wasm',
+  repeat: 'fledge-repeat.wasm',
+  harmony: 'fledge-harmony.wasm',
+  shifter: 'fledge-shifter.wasm',
+  spectral: 'fledge-spectral.wasm',
+};
+
+/** An effect's description, parameters and presets, read from its .wasm itself; and that it passes a sound without breaking. */
+export function readEffect(wasm) {
+  const e = new WebAssembly.Instance(new WebAssembly.Module(wasm), {}).exports;
+  const decoder = new TextDecoder();
+  const str = (p) => {
+    const b = new Uint8Array(e.memory.buffer);
+    let q = p;
+    while (b[q]) q++;
+    return decoder.decode(b.slice(p, q));
+  };
+  const info = JSON.parse(str(e.bb_info(0)));
+  const h = e.bb_create(0, 48000);
+  const params = [];
+  for (let i = 0; i < e.bb_params(h); i++) params.push({ name: str(e.bb_param_name(h, i)), value: e.bb_get(h, i), text: str(e.bb_param_display(h, i)) });
+  const presets = [];
+  for (let i = 0; i < e.bb_programs(h); i++) presets.push(str(e.bb_program_name(h, i)));
+  // A tone through it, to be sure the module runs (and stays within reason)
+  let peak = 0;
+  let finite = true;
+  for (let b = 0; b < 200; b++) {
+    for (const w of [0, 1]) {
+      const input = new Float32Array(e.memory.buffer, e.bb_buffer(h, w), 128);
+      for (let i = 0; i < 128; i++) input[i] = 0.25 * Math.sin((2 * Math.PI * 220 * (b * 128 + i)) / 48000);
+    }
+    e.bb_process(h, 128);
+    for (const w of [2, 3]) {
+      const out = new Float32Array(e.memory.buffer, e.bb_buffer(h, w), 128);
+      for (const x of out) {
+        if (!Number.isFinite(x)) finite = false;
+        peak = Math.max(peak, Math.abs(x));
+      }
+    }
+  }
+  e.bb_destroy(h);
+  return { info, params, presets, peak, finite };
+}
+
+async function fledgeEffects() {
+  const wrapper = readText('tools/fledge-effects/fledge-effects.js');
+  const effects = Object.entries(FLEDGE_EFFECTS).map(([kind, file]) => {
+    if (!wrapper.includes(`${kind}: '${file}'`)) throw new Error(`tools/fledge-effects/fledge-effects.js doesn't have ${kind}: '${file}' in EFFECTS`);
+    const wasm = read(`public/fledgetone-plugins/${file}`);
+    const made = readEffect(wasm);
+    if (!made.finite || made.peak >= 4) throw new Error(`${file} didn't pass a tone cleanly (peak ${made.peak})`);
+    return { kind, file, wasm, ...made };
+  });
+  const listens = (e) => (e.info.sidechain ? ' Listens to a sidechain.' : e.info.transport ? ' Follows the song\'s tempo and position.' : '');
+  const SUMMARY = effects.map((e) => `- **${e.info.name}** (\`'${e.kind}'\`): ${e.info.about.split(/(?<=[.:]) /)[0].replace(/:$/, '.')}`).join('\n');
+  const FILES = effects.map((e) => `| \`${e.file}\` | ${e.info.name}, compiled to WebAssembly |`).join('\n');
+  const EFFECTS = effects
+    .map((e) =>
+      [
+        `### ${e.info.name}`,
+        '',
+        `\`FledgeEffect.create(context, '${e.kind}')\`. ${e.info.about}${listens(e)}`,
+        '',
+        '| # | Parameter | Starts at |',
+        '| --- | --- | --- |',
+        ...e.params.map((p, i) => `| ${i} | ${cell(p.name)} | ${cell(p.text)} |`),
+        '',
+        `Presets: ${e.presets.map((p) => `\`${p}\``).join(', ')}.`,
+      ].join('\n'),
+    )
+    .join('\n\n');
+  // The whole Rust workspace: each effect is built from its crate on engine/fledge-dsp, fledge-plugin and fledge-wasm
+  const source = filesUnder('engine', ['target']).map((p) => ({ name: `source/${relative('engine', p)}`, data: read(p), executable: p.endsWith('.sh') }));
+  return {
+    readme: fill(readText('tools/fledge-effects/README.md'), { SUMMARY, FILES, EFFECTS }),
+    files: [
+      { name: 'fledge-effects.js', data: wrapper },
+      { name: 'fledge-effects-processor.js', data: read('tools/fledge-effects/fledge-effects-processor.js') },
+      ...effects.map((e) => ({ name: e.file, data: e.wasm })),
+      { name: 'index.html', data: read('tools/fledge-effects/index.html') },
+      ...source,
+    ],
+    notice: notice('Fledge effects', 'Everything in this zip is Fledgetone\'s own code. The effects use no libraries from anyone else. The all-pass filter coefficients in Fledge Shifter\'s Hilbert transformer are Olli Niemitalo\'s published design (his article "Hilbert transform" at yehar.com).'),
+  };
+}
+
 async function dropEffects() {
   const { code, packages } = await bundle('src/audio/effects/dropFx.ts');
   if (packages.size) throw new Error(`dropFx.ts now takes in npm packages (${[...packages.keys()].join(', ')}): list their licences`);
@@ -676,7 +774,7 @@ async function songPlayer() {
   };
 }
 
-const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'drop-effects': dropEffects, 'song-player': songPlayer };
+const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'fledge-effects': fledgeEffects, 'drop-effects': dropEffects, 'song-player': songPlayer };
 
 /** The date the zips' files carry: the version's (package.json's version is the release date). */
 function versionDate() {

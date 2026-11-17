@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- Fledge effects example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+     Serve this folder (for example "npx serve") and open it: AudioWorklets don't run from a file. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fledge effects example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 44rem; background: #121214; color: #e4e4e7; }
+    button, select { font: inherit; padding: .4rem .8rem; margin: .2rem 0; }
+    label { display: block; margin-top: .6rem; }
+    input[type=range] { width: 16rem; vertical-align: middle; }
+    output { margin-left: .5rem; color: #a1a1aa; }
+  </style>
+</head>
+<body>
+  <h1>Fledge effects</h1>
+  <p>A held chord with a kick under it, through the effect you choose. Where the effect listens to a
+    sidechain (the compressor, the gate, the vocoder), the kick is what it listens to. The sound is
+    kept quiet; turn your speakers down first anyway.</p>
+  <label>Effect <select id="kind"></select></label>
+  <label>Preset <select id="preset" disabled></select></label>
+  <div id="params"></div>
+  <p><button id="play">Play</button> <button id="stop" disabled>Stop</button></p>
+  <p id="status"></p>
+  <script type="module">
+    import { EFFECTS, FledgeEffect } from './fledge-effects.js';
+
+    const $ = (id) => document.getElementById(id);
+    const BPM = 120;
+    let context, effect, chord, kick, volume, timer, startedAt;
+    for (const kind of Object.keys(EFFECTS)) $('kind').append(new Option(kind, kind));
+
+    /** A chord of saws (a bright sound for the effects to work on) */
+    function makeChord() {
+      const out = new GainNode(context, { gain: 0.12 });
+      for (const hz of [130.81, 196, 261.63, 329.63]) {
+        const osc = new OscillatorNode(context, { type: 'sawtooth', frequency: hz });
+        osc.connect(out);
+        osc.start();
+      }
+      return out;
+    }
+
+    /** A kick on every beat from `time` on: a sine that falls in pitch and dies away */
+    function scheduleKicks(time) {
+      for (let k = 0; k < 4; k++) {
+        const at = time + (k * 60) / BPM;
+        const osc = new OscillatorNode(context, { frequency: 120 });
+        const amp = new GainNode(context, { gain: 0 });
+        osc.frequency.setValueAtTime(120, at);
+        osc.frequency.exponentialRampToValueAtTime(45, at + 0.12);
+        amp.gain.setValueAtTime(0.9, at);
+        amp.gain.exponentialRampToValueAtTime(0.001, at + 0.25);
+        osc.connect(amp).connect(kick);
+        osc.start(at);
+        osc.stop(at + 0.3);
+        // The beat repeat is told where the song is on each beat
+        if (effect.followsSong) effect.setPosition(Math.round(((at - startedAt) * BPM) / 60), at);
+      }
+    }
+
+    async function showParams() {
+      $('params').replaceChildren();
+      for (const p of await effect.describe()) {
+        const label = document.createElement('label');
+        const range = Object.assign(document.createElement('input'), { type: 'range', min: 0, max: 1, step: 0.001, value: p.value });
+        const text = Object.assign(document.createElement('output'), { textContent: p.text });
+        range.oninput = async () => {
+          effect.setParam(p.name, Number(range.value));
+          text.textContent = (await effect.describe()).find((q) => q.name === p.name).text;
+        };
+        label.append(`${p.name} `, range, text);
+        $('params').append(label);
+      }
+    }
+
+    async function choose(kind) {
+      if (effect) {
+        chord.disconnect(effect.node);
+        effect.destroy();
+      }
+      effect = await FledgeEffect.create(context, kind, { tempo: BPM });
+      chord.connect(effect.node);
+      effect.connect(volume);
+      effect.setSidechain(kick);
+      $('preset').replaceChildren(new Option('(as it starts)', -1), ...effect.listPresets().map((name, i) => new Option(name, i)));
+      $('preset').disabled = false;
+      await showParams();
+      $('status').textContent = `${effect.info.name}: ${effect.info.about}`;
+    }
+
+    $('preset').onchange = async () => {
+      if (Number($('preset').value) >= 0) await effect.setPreset(Number($('preset').value));
+      await showParams();
+    };
+    $('kind').onchange = () => context && choose($('kind').value);
+
+    $('play').onclick = async () => {
+      if (!context) {
+        context = new AudioContext();
+        volume = new GainNode(context, { gain: 0.5 });
+        volume.connect(context.destination);
+        kick = new GainNode(context, { gain: 1 });
+        // The kick is heard a little, as well as listened to
+        kick.connect(new GainNode(context, { gain: 0.3 })).connect(volume);
+        chord = makeChord();
+        await choose($('kind').value);
+      }
+      await context.resume();
+      clearInterval(timer);
+      startedAt = context.currentTime + 0.1;
+      let next = startedAt;
+      const more = () => {
+        while (next < context.currentTime + 1) {
+          scheduleKicks(next);
+          next += (4 * 60) / BPM;
+        }
+      };
+      more();
+      timer = setInterval(more, 250);
+      $('stop').disabled = false;
+    };
+
+    $('stop').onclick = async () => {
+      clearInterval(timer);
+      effect?.stop();
+      await context.suspend();
+      $('stop').disabled = true;
+    };
+  </script>
+</body>
+</html>
