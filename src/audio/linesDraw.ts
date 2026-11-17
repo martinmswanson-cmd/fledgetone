@@ -3,6 +3,7 @@
  * to left past "now", rising and falling with the notes it plays, its colour the pitch, a dot at
  * its head. A short rest runs on flat; a longer one ends the line (a dim dot stays behind at its
  * end), and when the instrument comes back a new line rises from under the picture to its first note.
+ * A stutter (the same note struck fast, again and again) draws as a row of teeth on the line.
  *
  * The instruments playing at a moment share the picture's height between them, the lowest part at
  * the bottom: each has a band of its own that its line moves in (a little into its neighbours'),
@@ -19,7 +20,7 @@
  * alone (no state), so frames can be drawn in any order. The lines come from store/lines.ts, the
  * chords from store/linesChords.ts; nothing here reads the app's state.
  */
-import { ease, isSounding, LINE_ENTRY, runPitch, type LineRun, type LinesData } from '../store/lines';
+import { ease, isSounding, LINE_ENTRY, rollKick, runPitch, type LineRun, type LinesData } from '../store/lines';
 import type { ChordSpan } from '../store/linesChords';
 import type { ShowcaseBox } from './showcaseDraw';
 
@@ -52,8 +53,11 @@ export interface LinesDrawOptions {
   duration: number;
 }
 
-/** Samples of a line a second */
+/** Samples of the bands a second, and of a line (fine enough for a stutter's teeth) */
 const RATE = 30;
+const LINE_RATE = 96;
+/** How far a stutter's strike kicks its line up */
+const TOOTH = 24;
 /** A ring's life, and a hit's flash (seconds) */
 const RING = 0.7;
 const FLASH = 0.6;
@@ -101,7 +105,8 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
   const tRight = t + (box.x + box.w - headX) / pps;
   const drumRow = look.drums && data.hits.length > 0;
   const headRow = look.chord || opts.section;
-  const top = box.y + (look.map ? 26 : 0) + (headRow ? 74 : 0) + 22;
+  // (the chord and the section's name lie over the top of the lines: the lines keep the room)
+  const top = box.y + (look.map ? 26 : 0) + 22;
   const bottom = box.y + box.h - (drumRow ? 74 : 22);
   const floor = box.y + box.h - 30;
   // The pitched range, for the colours
@@ -188,11 +193,11 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
       return { y: box.y + box.h + 24 + (y1 - (box.y + box.h + 24)) * u, p, shown: u };
     }
     const p = runPitch(run, time);
-    return { y: yOf(i, p, time), p, shown: 1 };
+    return { y: yOf(i, p, time) - TOOTH * rollKick(run, time), p, shown: 1 };
   };
   /** A path along `run` from `a` to `b`, with what `each` wants at every sample */
   const trace = (i: number, run: LineRun, a: number, b: number, each?: (u: number, x: number, pt: { y: number; p: number; shown: number }, time: number) => void) => {
-    const count = Math.max(1, Math.ceil((b - a) * RATE));
+    const count = Math.max(1, Math.ceil((b - a) * LINE_RATE));
     g.beginPath();
     for (let k = 0; k <= count; k++) {
       const time = a + ((b - a) * k) / count;
@@ -200,7 +205,7 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
       const x = xOf(time);
       if (k === 0) g.moveTo(x, pt.y);
       else g.lineTo(x, pt.y);
-      if (each && (k % 4 === 0 || k === count)) each(k / count, x, pt, time);
+      if (each && (k % 12 === 0 || k === count)) each(k / count, x, pt, time);
     }
   };
 

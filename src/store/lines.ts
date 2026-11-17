@@ -4,6 +4,8 @@
  * while the track plays with no silence longer than an allowance, so ordinary rests don't break it,
  * and its path says which pitch the line heads for and when. A chord follows its top note; a fast
  * passage (an arpeggio, a trill) follows its average, so its line is a calm curve and not a zig-zag.
+ * A stutter (the same note struck again and again, fast: a roll, a stutter edit written as notes)
+ * is kept as a roll, which the picture draws as teeth on the line.
  * Drum hits, and instruments with no pitch to follow, are the hits of the drum row. Plain data and
  * no app state, so Node can unit-test it.
  */
@@ -23,6 +25,9 @@ const FAST = 0.22;
 const FAST_COUNT = 4;
 /** A fast passage's line heads for its average pitch over each stretch of this long */
 const CALM = 0.45;
+/** The same note struck again within this, ROLL_COUNT or more times in a row, is a roll (seconds) */
+const ROLL = 0.13;
+const ROLL_COUNT = 3;
 
 export interface LinePoint {
   /** From this time the line heads for `pitch` (a MIDI note, with fractions for an average) */
@@ -42,6 +47,8 @@ export interface LineRun {
   path: LinePoint[];
   /** When notes start (a chord once), for the rings */
   starts: number[];
+  /** Its rolls, sorted: when each strike of the same note falls, and when the last one is over */
+  rolls: Array<{ strikes: number[]; end: number }>;
   /** When the track is sounding, merged and sorted */
   sounding: Array<[number, number]>;
 }
@@ -70,9 +77,16 @@ export interface LinesData {
 export const ease = (u: number) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 
 /** The lead of a run's notes (sorted by start): the highest note sounding, never dropping to a lower voice held under it */
-function leadOf(notes: readonly ShowcaseNote[]): { lead: Array<{ t: number; pitch: number }>; starts: number[] } {
+function leadOf(notes: readonly ShowcaseNote[]): { lead: Array<{ t: number; pitch: number }>; starts: number[]; rolls: LineRun['rolls'] } {
   const lead: Array<{ t: number; pitch: number }> = [];
   const starts: number[] = [];
+  const rolls: LineRun['rolls'] = [];
+  // The strikes of the same top note in a row, each soon after the one before
+  let strikes: number[] = [];
+  let struck = NaN;
+  const closeRoll = () => {
+    if (strikes.length >= ROLL_COUNT) rolls.push({ strikes, end: strikes[strikes.length - 1] + (strikes[strikes.length - 1] - strikes[strikes.length - 2]) });
+  };
   let top: ShowcaseNote | null = null;
   for (let i = 0; i < notes.length; ) {
     const at = notes[i].start;
@@ -81,12 +95,19 @@ function leadOf(notes: readonly ShowcaseNote[]): { lead: Array<{ t: number; pitc
     for (; j < notes.length && notes[j].start - at < TOGETHER; j++) if (notes[j].midi > best.midi) best = notes[j];
     i = j;
     starts.push(at);
+    if (best.midi === struck && at - strikes[strikes.length - 1] <= ROLL) strikes.push(at);
+    else {
+      closeRoll();
+      strikes = [at];
+      struck = best.midi;
+    }
     // A lower note under a top note still held: the line stays on the top note
     if (top && top.end > at + 1e-6 && top.midi > best.midi) continue;
     if (!lead.length || lead[lead.length - 1].pitch !== best.midi) lead.push({ t: at, pitch: best.midi });
     top = best;
   }
-  return { lead, starts };
+  closeRoll();
+  return { lead, starts, rolls };
 }
 
 /** The lead with its fast passages replaced by their average over each CALM seconds */
@@ -122,7 +143,7 @@ function calmed(lead: ReadonlyArray<{ t: number; pitch: number }>): Array<{ t: n
 }
 
 function runOf(notes: readonly ShowcaseNote[]): LineRun {
-  const { lead, starts } = leadOf(notes);
+  const { lead, starts, rolls } = leadOf(notes);
   const path: LinePoint[] = [];
   for (const p of calmed(lead)) {
     const prev = path[path.length - 1];
@@ -137,7 +158,7 @@ function runOf(notes: readonly ShowcaseNote[]): LineRun {
     else sounding.push([n.start, n.end]);
     end = Math.max(end, n.end);
   }
-  return { start: notes[0].start, end, path, starts, sounding };
+  return { start: notes[0].start, end, path, starts, rolls, sounding };
 }
 
 /** The lines and hits of a Showcase's notes */
@@ -195,6 +216,22 @@ export function runPitch(run: LineRun, t: number): number {
   }
   const p = path[lo];
   return p.from + (p.pitch - p.from) * ease((t - p.t) / p.bend);
+}
+
+/**
+ * How far a roll has the run's line kicked at `t`: 1 at each strike, falling away before the next
+ * (0 outside a roll), so a stutter draws as a row of teeth.
+ */
+export function rollKick(run: LineRun, t: number): number {
+  for (const roll of run.rolls) {
+    if (roll.strikes[0] > t) return 0;
+    if (roll.end <= t) continue;
+    let k = roll.strikes.length - 1;
+    while (roll.strikes[k] > t) k--;
+    const gap = (k + 1 < roll.strikes.length ? roll.strikes[k + 1] : roll.end) - roll.strikes[k];
+    return Math.exp(-(t - roll.strikes[k]) / (gap * 0.3));
+  }
+  return 0;
 }
 
 /** Whether a note of the run sounds at `t` */

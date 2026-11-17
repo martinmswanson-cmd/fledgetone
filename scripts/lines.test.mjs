@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { linesData, runPitch, isSounding, LINE_BEND } = await import('../src/store/lines.ts');
+const { linesData, runPitch, isSounding, rollKick, LINE_BEND } = await import('../src/store/lines.ts');
 
 const n = (start, end, midi, track = 0, extra = {}) => ({ start, end, midi, color: '#fff', track, drum: false, ...extra });
 const data = (notes, tracks = ['a', 'b']) => ({ notes: [...notes].sort((x, y) => x.start - y.start || x.midi - y.midi), tracks: tracks.map((name) => ({ name, color: '#fff' })), bars: [0, 2, 4], low: 0, high: 0, drumRows: [] });
@@ -67,4 +67,23 @@ test('two tracks on the same note are two lines', () => {
   const d = linesData(data([n(0, 1, 60, 0), n(0, 1, 60, 1)]));
   assert.deepEqual(d.tracks.map((t) => t.name), ['a', 'b']);
   assert.deepEqual([d.low, d.high], [60, 60]);
+});
+
+test('the same note struck fast, again and again, is a roll with a tooth at each strike', () => {
+  const notes = [n(0, 0.5, 60)];
+  for (let i = 0; i < 4; i++) notes.push(n(1 + i * 0.1, 1 + i * 0.1 + 0.08, 64));
+  notes.push(n(2, 2.5, 64), n(2.5, 3, 64));
+  const run = linesData(data(notes)).tracks[0].runs[0];
+  assert.equal(run.rolls.length, 1);
+  assert.deepEqual(run.rolls[0].strikes.map((t) => Math.round(t * 10) / 10), [1, 1.1, 1.2, 1.3]);
+  assert.equal(rollKick(run, 0.9), 0);
+  assert.equal(rollKick(run, 1), 1);
+  assert.ok(rollKick(run, 1.09) < 0.1);
+  assert.ok(Math.abs(rollKick(run, 1.2) - 1) < 1e-9);
+  assert.equal(rollKick(run, 1.5), 0);
+  // Slow repeats, and a fast run of different notes, are not rolls
+  assert.equal(rollKick(run, 2.5), 0);
+  const arp = [];
+  for (let i = 0; i < 8; i++) arp.push(n(i * 0.1, i * 0.1 + 0.08, 60 + i));
+  assert.deepEqual(linesData(data(arp)).tracks[0].runs[0].rolls, []);
 });
