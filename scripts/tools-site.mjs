@@ -2,7 +2,7 @@
 // their own programs, built from the repository on every site build (so they're always current)
 // into dist-site/tools/: the game music players, Fledge Synth (WebAssembly with a Web Audio
 // wrapper), the Fledge effects (the same way), the Drop pad's effects and the song player (the web runtime). Each zip has its README
-// (tools/<tool>/README.md, with parts filled in here), the MIT licence's text (tools/LICENSE) and a notice; each README is
+// (tools/<tool>/README.md, with parts filled in here), the MIT licence's text (tools/LICENSE; the song player keeps the GPL, with a permission) and a notice; each README is
 // also a page at /tools/<tool>/. The hand-written parts of the packages (wrappers, examples,
 // READMEs) are in tools/; the rest comes from src/, engine/ and public/.
 import { createHash } from 'node:crypto';
@@ -128,7 +128,62 @@ This is a summary to help you; the licence text in \`LICENSE\` is what counts. T
 studio itself is under a different licence, the GNU General Public License. Questions or
 concerns: email martin@twobirdsworkshop.com.`;
 
-/** The NOTICE that goes in every zip. */
+// The song player is the studio's own sound engine, so it stays under the GPL, with the permission
+// the exported kits carry (src/audio/exportLicence.ts): ship it in anything, changes stay free.
+export const GPL_HEADER = `Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+Source code: ${SOURCE_URL}`;
+
+export const GPL_PERMISSION = `As an extra permission from Two Birds Workshop, which makes Fledgetone: you may use, copy and
+distribute these files unchanged as part of any project, closed-source and paid games and apps
+included; your own project's code stays yours, under any licence you choose, with no need to
+share it. If you change one of these files and distribute the changed version, that changed file
+must be made available under the GNU General Public License, version 3 or later, with its source.
+Only the changed files: the rest of your project is not affected.`;
+
+export const GPL_LICENCE = `## Licence
+
+The song player is the studio's own sound engine, so unlike Fledgetone's other tools (which are
+under the MIT licence) it is free software under the GNU General Public License, version 3 or (at
+your choice) any later version: GPL-3.0-or-later, with an extra permission. The full text is in
+\`LICENSE\`. In plain words:
+
+- **Free to use, change and share.** You can use it for anything, for free, change it, and give
+  it to others, changed or not.
+- **Ship it in anything.** You can put these files, unchanged, in any site, app or game,
+  closed-source and paid ones too. Your own code stays yours, with no need to share it.
+- **Changes to the player stay free.** If you change the player itself and share the changed
+  version, you must make that changed file available under the GPL, with its source. Only the
+  changed files: the rest of your project is not affected.
+- **Keep the notices.** Keep this licence and the copyright notice with the files.
+- **No warranty.** It comes as it is, with no promise that it works for your purpose.
+- **Your music is yours.** The licence covers this code, not what you make with it: the music,
+  sounds and songs you play with it are yours, to use and share on any terms you like.
+
+The permission, in full:
+
+${GPL_PERMISSION}
+
+This is a summary to help you; the licence text in \`LICENSE\` and the permission above are what
+count. Questions or concerns: email martin@twobirdsworkshop.com.`;
+
+/** The NOTICE of a zip under the GPL with the permission (the song player's). */
+export const gplNotice = (title, credits) => `${title}
+${'='.repeat(title.length)}
+
+${GPL_HEADER}
+
+This program is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License (LICENSE) for more details.
+
+${GPL_PERMISSION}
+
+${credits}
+`;
+
+/** The NOTICE that goes in every MIT zip. */
 export const notice = (title, credits = 'Everything in this zip is Fledgetone\'s own code.') => `${title}
 ${'='.repeat(title.length)}
 
@@ -306,6 +361,7 @@ export const TOOLS = [
     what: 'Plays a song saved from the studio in a web page with no audio files: it makes the music in the browser from the song\'s small project file, then plays it with states, intensity and stingers.',
     inZip: ['The player (one JavaScript module) and its types', 'An example page: choose a saved song and play it', 'The licences of the open-source libraries inside it'],
     note: 'Songs with recorded instruments download their recordings while they load, from fledgetone.com and a few public sample collections. The README says which.',
+    licence: 'GPL-3.0-or-later',
   },
 ];
 
@@ -335,7 +391,7 @@ export function toolsPage(tools, zips) {
             <a class="btn btn-primary btn-sm" href="/tools/${z.file}" download>${DOWNLOAD_ICON} Download</a>
             <a class="btn btn-ghost btn-sm" href="/tools/${t.id}/">${DOC_ICON} README</a>
           </div>
-          <p class="tool-meta"><span>${escape(z.file)}</span><span>${formatSize(z.size)}</span><span>MIT</span></p>
+          <p class="tool-meta"><span>${escape(z.file)}</span><span>${formatSize(z.size)}</span><span>${escape(t.licence ?? 'MIT')}</span></p>
         </article>`;
   };
   return `<!doctype html>
@@ -416,9 +472,9 @@ export function toolsPage(tools, zips) {
     <section id="licence" class="wrap page-section tools" aria-labelledby="licence-title" data-ruler="Licence" data-ruler-color="--amber">
       <h2 id="licence-title" class="section-title"><span class="mono-label">Licence</span>What you can do with them</h2>
       <div class="tool-licence">
-        <p>Every tool here is free software under the <a href="/tools/LICENSE.txt">MIT licence</a>. In plain words:</p>
+        <p>Every tool here but the song player is free software under the <a href="/tools/LICENSE.txt">MIT licence</a>. In plain words:</p>
         ${PLAIN_LICENCE}
-        <p class="note-line">This is a summary; the licence text is what counts. The song player downloads a few plugins that others made under the GPL when a song plays them (its README says which). The Fledgetone studio itself is free software under the GNU General Public License, version 3; its source code is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
+        <p class="note-line">This is a summary; the licence text is what counts. <strong>The song player</strong> is the studio's own sound engine, so it stays under the <a href="/tools/LICENSE-GPL.txt">GNU General Public License, version 3</a> or later, with an extra permission: you can ship it unchanged inside any site, app or game, closed-source and paid ones too, but if you change the player itself and share it, the changed file stays under the GPL (its README has the permission in full). The Fledgetone studio itself is under the GPL as well; its source code is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
       </div>
     </section>
   </main>
@@ -757,6 +813,8 @@ async function songPlayer() {
       PLAYER_SIZE: formatSize(player.length),
       PLAYER_GZIP: formatSize(gzipSync(player).length),
       THIRD_PARTY,
+      HEADER: GPL_HEADER,
+      LICENCE: GPL_LICENCE,
     }),
     files: [
       { name: 'bos-player.js', data: player },
@@ -765,7 +823,8 @@ async function songPlayer() {
       { name: 'index.html', data: read('tools/song-player/index.html') },
       { name: 'THIRD-PARTY-LICENSES.txt', data: thirdParty },
     ],
-    notice: notice(
+    licence: read('LICENSE'),
+    notice: gplNotice(
       'Song player',
       `Fledgetone's own code, with these open-source libraries bundled inside bos-player.js, each under its own licence (texts in THIRD-PARTY-LICENSES.txt):\n${libs.map((l) => `  ${l.name} ${l.version} (${l.licence})`).join('\n')}`,
     ),
@@ -788,13 +847,14 @@ export async function writeTools(outDir) {
   mkdirSync(dir, { recursive: true });
   const licence = read('tools/LICENSE');
   cpSync(join(ROOT, 'tools/LICENSE'), join(dir, 'LICENSE.txt'));
+  cpSync(join(ROOT, 'LICENSE'), join(dir, 'LICENSE-GPL.txt'));
   const date = versionDate();
   const zips = {};
   for (const tool of TOOLS) {
-    const { readme, files, notice: note } = await BUILDERS[tool.id]();
+    const { readme, files, notice: note, licence: own } = await BUILDERS[tool.id]();
     const file = `fledgetone-${tool.id}.zip`;
     const zip = makeZip(
-      [{ name: 'README.md', data: readme }, { name: 'NOTICE.txt', data: note }, { name: 'LICENSE', data: licence }, ...files].map((f) => ({ ...f, name: `fledgetone-${tool.id}/${f.name}` })),
+      [{ name: 'README.md', data: readme }, { name: 'NOTICE.txt', data: note }, { name: 'LICENSE', data: own ?? licence }, ...files].map((f) => ({ ...f, name: `fledgetone-${tool.id}/${f.name}` })),
       date,
     );
     writeFileSync(join(dir, file), zip);

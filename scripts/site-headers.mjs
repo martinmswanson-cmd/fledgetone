@@ -53,6 +53,8 @@ const SITE_RULES = `
   Content-Type: text/plain; charset=utf-8
 /tools/LICENSE.txt
   Content-Type: text/plain; charset=utf-8
+/tools/LICENSE-GPL.txt
+  Content-Type: text/plain; charset=utf-8
 `;
 
 /** The site's _headers, from the app's (whose addresses start at the app's own folder). */

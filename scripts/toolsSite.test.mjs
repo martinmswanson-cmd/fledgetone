@@ -109,7 +109,11 @@ test('tools: the page has a card per tool with its download, size, README and li
     assert.match(page, new RegExp(`href="/tools/${t.id}/"`));
     assert.ok(page.includes(`<span>${formatSize(1000 * (i + 2))}</span>`));
   }
-  assert.equal(page.split('<span>MIT</span>').length - 1, TOOLS.length);
+  assert.equal(page.split('<span>MIT</span>').length - 1, TOOLS.length - 1);
+  assert.equal(page.split('<span>GPL-3.0-or-later</span>').length - 1, 1, 'the song player keeps the GPL');
+  assert.equal(TOOLS.find((t) => t.licence)?.id, 'song-player');
+  assert.match(page, /href="\/tools\/LICENSE-GPL\.txt"/);
+  assert.match(page, /changed file stays under the GPL/);
   assert.match(page, /In any program, open or closed/);
   assert.match(page, /href="\/tools\/LICENSE\.txt"/);
   assert.match(page, /<link rel="stylesheet" href="\/styles\.css" \/>/);

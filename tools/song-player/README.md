@@ -19,7 +19,7 @@ kit instead and use the game music players.
 | `bos-player.d.ts`, `adaptive-music.d.ts` | TypeScript types |
 | `index.html` | An example page: choose a saved song and play it |
 | `THIRD-PARTY-LICENSES.txt` | The licences of the open-source libraries inside `bos-player.js` |
-| `LICENSE` | The MIT licence |
+| `LICENSE` | The GNU General Public License, version 3 |
 
 ## Try it
 
@@ -70,7 +70,7 @@ player downloads while it makes the music:
 If a plugin the song plays can't be loaded, `loadSong` rejects with an error that names it, rather
 than play that part silent.
 
-Four of those plugins are other people's work under the GPL, not the MIT licence: **Surge XT**,
+Four of those plugins are other people's work under the GPL, without the permission below: **Surge XT**,
 the **Dragonfly** and **Plateau** reverbs and the **Tonewheel Organ** (setBfree). They are not in
 this download; the player fetches one only when a song plays it, and it keeps its own licence. If
 you host or ship those plugin files yourself, the GPL's terms for them apply (a runtime kit that
@@ -85,9 +85,8 @@ The recordings have their own licences: see the credits at https://fledgetone.co
 
 ### Inside a runtime kit
 
-The same `bos-player.js` comes inside the web runtime kits you export from the studio. Those
-copies carry the kit's own permission (`LICENSE-exported-files.txt`); the files in this download
-are under the MIT licence, as above, and you may use either.
+The same `bos-player.js` comes inside the web runtime kits you export from the studio, with the
+same permission (the kit's `LICENSE-exported-files.txt`, and section 3 of Fledgetone's terms).
 
 ## Open-source libraries inside
 

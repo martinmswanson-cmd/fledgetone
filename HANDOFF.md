@@ -468,7 +468,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   smaller set of starters is to be made from scratch.
 - **Tools page and exported-files licence** (2026.10.21-2): fledgetone.com/tools/ offers the game
   music players, Fledge Synth (wasm + a standalone Web Audio wrapper + its Rust source), the Drop
-  pad effects and the song player as zips (MIT since the release after 2026.11.17-2, with `engine/`; `tools/LICENSE`, `engine/LICENSE`; the studio stays GPL), built fresh by `scripts/tools-site.mjs`
+  pad effects and the song player as zips (MIT since 2026.11.17-3, with `engine/`: `tools/LICENSE`, `engine/LICENSE`; the song player, being the studio's engine, stays GPL with the kits' permission, as the studio stays GPL), built fresh by `scripts/tools-site.mjs`
   on every site build from the hand-written parts in `tools/` (it refuses to finish if the synth
   can't play a note cleanly). Every page's footer links it. Exported kits' extra permission
   (`src/audio/exportLicence.ts`, TERMS.md section 3) now lets the players ship in any game but keeps
@@ -507,8 +507,8 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
     Google Play"). Nothing of this has run on a real phone yet.
   - Settled: Fledge Synth and the other Fledge plugins are MIT (the owner's own code), so they ship
     in every build. Still open: the exported kits' permission (`src/audio/exportLicence.ts`,
-    TERMS.md section 3) keeps changes to the players under the GPL, while the same players on the
-    Tools page are MIT.
+    TERMS.md section 3) keeps changes to the game music players under the GPL, while the same
+    players on the Tools page are MIT.
 - **Drop pad** (2026.10.21-2): hold a pad to stutter, filter, tape-stop, crush,
   gate or echo the whole mix. It's a track (the Drop Pad instrument, kind `drop`) whose notes are
   the moves, one row per effect (DROP_ROWS), so copying a section copies its moves, the studio

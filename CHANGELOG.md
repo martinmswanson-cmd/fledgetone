@@ -4,9 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.17-3 — The tools are MIT now
 
-- **The tools are MIT now**: everything on fledgetone.com/tools (the game music players, Fledge Synth, the Fledge effects, the Drop pad effects and the song player) is under the MIT licence in place of the GPL, so you can put them in any site, app or game, open or closed, without sharing your own code; keep the copyright notice with them. Fledgetone's own plugins and their Rust source (the `engine` folder) are MIT too. The studio itself stays under the GPL.
+- **The tools are MIT now**: the game music players, Fledge Synth, the Fledge effects and the Drop pad effects on fledgetone.com/tools are under the MIT licence in place of the GPL, so you can put them in any site, app or game, open or closed, without sharing your own code; keep the copyright notice with them. Fledgetone's own plugins and their Rust source (the `engine` folder) are MIT too.
+- **The song player in closed games**: the song player stays under the GPL, as the studio does (it is the studio's sound engine), but the download now carries the permission the exported kits have: ship it unchanged in any game, closed-source and paid ones too; only changes to the player itself must be shared.
 
 ## 2026.11.17-2 — The new effects on the Tools page
 

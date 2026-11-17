@@ -1,5 +1,5 @@
 // Types for bos-player.js, Fledgetone's song player. Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, MIT licence.
+// © Martin Swanson, GPL-3.0-or-later.
 import { AdaptiveMusic } from './adaptive-music';
 
 export { AdaptiveMusic };

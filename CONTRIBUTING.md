@@ -395,8 +395,8 @@ Fledgetone is free software under the GNU General Public License, version 3 or l
 have the right to contribute it.
 
 Two parts are under the MIT licence instead: `engine/` (Fledgetone's own plugins and DSP) and the
-downloads on the Tools page (`tools/`, and the files of `src/` that go into them: `src/gameKit/`,
-`src/audio/effects/dropFx.ts` and what `src/runtime/player.ts` bundles). A contribution to those
+downloads on the Tools page other than the song player (`tools/` but `tools/song-player/`, and
+the files of `src/` that go into them: `src/gameKit/` and `src/audio/effects/dropFx.ts`). A contribution to those
 is licensed under MIT, and code you didn't write that goes into them must be under MIT or a
 licence as permissive (BSD, Apache-2.0, ISC), not the GPL or LGPL.
 
