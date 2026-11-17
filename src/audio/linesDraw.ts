@@ -1,9 +1,14 @@
 /**
  * The Lines picture for the MP4 export: every instrument draws a glowing line that scrolls right
- * to left past "now", its height and its colour following the pitch it plays, a dot at its head.
- * A short rest runs on flat; a longer one ends the line (a dim dot stays behind at its end), and
- * when the instrument comes back a new line rises from under the picture to its first note. Lines
- * on the same note are drawn a little apart, so doubled parts stay two lines.
+ * to left past "now", rising and falling with the notes it plays, its colour the pitch, a dot at
+ * its head. A short rest runs on flat; a longer one ends the line (a dim dot stays behind at its
+ * end), and when the instrument comes back a new line rises from under the picture to its first note.
+ *
+ * The instruments playing at a moment share the picture's height between them, the lowest part at
+ * the bottom: each has a band of its own that its line moves in (a little into its neighbours'),
+ * and the bands make room as an instrument comes in and close up when one leaves. So parts in the
+ * same register, even on the same notes, stay lines you can tell apart; the colour still tells the
+ * real pitch.
  *
  * Each of these can be left out (LinesLook, and the section name): a map of the song's sections
  * filling as it plays, the section's name, the chord sounding and the next one, a row of drum hits
@@ -52,21 +57,27 @@ const RATE = 30;
 /** A ring's life, and a hit's flash (seconds) */
 const RING = 0.7;
 const FLASH = 0.6;
-/** How far apart lines on the same note are drawn, and how close in pitch (semitones) they start to part */
-const APART = 7;
-const SAME = 0.6;
+/** How long a band takes to close up once its line has ended (seconds) */
+const LEAVE = 1.5;
+/** How far a line swings from its band's middle, as a share of the band; a band is never taller than this share of the picture */
+const SWING = 0.55;
+const TALLEST = 1 / 3;
+/** An instrument's range counts as at least this many semitones each way (a part on two notes doesn't swing the whole band) */
+const LEAST_RANGE = 4;
 /** Names are drawn beside the dots up to this many lines at once */
 const MAX_NAMES = 10;
 const FONT = 'system-ui, -apple-system, Segoe UI, sans-serif';
 const TAU = Math.PI * 2;
 
-/** The run of a track's line at `t` (its rise from under the picture counts when `rising`), or null */
-function runAt(runs: readonly LineRun[], t: number, rising: boolean): LineRun | null {
+/** How much room a track's band takes at `t`: growing as a line of its rises, 1 while it runs, closing up after it ends */
+function roomAt(runs: readonly LineRun[], t: number): number {
+  let room = 0;
   for (const r of runs) {
-    if (r.start - (rising ? LINE_ENTRY : 0) > t) return null;
-    if (r.end >= t) return r;
+    if (r.start - LINE_ENTRY > t) break;
+    if (t > r.end + LEAVE) continue;
+    room = Math.max(room, t < r.start ? ease(1 - (r.start - t) / LINE_ENTRY) : t <= r.end ? 1 : 1 - ease((t - r.end) / LEAVE));
   }
-  return null;
+  return room;
 }
 
 /** The first index of a time-sorted list at or after `t` */
@@ -93,11 +104,10 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
   const top = box.y + (look.map ? 26 : 0) + (headRow ? 74 : 0) + 22;
   const bottom = box.y + box.h - (drumRow ? 74 : 22);
   const floor = box.y + box.h - 30;
-  // The pitched range, a note of room at each end; one note alone sits mid-picture
+  // The pitched range, for the colours
   const lowP = data.low - 1;
   const highP = Math.max(data.high + 1, lowP + 2);
   const frac = (p: number) => Math.min(1, Math.max(0, (p - lowP) / (highP - lowP)));
-  const yOf = (p: number) => bottom - frac(p) * (bottom - top);
   // Low notes amber, high notes violet
   const colour = (p: number, a: number, light = 64) => `hsl(${(22 + frac(p) * 268).toFixed(1)} 92% ${light}% / ${Math.max(0, Math.min(1, a)).toFixed(3)})`;
   // Lines fade into the picture's left edge
@@ -136,42 +146,49 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
   g.fillStyle = 'rgba(255,255,255,0.05)';
   for (let i = firstAt(data.bars, tLeft, (b) => b); i < data.bars.length && data.bars[i] <= tRight; i++) g.fillRect(Math.round(xOf(data.bars[i])), top - 14, 1, bottom - top + 28);
 
-  // Every line's pitch on one grid of times, so lines on the same note can be drawn apart
+  // Each track's band on a grid of times: the tracks playing share the height, the highest part on top
   const dt = 1 / RATE;
   const back = Math.ceil((t - tLeft) / dt) + 1;
   const fore = look.ahead ? Math.ceil((tRight - t) / dt) + 1 : 0;
   const cells = back + fore + 1;
-  const pitches = data.tracks.map((tr) => {
-    const row = new Float32Array(cells).fill(NaN);
-    for (let m = 0; m < cells; m++) {
-      const time = t + (m - back) * dt;
-      const run = runAt(tr.runs, time, false);
-      if (run && run.start <= time) row[m] = runPitch(run, time);
-    }
+  const count = data.tracks.length;
+  const order = data.tracks.map((_, i) => i).sort((a, b) => data.tracks[b].low + data.tracks[b].high - (data.tracks[a].low + data.tracks[a].high) || a - b);
+  const rooms = data.tracks.map((tr) => {
+    const row = new Float32Array(cells);
+    for (let m = 0; m < cells; m++) row[m] = roomAt(tr.runs, t + (m - back) * dt);
     return row;
   });
-  /** How far up track `i`'s line is moved at `time`, clear of the lines before it on its note */
-  const lift = (i: number, time: number): number => {
-    const m = Math.min(cells - 1, Math.max(0, Math.round((time - t) / dt) + back));
-    const p = pitches[i][m];
-    if (Number.isNaN(p)) return 0;
-    let up = 0;
-    for (let j = 0; j < i; j++) {
-      const q = pitches[j][m];
-      if (!Number.isNaN(q)) up += APART * Math.max(0, 1 - Math.abs(p - q) / SAME);
+  const middle = data.tracks.map(() => new Float32Array(cells));
+  const swing = new Float32Array(cells);
+  for (let m = 0; m < cells; m++) {
+    let all = 0;
+    for (let i = 0; i < count; i++) all += rooms[i][m];
+    const band = (bottom - top) / Math.max(1, all);
+    // (less than one band's worth playing: it sits mid-picture)
+    let y = top + (bottom - top - all * band) / 2;
+    for (const i of order) {
+      middle[i][m] = y + (rooms[i][m] * band) / 2;
+      y += rooms[i][m] * band;
     }
-    return up;
+    swing[m] = Math.min(band, (bottom - top) * TALLEST) * SWING;
+  }
+  /** Where track `i`'s line is, playing pitch `p`, at `time`: in its band, by where `p` is in its range */
+  const yOf = (i: number, p: number, time: number): number => {
+    const m = Math.min(cells - 1, Math.max(0, Math.round((time - t) / dt) + back));
+    const tr = data.tracks[i];
+    const half = Math.max(LEAST_RANGE, (tr.high - tr.low) / 2);
+    return middle[i][m] - Math.max(-1, Math.min(1, (p - (tr.low + tr.high) / 2) / half)) * swing[m];
   };
   /** Where track `i`'s line is at `time` on `run`: rising from under the picture before its first note */
   const pointAt = (i: number, run: LineRun, time: number): { y: number; p: number; shown: number } => {
     if (time < run.start) {
       const u = ease(1 - (run.start - time) / LINE_ENTRY);
       const p = run.path[0].pitch;
-      const y1 = yOf(p) - lift(i, run.start);
+      const y1 = yOf(i, p, run.start);
       return { y: box.y + box.h + 24 + (y1 - (box.y + box.h + 24)) * u, p, shown: u };
     }
     const p = runPitch(run, time);
-    return { y: yOf(p) - lift(i, time), p, shown: 1 };
+    return { y: yOf(i, p, time), p, shown: 1 };
   };
   /** A path along `run` from `a` to `b`, with what `each` wants at every sample */
   const trace = (i: number, run: LineRun, a: number, b: number, each?: (u: number, x: number, pt: { y: number; p: number; shown: number }, time: number) => void) => {

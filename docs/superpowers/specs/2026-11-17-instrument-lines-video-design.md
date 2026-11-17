@@ -62,6 +62,15 @@ settings, all on by default.
 
 With **Drum pulse** off, drums are not drawn at all. With an option off, its room goes to the lines.
 
+### Changed after the first real song (2026-11-17)
+
+The owner tried a 16-track song with seven synths in one octave: "very crowded, you can't really
+see individual lines". Height no longer follows pitch across the song's whole range. Instead the
+instruments playing at a moment share the height, lowest part at the bottom, each in a band its
+line moves in by where the note is in that instrument's own range; bands open as a line comes in
+and close when one ends. Colour still shows the real pitch. This replaces "lines cross" and the
+"drawn a few units apart" rule for unison lines below.
+
 ## Goals
 
 - The motion and feel of the sketch, at the export's real sizes (1920×1080 and 1080×1920) and both

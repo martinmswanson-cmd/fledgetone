@@ -49,6 +49,9 @@ export interface LineRun {
 export interface LineTrack {
   name: string;
   runs: LineRun[];
+  /** The lowest and highest pitch its line reaches */
+  low: number;
+  high: number;
 }
 
 export interface LinesData {
@@ -167,7 +170,15 @@ export function linesData(d: ShowcaseData): LinesData {
         if (i < notes.length) end = notes[i].end;
       } else end = Math.max(end, notes[i].end);
     }
-    tracks.push({ name: d.tracks[index]?.name ?? '', runs });
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const r of runs) {
+      for (const p of r.path) {
+        if (p.pitch < lo) lo = p.pitch;
+        if (p.pitch > hi) hi = p.pitch;
+      }
+    }
+    tracks.push({ name: d.tracks[index]?.name ?? '', runs, low: lo, high: hi });
   }
   return { tracks, hits, low: Number.isFinite(low) ? low : 60, high: Number.isFinite(high) ? high : 72, bars: d.bars };
 }
