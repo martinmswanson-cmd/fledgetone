@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.17 — Sidechains, seven new plugins, a tuner and a spectrum analyser
 
 - **Spectral effects**: **Fledge Spectral** (Plugins › Browse plugins…, under Effects) works on a sound one frequency at a time. **Freeze** holds the sound of a moment for as long as it's switched on, chords included. **Blur** makes it linger into a wash. **Smear** turns pitches to breath. **Gate** takes out whatever is quieter than a threshold at each frequency, so hiss under a held note goes while the note stays. Its track plays 43 ms late (at 48 kHz): fine for pads and washes, not for tight drums.
 - **Your own room on any track's Reverb**: a track's **Reverb** insert now has **Room › Use a recording…**: pick a recording of a real space or a piece of gear (an impulse response WAV of a hall, a stairwell, a spring tank, a guitar cabinet) and that track's reverb sounds like it. The recording sets the tail's length; Pre-delay, Tone and Mix still work. It's saved in the project like a sample and plays the same live, in exports, stems and freezes. The master reverb could already do this; now each track can have its own.
