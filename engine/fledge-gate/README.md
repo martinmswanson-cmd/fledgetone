@@ -32,4 +32,4 @@ cargo test --release -p fledge-gate
 
 ## Licence
 
-GPL-3.0-or-later, as the rest of Fledgetone.
+MIT (see `LICENSE` in the `engine` folder). The studio itself is GPL-3.0-or-later.

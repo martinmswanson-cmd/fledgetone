@@ -5,7 +5,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge",
   "label": "Fledge Synth",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge.wasm",
   "bytes": 273397,
@@ -28,7 +28,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-compressor",
   "label": "Fledge Compressor",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-compressor.wasm",
   "bytes": 82071,
@@ -51,7 +51,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-gate",
   "label": "Fledge Gate",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-gate.wasm",
   "bytes": 81672,
@@ -74,7 +74,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-vocoder",
   "label": "Fledge Vocoder",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-vocoder.wasm",
   "bytes": 83284,
@@ -98,7 +98,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-repeat",
   "label": "Fledge Repeat",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-repeat.wasm",
   "bytes": 83411,
@@ -123,7 +123,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-harmony",
   "label": "Fledge Harmony",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-harmony.wasm",
   "bytes": 89622,
@@ -147,7 +147,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-shifter",
   "label": "Fledge Shifter",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-shifter.wasm",
   "bytes": 84981,
@@ -171,7 +171,7 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
   "family": "fledge-spectral",
   "label": "Fledge Spectral",
-  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-spectral.wasm",
   "bytes": 90646,

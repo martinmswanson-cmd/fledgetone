@@ -2,7 +2,7 @@
 name = "fledge-plugin"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 description = "The Plugin trait Fledgetone's Rust instruments and effects implement: parameters, audio blocks with an optional sidechain, MIDI, presets and saved state."
 repository = "https://github.com/martinmswanson-cmd/fledgetone"
 

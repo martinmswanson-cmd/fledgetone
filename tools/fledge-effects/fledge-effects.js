@@ -1,5 +1,5 @@
 // The Fledge effects for the Web Audio API. Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, GPL-3.0-or-later. No libraries: Web Audio and WebAssembly only.
+// © Martin Swanson, MIT licence. No libraries: Web Audio and WebAssembly only.
 //
 //   import { FledgeEffect } from './fledge-effects.js';
 //   const context = new AudioContext();

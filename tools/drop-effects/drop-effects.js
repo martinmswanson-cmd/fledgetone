@@ -1,5 +1,5 @@
 // The Drop pad's effects for the Web Audio API. Part of Fledgetone (https://fledgetone.com),
-// © Martin Swanson, GPL-3.0-or-later. No libraries.
+// © Martin Swanson, MIT licence. No libraries.
 //
 //   import { createDropEffects } from './drop-effects.js';
 //   const drop = await createDropEffects(context, { tempo: 128 });

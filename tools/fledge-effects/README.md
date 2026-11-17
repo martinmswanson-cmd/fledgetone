@@ -18,7 +18,7 @@ voice.
 {{FILES}}
 | `index.html` | An example page: a chord and a kick through the effect you choose |
 | `source/` | The effects' Rust source code, to build the `.wasm` files yourself |
-| `LICENSE` | The GNU General Public License, version 3 |
+| `LICENSE` | The MIT licence |
 
 ## Try it
 

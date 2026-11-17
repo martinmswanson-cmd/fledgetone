@@ -2,7 +2,7 @@
 name = "fledge-synth"
 version = "0.1.0"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 description = "Fledgetone's own synthesizer: wavetables, unison, filters, drive, OTT. Built to WebAssembly for the browser, and as a native library for the desktop app."
 
 [lib]

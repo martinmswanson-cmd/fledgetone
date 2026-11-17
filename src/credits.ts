@@ -177,14 +177,14 @@ export interface PluginCredit {
 
 const MIT = '[MIT](https://opensource.org/license/mit)';
 export const PLUGIN_CREDITS: PluginCredit[] = [
-  { family: 'fledge', made: "Fledge Synth, Fledgetone's own synthesizer (its Rust source is in engine/fledge-synth and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-spectral', made: "Fledge Spectral, Fledgetone's own spectral effect: freeze, blur, smear and gate (its Rust source is in engine/fledge-spectral and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-shifter', made: "Fledge Shifter, Fledgetone's own frequency shifter (its Rust source is in engine/fledge-shifter and engine/fledge-dsp; the all-pass coefficients of its Hilbert transformer are Olli Niemitalo's published design, from his article 'Hilbert transform' at yehar.com)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-harmony', made: "Fledge Harmony, Fledgetone's own harmoniser (its Rust source is in engine/fledge-harmony)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-repeat', made: "Fledge Repeat, Fledgetone's own beat repeat (its Rust source is in engine/fledge-repeat)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-vocoder', made: "Fledge Vocoder, Fledgetone's own vocoder with its voice from a sidechain (its Rust source is in engine/fledge-vocoder and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-gate', made: "Fledge Gate, Fledgetone's own gate with a sidechain (its Rust source is in engine/fledge-gate and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
-  { family: 'fledge-compressor', made: "Fledge Compressor, Fledgetone's own compressor with a sidechain (its Rust source is in engine/fledge-compressor and engine/fledge-dsp)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
+  { family: 'fledge', made: "Fledge Synth, Fledgetone's own synthesizer (its Rust source is in engine/fledge-synth and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-spectral', made: "Fledge Spectral, Fledgetone's own spectral effect: freeze, blur, smear and gate (its Rust source is in engine/fledge-spectral and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-shifter', made: "Fledge Shifter, Fledgetone's own frequency shifter (its Rust source is in engine/fledge-shifter and engine/fledge-dsp; the all-pass coefficients of its Hilbert transformer are Olli Niemitalo's published design, from his article 'Hilbert transform' at yehar.com)", licence: MIT },
+  { family: 'fledge-harmony', made: "Fledge Harmony, Fledgetone's own harmoniser (its Rust source is in engine/fledge-harmony)", licence: MIT },
+  { family: 'fledge-repeat', made: "Fledge Repeat, Fledgetone's own beat repeat (its Rust source is in engine/fledge-repeat)", licence: MIT },
+  { family: 'fledge-vocoder', made: "Fledge Vocoder, Fledgetone's own vocoder with its voice from a sidechain (its Rust source is in engine/fledge-vocoder and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-gate', made: "Fledge Gate, Fledgetone's own gate with a sidechain (its Rust source is in engine/fledge-gate and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-compressor', made: "Fledge Compressor, Fledgetone's own compressor with a sidechain (its Rust source is in engine/fledge-compressor and engine/fledge-dsp)", licence: MIT },
   {
     family: 'airwindows',
     made: 'The [Airwindows](https://www.airwindows.com) effects by Chris Johnson, through the [Airwin Consolidated](https://github.com/baconpaul/airwin2rack) library by Paul Walker',

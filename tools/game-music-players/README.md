@@ -31,7 +31,7 @@ versions, or want to read or change them.
 | `godot/music_example.gd`, `godot/music_example.tscn` | A scene to try it: run it with F6 |
 | `unity/AdaptiveMusic.cs` | The player for Unity |
 | `unity/AdaptiveMusicExample.cs` | A component to try it: buttons for every state and sound |
-| `LICENSE` | The GNU General Public License, version 3 |
+| `LICENSE` | The MIT licence |
 
 ## Web
 
@@ -124,8 +124,6 @@ audio clock, so they land on the beat.
 
 ### Inside a game kit
 
-When these players come inside a game kit you export from the studio, they come with an extra
-permission (the kit's `LICENSE-exported-files.txt`, and section 3 of Fledgetone's terms): there
-they can ship inside any game, closed-source and paid games too, with no need to share your own
-code; but if you change the players themselves and distribute them, the changed files stay under
-the GPL, with their source. The files in this download are offered under the GPL, as above.
+The same players come inside the game kits you export from the studio. Those copies carry the
+kit's own permission (`LICENSE-exported-files.txt`); the files in this download are under the MIT
+licence, as above, and you may use either.

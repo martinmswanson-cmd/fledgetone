@@ -26,7 +26,7 @@ none of them makes the sound louder than it was (apart from the echo's tail).
 | `drop-fx.js` | The effects themselves as a plain JavaScript module (`createDropKernel`), for use without Web Audio, for example to process a buffer |
 | `drop-fx.ts` | The same in TypeScript, as written |
 | `index.html` | An example: a simple beat and a pad for each effect |
-| `LICENSE` | The GNU General Public License, version 3 |
+| `LICENSE` | The MIT licence |
 
 ## Try it
 
