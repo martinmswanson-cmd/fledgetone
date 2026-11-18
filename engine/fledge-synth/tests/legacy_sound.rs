@@ -269,9 +269,12 @@ fn compare(name: &str, values: &[f32], want: &[f32], worst: &mut (f32, String), 
     {
         let got = fingerprint(values, 140.0);
         assert_eq!(got.len(), want.len(), "{name}");
-        // Within 0.01 dB in every frame (or below -100 dB)
+        // Within 0.01 dB in every frame that's louder than -60 dB; a quieter one within a
+        // millionth of full level (-120 dB). Machines round the last digit of a sine or an
+        // exponential differently, and in a near-silent frame that's more than 0.01 dB: GitHub's
+        // checks read 0.26 % off this machine's numbers at -80 dB, with the same code
         for (i, (g, w)) in got.iter().zip(want.iter()).enumerate() {
-            let err = (g - w).abs() / w.abs().max(1e-5);
+            let err = (g - w).abs() / w.abs().max(1e-3);
             if err > worst.0 {
                 *worst = (err, format!("{name} frame {} feature {}", i / 4, i % 4));
             }
