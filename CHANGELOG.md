@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.18 — Five new plugins: Smooth, Carve, Dynamic EQ, Heat and Shape
 
 - **Fledge Smooth, a resonance suppressor** (Plugins, under EQ): it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it. For a harsh supersaw, a whistle in a growl bass, a bass note that booms, the bite of a vocal. **Removed only** plays just what it takes out.
 - **Fledge Carve makes room for another track** (under EQ): pick the vocal, the lead or the kick beside **Sidechain from**, and this track is turned down only at the frequencies that one is using, while it plays. A pad under a vocal keeps its lows and its air.
