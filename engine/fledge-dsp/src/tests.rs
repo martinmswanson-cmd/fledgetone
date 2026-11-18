@@ -251,3 +251,44 @@ fn loud_steep_sound_rounds_off_below_the_ceiling() {
         assert!(pinned == 0, "amp {amp}: {pinned} samples on the ceiling");
     }
 }
+
+#[test]
+fn a_bell_turns_its_frequency_and_leaves_the_rest() {
+    use crate::bank::Bell;
+    let sr = 48000.0;
+    let gain = |hz: f32, db: f32| {
+        let mut b = Bell::default();
+        b.set(1000.0, db, 4.0, sr);
+        let (mut e_in, mut e_out) = (0.0f64, 0.0f64);
+        for i in 0..48000 {
+            let x = (std::f32::consts::TAU * hz * i as f32 / sr).sin();
+            let y = b.tick(x);
+            if i > 24000 {
+                e_in += (x * x) as f64;
+                e_out += (y * y) as f64;
+            }
+        }
+        10.0 * (e_out / e_in).log10()
+    };
+    assert!((gain(1000.0, -12.0) + 12.0).abs() < 0.1, "{}", gain(1000.0, -12.0));
+    assert!((gain(1000.0, 6.0) - 6.0).abs() < 0.1);
+    assert!(gain(100.0, -12.0).abs() < 0.2 && gain(8000.0, -12.0).abs() < 0.2, "far away it's untouched");
+    assert!(gain(1000.0, 0.0).abs() < 1e-4 && gain(700.0, 0.0).abs() < 1e-4, "at 0 dB it does nothing");
+}
+
+#[test]
+fn a_bank_hears_a_sine_in_its_own_band() {
+    use crate::bank::Bank;
+    let sr = 48000.0;
+    let mut bank = Bank::new(sr, 28, 60.0, 16000.0, 0.02);
+    let k = 14;
+    let hz = bank.hz[k];
+    for i in 0..24000 {
+        let x = 0.5 * (std::f32::consts::TAU * hz * i as f32 / sr).sin();
+        bank.hear(x, x);
+    }
+    assert!((bank.db(k) + 6.0).abs() < 0.5, "its own band reads the sine's level: {}", bank.db(k));
+    assert!(bank.db(k - 4) < bank.db(k) - 12.0 && bank.db(k + 4) < bank.db(k) - 12.0, "bands away read much less");
+    bank.hear(f32::NAN, 0.0);
+    assert!(bank.level.iter().all(|v| v.is_finite()));
+}

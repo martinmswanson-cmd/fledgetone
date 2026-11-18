@@ -148,11 +148,12 @@ test('tools: every Fledge effect is in the effects package, described from its o
     assert.ok(e.presets.length >= 5, file);
     assert.ok(e.finite && e.peak < 4, `${file}: peak ${e.peak}`);
   }
-  assert.deepEqual(names, ['Fledge Compressor', 'Fledge Gate', 'Fledge Vocoder', 'Fledge Repeat', 'Fledge Harmony', 'Fledge Shifter', 'Fledge Spectral']);
+  assert.deepEqual(names, ['Fledge Compressor', 'Fledge Gate', 'Fledge Vocoder', 'Fledge Repeat', 'Fledge Harmony', 'Fledge Shifter', 'Fledge Spectral', 'Fledge Smooth', 'Fledge Carve', 'Fledge Dynamic EQ', 'Fledge Heat', 'Fledge Shape']);
   // The three that listen to a sidechain say so, and the beat repeat says it follows the song
   const say = (file) => readEffect(readFileSync(join(ROOT, 'public/fledgetone-plugins', file))).info;
-  for (const kind of ['compressor', 'gate', 'vocoder']) assert.equal(say(FLEDGE_EFFECTS[kind]).sidechain, true, kind);
+  for (const kind of ['compressor', 'gate', 'vocoder', 'carve']) assert.equal(say(FLEDGE_EFFECTS[kind]).sidechain, true, kind);
   assert.equal(say(FLEDGE_EFFECTS.repeat).transport, true);
+  assert.equal(say(FLEDGE_EFFECTS.shape).transport, true);
   assert.ok(!say(FLEDGE_EFFECTS.shifter).sidechain && !say(FLEDGE_EFFECTS.shifter).transport);
 });
 

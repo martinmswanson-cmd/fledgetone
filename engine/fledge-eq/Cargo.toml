@@ -1,0 +1,19 @@
+[package]
+name = "fledge-eq"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Fledge Dynamic EQ: four bells that can each move with the sound (a band turned down only while it is loud) and work on the middle or the sides alone. Built to WebAssembly for Fledgetone, and as a Rust library."
+repository = "https://github.com/martinmswanson-cmd/fledgetone"
+
+[lib]
+# cdylib: the WebAssembly family the app loads; rlib: the effect as a Rust library
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fledge-dsp = { path = "../fledge-dsp", version = "0.1.0" }
+fledge-plugin = { path = "../fledge-plugin", version = "0.1.0" }
+fledge-wasm = { path = "../fledge-wasm", version = "0.1.0" }
+
+[lints]
+workspace = true

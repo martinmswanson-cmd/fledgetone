@@ -64,6 +64,46 @@
     "commit": "in this repository"
   },
   {
+    "family": "fledge-smooth",
+    "label": "Fledge Smooth",
+    "licence": "MIT (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-smooth (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-carve",
+    "label": "Fledge Carve",
+    "licence": "MIT (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-carve (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-eq",
+    "label": "Fledge Dynamic EQ",
+    "licence": "MIT (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-eq (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-heat",
+    "label": "Fledge Heat",
+    "licence": "MIT (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-heat (in this repository)",
+    "commit": "in this repository"
+  },
+  {
+    "family": "fledge-shape",
+    "label": "Fledge Shape",
+    "licence": "MIT (Fledgetone's own)",
+    "gpl": false,
+    "source": "engine/fledge-shape (in this repository)",
+    "commit": "in this repository"
+  },
+  {
     "family": "airwindows",
     "label": "Airwindows",
     "licence": "MIT",
@@ -115,7 +155,7 @@
         "ext": ".fxp",
         "shownAs": {
           "Basses/Mmm Pointy": "Basses/Mmm... Pointy!",
-          "Leads/Microcomputer": "Leads/\u00b5computer",
+          "Leads/Microcomputer": "Leads/µcomputer",
           "MPE/Pad Plink n Move": "MPE/Pad Plink 'n' Move",
           "Plucks/Lil Exploders": "Plucks/Lil' Exploders",
           "Polysynths/Keep em Coming": "Polysynths/Keep 'em Coming",

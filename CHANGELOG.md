@@ -4,6 +4,15 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Fledge Smooth, a resonance suppressor** (Plugins, under EQ): it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it. For a harsh supersaw, a whistle in a growl bass, a bass note that booms, the bite of a vocal. **Hear what's removed** plays just what it takes out.
+- **Fledge Carve makes room for another track** (under EQ): pick the vocal, the lead or the kick beside **Sidechain from**, and this track is turned down only at the frequencies that one is using, while it plays. A pad under a vocal keeps its lows and its air.
+- **Fledge Dynamic EQ** (under EQ): four bells that can each move with the sound (a de-esser, a boom tamed only when it booms, a part that opens as it's played harder), and each can work on both sides, the Mid or the Side: widen the top, or keep the bass in the middle.
+- **Fledge Heat, a saturator in three bands** (under Saturation): lows, mids and highs each with their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube), drive and level. On a loud sound, more drive is more grit, not more level.
+- **Fledge Shape** (under Modulation): a shape in time with the song (Duck, Fall, Rise, Triangle, Gate, Trance gate, Stairs, Bounce) that moves the volume, a filter or the pan: a sidechain pump with no kick needed, a trance gate, a filter sweep every bar, a sound swinging side to side.
+- None of the five adds any delay, so a track with one stays in time. All five are in the **Fledge effects** download on the Tools page as well.
+
 ## 2026.11.17-4 — Lines, a new video picture
 
 - **Lines, a new video picture**: in Export › Video (MP4), **Picture** has a third choice beside Showcase and the spectrum styles. **Lines: each instrument's path** draws a glowing line for every instrument, rising, falling and changing colour with the notes it plays, a dot at its head. The instruments playing share the picture's height, the lowest part at the bottom, so parts in the same octave stay lines you can tell apart; a line ends when its instrument falls silent and a new one rises from the bottom when it comes back. A stutter written as notes (the same note struck fast, again and again) draws as a row of teeth. Widescreen and portrait, 30 or 60 fps, as the other pictures; search *lines video* to open Export set to it.

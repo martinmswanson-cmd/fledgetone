@@ -70,6 +70,9 @@ Things to know:
 - **The beat repeat fills bars by itself only if you tell it where the song is**: call
   `setPosition(beats, time)` on each beat or bar, with `time` on the audio clock. Its **Repeat**
   switch works without that.
+- **Fledge Carve needs a sidechain**: it turns its input down where the sidechain is sounding,
+  and does nothing with none set. **Fledge Shape follows the song** like the beat repeat
+  (`effect.followsSong`): tell it the tempo and the position; with no position it runs on its own.
 - **Fledge Spectral's sound comes out one frame late** (2048 samples up to 48 kHz: 43 ms at
   48 kHz; 4096 above), and **Fledge Harmony's added voices** come a few milliseconds behind its
   input. Delay your other sounds to match if that matters.
