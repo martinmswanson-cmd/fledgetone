@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.18-4 — Every screenshot in the guide and the lessons retaken
 
 - **Every screenshot in the guide and the lessons is new**: the pictures on fledgetone.com/guide and fledgetone.com/learn were retaken from the studio as it is now. Some were from before the starter songs changed (one showed a starter that no longer exists) and before the header and the File menu grew.
 - **Five more pictures in the guide**: Fledge Synth, a plugin's window (and with **What it does** open), the spectrum analyser and the tuner.
