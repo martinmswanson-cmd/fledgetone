@@ -94,7 +94,25 @@ async function record(s, passes = 1, early = -150) {
   await fakeMic(s, passes);
   await s.title('Go to In point').click();
   await s.page.getByRole('button', { name: /^Mic$/ }).click();
-  await s.wait(passes * 6857 - early);
+  if (passes > 1) {
+    // By the playhead, not the clock (a slow machine starts late and plays unevenly): once it has
+    // gone round the loop passes - 1 times and is in the last beat of the loop's last bar
+    const bar = () => s.page.evaluate(() => {
+      const label = [...document.querySelectorAll('*')].find((e) => e.childElementCount === 0 && e.textContent.trim().toLowerCase() === 'bar.beat.tick');
+      const m = label?.parentElement?.textContent.match(/(\d{3})\.(\d{2})\.(\d{2})/);
+      return m ? Number(m[1]) + (Number(m[2]) - 1) / 4 + Number(m[3]) / 400 : 0;
+    });
+    let rounds = 0, last = await bar(), top = last;
+    for (let i = 0; i < 4000; i++) {
+      await s.wait(40);
+      const now = await bar();
+      top = Math.max(top, now);
+      if (now < last - 1) rounds++;
+      last = now;
+      // (The loop's last bar is the highest it reaches; three quarters of the way through it)
+      if (rounds >= passes - 1 && rounds > 0 && now >= Math.floor(top) + 0.8) break;
+    }
+  } else await s.wait(passes * 6857 - early);
   await s.page.getByRole('button', { name: /^Stop/ }).filter({ hasText: 'Stop' }).first().click();
   await s.wait(2500);
   // Back to the take's start (the view follows the playhead), with the page at its top
@@ -162,6 +180,9 @@ export const SHOTS = [
       await s.page.keyboard.press('Escape');
       // Stopped just before the third pass ends, so no sliver of a fourth pass becomes a take
       await record(s, 3, 250);
+      // (Six tracks no longer all show at once: fit them, so the Audio track and its clip are in view)
+      await s.q('[aria-label="Resize the timeline"]').dblclick();
+      await s.wait(500);
       await s.page.getByText(/^3T$/).first().click();
       await s.wait(1500);
       const dlg = s.page.locator('[role=dialog]').last();

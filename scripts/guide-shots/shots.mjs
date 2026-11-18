@@ -9,6 +9,30 @@
 // Each setup gets `s`, the capture helpers (see capture.mjs), and returns the box to keep: an
 // element, a list of elements (their union), or { x, y, width, height } in page pixels.
 
+/** The Lo-Fi starter, played for a moment so the audio is running (a plugin takes a preset, and the analyser and tuner open, only then). */
+async function lofiPlaying(s) {
+  await s.starter('Lo-Fi');
+  await s.page.keyboard.press('Space');
+  await s.wait(1500);
+  await s.page.keyboard.press('Space');
+  await s.wait(400);
+}
+/** Select a track by its name in the track list. */
+async function selectTrack(s, track) {
+  await s.q('[data-tour="track-header"]').filter({ hasText: track }).first().click({ position: { x: 60, y: 14 } });
+  await s.wait(300);
+}
+/** Find a built-in plugin in the browser and click its button ("Add" for an effect, "New track" for an instrument). */
+async function addPlugin(s, search, button = 'Add') {
+  await s.menu('Plugins', 'Browse plugins');
+  const dialog = s.page.getByRole('dialog', { name: 'Plugins' });
+  await dialog.getByRole('textbox', { name: 'Search plugins' }).fill(search);
+  await s.wait(400);
+  await dialog.getByRole('button', { name: button, exact: true }).first().click();
+  await s.wait(1800);
+  return s.q('[data-plugin-window]').last();
+}
+
 export const SHOTS = [
   {
     file: 'overview', section: 'getting-started', after: null,
@@ -60,9 +84,9 @@ export const SHOTS = [
   },
   {
     file: 'tempo-header', section: 'tempo-changes-and-time-signatures', after: 'end',
-    alt: 'The header: the tempo with minus and plus, TAP and FIT, swing, intensity and the master volume.',
+    alt: 'The header: the tempo with minus and plus, TAP and FIT, swing, intensity and the listening volume.',
     caption: 'Tempo, TAP and FIT in the header.',
-    setup: async (s) => { await s.starter('Eastern'); return s.union([s.title('Click to type a tempo'), s.title('Click repeatedly to tap tempo'), s.text('MASTER')], 16); },
+    setup: async (s) => { await s.starter('Eastern'); return s.union([s.title('Click to type a tempo'), s.title('Click repeatedly to tap tempo'), s.text('LISTEN')], 16); },
   },
   {
     file: 'timecode', section: 'timecode-and-frame-rates', after: 'choosing-a-frame-rate',
@@ -125,10 +149,62 @@ export const SHOTS = [
     setup: async (s) => { await s.starter('Ambient'); await s.page.getByTitle('Warm pad: open in the Inspector').click(); await s.wait(800); return s.inspector(); },
   },
   {
+    file: 'fledge-synth', section: 'instruments', after: 'fledge-synth',
+    alt: 'Fledge Synth’s window: a preset list with Hear, four macro knobs, and on the Sound tab two wavetable oscillators with their waves drawn, two filters, and the sub, noise and FM.',
+    caption: 'Fledge Synth: two wavetable oscillators, two filters, and tabs for Modulation and Effects.',
+    setup: async (s) => {
+      await lofiPlaying(s);
+      await addPlugin(s, 'fledge synth', 'New track');
+      return s.union(s.q('[data-plugin-window]').last(), 10);
+    },
+  },
+  {
+    file: 'plugin-window', section: 'instruments', after: 'plugins',
+    alt: 'Fledge Carve’s window on the Keys track: Sidechain from set to Flute and a Bypass button at the top, then a What it does button, the Preset list and a slider for each setting with its value.',
+    caption: 'A plugin’s window: a slider for each setting, with Sidechain from at the top on the plugins that listen to another track.',
+    setup: async (s) => {
+      await lofiPlaying(s);
+      await selectTrack(s, 'Keys');
+      const win = await addPlugin(s, 'carve');
+      await win.locator('select[aria-label="Sidechain from track"]').selectOption({ label: 'Flute' });
+      await s.wait(500);
+      return s.union(win, 10);
+    },
+  },
+  {
+    file: 'plugin-about', section: 'instruments', after: 'plugins',
+    alt: 'The same window with What it does clicked: a box over the sliders says what Fledge Carve is for and what Amount, Threshold, From, To and Removed only do.',
+    caption: 'What it does opens a box that says what the plugin is for; click anywhere else to put it away.',
+    setup: async (s) => {
+      await lofiPlaying(s);
+      await selectTrack(s, 'Keys');
+      const win = await addPlugin(s, 'carve');
+      await win.locator('select[aria-label="Sidechain from track"]').selectOption({ label: 'Flute' });
+      await win.getByRole('button', { name: /^What .* does$/ }).click();
+      await s.wait(400);
+      return s.union(win, 10);
+    },
+  },
+  {
     file: 'mixer', section: 'mixing-and-effects', after: 'the-mixer',
     alt: 'The Mixer: a channel strip per track with inserts, reverb and delay sends, pan and a fader, a drum bus, the master and a spectrum.',
     caption: 'The Mixer, in the bottom panel.',
     setup: async (s) => { await s.starter('Plaza'); await s.view('Mixer'); return s.panel(); },
+  },
+  {
+    file: 'analyser', section: 'mixing-and-effects', after: 'the-mixer',
+    alt: 'The Spectrum analyser window: the Keys drawn as a filled shape from 20 Hz to 20 kHz, with the Flute drawn over it as a line, and Hold peaks and Reset buttons.',
+    caption: 'Tools › Spectrum analyser (Shift+A): one track, with another drawn against it.',
+    setup: async (s) => {
+      await lofiPlaying(s);
+      await s.menu('Tools', 'Spectrum analyser');
+      const win = s.q('[data-floating-window][aria-label="Spectrum analyser"]');
+      await win.locator('select[aria-label="Show the spectrum of"]').selectOption({ label: 'Keys' });
+      await win.locator('select[aria-label="Compare against"]').selectOption({ label: 'Flute' });
+      await s.page.keyboard.press('Space');
+      await s.wait(9000);
+      return s.union(win, 10);
+    },
   },
   {
     file: 'inspector', section: 'mixing-and-effects', after: 'the-track-inspector-fx-rack',
@@ -175,6 +251,22 @@ export const SHOTS = [
     alt: 'The recording settings: count-in, quantize, metronome and takes.',
     caption: 'Recording settings, next to the record button.',
     setup: async (s) => { await s.starter('Plaza'); await s.page.getByTitle(/^Recording settings/).click(); await s.wait(500); return s.popover(); },
+  },
+  {
+    file: 'tuner', section: 'recording', after: 'recording-from-a-microphone',
+    alt: 'The Tuner window listening to the Bass track: the note it is nearest to in big letters, and a meter showing how many cents flat or sharp it is.',
+    caption: 'Tools › Tuner (Shift+T): the nearest note, and how far off it is.',
+    setup: async (s) => {
+      await lofiPlaying(s);
+      await s.menu('Tools', 'Tuner');
+      const win = s.q('[data-floating-window][aria-label="Tuner"]');
+      // (The bass: one note at a time, from the first bar)
+      await win.locator('select[aria-label="The tuner listens to"]').selectOption({ label: 'Bass' });
+      await s.page.keyboard.press('Space');
+      // Until it reads a note, and one that's in tune (the reading comes and goes between notes)
+      for (let i = 0; i < 200 && !/In tune/.test(await win.innerText()); i++) await s.wait(150);
+      return s.union(win, 10);
+    },
   },
   {
     file: 'export', section: 'exporting-audio', after: null,

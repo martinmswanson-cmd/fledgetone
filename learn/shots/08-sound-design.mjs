@@ -60,7 +60,8 @@ function knob(s, root, block, label) {
 async function instrument(s, track, search) {
   await s.title(`${track}: open in the Inspector`).click();
   await s.wait(500);
-  await s.text('SOUND GENERATOR').locator('xpath=../..').locator('button').last().click();
+  // (The instrument's own button: the box has buttons for saving and sharing the sound after it)
+  await s.q('button[aria-label^="Instrument: "]').first().click();
   await s.wait(400);
   await s.page.keyboard.type(search);
   await s.wait(300);

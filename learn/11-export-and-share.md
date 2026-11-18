@@ -26,11 +26,11 @@ To open a song again, choose **File › Open…** (**Ctrl+O**) and pick the file
 
 > Choosing a folder needs Chrome or Edge on a computer. Safari, Firefox and phones put the file in your downloads folder instead. Either way, keep your project files: they're the only way to move a song to another computer.
 
-### Autosave and Restore
+### Autosave: your song comes back
 
-You can't lose much by accident. The app saves your work in this browser half a second after every change, and the menu bar shows **Saved in this browser** with the time.
+You can't lose much by accident. The app saves your work in this browser half a second after every change, and the bar at the top shows **Saved** with the time.
 
-Close the tab, come back tomorrow, and a banner under the header offers your last session. Click **Restore** to bring it back, or **Dismiss** to forget it.
+Close the tab, come back tomorrow, and your song opens again by itself, as you left it. There is nothing to click.
 
 {{shot:export-restore}}
 

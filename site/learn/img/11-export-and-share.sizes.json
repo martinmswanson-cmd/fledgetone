@@ -1,23 +1,23 @@
 {
   "export-project-bar": [
-    1406,
-    96
+    1194,
+    92
   ],
   "export-restore": [
     1600,
-    216
+    139
   ],
   "export-mixdown": [
     896,
-    1500
+    1684
   ],
   "export-loop": [
     896,
-    1548
+    1828
   ],
   "export-share": [
     896,
-    1130
+    1098
   ],
   "export-video": [
     896,
@@ -25,6 +25,6 @@
   ],
   "export-cut": [
     896,
-    830
+    862
   ]
 }
