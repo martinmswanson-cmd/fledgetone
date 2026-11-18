@@ -151,6 +151,6 @@ In the **Export** dialog, tick **Match a loudness target** and pick where the so
 
 ### What's next
 
-You've set levels, panned, EQ'd, compressed, added space, bussed the drums and mastered for streaming. More in the guide: [Mixing and effects](/guide/mixing-and-effects/). Next, add a voice: [Record and polish vocals](/learn/vocals/).
+You've set levels, panned, EQ'd, compressed, added space, bussed the drums and mastered for streaming. More in the guide: [Mixing and effects](/guide/mixing-and-effects/). When faders, panning and a plain EQ aren't enough, [Mix with Fledgetone's own plugins](/learn/pro-plugins/) goes further: making room for a melody, taming what rings out, the centre and the sides apart, and warming the bass. Next, add a voice: [Record and polish vocals](/learn/vocals/).
 
 {{example:lofi-mix}}

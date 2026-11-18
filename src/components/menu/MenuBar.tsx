@@ -1,6 +1,7 @@
 import { isNativeApp } from '../../native/nativeApp';
 import { BUS_PRESETS } from '../../store/busPresets';
 import { isBus } from '../../store/buses';
+import { toolShortcutLabel } from '../../store/toolShortcuts';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type BuiltinEntry } from '../../store/builtinPlugins';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
@@ -280,7 +281,7 @@ const MENUS: MenuDef[] = [
         { label: 'Mute', shortcut: '', run: () => (t ? tl().toggleMute(t.id) : NEED_TRACK), checked: !!t?.isMuted, disabled: !t, divider: true },
         { label: 'Solo', run: () => (t ? tl().toggleSolo(t.id) : NEED_TRACK), checked: !!t?.isSoloed, disabled: !t },
         { label: 'Arm for recording', run: () => (t ? tl().toggleArm(t.id) : NEED_TRACK), checked: !!t?.isArmed, disabled: !t },
-        { label: 'Inspector & FX rack', run: () => tl().toggleInspector(), checked: tl().isInspectorOpen, divider: true },
+        { label: 'Inspector & FX rack', shortcut: toolShortcutLabel('fxRack'), run: () => tl().toggleInspector(), checked: tl().isInspectorOpen, divider: true },
         { label: 'EQ', run: showTrackPanel('eq') },
         { label: 'Pro EQ (big)', run: () => (t ? ui().openDock('eq') : NEED_TRACK) },
         { label: 'Multiband compressor', run: showTrackPanel('Multiband') },
@@ -303,7 +304,7 @@ const MENUS: MenuDef[] = [
         .slice(0, 8);
       const open = t ? [t.plugin, ...(t.pluginFx ?? [])].filter((p) => !!p) : [];
       return [
-        { label: 'Browse plugins…', run: browse(), title: `${allBuiltinPlugins().length} built-in effects and instruments` },
+        { label: 'Browse plugins…', shortcut: toolShortcutLabel('plugins'), run: browse(), title: `${allBuiltinPlugins().length} built-in effects and instruments` },
         { label: fxTrack ? `Add effect to “${fxTrack.name}”…` : 'Add effect to a track…', run: browse(), disabled: !fxTrack },
         ...PLUGIN_SHORTCUTS.map((c, i) => ({ label: `${c.label}…`, run: c.category === 'Instruments' ? () => ui().setPluginBrowser({ trackId: null, category: c.category }) : browse(c.category), divider: i === 0 })),
         ...favourites.map((e, i) => ({
@@ -347,8 +348,8 @@ const MENUS: MenuDef[] = [
           ui().setInspectorTab('track');
           void reveal('[aria-label="Drum Designer"]');
         } },
-        { label: 'Spectrum analyser', run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setAnalyserOpen(!ui().analyserOpen)), checked: ui().analyserOpen, title: 'How loud a track, or everything, is at each frequency: with held peaks, and a second sound to compare', divider: true },
-        { label: 'Tuner', run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setTunerOpen(!ui().tunerOpen)), checked: ui().tunerOpen, title: 'The note a sound is nearest to and how far off: for a guitar, a bass or a voice, from the microphone or a track' },
+        { label: 'Spectrum analyser', shortcut: toolShortcutLabel('analyser'), run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setAnalyserOpen(!ui().analyserOpen)), checked: ui().analyserOpen, title: 'How loud a track, or everything, is at each frequency: with held peaks, and a second sound to compare', divider: true },
+        { label: 'Tuner', shortcut: toolShortcutLabel('tuner'), run: () => (useAudioStore.getState().audioState !== 'running' ? 'Start the audio first.' : ui().setTunerOpen(!ui().tunerOpen)), checked: ui().tunerOpen, title: 'The note a sound is nearest to and how far off: for a guitar, a bass or a voice, from the microphone or a track' },
         { label: 'Record from the microphone', run: () => press('button[title^="Record from the microphone"], button[title^="Stop recording"]'), divider: true },
         { label: 'Piano (play and type notes with the keyboard)', run: () => usePianoPanel.getState().setOpen(!usePianoPanel.getState().open) },
         { label: 'MIDI keyboard…', run: () => press('button[title^="MIDI input"]') },
@@ -408,14 +409,14 @@ const MENUS: MenuDef[] = [
       const s = tl();
       const tab = (t: DockTab, label: string, divider = false): MenuAction => ({ label, run: () => u.openDock(t), checked: u.dockOpen && u.dockTab === t, divider });
       return [
-        tab('mixer', 'Mixer'),
+        { ...tab('mixer', 'Mixer'), shortcut: toolShortcutLabel('mixer') },
         tab('launcher', 'Launcher'),
         tab('eq', 'EQ & Dynamics'),
         tab('game', 'Game'),
         tab('video', 'Video'),
         tab('sfx', 'Sound effects'),
         { label: u.dockOpen ? 'Hide the bottom panel' : 'Show the bottom panel', run: () => u.setDockOpen(!u.dockOpen), divider: true },
-        { label: 'Inspector & FX rack', run: () => s.toggleInspector(), checked: s.isInspectorOpen },
+        { label: 'Inspector & FX rack', shortcut: toolShortcutLabel('fxRack'), run: () => s.toggleInspector(), checked: s.isInspectorOpen },
         // (Not in the phone apps: an agent connects to the studio on a computer)
         ...(isNativeApp()
           ? []
