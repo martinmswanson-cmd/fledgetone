@@ -178,6 +178,11 @@ export interface PluginCredit {
 const MIT = '[MIT](https://opensource.org/license/mit)';
 export const PLUGIN_CREDITS: PluginCredit[] = [
   { family: 'fledge', made: "Fledge Synth, Fledgetone's own synthesizer (its Rust source is in engine/fledge-synth and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-shape', made: "Fledge Shape, Fledgetone's own rhythmic shaper for volume, filter and pan (its Rust source is in engine/fledge-shape and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-heat', made: "Fledge Heat, Fledgetone's own three-band saturator (its Rust source is in engine/fledge-heat and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-eq', made: "Fledge Dynamic EQ, Fledgetone's own equaliser with moving bands and mid/side (its Rust source is in engine/fledge-eq and engine/fledge-dsp; its bell is the form in Robert Bristow-Johnson's Audio EQ Cookbook)", licence: MIT },
+  { family: 'fledge-carve', made: "Fledge Carve, Fledgetone's own frequency-by-frequency ducking from a sidechain (its Rust source is in engine/fledge-carve and engine/fledge-dsp)", licence: MIT },
+  { family: 'fledge-smooth', made: "Fledge Smooth, Fledgetone's own resonance suppressor (its Rust source is in engine/fledge-smooth and engine/fledge-dsp)", licence: MIT },
   { family: 'fledge-spectral', made: "Fledge Spectral, Fledgetone's own spectral effect: freeze, blur, smear and gate (its Rust source is in engine/fledge-spectral and engine/fledge-dsp)", licence: MIT },
   { family: 'fledge-shifter', made: "Fledge Shifter, Fledgetone's own frequency shifter (its Rust source is in engine/fledge-shifter and engine/fledge-dsp; the all-pass coefficients of its Hilbert transformer are Olli Niemitalo's published design, from his article 'Hilbert transform' at yehar.com)", licence: MIT },
   { family: 'fledge-harmony', made: "Fledge Harmony, Fledgetone's own harmoniser (its Rust source is in engine/fledge-harmony)", licence: MIT },

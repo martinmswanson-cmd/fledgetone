@@ -8,7 +8,7 @@ set -e
 cd "$(dirname "$0")"
 
 # Each family: its crate, and its file in public/fledgetone-plugins/ (as scripts/plugins/families.json names it)
-FAMILIES="fledge-synth:fledge.wasm fledge-compressor:fledge-compressor.wasm fledge-gate:fledge-gate.wasm fledge-vocoder:fledge-vocoder.wasm fledge-repeat:fledge-repeat.wasm fledge-harmony:fledge-harmony.wasm fledge-shifter:fledge-shifter.wasm fledge-spectral:fledge-spectral.wasm"
+FAMILIES="fledge-synth:fledge.wasm fledge-compressor:fledge-compressor.wasm fledge-gate:fledge-gate.wasm fledge-vocoder:fledge-vocoder.wasm fledge-repeat:fledge-repeat.wasm fledge-harmony:fledge-harmony.wasm fledge-shifter:fledge-shifter.wasm fledge-spectral:fledge-spectral.wasm fledge-smooth:fledge-smooth.wasm fledge-carve:fledge-carve.wasm fledge-eq:fledge-eq.wasm fledge-heat:fledge-heat.wasm fledge-shape:fledge-shape.wasm"
 
 for family in $FAMILIES; do
   crate=${family%%:*}

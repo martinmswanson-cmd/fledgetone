@@ -194,6 +194,134 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  },
  {
+  "family": "fledge-smooth",
+  "label": "Fledge Smooth",
+  "licence": "MIT (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-smooth.wasm",
+  "bytes": 93647,
+  "hash": "1af68dd4f9fb",
+  "plugins": [
+   {
+    "name": "Fledge Smooth",
+    "category": "EQ",
+    "about": "A resonance suppressor: it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it, and only by as much as it does. For a harsh supersaw, a whistle in a growl bass, one booming bass note, the bite of a vocal. Depth is how much; \"Stands out by\" is how far over its neighbours a band must be before it's touched; From and To keep it to a range; \"Removed only\" plays only what it takes out. No added delay.",
+    "tags": [
+     "resonance",
+     "harsh",
+     "smooth",
+     "de-harsh",
+     "dynamic eq",
+     "tame"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-carve",
+  "label": "Fledge Carve",
+  "licence": "MIT (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-carve.wasm",
+  "bytes": 92421,
+  "hash": "d08665124ca9",
+  "plugins": [
+   {
+    "name": "Fledge Carve",
+    "category": "EQ",
+    "about": "Makes room for another track: pick it under \"Sidechain from\", and this track is turned down only at the frequencies that one is using, band by band, while it plays. A pad under a vocal keeps its lows and its air; a bass under a kick loses only the thump. Amount is the most a band is turned down; Threshold is how loud the other track must be in a band before it counts; From and To keep it to a range; \"Removed only\" plays only what it takes out. With no sidechain it does nothing. No added delay.",
+    "sidechain": true,
+    "tags": [
+     "sidechain",
+     "duck",
+     "space",
+     "unmask",
+     "carve",
+     "dynamic eq"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-eq",
+  "label": "Fledge Dynamic EQ",
+  "licence": "MIT (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-eq.wasm",
+  "bytes": 92266,
+  "hash": "d33c9dfbdd65",
+  "plugins": [
+   {
+    "name": "Fledge Dynamic EQ",
+    "category": "EQ",
+    "about": "Four bells that can move with the sound. Each has a frequency, a gain and a width, like any equaliser band. Give one a \"moves by\" amount and a threshold and it turns that much further as the sound in its own range gets loud, and eases back as it falls: down for a de-esser or a boom tamed only on the notes that boom, up for a part that opens as it's played harder. \"Works on\" sends a band to both sides, to the Mid (the centre) or to the Side (the width): lift the Side's top for a wider mix, or cut the Side's lows to keep the bass in the middle. No added delay.",
+    "tags": [
+     "eq",
+     "dynamic eq",
+     "mid side",
+     "de-esser",
+     "equaliser",
+     "equalizer",
+     "bell",
+     "stereo width"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-heat",
+  "label": "Fledge Heat",
+  "licence": "MIT (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-heat.wasm",
+  "bytes": 89756,
+  "hash": "76fa37ae9979",
+  "plugins": [
+   {
+    "name": "Fledge Heat",
+    "category": "Saturation",
+    "about": "A saturator in three bands: lows, mids and highs each get their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube, or left Clean), their own drive and their own level, so the bass can be warmed without the top crackling, or the top given grit without fuzzing the bass. A loud sound keeps its level as the drive goes up (more grit, not more volume); a quiet one comes up, as through any saturator: trim it with the band's level. Set where the bands meet with Low / mid and Mid / high; Mix blends it with the clean sound. No added delay.",
+    "tags": [
+     "saturation",
+     "distortion",
+     "multiband",
+     "warm",
+     "tube",
+     "tape",
+     "drive"
+    ]
+   }
+  ]
+ },
+ {
+  "family": "fledge-shape",
+  "label": "Fledge Shape",
+  "licence": "MIT (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge-shape.wasm",
+  "bytes": 84938,
+  "hash": "ff0b44def477",
+  "plugins": [
+   {
+    "name": "Fledge Shape",
+    "category": "Modulation",
+    "about": "A shape that repeats in time with the song, moving the volume, a low-pass or high-pass filter, or the pan. Pick the shape (Duck, Fall, Rise, Triangle, Gate, Trance gate, Stairs, Bounce) and how often it repeats, from four bars to a 32nd. A Duck on the volume every quarter note is a sidechain pump with no kick needed; a Fall on the low-pass every bar is a sweep; the Trance gate chops a pad into a rhythm; a Triangle on the pan swings it side to side. Depth is how far it goes, Smooth rounds its corners, and \"Starts at\" slides it along the beat. It follows the song's position, so it lands the same every time. No added delay.",
+    "transport": true,
+    "tags": [
+     "pump",
+     "volume shaper",
+     "trance gate",
+     "filter sweep",
+     "auto pan",
+     "tremolo",
+     "lfo",
+     "rhythm",
+     "tempo"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",

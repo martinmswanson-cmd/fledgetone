@@ -4,6 +4,7 @@
 //!
 //! Everything here is deterministic: the same input gives the same output, at any block size.
 
+pub mod bank;
 pub mod delay;
 pub mod dynamics;
 pub mod envelope;

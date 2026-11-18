@@ -20,8 +20,8 @@ use.
 
 | # | Item | What it does | Where | Size | Needs |
 |---|------|--------------|-------|------|-------|
-| 1 | Resonance suppressor | Finds narrow peaks that ring and move from note to note (growls, supersaws, FM basses) and turns each down only while it rings | Rust | M | 0 |
-| 2 | Pro EQ upgrade | Dynamic bands, mid/side per band, a linear-phase mode, **Match** against the reference song. Today's Pro EQ (`src/audio/peq.ts`) is static Web Audio biquads; `PeqEditor.tsx` already draws the curve | Both | L | 0 |
+| 1 | Resonance suppressor (first version done 2026-11-18: Fledge Smooth, `engine/fledge-smooth`: 28 bands, each against its neighbours, no added delay; coarser than a spectral one, and not yet tuned by ear) | Finds narrow peaks that ring and move from note to note (growls, supersaws, FM basses) and turns each down only while it rings | Rust | M | 0 |
+| 2 | Pro EQ upgrade (in part, 2026-11-18: dynamic bands and mid/side per band are in a plugin, Fledge Dynamic EQ, `engine/fledge-eq`, with sliders; the drawn Pro EQ is unchanged, and linear phase and Match are not built) | Dynamic bands, mid/side per band, a linear-phase mode, **Match** against the reference song. Today's Pro EQ (`src/audio/peq.ts`) is static Web Audio biquads; `PeqEditor.tsx` already draws the curve | Both | L | 0 |
 | 3 | Stereo and phase meter | Vectorscope, a live correlation bar, loudness history, PSR/PLR (dynamic range left), a mono-compatibility warning on the master | Both | M | 0 |
 | 4 | Vocal cleanup | Noise reduction learned from a quiet stretch of the take, de-hum, de-click, de-plosive | Rust | L | 0 |
 | 5 | Audio to MIDI | Turn a recorded melody, bass line or hummed tune into notes (the pitch tracking in `vocalTune.ts` is a start) | Both | M | 0 |
@@ -71,6 +71,9 @@ last two are probable gaps: the app's own inserts were not checked feature by fe
 | 26 | Frequency shifter (done 2026-11-16: Fledge Shifter, `engine/fledge-shifter`) | Moves every frequency by the same number of Hz (not a ratio), from slow phasing to metallic tones (Ableton's Frequency Shifter). Ring modulators exist; this doesn't | Rust | S | 0 |
 | 27 | Convolution reverb with your own impulse responses (confirmed a gap, and done 2026-11-16: the track Reverb insert takes a recorded room, `TrackFx.reverb.room`, as the master reverb already did; no new plugin) | A reverb on a track that loads an impulse response you record or drop in. The catalog has three convolvers and the master reverb takes a recorded room; no per-track one that loads a file was found | Both | M | 0 |
 | 28 | Spectral tools (done 2026-11-16: Fledge Spectral, `engine/fledge-spectral`: freeze, blur, smear, gate; its track plays one frame late, which the host isn't told) | Freeze, blur and gate a sound by its spectrum. One denoiser exists; nothing else spectral was found | Rust | L | 0 |
+| 29 | Frequency-by-frequency ducking (done 2026-11-18: Fledge Carve, `engine/fledge-carve`; the sidechain's 28 bands as cuts on this track) | Turns a track down only where another one is sounding, so a vocal or a kick gets room without the whole track pumping | Rust | S | 6 |
+| 30 | Multiband saturator (done 2026-11-18: Fledge Heat, `engine/fledge-heat`; three bands, six shapes; no modulation of its own) | A different kind and amount of distortion for the lows, mids and highs | Rust | S | 0 |
+| 31 | Rhythmic shaper (first version done 2026-11-18: Fledge Shape, `engine/fledge-shape`; eight fixed shapes on volume, a filter or the pan, in time with the song. Not built: drawing your own shape, and more than one target at once) | A curve that repeats with the beat: pump, gate, sweep, pan | Rust | M | 0 |
 
 ## Workflow plan
 

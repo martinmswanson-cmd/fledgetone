@@ -24,6 +24,11 @@ export const EFFECTS = {
   harmony: 'fledge-harmony.wasm',
   shifter: 'fledge-shifter.wasm',
   spectral: 'fledge-spectral.wasm',
+  smooth: 'fledge-smooth.wasm',
+  carve: 'fledge-carve.wasm',
+  eq: 'fledge-eq.wasm',
+  heat: 'fledge-heat.wasm',
+  shape: 'fledge-shape.wasm',
 };
 
 // The processor is added once per context, and each .wasm compiled once per page

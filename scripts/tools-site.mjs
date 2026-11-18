@@ -343,7 +343,7 @@ export const TOOLS = [
     color: '--amber',
     who: 'For web developers and music app makers',
     what: 'Fledgetone\'s own effects, compiled to WebAssembly, with a small wrapper for the Web Audio API: a compressor and a gate you can sidechain, a vocoder that takes its voice from another sound, a beat repeat, a harmoniser, a frequency shifter and a spectral freeze, blur and gate.',
-    inZip: ['Seven effects (WebAssembly) and their Web Audio wrapper', 'An example page: a chord and a kick through each effect', 'Their Rust source code, to build them yourself'],
+    inZip: ['Twelve effects (WebAssembly) and their Web Audio wrapper', 'An example page: a chord and a kick through each effect', 'Their Rust source code, to build them yourself'],
   },
   {
     id: 'drop-effects',
@@ -699,6 +699,11 @@ export const FLEDGE_EFFECTS = {
   harmony: 'fledge-harmony.wasm',
   shifter: 'fledge-shifter.wasm',
   spectral: 'fledge-spectral.wasm',
+  smooth: 'fledge-smooth.wasm',
+  carve: 'fledge-carve.wasm',
+  eq: 'fledge-eq.wasm',
+  heat: 'fledge-heat.wasm',
+  shape: 'fledge-shape.wasm',
 };
 
 /** An effect's description, parameters and presets, read from its .wasm itself; and that it passes a sound without breaking. */

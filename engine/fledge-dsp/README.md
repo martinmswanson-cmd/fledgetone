@@ -11,6 +11,7 @@ time.
 | `shaper` | Drive shapes antialiased by antiderivatives, their make-up gain, and a soft ceiling at -1 dBFS |
 | `envelope` | An ADSR with analog-like curves |
 | `lfo` | LFO shapes |
+| `bank` | A bank of narrow bands across the spectrum with each one's level, a bell filter with its own width, and a bell per band to turn each down by (band-by-band work with no added delay) |
 | `delay` | A delay line read between samples (linear or Hermite) |
 | `dynamics` | A three-band compressor that works both ways (OTT) |
 | `fft` | A radix-2 FFT |
