@@ -5,14 +5,19 @@
 //! has its own kind of distortion, its own drive and its own level: a warm tube low end under a
 //! clean middle and a little hard grit on top, or the reverse.
 //!
-//! The split is a pair of Linkwitz-Riley crossovers (the bands add back to the whole sound, level
-//! for level), and the shapes are fledge-dsp's antialiased ones, each matched in loudness for a
+//! The split is a pair of Linkwitz-Riley crossovers (the lows also pass the upper one's turn of
+//! phase, so the three bands add back to the whole sound level for level wherever the crossovers
+//! sit), and each band is shaped at twice the sample rate, which keeps its top end: at the base
+//! rate the antialiasing took 8 dB off at 18 kHz from any band that was driven. The shapes are
+//! fledge-dsp's antialiased ones, each matched in loudness for a
 //! sound near full level, so there more drive is more grit, not more level (a quiet sound comes up
 //! with the drive, as through any saturator). Written from those textbook parts, not from anyone's code.
-//! No added delay. The Mix blends against the sound as the split passes it, so the two stay in
-//! step at any setting.
+//! No frames and no look-ahead: the sound is late only by what the filters turn it (a few
+//! samples). The Mix blends against the sound as the split passes it, at the doubled rate, so the
+//! two stay in step.
 
 use fledge_dsp::filter::{DcBlock, Svf, SvfCoef};
+use fledge_dsp::oversample::{Down2, Up2};
 use fledge_dsp::shaper::{shaper_makeup, Shaper};
 use fledge_plugin::{Block, Info, Plugin};
 
@@ -119,8 +124,12 @@ pub fn presets() -> [(&'static str, [f32; COUNT]); 6] {
 /// leaves, and its gains as they are now (they ease to their settings).
 #[derive(Clone, Copy, Default)]
 struct Stage {
+    /// To twice the sample rate, for each side
+    up: [Up2; 2],
     shaper: [Shaper; 2],
     dc: [DcBlock; 2],
+    /// The style it had last block
+    kind: u32,
     gain: f32,
     back: f32,
     level: f32,
@@ -132,7 +141,11 @@ pub struct Heat {
     /// The crossovers' filters, for each side: four at the lower one, four at the upper
     low: [[Svf; 4]; 2],
     high: [[Svf; 4]; 2],
+    /// What turns the lows as the upper crossover turns the other two
+    turn: [[Svf; 4]; 2],
     stages: [Stage; 3],
+    /// Back to the sample rate, for each side
+    down: [Down2; 2],
     mix: f32,
     out: f32,
     fresh: bool,
@@ -150,6 +163,13 @@ impl Heat {
         let mid = self.high[c][1].tick(hi, m.lp).lp;
         let h = self.high[c][2].tick(hi, rest);
         let high = self.high[c][3].tick(hi, h.hp).hp;
+        // The mids and highs have been through the upper crossover, whose two halves add back
+        // to the sound turned in phase. The lows are turned the same (both halves, added), or
+        // they'd cancel against the others where the crossovers are close: 7 dB at 900 Hz with
+        // them at 800 Hz and 1.2 kHz
+        let a = self.turn[c][0].tick(hi, low);
+        let b = self.turn[c][2].tick(hi, low);
+        let low = self.turn[c][1].tick(hi, a.lp).lp + self.turn[c][3].tick(hi, b.hp).hp;
         [low, mid, high]
     }
 }
@@ -159,7 +179,7 @@ impl Plugin for Heat {
         Info {
             name: "Fledge Heat",
             category: "Saturation",
-            about: "A saturator in three bands: lows, mids and highs each get their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube, or left Clean), their own drive and their own level, so the bass can be warmed without the top crackling, or the top given grit without fuzzing the bass. A loud sound keeps its level as the drive goes up (more grit, not more volume); a quiet one comes up, as through any saturator: trim it with the band's level. Set where the bands meet with Low / mid and Mid / high; Mix blends it with the clean sound. No added delay.",
+            about: "A saturator in three bands: lows, mids and highs each get their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube, or left Clean), their own drive and their own level, so the bass can be warmed without the top crackling, or the top given grit without fuzzing the bass. A loud sound keeps its level as the drive goes up (more grit, not more volume); a quiet one comes up, as through any saturator: trim it with the band's level, which works on a Clean band too. Set where the bands meet with Low / mid and Mid / high; Mix blends it with the clean sound. No frames and no look-ahead, so it stays in time.",
             instrument: false,
             sidechain: false,
             transport: false,
@@ -168,7 +188,7 @@ impl Plugin for Heat {
     }
 
     fn new(sample_rate: f32) -> Self {
-        Heat { sr: sample_rate.max(8000.0), params: defaults(), low: [[Svf::default(); 4]; 2], high: [[Svf::default(); 4]; 2], stages: [Stage::default(); 3], mix: 1.0, out: 1.0, fresh: true }
+        Heat { sr: sample_rate.max(8000.0), params: defaults(), low: [[Svf::default(); 4]; 2], high: [[Svf::default(); 4]; 2], turn: [[Svf::default(); 4]; 2], stages: [Stage::default(); 3], down: [Down2::default(); 2], mix: 1.0, out: 1.0, fresh: true }
     }
 
     fn param_count() -> usize {
@@ -190,8 +210,10 @@ impl Plugin for Heat {
     fn param_display(&self, i: usize) -> String {
         let x = value(i, self.params[i]);
         match (i, part(i)) {
-            (LOW_SPLIT, _) | (HIGH_SPLIT, _) if x >= 1000.0 => format!("{:.1} kHz", x / 1000.0),
-            (LOW_SPLIT, _) | (HIGH_SPLIT, _) => format!("{x:.0} Hz"),
+            // (The upper crossover keeps half an octave and more above the lower: shown as it's used)
+            (HIGH_SPLIT, _) => format!("{:.1} kHz", x.max(value(LOW_SPLIT, self.params[LOW_SPLIT]) * 1.5) / 1000.0),
+            (LOW_SPLIT, _) if x >= 1000.0 => format!("{:.1} kHz", x / 1000.0),
+            (LOW_SPLIT, _) => format!("{x:.0} Hz"),
             (_, Some(STYLE)) => STYLES[x as usize].to_string(),
             (_, Some(DRIVE)) => format!("{x:.1} dB"),
             (_, Some(LEVEL)) | (OUTPUT, _) => format!("{x:+.1} dB"),
@@ -209,10 +231,21 @@ impl Plugin for Heat {
         let mut to = [[1.0f32; 3]; 3];
         for b in 0..3 {
             kinds[b] = p(BAND + b * 3 + STYLE) as u32;
+            // (A band's level is its own whatever its style: a Clean one can be turned up or down too)
+            to[b][2] = 10f32.powf(p(BAND + b * 3 + LEVEL) / 20.0);
             if kinds[b] != 0 {
                 let gain = 10f32.powf(p(BAND + b * 3 + DRIVE) / 20.0);
-                to[b] = [gain, 1.0 / shaper_makeup(kinds[b], gain), 10f32.powf(p(BAND + b * 3 + LEVEL) / 20.0)];
+                to[b][0] = gain;
+                to[b][1] = 1.0 / shaper_makeup(kinds[b], gain);
             }
+            let s = &mut self.stages[b];
+            if (kinds[b] == 0) != (s.kind == 0) {
+                // To or from Clean: its shape starts afresh (while Clean it was passed by, and
+                // what it last held would come out as a thump)
+                s.shaper = [Shaper::default(); 2];
+                s.dc = [DcBlock::default(); 2];
+            }
+            s.kind = kinds[b];
         }
         let (mix_to, out_to) = (self.params[MIX], 10f32.powf(p(OUTPUT) / 20.0));
         if self.fresh {
@@ -225,7 +258,8 @@ impl Plugin for Heat {
         }
         // Gains ease over about 5 ms, so a moved slider doesn't click
         let ease = 1.0 - (-1.0 / (0.005 * self.sr)).exp();
-        let dc = 1.0 - std::f32::consts::TAU * 5.0 / self.sr;
+        // (The offset a lopsided shape leaves is taken out at the doubled rate)
+        let dc = 1.0 - std::f32::consts::TAU * 5.0 / (2.0 * self.sr);
         let clean = |x: f32| if x.is_finite() { x } else { 0.0 };
         for i in 0..block.frames() {
             for b in 0..3 {
@@ -238,17 +272,18 @@ impl Plugin for Heat {
             self.out += (out_to - self.out) * ease;
             for c in 0..2 {
                 let bands = self.split(c, clean(block.input[c][i]), &lo, &hi);
-                let (mut dry, mut wet) = (0.0, 0.0);
+                // Each band at twice the rate: shaped there, and added to the others there
+                let (mut dry, mut wet) = ([0.0f32; 2], [0.0f32; 2]);
                 for b in 0..3 {
-                    dry += bands[b];
                     let s = &mut self.stages[b];
-                    wet += if kinds[b] == 0 {
-                        bands[b]
-                    } else {
-                        s.dc[c].tick(s.shaper[c].tick(kinds[b], bands[b] * s.gain), dc) * s.back * s.level
-                    };
+                    let two = s.up[c].tick(bands[b]);
+                    for j in 0..2 {
+                        dry[j] += two[j];
+                        wet[j] += s.level * if kinds[b] == 0 { two[j] } else { s.dc[c].tick(s.shaper[c].tick(kinds[b], two[j] * s.gain), dc) * s.back };
+                    }
                 }
-                block.output[c][i] = (dry + (wet - dry) * self.mix) * self.out;
+                let mixed = [dry[0] + (wet[0] - dry[0]) * self.mix, dry[1] + (wet[1] - dry[1]) * self.mix];
+                block.output[c][i] = self.down[c].tick(mixed) * self.out;
             }
         }
     }
@@ -256,7 +291,9 @@ impl Plugin for Heat {
     fn settle(&mut self) {
         self.low = [[Svf::default(); 4]; 2];
         self.high = [[Svf::default(); 4]; 2];
+        self.turn = [[Svf::default(); 4]; 2];
         self.stages = [Stage::default(); 3];
+        self.down = [Down2::default(); 2];
         self.fresh = true;
     }
 

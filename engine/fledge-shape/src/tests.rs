@@ -87,9 +87,9 @@ fn a_duck_on_the_volume_pumps_on_every_beat() {
 }
 
 #[test]
-fn at_no_depth_the_volume_is_untouched() {
+fn at_no_depth_the_sound_is_untouched_whatever_it_moves() {
     let x = tone(440.0, 0.5, BEAT);
-    for target in [VOLUME, PAN] {
+    for target in [VOLUME, LOW_PASS, HIGH_PASS, PAN] {
         let (l, r) = run(&mut with(&[(TARGET, target as f32), (DEPTH, 0.0)]), &x, 128);
         assert_eq!(l, x, "{}", TARGETS[target]);
         assert_eq!(r, x);
@@ -179,5 +179,47 @@ fn broken_samples_do_not_stick_and_presets_are_in_range() {
     for (i, (name, values)) in presets().iter().enumerate() {
         assert_eq!(Shape::program_name(i), *name);
         assert!(values.iter().all(|v| (0.0..=1.0).contains(v)), "{name}");
+    }
+}
+
+#[test]
+fn moving_the_depth_never_flips_a_side_or_jumps() {
+    // Hard left (a triangle on the pan at the bar line, full depth), then the depth pulled down
+    let x = vec![0.5f32; 4800];
+    for to in [0.05, 0.0] {
+        let mut s = with(&[(TARGET, 3.0), (SHAPE, 3.0), (RATE, 0.0), (DEPTH, 1.0), (SMOOTH, 1.0)]);
+        let (_, r0) = run(&mut s, &x[..960], 128);
+        assert!(r0[959].abs() < 0.01, "hard left to begin with");
+        s.set(DEPTH, to);
+        let (l, r) = run(&mut s, &x, 128);
+        let lowest = r.iter().fold(f32::MAX, |m, v| m.min(*v));
+        let jump = r.windows(2).fold(0.0f32, |m, w| m.max((w[1] - w[0]).abs()));
+        assert!(lowest >= -1e-6, "depth to {to}: the right side went to {lowest}");
+        assert!(jump < 0.01, "depth to {to}: the right side jumped by {jump} in one sample");
+        assert!(l.iter().chain(&r).all(|v| *v <= 0.5 + 1e-6));
+        if to == 0.0 {
+            assert!((r[4799] - 0.5).abs() < 0.01, "at no depth it ends in the middle");
+        }
+    }
+}
+
+#[test]
+fn a_filter_snapping_shut_does_not_ring_louder_than_the_sound() {
+    let mut rng = fledge_dsp::math::Rng::new(5);
+    let x: Vec<f32> = (0..BEAT * 4).map(|_| 0.5 * rng.bipolar()).collect();
+    for rate in [44100.0, 48000.0] {
+        for target in [1.0, 2.0] {
+            let mut s = Shape::new(rate);
+            s.set_tempo(128.0);
+            s.set_position(0.0);
+            for (i, v) in [(TARGET, target), (SHAPE, 4.0), (RATE, 7.0), (DEPTH, 1.0), (SMOOTH, 0.0)] {
+                s.set(i, normal(i, v));
+            }
+            let (l, _) = run(&mut s, &x, 128);
+            let peak = l.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            println!("{} at {rate} Hz, a 16th gate with no smoothing on noise peaking at 0.5: the output peaks at {peak:.2}", TARGETS[target as usize]);
+            // (A filter can pass a peak a little over the sound's own; stepped shut, it rang to 1.2)
+            assert!(peak < 0.9, "{}", TARGETS[target as usize]);
+        }
     }
 }

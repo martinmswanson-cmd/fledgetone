@@ -18,8 +18,11 @@ has stopped) leaves it running from where it was.
 | 5 | Starts at | 0 to 100 % of the way through the shape |
 
 A shape's height runs from 0 to 1. On the volume, 1 is the sound untouched and 0 silence (at full
-depth). On the low-pass 1 is 20 kHz and 0 is 200 Hz; on the high-pass 1 is 20 Hz and 0 is 4 kHz.
-On the pan, 0 is left and 1 right, and a side is only ever turned down. A bar is counted as four
+depth). On the low-pass 1 is 20 kHz (or four tenths of the sample rate, if that's less) and 0 is
+200 Hz; on the high-pass 1 is 20 Hz and 0 is 4 kHz. The filter glides between settings, and over
+the last tenth of the way open the plain sound takes over, so fully open (or at no depth) the
+sound passes exactly. On the pan, 0 is left and 1 right, and a side is only ever turned down. The
+Depth eases over 5 ms when it's moved. A bar is counted as four
 beats.
 
 Parameters keep their order: new ones are only ever added at the end, so saved songs keep their

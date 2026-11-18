@@ -161,3 +161,39 @@ fn every_preset_is_within_range_and_named() {
     e.set_program(4);
     assert!(over(&run(&mut e, &x, &x, 128).0, &x).abs() < 0.1);
 }
+
+#[test]
+fn a_band_set_flat_and_used_again_starts_clean() {
+    let mut e = with(&[(at(0, FREQ), 100.0), (at(0, GAIN), 18.0), (at(0, Q), 4.0)]);
+    mono(&mut e, &tone(100.0, 0.5, 0.5));
+    e.set(at(0, GAIN), normal(at(0, GAIN), 0.0));
+    mono(&mut e, &vec![0.0; 96000]);
+    e.set(at(0, GAIN), normal(at(0, GAIN), 1.0));
+    let y = mono(&mut e, &vec![0.0; 4800]);
+    let peak = y.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    assert!(peak < 1e-4, "silence in, and {peak} came out");
+}
+
+#[test]
+fn a_band_that_stopped_moving_starts_from_silence_when_it_moves_again() {
+    let sets = [(at(3, FREQ), 6500.0), (at(3, MOVES), -18.0), (at(3, THRESHOLD), -30.0)];
+    let mut e = with(&sets);
+    mono(&mut e, &tone(6500.0, 0.5, 0.5));
+    e.set(at(3, MOVES), normal(at(3, MOVES), 0.0));
+    mono(&mut e, &vec![0.0; 48000]);
+    e.set(at(3, MOVES), normal(at(3, MOVES), -18.0));
+    mono(&mut e, &vec![0.0; 960]);
+    assert!(e.moved(3).abs() < 0.1, "with only silence since, it has moved {} dB", e.moved(3));
+}
+
+#[test]
+fn a_narrow_bell_low_down_is_right_at_a_high_sample_rate() {
+    let sr = 192000.0;
+    let mut e = DynamicEq::new(sr);
+    for (i, x) in [(at(0, FREQ), 20.0), (at(0, GAIN), 18.0), (at(0, Q), 12.0)] {
+        e.set(i, normal(i, x));
+    }
+    let x: Vec<f32> = (0..(4.0 * sr) as usize).map(|i| 0.1 * (TAU * 20.0 * i as f32 / sr).sin()).collect();
+    let y = run(&mut e, &x, &x, 128).0;
+    assert!((over(&y, &x) - 18.0).abs() < 0.5, "18 dB asked for at 20 Hz, {} dB given", over(&y, &x));
+}

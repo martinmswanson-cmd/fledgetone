@@ -102,6 +102,8 @@ pub struct Smooth {
     /// Samples until the cuts are worked out again
     until: usize,
     db: [f32; BANDS],
+    /// Each band's own level, followed faster
+    own: [f32; BANDS],
 }
 
 impl Smooth {
@@ -121,16 +123,23 @@ impl Smooth {
         let step = EVERY as f32 / self.sr;
         let attack = 1.0 - (-step / (p(ATTACK) * 0.001)).exp();
         let release = 1.0 - (-step / (p(RELEASE) * 0.001)).exp();
-        // Each band's level, steadied over 40 ms: hiss wavers from moment to moment in a narrow
-        // band, and a waver is not a resonance
+        // Each band's level, steadied (hiss wavers from moment to moment in a narrow band, and a
+        // waver is not a resonance): over 40 ms as a neighbour, what the others are compared
+        // with; over the Attack (15 ms at least) as itself, so a short Attack catches a ringing
+        // as it starts
         let steady = 1.0 - (-step / 0.04).exp();
+        let quick = 1.0 - (-step / (p(ATTACK) * 0.001).clamp(0.015, 0.04)).exp();
         for b in 0..BANDS {
-            self.db[b] += (self.bank.db(b) - self.db[b]) * steady;
+            let now = self.bank.db(b);
+            // (As a neighbour it rises as fast as it does as itself: when a sound starts, every
+            // band comes up together, and none may seem to stand out from ones still catching up)
+            self.db[b] += (now - self.db[b]) * if now > self.db[b] { quick } else { steady };
+            self.own[b] += (now - self.own[b]) * quick;
         }
         for b in 0..BANDS {
             let hz = self.bank.hz[b];
             let mut to = 0.0;
-            if depth > 0.0 && hz >= lo * 0.98 && hz <= hi * 1.02 && self.db[b] > FLOOR_DB {
+            if depth > 0.0 && hz >= lo * 0.98 && hz <= hi * 1.02 && self.own[b] > FLOOR_DB {
                 // The bands around it, averaged (in dB: a quiet neighbour counts as much as a loud one)
                 let (mut sum, mut count) = (0.0, 0);
                 for d in NEAR..=FAR {
@@ -140,7 +149,7 @@ impl Smooth {
                     }
                 }
                 let around = sum / count as f32;
-                to = (self.db[b] - around - over).clamp(0.0, MOST_CUT) * depth;
+                to = (self.own[b] - around - over).clamp(0.0, MOST_CUT) * depth;
             }
             self.cuts.ease(b, to, attack, release);
         }
@@ -164,7 +173,7 @@ impl Plugin for Smooth {
         let sr = sample_rate.max(8000.0);
         let bank = Bank::new(sr, BANDS, BANK_LO, BANK_HI, 0.02);
         let cuts = Cuts::new(&bank, sr);
-        Smooth { sr, params: defaults(), bank, cuts, until: 0, db: [-120.0; BANDS] }
+        Smooth { sr, params: defaults(), bank, cuts, until: 0, db: [-120.0; BANDS], own: [-120.0; BANDS] }
     }
 
     fn param_count() -> usize {
@@ -223,6 +232,7 @@ impl Plugin for Smooth {
         self.cuts.reset();
         self.until = 0;
         self.db = [-120.0; BANDS];
+        self.own = [-120.0; BANDS];
     }
 
     fn program_count() -> usize {
