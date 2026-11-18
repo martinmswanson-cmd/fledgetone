@@ -199,13 +199,13 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-smooth.wasm",
-  "bytes": 93655,
-  "hash": "a136a26b575f",
+  "bytes": 93647,
+  "hash": "1af68dd4f9fb",
   "plugins": [
    {
     "name": "Fledge Smooth",
     "category": "EQ",
-    "about": "A resonance suppressor: it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it, and only by as much as it does. For a harsh supersaw, a whistle in a growl bass, one booming bass note, the bite of a vocal. Depth is how much; \"Stands out by\" is how far over its neighbours a band must be before it's touched; From and To keep it to a range; \"Hear what's removed\" plays only what it takes out. No added delay.",
+    "about": "A resonance suppressor: it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it, and only by as much as it does. For a harsh supersaw, a whistle in a growl bass, one booming bass note, the bite of a vocal. Depth is how much; \"Stands out by\" is how far over its neighbours a band must be before it's touched; From and To keep it to a range; \"Removed only\" plays only what it takes out. No added delay.",
     "tags": [
      "resonance",
      "harsh",
@@ -223,13 +223,13 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-carve.wasm",
-  "bytes": 92437,
-  "hash": "fb59932d834f",
+  "bytes": 92421,
+  "hash": "d08665124ca9",
   "plugins": [
    {
     "name": "Fledge Carve",
     "category": "EQ",
-    "about": "Makes room for another track: pick it under \"Sidechain from\", and this track is turned down only at the frequencies that one is using, band by band, while it plays. A pad under a vocal keeps its lows and its air; a bass under a kick loses only the thump. Amount is the most a band is turned down; Threshold is how loud the other track must be in a band before it counts; From and To keep it to a range; \"Hear what's removed\" plays only what it takes out. With no sidechain it does nothing. No added delay.",
+    "about": "Makes room for another track: pick it under \"Sidechain from\", and this track is turned down only at the frequencies that one is using, band by band, while it plays. A pad under a vocal keeps its lows and its air; a bass under a kick loses only the thump. Amount is the most a band is turned down; Threshold is how loud the other track must be in a band before it counts; From and To keep it to a range; \"Removed only\" plays only what it takes out. With no sidechain it does nothing. No added delay.",
     "sidechain": true,
     "tags": [
      "sidechain",

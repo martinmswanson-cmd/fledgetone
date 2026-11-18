@@ -6,7 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
-- **Fledge Smooth, a resonance suppressor** (Plugins, under EQ): it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it. For a harsh supersaw, a whistle in a growl bass, a bass note that booms, the bite of a vocal. **Hear what's removed** plays just what it takes out.
+- **Fledge Smooth, a resonance suppressor** (Plugins, under EQ): it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it. For a harsh supersaw, a whistle in a growl bass, a bass note that booms, the bite of a vocal. **Removed only** plays just what it takes out.
 - **Fledge Carve makes room for another track** (under EQ): pick the vocal, the lead or the kick beside **Sidechain from**, and this track is turned down only at the frequencies that one is using, while it plays. A pad under a vocal keeps its lows and its air.
 - **Fledge Dynamic EQ** (under EQ): four bells that can each move with the sound (a de-esser, a boom tamed only when it booms, a part that opens as it's played harder), and each can work on both sides, the Mid or the Side: widen the top, or keep the bass in the middle.
 - **Fledge Heat, a saturator in three bands** (under Saturation): lows, mids and highs each with their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube), drive and level. On a loud sound, more drive is more grit, not more level.

@@ -23,7 +23,7 @@ pub const HIGH: usize = 5;
 pub const LISTEN: usize = 6;
 pub const COUNT: usize = 7;
 
-const NAMES: [&str; COUNT] = ["Amount", "Threshold", "Attack", "Release", "From", "To", "Hear what's removed"];
+const NAMES: [&str; COUNT] = ["Amount", "Threshold", "Attack", "Release", "From", "To", "Removed only"];
 
 /// The bands: how many, and from where to where
 pub const BANDS: usize = 28;
@@ -144,7 +144,7 @@ impl Plugin for Carve {
         Info {
             name: "Fledge Carve",
             category: "EQ",
-            about: "Makes room for another track: pick it under \"Sidechain from\", and this track is turned down only at the frequencies that one is using, band by band, while it plays. A pad under a vocal keeps its lows and its air; a bass under a kick loses only the thump. Amount is the most a band is turned down; Threshold is how loud the other track must be in a band before it counts; From and To keep it to a range; \"Hear what's removed\" plays only what it takes out. With no sidechain it does nothing. No added delay.",
+            about: "Makes room for another track: pick it under \"Sidechain from\", and this track is turned down only at the frequencies that one is using, band by band, while it plays. A pad under a vocal keeps its lows and its air; a bass under a kick loses only the thump. Amount is the most a band is turned down; Threshold is how loud the other track must be in a band before it counts; From and To keep it to a range; \"Removed only\" plays only what it takes out. With no sidechain it does nothing. No added delay.",
             instrument: false,
             sidechain: true,
             transport: false,

@@ -16,7 +16,7 @@ while it stands out from them, and only by as much as it does. Each band's level
 | 3 | Release | 20 ms to 2 s |
 | 4 | From | 60 Hz to 16 kHz |
 | 5 | To | 60 Hz to 16 kHz |
-| 6 | Hear what's removed | Off, On |
+| 6 | Removed only | Off, On |
 
 Measured (`cargo test --release -p fledge-smooth -- --nocapture how_much`): a 2 kHz tone ringing
 24 dB over hiss comes down 6.9 dB at a depth of 25 %, 13.9 dB at 50 % and 27.9 dB at 100 %, while

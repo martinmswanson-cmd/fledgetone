@@ -15,7 +15,7 @@ threshold, the whole Amount 18 dB over it. With no sidechain it passes its input
 | 3 | Release | 20 ms to 2 s |
 | 4 | From | 60 Hz to 16 kHz |
 | 5 | To | 60 Hz to 16 kHz |
-| 6 | Hear what's removed | Off, On |
+| 6 | Removed only | Off, On |
 
 Measured (the test `it_turns_down_only_where_the_other_track_is`): with a 1 kHz tone on the
 sidechain and the defaults (an Amount of 8 dB), this track's 1 kHz comes down 7.7 dB, its 200 Hz

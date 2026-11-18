@@ -23,7 +23,7 @@ pub const HIGH: usize = 5;
 pub const LISTEN: usize = 6;
 pub const COUNT: usize = 7;
 
-const NAMES: [&str; COUNT] = ["Depth", "Stands out by", "Attack", "Release", "From", "To", "Hear what's removed"];
+const NAMES: [&str; COUNT] = ["Depth", "Stands out by", "Attack", "Release", "From", "To", "Removed only"];
 
 /// The bands: how many, and from where to where
 pub const BANDS: usize = 28;
@@ -152,7 +152,7 @@ impl Plugin for Smooth {
         Info {
             name: "Fledge Smooth",
             category: "EQ",
-            about: "A resonance suppressor: it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it, and only by as much as it does. For a harsh supersaw, a whistle in a growl bass, one booming bass note, the bite of a vocal. Depth is how much; \"Stands out by\" is how far over its neighbours a band must be before it's touched; From and To keep it to a range; \"Hear what's removed\" plays only what it takes out. No added delay.",
+            about: "A resonance suppressor: it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it, and only by as much as it does. For a harsh supersaw, a whistle in a growl bass, one booming bass note, the bite of a vocal. Depth is how much; \"Stands out by\" is how far over its neighbours a band must be before it's touched; From and To keep it to a range; \"Removed only\" plays only what it takes out. No added delay.",
             instrument: false,
             sidechain: false,
             transport: false,
