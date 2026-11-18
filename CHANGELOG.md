@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.18-2 — Fixes to the five new plugins
 
 - **Fixes to the five new plugins**, found by going through their code:
   - **Fledge Heat** kept its top end only while a band was Clean: a driven band lost up to 8 dB at 18 kHz, and the Mix thinned the top further. Bands are now shaped at twice the sample rate (1.3 dB at 18 kHz). With the two crossovers close together the bands no longer cancel between them (it dipped 7 dB), a Clean band's **level** now works, **Mid / high** shows the frequency it's really using, and a band switched to Clean and back no longer thumps. A song that used Heat sounds a little brighter where a band was driven.
