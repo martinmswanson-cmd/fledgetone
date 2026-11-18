@@ -4,6 +4,13 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Every screenshot in the guide and the lessons is new**: the pictures on fledgetone.com/guide and fledgetone.com/learn were retaken from the studio as it is now. Some were from before the starter songs changed (one showed a starter that no longer exists) and before the header and the File menu grew.
+- **Five more pictures in the guide**: Fledge Synth, a plugin's window (and with **What it does** open), the spectrum analyser and the tuner.
+- **The Export and share lesson was out of date**: it described a banner offering to restore your last session. Your last song opens again by itself now, and the lesson says so.
+- **Every lesson's example link is fresh**, made from the lesson's steps in the studio as it is now.
+
 ## 2026.11.18-3 — Tutorials and shortcuts for the new tools, and a shorter plugin window
 
 - **Four new tutorials** in the Learn menu, for Fledgetone's own plugins: **Make room in a mix** (Fledge Carve and Smooth, and the spectrum analyser), **Pump, gate and stutter in time** (Fledge Shape and Repeat), **Dynamic EQ, mid/side and saturation** (Fledge Dynamic EQ and Heat) and **Sound design lab** (drawing a wave from sine waves, the vocoder, the harmoniser, the frequency shifter, the spectral freeze and the tuner). The last two are for when you know your way around.

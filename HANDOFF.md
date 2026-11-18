@@ -483,7 +483,9 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   `startersClassics`, `classicsScores`, `scoreNotes`). New and Pocket offer a blank song or the
   eight. The tutorials and Learn lessons that opened removed starters use the eight now (the game
   lessons rename a starter's sections and add their own transitions and stingers); their example
-  links and screenshots need taking again (`capture.mjs --learn`, and the guide's shots). A new,
+  links and screenshots were all taken again on 2026-11-18 (`capture.mjs --learn`, and the guide's
+  shots; `SHOT_DEBUG=<folder>` shows why a setup fails, `ONLY_EXAMPLES=1` redoes just the links,
+  and `STUDIO_URL=http://localhost:5200/?studio` takes them from the dev server). A new,
   smaller set of starters is to be made from scratch.
 - **Tools page and exported-files licence** (2026.10.21-2): fledgetone.com/tools/ offers the game
   music players, Fledge Synth (wasm + a standalone Web Audio wrapper + its Rust source), the Drop

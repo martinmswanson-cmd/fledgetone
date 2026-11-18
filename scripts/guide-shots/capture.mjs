@@ -50,7 +50,9 @@ const sets = LEARN
   : [{ shots: SHOTS.filter((s) => s.setup && (!only.length || only.includes(s.file))), examples: [], sizesFile: join(OUT, 'sizes.json') }];
 const PHONE = { viewport: { width: 412, height: 860 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true };
 
-const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+// (A made-up microphone, allowed without asking: the shots that record need one, and a machine
+// taking them may have none)
+const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 
 /** A page box in document pixels, from one element or several. */
 async function boxOf(page, locators, pad = 0) {
@@ -163,7 +165,7 @@ function helpers(page) {
     async inspector() {
       return page.evaluate(([w, h]) => {
         const all = [...document.querySelectorAll('body *')].map((e) => [e, e.getBoundingClientRect()])
-          .filter(([, r]) => r.x > w * 0.55 && r.width >= 260 && r.width <= 560 && r.height >= 500 && r.bottom <= h && r.top > 120);
+          .filter(([, r]) => r.x > w * 0.55 && r.width >= 260 && r.width <= 560 && r.height >= 360 && r.bottom <= h && r.top > 120);
         all.sort((a, b) => b[1].height - a[1].height || a[1].width - b[1].width);
         const r = all[0][1];
         return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 };
@@ -191,7 +193,8 @@ async function open(phone) {
 
 for (const set of sets) {
   const sizes = existsSync(set.sizesFile) ? JSON.parse(readFileSync(set.sizesFile, 'utf8')) : {};
-  for (const shot of set.shots) {
+  // (ONLY_EXAMPLES=1: just the lessons' example links, not their shots)
+  for (const shot of process.env.ONLY_EXAMPLES ? [] : set.shots) {
     const { ctx, page } = await open(shot.phone);
     try {
       const vw = shot.phone ? PHONE.viewport.width : W;
@@ -213,6 +216,11 @@ for (const set of sets) {
       console.log(`${shot.file}: ${clip.width}x${clip.height}`);
     } catch (e) {
       console.error(`${shot.file}: ${e.message.split('\n')[0]}`);
+      // SHOT_DEBUG=<folder>: the whole message, and the page as it stood, to see why a setup failed
+      if (process.env.SHOT_DEBUG) {
+        console.error(e.message);
+        await page.screenshot({ path: join(process.env.SHOT_DEBUG, `${shot.file}-failed.png`) }).catch(() => {});
+      }
     }
     await ctx.close();
   }
@@ -224,7 +232,8 @@ for (const set of sets) {
     try {
       const s = helpers(page);
       await ex.setup(s);
-      await s.menu('File', 'Share');
+      // ("Share…" itself, not "Share this track's sound…" above it)
+      await s.menu('File', /^Share…/);
       const field = page.getByLabel('Song link');
       await field.waitFor({ timeout: 20000 });
       const url = (await field.inputValue()).replace(/^https?:\/\/[^#]*/, 'https://fledgetone.com/app/');

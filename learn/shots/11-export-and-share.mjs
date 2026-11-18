@@ -47,16 +47,16 @@ export const SHOTS = [
   },
   {
     file: 'export-restore',
-    alt: 'The top of the studio after a reload: under the header, a banner says "Your last session, Night drive (5 clips, saved today), can be restored", with Restore and Dismiss.',
-    caption: 'Come back later and the banner offers your last session.',
+    alt: 'The top of the studio after a reload: the song Night drive is open again, its name in the bar at the top, with its tempo and the transport below.',
+    caption: 'Come back later and your song is open again, as you left it.',
     setup: async (s) => {
       await song(s);
       await s.wait(1500);
       await s.page.reload({ waitUntil: 'networkidle' });
       await s.wait(1500);
-      // The menu bar, the header and the banner under them, full width
-      const b = await s.union([s.page.getByRole('button', { name: 'Dismiss', exact: true })], 10);
-      return { x: 0, y: 0, width: 1440, height: b.y + b.height + 8 };
+      // The menu bar (with the song's name back in it) and the header under it, full width
+      const b = await s.union([s.title('Click to type a tempo')], 10);
+      return { x: 0, y: 0, width: 1440, height: b.y + b.height + 12 };
     },
   },
   {
