@@ -27,7 +27,7 @@ Measured (the test `a_moving_band_turns_only_while_its_range_is_loud`): a band t
 -10 dB over -30 dB leaves a sound at -50 dB alone (0.00 dB) and turns one at -6 dB down 9.99 dB.
 
 Parameters keep their order: new ones are only ever added at the end, so saved songs keep their
-sound. No added delay. It has sliders, not a curve to draw on: Fledgetone's Pro EQ insert is still the drawn one.
+sound. No added delay. A band set flat is passed by and starts clean when it's used again; a band that isn't moving hears nothing. The bells are worked out and run in double precision, so a narrow one low down is right at any sample rate (18 dB asked for at 20 Hz gives 18 dB at 192 kHz). It has sliders, not a curve to draw on: Fledgetone's Pro EQ insert is still the drawn one.
 
 ## Build and test
 

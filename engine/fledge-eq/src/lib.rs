@@ -184,6 +184,11 @@ impl DynamicEq {
                 band.set = now;
                 for bell in &mut band.bells {
                     bell.set(now[0], now[1], now[2], self.sr);
+                    // (Flat, it's passed by: it starts clean when it's next used, not with what
+                    // was ringing in it when it was last on)
+                    if now[1] == 0.0 {
+                        bell.reset();
+                    }
                 }
             }
         }
@@ -262,10 +267,14 @@ impl Plugin for DynamicEq {
             let (mut m, mut s) = (0.5 * (l + r), 0.5 * (l - r));
             // (Every band hears the sound as it came in, so one band's work doesn't set off another)
             for b in 0..BANDS {
+                let band = &mut self.bands[b];
                 if !moving[b] {
+                    // (Not moving, it hears nothing: turned on again it starts from silence, not
+                    // from how loud the sound was when it was turned off)
+                    band.level = 0.0;
+                    band.hear = [Svf::default(); 2];
                     continue;
                 }
-                let band = &mut self.bands[b];
                 let (a, c) = match band.channel {
                     1 => (m, m),
                     2 => (s, s),

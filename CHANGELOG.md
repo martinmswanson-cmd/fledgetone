@@ -4,6 +4,15 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Fixes to the five new plugins**, found by going through their code:
+  - **Fledge Heat** kept its top end only while a band was Clean: a driven band lost up to 8 dB at 18 kHz, and the Mix thinned the top further. Bands are now shaped at twice the sample rate (1.3 dB at 18 kHz). With the two crossovers close together the bands no longer cancel between them (it dipped 7 dB), a Clean band's **level** now works, **Mid / high** shows the frequency it's really using, and a band switched to Clean and back no longer thumps. A song that used Heat sounds a little brighter where a band was driven.
+  - **Fledge Shape**: moving **Depth** while it pans no longer flips a side for a moment or jumps; a filter gated shut no longer rings louder than the sound; and at no Depth a filter passes the sound exactly.
+  - **Fledge Dynamic EQ**: a band set flat and used again no longer plays back what was ringing in it; a band switched from moving to Off and back no longer ducks at once; and a narrow bell low down is right at high sample rates.
+  - **Fledge Smooth**: a short **Attack** now catches a ringing in about 20 ms (it took 40 and more whatever the setting).
+- **The home page** now says what Fledgetone's own mixing tools are.
+
 ## 2026.11.18 — Five new plugins: Smooth, Carve, Dynamic EQ, Heat and Shape
 
 - **Fledge Smooth, a resonance suppressor** (Plugins, under EQ): it listens in 28 narrow bands and turns a band down only while it stands out from the bands around it. For a harsh supersaw, a whistle in a growl bass, a bass note that booms, the bite of a vocal. **Removed only** plays just what it takes out.

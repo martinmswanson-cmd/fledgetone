@@ -35,6 +35,15 @@ impl SvfCoef {
         self.a2 += d.a2 * s;
         self.a3 += d.a3 * s;
     }
+    /// Moves `s` of the way to `to` (0 stays, 1 arrives): coefficients gliding to a new setting
+    /// over a few samples rather than stepping there
+    #[inline]
+    pub fn toward(&mut self, to: &SvfCoef, s: f32) {
+        self.k += (to.k - self.k) * s;
+        self.a1 += (to.a1 - self.a1) * s;
+        self.a2 += (to.a2 - self.a2) * s;
+        self.a3 += (to.a3 - self.a3) * s;
+    }
     /// For `cutoff` Hz at `sr`, with damping `k` (2 is no resonance, 0 self-oscillates).
     pub fn new(cutoff: f32, sr: f32, k: f32) -> Self {
         let g = (PI * cutoff.clamp(10.0, sr * 0.49) / sr).tan();

@@ -4,19 +4,21 @@
 
 use crate::filter::{Svf, SvfCoef};
 use crate::math::flush;
-use std::f32::consts::PI;
 
 /// A bell (peaking) filter with its own width: `db` of gain at `f` Hz, `q` wide (the textbook
 /// form, as in Robert Bristow-Johnson's cookbook). At 0 dB it passes the sound unchanged.
 #[derive(Clone, Copy)]
 pub struct Bell {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    z1: f32,
-    z2: f32,
+    // (In f64, coefficients and what it remembers both: a narrow bell low down at a high sample
+    // rate has coefficients a hair from 1 and 2, and in f32 that hair is lost. 18 dB asked for at
+    // 20 Hz came out as 9 at 192 kHz)
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
+    z1: f64,
+    z2: f64,
 }
 
 impl Default for Bell {
@@ -27,9 +29,9 @@ impl Default for Bell {
 
 impl Bell {
     pub fn set(&mut self, f: f32, db: f32, q: f32, sr: f32) {
-        let a = 10f32.powf(db / 40.0);
-        let w = 2.0 * PI * f.clamp(10.0, sr * 0.45) / sr;
-        let alpha = w.sin() / (2.0 * q.max(0.05));
+        let a = 10f64.powf(db as f64 / 40.0);
+        let w = 2.0 * std::f64::consts::PI * (f.clamp(10.0, sr * 0.45) / sr) as f64;
+        let alpha = w.sin() / (2.0 * q.max(0.05) as f64);
         let a0 = 1.0 + alpha / a;
         self.b0 = (1.0 + alpha * a) / a0;
         self.b1 = -2.0 * w.cos() / a0;
@@ -40,10 +42,18 @@ impl Bell {
     #[inline]
     pub fn tick(&mut self, x: f32) -> f32 {
         // (The transposed form: its coefficients can change while it runs without a jump)
+        let x = x as f64;
         let y = self.b0 * x + self.z1;
-        self.z1 = flush(self.b1 * x - self.a1 * y + self.z2);
-        self.z2 = flush(self.b2 * x - self.a2 * y);
-        y
+        self.z1 = self.b1 * x - self.a1 * y + self.z2;
+        self.z2 = self.b2 * x - self.a2 * y;
+        // (What it remembers dies away to nothing rather than to numbers too small to be worth the time)
+        if self.z1.abs() < 1e-30 {
+            self.z1 = 0.0;
+        }
+        if self.z2.abs() < 1e-30 {
+            self.z2 = 0.0;
+        }
+        y as f32
     }
     pub fn reset(&mut self) {
         self.z1 = 0.0;

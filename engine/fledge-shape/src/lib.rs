@@ -118,19 +118,23 @@ pub struct Shape {
     tempo: f32,
     /// Where the song is, in beats: told by the host, counted on between its tellings
     beat: f64,
-    /// The shape's height as it is now (it eases there: the Smooth)
+    /// The shape's height as it is now (it eases there: the Smooth), and the depth (eased too, so a
+    /// moved slider doesn't jump)
     height: f32,
+    depth: f32,
     filters: [Svf; 2],
+    /// The filter as it is now, and where it's gliding to
     coef: SvfCoef,
+    coef_to: SvfCoef,
     until: usize,
     target: usize,
     fresh: bool,
 }
 
 impl Shape {
-    /// The shape's height now, 0 to 1: for a display.
+    /// How open it is now, 0 to 1 (1 is the sound untouched): for a display.
     pub fn height(&self) -> f32 {
-        self.height
+        1.0 - self.depth * (1.0 - self.height)
     }
 }
 
@@ -148,7 +152,7 @@ impl Plugin for Shape {
     }
 
     fn new(sample_rate: f32) -> Self {
-        Shape { sr: sample_rate.max(8000.0), params: defaults(), tempo: 120.0, beat: 0.0, height: 1.0, filters: [Svf::default(); 2], coef: SvfCoef::default(), until: 0, target: 0, fresh: true }
+        Shape { sr: sample_rate.max(8000.0), params: defaults(), tempo: 120.0, beat: 0.0, height: 1.0, depth: 0.0, filters: [Svf::default(); 2], coef: SvfCoef::default(), coef_to: SvfCoef::default(), until: 0, target: 0, fresh: true }
     }
 
     fn param_count() -> usize {
@@ -182,49 +186,67 @@ impl Plugin for Shape {
         let p = |i: usize| value(i, self.params[i]);
         let (target, kind) = (p(TARGET) as usize, p(SHAPE) as usize);
         let cycle = RATE_BEATS[p(RATE) as usize];
-        let (depth, offset) = (p(DEPTH), p(OFFSET) as f64);
+        let (depth_to, offset) = (p(DEPTH), p(OFFSET) as f64);
         // (Never less than a millisecond: a gate's edge mustn't click)
         let ease = 1.0 - (-1.0 / ((0.001 + p(SMOOTH) * SMOOTH_MAX_S) * self.sr)).exp();
+        let depth_ease = 1.0 - (-1.0 / (0.005 * self.sr)).exp();
         let beats_a_sample = self.tempo.max(MIN_BPM) as f64 / 60.0 / self.sr as f64;
         if target != self.target {
             self.target = target;
             self.filters = [Svf::default(); 2];
             self.until = 0;
         }
+        // The filter's range: shut at 200 Hz (low-pass) or 4 kHz (high-pass); open at 20 kHz or
+        // 20 Hz, kept clear of the top of what this sample rate holds
+        let top = 20000f32.min(0.4 * self.sr);
+        let cutoff = |open: f32| if target == LOW_PASS { 200.0 * (top / 200.0).powf(open) } else { 20.0 * 200f32.powf(1.0 - open) };
         let clean = |x: f32| if x.is_finite() { x } else { 0.0 };
         for i in 0..block.frames() {
             // (A hair past the beat: counted a sample at a time it lands a hair short as often as on it)
             let phase = ((self.beat + 1e-7) / cycle + offset).fract() as f32;
-            let to = 1.0 - depth * (1.0 - shape(kind, phase));
+            let to = shape(kind, phase);
             if self.fresh {
                 // The first sound through starts where the shape is, not easing in from open
                 self.height = to;
+                self.depth = depth_to;
+                self.coef = SvfCoef::new(cutoff(1.0 - depth_to * (1.0 - to)), self.sr, std::f32::consts::SQRT_2);
+                self.coef_to = self.coef;
                 self.fresh = false;
             }
             self.height += (to - self.height) * ease;
-            let h = self.height;
+            self.depth += (depth_to - self.depth) * depth_ease;
+            if (self.depth - depth_to).abs() < 1e-5 {
+                self.depth = depth_to;
+            }
+            // How open it is: 1 the sound untouched, 0 all the way shut (at full depth)
+            let open = 1.0 - self.depth * (1.0 - self.height);
             let (l, r) = (clean(block.input[0][i]), clean(block.input[1][i]));
             let (yl, yr) = match target {
-                VOLUME => (l * h, r * h),
+                VOLUME => (l * open, r * open),
                 PAN => {
-                    // Height 1 is hard right, 0 hard left, a half the middle: a side is only ever turned down
-                    // (At no depth the shape's height stays at 1: that's the middle here, not the right)
-                    let pos = if depth == 0.0 { 0.0 } else { (2.0 * (h - (1.0 - depth)) / depth - 1.0) * depth };
+                    // The shape's height 0 is left and 1 right, as far as the depth: a side is only ever turned down
+                    let pos = ((2.0 * self.height - 1.0) * self.depth).clamp(-1.0, 1.0);
                     (l * (1.0 - pos).min(1.0), r * (1.0 + pos).min(1.0))
                 }
                 _ => {
                     if self.until == 0 {
-                        // Fully open, the low-pass sits at 20 kHz and the high-pass at 20 Hz
-                        let hz = if target == LOW_PASS { 200.0 * 100f32.powf(h) } else { 20.0 * 200f32.powf(1.0 - h) };
-                        self.coef = SvfCoef::new(hz, self.sr, std::f32::consts::SQRT_2);
+                        self.coef_to = SvfCoef::new(cutoff(open), self.sr, std::f32::consts::SQRT_2);
                         self.until = EVERY;
                     }
+                    // (The filter glides to where it's going over the samples until it's worked out
+                    // again: stepped there, a gate snapping it shut rang louder than the sound)
+                    self.coef.toward(&self.coef_to, 1.0 / self.until as f32);
                     self.until -= 1;
                     let (a, b) = (self.filters[0].tick(&self.coef, l), self.filters[1].tick(&self.coef, r));
-                    if target == LOW_PASS {
-                        (a.lp, b.lp)
+                    let (fl, fr) = if target == LOW_PASS { (a.lp, b.lp) } else { (a.hp, b.hp) };
+                    // The last tenth of the way open, the plain sound takes over: fully open is the
+                    // sound exactly as it came in
+                    let plain = ((open - 0.9) / 0.1).clamp(0.0, 1.0);
+                    let plain = plain * plain;
+                    if plain >= 1.0 {
+                        (l, r)
                     } else {
-                        (a.hp, b.hp)
+                        (fl + (l - fl) * plain, fr + (r - fr) * plain)
                     }
                 }
             };

@@ -199,8 +199,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-smooth.wasm",
-  "bytes": 93647,
-  "hash": "1af68dd4f9fb",
+  "bytes": 97938,
+  "hash": "192975e3f719",
   "plugins": [
    {
     "name": "Fledge Smooth",
@@ -223,8 +223,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-carve.wasm",
-  "bytes": 92421,
-  "hash": "d08665124ca9",
+  "bytes": 96456,
+  "hash": "c4d653e0f351",
   "plugins": [
    {
     "name": "Fledge Carve",
@@ -248,8 +248,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-eq.wasm",
-  "bytes": 92266,
-  "hash": "d33c9dfbdd65",
+  "bytes": 95791,
+  "hash": "f922f5d854e2",
   "plugins": [
    {
     "name": "Fledge Dynamic EQ",
@@ -274,13 +274,13 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-heat.wasm",
-  "bytes": 89756,
-  "hash": "76fa37ae9979",
+  "bytes": 91566,
+  "hash": "5128e2e7032a",
   "plugins": [
    {
     "name": "Fledge Heat",
     "category": "Saturation",
-    "about": "A saturator in three bands: lows, mids and highs each get their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube, or left Clean), their own drive and their own level, so the bass can be warmed without the top crackling, or the top given grit without fuzzing the bass. A loud sound keeps its level as the drive goes up (more grit, not more volume); a quiet one comes up, as through any saturator: trim it with the band's level. Set where the bands meet with Low / mid and Mid / high; Mix blends it with the clean sound. No added delay.",
+    "about": "A saturator in three bands: lows, mids and highs each get their own kind of distortion (Soft, Warm, Hard, Fold, Bias, Tube, or left Clean), their own drive and their own level, so the bass can be warmed without the top crackling, or the top given grit without fuzzing the bass. A loud sound keeps its level as the drive goes up (more grit, not more volume); a quiet one comes up, as through any saturator: trim it with the band's level, which works on a Clean band too. Set where the bands meet with Low / mid and Mid / high; Mix blends it with the clean sound. No frames and no look-ahead, so it stays in time.",
     "tags": [
      "saturation",
      "distortion",
@@ -299,8 +299,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT (Fledgetone's own)",
   "gpl": false,
   "file": "fledge-shape.wasm",
-  "bytes": 84938,
-  "hash": "ff0b44def477",
+  "bytes": 84509,
+  "hash": "b8f83a6df808",
   "plugins": [
    {
     "name": "Fledge Shape",
