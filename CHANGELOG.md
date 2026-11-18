@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Video exports no longer crawl in a background tab**: making a video paused between frames with timers, which a browser slows to one a second once you look at another tab, so an export left running in the background took several times as long. It now pauses in a way the browser doesn't slow.
+- **The Lines picture draws faster**: about a third less time per frame, with the same picture.
+
 ## 2026.11.17-4 — Lines, a new video picture
 
 - **Lines, a new video picture**: in Export › Video (MP4), **Picture** has a third choice beside Showcase and the spectrum styles. **Lines: each instrument's path** draws a glowing line for every instrument, rising, falling and changing colour with the notes it plays, a dot at its head. The instruments playing share the picture's height, the lowest part at the bottom, so parts in the same octave stay lines you can tell apart; a line ends when its instrument falls silent and a new one rises from the bottom when it comes back. A stutter written as notes (the same note struck fast, again and again) draws as a row of teeth. Widescreen and portrait, 30 or 60 fps, as the other pictures; search *lines video* to open Export set to it.

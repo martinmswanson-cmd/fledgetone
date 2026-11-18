@@ -56,6 +56,7 @@ export interface LinesDrawOptions {
 /** Samples of the bands a second, and of a line (fine enough for a stutter's teeth) */
 const RATE = 30;
 const LINE_RATE = 96;
+const COARSE_RATE = 40;
 /** How far a stutter's strike kicks its line up */
 const TOOTH = 24;
 /** A ring's life, and a hit's flash (seconds) */
@@ -196,39 +197,47 @@ export function drawLines(g: CanvasRenderingContext2D, data: LinesData, box: Sho
     return { y: yOf(i, p, time) - TOOTH * rollKick(run, time), p, shown: 1 };
   };
   /** A path along `run` from `a` to `b`, with what `each` wants at every sample */
-  const trace = (i: number, run: LineRun, a: number, b: number, each?: (u: number, x: number, pt: { y: number; p: number; shown: number }, time: number) => void) => {
-    const count = Math.max(1, Math.ceil((b - a) * LINE_RATE));
-    g.beginPath();
+  const trace = (i: number, run: LineRun, a: number, b: number, each?: (u: number, x: number, pt: { y: number; p: number; shown: number }, time: number) => void, begin = true) => {
+    // (finely only where a stutter's teeth need it: a long path of many points is slow to stroke)
+    const fine = run.rolls.some((r) => r.strikes[0] < b && r.end > a);
+    const rate = fine ? LINE_RATE : COARSE_RATE;
+    const every = Math.round(rate / 8);
+    const count = Math.max(1, Math.ceil((b - a) * rate));
+    if (begin) g.beginPath();
     for (let k = 0; k <= count; k++) {
       const time = a + ((b - a) * k) / count;
       const pt = pointAt(i, run, time);
       const x = xOf(time);
       if (k === 0) g.moveTo(x, pt.y);
       else g.lineTo(x, pt.y);
-      if (each && (k % 12 === 0 || k === count)) each(k / count, x, pt, time);
+      if (each && (k % every === 0 || k === count)) each(k / count, x, pt, time);
     }
   };
 
   const heads: Array<{ x: number; y: number; p: number; live: boolean; note: boolean; name: string; since: number; gone: number }> = [];
   const rings: Array<{ x: number; y: number; p: number; u: number }> = [];
+  // Where each goes next: every track's line ahead, as one path stroked once
+  if (look.ahead) {
+    g.beginPath();
+    data.tracks.forEach((tr, i) => {
+      for (const run of tr.runs) {
+        if (run.start - LINE_ENTRY > tRight) break;
+        const a = Math.max(run.start - LINE_ENTRY, t);
+        const b = Math.min(run.end, tRight);
+        if (b > a) trace(i, run, a, b, undefined, false);
+      }
+    });
+    const fade = g.createLinearGradient(headX, 0, box.x + box.w, 0);
+    fade.addColorStop(0, 'rgba(200,210,235,0.26)');
+    fade.addColorStop(1, 'rgba(200,210,235,0.05)');
+    g.strokeStyle = fade;
+    g.lineWidth = 1.5;
+    g.stroke();
+  }
   data.tracks.forEach((tr, i) => {
     for (const run of tr.runs) {
       if (run.start - LINE_ENTRY > tRight) break;
       if (run.end < tLeft) continue;
-      // Where it goes next
-      if (look.ahead) {
-        const a = Math.max(run.start - LINE_ENTRY, t);
-        const b = Math.min(run.end, tRight);
-        if (b > a) {
-          trace(i, run, a, b);
-          const fade = g.createLinearGradient(headX, 0, box.x + box.w, 0);
-          fade.addColorStop(0, 'rgba(200,210,235,0.26)');
-          fade.addColorStop(1, 'rgba(200,210,235,0.05)');
-          g.strokeStyle = fade;
-          g.lineWidth = 1.5;
-          g.stroke();
-        }
-      }
       const a = Math.max(run.start - LINE_ENTRY, tLeft);
       const b = Math.min(run.end, t);
       if (b <= a) continue;

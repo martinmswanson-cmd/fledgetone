@@ -109,10 +109,35 @@ type EncodedSound = Array<{ chunk: EncodedAudioChunk; meta?: EncodedAudioChunkMe
 
 /** Pieces handed to an encoder or decoder between breaths (and looks at the Cancel). */
 const PIECES_A_BREATH = 64;
+/**
+ * A pause that lets the page take its turn (the progress bar, the Cancel button). Not a timer:
+ * a browser slows a page's timers to one a second once its tab is in the background, which made an
+ * export take several times as long whenever the musician looked at another tab while it ran.
+ */
+const pause = () =>
+  new Promise<void>((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(0);
+  });
 const breathe = async (signal?: AbortSignal) => {
-  await new Promise((r) => setTimeout(r, 0));
+  await pause();
   signal?.throwIfAborted();
 };
+/** Wait until `encoder` has taken something off its queue (or a moment, should it never say so) */
+const dequeued = (encoder: VideoEncoder) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(done, 250);
+    function done() {
+      clearTimeout(timer);
+      encoder.removeEventListener('dequeue', done);
+      resolve();
+    }
+    encoder.addEventListener('dequeue', done);
+  });
 
 /** The sound (two channels) turned by `gain`, encoded with `codec` in 0.1 s pieces. */
 async function encodeSoundOnce(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, gain: number, signal?: AbortSignal): Promise<EncodedSound> {
@@ -446,10 +471,10 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       videoEncoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
       frame.close();
       // Don't run ahead of the encoder (memory), and let the page update its progress bar
-      while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
+      while (videoEncoder.encodeQueueSize > 8 && videoEncoder.state === 'configured') await dequeued(videoEncoder);
       if (f % 15 === 0) {
         opts.onProgress?.(f / total);
-        await new Promise((r) => setTimeout(r, 0));
+        await pause();
       }
     };
 
