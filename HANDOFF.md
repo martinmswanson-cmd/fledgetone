@@ -138,6 +138,8 @@ and so on.
 | Arrange a beat (dark melody, drops, beat switch, song form, producer tag) | `src/store/darkMelody.ts`, `arrangeActions.ts`, `beatSwitch.ts`, `songForm.ts`, `producerTag.ts`; `ArrangeDialog.tsx` |
 | Heavy bass, drum, vocal, mix and sample tools | `bass808.ts`, `bassTools.ts`, `kickClash.ts`, `drumDesign.ts`, `drumGroove.ts`, `noteRepeat.ts`, `vocalChains.ts`, `vocalActions.ts`, `busPresets.ts`, `sampleFlip.ts`, `flipActions.ts` in `src/store/`; `hardTune.ts`, `vocalDouble.ts`, `mixCheck.ts`, `referenceTrack.ts`, `beatPack.ts`, `sampleAnalysis.ts` in `src/audio/` |
 | Learn menu (tour and tutorials) | `MenuBar.tsx` (the Learn menu), `src/tour/lessons.ts`, `LearnDialog.tsx` |
+| Shift+letter shortcuts for the tools (plugin browser, tuner, analyser, FX rack, Mixer) | `src/store/toolShortcuts.ts` (the keys and `toolForKey`), handled in `Timeline.tsx`'s key handler, shown by `MenuBar.tsx`; `scripts/toolShortcuts.test.mjs` |
+| A plugin slider's value text | `src/audio/plugins/tidyValue.ts` (only four-place numbers are trimmed; "1/4" and "50 %" stay as the plugin wrote them) |
 | Studio-grade pitch: notes between recordings, tuned pads and keys play a re-pitched copy at rate 1 | `src/audio/samplers/resampler.ts` (Kaiser windowed-sinc polyphase, loops onto whole frames; tested in `scripts/pitchedCopies.test.mjs`), `copyCache.ts` (LRU, pins), `pitchedCopies.ts` (Workers, `copySet`: a render plays only what `TrackInstrument.prepare` made ready), `resampleWorker.ts`; budgets and live planning (`copyAllowed`, `liveCopies`, `wishOf`) in `samplerManager.ts`; `neededPitches` / `trackPlan` in `songSamples.ts`; `prepare` called in `exportWav.ts` before a render |
 
 ### Things that bite

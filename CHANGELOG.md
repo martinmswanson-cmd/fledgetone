@@ -4,6 +4,14 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.11.18-3 — Tutorials and shortcuts for the new tools, and a shorter plugin window
+
+- **Four new tutorials** in the Learn menu, for Fledgetone's own plugins: **Make room in a mix** (Fledge Carve and Smooth, and the spectrum analyser), **Pump, gate and stutter in time** (Fledge Shape and Repeat), **Dynamic EQ, mid/side and saturation** (Fledge Dynamic EQ and Heat) and **Sound design lab** (drawing a wave from sine waves, the vocoder, the harmoniser, the frequency shifter, the spectral freeze and the tuner). The last two are for when you know your way around.
+- **A new lesson on the website**, fledgetone.com/learn: **Mix with Fledgetone's own plugins**, with the Lo-Fi starter and a screenshot of each plugin at work.
+- **Shortcuts for the tools**: `Shift+P` opens the plugin browser, `Shift+F` shows or hides the FX rack, `Shift+X` the Mixer, `Shift+A` the spectrum analyser and `Shift+T` the tuner. Each is shown beside its menu item.
+- **A plugin's window is shorter**: the paragraph saying what the plugin does is now behind a **What it does** button at the top, which opens it in a box over the sliders. Before, it was always there and pushed the sliders half way down.
+- **A plugin's sliders show what the plugin wrote**: "1/4" and "1/8T" came out as "1.00/4" and "1.00/8T" (on Fledge Repeat and Fledge Shape), and "50 %" as "50.0 %". Only the four-place numbers some open-source plugins print are trimmed now.
+
 ## 2026.11.18-2 — Fixes to the five new plugins
 
 - **Fixes to the five new plugins**, found by going through their code:

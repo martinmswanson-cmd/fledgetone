@@ -2,6 +2,7 @@ import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { PALETTE_SHORTCUT } from '../store/uiStore';
+import { toolShortcutLabel } from '../store/toolShortcuts';
 import { isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
 import { isMixTrack } from '../store/buses';
 import { useMySounds } from '../store/mySounds';
@@ -560,7 +561,7 @@ const EXPERT: Lesson = {
     },
     {
       title: 'Work faster',
-      body: '**J** / **K** / **Shift+L**: back a bar, play/pause, forward a bar. **V** and **C**: select and razor tools. **Ctrl+D** duplicates the selected clips; **Alt**-drag copies one. **+** / **-** zoom. In the piano roll, **SCALE**, **CHORD** and **TOOLS** (arpeggiate, strum, ratchet, roll) do the busy work.',
+      body: '**J** / **K** / **Shift+L**: back a bar, play/pause, forward a bar. **V** and **C**: select and razor tools. **Ctrl+D** duplicates the selected clips; **Alt**-drag copies one. **+** / **-** zoom. **Shift+P** opens the plugin browser, **Shift+F** the FX Rack, **Shift+X** the Mixer, **Shift+A** the spectrum analyser and **Shift+T** the tuner. In the piano roll, **SCALE**, **CHORD** and **TOOLS** (arpeggiate, strum, ratchet, roll) do the busy work.',
     },
     {
       title: 'Score to picture, play live',
@@ -838,6 +839,285 @@ const EXPRESSIVE: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [TOUR, BEGINNER, SHOWCASE, SOUNDS, INTERMEDIATE, HELPERS, EXPRESSIVE, GAME_MUSIC, EXPERT, GAME_REACT];
+// --- Fledgetone's own plugins ---
+
+const PLUGIN_BROWSER = '[role="dialog"][aria-label="Plugins"]';
+const PLUGIN_WINDOW = '[data-plugin-window]';
+const PLUGINS_MENU = '#menu-plugins';
+/** The built-in effects of a family (as in the catalog: 'fledge-carve') on any track */
+const effectsOf = (family: string) => tl().tracks.flatMap((t) => (t.pluginFx ?? []).filter((p) => p.url.startsWith(`builtin:${family}/`)));
+/** Their settings, as a fingerprint: a preset chosen or a slider moved shows as a change */
+const settingsOf = (family: string) => JSON.stringify(effectsOf(family).map((p) => [p.state, p.sidechain ?? '']));
+/** "Add this effect": done when there's one more of the family than when the step began */
+const addEffect = (family: string, hint: string) => ({ hint, begin: () => effectsOf(family).length, done: (n: unknown) => effectsOf(family).length > (n as number) });
+/** "Change it": done when the family's settings differ from when the step began */
+const changeEffect = (family: string, hint: string) => ({ hint, begin: () => settingsOf(family), done: (was: unknown) => settingsOf(family) !== was });
+/** The plugin browser if it's open, else the Plugins menu */
+const browserOrMenu = () => (ui().pluginBrowser ? PLUGIN_BROWSER : PLUGINS_MENU);
+/** A plugin's window if one is open, else the Plugins menu (which lists the selected track's plugins to open) */
+const windowOrMenu = () => (document.querySelector(PLUGIN_WINDOW) ? PLUGIN_WINDOW : PLUGINS_MENU);
+const SONG_STEP: LessonStep = {
+  title: 'Have a song open',
+  body: 'Use a song of your own, or open the **File** menu, click **New…** and pick a starter: one with drums, a bass and chords or a pad works best here. Then press **Space** to play it for a moment, so the sound is on: a plugin takes a preset only once the audio is running.',
+  target: dialogOr('new', 'New arrangement', NEW_BUTTON),
+  task: { hint: 'A song with three tracks, and the sound on', done: () => tl().clips.length > 0 && tl().tracks.length >= 3 && useAudioStore.getState().audioState === 'running' },
+};
+const BROWSE = toolShortcutLabel('plugins');
+
+const MIX_ROOM: Lesson = {
+  id: 'mix-room',
+  level: 'Intermediate',
+  title: 'Make room in a mix',
+  summary: 'Fledge Carve gives a vocal or a kick room without the other parts pumping, and Fledge Smooth tames what rings out.',
+  minutes: 6,
+  steps: [
+    {
+      title: 'Make room in a mix',
+      body: 'When two parts fight for the same frequencies, one hides the other. You could turn the pad down, or duck it with a sidechain, but both take away all of it. **Fledge Carve** takes away only the frequencies the other part is using, only while it plays. Then **Fledge Smooth** tames the frequencies that ring out over the rest.',
+    },
+    SONG_STEP,
+    {
+      title: 'Open the plugin browser',
+      body: `Click the track that is **in the way** (a pad, chords, guitars: the part that should give way), then press **${BROWSE}**, or open **Plugins › Browse plugins…**.`,
+      target: browserOrMenu,
+      before: ensureTrack,
+      task: { hint: `Press ${BROWSE}`, done: () => !!ui().pluginBrowser },
+    },
+    {
+      title: 'Add Fledge Carve',
+      body: 'Type **carve** in the search box. **Effects go on** shows the track it will be added to: change it there if you like. Click **Add**. Its window opens.',
+      target: browserOrMenu,
+      task: addEffect('fledge-carve', 'Add Fledge Carve to a track'),
+    },
+    {
+      title: 'Tell it who needs the room',
+      body: 'At the top of its window, beside **Sidechain from**, pick the track that should be heard: the lead, the vocal, or the kick. Until you pick one, Carve does nothing.',
+      target: windowOrMenu,
+      task: { hint: 'Pick a track beside Sidechain from', done: () => effectsOf('fledge-carve').some((p) => !!p.sidechain) },
+    },
+    {
+      title: 'How much, and how to hear it',
+      body: 'Press **Space** to play. **Amount** is the most any band is turned down: 6 to 9 dB is plenty in a mix. Switch **Removed only** on and you hear just what it takes out: it should sound like a faint shadow of the other track. Switch it off again. Try a **Preset** too: **Room for a vocal**, **Bass under the kick**.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-carve', 'Move Amount, or choose a preset'),
+    },
+    {
+      title: 'Add Fledge Smooth',
+      body: `Now a part that sounds harsh, or a bass with one booming note. Click its track, press **${BROWSE}**, search **smooth** and click **Add**.`,
+      target: browserOrMenu,
+      task: addEffect('fledge-smooth', 'Add Fledge Smooth to a track'),
+    },
+    {
+      title: 'Only what stands out',
+      body: 'Smooth listens in 28 narrow bands and turns a band down only while it rings out over its neighbours. **Depth** is how much. **Stands out by** is how far over the others a band must be before it is touched: lower catches more. **From** and **To** keep it to a range. Use **Removed only** here too: turn the Depth up until you hear the music itself in what is removed, then back off.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-smooth', 'Move Depth, or choose a preset'),
+    },
+    {
+      title: 'See it',
+      body: `Press **${toolShortcutLabel('analyser')}** for the **Spectrum analyser** (the audio has to be running: press Play once). Pick a track beside **Show**, and another beside **Against**: where the two lines are loud in the same place, they are fighting. That is where Carve works.`,
+      target: () => (ui().analyserOpen ? '[data-floating-window][aria-label="Spectrum analyser"]' : '#menu-tools'),
+      task: { hint: `Press ${toolShortcutLabel('analyser')}`, done: () => ui().analyserOpen },
+    },
+    {
+      title: 'Room made',
+      body: 'Neither plugin adds any delay, so the track stays in time. One thing to know: if you **solo** the track with Carve on it, solo the track it listens to as well, or there is nothing for it to follow. The **GUIDE** has more under Plugins.',
+    },
+  ],
+};
+
+const RHYTHM_FX: Lesson = {
+  id: 'rhythm-fx',
+  level: 'Intermediate',
+  title: 'Pump, gate and stutter in time',
+  summary: 'Fledge Shape moves the volume, a filter or the pan to a shape on the beat; Fledge Repeat stutters and rolls.',
+  minutes: 6,
+  steps: [
+    {
+      title: 'Pump, gate and stutter in time',
+      body: 'Two plugins that follow the song. **Fledge Shape** repeats a shape on the beat and moves the volume, a filter or the pan with it: a pump with no kick needed, a trance gate, a sweep every bar. **Fledge Repeat** catches a slice of sound and plays it again and again: a stutter, a roll into the next bar.',
+    },
+    SONG_STEP,
+    {
+      title: 'Add Fledge Shape',
+      body: `Click a track that holds long notes (a pad or chords). Press **${BROWSE}**, search **shape** and click **Add**.`,
+      target: browserOrMenu,
+      before: ensureTrack,
+      task: addEffect('fledge-shape', 'Add Fledge Shape to a track'),
+    },
+    {
+      title: 'A pump, then a gate',
+      body: 'Press **Space**. It starts on a **Duck** every quarter note: the pump of a sidechained kick. Now open **Preset** and choose **Trance gate**: sixteen steps that chop the pad into a rhythm. **Chop in 16ths** is the plain version.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-shape', 'Choose a preset'),
+    },
+    {
+      title: 'Make it yours',
+      body: '**Shape** is the curve, **Every** how often it repeats (4 bars down to a 32nd, with triplets), **Depth** how far it goes. **Smooth** rounds the corners. **Starts at** slides the shape along the beat: at 50 % a pump lands on the off-beat.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-shape', 'Move Every, Depth or Starts at'),
+    },
+    {
+      title: 'Not just volume',
+      body: 'Set **Moves** to **Low-pass** and the Shape to **Fall**, every **1 bar**: a filter sweep on every bar. **Pan** with a **Triangle** swings the sound from side to side. It moves one thing at a time, so for a pump and a sweep together, add Shape twice.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-shape', 'Set Moves to Low-pass or Pan'),
+    },
+    {
+      title: 'Add Fledge Repeat',
+      body: `Click the drums (or anything with a rhythm), press **${BROWSE}**, search **repeat** and click **Add**.`,
+      target: browserOrMenu,
+      task: addEffect('fledge-repeat', 'Add Fledge Repeat to a track'),
+    },
+    {
+      title: 'A fill by itself',
+      body: 'Choose the preset **Fill before every 4th bar** and play: the last beat of every fourth bar repeats in 16ths. **Every** and **For** set when and how long, **Slice** how short the repeated piece is, and **Pitch** makes each repeat climb or fall.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-repeat', 'Choose a preset'),
+    },
+    {
+      title: 'A stutter where you want it',
+      body: 'For a stutter at one exact spot, give the **Repeat** switch an automation lane: click the curve button on the track header, pick **Repeat** from the lane list, and draw it on where the stutter should be. Both plugins land on the same beats every time, live and in an export.',
+    },
+    {
+      title: 'In time',
+      body: 'That is rhythm from effects alone. The older **Pump** and **Gate** in the FX Rack still do the simple jobs with one switch; Shape and Repeat are for when you want the shape, the rate and the place to be yours.',
+    },
+  ],
+};
+
+const PRO_MIX: Lesson = {
+  id: 'pro-mix',
+  level: 'Expert',
+  title: 'Dynamic EQ, mid/side and saturation',
+  summary: 'Bands that move with the sound, the centre and the sides treated apart, and distortion in three bands.',
+  minutes: 9,
+  steps: [
+    {
+      title: 'Dynamic EQ, mid/side and saturation',
+      body: 'Three ideas from mastering studios. An EQ band that turns only **while** its range is loud. An EQ that treats the **middle** of the stereo picture and its **sides** apart. And distortion given to the lows, mids and highs **separately**, so warming the bass does not make the top crackle.',
+    },
+    SONG_STEP,
+    {
+      title: 'Add Fledge Dynamic EQ',
+      body: `Click a vocal, a lead or a bright synth. Press **${BROWSE}**, search **dynamic** and click **Add**. Its window is long: four bands, six sliders each.`,
+      target: browserOrMenu,
+      before: ensureTrack,
+      task: addEffect('fledge-eq', 'Add Fledge Dynamic EQ to a track'),
+    },
+    {
+      title: 'A band that moves',
+      body: 'Choose the preset **De-ess**. Band 4 sits at 6.5 kHz with a **gain** of 0: it does nothing until that range gets loud. Then **moves by** (-10 dB) turns it down, and it eases back as the "s" passes. **Threshold** is how loud the range must be to start. A band listens only to its own range, so a loud bass note never sets it off.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-eq', 'Choose the De-ess preset'),
+    },
+    {
+      title: 'The middle and the sides',
+      body: 'Each band **works on** both sides (**Stereo**), the **Mid** (what the two speakers share: the centre) or the **Side** (where they differ: the width). Choose the preset **Bass in the middle**: a deep cut at 70 Hz on the Side only, so the low end sits in the centre where small speakers and vinyl want it. **Wider top** does the opposite at 10 kHz.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-eq', 'Choose Bass in the middle, or change a band’s “works on”'),
+    },
+    {
+      title: 'Up, not only down',
+      body: 'A positive **moves by** opens a band as the part is played harder: try **The centre forward as it’s sung**. The drawn **Pro EQ** in the FX Rack is still the one for fixed curves; this is for what a fixed curve cannot do.',
+      target: windowOrMenu,
+    },
+    {
+      title: 'Add Fledge Heat',
+      body: `Click the bass or the drums. Press **${BROWSE}**, search **heat** and click **Add**. A fresh one does nothing: every band starts **Clean**.`,
+      target: browserOrMenu,
+      task: addEffect('fledge-heat', 'Add Fledge Heat to a track'),
+    },
+    {
+      title: 'A style for each band',
+      body: 'Set **Low style** to **Tube** and bring up **Low drive**: the bass grows harmonics a phone speaker can play, and the top stays clean. The styles run from **Soft** and **Warm** through **Hard** and **Fold** (buzzy) to **Bias** and **Tube** (lopsided, like a valve). **Low / mid** and **Mid / high** set where the bands meet.',
+      target: windowOrMenu,
+      task: changeEffect('fledge-heat', 'Pick a style for a band, or a preset'),
+    },
+    {
+      title: 'Drive is not volume',
+      body: 'On a loud sound, more drive is more grit at the same level, so you can sweep it and judge the tone. A quiet sound comes up with the drive, as through any saturator: trim it with that band’s **level**, which works on a Clean band too. **Mix** blends the result with the clean sound.',
+      target: windowOrMenu,
+    },
+    {
+      title: 'Check your work',
+      body: `Two windows help. **${toolShortcutLabel('analyser')}** opens the **Spectrum analyser** (with **Hold peaks** to keep the highest each frequency has reached). **${toolShortcutLabel('mixer')}** shows or hides the **Mixer**, and **${toolShortcutLabel('fxRack')}** the **FX Rack**. Each plugin window has **Bypass**: the honest test is whether it sounds better on than off at the same loudness.`,
+      target: '#menu-tools',
+    },
+    {
+      title: 'Mastering moves',
+      body: 'All of these stay in time (no added delay), sound the same live and in an export, and can be automated like any slider. The **GUIDE** lists every setting under Plugins.',
+    },
+  ],
+};
+
+const SOUND_LAB: Lesson = {
+  id: 'sound-lab',
+  level: 'Expert',
+  title: 'Sound design lab',
+  summary: 'Draw a wave from sine waves, make a synth talk, add harmony voices, shift frequencies and freeze a sound.',
+  minutes: 12,
+  steps: [
+    {
+      title: 'Sound design lab',
+      body: 'The deep end. You will draw a wave for **Fledge Synth** out of sine waves, then run sounds through four effects that change what they are: a **vocoder**, a **harmoniser**, a **frequency shifter** and a **spectral** freeze. Go slowly and listen at each step.',
+    },
+    {
+      title: 'A Fledge Synth track',
+      body: `Press **Space** once so the sound is on. Then press **${BROWSE}**, click **Instruments** at the side, find **Fledge Synth** and click **New track**. Its panel opens. (If the song is empty, draw a few long notes on it afterwards.)`,
+      target: browserOrMenu,
+      task: { hint: 'Add a Fledge Synth track', begin: () => tl().tracks.filter((t) => t.plugin?.url.startsWith('builtin:fledge/')).length, done: (n) => tl().tracks.filter((t) => t.plugin?.url.startsWith('builtin:fledge/')).length > (n as number) },
+    },
+    {
+      title: 'Draw a wave',
+      body: 'Every sound is a sum of sine waves: a fundamental and its **harmonics**. In oscillator **A**, open the **Table** list and choose **User table** (the last one); a row appears under it. Click **Draw harmonics**. Each bar is one harmonic’s level: drag them. Only the first is a pure sine; odd ones alone sound hollow, like a clarinet; many together sound bright. **Start from** gives you a saw, a square or an organ to bend.',
+      target: () => (document.querySelector('button[title^="Build the table from sine waves"]') ? 'button[title^="Build the table from sine waves"]' : windowOrMenu()),
+      task: {
+        hint: 'Table: User table, then Draw harmonics, and drag a bar',
+        done: () => tl().tracks.some((t) => !!(t.plugin?.state as { table?: { harmonics?: unknown } } | undefined)?.table?.harmonics),
+      },
+    },
+    {
+      title: 'A wave that moves',
+      body: 'Click **+** to add a second drawing and change it. Now the oscillator’s **Position** morphs from the first drawing to the last (up to four): give Position an LFO or an envelope in the synth and the tone moves by itself. That is a wavetable, and you drew it.',
+      target: windowOrMenu,
+    },
+    {
+      title: 'Make it talk',
+      body: `With the synth track selected, press **${BROWSE}**, search **vocoder** and **Add** it. Beside **Sidechain from** pick a track with words or rhythm on it (speech, singing, even the drums). The synth’s notes now come out shaped like that track. Bright, rich sounds work best; the voice track is usually turned right down.`,
+      target: browserOrMenu,
+      task: { hint: 'Add Fledge Vocoder and pick its Sidechain from', done: () => effectsOf('fledge-vocoder').some((p) => !!p.sidechain) },
+    },
+    {
+      title: 'Harmony from one line',
+      body: `On a track that plays **one note at a time** (a lead, a vocal), add **Fledge Harmony** (**${BROWSE}**, search **harmony**). Set **Key** and **Scale** to the song’s, and each **Voice** is so many steps of the scale above or below: +2 is a third above, +4 a fifth. Because the steps follow the scale, the harmony is always in key.`,
+      target: browserOrMenu,
+      task: addEffect('fledge-harmony', 'Add Fledge Harmony to a track'),
+    },
+    {
+      title: 'Shift, do not transpose',
+      body: 'Add **Fledge Shifter** to drums, a piano or a pad. A pitch shifter multiplies every frequency, so a note stays a note. This **adds** the same number of hertz to each, so the overtones stop lining up: bell-like and metallic at tens of hertz, a slow endless phasing under one hertz with **Mix** at half.',
+      target: browserOrMenu,
+      task: addEffect('fledge-shifter', 'Add Fledge Shifter to a track'),
+    },
+    {
+      title: 'Freeze a moment',
+      body: 'Add **Fledge Spectral** to any track and choose the preset **Freeze when switched on**. Give its **Freeze** switch an automation lane and draw it on for a bar: the sound of that instant holds, every frequency still turning. **Blur** makes a sound linger into a wash; **Smear** turns pitches to breath. It plays one frame late (about 43 ms), so use it for effect, not on a tight rhythm part.',
+      target: browserOrMenu,
+      task: addEffect('fledge-spectral', 'Add Fledge Spectral to a track'),
+    },
+    {
+      title: 'In tune',
+      body: `One more tool: **${toolShortcutLabel('tuner')}** opens the **Tuner** (the audio must be running). It listens to the microphone or to a track and shows the nearest note and how many cents off. Use it on a guitar before recording, or on a track after the Shifter to see what it did.`,
+      target: () => (ui().tunerOpen ? '[data-floating-window][aria-label="Tuner"]' : '#menu-tools'),
+    },
+    {
+      title: 'The lab is yours',
+      body: 'Stack them: a drawn wave through the vocoder, harmonised, then frozen. Save a sound you like with **Save to My sounds** in the Inspector. Everything here plays the same live and in an export.',
+    },
+  ],
+};
+
+export const LESSONS: Lesson[] = [TOUR, BEGINNER, SHOWCASE, SOUNDS, INTERMEDIATE, HELPERS, EXPRESSIVE, MIX_ROOM, RHYTHM_FX, GAME_MUSIC, EXPERT, PRO_MIX, SOUND_LAB, GAME_REACT];
 
 export const lessonById = (id: string): Lesson | undefined => LESSONS.find((l) => l.id === id);

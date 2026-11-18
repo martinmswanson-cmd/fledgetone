@@ -1,6 +1,7 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { tidyValue } from '../../audio/plugins/tidyValue';
 import { createRoot } from 'react-dom/client';
-import { RotateCcw } from 'lucide-react';
+import { Info, RotateCcw } from 'lucide-react';
 import { setBuiltinGui, type BuiltinControls } from '../../audio/plugins/builtinHost';
 import { FledgeSynthPanel } from './FledgeSynthPanel';
 import { editPluginParam, editPluginParams, editPluginProgram, resetAllMoves } from '../../store/pluginEdits';
@@ -10,15 +11,6 @@ import { editPluginParam, editPluginParams, editPluginProgram, resetAllMoves } f
  * its parameters with the value as the plugin shows it. Double-click a slider to put it back.
  * Drawn into the plugin window (PluginWindow) through the plugin's createGui, like a WAM's own.
  */
-
-/** "-3.0000 dB" → "-3 dB", "0.5000" → "0.50": the plugins print four places. */
-function tidyValue(text: string): string {
-  const m = text.trim().match(/^(-?\d+(?:\.\d+)?)(.*)$/);
-  if (!m) return text.trim();
-  const v = Number(m[1]);
-  const places = Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2;
-  return `${Number(v.toFixed(places)).toFixed(places).replace(/^-0(\.0+)?$/, '0$1')}${m[2]}`;
-}
 
 /** Presets named "Category/Name" (Surge's patches) are grouped by category; others are one list. */
 function groupPresets(names: string[]): Array<[string, Array<{ name: string; i: number }>]> {
@@ -37,11 +29,48 @@ function groupPresets(names: string[]): Array<[string, Array<{ name: string; i: 
 const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
   const params = useSyncExternalStore(controls.subscribe, controls.params);
   const { info, family } = controls.ref;
+  // What it does, in a box that opens over the sliders when asked for (always there, it pushed
+  // the sliders half way down the window)
+  const [about, setAbout] = useState(false);
+  const aboutRow = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!about) return;
+    // A click anywhere else puts it away
+    const away = (e: PointerEvent) => {
+      if (!aboutRow.current?.contains(e.target as Node)) setAbout(false);
+    };
+    window.addEventListener('pointerdown', away, true);
+    return () => window.removeEventListener('pointerdown', away, true);
+  }, [about]);
   return (
     <div className="w-[380px] max-w-[92vw] p-3 flex flex-col gap-2.5 text-xs text-forge-text">
-      <p className="text-forge-muted leading-snug">
-        {info.about} <span className="text-[10px]">({family.label}, {info.category})</span>
-      </p>
+      <div ref={aboutRow} className="relative flex items-center gap-2">
+        <span className="text-[10px] text-forge-muted truncate">
+          {family.label === info.name ? info.category : `${family.label} · ${info.category}`}
+        </span>
+        <button
+          type="button"
+          onClick={() => setAbout(!about)}
+          // (Esc closes the box first; the next one closes the window)
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && about) {
+              e.stopPropagation();
+              setAbout(false);
+            }
+          }}
+          aria-expanded={about}
+          aria-label={`What ${info.name} does`}
+          title="What it does, and what each setting is for"
+          className={`ml-auto h-6 px-2 flex items-center gap-1 rounded border text-[10px] hover:text-forge-text ${about ? 'border-fuchsia-400 text-forge-text' : 'border-forge-border text-forge-muted'}`}
+        >
+          <Info className="w-3 h-3" /> What it does
+        </button>
+        {about && (
+          <p role="note" data-plugin-about className="absolute left-0 right-0 top-7 z-10 rounded-md border border-fuchsia-400/60 bg-forge-panel p-2.5 leading-snug text-forge-text shadow-xl">
+            {info.about}
+          </p>
+        )}
+      </div>
       {controls.programs.length > 0 && (
         <label className="flex items-center gap-2">
           <span className="w-[96px]">Preset</span>

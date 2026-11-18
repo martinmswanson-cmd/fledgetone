@@ -110,13 +110,13 @@ Any recording can become an instrument: a note you sang, a hit you recorded, a l
 
 ### Plugins, briefly
 
-**Plugins › Browse plugins…** opens hundreds of built-in effects and instruments: open-source plugins compiled to run in the browser. Search by what they do (*tape*, *warm*, *bell*), choose the track under **Effects go on**, and click **Add**. An instrument's **New track** makes a track that plays it. Each plugin's window has a slider for every setting. See [the guide](/guide/instruments/#plugins).
+**Plugins › Browse plugins…** (or `Shift+P`) opens hundreds of built-in effects and instruments: open-source plugins compiled to run in the browser, and Fledgetone's own (search *fledge*): **Fledge Synth**, a wavetable synth whose waves you can draw as harmonics, and effects from a vocoder to a spectral freeze. Search by what they do (*tape*, *warm*, *bell*), choose the track under **Effects go on**, and click **Add**. An instrument's **New track** makes a track that plays it. Each plugin's window has a slider for every setting. See [the guide](/guide/instruments/#plugins).
 
 {{shot:sound-plugins}}
 
 ### What's next
 
-You've built a pluck and a pad, designed drums, made game sounds and played your own recordings. Next, put sounds to pictures: [Score a video](/learn/score-a-video/).
+You've built a pluck and a pad, designed drums, made game sounds and played your own recordings. Next, put sounds to pictures: [Score a video](/learn/score-a-video/). For Fledgetone's own effects in a mix, see [Mix with Fledgetone's own plugins](/learn/pro-plugins/), and in the studio the **Learn** menu's **Sound design lab** tutorial.
 
 The example is Lo-Fi with this lesson's sounds: the pluck on the flute line, the pad on the keys, and the designed kick and snare.
 

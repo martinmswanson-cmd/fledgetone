@@ -47,6 +47,9 @@ import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { useUiStore } from '../../store/uiStore';
+import { toolForKey } from '../../store/toolShortcuts';
+import { isBus } from '../../store/buses';
+import { useAudioStore } from '../../store/audioStore';
 import { useTourStore } from '../../tour/tourStore';
 import { useVideoStore } from '../../store/videoStore';
 import { laneTops } from './rows';
@@ -407,6 +410,23 @@ export const Timeline: React.FC = () => {
         s.pasteClips(undefined, from.size === 1 && s.selectedTrackId ? s.selectedTrackId : undefined);
       } else if (mod || e.altKey) {
         return;
+      } else if (toolForKey(e)) {
+        // Shift and a letter: a tool (see toolShortcuts.ts)
+        e.preventDefault();
+        if (e.repeat) return;
+        const u = useUiStore.getState();
+        const tool = toolForKey(e);
+        if (tool === 'plugins') {
+          // Effects go on the selected track (a bus has none of its own to add here)
+          const t = s.tracks.find((x) => x.id === s.selectedTrackId);
+          u.setPluginBrowser({ trackId: t && !isBus(t) ? t.id : null });
+        } else if (tool === 'fxRack') s.toggleInspector();
+        else if (tool === 'mixer') {
+          if (u.dockOpen && u.dockTab === 'mixer') u.setDockOpen(false);
+          else u.openDock('mixer');
+        } else if (useAudioStore.getState().audioState !== 'running') showToast('Start the audio first.');
+        else if (tool === 'tuner') u.setTunerOpen(!u.tunerOpen);
+        else if (tool === 'analyser') u.setAnalyserOpen(!u.analyserOpen);
       } else if (key === 'v') {
         s.setTool('select');
       } else if (key === 'c') {
