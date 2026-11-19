@@ -91,7 +91,7 @@ test("a bird's footprint holds its whole model, in every pose", () => {
   const mat = new T.MeshBasicMaterial();
   const v = new T.Vector3();
   let worst = -Infinity;
-  for (let t = 0; t < 14; t += 0.07) {
+  for (let t = 0; t < 17; t += 0.031) {
     const posed = posedAt(plan, t);
     plan.pigeons.forEach((p, i) => {
       const model = makePigeon(p.seed, p.size, geo, mat);
@@ -106,7 +106,7 @@ test("a bird's footprint holds its whole model, in every pose", () => {
           v.fromBufferAttribute(pos, k).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
           const along = Math.min(BIRD_SHAPE.HEAD, Math.max(BIRD_SHAPE.TAIL, v.x));
           // (the feet may dip a little into the floor: that's not another bird)
-          worst = Math.max(worst, Math.hypot(v.x - along, v.z) - BIRD_SHAPE.RADIUS, v.y - BIRD_SHAPE.HEIGHT, -v.y - 0.15);
+          worst = Math.max(worst, Math.hypot(v.x - along, v.z) - posed[i].reach, v.y - BIRD_SHAPE.HEIGHT, -v.y - 0.15);
         }
       });
     });
@@ -123,4 +123,63 @@ test('birds on neighbouring keys fit side by side, and a white key and the black
   const playing = posed.filter((b) => b.leg.kind === 'press');
   assert.equal(playing.length, 12);
   for (const b of playing) assert.ok(Math.hypot(b.pos.x - b.leg.from.x, b.pos.z - b.leg.from.z) < 1e-9, 'a bird playing was moved off its spot');
+});
+
+test('a bird playing the same key again hops on the spot to strike it afresh', () => {
+  // The same note four times, with a gap, back to back, and fast
+  const notes = [note(1, 0.5, 60), note(2, 0.5, 60), note(2.5, 0.5, 60), note(3, 0.1, 60), note(3.1, 0.1, 60)];
+  const plan = planPigeons(data(notes));
+  const bird = plan.pigeons.find((p) => p.legs.some((l) => l.kind === 'press'));
+  const presses = bird.legs.filter((l) => l.kind === 'press');
+  assert.equal(presses.length, 5, 'one bird plays all five');
+  const hops = bird.legs.filter((l) => l.kind === 'hop' && l.from.distanceTo(l.to) < 1e-6);
+  assert.equal(hops.length, 4, 'a hop on the spot before each repeat');
+  for (const hop of hops) {
+    // It lands just before the note it's for, and is off the key in the middle of the hop
+    const next = presses.find((p) => p.t0 >= hop.t1 - 1e-9);
+    assert.ok(next && Math.abs(next.note.start - 0.05 - hop.t1) < 1e-6);
+    const mid = posedAt(plan, (hop.t0 + hop.t1) / 2)[plan.pigeons.indexOf(bird)];
+    assert.ok(mid.lift > 0.1, `it only rose ${mid.lift.toFixed(3)}`);
+  }
+});
+
+test('a long jump is flown with the wings out; a side-step to the next key is not', () => {
+  const wingsOut = (notes) => {
+    const plan = planPigeons(data(notes));
+    let most = 0;
+    let far = 0;
+    for (let t = 0; t < 4; t += 1 / 120) {
+      for (const b of posedAt(plan, t)) {
+        if (b.leg.kind !== 'hop' && b.leg.kind !== 'fly') continue;
+        // (only jumps between keys: the birds' first hops up from the floor are flown anyway)
+        if (!(b.leg.from.y > 0 && b.leg.to.y > 0)) continue;
+        most = Math.max(most, b.reach);
+        far = Math.max(far, Math.hypot(b.leg.to.x - b.leg.from.x, b.leg.to.z - b.leg.from.z));
+      }
+    }
+    return { most, far };
+  };
+  // C then D, a key apart: a hop, wings folded
+  const step = wingsOut([note(1, 0.3, 60), note(2, 0.3, 62)]);
+  assert.ok(step.far > 0.9 && step.far < 1.4);
+  assert.equal(step.most, BIRD_SHAPE.RADIUS);
+  // C then the G above, a few keys along: flown, wings right out
+  const jump = wingsOut([note(1, 0.3, 60), note(2, 0.3, 67)]);
+  assert.ok(jump.far >= 1.4);
+  assert.ok(jump.most > BIRD_SHAPE.SPAN - 0.01, `its wings only reached ${jump.most.toFixed(3)}`);
+});
+
+test('wings open only as far as there is room: in a crowd they stay off the neighbours', () => {
+  // Two birds side-step past... no: two birds fly to neighbouring keys at once, between birds holding the keys either side
+  const notes = [note(0.5, 4, 60), note(0.5, 4, 67), note(0.5, 0.3, 48), note(0.5, 0.3, 84), note(2, 0.5, 62), note(2, 0.5, 65)];
+  const plan = planPigeons(data(notes));
+  let spread = 0;
+  for (let t = 0; t < 5; t += 1 / 120) {
+    const posed = posedAt(plan, t);
+    for (let i = 0; i < posed.length; i++) {
+      spread = Math.max(spread, posed[i].reach);
+      for (let j = i + 1; j < posed.length; j++) assert.ok(overlapOf(posed[i], posed[j]).depth < 0.019, `wings touch at ${t.toFixed(3)}`);
+    }
+  }
+  assert.ok(spread > BIRD_SHAPE.RADIUS + 0.3, 'and they did open');
 });
