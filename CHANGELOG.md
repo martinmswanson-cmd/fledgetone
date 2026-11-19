@@ -6,7 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased — Pigeons video (preview)
 
-- **A new video picture, Pigeons** (Export › Video › Picture): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. It's a first try: how the birds share out the notes is still being worked on.
+- **A new video picture, Pigeons** (Export › Video › Picture): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. It's a first try, so the look may still change.
 
 ## 2026.11.18-4 — Every screenshot in the guide and the lessons retaken
 

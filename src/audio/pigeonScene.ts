@@ -23,9 +23,13 @@ const BLACK_L = 3.7;
 const BLACK_TOP = 1.45;
 /** How far a key goes down when played */
 const PRESS = 0.22;
-/** Where a pigeon stands on a key (z): the front of a white key (clear of the black ones), the middle of a black one */
-const WHITE_STAND_Z = WHITE_L / 2 - 1.2;
-const BLACK_STAND_Z = -WHITE_L / 2 + BLACK_L * 0.62;
+/**
+ * Where a pigeon stands on a key (z), facing the viewer: the front of a white key, the back half of
+ * a black one, so birds on a white key and the black key beside it are clear of each other
+ * (BIRD_SHAPE), as birds on two neighbouring white keys, or black keys, are side by side
+ */
+const WHITE_STAND_Z = WHITE_L / 2 - 1;
+const BLACK_STAND_Z = -0.85;
 /** The floor's lines where pigeons wait: in front of the keys and behind them */
 const FRONT_Z = WHITE_L / 2 + 2.2;
 const BACK_Z = -WHITE_L / 2 - 2.4;
@@ -60,18 +64,23 @@ interface Leg {
 }
 interface PigeonPlan {
   legs: Leg[];
-  /** A little variety per bird: size, feather shade, step phase */
+  /** A little variety per bird: feather shade, step phase */
   seed: number;
+  /** The bird's size (its model's scale): a little under 1 to a little over */
+  size: number;
 }
 
 /** Walking pace (units a second) and the hop and flight times */
 const WALK_SPEED = 5.5;
-const HOP_TIME = 0.2;
+const HOP_TIME = 0.26;
+/**
+ * How high a hop onto or off the keys, or a flight, goes: in the middle third of it a bird is clear
+ * over the head of one standing on a black key (the higher keys), so it can turn round there
+ */
+const CLEAR_HOP = 2.9;
 const HOP_REACH = 1.6;
 /** A bird lands this long before its note */
 const LAND_EARLY = 0.05;
-/** Longer than this between notes, a bird steps off the keys and waits on the floor */
-const WAIT_OFF = 2.6;
 
 const rand = (seed: number) => {
   let s = seed >>> 0;
@@ -132,37 +141,51 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
   for (let i = 0; i < count; i++) {
     const front = i % 2 === 0;
     const at = new T.Vector3(x0 + ((i + 0.5) / count) * (x1 - x0) + (r() - 0.5) * 2, 0, (front ? FRONT_Z : BACK_Z) + (front ? 1 : -1) * r() * 3);
-    birds.push({ plan: { legs: [], seed: Math.floor(r() * 1e9) }, at, free: -10, onKeys: false });
+    birds.push({ plan: { legs: [], seed: Math.floor(r() * 1e9), size: 1 + r() * 0.06 }, at, free: -10, onKeys: false });
   }
 
   const push = (b: Bird, leg: Leg) => b.plan.legs.push(leg);
   const floorSpot = (x: number, front: boolean) => new T.Vector3(x + (r() - 0.5) * 3, 0, front ? FRONT_Z + r() * 2.5 : BACK_Z - r() * 2.5);
+  /**
+   * Which side of the keyboard a bird gets on and off a key from: the front for a white key, the
+   * back for a black one (it stands on the back half), so it never steps across the row of birds
+   * on the other keys. On the floor: the side it's on.
+   */
+  const sideOf = (at: T.Vector3) => (at.y > 0 ? (at.y > WHITE_TOP + 0.01 ? -1 : 1) : at.z > 0 ? 1 : -1);
+  const EDGE = WHITE_L / 2 + 0.6;
   /** Moves `b` from where it is to `to`, arriving at `arrive` (leaving no earlier than b.free), the way the room allows */
   const travel = (b: Bird, to: T.Vector3, arrive: number) => {
     const d = flatDist(b.at, to);
-    const climbs = b.at.y !== to.y;
+    // (onto the keys from the floor, or down: a key to a key, white or black, is no climb)
+    const climbs = b.at.y > 0 !== to.y > 0;
     if (d < 0.05 && !climbs) return;
     const window = arrive - b.free;
-    if (d <= HOP_REACH && window >= HOP_TIME * 0.6) {
+    const keyToKey = b.at.y > 0 && to.y > 0;
+    // (between the floor on one side and a key got on from the other, it flies over the keys)
+    const wrongSide = climbs && sideOf(b.at) !== sideOf(to);
+    if ((keyToKey && d > HOP_REACH) || wrongSide) {
+      // Across the keys it flies, low, over the birds playing (walking it would be boxed in among them)
+      const time = Math.min(0.8, Math.max(0.3, d / 10));
+      push(b, { kind: 'fly', t0: Math.max(b.free, arrive - time), t1: arrive, from: b.at.clone(), to: to.clone() });
+    } else if (keyToKey && window >= HOP_TIME * 0.6) {
       const t0 = Math.max(b.free, arrive - HOP_TIME);
       push(b, { kind: 'hop', t0, t1: arrive, from: b.at.clone(), to: to.clone() });
-    } else if (d / WALK_SPEED + (climbs ? HOP_TIME : 0) <= window) {
-      // Walk most of the way, hop the step up or down at the keys' edge
-      const walkTime = d / WALK_SPEED;
-      const t0 = arrive - walkTime - (climbs ? HOP_TIME : 0);
-      if (climbs) {
-        // The edge: where the floor meets the keys, on the bird's way
-        const edgeZ = to.y > b.at.y ? (b.at.z > 0 ? WHITE_L / 2 + 0.6 : -WHITE_L / 2 - 0.6) : to.z > 0 ? WHITE_L / 2 + 0.6 : -WHITE_L / 2 - 0.6;
-        const ground = to.y > b.at.y ? b.at : to;
-        const edge = new T.Vector3(ground === b.at ? to.x : b.at.x, 0, edgeZ);
-        if (to.y > b.at.y) {
-          push(b, { kind: 'walk', t0, t1: t0 + walkTime, from: b.at.clone(), to: edge });
-          push(b, { kind: 'hop', t0: t0 + walkTime, t1: arrive, from: edge.clone(), to: to.clone() });
-        } else {
-          push(b, { kind: 'hop', t0, t1: t0 + HOP_TIME, from: b.at.clone(), to: edge });
-          push(b, { kind: 'walk', t0: t0 + HOP_TIME, t1: arrive, from: edge.clone(), to: to.clone() });
-        }
-      } else push(b, { kind: 'walk', t0, t1: arrive, from: b.at.clone(), to: to.clone() });
+    } else if (!climbs && d / WALK_SPEED <= window) {
+      push(b, { kind: 'walk', t0: arrive - d / WALK_SPEED, t1: arrive, from: b.at.clone(), to: to.clone() });
+    } else if (climbs) {
+      // Walk along the floor to the keys' edge on its side, and hop up (or hop down, and walk off)
+      const up = to.y > 0;
+      const key = up ? to : b.at;
+      const ground = up ? b.at : to;
+      const edge = new T.Vector3(key.x, 0, sideOf(key) * EDGE);
+      const walkTime = flatDist(ground, edge) / WALK_SPEED;
+      const time = walkTime + HOP_TIME;
+      const t0 = Math.max(b.free, arrive - time);
+      const t1 = Math.max(arrive, t0 + time * 0.5);
+      const split = t0 + ((up ? walkTime : HOP_TIME) / time) * (t1 - t0);
+      push(b, { kind: up ? 'walk' : 'hop', t0, t1: split, from: b.at.clone(), to: edge.clone() });
+      push(b, { kind: up ? 'hop' : 'walk', t0: split, t1, from: edge.clone(), to: to.clone() });
+      arrive = t1;
     } else {
       // Too far to walk: it flies (quickly, if it must)
       const t0 = Math.max(b.free, arrive - Math.max(0.35, d / 16));
@@ -171,14 +194,41 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
     b.at = to.clone();
     b.free = arrive;
   };
+  /** `c` gets down off the keys at `depart` and waits on the floor, on the side it got on from */
+  const stepOff = (c: Bird, depart: number) => {
+    const wait = floorSpot(c.at.x, sideOf(c.at) > 0);
+    c.free = Math.max(c.free, depart);
+    travel(c, wait, c.free + flatDist(c.at, wait) / WALK_SPEED + HOP_TIME);
+    c.onKeys = false;
+  };
 
   for (const n of notes) {
-    const spot = new T.Vector3(keyX(n.midi), keyTop(n.midi), standZ(n.midi) + (r() - 0.5) * 0.4);
+    const spot = new T.Vector3(keyX(n.midi), keyTop(n.midi), standZ(n.midi));
     const arrive = n.start - LAND_EARLY;
-    // The free bird that can walk (or hop) there in time, nearest first; else the nearest free one
-    let best: Bird | null = null;
-    let bestCost = Infinity;
+    const len = n.end - n.start;
+    // Short notes: it's off again before the key comes up (so one bird can run a fast line)
+    const leave = len > 0.4 ? n.end : n.start + Math.max(0.06, len * 0.55);
+    const onSpot = (b: Bird) => b.onKeys && flatDist(b.at, spot) < 0.05;
+    // Birds that have stood about on the keys for a while get down onto the floor, out of the way
+    for (const c of birds) if (c.onKeys && c.free < n.start - 1.5 && !onSpot(c)) stepOff(c, c.free + 0.3);
+    // The key's still held by a bird (another track playing the same note): that bird plays this one too
+    const holder = birds.find((b) => onSpot(b) && b.free > arrive);
+    if (holder) {
+      const last = holder.plan.legs[holder.plan.legs.length - 1];
+      if (leave > last.t1) {
+        last.t1 = leave;
+        last.note = { ...last.note!, end: Math.max(last.note!.end, n.end) };
+        holder.free = leave;
+      }
+      continue;
+    }
+    // A bird still standing on this key (it played it last) plays it again; else the free bird that
+    // can walk (or hop) there in time, nearest first; else the nearest free one
+    const parked = birds.find((b) => onSpot(b) && b.free <= n.start + 1e-3);
+    let best: Bird | null = parked ?? null;
+    let bestCost = parked ? -1 : Infinity;
     for (const b of birds) {
+      if (parked) break;
       if (b.free > arrive - 0.02) continue;
       const d = flatDist(b.at, spot);
       const walks = d <= HOP_REACH || d / WALK_SPEED + HOP_TIME <= arrive - b.free;
@@ -190,27 +240,15 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
     }
     if (!best) continue;
     const b = best;
-    // A long wait: step off the keys onto the floor near the next key, and wait there
-    if (b.onKeys && arrive - b.free > WAIT_OFF + 2) {
-      const front = r() < 0.7;
-      const wait = floorSpot((b.at.x + spot.x) / 2, front);
-      travel(b, wait, b.free + flatDist(b.at, wait) / WALK_SPEED + HOP_TIME + 0.1);
-      b.onKeys = false;
-    }
-    travel(b, spot, arrive);
-    // Short notes: it's off again before the key comes up (so one bird can run a fast line)
-    const len = n.end - n.start;
-    const leave = len > 0.4 ? n.end : n.start + Math.max(0.06, len * 0.55);
-    push(b, { kind: 'press', t0: arrive, t1: leave, from: spot.clone(), to: spot.clone(), note: n });
-    b.free = leave;
+    // Any other bird waiting on this key steps off onto the floor before this one lands
+    for (const c of birds) if (c !== b && onSpot(c)) stepOff(c, Math.max(c.free, arrive - 0.9));
+    if (b !== parked) travel(b, spot, arrive);
+    push(b, { kind: 'press', t0: Math.max(arrive, b.free), t1: Math.max(leave, b.free + 0.05), from: spot.clone(), to: spot.clone(), note: n });
+    b.free = Math.max(leave, b.free + 0.05);
     b.onKeys = true;
   }
   // Off the keys at the end
-  for (const b of birds) {
-    if (!b.onKeys) continue;
-    const wait = floorSpot(b.at.x, r() < 0.6);
-    travel(b, wait, b.free + flatDist(b.at, wait) / WALK_SPEED + HOP_TIME + 0.2);
-  }
+  for (const b of birds) if (b.onKeys) stepOff(b, b.free + 0.2);
   // Fill the gaps between legs with standing still
   for (const b of birds) {
     const legs: Leg[] = [];
@@ -270,7 +308,7 @@ function inked(mesh: T.Mesh, thickness = 0.07): T.Mesh {
 
 const SHADES = [0x8d93a3, 0x9aa0ae, 0x7e8494, 0xa7a9b2, 0x6f7280];
 
-function makePigeon(seed: number, shadowGeo: T.BufferGeometry, shadowMat: T.Material): PigeonModel {
+export function makePigeon(seed: number, size: number, shadowGeo: T.BufferGeometry, shadowMat: T.Material): PigeonModel {
   const r = rand(seed);
   const shade = SHADES[Math.floor(r() * SHADES.length)];
   const grey = flat(shade);
@@ -308,15 +346,15 @@ function makePigeon(seed: number, shadowGeo: T.BufferGeometry, shadowMat: T.Mate
   const wings: [T.Group, T.Group] = [new T.Group(), new T.Group()];
   wings.forEach((w, i) => {
     const side = i === 0 ? 1 : -1;
-    w.position.set(0.05, 0.12, side * 0.27);
+    w.position.set(0.05, 0.12, side * 0.2);
     const blade = inked(new T.Mesh(lowPoly(new T.IcosahedronGeometry(0.4, 0), 0.05, seed + 7 + i), grey), 0.08);
-    blade.scale.set(1.4, 0.4, 0.5);
-    blade.position.set(-0.15, 0, side * 0.08);
+    blade.scale.set(1.4, 0.4, 0.45);
+    blade.position.set(-0.15, 0, side * 0.04);
     w.add(blade);
     // Two dark wing bars
     for (const k of [0, 1]) {
       const bar = new T.Mesh(new T.BoxGeometry(0.07, 0.05, 0.16), dark);
-      bar.position.set(-0.28 - k * 0.18, 0.11, side * 0.1);
+      bar.position.set(-0.28 - k * 0.18, 0.11, side * 0.06);
       w.add(bar);
     }
     body.add(w);
@@ -367,7 +405,6 @@ function makePigeon(seed: number, shadowGeo: T.BufferGeometry, shadowMat: T.Mate
   shadow.renderOrder = 1;
   root.add(shadow);
 
-  const size = 1.3 + r() * 0.2;
   root.scale.setScalar(size);
   return { root, body, neck, head, wings, legs, shadow };
 }
@@ -404,7 +441,29 @@ function heading(legs: Leg[], leg: Leg, t: number, seed: number): number {
   return ((seed % 628) / 100) + Math.sin(t * 0.5 + seed) * 0.6;
 }
 
-function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
+/** A bird's pose at t, before the birds are kept apart (solveSpacing) */
+export interface Posed {
+  leg: Leg;
+  /** How far through its leg (0 to 1) */
+  k: number;
+  /** Where its feet are, before any lift */
+  pos: T.Vector3;
+  lift: number;
+  heading: number;
+  walkPhase: number;
+  flap: number;
+  bob: number;
+  peck: number;
+  /** Its size (the model's scale) */
+  size: number;
+  /** How readily it's pushed aside: 0 never (it's on its key, playing), 1 freely */
+  give: number;
+  /** Lifted over another bird it had no room to step round (solveSpacing's last resort) */
+  flutter: boolean;
+}
+
+function rawPose(plan: PigeonPlan, t: number): Posed {
+  const size = plan.size;
   const leg = findLeg(plan.legs, t);
   const k = leg.t1 > leg.t0 ? clamp01((t - leg.t0) / (leg.t1 - leg.t0)) : 1;
   const pos = new T.Vector3();
@@ -413,7 +472,10 @@ function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
   let flap = 0;
   let bob = 0;
   let peck = 0;
+  let give = 1;
   const seed = plan.seed;
+  /** Its leg ends on a key (it's arriving to play): the nearer it is, the less it gives way */
+  const arriving = leg.to.y > 0 && leg.kind !== 'press' && leg.kind !== 'stand';
   switch (leg.kind) {
     case 'walk': {
       pos.lerpVectors(leg.from, leg.to, k);
@@ -425,13 +487,16 @@ function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
     }
     case 'hop': {
       pos.lerpVectors(leg.from, leg.to, ease(k));
-      lift = Math.sin(k * Math.PI) * (0.35 + Math.abs(leg.to.y - leg.from.y) * 0.5);
+      // (a hop up onto the keys or down off them is a flap up over the heads of the birds there, so
+      // it can turn round up in the air; a side-step to the next key is a little hop)
+      const over = leg.from.y > 0 !== leg.to.y > 0 ? CLEAR_HOP : 0.35 + Math.abs(leg.to.y - leg.from.y) * 0.5;
+      lift = Math.sin(k * Math.PI) * over;
       flap = Math.sin(k * Math.PI) * 0.6;
       break;
     }
     case 'fly': {
       pos.lerpVectors(leg.from, leg.to, ease(k));
-      lift = Math.sin(k * Math.PI) * Math.min(4, 1 + flatDist(leg.from, leg.to) * 0.25);
+      lift = Math.sin(k * Math.PI) * Math.min(4, CLEAR_HOP + flatDist(leg.from, leg.to) * 0.1);
       flap = 0.5 + 0.5 * Math.sin(t * 50);
       break;
     }
@@ -444,6 +509,7 @@ function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
       if (since > -0.06 && since < 0.12) lift = Math.max(0, -since) * 2;
       // A long note: wings up in triumph
       if (n.end - n.start > 0.8 && since > 0.1) flap = 0.35 + 0.15 * Math.sin(since * 9);
+      give = 0;
       break;
     }
     case 'stand': {
@@ -452,15 +518,165 @@ function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
       if (leg.from.y === 0) {
         const cycle = (t * 0.6 + (seed % 97) / 13) % 3.5;
         peck = cycle < 0.5 ? Math.sin((cycle / 0.5) * Math.PI) : 0;
-      }
+      } else give = 0.5;
       break;
     }
   }
-  p.root.position.set(pos.x, pos.y + lift, pos.z);
-  // On a key it faces the viewer (so neighbours on a chord stand side by side), turning on the hop up
-  const FACE = -Math.PI / 2 + Math.sin(t * 1.3 + seed) * 0.12;
+  if (arriving) give = 1 - ease(k);
+  // On a key it faces the viewer, square to the key (so birds on neighbouring keys stand side by
+  // side, never wider than a key), turning to it on the way up
   const way = heading(plan.legs, leg, t, seed);
-  p.root.rotation.y = leg.kind === 'press' ? FACE : leg.kind === 'hop' && leg.to.y > 0 ? turn(way, FACE, ease(k)) : way;
+  // (a hop to a neighbouring key is a side-step: it keeps facing the viewer)
+  const onKey = leg.kind === 'press' || (leg.kind === 'stand' && leg.from.y > 0) || (leg.kind === 'hop' && leg.from.y > 0 && leg.to.y > 0);
+  // (it stays square to its key until it's up off it, and is square again before it lands: turning
+  // down among its neighbours would swing its tail into them)
+  const leaving = leg.from.y > 0 && (leg.kind === 'hop' || leg.kind === 'fly' || leg.kind === 'walk');
+  let h = onKey ? FACE : way;
+  // (turning only while it's up above the others' heads: the middle third of its hop or flight)
+  if (leaving && !onKey) h = turn(FACE, way, ease(clamp01((k - 1 / 3) / (1 / 6))));
+  if (arriving && !onKey) h = turn(h, FACE, ease(clamp01((k - 1 / 2) / (1 / 6))));
+  return { leg, k, pos, lift, heading: h, walkPhase, flap, bob, peck, size, give, flutter: false };
+}
+
+/** Facing the viewer (+z) */
+const FACE = -Math.PI / 2;
+
+/**
+ * A bird's footprint, in its own units (facing +x): a capsule, the segment from TAIL to HEAD along
+ * its length grown by RADIUS all round, and HEIGHT tall. It holds the whole model (the beak at the
+ * head's furthest bob, the tail band, the wings), so footprints that don't meet are birds that
+ * don't touch. RADIUS is under half a key at the biggest size, so birds on neighbouring keys fit.
+ */
+export const BIRD_SHAPE = { TAIL: -0.9, HEAD: 0.75, RADIUS: 0.45, HEIGHT: 1.55 };
+/** The smallest gap kept between two birds (scene units) */
+const GAP = 0.02;
+
+/** The ends of a bird's footprint segment, in scene units (x, z) */
+function footprint(b: Posed): [number, number, number, number] {
+  const c = Math.cos(b.heading);
+  const sn = -Math.sin(b.heading);
+  const x = b.pos.x;
+  const z = b.pos.z;
+  return [x + c * BIRD_SHAPE.TAIL * b.size, z + sn * BIRD_SHAPE.TAIL * b.size, x + c * BIRD_SHAPE.HEAD * b.size, z + sn * BIRD_SHAPE.HEAD * b.size];
+}
+
+/** The closest points between segments PQ and RS (2D): [px, pz, rx, rz] */
+function closest(p: number[], q: number[]): [number, number, number, number] {
+  const [ax, az, bx, bz] = p;
+  const [cx, cz, dx, dz] = q;
+  const ux = bx - ax;
+  const uz = bz - az;
+  const vx = dx - cx;
+  const vz = dz - cz;
+  const wx = ax - cx;
+  const wz = az - cz;
+  const a = ux * ux + uz * uz;
+  const b = ux * vx + uz * vz;
+  const c = vx * vx + vz * vz;
+  const d = ux * wx + uz * wz;
+  const e = vx * wx + vz * wz;
+  const den = a * c - b * b;
+  let sN = den > 1e-9 ? clamp01((b * e - c * d) / den) : 0;
+  let tN = c > 1e-9 ? (b * sN + e) / c : 0;
+  if (tN < 0) {
+    tN = 0;
+    sN = a > 1e-9 ? clamp01(-d / a) : 0;
+  } else if (tN > 1) {
+    tN = 1;
+    sN = a > 1e-9 ? clamp01((b - d) / a) : 0;
+  }
+  return [ax + ux * sN, az + uz * sN, cx + vx * tN, cz + vz * tN];
+}
+
+/** How far two birds' footprints overlap (positive: they touch), and the way from b to a */
+export function overlapOf(a: Posed, b: Posed): { depth: number; nx: number; nz: number } {
+  // Only birds at the same height can touch (one flying over another can't)
+  const a0 = a.pos.y + a.lift;
+  const b0 = b.pos.y + b.lift;
+  if (a0 > b0 + BIRD_SHAPE.HEIGHT * b.size || b0 > a0 + BIRD_SHAPE.HEIGHT * a.size) return { depth: -1, nx: 0, nz: 0 };
+  const [px, pz, rx, rz] = closest(footprint(a), footprint(b));
+  let nx = px - rx;
+  let nz = pz - rz;
+  const d = Math.hypot(nx, nz);
+  if (d > 1e-6) {
+    nx /= d;
+    nz /= d;
+  } else {
+    // (exactly on top of each other: apart along x, the same way every time)
+    nx = a.pos.x >= b.pos.x ? 1 : -1;
+    nz = 0;
+  }
+  return { depth: BIRD_SHAPE.RADIUS * (a.size + b.size) + GAP - d, nx, nz };
+}
+
+/** Pushes touching birds apart, each by its give (at least `least`); true if they all came clear */
+function spaceOut(birds: Posed[], least: number): boolean {
+  for (let round = 0; round < 24; round++) {
+    let worst = 0;
+    for (let i = 0; i < birds.length; i++) {
+      for (let j = i + 1; j < birds.length; j++) {
+        const a = birds[i];
+        const b = birds[j];
+        const { depth, nx, nz } = overlapOf(a, b);
+        if (depth <= 0) continue;
+        let ga = Math.max(least, a.give);
+        let gb = Math.max(least, b.give);
+        // (two birds that won't give way: both must, a little)
+        if (ga + gb < 1e-3) ga = gb = 0.5;
+        const share = depth / (ga + gb);
+        a.pos.x += nx * share * ga;
+        a.pos.z += nz * share * ga;
+        b.pos.x -= nx * share * gb;
+        b.pos.z -= nz * share * gb;
+        worst = Math.max(worst, depth);
+      }
+    }
+    if (worst <= 1e-4) return true;
+  }
+  return false;
+}
+
+/**
+ * Keeps every bird clear of every other: birds that would touch are pushed apart, the one more
+ * ready to give way (a bird walking or waiting) moving more than one playing its key (which never
+ * moves). It works from the poses at t alone, so a frame is the same however it's reached, and a
+ * push grows and shrinks smoothly as birds come close and part (they step round each other).
+ */
+export function solveSpacing(birds: Posed[]) {
+  // First the birds that give way move; if that can't settle it (one boxed in), the birds playing
+  // budge a little too (a small shift on their key, unseen beside a bird popping up)
+  if (spaceOut(birds, 0) || spaceOut(birds, 0.2)) return;
+  // Last resort: a bird boxed in (between birds playing their keys) flutters up over the one it
+  // still touches, rather than through it
+  for (let round = 0; round < 4; round++) {
+    let lifted = false;
+    for (let i = 0; i < birds.length; i++) {
+      for (let j = i + 1; j < birds.length; j++) {
+        const { depth } = overlapOf(birds[i], birds[j]);
+        if (depth <= 1e-4) continue;
+        const [up, under] = birds[i].give >= birds[j].give ? [birds[i], birds[j]] : [birds[j], birds[i]];
+        up.lift = under.pos.y + under.lift + BIRD_SHAPE.HEIGHT * under.size + GAP - up.pos.y;
+        up.flutter = true;
+        lifted = true;
+      }
+    }
+    if (!lifted) return;
+  }
+}
+
+/** Every bird's pose at t, kept clear of one another (what a frame draws) */
+export function posedAt(plan: PigeonPlanResult, t: number): Posed[] {
+  const posed = plan.pigeons.map((p) => rawPose(p, t));
+  solveSpacing(posed);
+  return posed;
+}
+
+/** Puts a model in the pose worked out for it */
+export function applyPose(p: PigeonModel, b: Posed, t: number, seed: number) {
+  const { leg, k, pos, lift, walkPhase, bob, peck } = b;
+  const flap = b.flutter ? 0.5 + 0.5 * Math.sin(t * 50) : b.flap;
+  p.root.position.set(pos.x, pos.y + lift, pos.z);
+  p.root.rotation.y = b.heading;
   // Legs: a step cycle while walking, tucked while flying
   const swing = leg.kind === 'walk' ? Math.sin(walkPhase) * 0.55 : 0;
   p.legs[0].rotation.z = swing;
@@ -469,20 +685,19 @@ function pose(p: PigeonModel, plan: PigeonPlan, t: number) {
   p.legs.forEach((l) => (l.scale.y = 1 - tucked * 0.6));
   p.body.position.y = 0.55 + (leg.kind === 'walk' ? Math.abs(Math.sin(walkPhase)) * 0.04 : 0);
   p.body.rotation.z = leg.kind === 'walk' ? 0.08 : leg.kind === 'fly' ? 0.2 : 0;
-  // Head: thrust forward then held (walking), down for a peck
+  // Head: thrust forward then held (walking), down for a peck; a little look around otherwise
   const thrust = leg.kind === 'walk' ? (bob < 0.5 ? ease(bob * 2) : 1 - ease((bob - 0.5) * 2)) : 0;
   p.neck.position.x = 0.45 + thrust * 0.16;
   p.neck.rotation.z = -peck * 0.9;
   p.head.rotation.z = -peck * 0.4 + Math.sin(t * 2.3 + seed) * 0.05;
+  p.head.rotation.y = Math.sin(t * 1.3 + seed) * 0.35;
   // Wings
   p.wings[0].rotation.x = -flap * 1.4;
   p.wings[1].rotation.x = flap * 1.4;
   // The shadow stays on whatever's under the bird
   const ground = groundAt(pos.x, pos.z);
   p.shadow.position.set(0, (ground - p.root.position.y) / p.root.scale.y + 0.02, 0);
-  const s = 1 / (1 + (p.root.position.y - ground) * 0.25);
-  p.shadow.scale.setScalar(s);
-  (p.shadow.material as T.MeshBasicMaterial).opacity = 0.22;
+  p.shadow.scale.setScalar(1 / (1 + (p.root.position.y - ground) * 0.25));
 }
 
 /** How far a note's key is down at t: quickly down, held, back up */
@@ -548,10 +763,10 @@ export class PigeonScene {
 
     // Units across the frame's narrow side: about 14 white keys in a portrait frame, 22 in a wide one
     const aspect = opts.width / opts.height;
-    const across = opts.across ?? (opts.tall ? 20 : 21);
+    const across = opts.across ?? (opts.tall ? 16 : 17);
     this.view = aspect < 1 ? { w: across, h: across / aspect } : { w: across * aspect, h: across };
     this.tilt = opts.tall ? -0.3 : 0.12;
-    this.alongKeys = opts.tall ? 26 : 40;
+    this.alongKeys = opts.tall ? 21 : 32;
     this.centerY = opts.centerY ?? 0.5;
     this.camera = new T.OrthographicCamera(-this.view.w / 2, this.view.w / 2, this.view.h / 2, -this.view.h / 2, -200, 400);
 
@@ -565,7 +780,7 @@ export class PigeonScene {
     const shadowMat = new T.MeshBasicMaterial({ color: 0x1b1a24, transparent: true, opacity: 0.22, depthWrite: false });
     this.disposables.push(shadowGeo, shadowMat);
     for (const p of this.plan.pigeons) {
-      const m = makePigeon(p.seed, shadowGeo, shadowMat);
+      const m = makePigeon(p.seed, p.size, shadowGeo, shadowMat);
       this.scene.add(m.root);
       this.birds.push(m);
     }
@@ -720,9 +935,15 @@ export class PigeonScene {
     }
     for (; g < this.glows.length; g++) this.glows[g].mesh.visible = false;
 
-    this.plan.pigeons.forEach((p, i) => pose(this.birds[i], p, t));
+    const posed = this.posed(t);
+    posed.forEach((b, i) => applyPose(this.birds[i], b, t, this.plan.pigeons[i].seed));
     this.renderer.render(this.scene, this.camera);
     return this.canvas;
+  }
+
+  /** Every bird's pose at t, kept clear of one another */
+  posed(t: number): Posed[] {
+    return posedAt(this.plan, t);
   }
 
   /** How many birds are on the keys at t (for the "on the keys" count) */
