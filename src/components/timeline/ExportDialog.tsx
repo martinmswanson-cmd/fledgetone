@@ -76,8 +76,8 @@ interface ExportSettings {
   format: AudioFormat;
   /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
   loopFile: boolean;
-  /** Video: the picture (Showcase, the notes on a piano roll; Lines, a line per instrument; or a spectrum style) and its shape */
-  picture: 'showcase' | 'lines' | SkinId;
+  /** Video: the picture (Showcase, the notes on a piano roll; Lines, a line per instrument; Pigeons, birds playing a big keyboard; or a spectrum style) and its shape */
+  picture: 'showcase' | 'lines' | 'pigeons' | SkinId;
   shape: VideoShape;
   /** Video: frames a second (60: smooth scrolling notes) */
   fps: VideoFps;
@@ -132,7 +132,7 @@ function loadSettings(): ExportSettings {
       target: oneOf(r.target, LOUDNESS_TARGETS.map((t) => t.id), d.target),
       format: oneOf(r.format, AUDIO_FORMATS, d.format),
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
-      picture: r.picture === 'showcase' || r.picture === 'lines' || isSkin(r.picture) ? r.picture : d.picture,
+      picture: r.picture === 'showcase' || r.picture === 'lines' || r.picture === 'pigeons' || isSkin(r.picture) ? r.picture : d.picture,
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
       fps: oneOf(r.fps, [30, 60] as const, d.fps),
       marks: readMarks(r.marks),
@@ -558,11 +558,14 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
         // Lines: the same notes as each instrument's line, and the chords they make (spelled in the song's key)
         const linesNotes = !footage && settings.picture === 'lines' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
+        // Pigeons: the same notes, played by birds on a big keyboard
+        const pigeons = !footage && settings.picture === 'pigeons' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo), opts.meter) : undefined;
         const lines = linesNotes ? { data: linesData(linesNotes), chords: settings.linesLook.chord ? lineChords(linesNotes, detectKey(clips, tracks)) : [], look: settings.linesLook } : undefined;
         const blob = await renderVideo({
           footage,
-          skin: settings.picture === 'showcase' || settings.picture === 'lines' ? 'bars' : settings.picture,
+          skin: settings.picture === 'showcase' || settings.picture === 'lines' || settings.picture === 'pigeons' ? 'bars' : settings.picture,
           lines,
+          pigeons,
           shape: settings.shape,
           fps: settings.fps,
           showcase,
@@ -837,7 +840,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   ? 'the notes of every track on a piano roll that scrolls past the playhead, each lighting up as it plays, the tracks playing'
                   : settings.picture === 'lines'
                     ? 'a glowing line for each instrument that bends and changes colour with the notes it plays'
-                    : 'a spectrum that moves with the music'}
+                    : settings.picture === 'pigeons'
+                      ? 'pigeons walking a big piano keyboard, standing on each key as it plays and lighting it in its track\'s colour'
+                      : 'a spectrum that moves with the music'}
                 {settings.picture === 'lines' ? '' : ", the whole song's waveform with a playhead"}, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'phone video apps' : 'video sites, socials or a game\'s trailer'}. It's drawn faster than real time.
               </p>
             )}
@@ -848,10 +853,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={settings.picture}
                   onChange={(e) => update({ picture: e.target.value as ExportSettings['picture'] })}
                   className="h-7 bg-forge-bg border border-forge-border rounded px-1"
-                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
+                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : settings.picture === 'pigeons' ? 'Low-poly pigeons walk and hop across a big keyboard, standing on each key as it plays (drums are left out). A first try: it may change' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
                 >
                   <option value="showcase">Showcase: the notes playing</option>
                   <option value="lines">Lines: each instrument's path</option>
+                  <option value="pigeons">Pigeons: birds on the keys (preview)</option>
                   {SPECTRUM_SKINS.map((k) => (
                     <option key={k.id} value={k.id}>
                       Spectrum: {k.name}

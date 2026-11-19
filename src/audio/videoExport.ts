@@ -9,6 +9,7 @@ import type { LinesData } from '../store/lines';
 import type { ChordSpan } from '../store/linesChords';
 import { BLIND_TRIM_DB, holdDecodedPeak, streamingTruePeak, type HeldReport } from './decodedPeak';
 import { LIMITER_CEILING_DBTP } from './effects/limiter';
+import { PigeonScene } from './pigeonScene';
 
 /**
  * A song as an MP4 video, for video sites, socials or a game's trailer: the rendered mix as its sound,
@@ -28,7 +29,9 @@ import { LIMITER_CEILING_DBTP } from './effects/limiter';
  * Made to survive a social site's own re-encoding: a high bitrate, and a background with a fine
  * grain baked in (drawn once), so its dark gradient can't break into bands or blocks.
  * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts);
- * Lines draws a glowing line per instrument, bending with its pitch (linesDraw.ts).
+ * Lines draws a glowing line per instrument, bending with its pitch (linesDraw.ts). Pigeons (a
+ * prototype) has low-poly pigeons walking a big keyboard and standing on each key as it plays
+ * (pigeonScene.ts, in three.js): a light picture, so the text over it is drawn in dark ink.
  */
 
 export type VideoShape = 'wide' | 'tall';
@@ -94,6 +97,8 @@ export interface VideoOptions {
    * and has no waveform (marks.waveform is ignored).
    */
   lines?: { data: LinesData; chords: ChordSpan[]; look: LinesLook };
+  /** The song's notes: pigeons play them on a big keyboard (pigeonScene.ts), filling the whole frame */
+  pigeons?: ShowcaseData;
   /** Frames a second (30 if not given) */
   fps?: VideoFps;
   /** What's drawn around the picture (all of it if not given) */
@@ -393,6 +398,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
 
   // Whatever happens (a failure, a cancel), the encoder and the footage are let go of
   let footage: HTMLVideoElement | null = null;
+  let pigeons: PigeonScene | null = null;
   try {
     // The sound, encoded first (and again, turned down, if its decoded peaks passed the ceiling)
     const left = channels[0];
@@ -440,6 +446,11 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const total = Math.ceil(seconds * fps);
     footage = opts.footage ? await openVideo(opts.footage.url) : null;
     const skinMemory: SkinMemory = {};
+    pigeons = opts.pigeons && !footage ? new PigeonScene(opts.pigeons, { width: size.w, height: size.h, tall, centerY: (picture.y + picture.h / 2) / H - (tall ? 0 : 0.08) }) : null;
+    // The text's colours: light on the dark backgrounds, dark ink on the pigeons' pale floor
+    const ink = pigeons
+      ? { title: '#1f1d26', sub: '#5b5866', wave: '#cdc8bf', played: '#7c3aed', head: '#1f1d26', section: '#7c3aed', mark: '#7a7684' }
+      : { title: '#e4e4e7', sub: '#9ca3af', wave: '#3a3a44', played: '#06b6d4', head: '#f59e0b', section: '#f59e0b', mark: '#6b7280' };
 
     const encodeFrame = async (f: number, t: number) => {
       const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
@@ -477,7 +488,8 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       }
       // (in pixels: the grain is one per pixel)
       g.setTransform(1, 0, 0, 1, 0, 0);
-      g.drawImage(background, 0, 0);
+      // (the pigeons' scene is the whole frame, its floor the background)
+      g.drawImage(pigeons ? pigeons.render(t) : background, 0, 0);
       g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
 
       // Title block (a subtitle on its own takes the title's place)
@@ -485,18 +497,27 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       if (heading) {
         if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
         if (marks.title) {
-          g.fillStyle = '#e4e4e7';
+          g.fillStyle = ink.title;
           g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
           g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
         }
         if (marks.subtitle) {
-          g.fillStyle = '#9ca3af';
+          g.fillStyle = ink.sub;
           g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
           g.fillText(opts.subtitle, stripX + 96, titleY + (marks.title ? 76 : 44), stripW - 96);
         }
       }
 
-      if (opts.lines) {
+      if (pigeons) {
+        // (drawn above, as the background) and how many birds are on the keys
+        const on = pigeons.onKeys(t);
+        g.fillStyle = ink.sub;
+        g.font = '500 20px system-ui, -apple-system, Segoe UI, sans-serif';
+        const count = on === 1 ? '1 pigeon on the keys' : `${on} pigeons on the keys`;
+        // (portrait: over the waveform; widescreen: under the title, where the keys leave the floor clear)
+        if (tall || !heading) g.fillText(count, stripX, waveform ? waveY - 50 : footY - 40);
+        else g.fillText(count, stripX + 96, titleY + 112);
+      } else if (opts.lines) {
         // A line per instrument, scrolling past its dot (linesDraw.ts)
         drawLines(g, opts.lines.data, picture, t, { secondsShown: tall ? 6 : 11, headAt: tall ? 0.6 : 0.7, look: opts.lines.look, section: marks.sections, sections: opts.sections, chords: opts.lines.chords, duration: seconds });
       } else if (opts.showcase) {
@@ -514,26 +535,26 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
         for (let c = 0; c < wave.length; c++) {
           const x = stripX + c * 2;
           const h = Math.max(1, wave[c] * waveH);
-          g.fillStyle = x < stripX + played ? '#06b6d4' : '#3a3a44';
+          g.fillStyle = x < stripX + played ? ink.played : ink.wave;
           g.fillRect(x, waveY - h / 2, 1.5, h);
         }
-        g.fillStyle = '#f59e0b';
+        g.fillStyle = ink.head;
         g.fillRect(stripX + played - 1, waveY - waveH / 2 - 8, 2, waveH + 16);
       }
 
       // Section and time
       const section = footSection ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
       g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
-      g.fillStyle = '#f59e0b';
+      g.fillStyle = ink.section;
       if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);
       if (marks.time) {
-        g.fillStyle = '#9ca3af';
+        g.fillStyle = ink.sub;
         g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
         const time = `${clock(t)} / ${clock(seconds)}`;
         g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
       }
       // Where it was made (portrait videos are shared on their own, away from any description)
-      g.fillStyle = '#6b7280';
+      g.fillStyle = ink.mark;
       g.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace';
       const mark = 'made with fledgetone.com';
       g.fillText(mark, (W - g.measureText(mark).width) / 2, footY + 34);
@@ -549,6 +570,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     return new Blob([target.buffer!], { type: 'video/mp4' });
   } finally {
     if (videoEncoder.state !== 'closed') videoEncoder.close();
+    pigeons?.dispose();
     if (footage) {
       footage.removeAttribute('src');
       footage.load();

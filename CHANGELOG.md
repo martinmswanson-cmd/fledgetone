@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased — Pigeons video (preview)
+
+- **A new video picture, Pigeons** (Export › Video › Picture): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. It's a first try: how the birds share out the notes is still being worked on.
+
 ## 2026.11.18-4 — Every screenshot in the guide and the lessons retaken
 
 - **Every screenshot in the guide and the lessons is new**: the pictures on fledgetone.com/guide and fledgetone.com/learn were retaken from the studio as it is now. Some were from before the starter songs changed (one showed a starter that no longer exists) and before the header and the File menu grew.
