@@ -10,6 +10,7 @@ import type { ChordSpan } from '../store/linesChords';
 import { BLIND_TRIM_DB, holdDecodedPeak, streamingTruePeak, type HeldReport } from './decodedPeak';
 import { LIMITER_CEILING_DBTP } from './effects/limiter';
 import { PigeonScene } from './pigeonScene';
+import type { PigeonLook } from './pigeonLooks';
 
 /**
  * A song as an MP4 video, for video sites, socials or a game's trailer: the rendered mix as its sound,
@@ -99,6 +100,8 @@ export interface VideoOptions {
   lines?: { data: LinesData; chords: ChordSpan[]; look: LinesLook };
   /** The song's notes: pigeons play them on a big keyboard (pigeonScene.ts), filling the whole frame */
   pigeons?: ShowcaseData;
+  /** Which backgrounds and camera angles the pigeons' scene uses, and when it changes between them */
+  pigeonLook?: PigeonLook;
   /** Frames a second (30 if not given) */
   fps?: VideoFps;
   /** What's drawn around the picture (all of it if not given) */
@@ -446,11 +449,13 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const total = Math.ceil(seconds * fps);
     footage = opts.footage ? await openVideo(opts.footage.url) : null;
     const skinMemory: SkinMemory = {};
-    pigeons = opts.pigeons && !footage ? new PigeonScene(opts.pigeons, { width: size.w, height: size.h, tall, centerY: (picture.y + picture.h / 2) / H - (tall ? 0 : 0.08) }) : null;
-    // The text's colours: light on the dark backgrounds, dark ink on the pigeons' pale floor
-    const ink = pigeons
-      ? { title: '#1f1d26', sub: '#5b5866', wave: '#cdc8bf', played: '#7c3aed', head: '#1f1d26', section: '#7c3aed', mark: '#7a7684' }
-      : { title: '#e4e4e7', sub: '#9ca3af', wave: '#3a3a44', played: '#06b6d4', head: '#f59e0b', section: '#f59e0b', mark: '#6b7280' };
+    pigeons = opts.pigeons && !footage ? new PigeonScene(opts.pigeons, { width: size.w, height: size.h, tall, centerY: (picture.y + picture.h / 2) / H - (tall ? 0 : 0.08), look: opts.pigeonLook }) : null;
+    // The text's colours: light on the dark backgrounds, dark ink on the pigeons' pale floors
+    // (their dark ones, the night street and space, take light text with a soft shade behind it)
+    const LIGHT_INK = { title: '#e4e4e7', sub: '#9ca3af', wave: '#3a3a44', played: '#06b6d4', head: '#f59e0b', section: '#f59e0b', mark: '#6b7280' };
+    const DARK_INK = { title: '#1f1d26', sub: '#4b4856', wave: 'rgba(40, 36, 52, 0.22)', played: '#7c3aed', head: '#1f1d26', section: '#6d28d9', mark: '#5f5b6a' };
+    const NIGHT_INK = { ...LIGHT_INK, sub: '#c3c7d4', wave: 'rgba(255, 255, 255, 0.2)', mark: '#a3a8b8' };
+    let ink = LIGHT_INK;
 
     const encodeFrame = async (f: number, t: number) => {
       const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
@@ -488,8 +493,16 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       }
       // (in pixels: the grain is one per pixel)
       g.setTransform(1, 0, 0, 1, 0, 0);
+      g.shadowBlur = 0;
       // (the pigeons' scene is the whole frame, its floor the background)
       g.drawImage(pigeons ? pigeons.render(t) : background, 0, 0);
+      if (pigeons) {
+        // (and a soft halo of the floor's own shade round the text, so it reads over the floor's details)
+        const dark = pigeons.darkAt(t);
+        ink = dark ? NIGHT_INK : DARK_INK;
+        g.shadowColor = dark ? 'rgba(8, 8, 24, 0.85)' : 'rgba(255, 255, 255, 0.75)';
+        g.shadowBlur = (9 * size.w) / W;
+      }
       g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
 
       // Title block (a subtitle on its own takes the title's place)

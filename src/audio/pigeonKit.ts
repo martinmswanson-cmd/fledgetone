@@ -5,3 +5,5 @@
  */
 export { PigeonScene, planPigeons, posedAt, overlapOf, BIRD_SHAPE, PIGEON_FLOOR } from './pigeonScene';
 export type { PigeonSceneOptions, PigeonPlanResult, Posed } from './pigeonScene';
+export { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, BACKGROUND_FADE, everyBars, backgroundAt, cameraAt, cleanLook } from './pigeonLooks';
+export type { BackgroundId, CameraId, PigeonBackground, PigeonCamera, PigeonLook } from './pigeonLooks';

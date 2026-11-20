@@ -21,6 +21,9 @@ How the birds behave:
   step round each other or fly over; wings open only as far as the birds nearby leave room.
 - Birds with nothing to play get down and wait on the floor, pecking.
 - The camera follows what's playing, and pulls back when the low and high parts are far apart.
+- Nine backgrounds (a plaza, a park, a rooftop at sunset, a night street, snow, space, a future
+  city, above the clouds, a beach) and five camera angles, and the picture can change between the
+  ones you choose as the song goes: at times you give, such as every four bars or at each section.
 - Most birds are blue-grey; the odd one is dark, red-brown or pied. The same song always gets the
   same birds doing the same things.
 
@@ -71,19 +74,38 @@ frame();
 
 | In `options` | What it does |
 | --- | --- |
-| `shape` | `'tall'` (the keys run corner to corner), `'wide'` (across the middle), or `'auto'`: tall when the canvas is taller than it's wide (`'auto'` if left out) |
-| `floor` | The floor's colour, any CSS colour (`PIGEON_FLOOR`, a pale grey, if left out). The birds have a dark outline, so they read on pale and mid colours |
-| `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (about 16); a smaller number makes everything bigger |
+| `shape` | `'tall'` (the keys run up the canvas), `'wide'` (across it), or `'auto'`: tall when the canvas is taller than it's wide (`'auto'` if left out) |
+| `backgrounds` | The backgrounds to use, by id, in the order they appear (`['plaza']` if left out) |
+| `backgroundAt` | When it changes to the next background, in seconds from the song's start: round and round the list, each fading into the next. Never, if left out |
+| `cameras` | The camera angles to use, by id, in order (`['diagonal']` if left out) |
+| `cameraAt` | When it cuts to the next angle, in seconds. Never, if left out |
+| `floor` | A floor colour of your own, any CSS colour, in place of the backgrounds' |
+| `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (each angle has its own, about 16); a smaller number makes everything bigger |
 | `centerY` | Where the keyboard's middle sits, from the top of the canvas, from 0 to 1 (0.5) |
+
+| Background | What it is |
+| --- | --- |
+{{BACKGROUNDS}}
+
+| Camera angle | What it is |
+| --- | --- |
+{{CAMERAS}}
+
+`everyBars(barTimes, n)` gives the times of every `n`th bar line, for `backgroundAt` and `cameraAt`:
+`cameraAt: everyBars(bars, 4)` cuts every four bars. For changes at a song's sections, give the
+times its sections start.
 
 | Call | What it does |
 | --- | --- |
 | `createPigeons(canvas, song, options?)` | Works out every bird's part once, and returns the calls below. The canvas must be one nothing has drawn on yet: it's given a WebGL context |
 | `draw(time)` | Draws the picture at `time` seconds, at the size the canvas has then |
 | `onKeys(time)` | How many pigeons are standing on a key, playing it, at `time` |
-| `setFloor(color)` | Changes the floor's colour; the next `draw` uses it |
+| `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras` or `cameraAt` (only the ones you give); the next `draw` uses them |
+| `isDark(time)` | Whether the floor is dark at `time`: for choosing the colour of anything you draw over it |
+| `setFloor(color)` | A floor colour of your own in place of the backgrounds' (`null`: theirs again); the next `draw` uses it |
 | `duration` | The song's length |
 | `dispose()` | Lets go of the WebGL context and everything made for it |
+| `PIGEON_BACKGROUNDS`, `PIGEON_CAMERAS` | The backgrounds and angles there are, `{ id, name, blurb }` each (and their colours and angles), to fill a menu from |
 
 Every picture is drawn from the time alone, with nothing remembered between calls: draw frames in
 any order, skip frames, or draw the same time twice. For a sharp picture, give the canvas as many

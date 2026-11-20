@@ -312,15 +312,23 @@ test('tools: the pigeons bundle is one module with three.js inside and its licen
   const wanted = /import \{([^}]+)\} from '\.\/pigeon-scene\.js'/.exec(text('pigeon-keys.js'))[1].split(',').map((n) => n.trim());
   for (const name of wanted) assert.ok(name in scene, `pigeon-scene.js exports ${name}`);
   assert.match(text('pigeon-keys.js'), /export function createPigeons\(/);
-  assert.match(text('index.html'), /import \{ createPigeons \} from '\.\/pigeon-keys\.js'/);
+  assert.match(text('index.html'), /import \{ createPigeons, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars \} from '\.\/pigeon-keys\.js'/);
   // The parts that need no canvas work from the bundle as shipped: a chord's three birds, apart
   const note = (start, end, midi) => ({ start, end, midi, track: 0, color: '#888', drum: false });
   const plan = scene.planPigeons({ notes: [note(1, 3, 60), note(1, 3, 61), note(1, 3, 62)], tracks: [], bars: [] });
   const posed = scene.posedAt(plan, 2);
   assert.equal(posed.filter((b) => b.leg.kind === 'press').length, 3);
   for (let i = 0; i < posed.length; i++) for (let j = i + 1; j < posed.length; j++) assert.ok(scene.overlapOf(posed[i], posed[j]).depth < 0.019);
+  // Every background and camera angle is in the README, by its id, and the example fills its menus from the lists
+  for (const x of [...scene.PIGEON_BACKGROUNDS, ...scene.PIGEON_CAMERAS]) assert.ok(readme.includes(`\`'${x.id}'\``), `the README lists ${x.id}`);
+  assert.deepEqual(scene.everyBars([0, 2, 4, 6, 8], 2), [4, 8]);
+  // The example's script is sound JavaScript (a name declared twice, say, would stop the page)
+  const script = /<script type="module">([\s\S]*?)<\/script>/.exec(text('index.html'))[1];
+  const { SourceTextModule } = await import('node:vm').catch(() => ({}));
+  if (SourceTextModule) new SourceTextModule(script);
+  else assert.doesNotThrow(() => new Function(script.replace(/^\s*import .*$/m, 'const { createPigeons, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars } = {};')));
   // The helper's documented calls are the ones it returns
-  for (const call of ['draw(time)', 'onKeys(time)', 'setFloor(color)', 'dispose()']) {
+  for (const call of ['draw(time)', 'onKeys(time)', 'setLook(changes)', 'isDark(time)', 'setFloor(color)', 'dispose()']) {
     assert.ok(readme.includes(`\`${call}\``), `the README documents ${call}`);
     assert.match(text('pigeon-keys.js'), new RegExp(`\\b${call.replace(/\(.*/, '')}\\(`));
   }

@@ -47,6 +47,7 @@ import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } fro
 import { showcaseData } from '../../store/showcase';
 import { DEFAULT_LINES_LOOK, type LinesLook } from '../../audio/linesDraw';
 import { linesData } from '../../store/lines';
+import { DEFAULT_PIGEON_CHOICES, lookFor, MOST_BARS, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, readPigeonChoices, type ChangeWhen, type PigeonChoices } from '../../audio/pigeonLooks';
 import { lineChords } from '../../store/linesChords';
 import { detectKey } from '../../store/songKey';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
@@ -88,12 +89,14 @@ interface ExportSettings {
   showcaseHits: ShowcaseHits;
   /** Lines: which of its extras it draws (the section's name is marks.sections) */
   linesLook: LinesLook;
+  /** Pigeons: which backgrounds and camera angles, and when the video changes between them */
+  pigeons: PigeonChoices;
   /** Mixdown: also the version without the lead melody, and the one without drums (songVersions.ts) */
   underscore: boolean;
   noDrums: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, marks: DEFAULT_VIDEO_MARKS, showcaseLayout: 'auto', showcaseHits: 'sparkles', linesLook: DEFAULT_LINES_LOOK, underscore: false, noDrums: false };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, marks: DEFAULT_VIDEO_MARKS, showcaseLayout: 'auto', showcaseHits: 'sparkles', linesLook: DEFAULT_LINES_LOOK, pigeons: DEFAULT_PIGEON_CHOICES, underscore: false, noDrums: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -139,6 +142,7 @@ function loadSettings(): ExportSettings {
       showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
       showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
       linesLook: readLinesLook(r.linesLook),
+      pigeons: readPigeonChoices(r.pigeons),
       underscore: typeof r.underscore === 'boolean' ? r.underscore : d.underscore,
       noDrums: typeof r.noDrums === 'boolean' ? r.noDrums : d.noDrums,
     };
@@ -567,6 +571,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           skin: settings.picture === 'showcase' || settings.picture === 'lines' || settings.picture === 'pigeons' ? 'bars' : settings.picture,
           lines,
           pigeons,
+          pigeonLook: pigeons ? lookFor(settings.pigeons, pigeons.bars, sections.map((s) => s.at)) : undefined,
           shape: settings.shape,
           fps: settings.fps,
           showcase,
@@ -942,6 +947,73 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   ))}
                 </div>
                 <span className="text-forge-muted">Each instrument with notes draws a line. Audio clips have no notes, so they have no line.</span>
+              </div>
+            )}
+            {!(refVideo && useFootage) && settings.picture === 'pigeons' && (
+              <div className="grid gap-3">
+                {(
+                  [
+                    ['Backgrounds', 'backgrounds', 'backgroundWhen', 'backgroundBars', PIGEON_BACKGROUNDS, 'background', 'One fades into the next'],
+                    ['Camera angles', 'cameras', 'cameraWhen', 'cameraBars', PIGEON_CAMERAS, 'camera angle', 'It cuts from one to the next'],
+                  ] as const
+                ).map(([label, list, when, bars, all, thing, how]) => {
+                  const ticked = settings.pigeons[list] as string[];
+                  const set = (changes: Partial<PigeonChoices>) => update({ pigeons: { ...settings.pigeons, ...changes } });
+                  return (
+                    <div key={list} className="grid gap-1.5" role="group" aria-label={label}>
+                      <span className="text-forge-text">{label}</span>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {all.map((item) => (
+                          <label key={item.id} className="flex items-center gap-1.5" title={item.blurb}>
+                            <input
+                              type="checkbox"
+                              checked={ticked.includes(item.id)}
+                              // (the last one ticked stays: the video needs one)
+                              disabled={ticked.length === 1 && ticked[0] === item.id}
+                              onChange={(e) => set({ [list]: all.map((x) => x.id).filter((id) => (id === item.id ? e.target.checked : ticked.includes(id))) })}
+                              className="accent-cyan-400"
+                            />
+                            {item.name}
+                          </label>
+                        ))}
+                      </div>
+                      {ticked.length > 1 ? (
+                        <label className="flex flex-wrap items-center gap-2">
+                          Change
+                          <select
+                            value={settings.pigeons[when]}
+                            onChange={(e) => set({ [when]: e.target.value as ChangeWhen })}
+                            className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
+                            aria-label={`When the ${thing} changes`}
+                            title={`When the video goes to the next ${thing} you've ticked, in the order above, round and round. ${how}.`}
+                          >
+                            <option value="sections">at each section (your markers)</option>
+                            <option value="bars">every so many bars</option>
+                            <option value="none">never (the first one only)</option>
+                          </select>
+                          {settings.pigeons[when] === 'bars' && (
+                            <>
+                              <input
+                                type="number"
+                                min={1}
+                                max={MOST_BARS}
+                                step={1}
+                                value={settings.pigeons[bars]}
+                                onChange={(e) => set({ [bars]: Math.min(MOST_BARS, Math.max(1, Math.round(Number(e.target.value) || 1))) })}
+                                className="h-7 w-16 bg-forge-bg border border-forge-border rounded px-1.5 text-forge-text"
+                                aria-label={`Bars between ${thing} changes`}
+                              />
+                              bars
+                            </>
+                          )}
+                          {settings.pigeons[when] === 'sections' && markers.length === 0 && <span className="text-forge-muted">This song has no markers yet: add some, or change every so many bars.</span>}
+                        </label>
+                      ) : (
+                        <span className="text-forge-muted">Tick more than one and the video changes between them as the song goes.</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {!(refVideo && useFootage) && settings.picture === 'showcase' && (

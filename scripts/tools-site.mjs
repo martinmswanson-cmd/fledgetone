@@ -366,7 +366,7 @@ export const TOOLS = [
     title: 'Pigeons on the keys',
     color: '--green',
     who: 'For web developers and music app makers',
-    what: 'The studio\'s Pigeons video picture for any web page: a song played by low-poly pigeons on a big piano keyboard, a bird on each key as it plays, and no two birds ever touching. Give it the notes and a time; it draws that moment.',
+    what: 'The studio\'s Pigeons video picture for any web page: a song played by low-poly pigeons on a big piano keyboard, a bird on each key as it plays, and no two birds ever touching, with nine backgrounds and five camera angles to change between. Give it the notes and a time; it draws that moment.',
     inZip: ['The pigeons as a JavaScript module (WebGL, with three.js inside), and a helper for a canvas', 'An example page: a small song whose pigeons follow the audio clock', 'Its TypeScript source'],
   },
   {
@@ -836,7 +836,7 @@ export async function pigeonKeys() {
   const libs = packageLicences(packages);
   if (libs.some((l) => l.name !== 'three')) throw new Error(`pigeonKit.ts now takes in more than three.js (${libs.map((l) => l.name).join(', ')}): check their licences suit an MIT tool`);
   const kit = await importCode(code);
-  for (const name of ['PigeonScene', 'PIGEON_FLOOR', 'planPigeons', 'posedAt']) if (!(name in kit)) throw new Error(`tools/pigeon-keys imports or documents ${name} from pigeon-scene.js: pigeonKit.ts no longer exports it`);
+  for (const name of ['PigeonScene', 'PIGEON_BACKGROUNDS', 'PIGEON_CAMERAS', 'everyBars', 'planPigeons', 'posedAt']) if (!(name in kit)) throw new Error(`tools/pigeon-keys imports or documents ${name} from pigeon-scene.js: pigeonKit.ts no longer exports it`);
   const top = '// Pigeons on the keys. Part of Fledgetone (https://fledgetone.com), © Martin Swanson,\n// MIT licence. Bundled from src/audio/pigeonScene.ts, with three.js inside (THIRD-PARTY-LICENSES.txt)';
   const scene = Buffer.from(`${top}.\n${code}`);
   const THIRD_PARTY = [
@@ -850,7 +850,14 @@ export async function pigeonKeys() {
     .map((l) => `${l.name} ${l.version} (${l.licence})\n${'='.repeat(60)}\n${l.text}`)
     .join('\n\n\n')}\n`;
   return {
-    readme: fill(readText('tools/pigeon-keys/README.md'), { SCENE_SIZE: formatSize(scene.length), SCENE_GZIP: formatSize(gzipSync(scene).length), THIRD_PARTY }),
+    readme: fill(readText('tools/pigeon-keys/README.md'), {
+      SCENE_SIZE: formatSize(scene.length),
+      SCENE_GZIP: formatSize(gzipSync(scene).length),
+      THIRD_PARTY,
+      // (the lists as the scene itself has them)
+      BACKGROUNDS: kit.PIGEON_BACKGROUNDS.map((b) => `| \`'${b.id}'\` | ${cell(b.name)}: ${cell(b.blurb.charAt(0).toLowerCase() + b.blurb.slice(1))} |`).join('\n'),
+      CAMERAS: kit.PIGEON_CAMERAS.map((c) => `| \`'${c.id}'\` | ${cell(c.name)}: ${cell(c.blurb.charAt(0).toLowerCase() + c.blurb.slice(1))} |`).join('\n'),
+    }),
     files: [
       { name: 'pigeon-keys.js', data: read('tools/pigeon-keys/pigeon-keys.js') },
       { name: 'pigeon-scene.js', data: scene },

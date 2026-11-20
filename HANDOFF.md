@@ -320,11 +320,19 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   checks all of it at 60 frames a second, and that the footprint holds the model in every pose:
   **run it after any change to the model, the planner or the poses**. A bird playing the same key
   again hops on the spot (`REHOP_TIME`); a jump of `FLAP_DISTANCE` or more is flown, wings out.
+  **Backgrounds and camera angles** are data in `src/audio/pigeonLooks.ts` (no three.js: nine
+  backgrounds, five angles, `lookFor` turning the dialog's choices into change times from the bar
+  lines and markers; `scripts/pigeonLooks.test.mjs`). The scene fades one background into the next
+  (`dress`: floor colour, light, and each background's flat floor details from `floorDetails`,
+  which lie on the floor so nothing stands in a bird's way) and cuts between angles (`aim`: an
+  angle is where the camera stands and how steeply the keyboard runs across the frame; how far it
+  pulls back is worked out from that). To add one, add it to the list (and, for a background, a
+  case in `floorDetails`): the dialog, the tool and its README pick it up.
   At most 30 birds: denser music still lights every key. Drums aren't played. The same scene is
   the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
   minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with
-  three's licence in the zip). Not done: drums (a pad beside the keyboard?), a dark floor, a look
-  at it on a phone's GPU.
+  three's licence in the zip). Not done: drums (a pad beside the keyboard?), a look at it on a phone's GPU; from some
+  angles the keyboard passes under the title (its halo keeps it readable).
 - **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no
   pitch to follow). `lines.ts` and `linesDraw.ts` read no app state, so they can be lifted into a

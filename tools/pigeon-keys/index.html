@@ -9,21 +9,24 @@
   <style>
     body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; background: #121214; color: #e4e4e7; }
     canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #e9e6e1; border-radius: 6px; }
-    button { font: inherit; padding: .5rem 1rem; margin: .5rem .5rem .5rem 0; }
+    button, select { font: inherit; padding: .5rem 1rem; margin: .5rem .5rem .5rem 0; }
+    label { margin-right: .5rem; white-space: nowrap; }
     input[type=range] { width: 100%; }
   </style>
 </head>
 <body>
   <h1>Pigeons on the keys</h1>
-  <p>A made-up song of three parts, played with plain oscillators (quietly: turn your speakers down first anyway). A pigeon stands on each key as it plays. Drag the slider to see any moment of it.</p>
+  <p>A made-up song of three parts, played with plain oscillators (quietly: turn your speakers down first anyway). A pigeon stands on each key as it plays. Drag the slider to see any moment of it, and choose a background and a camera angle.</p>
   <canvas id="picture" width="1920" height="1080"></canvas>
   <input id="scrub" type="range" min="0" max="1" step="0.001" value="0.3" aria-label="Where in the song" />
   <p>
     <button id="play">Play</button>
+    <label>Background <select id="background"></select></label>
+    <label>Camera <select id="camera"></select></label>
     <span id="count"></span>
   </p>
   <script type="module">
-    import { createPigeons } from './pigeon-keys.js';
+    import { createPigeons, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars } from './pigeon-keys.js';
 
     // --- A small song: 8 bars at 140 BPM, as plain notes ---
     const BEAT = 60 / 140, BARS = 8;
@@ -44,6 +47,20 @@
     const count = document.getElementById('count');
     // Track 0 the tune (purple), 1 the chords (blue), 2 the bass (teal)
     const pigeons = createPigeons(canvas, { notes, tracks: ['#a855f7', '#6366f1', '#14b8a6'], duration: DURATION });
+
+    // Pick one background and one angle, or "All of them": the background then changes every 2 bars
+    // (fading) and the camera cuts every bar
+    const BAR_TIMES = Array.from({ length: BARS }, (_, bar) => bar * 4 * BEAT);
+    const picker = (id, all, key, at, every) => {
+      const select = document.getElementById(id);
+      select.append(...all.map((x) => new Option(x.name, x.id)), new Option('All of them, in turn', 'all'));
+      select.onchange = () => {
+        pigeons.setLook(select.value === 'all' ? { [key]: all.map((x) => x.id), [at]: everyBars(BAR_TIMES, every) } : { [key]: [select.value], [at]: [] });
+        if (!context) show(scrub.value * DURATION);
+      };
+    };
+    picker('background', PIGEON_BACKGROUNDS, 'backgrounds', 'backgroundAt', 2);
+    picker('camera', PIGEON_CAMERAS, 'cameras', 'cameraAt', 1);
     const show = (time) => {
       pigeons.draw(time);
       const on = pigeons.onKeys(time);

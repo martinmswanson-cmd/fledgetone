@@ -5,9 +5,11 @@
 // notes once, then ask for the picture at any time. Every picture is drawn from the time alone, so
 // you can draw frames in any order: along with playing audio, while scrubbing, or one by one for a
 // video. No two pigeons ever touch.
-import { PigeonScene, PIGEON_FLOOR } from './pigeon-scene.js';
+import { PigeonScene, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars } from './pigeon-scene.js';
 
-export { PIGEON_FLOOR };
+// The backgrounds and camera angles there are ({ id, name, blurb, ... } each), and the times of
+// every Nth bar line: everyBars(barTimes, n), for backgroundAt and cameraAt
+export { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars };
 
 /** The colours tracks get when they aren't given their own */
 export const TRACK_COLORS = ['#a855f7', '#6366f1', '#14b8a6', '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#ec4899'];
@@ -25,12 +27,21 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  *                { color } (optional; TRACK_COLORS in turn if left out).
  * song.duration  The song's length in seconds (if left out: when the last note ends).
  *
- * options.shape    'tall' (the keys run corner to corner), 'wide' (across the middle), or 'auto':
- *                  tall when the canvas is taller than it's wide ('auto' if left out).
- * options.floor    The floor's colour, any CSS colour (PIGEON_FLOOR, a pale grey, if left out).
- * options.across   How many white keys fit across the canvas's narrow side at the closest the
- *                  camera comes (about 16): a smaller number makes everything bigger.
- * options.centerY  Where the keyboard's middle sits, from the top of the canvas, 0 to 1 (0.5).
+ * options.shape         'tall' (the keys run up the canvas), 'wide' (across it), or 'auto': tall
+ *                       when the canvas is taller than it's wide ('auto' if left out).
+ * options.backgrounds   The backgrounds to use, by id, in the order they appear: 'plaza', 'park',
+ *                       'sunset', 'night', 'snow', 'space', 'neon', 'clouds', 'beach' (['plaza']
+ *                       if left out; PIGEON_BACKGROUNDS lists them).
+ * options.backgroundAt  When it changes to the next background, in seconds (round and round the
+ *                       list, each fading into the next). Never, if left out.
+ * options.cameras       The camera angles to use, by id, in order: 'diagonal', 'above', 'low',
+ *                       'behind', 'close' (['diagonal'] if left out; PIGEON_CAMERAS lists them).
+ * options.cameraAt      When it cuts to the next angle, in seconds. Never, if left out.
+ * options.floor         A floor colour of your own (any CSS colour) in place of the backgrounds'.
+ * options.across        How many white keys fit across the canvas's narrow side at the closest
+ *                       the camera comes (each angle has its own, about 16): a smaller number
+ *                       makes everything bigger.
+ * options.centerY       Where the keyboard's middle sits, from the top of the canvas, 0 to 1 (0.5).
  */
 export function createPigeons(canvas, song, options = {}) {
   const colors = (Array.isArray(song.tracks) ? song.tracks : []).map((t, i) => (typeof t === 'string' ? t : t && typeof t.color === 'string' ? t.color : TRACK_COLORS[i % TRACK_COLORS.length]));
@@ -51,7 +62,8 @@ export function createPigeons(canvas, song, options = {}) {
   let width = canvas.width;
   let height = canvas.height;
   let tall = isTall();
-  const scene = new PigeonScene({ notes, tracks: [], bars: [] }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor });
+  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt };
+  const scene = new PigeonScene({ notes, tracks: [], bars: [] }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor, look });
 
   return {
     duration,
@@ -69,7 +81,15 @@ export function createPigeons(canvas, song, options = {}) {
     onKeys(time) {
       return scene.onKeys(number(time, 0));
     },
-    /** Change the floor's colour; the next draw uses it */
+    /** Change the backgrounds or camera angles, or when they change ({ backgrounds, backgroundAt, cameras, cameraAt }: only what you give); the next draw uses them */
+    setLook(changes) {
+      scene.setLook(changes);
+    },
+    /** Whether the floor is dark at `time` (to choose a colour for anything you draw over it) */
+    isDark(time) {
+      return scene.darkAt(number(time, 0));
+    },
+    /** A floor colour of your own in place of the backgrounds' (null: theirs again); the next draw uses it */
     setFloor(color) {
       scene.setFloor(color);
     },

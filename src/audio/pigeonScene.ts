@@ -13,6 +13,7 @@
 import * as T from 'three';
 import type { ShowcaseData, ShowcaseNote } from '../store/showcase';
 import { maxOf, minOf } from '../support/minMax';
+import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, type BackgroundId, type PigeonCamera, type PigeonLook } from './pigeonLooks';
 
 // ---------------------------------------------------------------------------------------------
 // The keyboard, in scene units: a white key is 1 wide; the keys run along x, their fronts toward +z
@@ -1031,6 +1032,204 @@ function groundAt(_x: number, z: number): number {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The backgrounds' floor details: flat shapes lying on the floor (paving, daisies, puddles, bird
+// tracks, shells), so the birds walk over them and nothing stands in their way
+
+/** Flat shapes on the floor, collected into one geometry (each a little above the last, so they lie over each other in the order drawn) */
+class FloorArt {
+  private m = new Mesher();
+  private y = 0.004;
+  private layer(): number {
+    return (this.y += 0.00002);
+  }
+  /** A shape with `sides` corners round (x, z), `r` across; `star` pulls every other corner in (a star), `squash` flattens it along z */
+  shape(x: number, z: number, r: number, sides: number, color: T.Color, turn = 0, star = 1, squash = 1) {
+    const y = this.layer();
+    const at = (k: number): P3 => {
+      const a = turn + (k / sides) * Math.PI * 2;
+      const rr = k % 2 ? r * star : r;
+      return [x + Math.cos(a) * rr, y, z + Math.sin(a) * rr * squash];
+    };
+    for (let k = 0; k < sides; k++) this.m.tri([x, y, z], at(k), at(k + 1), color, [x, y - 1, z]);
+  }
+  /** A straight stroke from one point to another, `wide` across */
+  stroke(x0: number, z0: number, x1: number, z1: number, wide: number, color: T.Color) {
+    const y = this.layer();
+    const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+    const nx = (-(z1 - z0) / len) * (wide / 2);
+    const nz = ((x1 - x0) / len) * (wide / 2);
+    this.m.quad([x0 + nx, y, z0 + nz], [x1 + nx, y, z1 + nz], [x1 - nx, y, z1 - nz], [x0 - nx, y, z0 - nz], color, [x0, y - 1, z0]);
+  }
+  build(): T.BufferGeometry {
+    return this.m.build();
+  }
+}
+
+/** How far the floor's details reach past the keyboard's ends and to its front and back (the camera, pulled right back, sees about this far) */
+const FLOOR_REACH = 80;
+
+/** The floor details of a background, for a keyboard from x0 to x1: the same every time */
+function floorDetails(id: BackgroundId, x0: number, x1: number): T.BufferGeometry {
+  const art = new FloorArt();
+  const r = rand(id.length * 7919 + id.charCodeAt(0) * 31 + id.charCodeAt(1));
+  const left = x0 - FLOOR_REACH;
+  const right = x1 + FLOOR_REACH;
+  const c = (hex: number) => new T.Color(hex);
+  /** `count` for every 100 square units of floor: calls `put` at spots clear of the keyboard */
+  const scatter = (per100: number, put: (x: number, z: number) => void) => {
+    const n = Math.round((((right - left) * FLOOR_REACH * 2) / 100) * per100);
+    for (let i = 0; i < n; i++) {
+      const x = left + r() * (right - left);
+      const z = (r() * 2 - 1) * FLOOR_REACH;
+      if (Math.abs(z) > WHITE_L / 2 + 0.9) put(x, z);
+    }
+  };
+  /** Joints between square paving stones `size` across */
+  const paving = (size: number, wide: number, color: T.Color) => {
+    for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) art.stroke(left, z + size / 2, right, z + size / 2, wide, color);
+    for (let x = Math.floor(left / size) * size; x <= right; x += size) art.stroke(x, -FLOOR_REACH, x, FLOOR_REACH, wide, color);
+  };
+  switch (id) {
+    case 'plaza': {
+      paving(4, 0.07, c(0xd6d2ca));
+      // Crumbs, a few together
+      scatter(0.5, (x, z) => {
+        for (let k = 0; k < 5; k++) art.shape(x + (r() - 0.5) * 1.6, z + (r() - 0.5) * 1.6, 0.05 + r() * 0.05, 5, c(0xc9a878), r() * 6);
+      });
+      break;
+    }
+    case 'park': {
+      // Tufts of darker and lighter grass, daisies, a few fallen leaves
+      scatter(22, (x, z) => {
+        const col = c(r() < 0.5 ? 0x8fbd6d : 0xb6dc93);
+        for (let k = 0; k < 3; k++) art.shape(x + (k - 1) * 0.16, z, 0.2 + r() * 0.12, 3, col, -Math.PI / 2 + (k - 1) * 0.4, 1, 1.5);
+      });
+      scatter(3, (x, z) => {
+        const turn = r() * 6;
+        art.shape(x, z, 0.2, 12, c(0xffffff), turn, 0.55);
+        art.shape(x, z, 0.075, 6, c(0xf6c945), turn);
+      });
+      scatter(1.2, (x, z) => art.shape(x, z, 0.26, 4, c([0xe0a03c, 0xd9763a, 0xc9c24a][Math.floor(r() * 3)]), r() * 6, 1, 0.5));
+      break;
+    }
+    case 'sunset': {
+      // Terracotta tiles, some a shade lighter or darker
+      const size = 3;
+      for (let x = Math.floor(left / size) * size; x <= right; x += size) {
+        for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) {
+          if (r() < 0.3) art.shape(x + size / 2, z + size / 2, (size / 2) * Math.SQRT2 * 0.97, 4, c(r() < 0.5 ? 0xe39f78 : 0xeeb590), Math.PI / 4);
+        }
+      }
+      paving(size, 0.09, c(0xcf8762));
+      break;
+    }
+    case 'night': {
+      paving(4, 0.07, c(0x2e3454));
+      // Pools of lamplight, and puddles catching it
+      scatter(0.16, (x, z) => {
+        art.shape(x, z, 7, 18, c(0x2c3152), 0);
+        art.shape(x, z, 4.4, 18, c(0x363b60), 0);
+      });
+      scatter(0.9, (x, z) => {
+        const turn = r() * 6;
+        const size = 0.7 + r() * 1.3;
+        art.shape(x, z, size, 9, c(0x38436e), turn, 0.82, 0.6);
+        art.shape(x + size * 0.15, z - size * 0.08, size * 0.42, 7, c(0x53629a), turn, 0.8, 0.6);
+      });
+      break;
+    }
+    case 'snow': {
+      // Soft blue hollows, and trails of bird tracks wandering across
+      scatter(0.7, (x, z) => art.shape(x, z, 1.5 + r() * 2.5, 9, c(0xe4ecf7), r() * 6, 0.85, 0.6));
+      scatter(0.45, (x, z) => {
+        let way = r() * Math.PI * 2;
+        let px = x;
+        let pz = z;
+        const ink = c(0xbfcce0);
+        for (let step = 0; step < 9 + r() * 8; step++) {
+          way += (r() - 0.5) * 0.5;
+          // (left foot, right foot)
+          const side = step % 2 ? 0.13 : -0.13;
+          const fx = px - Math.sin(way) * side;
+          const fz = pz + Math.cos(way) * side;
+          if (Math.abs(fz) < WHITE_L / 2 + 0.9) break;
+          for (const toe of [0, 0.55, -0.55]) art.stroke(fx, fz, fx + Math.cos(way + toe) * 0.2, fz + Math.sin(way + toe) * 0.2, 0.045, ink);
+          art.stroke(fx, fz, fx - Math.cos(way) * 0.09, fz - Math.sin(way) * 0.09, 0.045, ink);
+          px += Math.cos(way) * 0.42;
+          pz += Math.sin(way) * 0.42;
+        }
+      });
+      break;
+    }
+    case 'space': {
+      // Nebulas, a few planets (some ringed), and stars: dots, and brighter four-pointed ones
+      scatter(0.12, (x, z) => {
+        const tint = [0x1c1640, 0x161f45, 0x2a1640][Math.floor(r() * 3)];
+        for (let k = 0; k < 5; k++) art.shape(x + (r() - 0.5) * 10, z + (r() - 0.5) * 6, 3 + r() * 4, 16, c(tint), r() * 6, 0.92, 0.7);
+      });
+      scatter(0.1, (x, z) => {
+        const size = 1.1 + r() * 1.6;
+        const [body, band] = [[0xe07a5f, 0xf2a488], [0x5fa8d3, 0x9fd0ec], [0xd9b44a, 0xf0d98a], [0x8e6fd1, 0xb9a3ea]][Math.floor(r() * 4)];
+        if (r() < 0.5) art.shape(x, z, size * 1.9, 20, c(0xcfc6e8), 0.3, 1, 0.28);
+        art.shape(x, z, size, 16, c(body), 0);
+        art.shape(x - size * 0.2, z - size * 0.25, size * 0.5, 9, c(band), 0, 1, 0.5);
+      });
+      scatter(26, (x, z) => art.shape(x, z, 0.035 + r() * 0.05, 4, c(r() < 0.8 ? 0xdfe3ff : 0xffe9b8), 0));
+      scatter(1.4, (x, z) => art.shape(x, z, 0.22 + r() * 0.2, 8, c(0xffffff), 0, 0.22));
+      break;
+    }
+    case 'neon': {
+      // A grid of neon lines, bright crossings, and circuit traces with a pad at each end
+      const size = 4;
+      for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) art.stroke(left, z + size / 2, right, z + size / 2, 0.06, c(0x3a1f7a));
+      for (let x = Math.floor(left / size) * size; x <= right; x += size) art.stroke(x, -FLOOR_REACH, x, FLOOR_REACH, 0.06, c(0x1f3f7a));
+      scatter(1.3, (x, z) => {
+        const col = c(r() < 0.5 ? 0xff3fd0 : 0x2ff3ff);
+        // (along the grid: a run, a turn, another run)
+        const gx = Math.round(x / size) * size;
+        const gz = Math.round(z / size) * size + size / 2;
+        const run = (1 + Math.floor(r() * 3)) * size * (r() < 0.5 ? 1 : -1);
+        const rise = (1 + Math.floor(r() * 2)) * size * (r() < 0.5 ? 1 : -1);
+        if (Math.abs(gz) < WHITE_L / 2 + 1.2 || Math.abs(gz + rise) < WHITE_L / 2 + 1.2) return;
+        art.stroke(gx, gz, gx + run, gz, 0.1, col);
+        art.stroke(gx + run, gz, gx + run, gz + rise, 0.1, col);
+        art.shape(gx, gz, 0.22, 6, col, 0);
+        art.shape(gx + run, gz + rise, 0.3, 4, col, Math.PI / 4);
+      });
+      scatter(0.5, (x, z) => art.shape(Math.round(x / size) * size, Math.round(z / size) * size + size / 2, 0.9, 6, c(r() < 0.5 ? 0x2a1560 : 0x15305e), Math.PI / 6));
+      break;
+    }
+    case 'clouds': {
+      // Clouds far below: a few puffs together, with a paler edge
+      scatter(0.5, (x, z) => {
+        const puffs = 3 + Math.floor(r() * 3);
+        const size = 1.4 + r() * 1.8;
+        for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.4 + 0.25, size * (0.7 + r() * 0.5), 12, c(0xcfe6fa), 0, 1, 0.62);
+        for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.3, size * (0.6 + r() * 0.45), 12, c(0xffffff), 0, 1, 0.6);
+      });
+      break;
+    }
+    case 'beach': {
+      // Ripples in the sand, shells, the odd starfish and pebble
+      scatter(3.2, (x, z) => {
+        const col = c(r() < 0.5 ? 0xe4cc94 : 0xf5e4b8);
+        const len = 1.5 + r() * 3;
+        for (let k = 0; k < 4; k++) art.stroke(x + (k / 4) * len, z + Math.sin(k * 1.6) * 0.13, x + ((k + 1) / 4) * len, z + Math.sin((k + 1) * 1.6) * 0.13, 0.07, col);
+      });
+      scatter(1.1, (x, z) => {
+        const turn = r() * 6;
+        art.shape(x, z, 0.2, 7, c(r() < 0.5 ? 0xfaf3ea : 0xf2c4b8), turn, 1, 0.8);
+        art.shape(x, z, 0.1, 5, c(0xe9a99a), turn, 1, 0.8);
+      });
+      scatter(0.3, (x, z) => art.shape(x, z, 0.42, 10, c(0xf08a4b), r() * 6, 0.42));
+      scatter(0.8, (x, z) => art.shape(x, z, 0.1 + r() * 0.1, 6, c(0xb9ad97), r() * 6, 1, 0.75));
+      break;
+    }
+  }
+  return art.build();
+}
+
+// ---------------------------------------------------------------------------------------------
 // The scene
 
 export interface PigeonSceneOptions {
@@ -1045,8 +1244,10 @@ export interface PigeonSceneOptions {
   centerY?: number;
   /** The canvas to draw on (one of its own, if not given). It mustn't have a context yet */
   canvas?: HTMLCanvasElement;
-  /** The floor's colour (PIGEON_FLOOR if not given) */
+  /** A floor colour of your own, in place of the backgrounds' (their floor details are still drawn) */
   floor?: string;
+  /** Which backgrounds and camera angles it uses, and when it changes between them (the plaza, the diagonal camera, if not given) */
+  look?: Partial<PigeonLook>;
 }
 
 const flat = (color: number) => new T.MeshLambertMaterial({ color, flatShading: true });
@@ -1067,11 +1268,17 @@ export class PigeonScene {
   private byKey = new Map<number, ShowcaseNote[]>();
   private colors = new Map<string, T.Color>();
   private view = { w: 1, h: 1 };
-  private tilt = 0;
-  /** Roughly how many keys fit along the frame at the usual zoom */
-  private alongKeys = 1;
+  private tall = false;
+  private aspect = 1;
   private centerY: number;
   private across?: number;
+  private look: PigeonLook;
+  /** A floor colour given in place of the backgrounds' */
+  private ownFloor: T.Color | null;
+  private sky: T.HemisphereLight;
+  private sun: T.DirectionalLight;
+  /** Each background's floor details (made when it's first shown) */
+  private details = new Map<BackgroundId, { mesh: T.Mesh; mat: T.MeshBasicMaterial }>();
   private disposables: Array<{ dispose(): void }> = [];
 
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
@@ -1079,17 +1286,18 @@ export class PigeonScene {
     this.canvas = opts.canvas ?? document.createElement('canvas');
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
-    this.renderer.setClearColor(new T.Color(opts.floor ?? PIGEON_FLOOR));
     this.renderer.outputColorSpace = T.SRGBColorSpace;
-    this.camera = new T.OrthographicCamera(-1, 1, 1, -1, -200, 400);
+    this.camera = new T.OrthographicCamera(-1, 1, 1, -1, -400, 600);
     this.across = opts.across;
     this.centerY = opts.centerY ?? 0.5;
+    this.look = cleanLook(opts.look);
+    this.ownFloor = opts.floor ? new T.Color(opts.floor) : null;
     this.frame(opts.width, opts.height, opts.tall);
 
-    this.scene.add(new T.HemisphereLight(0xffffff, 0xb8b2a8, 1.6));
-    const sun = new T.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(-6, 14, 9);
-    this.scene.add(sun);
+    this.sky = new T.HemisphereLight(0xffffff, 0xb8b2a8, 1.6);
+    this.sun = new T.DirectionalLight(0xffffff, 1.6);
+    this.sun.position.set(-6, 14, 9);
+    this.scene.add(this.sky, this.sun);
 
     this.buildKeyboard();
     const shadowGeo = new T.CircleGeometry(0.55, 16);
@@ -1113,21 +1321,87 @@ export class PigeonScene {
    */
   frame(width: number, height: number, tall: boolean) {
     this.renderer.setSize(width, height, false);
-    // Units across the frame's narrow side: about 16 white keys
-    const aspect = width / height;
-    const across = this.across ?? (tall ? 16 : 17);
-    this.view = aspect < 1 ? { w: across, h: across / aspect } : { w: across * aspect, h: across };
-    this.tilt = tall ? -0.3 : 0.12;
-    this.alongKeys = tall ? 21 : 32;
+    this.aspect = width / height;
+    this.tall = tall;
+  }
+
+  /** A floor colour of your own (any CSS colour) in place of the backgrounds'; null: theirs again */
+  setFloor(color: string | null) {
+    this.ownFloor = color ? new T.Color(color) : null;
+  }
+
+  /** Changes which backgrounds and camera angles it uses, and when it changes between them */
+  setLook(look: Partial<PigeonLook>) {
+    this.look = cleanLook({ ...this.look, ...look });
+  }
+
+  /** Whether the floor is dark at t (the export then draws its text in light ink) */
+  darkAt(t: number): boolean {
+    if (this.ownFloor) return this.ownFloor.getHSL({ h: 0, s: 0, l: 0 }).l < 0.45;
+    const { now, from, mix } = backgroundAt(this.look, t);
+    return backgroundOf(mix < 0.5 ? from : now).dark;
+  }
+
+  /** The background at t: the floor's colour, the light, and each background's floor details faded in or out */
+  private dress(t: number) {
+    const { now, from, mix } = backgroundAt(this.look, t);
+    const a = backgroundOf(from);
+    const b = backgroundOf(now);
+    const blend = (x: string, y: string) => this.color(x).clone().lerp(this.color(y), mix);
+    this.renderer.setClearColor(this.ownFloor ?? blend(a.floor, b.floor));
+    this.sky.color.copy(blend(a.sky, b.sky));
+    this.sky.groundColor.copy(blend(a.bounce, b.bounce));
+    this.sky.intensity = a.skyLight + (b.skyLight - a.skyLight) * mix;
+    this.sun.color.copy(blend(a.sun, b.sun));
+    this.sun.intensity = a.sunLight + (b.sunLight - a.sunLight) * mix;
+    for (const id of new Set([from, now])) {
+      if (this.details.has(id)) continue;
+      const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: T.DoubleSide });
+      const mesh = new T.Mesh(floorDetails(id, keyX(this.plan.low), keyX(this.plan.high)), mat);
+      mesh.renderOrder = -1;
+      this.scene.add(mesh);
+      this.details.set(id, { mesh, mat });
+    }
+    for (const [id, d] of this.details) {
+      const shown = id === now ? (id === from ? 1 : mix) : id === from ? 1 - mix : 0;
+      d.mesh.visible = shown > 0.001;
+      d.mat.opacity = shown;
+    }
+  }
+
+  /**
+   * Points the camera for the angle in use at t: at the middle of what's playing, turned so the
+   * keyboard runs at the angle's slope across the frame, pulled back far enough to show what's
+   * playing (both hands, as it were), and moved so the keys sit where the picture's room is.
+   */
+  private aim(t: number) {
+    const cam: PigeonCamera = cameraOf(cameraAt(this.look, t));
+    const across = this.across ?? (this.tall ? cam.across.tall : cam.across.wide);
+    this.view = this.aspect < 1 ? { w: across, h: across / this.aspect } : { w: across * this.aspect, h: across };
     this.camera.left = -this.view.w / 2;
     this.camera.right = this.view.w / 2;
     this.camera.top = this.view.h / 2;
     this.camera.bottom = -this.view.h / 2;
-  }
-
-  /** The floor's colour (any CSS colour) */
-  setFloor(color: string) {
-    this.renderer.setClearColor(new T.Color(color));
+    const { x: fx, spread } = this.focus(t);
+    const target = new T.Vector3(fx, 0, 0.5);
+    const dist = 120;
+    this.camera.position.set(target.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dist, target.y + Math.sin(cam.pitch) * dist, target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dist);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(target);
+    // Which way the keyboard runs across the picture as the camera stands, and how much shorter it
+    // looks than it is; then the camera is rolled to give it the angle's slope
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorld.elements;
+    const rx = e[0];
+    const ux = e[4];
+    const seen = Math.hypot(rx, ux);
+    const slope = this.tall ? cam.slope.tall : cam.slope.wide;
+    this.camera.rotateZ(Math.atan2(ux, rx) - slope);
+    // How many keys fit along the frame at this slope, and so how far to pull back
+    const fits = 0.92 * Math.min(this.view.w / Math.max(1e-6, seen * Math.abs(Math.cos(slope))), this.view.h / Math.max(1e-6, seen * Math.abs(Math.sin(slope))));
+    this.camera.zoom = Math.min(1, Math.max(cam.furthest, fits / (2.2 * spread + 10)));
+    this.camera.updateProjectionMatrix();
+    this.camera.translateY(((this.centerY - 0.5) * this.view.h) / this.camera.zoom);
   }
 
   private buildKeyboard() {
@@ -1218,21 +1492,8 @@ export class PigeonScene {
 
   /** Draws the frame for time t (seconds) into `canvas` */
   render(t: number): HTMLCanvasElement {
-    // The camera: high, looking down at an angle, turned so the keys run diagonally up the frame
-    const { x: fx, spread } = this.focus(t);
-    // Zoomed out far enough to show what's playing (both hands, as it were), never in past the usual
-    this.camera.zoom = Math.min(1, Math.max(0.4, this.alongKeys / (2.2 * spread + 10)));
-    this.camera.updateProjectionMatrix();
-    const target = new T.Vector3(fx, 0, 0.5);
-    const dist = 60;
-    const yaw = -0.5;
-    const pitch = 0.92;
-    this.camera.position.set(target.x + Math.sin(yaw) * Math.cos(pitch) * dist, target.y + Math.sin(pitch) * dist, target.z + Math.cos(yaw) * Math.cos(pitch) * dist);
-    this.camera.lookAt(target);
-    // (turn the picture so the keyboard climbs from bottom left to top right)
-    this.camera.rotateZ(this.tilt);
-    // (and moved so the keys sit where the picture's room is)
-    this.camera.translateY(((this.centerY - 0.5) * this.view.h) / this.camera.zoom);
+    this.dress(t);
+    this.aim(t);
 
     // Keys: down and coloured while played
     for (const [midi, k] of this.keys) {
@@ -1251,8 +1512,14 @@ export class PigeonScene {
       }
       const black = isBlack(midi);
       k.mesh.position.y = (black ? k.top - (BLACK_TOP - WHITE_TOP + 0.5) / 2 : k.top / 2) - down;
-      if (lit) k.mat.color.copy(k.base).lerp(this.color(lit.color), (black ? 0.75 : 0.62) * (down / PRESS));
-      else k.mat.color.copy(k.base);
+      if (lit) {
+        k.mat.color.copy(k.base).lerp(this.color(lit.color), (black ? 0.75 : 0.62) * (down / PRESS));
+        // (and it glows a little, which shows on the night street)
+        k.mat.emissive.copy(this.color(lit.color)).multiplyScalar(0.3 * (down / PRESS));
+      } else {
+        k.mat.color.copy(k.base);
+        k.mat.emissive.setRGB(0, 0, 0);
+      }
     }
     // Floor glows in front of the keys being played, fading out after
     let g = 0;
