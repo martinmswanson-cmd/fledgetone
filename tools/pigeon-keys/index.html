@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- Pigeons on the keys example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, MIT licence.
+     Serve this folder (for example "npx serve") and open it: modules don't load from a file. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pigeons on the keys example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 60rem; background: #121214; color: #e4e4e7; }
+    canvas { display: block; width: 100%; aspect-ratio: 16 / 9; background: #e9e6e1; border-radius: 6px; }
+    button, select { font: inherit; padding: .5rem 1rem; margin: .5rem .5rem .5rem 0; }
+    label { margin-right: .5rem; white-space: nowrap; }
+    input[type=range] { width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>Pigeons on the keys</h1>
+  <p>A made-up song of three parts, played with plain oscillators (quietly: turn your speakers down first anyway). A pigeon stands on each key as it plays. Drag the slider to see any moment of it, and choose a background and a camera angle.</p>
+  <canvas id="picture" width="1920" height="1080"></canvas>
+  <input id="scrub" type="range" min="0" max="1" step="0.001" value="0.3" aria-label="Where in the song" />
+  <p>
+    <button id="play">Play</button>
+    <label>Background <select id="background"></select></label>
+    <label>Camera <select id="camera"></select></label>
+    <span id="count"></span>
+  </p>
+  <script type="module">
+    import { createPigeons, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, everyBars } from './pigeon-keys.js';
+
+    // --- A small song: 8 bars at 140 BPM, as plain notes ---
+    const BEAT = 60 / 140, BARS = 8;
+    const notes = [];
+    const add = (track, beat, beats, pitch) => notes.push({ track, start: beat * BEAT, end: (beat + beats) * BEAT - 0.03, pitch });
+    // (a kick on every beat: silent here, but the backgrounds jump on it)
+    for (let beat = 0; beat < BARS * 4; beat++) notes.push({ track: 0, start: beat * BEAT, end: beat * BEAT + 0.1, pitch: 36, kick: true });
+    const CHORDS = [[50, 53, 57], [46, 50, 53], [48, 52, 55], [45, 49, 52]];
+    const TUNE = [74, 77, 81, 79, 77, 76, 74, 72, 74, 77, 81, 84, 82, 81, 79, 77, 76, 77, 79, 81, 82, 84, 86, 84, 81, 0, 79, 0, 77, 77, 74, 0];
+    for (let bar = 0; bar < BARS; bar++) {
+      const chord = CHORDS[bar % 4];
+      for (const p of chord) add(1, bar * 4, 4, p);
+      for (let q = 0; q < 4; q++) add(2, bar * 4 + q, 0.8, chord[0] - 12);
+    }
+    for (let rep = 0; rep < 2; rep++) TUNE.forEach((p, i) => p && add(0, rep * 16 + i / 2, 0.5, p));
+    const DURATION = BARS * 4 * BEAT;
+
+    const canvas = document.getElementById('picture');
+    const scrub = document.getElementById('scrub');
+    const count = document.getElementById('count');
+    // Track 0 the tune (purple), 1 the chords (blue), 2 the bass (teal)
+    const pigeons = createPigeons(canvas, { notes, tracks: ['#a855f7', '#6366f1', '#14b8a6'], duration: DURATION });
+
+    // Pick one background and one angle, or "All of them": the background then changes every 2 bars
+    // (fading) and the camera cuts every bar
+    const BAR_TIMES = Array.from({ length: BARS }, (_, bar) => bar * 4 * BEAT);
+    const picker = (id, all, key, at, every) => {
+      const select = document.getElementById(id);
+      select.append(...all.map((x) => new Option(x.name, x.id)), new Option('All of them, in turn', 'all'));
+      select.onchange = () => {
+        pigeons.setLook(select.value === 'all' ? { [key]: all.map((x) => x.id), [at]: everyBars(BAR_TIMES, every) } : { [key]: [select.value], [at]: [] });
+        if (!context) show(scrub.value * DURATION);
+      };
+    };
+    picker('background', PIGEON_BACKGROUNDS, 'backgrounds', 'backgroundAt', 2);
+    picker('camera', PIGEON_CAMERAS, 'cameras', 'cameraAt', 1);
+    const show = (time) => {
+      pigeons.draw(time);
+      const on = pigeons.onKeys(time);
+      count.textContent = on === 1 ? '1 pigeon on the keys' : `${on} pigeons on the keys`;
+    };
+    scrub.oninput = () => { if (!context) show(scrub.value * DURATION); };
+
+    // --- The sound: an oscillator per note, started on the audio clock, and the picture drawn from that clock ---
+    let context = null, began = 0, frame = 0;
+    const WAVES = ['triangle', 'sine', 'sine'], LEVELS = [0.06, 0.03, 0.1];
+    function play() {
+      context = new AudioContext();
+      began = context.currentTime + 0.1;
+      for (const n of notes) {
+        if (n.kick) continue;
+        const at = began + n.start, end = began + n.end;
+        const osc = new OscillatorNode(context, { type: WAVES[n.track], frequency: 440 * 2 ** ((n.pitch - 69) / 12) });
+        const gain = new GainNode(context, { gain: 0 });
+        gain.gain.setValueAtTime(0, at);
+        gain.gain.linearRampToValueAtTime(LEVELS[n.track], at + 0.01);
+        gain.gain.setValueAtTime(LEVELS[n.track], Math.max(at + 0.01, end - 0.03));
+        gain.gain.linearRampToValueAtTime(0, end);
+        osc.connect(gain).connect(context.destination);
+        osc.start(at);
+        osc.stop(end + 0.02);
+      }
+      const tick = () => {
+        const time = context.currentTime - began;
+        show(time);
+        scrub.value = Math.min(1, Math.max(0, time / DURATION));
+        if (time < DURATION + 2) frame = requestAnimationFrame(tick);
+        else stop();
+      };
+      frame = requestAnimationFrame(tick);
+    }
+    function stop() {
+      cancelAnimationFrame(frame);
+      context?.close();
+      context = null;
+      document.getElementById('play').textContent = 'Play';
+    }
+    document.getElementById('play').onclick = (e) => {
+      if (context) return stop();
+      play();
+      e.target.textContent = 'Stop';
+    };
+    show(scrub.value * DURATION);
+  </script>
+</body>
+</html>
