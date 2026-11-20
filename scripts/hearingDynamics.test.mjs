@@ -76,3 +76,13 @@ test('stereo input gives finite attack values', () => {
   const a = attackOf([l, r], 48000);
   assert.ok(Number.isFinite(a.onsetsPerSecond) && Number.isFinite(a.riseMs));
 });
+test('held sounds have no onsets', () => {
+  const sine = attackOf([S.sine(220, 4, -20)], 48000);
+  assert.equal(sine.onsetsPerSecond, 0); assert.equal(sine.riseMs, null);
+  assert.equal(attackOf([S.saw(55, 4, -20)], 48000).onsetsPerSecond, 0);
+  assert.ok(attackOf([S.pink(4, -18, 1)], 48000).onsetsPerSecond < 1);
+});
+test('sharp hits on a bed are counted at their own rate', () => {
+  const hits = S.at(4, Array.from({ length: 4 }, (_, i) => [i + 0.2, S.burst(0.2, 50, 0, -8, i)]));
+  near(attackOf([S.mix(S.sine(220, 4, -20), hits)], 48000).onsetsPerSecond, 1, 0.3);
+});

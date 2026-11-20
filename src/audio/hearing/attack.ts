@@ -5,6 +5,7 @@
  */
 import { fallMs, frameDb, kPeakDb } from '../drumMeasure';
 import { onsetStrength, onsetTimes } from '../sampleAnalysis';
+import { maxOf } from '../../support/minMax';
 import { midOf } from './frames';
 import type { Attack } from './types';
 
@@ -20,8 +21,10 @@ const LOOK_BACK_MS = 100;
 const LOOK_AHEAD_MS = 300;
 /** A window ends this long before the next onset's time, which is stamped at the end of its frame, ms. */
 const END_GAP_MS = 5;
+/** How far the level must step up at an onset to count as one, dB (3 let slow ripples of pink noise count; 6 lost the hits on a bed). */
+const STEP_DB = 5;
 /** The span of the smoothed level, ms (a little over a period of a 220 Hz tone). */
-const SMOOTH_MS = 5;
+const SMOOTH_MS = 20;
 /** The span of the level the climb is followed on, ms: short enough to keep a sharp attack sharp, long enough that noise in a slow climb does not cut it short. */
 const WALK_MS = 2;
 
@@ -64,6 +67,15 @@ function riseOf(env: readonly number[], slow: readonly number[], from: number, t
   return at90 - at10;
 }
 
+/** The loudest of the smoothed level `slow` in the 120 ms from 20 ms before the onset at frame `at`, over its loudest in the 80 ms before that, dB. */
+function stepDb(slow: readonly number[], at: number): number {
+  let before = -200;
+  for (let i = Math.max(0, at - 120); i < Math.min(slow.length, at - 40); i++) before = Math.max(before, slow[i]);
+  let after = -200;
+  for (let i = Math.max(0, at - 20); i < Math.min(slow.length, at + 100); i++) after = Math.max(after, slow[i]);
+  return after - before;
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
@@ -84,24 +96,26 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   const slow = smoothed(env, SMOOTH_MS);
   const fine = smoothed(env, WALK_MS);
   const ms = (t: number) => Math.round(t * 1000);
+  // Only onsets where the level really steps up (a measurable rise) count: a held tone or steady noise has flux ripple but no hits
   const rises: Array<{ strength: number; rise: number }> = [];
   times.forEach((t, k) => {
     // Back from the onset's time to half way to the one before, on to the next one or a while after
     const from = Math.max(0, k > 0 ? ms((times[k - 1] + t) / 2) : ms(t) - LOOK_BACK_MS, ms(t) - LOOK_BACK_MS);
     const to = Math.min(env.length, k + 1 < times.length ? ms(times[k + 1]) - END_GAP_MS : env.length, ms(t) + LOOK_AHEAD_MS);
     const rise = riseOf(fine, slow, from, to);
+    if (rise !== null && stepDb(slow, ms(t)) < STEP_DB) return;
     const frame = Math.round((t * sampleRate - FLUX_SIZE / 2) / FLUX_HOP - 0.5);
     if (rise !== null) rises.push({ strength: strength[frame] ?? 0, rise });
   });
   const strongest = rises.sort((a, b) => b.strength - a.strength).slice(0, MAX_ONSETS).map((r) => r.rise);
   const riseMs = strongest.length > 0 ? round1(median(strongest)) : null;
   let single: Attack['single'] = null;
-  if (times.length === 1 && seconds < 2 && riseMs !== null) {
+  if (rises.length === 1 && seconds < 2 && riseMs !== null) {
     // kPeakDb reads the first 70 ms, so it starts where the hit does: the first frame within 40 dB of the loudest
-    const top = Math.max(...env);
+    const top = maxOf(env);
     const start = env.findIndex((v) => v > top - 40);
     const hit = mono.subarray(Math.max(0, Math.round((start / 1000) * sampleRate)));
     single = { riseMs, fall20Ms: round1(fallMs(env, 20)), peakDb: round1(kPeakDb(hit, sampleRate)) };
   }
-  return { onsetsPerSecond: round1(times.length / seconds), riseMs, single };
+  return { onsetsPerSecond: round1(rises.length / seconds), riseMs, single };
 }
