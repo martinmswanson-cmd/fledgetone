@@ -49,3 +49,21 @@ test('silent and empty input give finite numbers', () => {
     assert.deepEqual(t, { flatness: 0, roughness: 0, percussiveShare: 0, flatTops: null });
   }
 });
+test('clean sines have no flat tops, at any pitch or rate, or rounded to 16 bits', () => {
+  const q = (x) => Float32Array.from(x, (v) => Math.round(v * 32767) / 32767);
+  for (const sr of [48000, 44100]) for (const hz of [20, 55, 100, 440, 2000]) for (const peak of [-1, 0]) {
+    const x = S.sine(hz, 3, peak, sr);
+    assert.equal(textureOf([x], sr).flatTops, null, `${hz} Hz ${peak} dB ${sr}`);
+    assert.equal(textureOf([q(x)], sr).flatTops, null, `${hz} Hz ${peak} dB ${sr} 16-bit`);
+  }
+});
+test('clipped low and mid sines are found', () => {
+  const a = textureOf([S.clip(S.sine(55, 3, 0), 0.99)], 48000).flatTops;
+  assert.ok(a); near(a.levelDb, -0.09, 0.1);
+  const b = textureOf([S.clip(S.sine(1000, 3, 0), 0.7)], 48000).flatTops;
+  assert.ok(b); near(b.levelDb, -3.1, 0.1); assert.ok(b.share > 0.3);
+});
+test('a clean saw and pink noise have no flat tops', () => {
+  assert.equal(textureOf([S.saw(55, 3, -6)], 48000).flatTops, null);
+  assert.equal(textureOf([S.pink(3, -12, 1)], 48000).flatTops, null);
+});

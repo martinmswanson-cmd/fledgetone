@@ -8,7 +8,6 @@ import { harmonicPercussive } from '../harmonicPercussive';
 import { db, framesOf, midOf } from './frames';
 import type { Texture } from './types';
 
-const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
 const finite = (x: number) => (Number.isFinite(x) ? x : 0);
 
@@ -145,7 +144,31 @@ function roughnessOf(mid: Float32Array, sampleRate: number): number {
   return weights > 0 ? weighted / weights : 0;
 }
 
-/** The share of samples in runs of 3 or more equal samples at a local extreme of at least a quarter of the peak, and the commonest such level. */
+/**
+ * Whether the run of equal samples x[i..j) is longer than a smooth peak would be. The curvature is
+ * measured just outside the run (a drop from its level over the square of the distance from its
+ * centre, on the side that falls away faster); a parabola of that curvature stays within `tol` of its
+ * top for a half-width we can predict. A flat top is at least twice that, plus one sample. A clean sine
+ * predicts its own run, a clipped wave leaves a plateau on a slope, so the measured curvature is large
+ * and the plateau far longer than predicted.
+ */
+function longerThanSmooth(x: Float32Array, i: number, j: number, tol: number): boolean {
+  const v = x[i];
+  const half = (j - i) / 2;
+  const centre = (i + j - 1) / 2;
+  const reach = Math.max(3, Math.ceil(half)); // samples beyond the run's end; further out, the drop stands clear of rounding
+  let curvature = 0;
+  for (const p of [j - 1 + reach, i - reach]) {
+    if (p < 0 || p >= x.length) continue;
+    const d = p - centre;
+    curvature = Math.max(curvature, Math.abs(v - x[p]) / (d * d));
+  }
+  if (!(curvature > 0)) return false;
+  const smoothHalf = Math.sqrt(tol / curvature);
+  return half >= 2 * smoothHalf + 1;
+}
+
+/** The share of samples in flat tops (see longerThanSmooth) at a local extreme of at least a quarter of the peak, and the commonest such level. */
 function flatTopsOf(channels: readonly Float32Array[]): Texture['flatTops'] {
   const tol = 1e-4;
   let peak = 0;
@@ -163,13 +186,15 @@ function flatTopsOf(channels: readonly Float32Array[]): Texture['flatTops'] {
       let j = i + 1;
       while (j < x.length && Math.abs(x[j] - x[i]) <= tol) j++;
       const v = x[i];
-      const before = i > 0 ? x[i - 1] : null;
-      const after = j < x.length ? x[j] : null;
-      const top = before !== null && after !== null && ((before < v - tol && after < v - tol) || (before > v + tol && after > v + tol));
-      if (j - i >= 3 && top && Math.abs(v) >= peak / 4) {
-        flat += j - i;
-        const key = Math.round(Math.abs(v) * 1000);
-        counts.set(key, (counts.get(key) ?? 0) + (j - i));
+      if (j - i >= 3 && Math.abs(v) >= peak / 4) {
+        const before = i > 0 ? x[i - 1] : null;
+        const after = j < x.length ? x[j] : null;
+        const top = before !== null && after !== null && ((before < v - tol && after < v - tol) || (before > v + tol && after > v + tol));
+        if (top && longerThanSmooth(x, i, j, tol)) {
+          flat += j - i;
+          const key = Math.round(db(v * v) * 10); // steps of 0.1 dB
+          counts.set(key, (counts.get(key) ?? 0) + (j - i));
+        }
       }
       i = j;
     }
@@ -184,7 +209,7 @@ function flatTopsOf(channels: readonly Float32Array[]): Texture['flatTops'] {
       bestCount = count;
     }
   }
-  return { share: round2(share), levelDb: round1(db((best / 1000) ** 2)) };
+  return { share: Math.round(share * 1000) / 1000, levelDb: best / 10 };
 }
 
 /** Tonal against noisy and smooth against rough, for some sound. */
