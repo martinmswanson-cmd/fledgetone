@@ -37,6 +37,17 @@ const BLACK_STAND_Z = -0.85;
 const FRONT_Z = WHITE_L / 2 + 2.2;
 const BACK_Z = -WHITE_L / 2 - 2.4;
 
+/**
+ * The key bed: the keyboard's dark body. The keys stand in it: their undersides are down inside it
+ * and stay inside it however far they're pressed, so no key ever shows under the keyboard.
+ */
+const BED_TOP = 0.46;
+const BED_MARGIN = 0.2;
+/** Where the keys' undersides are (above the floor even when pressed: KEY_FLOOR - PRESS > 0) */
+const KEY_FLOOR = 0.3;
+/** The room left between a key and the next */
+const KEY_GAP = 0.03;
+
 const isBlack = (midi: number) => [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12);
 /** Index of the white key at or below `midi` (C-1 = 0) */
 const whiteIndex = (midi: number) => {
@@ -51,6 +62,56 @@ function keyX(midi: number): number {
 }
 const keyTop = (midi: number) => (isBlack(midi) ? BLACK_TOP : WHITE_TOP);
 const standZ = (midi: number) => (isBlack(midi) ? BLACK_STAND_Z : WHITE_STAND_Z);
+
+/** A box: its least and greatest x, y and z */
+export interface KeyBox {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  z0: number;
+  z1: number;
+}
+
+/**
+ * The shape of each key from `low` to `high`, as boxes, at rest. A white key is its head (the
+ * front, its full width) and its tail (the back, cut away where a black key sits beside it, as on
+ * a real keyboard); a black key is one box standing in those cuts. No two keys share any space,
+ * pressed or not, and none reaches down out of the bed (scripts/pigeonScene.test.mjs).
+ */
+export function keyBoxes(low: number, high: number): Array<{ midi: number; black: boolean; boxes: KeyBox[] }> {
+  const back = -WHITE_L / 2;
+  const front = WHITE_L / 2;
+  const blackFront = back + BLACK_L;
+  const out: Array<{ midi: number; black: boolean; boxes: KeyBox[] }> = [];
+  for (let m = low; m <= high; m++) {
+    const x = keyX(m);
+    if (isBlack(m)) {
+      out.push({ midi: m, black: true, boxes: [{ x0: x - BLACK_W / 2, x1: x + BLACK_W / 2, y0: KEY_FLOOR, y1: BLACK_TOP, z0: back, z1: blackFront }] });
+      continue;
+    }
+    const half = WHITE_W / 2 - KEY_GAP / 2;
+    // (cut back to clear a black key on that side, if there's one there in this keyboard)
+    const cut = (to: number) => (to >= low && to <= high && isBlack(to) ? WHITE_W / 2 - BLACK_W / 2 - KEY_GAP : half);
+    out.push({
+      midi: m,
+      black: false,
+      boxes: [
+        { x0: x - half, x1: x + half, y0: KEY_FLOOR, y1: WHITE_TOP, z0: blackFront + KEY_GAP, z1: front },
+        { x0: x - cut(m - 1), x1: x + cut(m + 1), y0: KEY_FLOOR, y1: WHITE_TOP, z0: back, z1: blackFront + KEY_GAP },
+      ],
+    });
+  }
+  return out;
+}
+
+/** The key bed's box, for keys from `low` to `high` */
+export function bedBox(low: number, high: number): KeyBox {
+  return { x0: keyX(low) - WHITE_W / 2 - BED_MARGIN, x1: keyX(high) + WHITE_W / 2 + BED_MARGIN, y0: 0, y1: BED_TOP, z0: -WHITE_L / 2 - BED_MARGIN, z1: WHITE_L / 2 + BED_MARGIN };
+}
+
+/** How far a key goes down when played (for the tests) */
+export const KEY_PRESS = PRESS;
 
 // ---------------------------------------------------------------------------------------------
 // The plan: every pigeon's legs, worked out once
@@ -178,7 +239,8 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
    * on the other keys. On the floor: the side it's on.
    */
   const sideOf = (at: T.Vector3) => (at.y > 0 ? (at.y > WHITE_TOP + 0.01 ? -1 : 1) : at.z > 0 ? 1 : -1);
-  const EDGE = WHITE_L / 2 + 0.6;
+  // (where a bird stands on the floor to hop up: clear of the key bed)
+  const EDGE = WHITE_L / 2 + BED_MARGIN + 0.55;
   /** Moves `b` from where it is to `to`, arriving at `arrive` (leaving no earlier than b.free), the way the room allows */
   const travel = (b: Bird, to: T.Vector3, arrive: number) => {
     const d = flatDist(b.at, to);
@@ -1262,7 +1324,7 @@ export class PigeonScene {
   private camera: T.OrthographicCamera;
   private plan: PigeonPlanResult;
   private birds: PigeonModel[] = [];
-  private keys = new Map<number, { mesh: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; top: number }>();
+  private keys = new Map<number, { mesh: T.Group; mat: T.MeshLambertMaterial; base: T.Color }>();
   private glows: Array<{ mesh: T.Mesh; mat: T.MeshBasicMaterial }> = [];
   /** Notes by key, for lighting the keys */
   private byKey = new Map<number, ShowcaseNote[]>();
@@ -1406,38 +1468,37 @@ export class PigeonScene {
 
   private buildKeyboard() {
     const { low, high } = this.plan;
-    const whiteGeo = new T.BoxGeometry(WHITE_W * 0.94, WHITE_TOP, WHITE_L);
-    const blackGeo = new T.BoxGeometry(BLACK_W, BLACK_TOP - WHITE_TOP + 0.5, BLACK_L);
     const glowGeo = new T.PlaneGeometry(1, 1);
-    this.disposables.push(whiteGeo, blackGeo, glowGeo);
-    // The keyboard's body under the keys and a soft shadow on the floor
-    const x0 = keyX(low) - WHITE_W;
-    const x1 = keyX(high) + WHITE_W;
-    const baseGeo = new T.BoxGeometry(x1 - x0 + 0.4, 0.3, WHITE_L + 0.4);
-    const baseMat = flat(0x2a2833);
-    this.disposables.push(baseGeo, baseMat);
-    const base = new T.Mesh(baseGeo, baseMat);
-    base.position.set((x0 + x1) / 2, 0.15, 0);
-    this.scene.add(base);
-    const shadeGeo = new T.PlaneGeometry(x1 - x0 + 3, WHITE_L + 1.5);
+    this.disposables.push(glowGeo);
+    const boxMesh = (b: KeyBox, mat: T.Material) => {
+      const geo = new T.BoxGeometry(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0);
+      this.disposables.push(geo);
+      const mesh = new T.Mesh(geo, mat);
+      mesh.position.set((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+      return mesh;
+    };
+    // The key bed, and a soft shadow on the floor beside it
+    const bed = bedBox(low, high);
+    const bedMat = flat(0x2a2833);
+    this.disposables.push(bedMat);
+    this.scene.add(boxMesh(bed, bedMat));
+    const shadeGeo = new T.PlaneGeometry(bed.x1 - bed.x0 + 2.6, WHITE_L + 1.5);
     const shadeMat = new T.MeshBasicMaterial({ color: 0x1b1a24, transparent: true, opacity: 0.12, depthWrite: false });
     this.disposables.push(shadeGeo, shadeMat);
     const shade = new T.Mesh(shadeGeo, shadeMat);
     shade.rotation.x = -Math.PI / 2;
-    shade.position.set((x0 + x1) / 2 + 0.8, 0.01, 0.9);
+    shade.position.set((bed.x0 + bed.x1) / 2 + 0.8, 0.01, 0.9);
     this.scene.add(shade);
 
-    for (let m = low; m <= high; m++) {
-      const black = isBlack(m);
-      const base = new T.Color(black ? 0x1d1c22 : 0xfbfaf7);
+    // The keys, each a group that goes down as one when it's played
+    for (const key of keyBoxes(low, high)) {
+      const base = new T.Color(key.black ? 0x1d1c22 : 0xfbfaf7);
       const mat = flat(base.getHex());
       this.disposables.push(mat);
-      const mesh = new T.Mesh(black ? blackGeo : whiteGeo, mat);
-      const top = keyTop(m);
-      if (black) mesh.position.set(keyX(m), top - (BLACK_TOP - WHITE_TOP + 0.5) / 2, -WHITE_L / 2 + BLACK_L / 2);
-      else mesh.position.set(keyX(m), top / 2, 0);
+      const mesh = new T.Group();
+      for (const b of key.boxes) mesh.add(boxMesh(b, mat));
       this.scene.add(mesh);
-      this.keys.set(m, { mesh, mat, base, top });
+      this.keys.set(key.midi, { mesh, mat, base });
     }
     // Glows: a soft coloured patch on the floor in front of a played key (a pool, reused)
     for (let i = 0; i < 24; i++) {
@@ -1511,7 +1572,7 @@ export class PigeonScene {
         }
       }
       const black = isBlack(midi);
-      k.mesh.position.y = (black ? k.top - (BLACK_TOP - WHITE_TOP + 0.5) / 2 : k.top / 2) - down;
+      k.mesh.position.y = -down;
       if (lit) {
         k.mat.color.copy(k.base).lerp(this.color(lit.color), (black ? 0.75 : 0.62) * (down / PRESS));
         // (and it glows a little, which shows on the night street)

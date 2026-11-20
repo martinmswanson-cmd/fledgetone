@@ -17,7 +17,7 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS } = await import('../src/audio/pigeonScene.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
 const data = (notes) => ({ notes: notes.sort((a, b) => a.start - b.start), tracks: [], bars: [] });
@@ -182,4 +182,39 @@ test('wings open only as far as there is room: in a crowd they stay off the neig
     }
   }
   assert.ok(spread > BIRD_SHAPE.RADIUS + 0.3, 'and they did open');
+});
+
+test('no piano key shares space with another, pressed or not, and none comes out of the key bed', () => {
+  const low = 36;
+  const high = 96;
+  const keys = keyBoxes(low, high);
+  const bed = bedBox(low, high);
+  assert.equal(keys.length, high - low + 1);
+  const down = (b, by) => ({ ...b, y0: b.y0 - by, y1: b.y1 - by });
+  const meet = (a, b) => a.x0 < b.x1 - 1e-9 && b.x0 < a.x1 - 1e-9 && a.y0 < b.y1 - 1e-9 && b.y0 < a.y1 - 1e-9 && a.z0 < b.z1 - 1e-9 && b.z0 < a.z1 - 1e-9;
+  for (const key of keys) {
+    for (const by of [0, KEY_PRESS / 2, KEY_PRESS]) {
+      for (const box of key.boxes.map((b) => down(b, by))) {
+        // Its underside stays down inside the bed and above the floor; its top stays up out of the bed; it's within the bed's edges
+        assert.ok(box.y0 > 0 && box.y0 < bed.y1, `key ${key.midi}, down ${by}: its underside is at ${box.y0.toFixed(2)}`);
+        assert.ok(box.y1 > bed.y1 + 0.1, `key ${key.midi}, down ${by}: its top is at ${box.y1.toFixed(2)}`);
+        assert.ok(box.x0 > bed.x0 && box.x1 < bed.x1 && box.z0 > bed.z0 && box.z1 < bed.z1, `key ${key.midi} is within the bed`);
+      }
+    }
+  }
+  // Every pair of neighbours (a key only comes near the two keys either side of it, and the white keys beyond those), each at rest or right down
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < Math.min(keys.length, i + 4); j++) {
+      for (const pi of [0, KEY_PRESS]) for (const pj of [0, KEY_PRESS]) for (const a of keys[i].boxes) for (const b of keys[j].boxes) assert.ok(!meet(down(a, pi), down(b, pj)), `keys ${keys[i].midi} and ${keys[j].midi} share space`);
+    }
+  }
+  // A black key stands in the cuts of the white keys beside it, with a gap; a pressed black key still stands proud of them
+  const cSharp = keys.find((k) => k.midi === 61).boxes[0];
+  const c = keys.find((k) => k.midi === 60).boxes;
+  assert.ok(c[1].x1 < cSharp.x0 && c[1].x1 > cSharp.x0 - 0.1, 'the white key is cut back to just clear the black one');
+  assert.ok(c[0].x1 > cSharp.x0, "and its head, in front of the black key, is the key's full width");
+  assert.ok(cSharp.y1 - KEY_PRESS > c[0].y1);
+  // A white key with no black key on a side (E to F) isn't cut on that side
+  const e = keys.find((k) => k.midi === 64).boxes;
+  assert.ok(Math.abs(e[1].x1 - e[0].x1) < 1e-9 && e[1].x0 > e[0].x0);
 });
