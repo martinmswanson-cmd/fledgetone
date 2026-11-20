@@ -68,7 +68,8 @@ frame();
 
 | In `song` | What it is |
 | --- | --- |
-| `notes` | `{ start, end, pitch, track?, drum? }` each: seconds from the song's start, a MIDI note number, the index of its track (0 if left out). A note with `drum: true` is left out: the birds play pitched notes |
+| `notes` | `{ start, end, pitch, track?, drum?, kick? }` each: seconds from the song's start, a MIDI note number, the index of its track (0 if left out). The birds play pitched notes: one with `drum: true` or `kick: true` isn't played, but the backgrounds jump on the kicks |
+| `bars` | When each bar line falls, in seconds (optional): the beat the backgrounds jump on, in a song with no kicks |
 | `tracks` | The colour each track's keys light up in: a CSS colour each, or `{ color }` (optional; `TRACK_COLORS` in turn if left out) |
 | `duration` | The song's length in seconds (if left out: when the last note ends) |
 
@@ -79,6 +80,7 @@ frame();
 | `backgroundAt` | When it changes to the next background, in seconds from the song's start: round and round the list, each fading into the next. Never, if left out |
 | `cameras` | The camera angles to use, by id, in order (`['diagonal']` if left out) |
 | `cameraAt` | When it cuts to the next angle, in seconds. Never, if left out |
+| `motion` | How much the backgrounds move with the music, from 0 (still) to 1 (fully; 1 if left out) |
 | `floor` | A floor colour of your own, any CSS colour, in place of the backgrounds' |
 | `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (each angle has its own, about 16); a smaller number makes everything bigger |
 | `centerY` | Where the keyboard's middle sits, from the top of the canvas, from 0 to 1 (0.5) |
@@ -91,6 +93,16 @@ frame();
 | --- | --- |
 {{CAMERAS}}
 
+The backgrounds move with the music: a ring spreads across the floor from each key as it's struck,
+in its track's colour, and each background has its own way of moving. On the beat (the kicks, or
+the bar lines of a song with none) the future city's grid brightens, the night street's lamplight
+swells and the park's daisies nod; struck notes send light to the city's circuits and make stars
+flare; in busier passages more snow falls and space drifts by faster; and the sunset goes down
+through the song. The calm ones (the clouds, the plaza, the beach, the sunset) only ever move
+gently: the clouds drift at about a key's width every eight seconds, whatever the music does. It
+follows the notes you give, not the sound, so it's the same every time. `motion: 0` keeps them
+still.
+
 `everyBars(barTimes, n)` gives the times of every `n`th bar line, for `backgroundAt` and `cameraAt`:
 `cameraAt: everyBars(bars, 4)` cuts every four bars. For changes at a song's sections, give the
 times its sections start.
@@ -100,7 +112,7 @@ times its sections start.
 | `createPigeons(canvas, song, options?)` | Works out every bird's part once, and returns the calls below. The canvas must be one nothing has drawn on yet: it's given a WebGL context |
 | `draw(time)` | Draws the picture at `time` seconds, at the size the canvas has then |
 | `onKeys(time)` | How many pigeons are standing on a key, playing it, at `time` |
-| `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras` or `cameraAt` (only the ones you give); the next `draw` uses them |
+| `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras`, `cameraAt` or `motion` (only the ones you give); the next `draw` uses them |
 | `isDark(time)` | Whether the floor is dark at `time`: for choosing the colour of anything you draw over it |
 | `setFloor(color)` | A floor colour of your own in place of the backgrounds' (`null`: theirs again); the next `draw` uses it |
 | `duration` | The song's length |

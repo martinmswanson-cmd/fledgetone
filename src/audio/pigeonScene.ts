@@ -13,7 +13,7 @@
 import * as T from 'three';
 import type { ShowcaseData, ShowcaseNote } from '../store/showcase';
 import { maxOf, minOf } from '../support/minMax';
-import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, type BackgroundId, type PigeonCamera, type PigeonLook } from './pigeonLooks';
+import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, energyAt, flaresAt, pulseAt, senseMusic, travelAt, type BackgroundId, type MusicSense, type PigeonBackground, type PigeonCamera, type PigeonLook } from './pigeonLooks';
 
 // ---------------------------------------------------------------------------------------------
 // The keyboard, in scene units: a white key is 1 wide; the keys run along x, their fronts toward +z
@@ -390,6 +390,10 @@ type P3 = [number, number, number];
 class Mesher {
   private pos: number[] = [];
   private col: number[] = [];
+  /** How many corners it has so far */
+  get count(): number {
+    return this.pos.length / 3;
+  }
   /** A triangle in `color`, wound so it faces away from `inside` */
   tri(a: P3, b: P3, c: P3, color: T.Color, inside: P3) {
     const ux = b[0] - a[0];
@@ -1095,14 +1099,65 @@ function groundAt(_x: number, z: number): number {
 
 // ---------------------------------------------------------------------------------------------
 // The backgrounds' floor details: flat shapes lying on the floor (paving, daisies, puddles, bird
-// tracks, shells), so the birds walk over them and nothing stands in their way
+// tracks, shells), so the birds walk over them and nothing stands in their way. Each detail can
+// move with the music in its own way (FloorMove); the moving is done on the graphics card, from a
+// few numbers the scene gives it each frame (the beat's jump, how busy the music is, the notes
+// just struck), so a frame is still drawn from the time alone.
+
+/** How one detail moves with the music (all 0: it doesn't) */
+interface FloorMove {
+  /** How much bigger it gets on a beat (0.2: a fifth bigger) */
+  grow?: number;
+  /** How much brighter it gets on a beat */
+  glow?: number;
+  /** How much it twinkles by itself: bigger and brighter, smaller and dimmer, in its own time */
+  twinkle?: number;
+  /** How far it rocks from side to side (radians), gently by itself and a little further on a beat */
+  sway?: number;
+  /** How fast it drifts across the floor, along the keys and toward the front, as a share of the background's drift speed (it comes round again at the far side) */
+  drift?: [number, number];
+  /** How much it flares (brighter, a little bigger) when a note is struck: the details take turns, in eight groups */
+  flare?: number;
+  /** It's there only in busier passages (1): the busier, the more of these show */
+  busy?: number;
+}
 
 /** Flat shapes on the floor, collected into one geometry (each a little above the last, so they lie over each other in the order drawn) */
 class FloorArt {
   private m = new Mesher();
   private y = 0.004;
+  private anchors: number[] = [];
+  private moveA: number[] = [];
+  private moveB: number[] = [];
+  private moveC: number[] = [];
+  private r: () => number;
+  private now: { x: number; z: number; move: FloorMove; phase: number } = { x: 0, z: 0, move: {}, phase: 0 };
+  constructor(r: () => number) {
+    this.r = r;
+  }
+  /** The detail's own phase (which group of eight it flares with, when it twinkles): set it to make details move together */
+  get phaseNow(): number {
+    return this.now.phase;
+  }
+  set phaseNow(phase: number) {
+    this.now.phase = phase;
+  }
+  /** What follows (until the next detail) is one detail, centred on (x, z), moving like this */
+  detail(x: number, z: number, move: FloorMove = {}) {
+    this.now = { x, z, move, phase: this.r() };
+  }
   private layer(): number {
     return (this.y += 0.00002);
+  }
+  /** Gives the corners just added their detail's centre and moves */
+  private tag() {
+    const { x, z, move, phase } = this.now;
+    while (this.anchors.length / 2 < this.m.count) {
+      this.anchors.push(x, z);
+      this.moveA.push(move.grow ?? 0, move.glow ?? 0, move.twinkle ?? 0, move.sway ?? 0);
+      this.moveB.push(move.drift?.[0] ?? 0, move.drift?.[1] ?? 0, phase, move.busy ?? 0);
+      this.moveC.push(move.flare ?? 0);
+    }
   }
   /** A shape with `sides` corners round (x, z), `r` across; `star` pulls every other corner in (a star), `squash` flattens it along z */
   shape(x: number, z: number, r: number, sides: number, color: T.Color, turn = 0, star = 1, squash = 1) {
@@ -1113,6 +1168,7 @@ class FloorArt {
       return [x + Math.cos(a) * rr, y, z + Math.sin(a) * rr * squash];
     };
     for (let k = 0; k < sides; k++) this.m.tri([x, y, z], at(k), at(k + 1), color, [x, y - 1, z]);
+    this.tag();
   }
   /** A straight stroke from one point to another, `wide` across */
   stroke(x0: number, z0: number, x1: number, z1: number, wide: number, color: T.Color) {
@@ -1121,93 +1177,207 @@ class FloorArt {
     const nx = (-(z1 - z0) / len) * (wide / 2);
     const nz = ((x1 - x0) / len) * (wide / 2);
     this.m.quad([x0 + nx, y, z0 + nz], [x1 + nx, y, z1 + nz], [x1 - nx, y, z1 - nz], [x0 - nx, y, z0 - nz], color, [x0, y - 1, z0]);
+    this.tag();
   }
   build(): T.BufferGeometry {
-    return this.m.build();
+    const g = this.m.build();
+    g.setAttribute('anchor', new T.Float32BufferAttribute(this.anchors, 2));
+    g.setAttribute('moveA', new T.Float32BufferAttribute(this.moveA, 4));
+    g.setAttribute('moveB', new T.Float32BufferAttribute(this.moveB, 4));
+    g.setAttribute('moveC', new T.Float32BufferAttribute(this.moveC, 1));
+    return g;
   }
 }
+
+/** A ring from a struck key: how long it lasts (seconds) and how fast it spreads (units a second) */
+const RING_LIFE = 1.5;
+const RING_SPEED = 2.6;
 
 /** How far the floor's details reach past the keyboard's ends and to its front and back (the camera, pulled right back, sees about this far) */
 const FLOOR_REACH = 80;
 
+/** What the scene tells a background's details each frame */
+interface FloorUniforms {
+  [name: string]: T.IUniform;
+  uOpacity: { value: number };
+  /** How much the details move at all: the look's motion times the background's liveliness (drifting goes by uDrift) */
+  uAmount: { value: number };
+  uTime: { value: number };
+  uPulse: { value: number };
+  uEnergy: { value: number };
+  /** How far a detail drifting at the background's full speed has gone (scene units) */
+  uDrift: { value: number };
+  /** The last four notes struck: their groups, and how bright each still is */
+  uGroups: { value: T.Vector4 };
+  uGlows: { value: T.Vector4 };
+  /** The floor's left edge and width, and its reach to front and back: drifting details come round again */
+  uSpan: { value: T.Vector3 };
+  uTint: { value: T.Color };
+}
+
+/** The material that draws a background's details and moves them (FloorMove) */
+function floorMaterial(left: number, right: number): T.ShaderMaterial & { uniforms: FloorUniforms } {
+  const uniforms: FloorUniforms = {
+    uOpacity: { value: 1 },
+    uAmount: { value: 1 },
+    uTime: { value: 0 },
+    uPulse: { value: 0 },
+    uEnergy: { value: 0 },
+    uDrift: { value: 0 },
+    uGroups: { value: new T.Vector4(-1, -1, -1, -1) },
+    uGlows: { value: new T.Vector4() },
+    uSpan: { value: new T.Vector3(left, right - left, FLOOR_REACH) },
+    uTint: { value: new T.Color(1, 1, 1) },
+  };
+  return new T.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    side: T.DoubleSide,
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      attribute vec2 anchor;
+      attribute vec4 moveA; // grow, glow, twinkle, sway
+      attribute vec4 moveB; // drift along the keys, drift to the front, its own phase, only when busy
+      attribute float moveC; // flare
+      uniform float uAmount, uTime, uPulse, uEnergy, uDrift;
+      uniform vec4 uGroups, uGlows;
+      uniform vec3 uSpan;
+      varying vec3 vColor;
+      void main() {
+        float phase = moveB.z;
+        // The notes just struck: this detail's group lights when its turn comes
+        float group = floor(phase * 8.0);
+        float lit = 0.0;
+        for (int i = 0; i < 4; i++) if (abs(uGroups[i] - group) < 0.5) lit = max(lit, uGlows[i]);
+        // Its own slow twinkle (each detail in its own time)
+        float twinkle = sin(uTime * (0.9 + phase * 1.3) + phase * 40.0);
+        float size = 1.0 + uAmount * (moveA.x * uPulse + moveA.z * twinkle * 0.45 + moveC * lit * 0.5);
+        // Only in busier passages: the busier, the more of them (each has its own threshold)
+        float need = fract(phase * 7.31);
+        size *= mix(1.0, smoothstep(need - 0.12, need + 0.02, 0.15 + uEnergy * 0.9), moveB.w);
+        float rock = uAmount * moveA.w * (sin(uTime * 1.1 + phase * 6.2832) * 0.7 + uPulse * 0.5);
+        vec2 rel = position.xz - anchor;
+        rel = vec2(rel.x * cos(rock) - rel.y * sin(rock), rel.x * sin(rock) + rel.y * cos(rock)) * size;
+        // Drifting, and round again at the far side
+        vec2 at = anchor + moveB.xy * uDrift;
+        at.x = uSpan.x + mod(at.x - uSpan.x, uSpan.y);
+        at.y = mod(at.y + uSpan.z, 2.0 * uSpan.z) - uSpan.z;
+        vColor = color * (1.0 + uAmount * (moveA.y * uPulse + moveA.z * twinkle * 0.3 + moveC * lit * 1.3));
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(at.x + rel.x, position.y, at.y + rel.y, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity;
+      uniform vec3 uTint;
+      varying vec3 vColor;
+      void main() {
+        gl_FragColor = vec4(vColor * uTint, uOpacity);
+        #include <colorspace_fragment>
+      }`,
+  }) as T.ShaderMaterial & { uniforms: FloorUniforms };
+}
+
 /** The floor details of a background, for a keyboard from x0 to x1: the same every time */
 function floorDetails(id: BackgroundId, x0: number, x1: number): T.BufferGeometry {
-  const art = new FloorArt();
   const r = rand(id.length * 7919 + id.charCodeAt(0) * 31 + id.charCodeAt(1));
+  const art = new FloorArt(r);
   const left = x0 - FLOOR_REACH;
   const right = x1 + FLOOR_REACH;
   const c = (hex: number) => new T.Color(hex);
-  /** `count` for every 100 square units of floor: calls `put` at spots clear of the keyboard */
-  const scatter = (per100: number, put: (x: number, z: number) => void) => {
+  /** `per100` for every 100 square units of floor: calls `put` at spots clear of the keyboard (everywhere, for things that drift: they pass under it) */
+  const scatter = (per100: number, put: (x: number, z: number) => void, everywhere = false) => {
     const n = Math.round((((right - left) * FLOOR_REACH * 2) / 100) * per100);
     for (let i = 0; i < n; i++) {
       const x = left + r() * (right - left);
       const z = (r() * 2 - 1) * FLOOR_REACH;
-      if (Math.abs(z) > WHITE_L / 2 + 0.9) put(x, z);
+      if (everywhere || Math.abs(z) > WHITE_L / 2 + 0.9) put(x, z);
     }
   };
-  /** Joints between square paving stones `size` across */
-  const paving = (size: number, wide: number, color: T.Color) => {
+  /** Joints between square paving stones `size` across (one detail: they glow together on the beat) */
+  const paving = (size: number, wide: number, color: T.Color, glow = 0) => {
+    art.detail(0, 0, { glow });
     for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) art.stroke(left, z + size / 2, right, z + size / 2, wide, color);
     for (let x = Math.floor(left / size) * size; x <= right; x += size) art.stroke(x, -FLOOR_REACH, x, FLOOR_REACH, wide, color);
   };
   switch (id) {
     case 'plaza': {
       paving(4, 0.07, c(0xd6d2ca));
-      // Crumbs, a few together
+      // Crumbs, a few together (they hop a little on the beat)
       scatter(0.5, (x, z) => {
-        for (let k = 0; k < 5; k++) art.shape(x + (r() - 0.5) * 1.6, z + (r() - 0.5) * 1.6, 0.05 + r() * 0.05, 5, c(0xc9a878), r() * 6);
+        for (let k = 0; k < 5; k++) {
+          const cx = x + (r() - 0.5) * 1.6;
+          const cz = z + (r() - 0.5) * 1.6;
+          art.detail(cx, cz, { grow: 0.5 });
+          art.shape(cx, cz, 0.05 + r() * 0.05, 5, c(0xc9a878), r() * 6);
+        }
       });
       break;
     }
     case 'park': {
-      // Tufts of darker and lighter grass, daisies, a few fallen leaves
+      // Tufts of darker and lighter grass swaying, daisies that nod on the beat, a few leaves blowing across
       scatter(22, (x, z) => {
         const col = c(r() < 0.5 ? 0x8fbd6d : 0xb6dc93);
+        art.detail(x, z + 0.2, { sway: 0.3 });
         for (let k = 0; k < 3; k++) art.shape(x + (k - 1) * 0.16, z, 0.2 + r() * 0.12, 3, col, -Math.PI / 2 + (k - 1) * 0.4, 1, 1.5);
       });
       scatter(3, (x, z) => {
         const turn = r() * 6;
+        art.detail(x, z, { grow: 0.35, sway: 0.25, flare: 0.5 });
         art.shape(x, z, 0.2, 12, c(0xffffff), turn, 0.55);
         art.shape(x, z, 0.075, 6, c(0xf6c945), turn);
       });
-      scatter(1.2, (x, z) => art.shape(x, z, 0.26, 4, c([0xe0a03c, 0xd9763a, 0xc9c24a][Math.floor(r() * 3)]), r() * 6, 1, 0.5));
+      scatter(
+        1.2,
+        (x, z) => {
+          art.detail(x, z, { drift: [0.6 + r() * 0.4, 0.15], sway: 0.9 });
+          art.shape(x, z, 0.26, 4, c([0xe0a03c, 0xd9763a, 0xc9c24a][Math.floor(r() * 3)]), r() * 6, 1, 0.5);
+        },
+        true
+      );
       break;
     }
     case 'sunset': {
-      // Terracotta tiles, some a shade lighter or darker
+      // Terracotta tiles, some a shade lighter or darker, catching the light in turn
       const size = 3;
       for (let x = Math.floor(left / size) * size; x <= right; x += size) {
         for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) {
-          if (r() < 0.3) art.shape(x + size / 2, z + size / 2, (size / 2) * Math.SQRT2 * 0.97, 4, c(r() < 0.5 ? 0xe39f78 : 0xeeb590), Math.PI / 4);
+          if (r() >= 0.3) continue;
+          art.detail(x + size / 2, z + size / 2, { glow: 0.12, flare: 0.25 });
+          art.shape(x + size / 2, z + size / 2, (size / 2) * Math.SQRT2 * 0.97, 4, c(r() < 0.5 ? 0xe39f78 : 0xeeb590), Math.PI / 4);
         }
       }
       paving(size, 0.09, c(0xcf8762));
       break;
     }
     case 'night': {
-      paving(4, 0.07, c(0x2e3454));
-      // Pools of lamplight, and puddles catching it
+      paving(4, 0.07, c(0x2e3454), 0.5);
+      // Pools of lamplight that swell on the beat, and puddles that shiver and catch the notes
       scatter(0.16, (x, z) => {
+        art.detail(x, z, { grow: 0.08, glow: 0.35 });
         art.shape(x, z, 7, 18, c(0x2c3152), 0);
         art.shape(x, z, 4.4, 18, c(0x363b60), 0);
       });
       scatter(0.9, (x, z) => {
         const turn = r() * 6;
         const size = 0.7 + r() * 1.3;
+        art.detail(x, z, { grow: 0.12, flare: 0.5, twinkle: 0.08 });
         art.shape(x, z, size, 9, c(0x38436e), turn, 0.82, 0.6);
         art.shape(x + size * 0.15, z - size * 0.08, size * 0.42, 7, c(0x53629a), turn, 0.8, 0.6);
       });
       break;
     }
     case 'snow': {
-      // Soft blue hollows, and trails of bird tracks wandering across
-      scatter(0.7, (x, z) => art.shape(x, z, 1.5 + r() * 2.5, 9, c(0xe4ecf7), r() * 6, 0.85, 0.6));
+      // Soft blue hollows, trails of bird tracks wandering across, and snow falling: more of it in busy passages
+      scatter(0.7, (x, z) => {
+        art.detail(x, z);
+        art.shape(x, z, 1.5 + r() * 2.5, 9, c(0xe4ecf7), r() * 6, 0.85, 0.6);
+      });
       scatter(0.45, (x, z) => {
         let way = r() * Math.PI * 2;
         let px = x;
         let pz = z;
         const ink = c(0xbfcce0);
+        art.detail(x, z);
         for (let step = 0; step < 9 + r() * 8; step++) {
           way += (r() - 0.5) * 0.5;
           // (left foot, right foot)
@@ -1221,70 +1391,129 @@ function floorDetails(id: BackgroundId, x0: number, x1: number): T.BufferGeometr
           pz += Math.sin(way) * 0.42;
         }
       });
+      scatter(
+        9,
+        (x, z) => {
+          // (the first third always fall; the rest come in as the music gets busier)
+          art.detail(x, z, { drift: [0.25 + r() * 0.2, 0.7 + r() * 0.3], twinkle: 0.3, busy: r() < 0.35 ? 0 : 1 });
+          art.shape(x, z, 0.06 + r() * 0.07, 6, c(r() < 0.5 ? 0xffffff : 0xdbe6f5), r() * 6);
+        },
+        true
+      );
       break;
     }
     case 'space': {
-      // Nebulas, a few planets (some ringed), and stars: dots, and brighter four-pointed ones
-      scatter(0.12, (x, z) => {
-        const tint = [0x1c1640, 0x161f45, 0x2a1640][Math.floor(r() * 3)];
-        for (let k = 0; k < 5; k++) art.shape(x + (r() - 0.5) * 10, z + (r() - 0.5) * 6, 3 + r() * 4, 16, c(tint), r() * 6, 0.92, 0.7);
-      });
-      scatter(0.1, (x, z) => {
-        const size = 1.1 + r() * 1.6;
-        const [body, band] = [[0xe07a5f, 0xf2a488], [0x5fa8d3, 0x9fd0ec], [0xd9b44a, 0xf0d98a], [0x8e6fd1, 0xb9a3ea]][Math.floor(r() * 4)];
-        if (r() < 0.5) art.shape(x, z, size * 1.9, 20, c(0xcfc6e8), 0.3, 1, 0.28);
-        art.shape(x, z, size, 16, c(body), 0);
-        art.shape(x - size * 0.2, z - size * 0.25, size * 0.5, 9, c(band), 0, 1, 0.5);
-      });
-      scatter(26, (x, z) => art.shape(x, z, 0.035 + r() * 0.05, 4, c(r() < 0.8 ? 0xdfe3ff : 0xffe9b8), 0));
-      scatter(1.4, (x, z) => art.shape(x, z, 0.22 + r() * 0.2, 8, c(0xffffff), 0, 0.22));
+      // Nebulas, a few planets (some ringed), and stars: all drifting by, the near ones faster; the stars twinkle and flare with the notes
+      scatter(
+        0.12,
+        (x, z) => {
+          const tint = [0x1c1640, 0x161f45, 0x2a1640][Math.floor(r() * 3)];
+          art.detail(x, z, { drift: [0.25, 0], glow: 0.25 });
+          for (let k = 0; k < 5; k++) art.shape(x + (r() - 0.5) * 10, z + (r() - 0.5) * 6, 3 + r() * 4, 16, c(tint), r() * 6, 0.92, 0.7);
+        },
+        true
+      );
+      scatter(
+        0.1,
+        (x, z) => {
+          const size = 1.1 + r() * 1.6;
+          const [body, band] = [[0xe07a5f, 0xf2a488], [0x5fa8d3, 0x9fd0ec], [0xd9b44a, 0xf0d98a], [0x8e6fd1, 0xb9a3ea]][Math.floor(r() * 4)];
+          art.detail(x, z, { drift: [0.45, 0], grow: 0.04 });
+          if (r() < 0.5) art.shape(x, z, size * 1.9, 20, c(0xcfc6e8), 0.3, 1, 0.28);
+          art.shape(x, z, size, 16, c(body), 0);
+          art.shape(x - size * 0.2, z - size * 0.25, size * 0.5, 9, c(band), 0, 1, 0.5);
+        },
+        true
+      );
+      scatter(
+        26,
+        (x, z) => {
+          art.detail(x, z, { drift: [0.6 + r() * 0.4, 0], twinkle: 0.7, flare: 1 });
+          art.shape(x, z, 0.035 + r() * 0.05, 4, c(r() < 0.8 ? 0xdfe3ff : 0xffe9b8), 0);
+        },
+        true
+      );
+      scatter(
+        1.4,
+        (x, z) => {
+          art.detail(x, z, { drift: [1, 0], twinkle: 0.5, grow: 0.5, flare: 0.8 });
+          art.shape(x, z, 0.22 + r() * 0.2, 8, c(0xffffff), 0, 0.22);
+        },
+        true
+      );
       break;
     }
     case 'neon': {
-      // A grid of neon lines, bright crossings, and circuit traces with a pad at each end
+      // A grid of neon lines that brightens on the beat, and circuit traces with a pad at each end: light runs to them as notes are struck
       const size = 4;
+      art.detail(0, 0, { glow: 1.1 });
       for (let z = -FLOOR_REACH; z <= FLOOR_REACH; z += size) art.stroke(left, z + size / 2, right, z + size / 2, 0.06, c(0x3a1f7a));
       for (let x = Math.floor(left / size) * size; x <= right; x += size) art.stroke(x, -FLOOR_REACH, x, FLOOR_REACH, 0.06, c(0x1f3f7a));
       scatter(1.3, (x, z) => {
-        const col = c(r() < 0.5 ? 0xff3fd0 : 0x2ff3ff);
+        const col = c(r() < 0.5 ? 0xff3fd0 : 0x2ff3ff).multiplyScalar(0.62);
         // (along the grid: a run, a turn, another run)
         const gx = Math.round(x / size) * size;
         const gz = Math.round(z / size) * size + size / 2;
         const run = (1 + Math.floor(r() * 3)) * size * (r() < 0.5 ? 1 : -1);
         const rise = (1 + Math.floor(r() * 2)) * size * (r() < 0.5 ? 1 : -1);
         if (Math.abs(gz) < WHITE_L / 2 + 1.2 || Math.abs(gz + rise) < WHITE_L / 2 + 1.2) return;
+        // (the lines light, without growing; the pads at their ends grow too)
+        art.detail(gx, gz, { glow: 0.2 });
+        const phase = art.phaseNow;
         art.stroke(gx, gz, gx + run, gz, 0.1, col);
         art.stroke(gx + run, gz, gx + run, gz + rise, 0.1, col);
+        art.detail(gx, gz, { flare: 1, grow: 0.3 });
+        art.phaseNow = phase;
         art.shape(gx, gz, 0.22, 6, col, 0);
+        art.detail(gx + run, gz + rise, { flare: 1, grow: 0.3 });
+        art.phaseNow = phase;
         art.shape(gx + run, gz + rise, 0.3, 4, col, Math.PI / 4);
       });
-      scatter(0.5, (x, z) => art.shape(Math.round(x / size) * size, Math.round(z / size) * size + size / 2, 0.9, 6, c(r() < 0.5 ? 0x2a1560 : 0x15305e), Math.PI / 6));
+      scatter(0.5, (x, z) => {
+        const hx = Math.round(x / size) * size;
+        const hz = Math.round(z / size) * size + size / 2;
+        art.detail(hx, hz, { glow: 0.8, grow: 0.15 });
+        art.shape(hx, hz, 0.9, 6, c(r() < 0.5 ? 0x2a1560 : 0x15305e), Math.PI / 6);
+      });
       break;
     }
     case 'clouds': {
-      // Clouds far below: a few puffs together, with a paler edge
-      scatter(0.5, (x, z) => {
-        const puffs = 3 + Math.floor(r() * 3);
-        const size = 1.4 + r() * 1.8;
-        for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.4 + 0.25, size * (0.7 + r() * 0.5), 12, c(0xcfe6fa), 0, 1, 0.62);
-        for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.3, size * (0.6 + r() * 0.45), 12, c(0xffffff), 0, 1, 0.6);
-      });
+      // Clouds far below, drifting slowly by (the nearer ones a little faster): a few puffs together, with a paler edge
+      scatter(
+        0.5,
+        (x, z) => {
+          const puffs = 3 + Math.floor(r() * 3);
+          const size = 1.4 + r() * 1.8;
+          art.detail(x, z, { drift: [0.55 + r() * 0.45, 0], grow: 0.06 });
+          for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.4 + 0.25, size * (0.7 + r() * 0.5), 12, c(0xcfe6fa), 0, 1, 0.62);
+          for (let k = 0; k < puffs; k++) art.shape(x + (k - puffs / 2) * size * 0.8, z + (r() - 0.5) * size * 0.3, size * (0.6 + r() * 0.45), 12, c(0xffffff), 0, 1, 0.6);
+        },
+        true
+      );
       break;
     }
     case 'beach': {
-      // Ripples in the sand, shells, the odd starfish and pebble
+      // Ripples in the sand that shift a little like water running back, shells, the odd starfish and pebble
       scatter(3.2, (x, z) => {
         const col = c(r() < 0.5 ? 0xe4cc94 : 0xf5e4b8);
         const len = 1.5 + r() * 3;
+        art.detail(x + len / 2, z, { sway: 0.07, twinkle: 0.12 });
         for (let k = 0; k < 4; k++) art.stroke(x + (k / 4) * len, z + Math.sin(k * 1.6) * 0.13, x + ((k + 1) / 4) * len, z + Math.sin((k + 1) * 1.6) * 0.13, 0.07, col);
       });
       scatter(1.1, (x, z) => {
         const turn = r() * 6;
+        art.detail(x, z, { flare: 0.4 });
         art.shape(x, z, 0.2, 7, c(r() < 0.5 ? 0xfaf3ea : 0xf2c4b8), turn, 1, 0.8);
         art.shape(x, z, 0.1, 5, c(0xe9a99a), turn, 1, 0.8);
       });
-      scatter(0.3, (x, z) => art.shape(x, z, 0.42, 10, c(0xf08a4b), r() * 6, 0.42));
-      scatter(0.8, (x, z) => art.shape(x, z, 0.1 + r() * 0.1, 6, c(0xb9ad97), r() * 6, 1, 0.75));
+      scatter(0.3, (x, z) => {
+        art.detail(x, z, { grow: 0.25, sway: 0.12 });
+        art.shape(x, z, 0.42, 10, c(0xf08a4b), r() * 6, 0.42);
+      });
+      scatter(0.8, (x, z) => {
+        art.detail(x, z);
+        art.shape(x, z, 0.1 + r() * 0.1, 6, c(0xb9ad97), r() * 6, 1, 0.75);
+      });
       break;
     }
   }
@@ -1340,7 +1569,13 @@ export class PigeonScene {
   private sky: T.HemisphereLight;
   private sun: T.DirectionalLight;
   /** Each background's floor details (made when it's first shown) */
-  private details = new Map<BackgroundId, { mesh: T.Mesh; mat: T.MeshBasicMaterial }>();
+  private details = new Map<BackgroundId, { mesh: T.Mesh; mat: ReturnType<typeof floorMaterial> }>();
+  /** What the backgrounds hear of the music: the beat, how busy it is, the notes just struck */
+  private sense: MusicSense;
+  /** When the song ends (the sunset is down by then) */
+  private songEnd: number;
+  /** Rings that spread across the floor from each key as it's struck (a pool, reused) */
+  private rings: Array<{ mesh: T.Mesh; mat: T.MeshBasicMaterial }> = [];
   private disposables: Array<{ dispose(): void }> = [];
 
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
@@ -1353,6 +1588,8 @@ export class PigeonScene {
     this.across = opts.across;
     this.centerY = opts.centerY ?? 0.5;
     this.look = cleanLook(opts.look);
+    this.sense = senseMusic(data.notes, data.bars);
+    this.songEnd = maxOf(data.notes.map((n) => n.end), 1);
     this.ownFloor = opts.floor ? new T.Color(opts.floor) : null;
     this.frame(opts.width, opts.height, opts.tall);
 
@@ -1404,31 +1641,98 @@ export class PigeonScene {
     return backgroundOf(mix < 0.5 ? from : now).dark;
   }
 
-  /** The background at t: the floor's colour, the light, and each background's floor details faded in or out */
+  /**
+   * The background at t: the floor's colour, the light, and each background's floor details faded
+   * in or out and moving with the music (as much as the look's motion and the background's own
+   * liveliness allow); and the rings spreading from the keys just struck.
+   */
   private dress(t: number) {
     const { now, from, mix } = backgroundAt(this.look, t);
+    const motion = this.look.motion;
+    // How far through the song it is (a background whose light changes through it: the sunset going down)
+    const through = Math.min(1, Math.max(0, t / this.songEnd)) * motion;
+    const lit = (b: PigeonBackground) => {
+      const late = b.late;
+      const at = (early: string, end?: string) => (end ? this.color(early).clone().lerp(this.color(end), through) : this.color(early));
+      return { floor: at(b.floor, late?.floor), sky: at(b.sky, late?.sky), sun: at(b.sun, late?.sun) };
+    };
     const a = backgroundOf(from);
     const b = backgroundOf(now);
-    const blend = (x: string, y: string) => this.color(x).clone().lerp(this.color(y), mix);
-    this.renderer.setClearColor(this.ownFloor ?? blend(a.floor, b.floor));
-    this.sky.color.copy(blend(a.sky, b.sky));
-    this.sky.groundColor.copy(blend(a.bounce, b.bounce));
+    const la = lit(a);
+    const lb = lit(b);
+    this.renderer.setClearColor(this.ownFloor ?? la.floor.clone().lerp(lb.floor, mix));
+    this.sky.color.copy(la.sky).lerp(lb.sky, mix);
+    this.sky.groundColor.copy(this.color(a.bounce)).lerp(this.color(b.bounce), mix);
     this.sky.intensity = a.skyLight + (b.skyLight - a.skyLight) * mix;
-    this.sun.color.copy(blend(a.sun, b.sun));
+    this.sun.color.copy(la.sun).lerp(lb.sun, mix);
     this.sun.intensity = a.sunLight + (b.sunLight - a.sunLight) * mix;
     for (const id of new Set([from, now])) {
       if (this.details.has(id)) continue;
-      const mat = new T.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: T.DoubleSide });
-      const mesh = new T.Mesh(floorDetails(id, keyX(this.plan.low), keyX(this.plan.high)), mat);
+      const x0 = keyX(this.plan.low);
+      const x1 = keyX(this.plan.high);
+      const mat = floorMaterial(x0 - FLOOR_REACH, x1 + FLOOR_REACH);
+      const mesh = new T.Mesh(floorDetails(id, x0, x1), mat);
       mesh.renderOrder = -1;
+      // (its details move on the graphics card, so where it is can't be told from its corners: always draw it)
+      mesh.frustumCulled = false;
       this.scene.add(mesh);
       this.details.set(id, { mesh, mat });
     }
+    const pulse = pulseAt(this.sense, t);
+    const energy = energyAt(this.sense, t);
+    const travel = travelAt(this.sense, t);
+    const flares = flaresAt(this.sense, t);
     for (const [id, d] of this.details) {
       const shown = id === now ? (id === from ? 1 : mix) : id === from ? 1 - mix : 0;
       d.mesh.visible = shown > 0.001;
-      d.mat.opacity = shown;
+      if (!d.mesh.visible) continue;
+      const bg = backgroundOf(id);
+      const u = d.mat.uniforms;
+      u.uOpacity.value = shown;
+      u.uAmount.value = motion * (0.4 + 0.6 * bg.lively);
+      u.uTime.value = t;
+      u.uPulse.value = pulse;
+      u.uEnergy.value = energy;
+      // A calm background drifts at nearly one pace; a lively one quickens with the music. Never faster than its drift speed
+      u.uDrift.value = motion * bg.drift * ((1 - bg.lively) * 0.7 * t + bg.lively * travel);
+      u.uGroups.value.set(flares[0].group, flares[1].group, flares[2].group, flares[3].group);
+      u.uGlows.value.set(flares[0].glow, flares[1].glow, flares[2].glow, flares[3].glow);
+      // (the sunset's tiles darken with its floor)
+      if (bg.late && !this.ownFloor) {
+        const floor = lit(bg).floor;
+        const first = this.color(bg.floor);
+        u.uTint.value.setRGB(floor.r / first.r, floor.g / first.g, floor.b / first.b);
+      }
     }
+    this.ripple(t, motion * (0.45 + 0.55 * (backgroundOf(from).lively + (backgroundOf(now).lively - backgroundOf(from).lively) * mix)));
+  }
+
+  /** Rings spreading across the floor from under each key struck in the last moments, in its track's colour, fading as they go */
+  private ripple(t: number, strength: number) {
+    const notes = this.plan.notes;
+    let used = 0;
+    if (strength > 0.001) {
+      // The notes begun within a ring's life, newest first (as many as there are rings)
+      let hi = notes.length;
+      let lo = 0;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (notes[mid].start <= t) lo = mid + 1;
+        else hi = mid;
+      }
+      for (let i = lo - 1; i >= 0 && used < this.rings.length; i--) {
+        const age = t - notes[i].start;
+        if (age > RING_LIFE) break;
+        const k = age / RING_LIFE;
+        const { mesh, mat } = this.rings[used++];
+        mesh.visible = true;
+        mesh.scale.setScalar(WHITE_L / 2 + 0.4 + age * RING_SPEED);
+        mesh.position.set(keyX(notes[i].midi), 0.012 + used * 0.00002, 0);
+        mat.color.copy(this.color(notes[i].color));
+        mat.opacity = 0.55 * strength * (1 - k) * (1 - k);
+      }
+    }
+    for (; used < this.rings.length; used++) this.rings[used].mesh.visible = false;
   }
 
   /**
@@ -1499,6 +1803,18 @@ export class PigeonScene {
       for (const b of key.boxes) mesh.add(boxMesh(b, mat));
       this.scene.add(mesh);
       this.keys.set(key.midi, { mesh, mat, base });
+    }
+    // Rings that spread from a struck key (a pool, reused)
+    const ringGeo = new T.RingGeometry(0.965, 1, 56);
+    this.disposables.push(ringGeo);
+    for (let i = 0; i < 40; i++) {
+      const mat = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: T.DoubleSide });
+      this.disposables.push(mat);
+      const mesh = new T.Mesh(ringGeo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.rings.push({ mesh, mat });
     }
     // Glows: a soft coloured patch on the floor in front of a played key (a pool, reused)
     for (let i = 0; i < 24; i++) {

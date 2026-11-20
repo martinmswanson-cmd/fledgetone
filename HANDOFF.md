@@ -328,6 +328,16 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   angle is where the camera stands and how steeply the keyboard runs across the frame; how far it
   pulls back is worked out from that). To add one, add it to the list (and, for a background, a
   case in `floorDetails`): the dialog, the tool and its README pick it up.
+  **The backgrounds move with the music**: `senseMusic` (pigeonLooks.ts) works out once, from the
+  notes, the beat (the kicks, else the bar lines), how busy the music is and how far drifting
+  things have travelled; `pulseAt`, `energyAt`, `travelAt` and `flaresAt` read those by time alone.
+  Each floor detail says how it moves (`FloorMove`: grow or glow on the beat, twinkle, sway, drift,
+  flare on a struck note, show only in busy passages) and the moving is done in the details'
+  shader (`floorMaterial`) from a handful of uniforms `dress` sets each frame, so it costs nothing
+  per detail. `ripple` spreads a ring from each struck key. A background's `lively` (0 to 1) scales
+  all of it and `drift` is its drifting things' top speed; the calm ones are low on purpose and a
+  test holds them there (the clouds: under a key's width in six seconds). The look's `motion`
+  (the dialog's With the music, Calmly, Still) scales everything.
   At most 30 birds: denser music still lights every key. Drums aren't played. The same scene is
   the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
   minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with

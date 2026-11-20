@@ -32,6 +32,8 @@
     const BEAT = 60 / 140, BARS = 8;
     const notes = [];
     const add = (track, beat, beats, pitch) => notes.push({ track, start: beat * BEAT, end: (beat + beats) * BEAT - 0.03, pitch });
+    // (a kick on every beat: silent here, but the backgrounds jump on it)
+    for (let beat = 0; beat < BARS * 4; beat++) notes.push({ track: 0, start: beat * BEAT, end: beat * BEAT + 0.1, pitch: 36, kick: true });
     const CHORDS = [[50, 53, 57], [46, 50, 53], [48, 52, 55], [45, 49, 52]];
     const TUNE = [74, 77, 81, 79, 77, 76, 74, 72, 74, 77, 81, 84, 82, 81, 79, 77, 76, 77, 79, 81, 82, 84, 86, 84, 81, 0, 79, 0, 77, 77, 74, 0];
     for (let bar = 0; bar < BARS; bar++) {
@@ -75,6 +77,7 @@
       context = new AudioContext();
       began = context.currentTime + 0.1;
       for (const n of notes) {
+        if (n.kick) continue;
         const at = began + n.start, end = began + n.end;
         const osc = new OscillatorNode(context, { type: WAVES[n.track], frequency: 440 * 2 ** ((n.pitch - 69) / 12) });
         const gain = new GainNode(context, { gain: 0 });

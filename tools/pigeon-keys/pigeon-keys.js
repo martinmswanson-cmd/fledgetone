@@ -20,9 +20,12 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  * Make the pigeons of `song` for `canvas`.
  *
  * canvas         A canvas nothing has drawn on yet (it's given a WebGL context).
- * song.notes     [{ start, end, pitch, track?, drum? }]: seconds, a MIDI note number (60 is middle
- *                C), and which track (an index into song.tracks; 0 if left out). Notes with
- *                `drum: true` are left out: the birds play pitched notes.
+ * song.notes     [{ start, end, pitch, track?, drum?, kick? }]: seconds, a MIDI note number (60
+ *                is middle C), and which track (an index into song.tracks; 0 if left out). The
+ *                birds play pitched notes: one with `drum: true` or `kick: true` isn't played,
+ *                but the backgrounds jump on the kicks.
+ * song.bars      When each bar line falls, in seconds (optional): the beat the backgrounds jump
+ *                on, for a song with no kicks.
  * song.tracks    The tracks, for the colour their keys light up in: a CSS colour each, or
  *                { color } (optional; TRACK_COLORS in turn if left out).
  * song.duration  The song's length in seconds (if left out: when the last note ends).
@@ -37,6 +40,8 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  * options.cameras       The camera angles to use, by id, in order: 'diagonal', 'above', 'low',
  *                       'behind', 'close' (['diagonal'] if left out; PIGEON_CAMERAS lists them).
  * options.cameraAt      When it cuts to the next angle, in seconds. Never, if left out.
+ * options.motion        How much the backgrounds move with the music, 0 (still) to 1 (fully; 1 if
+ *                       left out). The calm backgrounds only ever move gently.
  * options.floor         A floor colour of your own (any CSS colour) in place of the backgrounds'.
  * options.across        How many white keys fit across the canvas's narrow side at the closest
  *                       the camera comes (each angle has its own, about 16): a smaller number
@@ -52,8 +57,10 @@ export function createPigeons(canvas, song, options = {}) {
     const end = Math.max(number(n.end, start), start + 0.01);
     const midi = Math.round(number(n.pitch, NaN));
     const track = Math.max(0, Math.floor(number(n.track, 0)));
-    if (!Number.isFinite(start) || !Number.isFinite(midi) || midi < 0 || midi > 127 || n.drum) continue;
-    notes.push({ start, end, midi, track, color: colors[track] ?? TRACK_COLORS[track % TRACK_COLORS.length], drum: false });
+    if (!Number.isFinite(start) || !Number.isFinite(midi) || midi < 0 || midi > 127) continue;
+    // (drum hits aren't played by the birds, but the backgrounds hear them: they jump on the kicks)
+    const drum = !!(n.drum || n.kick);
+    notes.push({ start, end, midi, track, color: colors[track] ?? TRACK_COLORS[track % TRACK_COLORS.length], drum, ...(n.kick ? { kick: true } : {}) });
     if (end > lastEnd) lastEnd = end;
   }
   notes.sort((a, b) => a.start - b.start || a.midi - b.midi);
@@ -62,8 +69,9 @@ export function createPigeons(canvas, song, options = {}) {
   let width = canvas.width;
   let height = canvas.height;
   let tall = isTall();
-  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt };
-  const scene = new PigeonScene({ notes, tracks: [], bars: [] }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor, look });
+  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt, motion: options.motion };
+  const bars = (Array.isArray(song.bars) ? song.bars : []).filter((t) => typeof t === 'number' && Number.isFinite(t)).sort((a, b) => a - b);
+  const scene = new PigeonScene({ notes, tracks: [], bars }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor, look });
 
   return {
     duration,
@@ -81,7 +89,7 @@ export function createPigeons(canvas, song, options = {}) {
     onKeys(time) {
       return scene.onKeys(number(time, 0));
     },
-    /** Change the backgrounds or camera angles, or when they change ({ backgrounds, backgroundAt, cameras, cameraAt }: only what you give); the next draw uses them */
+    /** Change the backgrounds or camera angles, when they change, or how much the backgrounds move ({ backgrounds, backgroundAt, cameras, cameraAt, motion }: only what you give); the next draw uses them */
     setLook(changes) {
       scene.setLook(changes);
     },

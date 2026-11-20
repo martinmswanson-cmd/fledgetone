@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, BACKGROUND_FADE, DEFAULT_PIGEON_CHOICES, cleanLook, everyBars, turnAt, backgroundAt, cameraAt, readPigeonChoices, lookFor } = await import('../src/audio/pigeonLooks.ts');
+const { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, BACKGROUND_FADE, DEFAULT_PIGEON_CHOICES, MOTIONS, SENSE_STEP, cleanLook, everyBars, turnAt, backgroundAt, cameraAt, readPigeonChoices, lookFor, senseMusic, pulseAt, energyAt, travelAt, flaresAt } = await import('../src/audio/pigeonLooks.ts');
 
 test('every background and camera angle has its own id, a name and a blurb, and colours that are colours', () => {
   for (const list of [PIGEON_BACKGROUNDS, PIGEON_CAMERAS]) {
@@ -51,8 +51,9 @@ test('backgrounds go round in the order chosen, each fading in; cameras cut', ()
 });
 
 test('a look is made safe: unknown ids dropped, at least one of each, times in order and after the start', () => {
-  assert.deepEqual(cleanLook(), { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [] });
-  assert.deepEqual(cleanLook({ backgrounds: ['moon', 'snow', 'snow', 7], backgroundAt: [9, 'x', 3, 0, -1, NaN], cameras: [], cameraAt: null }), { backgrounds: ['snow'], backgroundAt: [3, 9], cameras: ['diagonal'], cameraAt: [] });
+  assert.deepEqual(cleanLook(), { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1 });
+  assert.deepEqual(cleanLook({ backgrounds: ['moon', 'snow', 'snow', 7], backgroundAt: [9, 'x', 3, 0, -1, NaN], cameras: [], cameraAt: null }), { backgrounds: ['snow'], backgroundAt: [3, 9], cameras: ['diagonal'], cameraAt: [], motion: 1 });
+  assert.deepEqual([cleanLook({ motion: 0.3 }).motion, cleanLook({ motion: 7 }).motion, cleanLook({ motion: -1 }).motion, cleanLook({ motion: 'lots' }).motion], [0.3, 1, 0, 1]);
   // (the order given is kept: it's the order they appear in)
   assert.deepEqual(cleanLook({ backgrounds: ['beach', 'plaza'] }).backgrounds, ['beach', 'plaza']);
 });
@@ -67,13 +68,115 @@ test("the dialog's choices: read back safely, and made into a look from the song
     cameras: ['diagonal'],
     cameraWhen: 'none',
     cameraBars: 3,
+    motion: 'music',
   });
+  assert.equal(readPigeonChoices({ motion: 'still' }).motion, 'still');
   const bars = [0, 2, 4, 6, 8, 10];
   const sections = [0, 4, 8];
-  const choices = { backgrounds: ['plaza', 'night'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal', 'above', 'close'], cameraWhen: 'bars', cameraBars: 2 };
+  const choices = { backgrounds: ['plaza', 'night'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal', 'above', 'close'], cameraWhen: 'bars', cameraBars: 2, motion: 'calm' };
   // (the section at the very start isn't a change)
-  assert.deepEqual(lookFor(choices, bars, sections), { backgrounds: ['plaza', 'night'], backgroundAt: [4, 8], cameras: ['diagonal', 'above', 'close'], cameraAt: [4, 8] });
+  assert.deepEqual(lookFor(choices, bars, sections), { backgrounds: ['plaza', 'night'], backgroundAt: [4, 8], cameras: ['diagonal', 'above', 'close'], cameraAt: [4, 8], motion: 0.5 });
   assert.deepEqual(lookFor({ ...choices, backgroundWhen: 'none', cameraWhen: 'sections' }, bars, sections).backgroundAt, []);
   // One ticked: nothing to change to
-  assert.deepEqual(lookFor({ ...choices, backgrounds: ['night'], cameras: ['low'] }, bars, sections), { backgrounds: ['night'], backgroundAt: [], cameras: ['low'], cameraAt: [] });
+  assert.deepEqual(lookFor({ ...choices, backgrounds: ['night'], cameras: ['low'] }, bars, sections), { backgrounds: ['night'], backgroundAt: [], cameras: ['low'], cameraAt: [], motion: 0.5 });
+  assert.deepEqual(MOTIONS.map((m) => [m.id, m.amount]), [['music', 1], ['calm', 0.5], ['still', 0]]);
+});
+
+// --- What the backgrounds hear of the music ---
+
+const note = (start, len, midi, extra = {}) => ({ start, end: start + len, midi, ...extra });
+/** 32 s: a quiet first half (a note a second), a busy second half (eight a second), a kick on every half second throughout */
+function song() {
+  const notes = [];
+  for (let t = 0; t < 16; t += 1) notes.push(note(t, 0.4, 60));
+  for (let t = 16; t < 32; t += 0.125) notes.push(note(t, 0.1, 60 + (Math.round(t * 8) % 12)));
+  for (let t = 0; t < 32; t += 0.5) notes.push(note(t, 0.05, 36, { drum: true, kick: true }));
+  return notes;
+}
+
+test('the beat is the kicks, or the bar lines of a song with none; a jump rises at once and dies away', () => {
+  const sense = senseMusic(song(), [0, 2, 4]);
+  assert.equal(sense.beats.length, 64);
+  assert.deepEqual(sense.beats.slice(0, 3), [0, 0.5, 1]);
+  // No kicks: the bar lines
+  assert.deepEqual(senseMusic([note(0, 1, 60), note(1, 1, 62)], [0, 2, 4]).beats, [0, 2, 4]);
+  // Two hits at once are one beat
+  assert.equal(senseMusic([0, 0.01, 1, 2, 3].map((t) => note(t, 0.1, 36, { kick: true })), []).beats.length, 4);
+  assert.equal(pulseAt(sense, -1), 0);
+  assert.equal(pulseAt(sense, 4), 0, 'on the beat itself it has yet to rise');
+  assert.ok(pulseAt(sense, 4.02) > 0.9, 'a fiftieth of a second later it is right up');
+  assert.ok(pulseAt(sense, 4.25) < 0.4 && pulseAt(sense, 4.25) > 0.2);
+  assert.ok(pulseAt(sense, 4.49) < 0.15);
+  // And it's never out of range
+  for (let t = -2; t < 40; t += 0.013) assert.ok(pulseAt(sense, t) >= 0 && pulseAt(sense, t) <= 1);
+});
+
+test('how busy the music is: low in the quiet half, high in the busy half, changing smoothly, always 0 to 1', () => {
+  const sense = senseMusic(song(), []);
+  assert.ok(energyAt(sense, 8) < 0.45, `quiet: ${energyAt(sense, 8).toFixed(2)}`);
+  assert.ok(energyAt(sense, 24) > 0.9, `busy: ${energyAt(sense, 24).toFixed(2)}`);
+  let last = energyAt(sense, -1);
+  for (let t = -1; t < 40; t += 1 / 60) {
+    const e = energyAt(sense, t);
+    assert.ok(e >= 0 && e <= 1);
+    assert.ok(Math.abs(e - last) < 0.03, `no jump between frames at ${t.toFixed(2)}: ${last.toFixed(3)} to ${e.toFixed(3)}`);
+    last = e;
+  }
+  // A song with no notes is still (and nothing breaks)
+  const empty = senseMusic([], []);
+  assert.equal(energyAt(empty, 3), 0);
+  assert.equal(pulseAt(empty, 3), 0);
+  assert.deepEqual(flaresAt(empty, 3).map((f) => f.glow), [0, 0, 0, 0]);
+});
+
+test('drifting things only ever go forward, between two fifths of full speed and full speed: faster in busy passages', () => {
+  const sense = senseMusic(song(), []);
+  let last = travelAt(sense, -2);
+  for (let t = -2 + 1 / 60; t < 45; t += 1 / 60) {
+    const now = travelAt(sense, t);
+    const speed = (now - last) * 60;
+    assert.ok(speed > 0.39 && speed < 1.001, `speed ${speed.toFixed(3)} at ${t.toFixed(2)}`);
+    last = now;
+  }
+  const quiet = travelAt(sense, 12) - travelAt(sense, 4);
+  const busy = travelAt(sense, 28) - travelAt(sense, 20);
+  assert.ok(busy > quiet * 1.4, `quiet ${quiet.toFixed(2)}, busy ${busy.toFixed(2)}`);
+  assert.equal(sense.travel.length, sense.energy.length);
+  assert.ok(Math.abs(sense.travel.length * SENSE_STEP - 34) < 1);
+});
+
+test('the calm backgrounds stay calm: the clouds, the plaza, the beach and the sunset drift slowly, whatever the music does', () => {
+  const by = Object.fromEntries(PIGEON_BACKGROUNDS.map((b) => [b.id, b]));
+  for (const b of PIGEON_BACKGROUNDS) assert.ok(b.lively >= 0 && b.lively <= 1 && b.drift >= 0, b.id);
+  for (const id of ['clouds', 'plaza', 'beach', 'sunset']) assert.ok(by[id].lively <= 0.3, `${id} is calm`);
+  assert.ok(by.neon.lively > by.clouds.lively * 3, 'and the future city is not');
+  // How fast a background's drifting things cross the floor, in white keys' widths a second, as the scene works it out (pigeonScene.ts, dress):
+  // its drift speed times a pace that's part steady and part the music's (which runs at 0.4 to 1)
+  const sense = senseMusic(song(), []);
+  const speedAt = (b, t) => b.drift * ((1 - b.lively) * 0.7 + b.lively * (travelAt(sense, t + 1 / 60) - travelAt(sense, t)) * 60);
+  let slowest = Infinity;
+  let fastest = 0;
+  for (let t = 0; t < 32; t += 0.1) {
+    const v = speedAt(by.clouds, t);
+    slowest = Math.min(slowest, v);
+    fastest = Math.max(fastest, v);
+  }
+  // The clouds: never more than a key's width in six seconds, and nearly the same pace in the quiet half and the busy one
+  assert.ok(fastest <= 1 / 6, `the clouds reach ${fastest.toFixed(3)} keys a second`);
+  assert.ok(fastest / slowest < 1.25, `their pace changes by ${(fastest / slowest).toFixed(2)} times`);
+  // No background's drifting things ever outrun its drift speed, and none drifts faster than a key's width a second
+  for (const b of PIGEON_BACKGROUNDS) {
+    for (let t = 0; t < 32; t += 0.5) assert.ok(speedAt(b, t) <= b.drift + 1e-9, b.id);
+    assert.ok(b.drift <= 1, b.id);
+  }
+});
+
+test('struck notes light the details in turn: the newest brightest, fading, and a different group each time', () => {
+  const sense = senseMusic([0, 1, 2, 3, 4].map((t) => note(t, 0.5, 60 + t)), []);
+  assert.deepEqual(flaresAt(sense, -1).map((f) => f.group), [-1, -1, -1, -1]);
+  const at = flaresAt(sense, 3.1);
+  assert.ok(at[0].glow > at[1].glow && at[1].glow > at[2].glow && at[2].glow > at[3].glow);
+  assert.ok(at[0].glow > 0.8 && at[3].glow < 0.01);
+  assert.equal(new Set(at.map((f) => f.group)).size, 4);
+  for (const f of at) assert.ok(f.group >= 0 && f.group < 8);
 });

@@ -47,7 +47,7 @@ import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } fro
 import { showcaseData } from '../../store/showcase';
 import { DEFAULT_LINES_LOOK, type LinesLook } from '../../audio/linesDraw';
 import { linesData } from '../../store/lines';
-import { DEFAULT_PIGEON_CHOICES, lookFor, MOST_BARS, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, readPigeonChoices, type ChangeWhen, type PigeonChoices } from '../../audio/pigeonLooks';
+import { DEFAULT_PIGEON_CHOICES, lookFor, MOST_BARS, MOTIONS, PIGEON_BACKGROUNDS, PIGEON_CAMERAS, readPigeonChoices, type ChangeWhen, type MotionId, type PigeonChoices } from '../../audio/pigeonLooks';
 import { lineChords } from '../../store/linesChords';
 import { detectKey } from '../../store/songKey';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
@@ -951,6 +951,21 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             )}
             {!(refVideo && useFootage) && settings.picture === 'pigeons' && (
               <div className="grid gap-3">
+                <label className="flex flex-wrap items-center gap-2 text-forge-text">
+                  The backgrounds move
+                  <select
+                    value={settings.pigeons.motion}
+                    onChange={(e) => update({ pigeons: { ...settings.pigeons, motion: e.target.value as MotionId } })}
+                    className="h-7 bg-forge-bg border border-forge-border rounded px-1"
+                    title={`${MOTIONS.find((m) => m.id === settings.pigeons.motion)?.blurb}. The calm backgrounds (the clouds, the plaza, the beach, the sunset) only ever move gently.`}
+                  >
+                    {MOTIONS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name.charAt(0).toLowerCase() + m.name.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {(
                   [
                     ['Backgrounds', 'backgrounds', 'backgroundWhen', 'backgroundBars', PIGEON_BACKGROUNDS, 'background', 'One fades into the next'],

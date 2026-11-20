@@ -322,6 +322,9 @@ test('tools: the pigeons bundle is one module with three.js inside and its licen
   // Every background and camera angle is in the README, by its id, and the example fills its menus from the lists
   for (const x of [...scene.PIGEON_BACKGROUNDS, ...scene.PIGEON_CAMERAS]) assert.ok(readme.includes(`\`'${x.id}'\``), `the README lists ${x.id}`);
   assert.deepEqual(scene.everyBars([0, 2, 4, 6, 8], 2), [4, 8]);
+  // The helper passes on the kicks and bar lines the backgrounds move to, and how much they move
+  for (const word of ['kick: true', 'song.bars', 'motion: options.motion']) assert.ok(text('pigeon-keys.js').includes(word), word);
+  for (const word of ['`motion`', '`bars`', 'kick']) assert.ok(readme.includes(word), `the README says ${word}`);
   // The example's script is sound JavaScript (a name declared twice, say, would stop the page)
   const script = /<script type="module">([\s\S]*?)<\/script>/.exec(text('index.html'))[1];
   const { SourceTextModule } = await import('node:vm').catch(() => ({}));

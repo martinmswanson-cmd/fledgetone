@@ -22,18 +22,27 @@ export interface PigeonBackground {
   sunLight: number;
   /** A dark floor: the export draws its title and marks in light ink over it */
   dark: boolean;
+  /**
+   * How much it moves with the music, 0 to 1: how far its details jump on the beat, flare on notes
+   * and quicken in busy passages. The calm ones (the clouds, the plaza, the beach) are low.
+   */
+  lively: number;
+  /** How fast its drifting things (clouds, stars, leaves, snow) cross the floor at their fastest, in white keys' widths a second */
+  drift: number;
+  /** What the light and floor become by the end of the song, if they change through it (the sunset going down) */
+  late?: { floor: string; sky: string; sun: string };
 }
 
 export const PIGEON_BACKGROUNDS: PigeonBackground[] = [
-  { id: 'plaza', name: 'Plaza', blurb: 'Pale paving stones, a few crumbs', floor: '#e9e6e1', sky: '#ffffff', bounce: '#b8b2a8', skyLight: 1.6, sun: '#ffffff', sunLight: 1.6, dark: false },
-  { id: 'park', name: 'Park', blurb: 'Grass with daisies and fallen leaves', floor: '#a5cf83', sky: '#f4ffe9', bounce: '#7fa860', skyLight: 1.6, sun: '#fff8e0', sunLight: 1.6, dark: false },
-  { id: 'sunset', name: 'Rooftop at sunset', blurb: 'Warm terracotta tiles in low orange light', floor: '#e9ab84', sky: '#ffd9b8', bounce: '#c9785a', skyLight: 1.5, sun: '#ffb070', sunLight: 1.8, dark: false },
-  { id: 'night', name: 'Night street', blurb: 'Dark wet paving with puddles: the keys glow', floor: '#232844', sky: '#8f9fe0', bounce: '#2a2f55', skyLight: 1.5, sun: '#b9c6ff', sunLight: 1.1, dark: true },
-  { id: 'snow', name: 'Snow', blurb: 'Fresh snow with trails of bird tracks', floor: '#f1f5fb', sky: '#ffffff', bounce: '#b9c8e0', skyLight: 1.7, sun: '#eef4ff', sunLight: 1.4, dark: false },
-  { id: 'space', name: 'Space', blurb: 'Stars, planets and drifting nebulas under a keyboard afloat', floor: '#0d0b24', sky: '#b9b4ff', bounce: '#3a2a6e', skyLight: 1.5, sun: '#ffffff', sunLight: 1.5, dark: true },
-  { id: 'neon', name: 'Future city', blurb: 'A dark grid lit in neon pink and cyan, circuits running under the keys', floor: '#120d2b', sky: '#9fd8ff', bounce: '#7a2a8a', skyLight: 1.5, sun: '#ffc4f4', sunLight: 1.3, dark: true },
-  { id: 'clouds', name: 'Above the clouds', blurb: 'Blue sky with white clouds far below', floor: '#8fc4f2', sky: '#ffffff', bounce: '#9fc6ea', skyLight: 1.7, sun: '#fffbe6', sunLight: 1.6, dark: false },
-  { id: 'beach', name: 'Beach', blurb: 'Rippled sand with shells and starfish', floor: '#eed9a6', sky: '#fffbe8', bounce: '#c9ab72', skyLight: 1.6, sun: '#fff3d0', sunLight: 1.7, dark: false },
+  { id: 'plaza', name: 'Plaza', blurb: 'Pale paving stones, a few crumbs', floor: '#e9e6e1', sky: '#ffffff', bounce: '#b8b2a8', skyLight: 1.6, sun: '#ffffff', sunLight: 1.6, dark: false, lively: 0.3, drift: 0 },
+  { id: 'park', name: 'Park', blurb: 'Grass with daisies and fallen leaves', floor: '#a5cf83', sky: '#f4ffe9', bounce: '#7fa860', skyLight: 1.6, sun: '#fff8e0', sunLight: 1.6, dark: false, lively: 0.5, drift: 0.25 },
+  { id: 'sunset', name: 'Rooftop at sunset', blurb: 'Warm terracotta tiles in low orange light', floor: '#e9ab84', sky: '#ffd9b8', bounce: '#c9785a', skyLight: 1.5, sun: '#ffb070', sunLight: 1.8, dark: false, lively: 0.3, drift: 0, late: { floor: '#c98a78', sky: '#e9b5c0', sun: '#ff7f66' } },
+  { id: 'night', name: 'Night street', blurb: 'Dark wet paving with puddles: the keys glow', floor: '#232844', sky: '#8f9fe0', bounce: '#2a2f55', skyLight: 1.5, sun: '#b9c6ff', sunLight: 1.1, dark: true, lively: 0.6, drift: 0 },
+  { id: 'snow', name: 'Snow', blurb: 'Fresh snow with trails of bird tracks', floor: '#f1f5fb', sky: '#ffffff', bounce: '#b9c8e0', skyLight: 1.7, sun: '#eef4ff', sunLight: 1.4, dark: false, lively: 0.4, drift: 0.7 },
+  { id: 'space', name: 'Space', blurb: 'Stars, planets and drifting nebulas under a keyboard afloat', floor: '#0d0b24', sky: '#b9b4ff', bounce: '#3a2a6e', skyLight: 1.5, sun: '#ffffff', sunLight: 1.5, dark: true, lively: 0.6, drift: 0.3 },
+  { id: 'neon', name: 'Future city', blurb: 'A dark grid lit in neon pink and cyan, circuits running under the keys', floor: '#120d2b', sky: '#9fd8ff', bounce: '#7a2a8a', skyLight: 1.5, sun: '#ffc4f4', sunLight: 1.3, dark: true, lively: 1, drift: 0 },
+  { id: 'clouds', name: 'Above the clouds', blurb: 'Blue sky with white clouds far below', floor: '#8fc4f2', sky: '#ffffff', bounce: '#9fc6ea', skyLight: 1.7, sun: '#fffbe6', sunLight: 1.6, dark: false, lively: 0.2, drift: 0.16 },
+  { id: 'beach', name: 'Beach', blurb: 'Rippled sand with shells and starfish', floor: '#eed9a6', sky: '#fffbe8', bounce: '#c9ab72', skyLight: 1.6, sun: '#fff3d0', sunLight: 1.7, dark: false, lively: 0.3, drift: 0 },
 ];
 
 export type CameraId = 'diagonal' | 'above' | 'low' | 'behind' | 'close';
@@ -67,9 +76,11 @@ export interface PigeonLook {
   backgroundAt: number[];
   cameras: CameraId[];
   cameraAt: number[];
+  /** How much the backgrounds move with the music: 0 still, 1 fully (each background's own liveliness scales it) */
+  motion: number;
 }
 
-export const DEFAULT_PIGEON_LOOK: PigeonLook = { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [] };
+export const DEFAULT_PIGEON_LOOK: PigeonLook = { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1 };
 
 /** How long one background takes to fade into the next (seconds) */
 export const BACKGROUND_FADE = 0.8;
@@ -88,6 +99,7 @@ export function cleanLook(look?: Partial<PigeonLook> | null): PigeonLook {
     backgroundAt: times(look?.backgroundAt),
     cameras: known(look?.cameras, PIGEON_CAMERAS.map((c) => c.id), 'diagonal'),
     cameraAt: times(look?.cameraAt),
+    motion: typeof look?.motion === 'number' && Number.isFinite(look.motion) ? Math.min(1, Math.max(0, look.motion)) : 1,
   };
 }
 
@@ -144,9 +156,19 @@ export interface PigeonChoices {
   cameras: CameraId[];
   cameraWhen: ChangeWhen;
   cameraBars: number;
+  /** How much the backgrounds move with the music */
+  motion: MotionId;
 }
 
-export const DEFAULT_PIGEON_CHOICES: PigeonChoices = { backgrounds: ['plaza'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal'], cameraWhen: 'bars', cameraBars: 4 };
+/** The dialog's choices for how much the backgrounds move, and what each comes to */
+export type MotionId = 'music' | 'calm' | 'still';
+export const MOTIONS: Array<{ id: MotionId; name: string; blurb: string; amount: number }> = [
+  { id: 'music', name: 'With the music', blurb: 'Rings spread from the keys as they play, and each background moves in its own way: on the beat, with the notes, more in busy passages', amount: 1 },
+  { id: 'calm', name: 'Calmly', blurb: 'The same, at half strength', amount: 0.5 },
+  { id: 'still', name: 'Still', blurb: 'The backgrounds stay as they are', amount: 0 },
+];
+
+export const DEFAULT_PIGEON_CHOICES: PigeonChoices = { backgrounds: ['plaza'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal'], cameraWhen: 'bars', cameraBars: 4, motion: 'music' };
 
 /** The most bars between changes the dialog takes */
 export const MOST_BARS = 64;
@@ -167,6 +189,7 @@ export function readPigeonChoices(raw: unknown): PigeonChoices {
     cameras: inOrder(look.cameras, PIGEON_CAMERAS.map((c) => c.id)),
     cameraWhen: when(r.cameraWhen, d.cameraWhen),
     cameraBars: bars(r.cameraBars, d.cameraBars),
+    motion: MOTIONS.some((m) => m.id === r.motion) ? (r.motion as MotionId) : d.motion,
   };
 }
 
@@ -182,5 +205,103 @@ export function lookFor(choices: PigeonChoices, bars: number[], sections: number
     backgroundAt: choices.backgrounds.length > 1 ? at(choices.backgroundWhen, choices.backgroundBars) : [],
     cameras: choices.cameras,
     cameraAt: choices.cameras.length > 1 ? at(choices.cameraWhen, choices.cameraBars) : [],
+    motion: MOTIONS.find((m) => m.id === choices.motion)?.amount ?? 1,
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// What the backgrounds hear of the music: the beat, how busy it is, and the notes just struck. All
+// worked out once from the notes, and read by time alone (a frame is the same however it's reached)
+
+/** A note as the scene has it: seconds, a pitch, and whether it's a drum hit (a kick marked) */
+export interface HeardNote {
+  start: number;
+  end: number;
+  midi: number;
+  drum?: boolean;
+  kick?: true;
+}
+
+export interface MusicSense {
+  /** When each beat the backgrounds jump on falls: the kicks, or the bar lines of a song without them */
+  beats: number[];
+  /** When each pitched note starts, in order */
+  onsets: number[];
+  /** How busy the music is (0 to 1), every SENSE_STEP seconds from 0 */
+  energy: Float32Array;
+  /** How far drifting things have travelled by then, in seconds of travel at full speed (it grows at 0.4 to 1 a second: slower in quiet passages) */
+  travel: Float32Array;
+}
+
+export const SENSE_STEP = 0.25;
+/** How long a beat's jump takes to die away (seconds), and a struck note's flare */
+const PULSE_FADE = 0.24;
+const FLARE_FADE = 0.5;
+
+export function senseMusic(notes: HeardNote[], bars: number[]): MusicSense {
+  const kicks = notes.filter((n) => n.kick).map((n) => n.start).sort((a, b) => a - b);
+  // (kicks if the song has a few; hits closer than a twentieth of a second are one beat)
+  const beats = (kicks.length >= 4 ? kicks : [...bars].sort((a, b) => a - b)).filter((t, i, all) => i === 0 || t - all[i - 1] > 0.05);
+  const pitched = notes.filter((n) => !n.drum && !n.kick);
+  const onsets = pitched.map((n) => n.start).sort((a, b) => a - b);
+  let last = 0;
+  for (const n of notes) if (n.end > last) last = n.end;
+  const steps = Math.max(2, Math.ceil((last + 2) / SENSE_STEP) + 1);
+  // How much is sounding round each moment: each note counts for where it sounds, fading out over a second either side (a drum hit counts half)
+  const raw = new Float32Array(steps);
+  for (const n of notes) {
+    const weight = n.drum || n.kick ? 0.5 : 1;
+    const i0 = Math.max(0, Math.floor((n.start - 2) / SENSE_STEP));
+    const i1 = Math.min(steps - 1, Math.ceil((n.end + 2) / SENSE_STEP));
+    for (let i = i0; i <= i1; i++) {
+      const t = i * SENSE_STEP;
+      const away = t < n.start ? n.start - t : t > n.end ? t - n.end : 0;
+      raw[i] += weight * Math.exp(-(away * away) / 0.9);
+    }
+  }
+  // Against the song's own busiest passages (the level nine tenths of it stays under), so a quiet song still has its louder and softer parts
+  const sorted = Array.from(raw).filter((v) => v > 0).sort((a, b) => a - b);
+  const top = sorted.length ? sorted[Math.floor(sorted.length * 0.9)] : 1;
+  const energy = new Float32Array(steps);
+  const travel = new Float32Array(steps);
+  for (let i = 0; i < steps; i++) {
+    energy[i] = Math.min(1, raw[i] / (top || 1));
+    if (i) travel[i] = travel[i - 1] + SENSE_STEP * (0.4 + 0.6 * (energy[i - 1] + energy[i]) * 0.5);
+  }
+  return { beats, onsets, energy, travel };
+}
+
+const sampled = (list: Float32Array, t: number, slopeAfter: number): number => {
+  const x = t / SENSE_STEP;
+  if (x <= 0) return list[0] + (slopeAfter ? t * 0.4 : 0);
+  const end = list.length - 1;
+  if (x >= end) return list[end] + (t - end * SENSE_STEP) * slopeAfter;
+  const i = Math.floor(x);
+  return list[i] + (list[i + 1] - list[i]) * (x - i);
+};
+
+/** How busy the music is at t, 0 to 1 */
+export const energyAt = (sense: MusicSense, t: number): number => sampled(sense.energy, t, 0);
+/** How far drifting things have travelled by t (it goes on at the slowest pace after the song) */
+export const travelAt = (sense: MusicSense, t: number): number => sampled(sense.travel, t, 0.4);
+
+/** The beat's jump at t: up at once on a beat (in a fiftieth of a second), then dying away */
+export function pulseAt(sense: MusicSense, t: number): number {
+  const { turns, since } = turnAt(sense.beats, t);
+  if (!turns) return 0;
+  return Math.min(1, since / 0.02) * Math.exp(-since / PULSE_FADE);
+}
+
+/** The last four notes struck by t: which of eight groups of details each lights (they take turns), and how bright it still is (1 fading to 0) */
+export function flaresAt(sense: MusicSense, t: number): Array<{ group: number; glow: number }> {
+  const { turns } = turnAt(sense.onsets, t);
+  const out: Array<{ group: number; glow: number }> = [];
+  for (let k = 0; k < 4; k++) {
+    const i = turns - 1 - k;
+    out.push(i >= 0 ? { group: (i * 3) % 8, glow: Math.exp(-(t - sense.onsets[i]) / FLARE_FADE) } : { group: -1, glow: 0 });
+  }
+  return out;
+}
+
+/** The fastest a background's drifting things ever move across the floor, in white keys' widths a second, with the backgrounds moving fully */
+export const fastestDrift = (b: PigeonBackground): number => b.drift;
