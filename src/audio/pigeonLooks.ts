@@ -66,9 +66,22 @@ export const PIGEON_CAMERAS: PigeonCamera[] = [
   { id: 'diagonal', name: 'Diagonal', blurb: 'From above and in front, the keys running corner to corner', yaw: -0.5, pitch: 0.92, slope: { tall: 0.66, wide: 0.24 }, across: { tall: 16, wide: 17 }, furthest: 0.4 },
   { id: 'above', name: 'From above', blurb: 'Straight down on the keys', yaw: 0, pitch: 1.5, slope: { tall: 0.95, wide: 0 }, across: { tall: 16, wide: 15 }, furthest: 0.4 },
   { id: 'low', name: 'Low, from the front', blurb: 'Down near the floor, the birds seen from the side', yaw: 0.42, pitch: 0.6, slope: { tall: 0.5, wide: 0.1 }, across: { tall: 15, wide: 13 }, furthest: 0.45 },
-  { id: 'behind', name: 'From behind', blurb: 'Over the black keys, the other way up the frame', yaw: Math.PI - 0.55, pitch: 0.85, slope: { tall: -0.66, wide: -0.22 }, across: { tall: 16, wide: 17 }, furthest: 0.4 },
+  { id: 'behind', name: 'From behind', blurb: 'Over the black keys, from the far side: the low notes are on the right, as they are from there', yaw: Math.PI - 0.55, pitch: 0.85, slope: { tall: -0.66, wide: -0.22 }, across: { tall: 16, wide: 17 }, furthest: 0.4 },
   { id: 'close', name: 'Close up', blurb: 'In close on what is playing; far-off parts go out of the frame', yaw: -0.3, pitch: 0.8, slope: { tall: 0.6, wide: 0.16 }, across: { tall: 10, wide: 9 }, furthest: 0.75 },
 ];
+
+/**
+ * How far to roll a camera (radians, about the way it looks) so the keyboard runs at `slope` across
+ * the picture, given which way the keyboard runs across it unrolled (`alongX` to the right,
+ * `alongY` up): the lesser turn of the two that give that slope, so the camera stays the right way
+ * up. (From behind the keys that leaves the low notes on the right, as they are from there.)
+ */
+export function uprightRoll(alongX: number, alongY: number, slope: number): number {
+  let roll = Math.atan2(alongY, alongX) - slope;
+  roll = Math.atan2(Math.sin(roll), Math.cos(roll));
+  if (Math.abs(roll) > Math.PI / 2) roll -= Math.sign(roll) * Math.PI;
+  return roll;
+}
 
 /** Which backgrounds and camera angles a video uses, in the order they appear, and when it changes to the next (seconds from its start) */
 export interface PigeonLook {

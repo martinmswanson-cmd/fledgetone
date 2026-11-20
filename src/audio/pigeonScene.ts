@@ -13,7 +13,7 @@
 import * as T from 'three';
 import type { ShowcaseData, ShowcaseNote } from '../store/showcase';
 import { maxOf, minOf } from '../support/minMax';
-import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, energyAt, flaresAt, pulseAt, senseMusic, travelAt, type BackgroundId, type MusicSense, type PigeonBackground, type PigeonCamera, type PigeonLook } from './pigeonLooks';
+import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, energyAt, flaresAt, pulseAt, senseMusic, travelAt, uprightRoll, type BackgroundId, type MusicSense, type PigeonBackground, type PigeonCamera, type PigeonLook } from './pigeonLooks';
 
 // ---------------------------------------------------------------------------------------------
 // The keyboard, in scene units: a white key is 1 wide; the keys run along x, their fronts toward +z
@@ -1824,7 +1824,8 @@ export class PigeonScene {
     const ux = e[4];
     const seen = Math.hypot(rx, ux);
     const slope = this.tall ? cam.slope.tall : cam.slope.wide;
-    this.camera.rotateZ(Math.atan2(ux, rx) - slope);
+    // (the lesser turn that gives that slope: the camera stays the right way up)
+    this.camera.rotateZ(uprightRoll(rx, ux, slope));
     // How many keys fit along the frame at this slope, and so how far to pull back
     const fits = 0.92 * Math.min(this.view.w / Math.max(1e-6, seen * Math.abs(Math.cos(slope))), this.view.h / Math.max(1e-6, seen * Math.abs(Math.sin(slope))));
     this.camera.zoom = Math.min(1, Math.max(cam.furthest, fits / (2.2 * spread + 10)));

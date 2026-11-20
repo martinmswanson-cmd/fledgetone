@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, BACKGROUND_FADE, DEFAULT_PIGEON_CHOICES, MOTIONS, SENSE_STEP, cleanLook, everyBars, turnAt, backgroundAt, cameraAt, readPigeonChoices, lookFor, senseMusic, pulseAt, energyAt, travelAt, flaresAt } = await import('../src/audio/pigeonLooks.ts');
+const { PIGEON_BACKGROUNDS, PIGEON_CAMERAS, BACKGROUND_FADE, DEFAULT_PIGEON_CHOICES, MOTIONS, SENSE_STEP, cleanLook, everyBars, turnAt, backgroundAt, cameraAt, readPigeonChoices, lookFor, senseMusic, pulseAt, energyAt, travelAt, flaresAt, uprightRoll } = await import('../src/audio/pigeonLooks.ts');
 
 test('every background and camera angle has its own id, a name and a blurb, and colours that are colours', () => {
   for (const list of [PIGEON_BACKGROUNDS, PIGEON_CAMERAS]) {
@@ -179,4 +179,39 @@ test('struck notes light the details in turn: the newest brightest, fading, and 
   assert.ok(at[0].glow > 0.8 && at[3].glow < 0.01);
   assert.equal(new Set(at.map((f) => f.group)).size, 4);
   for (const f of at) assert.ok(f.group >= 0 && f.group < 8);
+});
+
+test('every camera angle is the right way up, with the keyboard at its slope; low notes on the left from the front, on the right from behind', async () => {
+  const T = await import('three');
+  // The keys run along x, rising with pitch, their fronts toward +z (pigeonScene.ts); the camera is aimed as the scene aims it
+  const at = (cam, tall, v) => {
+    const c = new T.OrthographicCamera(-10, 10, 10, -10, -400, 600);
+    c.position.set(Math.sin(cam.yaw) * Math.cos(cam.pitch) * 120, Math.sin(cam.pitch) * 120, Math.cos(cam.yaw) * Math.cos(cam.pitch) * 120);
+    c.lookAt(new T.Vector3(0, 0, 0));
+    c.updateMatrixWorld();
+    const e = c.matrixWorld.elements;
+    c.rotateZ(uprightRoll(e[0], e[4], tall ? cam.slope.tall : cam.slope.wide));
+    c.updateMatrixWorld();
+    return new T.Vector3(...v).project(c);
+  };
+  for (const cam of PIGEON_CAMERAS) {
+    for (const tall of [true, false]) {
+      const where = `${cam.id}, ${tall ? 'tall' : 'wide'}`;
+      // Up is up: a point above the keys is higher on screen (a bird stands on its feet)
+      assert.ok(at(cam, tall, [0, 3, 0]).y > at(cam, tall, [0, 0, 0]).y + 0.01, `${where}: upside down`);
+      // The keyboard runs at the angle's slope (either way along it)
+      const low = at(cam, tall, [-7, 0, 0]);
+      const high = at(cam, tall, [7, 0, 0]);
+      const slope = Math.atan2(high.y - low.y, high.x - low.x);
+      const want = tall ? cam.slope.tall : cam.slope.wide;
+      const off = Math.abs(Math.atan2(Math.sin(slope - want), Math.cos(slope - want)));
+      assert.ok(Math.min(off, Math.PI - off) < 1e-6, `${where}: the keyboard runs at ${slope.toFixed(3)}, not ${want}`);
+      // From in front (the player's side) the low notes are on the left and the white keys' fronts nearest (lowest on screen); from behind, the other way round
+      const behind = Math.cos(cam.yaw) < 0;
+      assert.equal(low.x < high.x, !behind, `${where}: low notes on the ${low.x < high.x ? 'left' : 'right'}`);
+      if (cam.pitch < 1.4) assert.equal(at(cam, tall, [0, 0, 3]).y < at(cam, tall, [0, 0, -3]).y, !behind, `${where}: which edge of the keys is nearest`);
+    }
+  }
+  // The roll is never more than a quarter turn, whatever it's asked
+  for (let a = -3.1; a < 3.14; a += 0.37) for (const slope of [-1, -0.3, 0, 0.3, 1]) assert.ok(Math.abs(uprightRoll(Math.cos(a), Math.sin(a), slope)) <= Math.PI / 2 + 1e-9);
 });
