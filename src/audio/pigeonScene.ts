@@ -306,11 +306,17 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
     // that bird plays this one too
     const holder = birds.find((b) => onSpot(b) && b.free > n.start + 1e-3);
     if (holder) {
+      // It hops on the spot and strikes the key afresh as this note starts (so every note is seen
+      // played), unless the two notes start together or there's no time to; then it stays on for both
       const last = holder.plan.legs[holder.plan.legs.length - 1];
-      if (leave > last.t1) {
-        last.t1 = leave;
-        holder.free = leave;
-      }
+      const until = Math.max(last.t1, leave);
+      const off = Math.max(last.t0 + 0.05, n.start - REHOP_TIME);
+      if (last.kind === 'press' && n.start - off > 0.04) {
+        last.t1 = off;
+        push(holder, { kind: 'hop', t0: off, t1: n.start, from: spot.clone(), to: spot.clone(), key: n.midi });
+        push(holder, { kind: 'press', t0: n.start, t1: until, from: spot.clone(), to: spot.clone(), note: n, key: n.midi });
+      } else last.t1 = until;
+      holder.free = until;
       continue;
     }
     // A bird still standing on this key (it played it last) plays it again; else the free bird that
@@ -1088,14 +1094,50 @@ export function applyPose(p: PigeonModel, b: Posed, t: number, seed: number) {
 
 /** How far a key is down at t, given its notes in order */
 function keyDownAt(notes: ShowcaseNote[] | undefined, t: number): number {
+  return keyAt(notes, t).down;
+}
+
+/** How far a held key comes back up before it's struck again (a share of its travel) */
+const RESTRIKE = 0.55;
+
+/**
+ * A key at t, given its notes in order: how far down it is, and the note it shows (the one struck
+ * last that's still sounding). A note that starts while the key is already down (the same pitch in
+ * another part, or the same note again with no gap) is a new strike all the same: the key comes
+ * part of the way up over the moment before it (the bird on it hops) and goes down again as the
+ * note starts, so every note is seen played.
+ */
+export function keyAt(notes: ShowcaseNote[] | undefined, t: number): { down: number; lit: ShowcaseNote | null } {
   let down = 0;
-  if (notes) {
-    for (const n of notes) {
-      if (n.start > t + 0.05) break;
-      if (n.end > t - 0.1) down = Math.max(down, keyDown(n, t));
+  let lit: ShowcaseNote | null = null;
+  if (!notes) return { down, lit };
+  let next: ShowcaseNote | null = null;
+  /** Whether another note had the key down when `lit` was struck */
+  let restruck = false;
+  for (const n of notes) {
+    if (n.start > t) {
+      next = n;
+      break;
     }
+    if (n.end + 0.1 < t) continue;
+    const d = keyDown(n, t);
+    if (d <= 0) continue;
+    // (the last one struck is shown; one struck at the same moment as it isn't a strike of its own)
+    if (lit && n.start - lit.start > 0.04) restruck = true;
+    down = Math.max(down, d);
+    lit = n;
   }
-  return down;
+  if (lit && restruck) {
+    // Struck again: down from part of the way up, over the key's travel
+    const since = t - lit.start;
+    if (since < KEY_TRAVEL) down = Math.min(down, PRESS * (1 - RESTRIKE + (RESTRIKE * since) / KEY_TRAVEL));
+  }
+  if (down > 0 && next && next.start - t < REHOP_TIME && next.start - (lit?.start ?? -1) > 0.04) {
+    // About to be struck again: it comes up as the bird leaves it
+    const rise = ease(1 - (next.start - t) / REHOP_TIME);
+    down *= 1 - RESTRIKE * rise;
+  }
+  return { down, lit };
 }
 
 /** How long a key takes to go down (seconds): two frames of a 60 a second video */
@@ -1894,25 +1936,13 @@ export class PigeonScene {
 
     // Keys: down and coloured while played
     for (const [midi, k] of this.keys) {
-      const notes = this.byKey.get(midi);
-      let down = 0;
-      let lit: ShowcaseNote | null = null;
-      if (notes) {
-        for (const n of notes) {
-          if (n.start > t + 0.05) break;
-          const d = keyDown(n, t);
-          if (d > down) {
-            down = d;
-            lit = n;
-          }
-        }
-      }
+      const { down, lit } = keyAt(this.byKey.get(midi), t);
       const black = isBlack(midi);
       k.mesh.position.y = -down;
       if (lit) {
-        k.mat.color.copy(k.base).lerp(this.color(lit.color), (black ? 0.75 : 0.62) * (down / PRESS));
+        k.mat.color.copy(k.base).lerp(this.color(lit.color), (black ? 0.75 : 0.62) * Math.min(1, down / (PRESS * (1 - RESTRIKE))));
         // (and it glows a little, which shows on the night street)
-        k.mat.emissive.copy(this.color(lit.color)).multiplyScalar(0.3 * (down / PRESS));
+        k.mat.emissive.copy(this.color(lit.color)).multiplyScalar(0.3 * Math.min(1, down / (PRESS * (1 - RESTRIKE))));
       } else {
         k.mat.color.copy(k.base);
         k.mat.emissive.setRGB(0, 0, 0);

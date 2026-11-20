@@ -17,7 +17,7 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, KEY_TRAVEL } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, keyAt, KEY_TRAVEL } = await import('../src/audio/pigeonScene.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
 const data = (notes) => ({ notes: notes.sort((a, b) => a.start - b.start), tracks: [], bars: [] });
@@ -275,5 +275,54 @@ test('a key goes down as its note starts, never before: the press is seen when t
       }
     }
     assert.ok(landings > 20);
+  }
+});
+
+test('every note is seen played: one that starts on a key already held is struck afresh', () => {
+  // A chord note held for three seconds (one part), and a tune that plays the same key three times inside it (another part)
+  const held = { ...note(1, 3, 60, 0), color: '#111111' };
+  const again = [1.5, 2.25, 3].map((t) => ({ ...note(t, 0.4, 60, 1), color: '#eeeeee' }));
+  const plan = planPigeons(data([held, ...again]));
+  const bird = plan.pigeons.find((p) => p.legs.some((l) => l.kind === 'press'));
+  assert.equal(plan.pigeons.filter((p) => p.legs.some((l) => l.kind === 'press')).length, 1, 'one bird, on the one key');
+  // It lands as each note starts: four strikes, a hop on the spot before each of the last three
+  const presses = bird.legs.filter((l) => l.kind === 'press');
+  assert.deepEqual(presses.map((l) => l.t0), [1, 1.5, 2.25, 3]);
+  assert.equal(bird.legs.filter((l) => l.kind === 'hop' && l.from.distanceTo(l.to) < 1e-6).length, 3);
+  assert.ok(presses[presses.length - 1].t1 >= 4 - 1e-9, 'and it stays on while the held note lasts');
+  const notes = plan.byKey.get(60);
+  for (const n of again) {
+    // The key: right down well before; part of the way up just before the strike; down again within its travel; showing the new note
+    assert.ok(Math.abs(keyAt(notes, n.start - 0.3).down - KEY_PRESS) < 1e-9);
+    const before = keyAt(notes, n.start - 0.005).down;
+    assert.ok(before < KEY_PRESS * 0.6 && before > KEY_PRESS * 0.3, `just before the strike it is ${(before / KEY_PRESS).toFixed(2)} of the way down`);
+    assert.ok(Math.abs(keyAt(notes, n.start + KEY_TRAVEL + 0.001).down - KEY_PRESS) < 1e-6);
+    assert.equal(keyAt(notes, n.start + 0.1).lit, n);
+    // and the bird is off the key in the middle of its hop
+    const mid = posedAt(plan, n.start - 0.08)[plan.pigeons.indexOf(bird)];
+    assert.ok(mid.leg.kind === 'hop' && mid.lift > 0.15);
+  }
+  // Between the tune's notes the key shows the held note again, and after everything it's up
+  assert.equal(keyAt(notes, 2.05).lit, held);
+  assert.equal(keyAt(notes, 4.5).down, 0);
+  // Two parts starting the same note together: one strike, no hop
+  const together = planPigeons(data([note(1, 1, 64, 0), note(1, 2, 64, 1)]));
+  const b2 = together.pigeons.find((p) => p.legs.some((l) => l.kind === 'press'));
+  assert.equal(b2.legs.filter((l) => l.kind === 'press').length, 1);
+  assert.ok(b2.legs.find((l) => l.kind === 'press').t1 >= 3 - 1e-9);
+
+  // And in whole songs: every note has a bird landing on its key as it starts (but one starting together with another on the same key)
+  for (const song of [tune(), stress()]) {
+    const p = planPigeons(song);
+    const strikes = p.pigeons.flatMap((b) => b.legs.filter((l) => l.kind === 'press'));
+    let seen = 0;
+    for (const n of p.notes) {
+      const struck = strikes.some((l) => l.key === n.midi && Math.abs(l.t0 - n.start) < 1e-6);
+      const together = p.notes.some((o) => o !== n && o.midi === n.midi && Math.abs(o.start - n.start) < 0.04);
+      const tight = p.notes.some((o) => o !== n && o.midi === n.midi && o.start < n.start && n.start - o.start < 0.1);
+      if (struck) seen++;
+      else assert.ok(together || tight, `nothing is seen for ${n.midi} at ${n.start.toFixed(3)}`);
+    }
+    assert.ok(seen > p.notes.length * 0.9);
   }
 });
