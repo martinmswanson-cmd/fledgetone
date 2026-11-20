@@ -99,6 +99,7 @@ the builder; approach 1 is that.
   now; other formats (at least MP3, FLAC, Ogg/Opus and AAC/M4A where the browser decodes them) are
   decoded in the headless browser the command line already drives for rendering. A file has no
   bars, so its time axis is seconds, unless a tempo is given or detected, when bars are shown too.
+  The caller may name **a stretch of the file** (from and to, in seconds) to hear only that part.
 
 Both produce the same report shape, so everything downstream (comparison, saving) treats them alike.
 
@@ -114,7 +115,7 @@ it exists. The groups, and what each must let an agent tell:
 | Texture | noisiness (spectral flatness), roughness (fast amplitude beating inside bands, the measurable part of grit and growl), harmonic against percussive share | clean or distorted, tonal or noisy, smooth or gritty |
 | Movement | how fast the spectrum changes, the strongest repeating modulation in the low and mid bands with its rate in Hz and as a note value at the song's tempo, pump depth from the low-band envelope | a wobble and its rate, a filter sweep, sidechain pump, a static sound |
 | Dynamics | the existing loudness, short-term maximum, true peak and crest, plus loudness range and the loudness of each bar or second | squashed or open, where it lifts and drops |
-| Attack | onsets per bar or second, how sharp the attacks are (rise time), and the existing kick and snare measures where drums are heard alone | punchy or soft, busy or sparse |
+| Attack | onsets per bar or second, how sharp the attacks are (rise time); for a single drum hit (a short file or stretch with one onset) the existing kick and snare measures as well | punchy or soft, busy or sparse |
 | Stereo | left-right correlation, width per frequency band, how mono the low end is, what is lost when folded to mono | narrow or wide and where, phase trouble |
 | Pitch | tempo, key and tuning from the existing detectors (for a file; a song already knows its own), pitch-class energy over time | what key it sits in, whether pitched content is in tune |
 | Faults | clicks (isolated jumps), clipping and runs of flat tops, DC offset, steady hum, digital silence in the middle, a channel missing or much quieter | something is broken, and where |
@@ -126,8 +127,15 @@ Alongside the numbers the report gives **plain-word lines**, as `findings` does 
 description tied to its number ("Bright: the spectral centre sits at 3.1 kHz", "A click at bar 9,
 beat 3"). Words are taken from fixed thresholds and are descriptive only.
 
-The report carries a **format version**, the settings it was made with, and the engine version, so a
-saved one can be compared later and an old one can be recognised as old.
+The report carries the settings it was made with, the engine version, and a **version for each
+group** of measures. Two reports are compared on the groups whose versions match; for the others
+the comparison says the older report must be made again from its audio. A saved report is therefore
+a record that can go stale, not a permanent stand-in: whoever keeps one should be able to measure
+the audio again (see Open with the owner).
+
+So that a part of a saved report can be compared later without the audio, the report keeps the
+1/6-octave spectrum (mid and side) and the loudness **along time**, at about one reading a second,
+not only their averages.
 
 ### The pictures
 
@@ -154,10 +162,16 @@ The report lists each picture with its path, what it shows and the range it cove
 
 - **Before and after** a suggestion (`listen` already does this for loudness): the sound reports
   are compared measure by measure, with the difference picture.
-- **Against another hearing**: an audio file, or a saved report. The two are matched in loudness
-  first, so tone isn't confused with level, and the result lists the differences in each group,
-  largest first, in numbers and in plain words. Against a saved report there is no audio, so the
-  comparison is of the measures and the average spectrum only, and it says so.
+- **Against another hearing**: an audio file (or a stretch of one), or a saved report (or a stretch
+  of it). The two are matched in loudness first, so tone isn't confused with level, and the result
+  lists the differences in each group, largest first, in numbers and in plain words. Against a saved
+  report there is no audio, so the comparison is of the measures and the spectrum only, and it says
+  so.
+- **Like with like is the caller's job.** A loud 16 bars set against a whole track, quiet parts and
+  all, reads brighter, louder and more squashed only because it is an excerpt. This piece doesn't
+  find the matching part of a reference by itself (naming a track's sections belongs to piece 2).
+  The caller names the stretch, and when the two ranges differ in length by more than half, or one
+  is a whole file and the other a few bars, the comparison says so at the top.
 
 ### Where it is reached
 
@@ -179,11 +193,21 @@ check**:
 - A small set of made sounds, each with one known property: a click at a known time, a narrow
   resonance at a known frequency, a wobble at a known rate, pump at a known depth, a side-only band,
   hard clipping, hum, a dull and a bright version of the same sound, a clean and a distorted one.
-- For each, the hearing is made and a fresh agent that sees only the report and pictures is asked
-  what it finds. The piece is done when it names the property, and its place or value, for every
-  sound in the set, and reports nothing false on a clean one.
-- The same check is run on real renders of two of the app's starters, where a planted fault (a
-  click, a boosted band) must be found.
+- **Alone**, with nothing to compare against: the click, the resonance, the wobble, the pump, the
+  side-only band, the clipping and the hum. The hearing of each is made and a fresh agent that sees
+  only the report and pictures is asked what it finds. It must name the property and its place or
+  value, and report nothing false on a clean sound.
+- **As a pair**, through the comparison: dull against bright, clean against distorted. The agent
+  must say which is which and roughly by how much. Alone, such a sound only gets its describing
+  words; there is no absolute "too bright".
+- **In real material**: renders of two of the app's starters, and of one **heavy** test song built in
+  the test from the app's own synths (dense, loud, distorted bass, limited hard), since that is the
+  music the app is mostly used for. In each, a planted click must be found alone, a planted boost
+  must be found by comparing with the unplanted render, and the heavy song's own distortion and
+  limiting must not be reported as clicks or faults.
+- **How subtle**: the planted click is a jump of one sample, 12 dB above the level around it; the
+  boost is 6 dB over a third of an octave; the wobble and the hum are 12 dB below the sound they sit
+  in. These are a first bar, set by the builder of this design, to be tightened once it passes.
 
 The made sounds and their expected answers are kept in the repository so the check can be run again
 after a change.
@@ -212,6 +236,19 @@ Made by the builder in this design, open to correction:
 - A saved report is versioned and can be compared without its audio.
 - The reading check, by a fresh agent, is the acceptance test.
 - The studio shows none of this yet.
+
+- The caller names the stretch to compare; matching parts are not found automatically here.
+- A saved report keeps spectrum and loudness along time, and is versioned group by group.
+- The reading check has blind singles, pairs, and a heavy song, at the sizes given.
+- Kick and snare measures apply to a single hit only.
+
+## Open with the owner
+
+- **Whether a reference's audio stays available after it is measured.** If it does, a stale report
+  is simply made again. If it doesn't (a track measured while it streams, nothing kept), an old
+  report loses the groups whose maths has since changed, and piece 2's reading of chords and
+  structure has to happen at the same moment the track is measured. This doesn't change what piece 1
+  builds; it decides how careful piece 2 must be.
 
 ## Left to the builder
 
