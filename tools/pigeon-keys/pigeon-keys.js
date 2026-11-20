@@ -85,7 +85,7 @@ export function createPigeons(canvas, song, options = {}) {
       }
       scene.render(number(time, 0));
     },
-    /** How many pigeons are standing on a key, playing it, at `time` */
+    /** How many pigeons are on the keys at `time`: standing on a key (playing it or not) or hopping between keys; not the ones flying or on the floor */
     onKeys(time) {
       return scene.onKeys(number(time, 0));
     },

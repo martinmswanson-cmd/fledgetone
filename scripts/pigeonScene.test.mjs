@@ -17,7 +17,7 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys } = await import('../src/audio/pigeonScene.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
 const data = (notes) => ({ notes: notes.sort((a, b) => a.start - b.start), tracks: [], bars: [] });
@@ -217,4 +217,38 @@ test('no piano key shares space with another, pressed or not, and none comes out
   // A white key with no black key on a side (E to F) isn't cut on that side
   const e = keys.find((k) => k.midi === 64).boxes;
   assert.ok(Math.abs(e[1].x1 - e[0].x1) < 1e-9 && e[1].x0 > e[0].x0);
+});
+
+test('the count of pigeons on the keys is the birds you can see on them, playing or not', () => {
+  // Three notes held together, then nothing: the birds stand on their keys a moment after, then get down
+  const plan = planPigeons(data([note(2, 1, 60), note(2, 1, 64), note(2, 1, 67)]));
+  assert.equal(birdsOnKeys(plan, 0), 0, 'none before they hop up');
+  assert.equal(birdsOnKeys(plan, 2.5), 3, 'three playing');
+  assert.equal(birdsOnKeys(plan, 3.1), 3, 'still on their keys just after the notes end');
+  assert.equal(birdsOnKeys(plan, 12), 0, 'down again in the end');
+  // The same key again and again: the one bird stays counted through its hops on the spot
+  const again = planPigeons(data([0, 1, 2, 3].map((k) => note(1 + k * 0.5, 0.5, 60))));
+  for (let t = 1; t < 3; t += 1 / 60) assert.equal(birdsOnKeys(again, t), 1, `at ${t.toFixed(2)}`);
+  // On a whole tune, at every frame: it's exactly the birds whose feet are at a key's height (on a key
+  // or just over it in a small hop) and not flying; and every one counted is over the keyboard
+  const song = tune();
+  const p = planPigeons(song);
+  const [low, high] = [p.low, p.high];
+  const bed = bedBox(low, high);
+  let most = 0;
+  for (let t = -0.5; t < 16; t += 1 / 30) {
+    const posed = posedAt(p, t);
+    const seen = posed.filter((b) => b.leg.kind !== 'fly' && b.leg.from.y > 0 && b.leg.to.y > 0);
+    assert.equal(birdsOnKeys(p, t), seen.length);
+    for (const b of seen) {
+      assert.ok(b.pos.y > 0.5 && b.lift < 0.7, `a counted bird is at a key's height at ${t.toFixed(2)}`);
+      assert.ok(b.pos.x > bed.x0 && b.pos.x < bed.x1 && b.pos.z > bed.z0 && b.pos.z < bed.z1, `and over the keyboard at ${t.toFixed(2)}`);
+    }
+    // And none standing still on a key is left out
+    for (const b of posed) if ((b.leg.kind === 'stand' || b.leg.kind === 'press') && b.pos.y > 0.5) assert.ok(seen.includes(b));
+    most = Math.max(most, seen.length);
+    // (it's never fewer than the birds playing, which is all the old count had)
+    assert.ok(seen.length >= posed.filter((b) => b.leg.kind === 'press').length);
+  }
+  assert.ok(most >= 4);
 });

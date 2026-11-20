@@ -111,7 +111,7 @@ times its sections start.
 | --- | --- |
 | `createPigeons(canvas, song, options?)` | Works out every bird's part once, and returns the calls below. The canvas must be one nothing has drawn on yet: it's given a WebGL context |
 | `draw(time)` | Draws the picture at `time` seconds, at the size the canvas has then |
-| `onKeys(time)` | How many pigeons are standing on a key, playing it, at `time` |
+| `onKeys(time)` | How many pigeons are on the keys at `time`: standing on a key (playing it or not) or hopping between keys; not the ones flying or waiting on the floor |
 | `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras`, `cameraAt` or `motion` (only the ones you give); the next `draw` uses them |
 | `isDark(time)` | Whether the floor is dark at `time`: for choosing the colour of anything you draw over it |
 | `setFloor(color)` | A floor colour of your own in place of the backgrounds' (`null`: theirs again); the next `draw` uses it |

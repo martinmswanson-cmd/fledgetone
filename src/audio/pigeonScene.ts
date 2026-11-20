@@ -996,6 +996,20 @@ export function solveSpacing(birds: Posed[]) {
   }
 }
 
+/**
+ * Whether a bird is on the keys in this leg: standing on a key (playing it or not), hopping on the
+ * spot to play it again, or side-stepping to the next key. Not while it's flying, even from key to
+ * key, nor on its way up from the floor or down to it.
+ */
+const onTheKeys = (leg: Leg) => leg.from.y > 0 && leg.to.y > 0 && leg.kind !== 'fly';
+
+/** How many birds are on the keys at t: what the picture's count says, and what you'd count yourself */
+export function birdsOnKeys(plan: PigeonPlanResult, t: number): number {
+  let n = 0;
+  for (const p of plan.pigeons) if (onTheKeys(findLeg(p.legs, t))) n++;
+  return n;
+}
+
 /** Every bird's pose at t, kept clear of one another (what a frame draws) */
 export function posedAt(plan: PigeonPlanResult, t: number): Posed[] {
   const posed = plan.pigeons.map((p) => rawPose(p, t, plan.byKey));
@@ -1931,9 +1945,7 @@ export class PigeonScene {
 
   /** How many birds are on the keys at t (for the "on the keys" count) */
   onKeys(t: number): number {
-    let n = 0;
-    for (const p of this.plan.pigeons) if (findLeg(p.legs, t).kind === 'press') n++;
-    return n;
+    return birdsOnKeys(this.plan, t);
   }
 
   dispose() {
