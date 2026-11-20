@@ -17,7 +17,7 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, KEY_TRAVEL } = await import('../src/audio/pigeonScene.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
 const data = (notes) => ({ notes: notes.sort((a, b) => a.start - b.start), tracks: [], bars: [] });
@@ -135,9 +135,9 @@ test('a bird playing the same key again hops on the spot to strike it afresh', (
   const hops = bird.legs.filter((l) => l.kind === 'hop' && l.from.distanceTo(l.to) < 1e-6);
   assert.equal(hops.length, 4, 'a hop on the spot before each repeat');
   for (const hop of hops) {
-    // It lands just before the note it's for, and is off the key in the middle of the hop
+    // It lands as the note it's for starts, and is off the key in the middle of the hop
     const next = presses.find((p) => p.t0 >= hop.t1 - 1e-9);
-    assert.ok(next && Math.abs(next.note.start - 0.05 - hop.t1) < 1e-6);
+    assert.ok(next && Math.abs(next.note.start - hop.t1) < 1e-6);
     const mid = posedAt(plan, (hop.t0 + hop.t1) / 2)[plan.pigeons.indexOf(bird)];
     assert.ok(mid.lift > 0.1, `it only rose ${mid.lift.toFixed(3)}`);
   }
@@ -251,4 +251,29 @@ test('the count of pigeons on the keys is the birds you can see on them, playing
     assert.ok(seen.length >= posed.filter((b) => b.leg.kind === 'press').length);
   }
   assert.ok(most >= 4);
+});
+
+test('a key goes down as its note starts, never before: the press is seen when the note is heard', () => {
+  const n = note(2, 1, 60);
+  // Up until the note starts (a frame before, at 60 a second, it hasn't moved), right down within two frames, held, up after it ends
+  assert.equal(keyDown(n, 2 - 1 / 60), 0);
+  assert.equal(keyDown(n, 2), 0);
+  assert.ok(keyDown(n, 2 + 1 / 60) > KEY_PRESS * 0.5);
+  assert.ok(Math.abs(keyDown(n, 2 + KEY_TRAVEL) - KEY_PRESS) < 1e-9);
+  assert.ok(KEY_TRAVEL <= 2 / 60 + 1e-9);
+  assert.ok(Math.abs(keyDown(n, 2.9) - KEY_PRESS) < 1e-9);
+  assert.equal(keyDown(n, 3.2), 0);
+  // And the bird: no bird is ever on a key, playing it, before its note starts; each lands as it starts
+  for (const song of [tune(), stress()]) {
+    const plan = planPigeons(song);
+    let landings = 0;
+    for (const p of plan.pigeons) {
+      for (const leg of p.legs) {
+        if (leg.kind !== 'press') continue;
+        assert.ok(leg.t0 >= leg.note.start - 1e-9, `a bird starts playing ${(leg.note.start - leg.t0).toFixed(3)} s before its note`);
+        if (Math.abs(leg.t0 - leg.note.start) < 1e-9) landings++;
+      }
+    }
+    assert.ok(landings > 20);
+  }
 });

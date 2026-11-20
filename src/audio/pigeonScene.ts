@@ -150,8 +150,11 @@ const FLAP_DISTANCE = 1.4;
  */
 const CLEAR_HOP = 2.9;
 const HOP_REACH = 1.6;
-/** A bird lands this long before its note */
-const LAND_EARLY = 0.05;
+/**
+ * A bird lands this long before its note: not at all. It touches the key as the note starts and the
+ * key goes down under it (KEY_TRAVEL), so the press is seen as the note is heard
+ */
+const LAND_EARLY = 0;
 
 const rand = (seed: number) => {
   let s = seed >>> 0;
@@ -835,9 +838,6 @@ function rawPose(plan: PigeonPlan, t: number, byKey: Map<number, ShowcaseNote[]>
     }
     case 'press': {
       pos.copy(leg.from);
-      // A little stamp as it lands
-      const since = t - leg.note!.start;
-      if (since > -0.06 && since < 0.12) lift = Math.max(0, -since) * 2;
       give = 0;
       break;
     }
@@ -1098,10 +1098,16 @@ function keyDownAt(notes: ShowcaseNote[] | undefined, t: number): number {
   return down;
 }
 
-/** How far a note's key is down at t: quickly down, held, back up */
-function keyDown(n: ShowcaseNote, t: number): number {
-  if (t < n.start - 0.02 || t > n.end + 0.08) return 0;
-  const down = clamp01((t - n.start + 0.02) / 0.04);
+/** How long a key takes to go down (seconds): two frames of a 60 a second video */
+export const KEY_TRAVEL = 0.03;
+
+/**
+ * How far a note's key is down at t: it starts down as the note starts (never before: seen before
+ * it's heard, a key press looks early, and the sound late), is down in KEY_TRAVEL, held, back up
+ */
+export function keyDown(n: ShowcaseNote, t: number): number {
+  if (t < n.start || t > n.end + 0.08) return 0;
+  const down = clamp01((t - n.start) / KEY_TRAVEL);
   const up = clamp01((n.end + 0.08 - t) / 0.08);
   return PRESS * Math.min(down, up);
 }
