@@ -133,12 +133,13 @@ export function burst(seconds, decayMs, rampMs, peakDb, seed = 1, sr = SR) {
   return toPeak(x, peakDb);
 }
 
-/** Silence of `length` samples with each `[seconds, array]` piece placed at its time. */
-export function at(length, pieces, sr = SR) {
+/** Silence of `seconds` with each `[startSeconds, array]` piece placed at its start; pieces past the end are cut, overlapping ones add. */
+export function at(seconds, pieces, sr = SR) {
+  const length = count(seconds, sr);
   const out = new Float32Array(length);
-  for (const [seconds, piece] of pieces) {
-    const start = count(seconds, sr);
-    for (let i = 0; i < piece.length && start + i < length; i++) out[start + i] += piece[i];
+  for (const [start, piece] of pieces) {
+    const from = count(start, sr);
+    for (let i = 0; i < piece.length && from + i < length; i++) out[from + i] += piece[i];
   }
   return out;
 }

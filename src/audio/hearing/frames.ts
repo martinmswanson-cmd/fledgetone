@@ -76,11 +76,7 @@ export function framesOf(x: Float32Array, sampleRate: number, size: number, hop:
   return { size, hop, sampleRate, power };
 }
 
-/**
- * Band edges and centres, `perOctave` bands per octave from `lo` up; no band reaches past half the
- * sample rate. When `hi` asks for everything up to half the sample rate, the top band is stretched
- * to end exactly there, so the bands still hold all the power of the spectrum.
- */
+/** Band edges and centres, `perOctave` bands per octave from `lo` up; no band reaches past `hi` or half the sample rate. */
 export function bandEdges(perOctave: number, sampleRate: number, lo = 20, hi = 20000): { centres: number[]; edges: number[] } {
   const limit = Math.min(hi, sampleRate / 2) * 1.0001;
   const step = 2 ** (1 / perOctave);
@@ -89,11 +85,6 @@ export function bandEdges(perOctave: number, sampleRate: number, lo = 20, hi = 2
   for (let upper = lo * step; upper <= limit; upper *= step) {
     centres.push(Math.sqrt(edges[edges.length - 1] * upper));
     edges.push(upper);
-  }
-  const nyquist = sampleRate / 2;
-  if (hi >= nyquist && centres.length > 0 && edges[edges.length - 1] < nyquist) {
-    edges[edges.length - 1] = nyquist;
-    centres[centres.length - 1] = Math.sqrt(edges[edges.length - 2] * nyquist);
   }
   return { centres, edges };
 }

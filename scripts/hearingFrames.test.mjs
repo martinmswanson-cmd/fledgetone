@@ -37,7 +37,13 @@ test('bands stop at half the sample rate', () => {
 test('band power keeps the total', () => {
   const f = F.framesOf(S.white(1, -12, 1), 48000, 4096, 1024);
   const { edges } = F.bandEdges(6, 48000, 20, 24000);
-  const whole = f.power[5].reduce((a, b) => a + b, 0);
+  // The power of the bins between the first and last edge, sharing the end bins by overlap as toBands does
+  const binHz = 48000 / 4096;
+  let whole = 0;
+  f.power[5].forEach((p, k) => {
+    const overlap = Math.min(edges.at(-1), (k + 0.5) * binHz) - Math.max(edges[0], (k - 0.5) * binHz);
+    if (overlap > 0) whole += p * Math.min(1, overlap / binHz);
+  });
   near(10 * Math.log10(F.toBands(f.power[5], 48000, 4096, edges).reduce((a, b) => a + b, 0) / whole), 0, 0.2);
 });
 test('db never gives NaN or minus infinity', () => { assert.equal(F.db(0), -120); assert.equal(F.db(-1), -120); });
@@ -50,4 +56,17 @@ test('mid and side', () => {
 test('short and empty signals', () => {
   assert.equal(F.framesOf(new Float32Array(0), 48000, 4096, 1024).power.length, 0);
   assert.equal(F.framesOf(S.sine(1000, 0.01, 0), 48000, 4096, 1024).power.length, 1);
+});
+test('at places pieces in seconds, cutting what runs past the end', () => {
+  const one = new Float32Array(100).fill(1);
+  const x = S.at(1, [[0.5, one]]);
+  assert.equal(x.length, 48000);
+  assert.equal(x[23999], 0);
+  assert.equal(x[24000], 1);
+  assert.equal(x[24099], 1);
+  assert.equal(x[24100], 0);
+  const cut = S.at(1, [[0.999, one]]);
+  assert.equal(cut.length, 48000);
+  assert.equal(cut[47999], 1);
+  assert.equal(S.at(0.01, [[0, one], [0, one]])[0], 2);
 });
