@@ -1,0 +1,139 @@
+/**
+ * How a sound changes over its length, for the hearing report: the average frame-to-frame change
+ * in level across third-octave bands, and the steady wobbles (tremolo, gating, ducking) of the low,
+ * mid and high bands with their rate, depth and musical note value. Plain maths on samples, no Web
+ * Audio, so Node can test it.
+ */
+import { fftInPlace } from '../fft';
+import { bandEnvelope } from '../mixAnalysis';
+import { bandEdges, db, framesOf, midOf, toBands } from './frames';
+import type { Modulation, Movement } from './types';
+
+/** The three bands whose level is followed over time, Hz. */
+export const MOVEMENT_BANDS = { low: [40, 250], mid: [250, 4000], high: [4000, 16000] } as const;
+
+const round1 = (x: number) => Math.round(x * 10) / 10;
+const finite = (x: number) => (Number.isFinite(x) ? x : 0);
+
+/** Cycles per beat that name a note value, and the note. */
+const NOTES: ReadonlyArray<[number, string]> = [
+  [0.25, '1/1'], [0.5, '1/2'], [1, '1/4'], [2, '1/8'], [4, '1/16'], [8, '1/32'],
+  [1.5, '1/4T'], [3, '1/8T'], [6, '1/16T'],
+];
+
+/** The note value a rate of `hz` cycles per second makes at `bpm`, when it is within 3% of one. */
+export function noteOf(hz: number, bpm: number): string | undefined {
+  if (!(hz > 0) || !(bpm > 0)) return undefined;
+  const perBeat = hz / (bpm / 60);
+  for (const [cycles, name] of NOTES) if (Math.abs(perBeat - cycles) <= cycles * 0.03) return name;
+  return undefined;
+}
+
+/** The mean absolute frame-to-frame change of the third-octave band levels, over bands louder than -70 dB. */
+function changeOf(mid: Float32Array, sampleRate: number): number {
+  const size = 4096;
+  const hop = Math.max(1, Math.round(0.05 * sampleRate));
+  if (mid.length < size + hop) return 0;
+  const { power } = framesOf(mid, sampleRate, size, hop);
+  const { edges } = bandEdges(3, sampleRate);
+  let previous: number[] | null = null;
+  let sum = 0;
+  let count = 0;
+  for (const frame of power) {
+    const levels = Array.from(toBands(frame, sampleRate, size, edges), db);
+    if (previous) {
+      for (let b = 0; b < levels.length; b++) {
+        if (levels[b] > -70 && previous[b] > -70) {
+          sum += Math.abs(levels[b] - previous[b]);
+          count++;
+        }
+      }
+    }
+    previous = levels;
+  }
+  return count > 0 ? sum / count : 0;
+}
+
+/** The value below which `fraction` of the sorted `values` lie, interpolated. */
+function percentile(sorted: Float64Array, fraction: number): number {
+  const at = fraction * (sorted.length - 1);
+  const i = Math.floor(at);
+  const next = Math.min(sorted.length - 1, i + 1);
+  return sorted[i] + (sorted[next] - sorted[i]) * (at - i);
+}
+
+/** The wobble of one band's level, or null when it has no clear steady rate. */
+function modulationOf(
+  channels: readonly Float32Array[],
+  sampleRate: number,
+  band: Modulation['band'],
+  tempoBpm: number | undefined
+): Modulation | null {
+  const [lo, hi] = MOVEMENT_BANDS[band];
+  if (lo >= sampleRate / 2) return null;
+  const envelope = bandEnvelope(channels, sampleRate, lo, hi);
+  const n = envelope.length;
+  if (n < 8) return null;
+  const frame = Math.max(1, Math.round(0.02 * sampleRate));
+  const rate = sampleRate / frame;
+  // The envelope is amplitude, so 20 log10
+  const levels = new Float64Array(n);
+  let mean = 0;
+  for (let i = 0; i < n; i++) {
+    levels[i] = Math.max(-80, finite(20 * Math.log10(Math.max(envelope[i], 1e-12))));
+    mean += levels[i];
+  }
+  mean /= n;
+  const sorted = Float64Array.from(levels).sort();
+  const depth = percentile(sorted, 0.9) - percentile(sorted, 0.1);
+  if (!(depth >= 2)) return null;
+
+  let size = 1024;
+  while (size < n * 8) size *= 2;
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  for (let i = 0; i < n; i++) re[i] = (levels[i] - mean) * (0.5 - 0.5 * Math.cos((2 * Math.PI * (i + 0.5)) / n));
+  fftInPlace(re, im);
+  const binHz = rate / size;
+  const spectrum = new Float64Array(size / 2 + 1);
+  for (let k = 0; k < spectrum.length; k++) spectrum[k] = re[k] * re[k] + im[k] * im[k];
+  const first = Math.ceil(0.5 / binHz);
+  const last = Math.min(spectrum.length - 2, Math.floor(20 / binHz));
+  let total = 0;
+  let peak = first;
+  for (let k = first; k <= last; k++) {
+    total += spectrum[k];
+    if (spectrum[k] > spectrum[peak]) peak = k;
+  }
+  if (!(total > 0)) return null;
+  // The peak's share is its Hann main lobe: two bins of the envelope's own resolution each side
+  const reach = Math.ceil((2 * size) / n);
+  let held = 0;
+  for (let k = Math.max(first, peak - reach); k <= Math.min(last, peak + reach); k++) held += spectrum[k];
+  if (held < 0.3 * total) return null;
+  // Parabola through the peak and its neighbours for a rate finer than a bin
+  const a = Math.log(spectrum[peak - 1] + 1e-30);
+  const b = Math.log(spectrum[peak] + 1e-30);
+  const c = Math.log(spectrum[peak + 1] + 1e-30);
+  const denom = a - 2 * b + c;
+  const shift = denom < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / denom)) : 0;
+  const hz = round1((peak + shift) * binHz);
+  const found: Modulation = { band, hz, depthDb: round1(depth) };
+  const note = tempoBpm === undefined ? undefined : noteOf(hz, tempoBpm);
+  if (note !== undefined) found.note = note;
+  return found;
+}
+
+/** How `channels` change over their length; silent, empty and very short input give 0 and no modulations. */
+export function movementOf(channels: readonly Float32Array[], sampleRate: number, tempoBpm?: number): Movement {
+  if (channels.length === 0 || channels[0].length === 0) return { changeDb: 0, modulations: [] };
+  const changeDb = round1(finite(changeOf(midOf(channels), sampleRate)));
+  const modulations: Modulation[] = [];
+  if (channels[0].length >= 2 * sampleRate) {
+    for (const band of ['low', 'mid', 'high'] as const) {
+      const m = modulationOf(channels, sampleRate, band, tempoBpm);
+      if (m) modulations.push(m);
+    }
+  }
+  return { changeDb, modulations };
+}
