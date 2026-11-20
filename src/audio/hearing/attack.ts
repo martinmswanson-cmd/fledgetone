@@ -18,18 +18,49 @@ const MAX_ONSETS = 32;
 /** How far before an onset's time the climb may begin, and how long after it the peak may come, ms. */
 const LOOK_BACK_MS = 100;
 const LOOK_AHEAD_MS = 300;
+/** A window ends this long before the next onset's time, which is stamped at the end of its frame, ms. */
+const END_GAP_MS = 5;
+/** The span of the smoothed level, ms (a little over a period of a 220 Hz tone). */
+const SMOOTH_MS = 5;
+/** The span of the level the climb is followed on, ms: short enough to keep a sharp attack sharp, long enough that noise in a slow climb does not cut it short. */
+const WALK_MS = 2;
 
-/** The 10% to 90% rise of the peak amplitude in the 1 ms level `env` (dB) between frames `from` and `to`, ms. */
-function riseOf(env: readonly number[], from: number, to: number): number | null {
+/** The 1 ms level `env` (dB) as a mean of power over `width` frames up to each one, dB: a low tone's ripple in the 1 ms level is smoothed out. */
+function smoothed(env: readonly number[], width: number): number[] {
+  const out: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < env.length; i++) {
+    sum += 10 ** (env[i] / 10);
+    if (i >= width) sum -= 10 ** (env[i - width] / 10);
+    out.push(10 * Math.log10(sum / Math.min(width, i + 1) + 1e-20));
+  }
+  return out;
+}
+
+/**
+ * The rise of the peak in the level `env` (dB, from 1 ms frames) between frames `from` and `to`, ms: the time from
+ * 10% to 90% of the way (in amplitude) from the quietest level before the peak up to the peak. Null
+ * when the peak is at the start of the window or stands less than 3 dB over that quietest level
+ * (both judged on `slow`, the smoothed level, so a steady low tone's ripple is not a climb), since no
+ * climb was seen.
+ */
+function riseOf(env: readonly number[], slow: readonly number[], from: number, to: number): number | null {
   if (to <= from) return null;
   let top = from;
   for (let i = from; i < to; i++) if (env[i] > env[top]) top = i;
+  let slowTop = from;
+  for (let i = from; i < to; i++) if (slow[i] > slow[slowTop]) slowTop = i;
+  if (slowTop === from) return null;
+  let low = from;
+  for (let i = from; i <= slowTop; i++) if (slow[i] < slow[low]) low = i;
+  if (slow[slowTop] - slow[low] < 3) return null;
   const peak = 10 ** (env[top] / 20);
-  if (!(peak > 1e-9)) return null;
+  const base = 10 ** (slow[low] / 20);
+  const at = (share: number) => base + share * (peak - base);
   let at90 = top;
-  while (at90 > from && 10 ** (env[at90] / 20) > 0.9 * peak) at90--;
+  while (at90 > low && 10 ** (env[at90] / 20) > at(0.9)) at90--;
   let at10 = at90;
-  while (at10 > from && 10 ** (env[at10] / 20) > 0.1 * peak) at10--;
+  while (at10 > low && 10 ** (env[at10] / 20) > at(0.1)) at10--;
   return at90 - at10;
 }
 
@@ -50,13 +81,15 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   if (times.length === 0) return none;
 
   const env = frameDb(mono, sampleRate, 1);
+  const slow = smoothed(env, SMOOTH_MS);
+  const fine = smoothed(env, WALK_MS);
   const ms = (t: number) => Math.round(t * 1000);
   const rises: Array<{ strength: number; rise: number }> = [];
   times.forEach((t, k) => {
     // Back from the onset's time to half way to the one before, on to the next one or a while after
     const from = Math.max(0, k > 0 ? ms((times[k - 1] + t) / 2) : ms(t) - LOOK_BACK_MS, ms(t) - LOOK_BACK_MS);
-    const to = Math.min(env.length, k + 1 < times.length ? ms(times[k + 1]) : env.length, ms(t) + LOOK_AHEAD_MS);
-    const rise = riseOf(env, from, to);
+    const to = Math.min(env.length, k + 1 < times.length ? ms(times[k + 1]) - END_GAP_MS : env.length, ms(t) + LOOK_AHEAD_MS);
+    const rise = riseOf(fine, slow, from, to);
     const frame = Math.round((t * sampleRate - FLUX_SIZE / 2) / FLUX_HOP - 0.5);
     if (rise !== null) rises.push({ strength: strength[frame] ?? 0, rise });
   });

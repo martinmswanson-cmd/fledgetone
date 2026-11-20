@@ -56,3 +56,23 @@ test('a single hit is measured as one', () => {
   const a = attackOf([S.at(1, [[0.1, S.burst(0.6, 50, 0, -6, 1)]])], 48000);
   near(a.single.fall20Ms, 115, 35); assert.ok(a.single.riseMs < 3); assert.ok(a.single.peakDb > -30, 'the loudness is read at the hit, not in the lead-in silence');
 });
+test('sharp hits on a sustained bed still read sharp', () => {
+  const bed = S.sine(220, 4, -20);
+  const hits = S.at(4, Array.from({ length: 4 }, (_, i) => [i + 0.2, S.burst(0.2, 50, 0, -8, i)]));
+  assert.ok(attackOf([S.mix(bed, hits)], 48000).riseMs < 5);
+});
+test('soft swells on a sustained bed still read slow', () => {
+  const bed = S.sine(220, 4, -20);
+  const swells = S.at(4, Array.from({ length: 4 }, (_, i) => [i + 0.2, S.burst(0.4, 200, 80, -8, i)]));
+  const r = attackOf([S.mix(bed, swells)], 48000).riseMs; assert.ok(r > 40 && r < 110, `${r}`);
+});
+test('a steady sine has no rise', () => {
+  const a = attackOf([S.sine(220, 4, -20)], 48000);
+  assert.equal(a.riseMs, null); assert.equal(a.single, null); assert.ok(Number.isFinite(a.onsetsPerSecond));
+});
+test('stereo input gives finite attack values', () => {
+  const l = S.at(4, Array.from({ length: 8 }, (_, i) => [i / 2, S.burst(0.2, 50, 0, -6, i)]));
+  const r = S.at(4, Array.from({ length: 8 }, (_, i) => [i / 2 + 0.25, S.burst(0.2, 50, 0, -6, i + 9)]));
+  const a = attackOf([l, r], 48000);
+  assert.ok(Number.isFinite(a.onsetsPerSecond) && Number.isFinite(a.riseMs));
+});
