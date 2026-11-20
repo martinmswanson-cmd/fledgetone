@@ -115,7 +115,7 @@ it exists. The groups, and what each must let an agent tell:
 | Texture | noisiness (spectral flatness), roughness (fast amplitude beating inside bands, the measurable part of grit and growl), harmonic against percussive share | clean or distorted, tonal or noisy, smooth or gritty |
 | Movement | how fast the spectrum changes, the strongest repeating modulation in the low and mid bands with its rate in Hz and as a note value at the song's tempo, pump depth from the low-band envelope | a wobble and its rate, a filter sweep, sidechain pump, a static sound |
 | Dynamics | the existing loudness, short-term maximum, true peak and crest, plus loudness range and the loudness of each bar or second | squashed or open, where it lifts and drops |
-| Attack | onsets per bar or second, how sharp the attacks are (rise time); for a single drum hit (a short file or stretch with one onset) the existing kick and snare measures as well | punchy or soft, busy or sparse |
+| Attack | onsets per bar or second, how sharp the attacks are (rise time); for a single drum hit (a short file or stretch with one onset) its rise, fall and peak as well | punchy or soft, busy or sparse |
 | Stereo | left-right correlation, width per frequency band, how mono the low end is, what is lost when folded to mono | narrow or wide and where, phase trouble |
 | Pitch | tempo, key and tuning from the existing detectors (for a file; a song already knows its own), pitch-class energy over time | what key it sits in, whether pitched content is in tune |
 | Faults | clicks (isolated jumps), clipping and runs of flat tops, DC offset, steady hum, digital silence in the middle, a channel missing or much quieter | something is broken, and where |
@@ -206,8 +206,8 @@ check**:
   must be found by comparing with the unplanted render, and the heavy song's own distortion and
   limiting must not be reported as clicks or faults.
 - **How subtle**: the planted click is a jump of one sample, 12 dB above the level around it; the
-  boost is 6 dB over a third of an octave; the wobble and the hum are 12 dB below the sound they sit
-  in. These are a first bar, set by the builder of this design, to be tightened once it passes.
+  boost is 6 dB over a third of an octave; the wobble is 12 dB deep; the hum is 12 dB below the sound
+  it sits in. These are a first bar, set by the builder of this design, to be tightened once it passes.
 
 The made sounds and their expected answers are kept in the repository so the check can be run again
 after a change.
