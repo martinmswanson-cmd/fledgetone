@@ -1,0 +1,108 @@
+# Pigeons on the keys
+
+{{HEADER}}
+
+Fledgetone's **Pigeons** video picture, for any web page: a song played by low-poly pigeons on a
+big piano keyboard, seen from above at an angle. A pigeon stands on each key as it plays; the key
+goes down under it and lights up in its track's colour. Give it the notes and it draws the picture
+for any moment of the song, so it suits a visualizer beside a player, a scrubbable score, or frames
+for a video.
+
+It draws; it makes no sound and reads no audio. You bring the notes (from your own sequencer, a
+MIDI file you've parsed, a song's data) and the time. It draws with WebGL, on a canvas of yours.
+
+How the birds behave:
+
+- Each note gets the free bird that can reach its key in time: one already on the keys side-steps
+  to the next key or flies along to a further one; one waiting on the floor walks over and hops up.
+- A jump of more than about a key and a half is flown, wings spread and beating. A bird playing
+  the same key again hops on the spot to strike it afresh.
+- **No two pigeons ever touch.** Birds on neighbouring keys stand side by side; birds on the move
+  step round each other or fly over; wings open only as far as the birds nearby leave room.
+- Birds with nothing to play get down and wait on the floor, pecking.
+- The camera follows what's playing, and pulls back when the low and high parts are far apart.
+- Most birds are blue-grey; the odd one is dark, red-brown or pied. The same song always gets the
+  same birds doing the same things.
+
+## What's in this zip
+
+| File | What it is |
+| --- | --- |
+| `pigeon-keys.js` | The helper you import: `createPigeons(canvas, song, options)` |
+| `pigeon-scene.js` | The scene itself as one JavaScript module (`PigeonScene`), bundled from the studio's own code with three.js inside it ({{SCENE_SIZE}}; {{SCENE_GZIP}} gzipped) |
+| `pigeonScene.ts` | The scene in TypeScript, as written |
+| `index.html` | An example: a small song played with oscillators, its pigeons following the audio clock |
+| `THIRD-PARTY-LICENSES.txt` | The licence of the library inside `pigeon-scene.js` |
+| `LICENSE` | The MIT licence |
+
+## Try it
+
+Serve this folder and open `index.html` (modules don't load from a `file://` page):
+
+```sh
+npx serve
+```
+
+## Use it
+
+```js
+import { createPigeons } from './pigeon-keys.js';
+
+const pigeons = createPigeons(canvas, {
+  tracks: ['#a855f7', '#14b8a6'],                     // the colour each track's keys light up in
+  notes: [
+    { track: 0, start: 0.5, end: 1, pitch: 72 },      // seconds, and a MIDI note (60 is middle C)
+    { track: 1, start: 0, end: 1.9, pitch: 45 },
+  ],
+});
+
+function frame() {
+  pigeons.draw(audio.currentTime);      // or audioContext.currentTime - whenTheSongBegan
+  requestAnimationFrame(frame);
+}
+frame();
+```
+
+| In `song` | What it is |
+| --- | --- |
+| `notes` | `{ start, end, pitch, track?, drum? }` each: seconds from the song's start, a MIDI note number, the index of its track (0 if left out). A note with `drum: true` is left out: the birds play pitched notes |
+| `tracks` | The colour each track's keys light up in: a CSS colour each, or `{ color }` (optional; `TRACK_COLORS` in turn if left out) |
+| `duration` | The song's length in seconds (if left out: when the last note ends) |
+
+| In `options` | What it does |
+| --- | --- |
+| `shape` | `'tall'` (the keys run corner to corner), `'wide'` (across the middle), or `'auto'`: tall when the canvas is taller than it's wide (`'auto'` if left out) |
+| `floor` | The floor's colour, any CSS colour (`PIGEON_FLOOR`, a pale grey, if left out). The birds have a dark outline, so they read on pale and mid colours |
+| `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (about 16); a smaller number makes everything bigger |
+| `centerY` | Where the keyboard's middle sits, from the top of the canvas, from 0 to 1 (0.5) |
+
+| Call | What it does |
+| --- | --- |
+| `createPigeons(canvas, song, options?)` | Works out every bird's part once, and returns the calls below. The canvas must be one nothing has drawn on yet: it's given a WebGL context |
+| `draw(time)` | Draws the picture at `time` seconds, at the size the canvas has then |
+| `onKeys(time)` | How many pigeons are standing on a key, playing it, at `time` |
+| `setFloor(color)` | Changes the floor's colour; the next `draw` uses it |
+| `duration` | The song's length |
+| `dispose()` | Lets go of the WebGL context and everything made for it |
+
+Every picture is drawn from the time alone, with nothing remembered between calls: draw frames in
+any order, skip frames, or draw the same time twice. For a sharp picture, give the canvas as many
+pixels as it shows (`canvas.width = canvas.clientWidth * devicePixelRatio`, and the same for its
+height); `draw` fits itself to whatever size the canvas has. To put the picture into a video or
+onto another canvas, draw this canvas there right after `draw` (`context.drawImage(canvas, 0, 0)`).
+
+There are up to 30 birds: music with more notes at once than that (or about 40 notes a second)
+still lights every key, but some keys play without a bird.
+
+## Without the helper
+
+`pigeon-scene.js` exports what the helper is made of: `PigeonScene` (`new PigeonScene(data,
+options)`, then `render(time)`), and the parts under it, which need no canvas: `planPigeons(data)`
+works out every bird's moves, and `posedAt(plan, time)` gives where each bird is at a moment, kept
+clear of the others. `pigeonScene.ts` says what each part means.
+
+## The library inside
+
+{{THIRD_PARTY}}
+
+{{LICENCE}}

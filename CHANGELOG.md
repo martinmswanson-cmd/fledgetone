@@ -4,9 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased — Pigeons video (preview)
+## 2026.11.20 — Pigeons video, and Pigeons on the keys for your own pages
 
-- **A new video picture, Pigeons** (Export › Video › Picture): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. The birds are proper low-poly rock doves, with wings that spread and beat on any jump longer than a key and a half, and a bird playing the same key twice hops on the spot between. It's a first try, so the look may still change.
+- **A new video picture, Pigeons** (Export › Video › Picture, or search *pigeons video*): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. The birds are proper low-poly rock doves, with wings that spread and beat on any jump longer than a key and a half, and a bird playing the same key twice hops on the spot between. Drums aren't played by the birds.
+- **A new tool, Pigeons on the keys**, on fledgetone.com/tools: the same picture as a JavaScript module for your own web pages (MIT licence). Give it a canvas and a song's notes, and it draws the pigeons for any moment of it: beside a player, under a scrub bar, or frame by frame for a video.
 
 ## 2026.11.18-4 — Every screenshot in the guide and the lessons retaken
 

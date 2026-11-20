@@ -150,9 +150,10 @@ function loadSettings(): ExportSettings {
 /**
  * Open Export set up for a Showcase video (the notes playing on a piano roll), of the whole song,
  * in the shape asked for: what File › Showcase video… and the search do. Other settings are kept.
- * With `picture` 'lines', set up for a Lines video (a line per instrument) instead.
+ * With `picture` 'lines', set up for a Lines video (a line per instrument) instead; with 'pigeons',
+ * for a Pigeons video (birds playing a big keyboard).
  */
-export function presetShowcaseExport(shape: VideoShape = 'wide', picture: 'showcase' | 'lines' = 'showcase'): void {
+export function presetShowcaseExport(shape: VideoShape = 'wide', picture: 'showcase' | 'lines' | 'pigeons' = 'showcase'): void {
   const s = loadSettings();
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...s, range: 'song', what: 'video', picture, shape }));
@@ -853,11 +854,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={settings.picture}
                   onChange={(e) => update({ picture: e.target.value as ExportSettings['picture'] })}
                   className="h-7 bg-forge-bg border border-forge-border rounded px-1"
-                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : settings.picture === 'pigeons' ? 'Low-poly pigeons walk and hop across a big keyboard, standing on each key as it plays (drums are left out). A first try: it may change' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
+                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : settings.picture === 'pigeons' ? 'Low-poly pigeons walk, hop and fly across a big keyboard, a bird standing on each key as it plays (drums are left out)' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
                 >
                   <option value="showcase">Showcase: the notes playing</option>
                   <option value="lines">Lines: each instrument's path</option>
-                  <option value="pigeons">Pigeons: birds on the keys (preview)</option>
+                  <option value="pigeons">Pigeons: birds on the keys</option>
                   {SPECTRUM_SKINS.map((k) => (
                     <option key={k.id} value={k.id}>
                       Spectrum: {k.name}

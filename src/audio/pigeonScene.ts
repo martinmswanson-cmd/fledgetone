@@ -1,5 +1,5 @@
 /**
- * Pigeons video picture (a prototype): the song's notes played by low-poly pigeons walking and hopping
+ * Pigeons video picture: the song's notes played by low-poly pigeons walking, hopping and flying
  * across a big piano keyboard, seen from above at an angle. Drawn with three.js, one frame for any
  * time asked (the export asks in order, but nothing here depends on that): the keys press and light
  * up in their track's colour, and a pigeon is standing on each key as it plays.
@@ -1043,6 +1043,10 @@ export interface PigeonSceneOptions {
   across?: number;
   /** Where the keys' middle goes, from the top of the frame (0 to 1; the middle if not given) */
   centerY?: number;
+  /** The canvas to draw on (one of its own, if not given). It mustn't have a context yet */
+  canvas?: HTMLCanvasElement;
+  /** The floor's colour (PIGEON_FLOOR if not given) */
+  floor?: string;
 }
 
 const flat = (color: number) => new T.MeshLambertMaterial({ color, flatShading: true });
@@ -1062,32 +1066,25 @@ export class PigeonScene {
   /** Notes by key, for lighting the keys */
   private byKey = new Map<number, ShowcaseNote[]>();
   private colors = new Map<string, T.Color>();
-  private view: { w: number; h: number };
-  private tilt: number;
+  private view = { w: 1, h: 1 };
+  private tilt = 0;
   /** Roughly how many keys fit along the frame at the usual zoom */
-  private alongKeys: number;
+  private alongKeys = 1;
   private centerY: number;
+  private across?: number;
   private disposables: Array<{ dispose(): void }> = [];
 
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
     this.plan = planPigeons(data);
-    this.canvas = document.createElement('canvas');
-    this.canvas.width = opts.width;
-    this.canvas.height = opts.height;
+    this.canvas = opts.canvas ?? document.createElement('canvas');
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
-    this.renderer.setSize(opts.width, opts.height, false);
-    this.renderer.setClearColor(new T.Color(PIGEON_FLOOR));
+    this.renderer.setClearColor(new T.Color(opts.floor ?? PIGEON_FLOOR));
     this.renderer.outputColorSpace = T.SRGBColorSpace;
-
-    // Units across the frame's narrow side: about 14 white keys in a portrait frame, 22 in a wide one
-    const aspect = opts.width / opts.height;
-    const across = opts.across ?? (opts.tall ? 16 : 17);
-    this.view = aspect < 1 ? { w: across, h: across / aspect } : { w: across * aspect, h: across };
-    this.tilt = opts.tall ? -0.3 : 0.12;
-    this.alongKeys = opts.tall ? 21 : 32;
+    this.camera = new T.OrthographicCamera(-1, 1, 1, -1, -200, 400);
+    this.across = opts.across;
     this.centerY = opts.centerY ?? 0.5;
-    this.camera = new T.OrthographicCamera(-this.view.w / 2, this.view.w / 2, this.view.h / 2, -this.view.h / 2, -200, 400);
+    this.frame(opts.width, opts.height, opts.tall);
 
     this.scene.add(new T.HemisphereLight(0xffffff, 0xb8b2a8, 1.6));
     const sun = new T.DirectionalLight(0xffffff, 1.6);
@@ -1108,6 +1105,29 @@ export class PigeonScene {
       list.push(n);
       this.byKey.set(n.midi, list);
     }
+  }
+
+  /**
+   * Sets the picture's size in pixels and its shape (tall: the keys run corner to corner; wide:
+   * across the middle). The export sets it once; a page calls it when its canvas changes size.
+   */
+  frame(width: number, height: number, tall: boolean) {
+    this.renderer.setSize(width, height, false);
+    // Units across the frame's narrow side: about 16 white keys
+    const aspect = width / height;
+    const across = this.across ?? (tall ? 16 : 17);
+    this.view = aspect < 1 ? { w: across, h: across / aspect } : { w: across * aspect, h: across };
+    this.tilt = tall ? -0.3 : 0.12;
+    this.alongKeys = tall ? 21 : 32;
+    this.camera.left = -this.view.w / 2;
+    this.camera.right = this.view.w / 2;
+    this.camera.top = this.view.h / 2;
+    this.camera.bottom = -this.view.h / 2;
+  }
+
+  /** The floor's colour (any CSS colour) */
+  setFloor(color: string) {
+    this.renderer.setClearColor(new T.Color(color));
   }
 
   private buildKeyboard() {

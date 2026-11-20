@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
-import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS, gameMusicPlayers, instrumentLines } from './tools-site.mjs';
+import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS, gameMusicPlayers, instrumentLines, pigeonKeys } from './tools-site.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -241,7 +241,7 @@ test('tools: every page of the site links to the Tools page in its footer, and i
   const { siteHeaders } = await import('./site-headers.mjs');
   const out = siteHeaders('');
   // (Each zip by name: the host matches a * only at the end of an address)
-  for (const name of ['game-music-players', 'fledge-synth', 'fledge-effects', 'drop-effects', 'instrument-lines', 'song-player'])
+  for (const name of ['game-music-players', 'fledge-synth', 'fledge-effects', 'drop-effects', 'instrument-lines', 'pigeon-keys', 'song-player'])
     assert.match(out, new RegExp(`/tools/fledgetone-${name}\\.zip\\n {2}Content-Type: application/zip\\n {2}Content-Disposition: attachment`));
   assert.doesNotMatch(out, /\/tools\/\*/);
 });
@@ -292,4 +292,36 @@ test('tools: the instrument lines bundle draws a song with the helper, with no l
   lines.draw(1.5);
   assert.deepEqual(texts.sort(), ['Bass', 'Lead']);
   helper.createLines(canvas, { notes: [] }).draw(0);
+});
+
+test('tools: the pigeons bundle is one module with three.js inside and its licence beside it, and plans a song', async () => {
+  const { files, readme, notice } = await pigeonKeys();
+  assert.deepEqual(files.map((f) => f.name), ['pigeon-keys.js', 'pigeon-scene.js', 'pigeonScene.ts', 'index.html', 'THIRD-PARTY-LICENSES.txt']);
+  const text = (name) => files.find((f) => f.name === name).data.toString();
+  // Nothing left to fetch: the library is inside, and says so, with its licence's text
+  assert.doesNotMatch(text('pigeon-scene.js'), /^import /m);
+  assert.doesNotMatch(text('pigeon-scene.js'), /from\s*["']three["']/);
+  assert.match(text('THIRD-PARTY-LICENSES.txt'), /^three \d+\.\d+\.\d+ \(MIT\)/m);
+  assert.match(text('THIRD-PARTY-LICENSES.txt'), /Permission is hereby granted, free of charge/);
+  assert.match(notice, /three \d+\.\d+\.\d+ \(MIT\)/);
+  assert.match(readme, /\| three \| \d+\.\d+\.\d+ \| MIT \|/);
+  assert.doesNotMatch(readme, /\{\{/);
+  // The helper imports only what the bundle exports, and the example only what the helper does
+  const url = (code) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+  const scene = await import(url(text('pigeon-scene.js')));
+  const wanted = /import \{([^}]+)\} from '\.\/pigeon-scene\.js'/.exec(text('pigeon-keys.js'))[1].split(',').map((n) => n.trim());
+  for (const name of wanted) assert.ok(name in scene, `pigeon-scene.js exports ${name}`);
+  assert.match(text('pigeon-keys.js'), /export function createPigeons\(/);
+  assert.match(text('index.html'), /import \{ createPigeons \} from '\.\/pigeon-keys\.js'/);
+  // The parts that need no canvas work from the bundle as shipped: a chord's three birds, apart
+  const note = (start, end, midi) => ({ start, end, midi, track: 0, color: '#888', drum: false });
+  const plan = scene.planPigeons({ notes: [note(1, 3, 60), note(1, 3, 61), note(1, 3, 62)], tracks: [], bars: [] });
+  const posed = scene.posedAt(plan, 2);
+  assert.equal(posed.filter((b) => b.leg.kind === 'press').length, 3);
+  for (let i = 0; i < posed.length; i++) for (let j = i + 1; j < posed.length; j++) assert.ok(scene.overlapOf(posed[i], posed[j]).depth < 0.019);
+  // The helper's documented calls are the ones it returns
+  for (const call of ['draw(time)', 'onKeys(time)', 'setFloor(color)', 'dispose()']) {
+    assert.ok(readme.includes(`\`${call}\``), `the README documents ${call}`);
+    assert.match(text('pigeon-keys.js'), new RegExp(`\\b${call.replace(/\(.*/, '')}\\(`));
+  }
 });

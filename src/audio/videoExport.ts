@@ -29,8 +29,8 @@ import { PigeonScene } from './pigeonScene';
  * Made to survive a social site's own re-encoding: a high bitrate, and a background with a fine
  * grain baked in (drawn once), so its dark gradient can't break into bands or blocks.
  * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts);
- * Lines draws a glowing line per instrument, bending with its pitch (linesDraw.ts). Pigeons (a
- * prototype) has low-poly pigeons walking a big keyboard and standing on each key as it plays
+ * Lines draws a glowing line per instrument, bending with its pitch (linesDraw.ts). Pigeons has
+ * low-poly pigeons walking a big keyboard and standing on each key as it plays
  * (pigeonScene.ts, in three.js): a light picture, so the text over it is drawn in dark ink.
  */
 
