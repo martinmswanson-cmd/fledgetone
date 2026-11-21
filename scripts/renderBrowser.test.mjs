@@ -212,6 +212,34 @@ test('compare hears both versions: the sound difference, the after version pictu
   });
 });
 
+/** Every `beat` anywhere in `x`, and every beat a picture's name gives. */
+const beatsIn = (x, out = []) => {
+  if (Array.isArray(x)) x.forEach((v) => beatsIn(v, out));
+  else if (x && typeof x === 'object') for (const [k, v] of Object.entries(x)) k === 'beat' && typeof v === 'number' ? out.push(v) : beatsIn(v, out);
+  else if (typeof x === 'string') for (const m of x.matchAll(/beat-(\d+)/g)) out.push(Number(m[1]));
+  return out;
+};
+
+test("listen names its places by the agent's bars and quarter beats, in 3/4 too (with the ruler's measure in words), and from part-way through a bar", { skip, timeout: 300_000 }, async () => {
+  const song = JSON.parse(readFileSync(SONG, 'utf8'));
+  const waltz = JSON.stringify({ ...song, meter: { num: 3, den: 4 } });
+  await withPage(async (session) => {
+    // 2.5 s from bar 1 at 120 BPM is bar 2.25: bar 2, beat 2, and on the 3/4 ruler measure 2 (from bar 1.75), beat 3
+    const rep = await session.call('listen', waltz, { fromBar: 1, toBar: 5, sound: true, pictures: true, closeUps: [2.5] });
+    const closeUp = rep.pictures.find((p) => p.kind === 'closeup');
+    assert.equal(closeUp?.name, 'closeup-bar-2-beat-2', rep.pictures.map((p) => p.name).join(', '));
+    assert.match(closeUp.shows, /bar 2, beat 2 \(measure 2, beat 3 on the ruler\)/);
+    const beats = beatsIn([rep.sound, rep.pictures]);
+    assert.ok(beats.every((b) => b >= 1 && b <= 4), `beats ${beats.join(', ')}`);
+    // From bar 1.5 (4/4): a moment just after it is bar 1, beat 3, with no ruler
+    const part = await session.call('listen', JSON.stringify(song), { fromBar: 1.5, toBar: 3, pictures: true, closeUps: [0.1] });
+    const near = part.pictures.find((p) => p.kind === 'closeup');
+    assert.equal(near?.name, 'closeup-bar-1-beat-3', part.pictures.map((p) => p.name).join(', '));
+    assert.doesNotMatch(near.shows, /on the ruler/);
+    assert.ok(beatsIn([part.sound, part.pictures]).every((b) => b >= 1 && b <= 4));
+  });
+});
+
 /** A 16-bit WAV of a sine at `hz` (0.5 of full scale), `seconds` long, on every channel. */
 function sineWav(seconds, channels, rate, hz = 1000) {
   const frames = Math.round(seconds * rate);
@@ -242,6 +270,10 @@ test('hearAudio: an audio file measured and heard, a stretch of it, and files it
   writeFileSync(join(served, 'mono.wav'), sineWav(2, 1, 48000));
   writeFileSync(join(served, 'cd.wav'), sineWav(2, 2, 44100));
   writeFileSync(join(served, 'notes.txt'), 'These are not sounds.\n');
+  // A header saying 16 minutes, and a second of samples: refused by its length before it is decoded
+  const long = sineWav(1, 2, 48000);
+  long.writeUInt32LE(48000 * 4 * 960, 40);
+  writeFileSync(join(served, 'long.wav'), long);
   const url = (name) => `/fledgetone-samples/${name}`;
   await withPage(
     async (session) => {
@@ -275,6 +307,7 @@ test('hearAudio: an audio file measured and heard, a stretch of it, and files it
       assert.equal(cd.seconds, 2);
       await assert.rejects(session.call('hearAudio', url('notes.txt'), { name: 'notes.txt' }), /notes\.txt can't be read as audio\./);
       await assert.rejects(session.call('hearAudio', url('sine.wav'), { name: 'sine.wav', fromSeconds: 3 }), /that stretch is outside the file/);
+      await assert.rejects(session.call('hearAudio', url('long.wav'), { name: 'long.wav' }), /At most 15 minutes at a time \(this is 16:00\); name a stretch\./);
     },
     { samples: served }
   );

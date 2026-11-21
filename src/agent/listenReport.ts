@@ -15,7 +15,8 @@ import type { Finding } from '../audio/mixCheck';
 import type { SoundComparison } from '../audio/hearing/compareSound';
 import { MAX_HEAR_SECONDS } from '../audio/hearing/hearingOf';
 import type { PictureInfo } from '../audio/hearing/pictures';
-import type { SoundReport } from '../audio/hearing/types';
+import type { Place, SoundReport } from '../audio/hearing/types';
+import { barToSeconds, meterAt, secondsToBar, toMeasureBeat, type MeterMap, type Tempo } from '../audio/tempoMap';
 import { maxOf } from '../support/minMax';
 
 /** A number rounded to a tenth of a dB, or null for none (silence: -Infinity). */
@@ -93,6 +94,55 @@ export interface AudioHearing {
   sound?: SoundReport;
   pictures?: KeptPicture[];
   against?: SoundComparison;
+}
+
+/** Faults are placed to the ms, so a moment this close before a beat counts as on it (as hearingOf's own placing does). */
+const PLACE_ROUNDING = 0.0005;
+
+/**
+ * How a listen of bars [fromBar, toBar) names the place `seconds` after fromBar: `bar` is the whole
+ * bar of four quarter notes that holds it (the agent's bars, whatever the meter) and `beat` its
+ * quarter-note beat, 1 to 4, from that bar's start. Where the musician's ruler counts otherwise (a
+ * meter other than 4/4 there, or measures out of line with bars after a meter change), `ruler` is
+ * the measure and beat it shows (toMeasureBeat, as the studio's own bar names count them).
+ */
+export function songPlaces(tempo: Tempo, meter: MeterMap, fromBar: number, toBar: number): (seconds: number) => Place {
+  const t0 = barToSeconds(fromBar, tempo);
+  return (seconds) => {
+    // (a moment at the range's very end is placed in its last bar)
+    const at = Math.min(Math.max(fromBar, secondsToBar(t0 + seconds + PLACE_ROUNDING, tempo)), toBar - 1e-6);
+    const bar = Math.floor(at + 1e-9);
+    const beat = Math.min(4, 1 + Math.floor((at - bar) * 4 + 1e-9));
+    const ruler = toMeasureBeat(at, meter);
+    const there = meterAt(at, meter);
+    const same = there.num === 4 && there.den === 4 && ruler.measure === bar && ruler.beat === beat;
+    return same ? { seconds, bar, beat } : { seconds, bar, beat, ruler: { measure: ruler.measure, beat: ruler.beat } };
+  };
+}
+
+/**
+ * What a WAV file's header says (null for any other file): its sample rate, and its length in seconds
+ * from the data chunk's size and the byte rate (null when the header doesn't say it: a stream's
+ * unknown size, or no data chunk in the bytes given).
+ */
+export function wavHeader(bytes: ArrayBuffer | Uint8Array): { sampleRate: number; seconds: number | null } | null {
+  const v = bytes instanceof Uint8Array ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : new DataView(bytes);
+  const tag = (at: number) => String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3));
+  if (v.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null;
+  let sampleRate: number | null = null;
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= v.byteLength; ) {
+    const size = v.getUint32(at + 4, true);
+    if (tag(at) === 'fmt ' && at + 20 <= v.byteLength) {
+      sampleRate = v.getUint32(at + 12, true);
+      byteRate = v.getUint32(at + 16, true);
+    } else if (tag(at) === 'data') {
+      if (sampleRate === null) return null;
+      return { sampleRate, seconds: byteRate > 0 && size > 0 && size !== 0xffffffff ? size / byteRate : null };
+    }
+    at += 8 + size + (size % 2);
+  }
+  return sampleRate === null ? null : { sampleRate, seconds: null };
 }
 
 /** Why a stretch of `seconds` is too long to hear at once (over MAX_HEAR_SECONDS), or null. */

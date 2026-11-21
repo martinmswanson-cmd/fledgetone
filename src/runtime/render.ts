@@ -40,12 +40,12 @@ import { sharedRunIn } from '../audio/auditionMath';
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
 import { checkMix, duckedToKick, trackRole, type TrackMeasure } from '../audio/mixCheck';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
-import { barToSeconds, FOUR_FOUR, meterAt, tempoAt, type MeterMap } from '../audio/tempoMap';
+import { barToSeconds, FOUR_FOUR, tempoAt, type MeterMap } from '../audio/tempoMap';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { listenSnapshot } from '../agent/listenSnapshot';
 import { agentIdOf } from '../agent/agentText';
 import { applyOps, OPS_VERSION } from '../agent/ops';
-import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, tooLongToHear, type AudioHearing, type KeptPicture, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
+import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, songPlaces, tenth, tooLongToHear, wavHeader, type AudioHearing, type KeptPicture, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
 import { hearingOf, type HearingOptions } from '../audio/hearing/hearingOf';
 import { axisFor, differencePicture, middleOf, type BarSpan, type Picture } from '../audio/hearing/pictures';
 import { compareSound } from '../audio/hearing/compareSound';
@@ -344,13 +344,12 @@ function withOps(p: ProjectSnapshot, ops: unknown[], idBase = 'listen'): Project
   return { ...out.song, sounds: p.sounds };
 }
 
-/** Each bar of barSpans with the beats it holds, in its measure's beat (4 in 4/4), for the hearing to place things by bar and beat. */
+/**
+ * Each bar of barSpans with the quarter-note beats it holds (4 in a whole bar), for the hearing's
+ * pictures to mark the bars by (its places come from songPlaces, which names them as the agent reads bars).
+ */
 function hearingBars(p: ProjectSnapshot, from: number, to: number): BarSpan[] {
-  const meter = meterOf(p);
-  return barSpans(p, from, to).map((s) => {
-    const next = Math.min(to, Math.floor(s.bar) + 1);
-    return { ...s, beats: Math.max(1, Math.round((next - s.bar) * meterAt(s.bar, meter).den)) };
-  });
+  return barSpans(p, from, to).map((s) => ({ ...s, beats: Math.max(1, Math.round((Math.min(to, Math.floor(s.bar) + 1) - s.bar) * 4)) }));
 }
 
 /** The bars of [from, to) as [bar, start, end) in seconds from `from`, cut at whole bars. */
@@ -394,10 +393,13 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const measures: TrackMeasure[] = [];
   // Track ids as the agent reads them everywhere else (hidden ones as their aliases)
   const idOf = agentIdOf(song.tracks);
-  // The hearing (asked for only): placed in the range's bars, at the song's tempo where it starts
+  // The hearing (asked for only): placed by the agent's bars and quarter beats (and the ruler's measures
+  // where they differ), the pictures marked by the range's bars, at the song's tempo where it starts
   const hearing = opts.sound || opts.pictures;
   const spans = hearing ? hearingBars(p, fromBar, toBar) : undefined;
-  const hearOpts: HearingOptions | undefined = hearing ? { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, pictures: !!opts.pictures } : undefined;
+  const hearOpts: HearingOptions | undefined = hearing
+    ? { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, place: songPlaces(tempoOf(p), meterOf(p), fromBar, toBar), pictures: !!opts.pictures }
+    : undefined;
   if (opts.perTrack) {
     tracks = [];
     await renderRangeStems(
@@ -513,19 +515,6 @@ export interface HearAudioOptions {
   onProgress?: Progress;
 }
 
-/** The sample rate a WAV file's header gives, or null for any other file. */
-function wavRate(bytes: ArrayBuffer): number | null {
-  const v = new DataView(bytes);
-  const tag = (at: number) => String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3));
-  if (v.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null;
-  for (let at = 12; at + 8 <= v.byteLength; ) {
-    const size = v.getUint32(at + 4, true);
-    if (tag(at) === 'fmt ') return at + 16 <= v.byteLength ? v.getUint32(at + 12, true) : null;
-    at += 8 + size + (size % 2);
-  }
-  return null;
-}
-
 /** Decoded at `rate`, or null when the page can't make a context at that rate. */
 async function decodeAt(bytes: ArrayBuffer, rate: number): Promise<AudioBuffer | null> {
   let context: OfflineAudioContext;
@@ -547,7 +536,14 @@ export async function hearAudio(url: string, opts: HearAudioOptions): Promise<Au
   const bytes = await response.arrayBuffer();
   const notes: string[] = [];
   // At the file's own rate where the header says it (a WAV's), else the context's, to which the page resamples
-  const own = wavRate(bytes);
+  const header = wavHeader(bytes);
+  const own = header?.sampleRate ?? null;
+  // (a WAV says its length: one over the limit is refused before it is decoded)
+  if (header?.seconds !== undefined && header.seconds !== null) {
+    const from = opts.fromSeconds ?? 0;
+    const early = tooLongToHear(Math.min(opts.toSeconds ?? header.seconds, header.seconds) - from);
+    if (early) throw new Error(early);
+  }
   let audio: AudioBuffer;
   try {
     const atOwn = own ? await decodeAt(bytes.slice(0), own) : null;

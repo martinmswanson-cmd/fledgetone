@@ -369,3 +369,8 @@ test('words never judge', () => {
   assert.ok(all.length > 15);
   assert.ok(all.every((w) => !/\b(good|bad|too|should)\b/i.test(w) && !/—/.test(w)));
 });
+
+test("a place where the musician's ruler counts otherwise names the ruler's measure and beat too", () => {
+  assert.equal(placeText({ seconds: 20, bar: 9, beat: 3, ruler: { measure: 12, beat: 1 } }), 'bar 9, beat 3 (measure 12, beat 1 on the ruler)');
+  assert.equal(placeText({ seconds: 20, bar: 9, beat: 3 }), 'bar 9, beat 3');
+});

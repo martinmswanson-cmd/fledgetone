@@ -27,9 +27,15 @@ function rangeText(lo: number, hi: number): string {
   return `${lo} Hz-${k(hi)} kHz`;
 }
 
-/** "bar 9, beat 3" when the place has a bar, else minutes and seconds: "0:12.5". */
+/**
+ * "bar 9, beat 3" when the place has a bar (with "(measure 12, beat 1 on the ruler)" where the ruler
+ * counts otherwise), else minutes and seconds: "0:12.5".
+ */
 export function placeText(p: Place): string {
-  if (p.bar !== undefined) return p.beat !== undefined ? `bar ${p.bar}, beat ${p.beat}` : `bar ${p.bar}`;
+  if (p.bar !== undefined) {
+    const at = p.beat !== undefined ? `bar ${p.bar}, beat ${p.beat}` : `bar ${p.bar}`;
+    return p.ruler ? `${at} (measure ${p.ruler.measure}, beat ${p.ruler.beat} on the ruler)` : at;
+  }
   const tenths = Math.round(Math.max(0, p.seconds) * 10);
   const minutes = Math.floor(tenths / 600);
   const seconds = (tenths % 600) / 10;

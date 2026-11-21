@@ -276,3 +276,75 @@ test('leftover browser folders: old ones whose run ended are deleted, others kep
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("a listen's places: the agent's bar and quarter beat in every meter, and the ruler's measure and beat where it counts otherwise", async () => {
+  const { songPlaces } = await import('../src/agent/listenReport.ts');
+  const { barToSeconds, measureAt } = await import('../src/audio/tempoMap.ts');
+  const tempo = { bpm: 120, points: [] };
+  const meter = (num, den, points = []) => ({ base: { num, den }, points });
+  /** The place of song position `pos` in a listen of [from, to), checked against measureAt. */
+  const check = (map, from, to, pos) => {
+    const place = songPlaces(tempo, map, from, to)(barToSeconds(pos, tempo) - barToSeconds(from, tempo));
+    const bar = Math.floor(pos + 1e-9);
+    assert.equal(place.bar, bar, `${pos}`);
+    assert.equal(place.beat, 1 + Math.floor((pos - bar) * 4 + 1e-9), `${pos}`);
+    assert.ok(place.beat >= 1 && place.beat <= 4);
+    const m = measureAt(pos, map);
+    const ruler = { measure: m.measure, beat: 1 + Math.floor((pos - m.start) * m.meter.den + 1e-6) };
+    return { place, ruler };
+  };
+  // 4/4: no ruler, the numbers are the ruler's
+  for (const pos of [1, 1.25, 2.5, 4.75, 8.99]) {
+    const { place, ruler } = check(meter(4, 4), 1, 9, pos);
+    assert.ok(!('ruler' in place), JSON.stringify(place));
+    assert.deepEqual([place.bar, place.beat], [ruler.measure, ruler.beat]);
+  }
+  // 3/4 and 6/8: the agent's bars, and the ruler's measures beside them
+  for (const [num, den] of [[3, 4], [6, 8]]) {
+    for (let pos = 1; pos < 9; pos += 0.125) {
+      const { place, ruler } = check(meter(num, den), 1, 9, pos);
+      assert.deepEqual(place.ruler, ruler, `${num}/${den} at ${pos}`);
+    }
+  }
+  // (the review's examples: bar 2, beat 3 is measure 3, beat 1 in 3/4; an eighth later in 6/8 it is measure 3, beat 2)
+  assert.deepEqual(check(meter(3, 4), 1, 9, 2.5).place, { seconds: 3, bar: 2, beat: 3, ruler: { measure: 3, beat: 1 } });
+  assert.deepEqual(check(meter(6, 8), 1, 9, 2.625).place, { seconds: 3.25, bar: 2, beat: 3, ruler: { measure: 3, beat: 2 } });
+  // 4/4, then 3/4 from bar 5: no ruler before; after, the ruler's measures
+  const changing = meter(4, 4, [{ id: 'm', bar: 5, num: 3, den: 4 }]);
+  for (let pos = 1; pos < 5; pos += 0.25) assert.ok(!('ruler' in check(changing, 1, 12, pos).place), `${pos}`);
+  for (let pos = 5; pos < 12; pos += 0.25) {
+    const { place, ruler } = check(changing, 1, 12, pos);
+    assert.deepEqual(place.ruler, ruler, `${pos}`);
+  }
+  // A range that starts part-way through a bar: a moment just after bar 1.5 is bar 1, beat 3
+  assert.deepEqual(songPlaces(tempo, meter(4, 4), 1.5, 3)(0.1), { seconds: 0.1, bar: 1, beat: 3 });
+  // The range's very end is in its last bar
+  assert.deepEqual(songPlaces(tempo, meter(4, 4), 1, 3)(4), { seconds: 4, bar: 2, beat: 4 });
+});
+
+test("a WAV's header: its rate and length, so a file over the limit is refused before it is decoded", async () => {
+  const { wavHeader, tooLongToHear } = await import('../src/agent/listenReport.ts');
+  const header = (rate, channels, dataBytes) => {
+    const b = Buffer.alloc(44);
+    b.write('RIFF', 0, 'latin1');
+    b.writeUInt32LE(Math.min(0xffffffff, 36 + dataBytes), 4);
+    b.write('WAVEfmt ', 8, 'latin1');
+    b.writeUInt32LE(16, 16);
+    b.writeUInt16LE(1, 20);
+    b.writeUInt16LE(channels, 22);
+    b.writeUInt32LE(rate, 24);
+    b.writeUInt32LE(rate * channels * 2, 28);
+    b.writeUInt16LE(channels * 2, 32);
+    b.writeUInt16LE(16, 34);
+    b.write('data', 36, 'latin1');
+    b.writeUInt32LE(dataBytes, 40);
+    return new Uint8Array(b);
+  };
+  assert.deepEqual(wavHeader(header(44100, 2, 44100 * 4 * 2)), { sampleRate: 44100, seconds: 2 });
+  // 16 minutes, said by the header alone (no samples here at all)
+  const long = wavHeader(header(48000, 2, 48000 * 4 * 960));
+  assert.equal(long.seconds, 960);
+  assert.match(tooLongToHear(long.seconds), /this is 16:00/);
+  assert.equal(wavHeader(header(48000, 1, 0xffffffff)).seconds, null, 'a stream: no length');
+  assert.equal(wavHeader(new TextEncoder().encode('These are not sounds.')), null);
+});

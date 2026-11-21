@@ -9,11 +9,17 @@ import type { BandSpectrum } from '../mixAnalysis';
 export const HEARING_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1 } as const;
 export type HearingGroup = keyof typeof HEARING_VERSIONS;
 
-/** Where in a song: always seconds, and the bar and beat when the song's grid is known. */
+/**
+ * Where in a song: always seconds, and the bar and beat when the song's grid is known (the agent's
+ * bars of four quarter notes and their quarter-note beats). Where the musician's ruler counts
+ * otherwise (another meter, or measures out of line with bars after a meter change), also the
+ * measure and beat the ruler shows.
+ */
 export interface Place {
   seconds: number;
   bar?: number;
   beat?: number;
+  ruler?: { measure: number; beat: number };
 }
 
 /** The balance of the spectrum. */

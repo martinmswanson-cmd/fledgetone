@@ -5,6 +5,7 @@
  * in the song. Also the shape of a hearing saved to a file, and its check. Pure code on samples.
  */
 import { cleaned, hearSound, type HearOptions } from './hearSound';
+import { placeText } from './words';
 import {
   axisFor,
   chromaPicture,
@@ -66,7 +67,7 @@ function placeIn(bars: readonly BarSpan[]): (seconds: number) => Place {
   };
 }
 
-const placeWords = (p: Place) => (p.bar !== undefined && p.beat !== undefined ? `bar ${p.bar}, beat ${p.beat}` : `${p.seconds.toFixed(2)} s`);
+const placeWords = (p: Place) => (p.bar !== undefined && p.beat !== undefined ? placeText(p) : `${p.seconds.toFixed(2)} s`);
 const placeName = (p: Place) => (p.bar !== undefined && p.beat !== undefined ? `closeup-bar-${p.bar}-beat-${p.beat}` : `closeup-${p.seconds.toFixed(2)}s`);
 const FAULT_WORDS: Record<Fault['kind'], string> = { click: 'a click', clipping: 'clipping', dc: 'a DC offset', hum: 'hum', silence: 'digital silence', channel: 'a channel fault' };
 /** `5m30` for 330 s. */
@@ -114,10 +115,13 @@ export function detailRanges(fromSeconds: number, toSeconds: number, bars?: read
   return spread(out, MAX_DETAILS);
 }
 
-/** The sound report of `channels` (one or two) and, with `pictures`, its pictures, named and in a fixed order. */
+/**
+ * The sound report of `channels` (one or two) and, with `pictures`, its pictures, named and in a fixed
+ * order. Things are placed by `place` when it is given, else by `bars`.
+ */
 export function hearingOf(channels: readonly Float32Array[], sampleRate: number, opts: HearingOptions): Hearing {
   const { bars, closeUps, pictures, prefix = '', small, against, ...hear } = opts;
-  const place = bars && bars.length > 0 ? placeIn(bars) : opts.place;
+  const place = opts.place ?? (bars && bars.length > 0 ? placeIn(bars) : undefined);
   const sound = hearSound(channels, sampleRate, place ? { ...hear, place } : hear);
   if (!pictures) return { sound, pictures: [] };
 
