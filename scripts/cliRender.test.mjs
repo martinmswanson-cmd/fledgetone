@@ -134,6 +134,43 @@ test('a before-and-after: which bars changed, and the difference in plain words'
   assert.ok(compareListens(before, after, ['tempo', 'tempo', 'tempo', 'tempo']).difference.bars.every((b) => b.changed && b.differenceDb === null));
 });
 
+test("a before-and-after's sound comparison: on the difference when given, its first five differences' words at the summary's end", () => {
+  const report = (lufs, bars) => ({
+    range: { fromBar: 1, toBar: 5 },
+    seconds: 8,
+    heard: 'x',
+    renderMode: 'playback',
+    mix: { lufs, shortTermMaxLufs: lufs + 2, truePeakDbtp: -1, crestDb: 12, regions: [{ name: 'bass', db: -3 }], master: { limiterMaxGrDb: 1, clipperMaxDb: null } },
+    bars: bars.map((l, i) => ({ bar: i + 1, lufs: l })),
+    findings: [],
+  });
+  const before = report(-16, [-16, -16, -16, -16]);
+  const after = report(-15.5, [-16, -16, -14, -16]);
+  const diffs = [null, HEARD_DIFFERENCE_DB - 10, -30, -60];
+  const plain = compareListens(before, after, diffs);
+  assert.ok(!('sound' in plain.difference) && !('pictures' in plain.difference));
+  const difference = (measure, words) => ({ group: 'tone', measure, a: 1, b: 2, change: 1, size: 1, words });
+  const comparison = { levelDb: 0.5, differences: [difference('centre', 'It is brighter.'), difference('tilt', 'It tilts up.')], spectrum: { freqs: [], changeDb: [] }, skipped: [], notes: [] };
+  const pictures = [{ name: 'difference', kind: 'difference', shows: 's', fromSeconds: 0, toSeconds: 8, width: 1500, height: 700, id: 'f1', bytes: 10 }];
+  const heard = compareListens(before, after, diffs, undefined, undefined, { comparison, pictures });
+  assert.equal(heard.difference.sound, comparison);
+  assert.deepEqual(heard.difference.pictures, pictures);
+  assert.deepEqual(heard.difference.summary, [...plain.difference.summary, 'It is brighter.', 'It tilts up.']);
+  // At most five differences' words
+  const many = { ...comparison, differences: [...Array(7)].map((_, i) => difference(`m${i}`, `Difference ${i}.`)) };
+  assert.deepEqual(compareListens(before, after, diffs, undefined, undefined, { comparison: many, pictures: [] }).difference.summary.slice(plain.difference.summary.length), ['Difference 0.', 'Difference 1.', 'Difference 2.', 'Difference 3.', 'Difference 4.']);
+  assert.ok(!('pictures' in compareListens(before, after, diffs, undefined, undefined, { comparison, pictures: [] }).difference), 'no pictures: no pictures key');
+});
+
+test('hearing an audio file: at most MAX_HEAR_SECONDS at a time, said in minutes and seconds', async () => {
+  const { MAX_HEAR_SECONDS } = await import('../src/audio/hearing/hearingOf.ts');
+  const { tooLongToHear } = await import('../src/agent/listenReport.ts');
+  assert.equal(tooLongToHear(MAX_HEAR_SECONDS), null);
+  assert.equal(tooLongToHear(2), null);
+  assert.equal(tooLongToHear(1000), 'At most 15 minutes at a time (this is 16:40); name a stretch.');
+  assert.equal(tooLongToHear(MAX_HEAR_SECONDS + 4.6), 'At most 15 minutes at a time (this is 15:05); name a stretch.');
+});
+
 test('render and listen on the command line: mistakes are exit 2, in plain words, before any browser starts', { skip }, async () => {
   const r = await cli('render', SONG);
   assert.equal(r.code, 2);

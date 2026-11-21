@@ -12,7 +12,11 @@
  *                                  the run-in, held notes) and measured: a ListenReport
  *   compare(projectJson, opts)     the same bars before and after a suggestion's ops, and the
  *                                  difference bar by bar
+ *   hearAudio(url, opts)           an audio file (or a stretch of it) measured as a listen measures
+ *                                  a mix
  *
+ * Asked to (sound, pictures), a listen, a before-and-after and an audio file also carry the hearing
+ * work's sound report (hearingOf) and pictures, each picture kept as a PNG file like a render.
  * The files stay in the page until the command line reads them (take, release). No store here
  * (the build refuses timelineStore), as in the game runtime (player.ts). Recorded instruments
  * download their recordings from the app's own site, as the app does, unless the page is served
@@ -36,15 +40,21 @@ import { sharedRunIn } from '../audio/auditionMath';
 import { bandEnvelope, bandSpectrum } from '../audio/mixAnalysis';
 import { checkMix, duckedToKick, trackRole, type TrackMeasure } from '../audio/mixCheck';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
-import { barToSeconds, FOUR_FOUR, type MeterMap } from '../audio/tempoMap';
+import { barToSeconds, FOUR_FOUR, meterAt, tempoAt, type MeterMap } from '../audio/tempoMap';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { listenSnapshot } from '../agent/listenSnapshot';
 import { agentIdOf } from '../agent/agentText';
 import { applyOps, OPS_VERSION } from '../agent/ops';
-import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
+import { allFindings, barDifferences, compareListens, listenMix, MIX_ONLY_CHECKS, mixFindings, tenth, tooLongToHear, type AudioHearing, type KeptPicture, type ListenComparison, type ListenReport, type ListenTrack } from '../agent/listenReport';
+import { hearingOf, type HearingOptions } from '../audio/hearing/hearingOf';
+import { axisFor, differencePicture, middleOf, type BarSpan, type Picture } from '../audio/hearing/pictures';
+import { compareSound } from '../audio/hearing/compareSound';
+import { encodePng } from '../audio/hearing/png';
+import type { SoundReport } from '../audio/hearing/types';
+import { APP_VERSION } from '../version';
 import { maxOf } from '../support/minMax';
 
-export type { ListenReport, ListenComparison } from '../agent/listenReport';
+export type { ListenReport, ListenComparison, AudioHearing } from '../agent/listenReport';
 
 /** Told how far a render has got (0 to 1) and what it's doing. */
 export type Progress = (fraction: number, what: string) => void;
@@ -287,6 +297,14 @@ export interface ListenOptions {
   ops?: unknown[];
   /** The id base the ops are applied with (a suggestion file's: see suggestionIdBase). */
   idBase?: string;
+  /** The hearing work's sound report of the mix (and of each track's stem, with perTrack). */
+  sound?: boolean;
+  /** Its pictures too (kept as PNG files for take): implies sound. */
+  pictures?: boolean;
+  /** Moments to picture close up, seconds from fromBar. */
+  closeUps?: number[];
+  /** Another sound report to read the song's against (and to draw in its spectrum picture). */
+  against?: { sound: SoundReport; label: string };
   onProgress?: Progress;
 }
 
@@ -298,6 +316,25 @@ interface Heard {
   /** The mix's gating blocks (RenderMeasure.blocks), for the before-and-after's loudness change; each track's too (by its id as the agent reads it). */
   blocks: number[];
   trackBlocks: Map<string, number[]>;
+  /** The bars of the range as the hearing places things in them (with sound or pictures only). */
+  spans?: BarSpan[];
+}
+
+/** Each picture kept as a PNG file for take, encoded one at a time, each raster let go once it is. */
+async function keepPictures(pictures: Picture[]): Promise<KeptPicture[]> {
+  const out: KeptPicture[] = [];
+  while (pictures.length) {
+    const { raster, ...info } = pictures.shift()!;
+    const png = await encodePng(raster);
+    out.push({ ...info, id: keep(new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' })), bytes: png.length });
+  }
+  return out;
+}
+
+/** The sound report of `channels` and, when asked, its pictures kept as PNG files. */
+async function heardSound(channels: readonly Float32Array[], sampleRate: number, opts: HearingOptions): Promise<{ sound: SoundReport; pictures?: KeptPicture[] }> {
+  const { sound, pictures } = hearingOf(channels, sampleRate, opts);
+  return opts.pictures ? { sound, pictures: await keepPictures(pictures) } : { sound };
 }
 
 /** The song with `ops` applied, or a plain error. */
@@ -305,6 +342,15 @@ function withOps(p: ProjectSnapshot, ops: unknown[], idBase = 'listen'): Project
   const out = applyOps(p, { opsVersion: OPS_VERSION, ops }, { idBase });
   if (!out.ok) throw new Error(`The ops can't be applied: ${out.errors.map((e) => `op ${e.op}${e.path ? ` (${e.path})` : ''}: ${e.message}`).join('; ')}`);
   return { ...out.song, sounds: p.sounds };
+}
+
+/** Each bar of barSpans with the beats it holds, in its measure's beat (4 in 4/4), for the hearing to place things by bar and beat. */
+function hearingBars(p: ProjectSnapshot, from: number, to: number): BarSpan[] {
+  const meter = meterOf(p);
+  return barSpans(p, from, to).map((s) => {
+    const next = Math.min(to, Math.floor(s.bar) + 1);
+    return { ...s, beats: Math.max(1, Math.round((next - s.bar) * meterAt(s.bar, meter).den)) };
+  });
 }
 
 /** The bars of [from, to) as [bar, start, end) in seconds from `from`, cut at whole bars. */
@@ -327,8 +373,11 @@ function loudnessOf(channels: Float32Array[], sampleRate: number, a: number, b: 
   return analyser.read().integrated;
 }
 
-/** `start`: the run-in to render from (one shared by a before-and-after's two versions: see compare), else its own. */
-async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, progress: Progress, share: [number, number], start?: number): Promise<Heard> {
+/**
+ * `start`: the run-in to render from (one shared by a before-and-after's two versions: see compare),
+ * else its own. `picturePrefix`: put before the mix's picture names (a before-and-after's `after-`).
+ */
+async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, progress: Progress, share: [number, number], start?: number, picturePrefix?: string): Promise<Heard> {
   const { fromBar, toBar } = opts;
   const at = (f: number) => share[0] + f * (share[1] - share[0]);
   const song = listenSnapshot(p);
@@ -345,6 +394,10 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const measures: TrackMeasure[] = [];
   // Track ids as the agent reads them everywhere else (hidden ones as their aliases)
   const idOf = agentIdOf(song.tracks);
+  // The hearing (asked for only): placed in the range's bars, at the song's tempo where it starts
+  const hearing = opts.sound || opts.pictures;
+  const spans = hearing ? hearingBars(p, fromBar, toBar) : undefined;
+  const hearOpts: HearingOptions = { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, pictures: !!opts.pictures };
   if (opts.perTrack) {
     tracks = [];
     await renderRangeStems(
@@ -353,8 +406,10 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
       toBar,
       async (track, ch, sampleRate) => {
         const t = await measureRender(bufferOf(ch, sampleRate));
-        trackBlocks.set(idOf(track.id), t.blocks);
-        tracks!.push({ id: idOf(track.id), name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions });
+        const id = idOf(track.id);
+        trackBlocks.set(id, t.blocks);
+        const heardTrack = hearing ? await heardSound(ch, sampleRate, { ...hearOpts, small: true, prefix: `track-${id}-` }) : {};
+        tracks!.push({ id, name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions, ...heardTrack });
         measures.push({
           id: track.id,
           name: track.name,
@@ -384,7 +439,14 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
     checks,
     findings: allFindings(mixFindings(m, stats), checks),
   };
-  return { report, channels, sampleRate: rate, blocks: m.blocks, trackBlocks };
+  if (hearing) {
+    progress(at(0.97), `Hearing ${heard}`);
+    const against = opts.against;
+    const mix = await heardSound(channels, rate, { ...hearOpts, closeUps: opts.closeUps, against, prefix: picturePrefix });
+    Object.assign(report, mix);
+    if (against) report.against = compareSound(against.sound, mix.sound, { a: against.label, b: 'the song' });
+  }
+  return { report, channels, sampleRate: rate, blocks: m.blocks, trackBlocks, spans };
 }
 
 /** Channels in an AudioBuffer (for measureRender). */
@@ -411,8 +473,9 @@ export async function compare(projectJson: unknown, opts: ListenOptions & { ops:
   const after = withOps(before, opts.ops, opts.idBase);
   // Both from one run-in, so they line up sample for sample and only what changed differs (see sharedRunIn)
   const start = sharedRunIn([listenSnapshot(before), listenSnapshot(after)], opts.fromBar);
-  const a = await hear(before, opts, 'the song as it is', progress, [0, 0.5], start);
-  const b = await hear(after, opts, 'the song with the suggestion', progress, [0.5, 1], start);
+  // (heard, both are; only the after version is pictured)
+  const a = await hear(before, { ...opts, pictures: false, sound: opts.sound || opts.pictures }, 'the song as it is', progress, [0, 0.5], start);
+  const b = await hear(after, opts, 'the song with the suggestion', progress, [0.5, 1], start, 'after-');
   // (bar by bar, each where it lies in each render: one the tempo moved can't be lined up, and counts as changed)
   const diffs = barDifferences(a.channels, b.channels, a.sampleRate, barSpans(before, opts.fromBar, opts.toBar), barSpans(after, opts.fromBar, opts.toBar));
   progress(1, 'Done');
@@ -421,5 +484,111 @@ export async function compare(projectJson: unknown, opts: ListenOptions & { ops:
     const before = a.trackBlocks.get(id);
     return before ? [[id, pairedLoudnessDiff(before, after)] as const] : [];
   }));
-  return compareListens(a.report, b.report, diffs, pairedLoudnessDiff(a.blocks, b.blocks), trackPaired);
+  let sound: Parameters<typeof compareListens>[5];
+  if (a.report.sound && b.report.sound) {
+    const pictures: Picture[] = [];
+    if (opts.pictures) {
+      const mid = (c: Float32Array[]) => (c.length >= 2 ? middleOf(c[0], c[1]) : c[0]);
+      const seconds = Math.min(a.channels[0].length, b.channels[0].length) / a.sampleRate;
+      pictures.push(differencePicture(mid(a.channels), mid(b.channels), a.sampleRate, axisFor(0, seconds, b.spans), 'difference'));
+    }
+    sound = { comparison: compareSound(a.report.sound, b.report.sound, { a: 'before', b: 'after' }), pictures: await keepPictures(pictures) };
+  }
+  return compareListens(a.report, b.report, diffs, pairedLoudnessDiff(a.blocks, b.blocks), trackPaired, sound);
+}
+
+export interface HearAudioOptions {
+  /** The file's name, as messages and the report call it. */
+  name: string;
+  /** The stretch to hear, seconds (default: the whole file). */
+  fromSeconds?: number;
+  toSeconds?: number;
+  sound?: boolean;
+  pictures?: boolean;
+  /** Moments to picture close up, seconds from fromSeconds. */
+  closeUps?: number[];
+  /** The tempo, when it is known (else the hearing finds one). */
+  tempoBpm?: number;
+  against?: { sound: SoundReport; label: string };
+  onProgress?: Progress;
+}
+
+/** The sample rate a WAV file's header gives, or null for any other file. */
+function wavRate(bytes: ArrayBuffer): number | null {
+  const v = new DataView(bytes);
+  const tag = (at: number) => String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3));
+  if (v.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null;
+  for (let at = 12; at + 8 <= v.byteLength; ) {
+    const size = v.getUint32(at + 4, true);
+    if (tag(at) === 'fmt ') return at + 16 <= v.byteLength ? v.getUint32(at + 12, true) : null;
+    at += 8 + size + (size % 2);
+  }
+  return null;
+}
+
+/** Decoded at `rate`, or null when the page can't make a context at that rate. */
+async function decodeAt(bytes: ArrayBuffer, rate: number): Promise<AudioBuffer | null> {
+  let context: OfflineAudioContext;
+  try {
+    context = new OfflineAudioContext(2, 1, rate);
+  } catch {
+    return null;
+  }
+  return context.decodeAudioData(bytes);
+}
+
+/** An audio file at `url` (or a stretch of it) measured as a listen measures a mix and, when asked, heard: its sound report and pictures. */
+export async function hearAudio(url: string, opts: HearAudioOptions): Promise<AudioHearing> {
+  const progress = opts.onProgress ?? (() => {});
+  const { name } = opts;
+  progress(0, `Reading ${name}`);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${name} can't be read (${response.status} ${response.statusText}).`);
+  const bytes = await response.arrayBuffer();
+  const notes: string[] = [];
+  // At the file's own rate where the header says it (a WAV's), else the context's, to which the page resamples
+  const own = wavRate(bytes);
+  let audio: AudioBuffer;
+  try {
+    const atOwn = own ? await decodeAt(bytes.slice(0), own) : null;
+    audio = atOwn ?? (await new OfflineAudioContext(2, 1, 48000).decodeAudioData(bytes));
+  } catch {
+    throw new Error(`${name} can't be read as audio.`);
+  }
+  const rate = audio.sampleRate;
+  if (own && own !== rate) notes.push(`Resampled from ${own} to ${rate} Hz to measure.`);
+  if (audio.numberOfChannels > 2) notes.push(`It has ${audio.numberOfChannels} channels: measured on the first two.`);
+  const length = audio.duration;
+  const fromSeconds = opts.fromSeconds ?? 0;
+  const toSeconds = Math.min(opts.toSeconds ?? length, length);
+  if (!(fromSeconds >= 0 && fromSeconds < length && toSeconds > fromSeconds)) throw new Error('that stretch is outside the file');
+  const tooLong = tooLongToHear(toSeconds - fromSeconds);
+  if (tooLong) throw new Error(tooLong);
+  const a = Math.round(fromSeconds * rate);
+  const b = Math.max(a + 1, Math.round(toSeconds * rate));
+  const channels = channelsOf(audio).slice(0, 2).map((c) => c.slice(a, b));
+  progress(0.3, `Measuring ${name}`);
+  const m = await measureRender(bufferOf(channels, rate));
+  const ms = (s: number) => Math.round(s * 1000) / 1000;
+  const out: AudioHearing = {
+    file: name,
+    range: { fromSeconds: ms(fromSeconds), toSeconds: ms(toSeconds) },
+    seconds: ms(channels[0].length / rate),
+    channels: channels.length,
+    silent: isSilent(m.truePeakDbtp),
+    lufs: tenth(m.lufs),
+    shortTermMaxLufs: tenth(m.shortTermMaxLufs),
+    truePeakDbtp: tenth(m.truePeakDbtp),
+    crestDb: tenth(m.crestDb),
+    regions: m.regions,
+    ...(notes.length ? { note: notes.join(' ') } : {}),
+  };
+  if (opts.sound || opts.pictures) {
+    progress(0.6, `Hearing ${name}`);
+    const { against } = opts;
+    Object.assign(out, await heardSound(channels, rate, { engine: APP_VERSION, tempoBpm: opts.tempoBpm, closeUps: opts.closeUps, pictures: !!opts.pictures, against }));
+    if (against) out.against = compareSound(against.sound, out.sound!, { a: against.label, b: name });
+  }
+  progress(1, 'Done');
+  return out;
 }

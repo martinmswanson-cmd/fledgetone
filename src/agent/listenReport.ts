@@ -5,11 +5,17 @@
  * and the song with a suggestion), bar by bar, so an agent can tell where a change is heard: the
  * level of what changed in each bar (barDifferences, from the two renders' samples) and the bars
  * that sound different (changedRegions), which the studio also uses to find where a suggestion is
- * heard (whereHeard.ts). Pure: the rendering and measuring are the runtime's (src/runtime/render.ts)
- * and the studio's.
+ * heard (whereHeard.ts). When asked, a listen also carries the hearing work's sound report and
+ * pictures (kept in the renderer's page as PNGs), and an audio file can be heard the same way
+ * (AudioHearing). Pure: the rendering and measuring are the runtime's (src/runtime/render.ts) and
+ * the studio's.
  */
 import type { MasterStats } from '../audio/effects/masterAfter';
 import type { Finding } from '../audio/mixCheck';
+import type { SoundComparison } from '../audio/hearing/compareSound';
+import { MAX_HEAR_SECONDS } from '../audio/hearing/hearingOf';
+import type { PictureInfo } from '../audio/hearing/pictures';
+import type { SoundReport } from '../audio/hearing/types';
 import { maxOf } from '../support/minMax';
 
 /** A number rounded to a tenth of a dB, or null for none (silence: -Infinity). */
@@ -25,6 +31,12 @@ export interface ListenMix {
   master: { limiterMaxGrDb: number | null; clipperMaxDb: number | null };
 }
 
+/** A picture kept in the renderer's page as a PNG file: read with the renderer's take(id, bytes). */
+export interface KeptPicture extends PictureInfo {
+  id: string;
+  bytes: number;
+}
+
 export interface ListenTrack {
   id: string;
   name: string;
@@ -32,6 +44,9 @@ export interface ListenTrack {
   truePeakDbtp: number | null;
   crestDb: number | null;
   regions: Array<{ name: string; db: number }>;
+  /** The stem's sound report (a small hearing), when asked. */
+  sound?: SoundReport;
+  pictures?: KeptPicture[];
 }
 
 /** One bar's loudness (a bar cut short by the range's end measures what there is of it). */
@@ -53,6 +68,38 @@ export interface ListenReport {
   checks?: Array<Pick<Finding, 'id' | 'level' | 'title' | 'detail' | 'trackIds'>>;
   /** In plain words, worst first. */
   findings: string[];
+  /** The hearing work's sound report of the mix, when asked. */
+  sound?: SoundReport;
+  /** Its pictures, when asked. */
+  pictures?: KeptPicture[];
+  /** The sound read against another sound report given with the listen. */
+  against?: SoundComparison;
+}
+
+/** An audio file heard: its stretch, its loudness as a listen measures a mix, and, when asked, its sound report and pictures. */
+export interface AudioHearing {
+  file: string;
+  range: { fromSeconds: number; toSeconds: number };
+  seconds: number;
+  channels: number;
+  silent: boolean;
+  lufs: number | null;
+  shortTermMaxLufs: number | null;
+  truePeakDbtp: number | null;
+  crestDb: number | null;
+  regions: Array<{ name: string; db: number }>;
+  /** What was done to measure it (resampled, or only its first two channels). */
+  note?: string;
+  sound?: SoundReport;
+  pictures?: KeptPicture[];
+  against?: SoundComparison;
+}
+
+/** Why a stretch of `seconds` is too long to hear at once (over MAX_HEAR_SECONDS), or null. */
+export function tooLongToHear(seconds: number): string | null {
+  if (!(seconds > MAX_HEAR_SECONDS)) return null;
+  const whole = Math.round(seconds);
+  return `At most ${MAX_HEAR_SECONDS / 60} minutes at a time (this is ${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}); name a stretch.`;
 }
 
 /** What a listen measured of the mix, before rounding (as listen.ts measureRender gives it). */
@@ -134,17 +181,32 @@ export interface ListenComparison {
     changedBars: { fromBar: number; toBar: number } | null;
     /** In plain words. */
     summary: string[];
+    /** The after version's sound against the before's (when both were heard). */
+    sound?: SoundComparison;
+    /** The difference picture of the two mixes. */
+    pictures?: KeptPicture[];
   };
 }
+
+/** How many of a sound comparison's differences a before-and-after's summary gives in words. */
+const SUMMARY_DIFFERENCES = 5;
 
 const minus = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : tenth(a - b));
 
 /**
  * The difference between two listens of the same bars: `before` (the song) and `after` (with a
  * suggestion). `differenceDb` is each bar's level of after minus before (see CompareBar), measured
- * by the caller from the two renders.
+ * by the caller from the two renders. `sound`: the two versions' sound reports compared (and its
+ * pictures), put on the difference, its first differences ending the summary in words.
  */
-export function compareListens(before: ListenReport, after: ListenReport, differenceDb: ReadonlyArray<number | null | 'tempo'>, pairedLufs?: number | null, trackPaired?: ReadonlyMap<string, number | null>): ListenComparison {
+export function compareListens(
+  before: ListenReport,
+  after: ListenReport,
+  differenceDb: ReadonlyArray<number | null | 'tempo'>,
+  pairedLufs?: number | null,
+  trackPaired?: ReadonlyMap<string, number | null>,
+  sound?: { comparison: SoundComparison; pictures: KeptPicture[] }
+): ListenComparison {
   const bars: CompareBar[] = before.bars.map((b, i) => {
     const a = after.bars[i];
     const d = differenceDb[i];
@@ -192,7 +254,9 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
   if (mix.truePeakDbtp !== null && Math.abs(mix.truePeakDbtp) >= 0.1) summary.push(`The true peak moves ${mix.truePeakDbtp > 0 ? 'up' : 'down'} ${Math.abs(mix.truePeakDbtp).toFixed(1)} dB, to ${after.mix.truePeakDbtp} dBTP.`);
   for (const r of mix.regions) if (Math.abs(r.db) >= 1) summary.push(`${r.name}: ${r.db > 0 ? '+' : ''}${r.db.toFixed(1)} dB against the whole.`);
   for (const t of tracks ?? []) if (t.lufs !== null && Math.abs(t.lufs) >= 0.5) summary.push(`"${t.name}" is ${Math.abs(t.lufs).toFixed(1)} LU ${t.lufs > 0 ? 'louder' : 'quieter'}.`);
-  return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary } };
+  if (sound) for (const d of sound.comparison.differences.slice(0, SUMMARY_DIFFERENCES)) summary.push(d.words);
+  const heard = sound ? { sound: sound.comparison, ...(sound.pictures.length ? { pictures: sound.pictures } : {}) } : {};
+  return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary, ...heard } };
 }
 
 /** Where a bar lies in a render: seconds from the render's start, end not included. */

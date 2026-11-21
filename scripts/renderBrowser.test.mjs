@@ -128,6 +128,158 @@ test('listen: the report an agent reads, bar by bar and track by track', { skip,
   assert.match(text.stdout, /^Bars 1 to 2, the song as it is: 0:04\.0\n  Loudness -\d+\.\d LUFS/);
 });
 
+/** Asserts every number anywhere in `x` is finite, naming the path of the first that is not (as hearingReport.test.mjs does). */
+const finite = (x, path = 'report') => {
+  if (typeof x === 'number') assert.ok(Number.isFinite(x), `${path} is ${x}`);
+  else if (x && typeof x === 'object') for (const k of Object.keys(x)) finite(x[k], `${path}.${k}`);
+};
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+/** Run `job` with a renderer page of its own (offline), as the command line does. */
+const withPage = async (job, opts = {}) => {
+  const { withRenderer } = await import('../tools/cli/src/browserRender.ts');
+  return withRenderer({ offline: true, ...opts }, job);
+};
+
+test('listen hears the sound when asked: a sound report and pictures kept as PNGs; without the options, the report as it was', { skip, timeout: 300_000 }, async (t) => {
+  const song = readFileSync(SONG, 'utf8');
+  await withPage(async (session) => {
+    let started = Date.now();
+    const plain = await session.call('listen', song, { fromBar: 1, toBar: 9 });
+    const plainMs = Date.now() - started;
+    assert.ok(!('sound' in plain) && !('pictures' in plain) && !('against' in plain), Object.keys(plain).join(', '));
+    started = Date.now();
+    const rep = await session.call('listen', song, { fromBar: 1, toBar: 9, sound: true, pictures: true });
+    const heardMs = Date.now() - started;
+    t.diagnostic(`listen of bars 1 to 8: ${plainMs} ms plain, ${heardMs} ms with { sound: true, pictures: true }`);
+    // The rest of the report is what it was
+    assert.deepEqual({ ...rep, sound: undefined, pictures: undefined }, { ...plain, sound: undefined, pictures: undefined });
+    // (imported here: a top-level await between the tests would let the folder's clean-up run early)
+    const { HEARING_VERSIONS } = await import('../src/audio/hearing/types.ts');
+    assert.deepEqual(rep.sound.versions, HEARING_VERSIONS);
+    assert.equal(rep.sound.along.mid.length, Math.ceil(rep.seconds));
+    assert.equal(rep.pictures[0].name, 'spectrogram');
+    for (const f of rep.sound.faults) assert.ok(f.at && f.at.bar >= 1 && f.at.bar < 9, JSON.stringify(f));
+    finite(rep.sound, 'sound');
+    const png = await session.take(rep.pictures[0].id, rep.pictures[0].bytes);
+    assert.equal(png.length, rep.pictures[0].bytes);
+    assert.ok(png.subarray(0, 8).equals(PNG_SIGNATURE), 'a PNG file');
+    // The sound alone: no pictures
+    const sound = await session.call('listen', song, { fromBar: 1, toBar: 3, sound: true });
+    assert.equal(typeof sound.sound, 'object');
+    assert.ok(!('pictures' in sound));
+    // Against another sound report: read as the song against it
+    const against = await session.call('listen', song, { fromBar: 5, toBar: 7, sound: true, against: { sound: sound.sound, label: 'bars 1 to 2' } });
+    assert.match(against.against.notes[0], /the song against bars 1 to 2/);
+    finite(against.against, 'against');
+    finite(against.sound, 'sound');
+  });
+});
+
+test('listen track by track hears each stem: a small hearing, its pictures named for the track', { skip, timeout: 300_000 }, async () => {
+  const song = readFileSync(SONG, 'utf8');
+  await withPage(async (session) => {
+    const rep = await session.call('listen', song, { fromBar: 1, toBar: 3, perTrack: true, sound: true, pictures: true });
+    assert.equal(rep.tracks.length, 3);
+    for (const track of rep.tracks) {
+      assert.equal(typeof track.sound, 'object', track.name);
+      finite(track.sound, `${track.name}.sound`);
+      assert.deepEqual(track.pictures.map((p) => p.name), [`track-${track.id}-spectrogram`, `track-${track.id}-spectrum`]);
+    }
+    assert.ok(!rep.pictures.some((p) => p.name.startsWith('track-')), 'the mix keeps its own pictures');
+  });
+});
+
+test('compare hears both versions: the sound difference, the after version pictured, and a difference picture', { skip, timeout: 300_000 }, async () => {
+  const song = readFileSync(SONG, 'utf8');
+  const ops = [{ op: 'set_track', trackId: 'track-fixture-1p', volumeDb: 6 }];
+  await withPage(async (session) => {
+    const plain = await session.call('compare', song, { fromBar: 1, toBar: 3, ops });
+    assert.ok(!('sound' in plain.difference) && !('pictures' in plain.difference) && !('sound' in plain.before) && !('sound' in plain.after));
+    const ab = await session.call('compare', song, { fromBar: 1, toBar: 3, ops, sound: true, pictures: true });
+    assert.ok(ab.difference.sound.levelDb > 0, `level ${ab.difference.sound.levelDb} dB`);
+    assert.match(ab.difference.sound.notes[0], /after against before/);
+    finite(ab.difference.sound, 'difference.sound');
+    assert.ok(!('pictures' in ab.before), 'the before version is not pictured');
+    assert.ok(ab.after.pictures.length > 0 && ab.after.pictures.every((p) => p.name.startsWith('after-')), ab.after.pictures.map((p) => p.name).join(', '));
+    const picture = ab.difference.pictures.find((p) => p.name === 'difference');
+    assert.ok(picture, 'a difference picture');
+    assert.equal(picture.kind, 'difference');
+    const png = await session.take(picture.id, picture.bytes);
+    assert.ok(png.subarray(0, 8).equals(PNG_SIGNATURE));
+    // The summary ends with the sound's differences in words
+    const words = ab.difference.sound.differences.slice(0, 5).map((d) => d.words);
+    assert.deepEqual(ab.difference.summary.slice(ab.difference.summary.length - words.length), words);
+  });
+});
+
+/** A 16-bit WAV of a sine at `hz` (0.5 of full scale), `seconds` long, on every channel. */
+function sineWav(seconds, channels, rate, hz = 1000) {
+  const frames = Math.round(seconds * rate);
+  const b = Buffer.alloc(44 + frames * channels * 2);
+  b.write('RIFF', 0, 'latin1');
+  b.writeUInt32LE(36 + frames * channels * 2, 4);
+  b.write('WAVEfmt ', 8, 'latin1');
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(channels, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate * channels * 2, 28);
+  b.writeUInt16LE(channels * 2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36, 'latin1');
+  b.writeUInt32LE(frames * channels * 2, 40);
+  for (let i = 0; i < frames; i++) {
+    const v = Math.round(0.5 * 32767 * Math.sin((2 * Math.PI * hz * i) / rate));
+    for (let c = 0; c < channels; c++) b.writeInt16LE(v, 44 + (i * channels + c) * 2);
+  }
+  return b;
+}
+
+test('hearAudio: an audio file measured and heard, a stretch of it, and files it cannot read or stretches outside it refused', { skip, timeout: 300_000 }, async () => {
+  // Served to the page from a folder of the test's own (as the renderer's recordings are)
+  const served = mkdtempSync(join(work, 'served-'));
+  writeFileSync(join(served, 'sine.wav'), sineWav(2, 2, 48000));
+  writeFileSync(join(served, 'mono.wav'), sineWav(2, 1, 48000));
+  writeFileSync(join(served, 'cd.wav'), sineWav(2, 2, 44100));
+  writeFileSync(join(served, 'notes.txt'), 'These are not sounds.\n');
+  const url = (name) => `/fledgetone-samples/${name}`;
+  await withPage(
+    async (session) => {
+      const whole = await session.call('hearAudio', url('sine.wav'), { name: 'sine.wav', sound: true, pictures: true });
+      assert.equal(whole.file, 'sine.wav');
+      assert.equal(whole.seconds, 2);
+      assert.deepEqual(whole.range, { fromSeconds: 0, toSeconds: 2 });
+      assert.equal(whole.channels, 2);
+      assert.equal(whole.silent, false);
+      assert.ok(Math.abs(whole.sound.tone.centreHz - 1000) < 20, `centre ${whole.sound.tone.centreHz} Hz`);
+      for (const k of ['lufs', 'truePeakDbtp', 'crestDb']) assert.equal(typeof whole[k], 'number', k);
+      assert.equal(whole.note, undefined);
+      assert.equal(whole.pictures[0].name, 'spectrogram');
+      assert.ok((await session.take(whole.pictures[0].id, whole.pictures[0].bytes)).subarray(0, 8).equals(PNG_SIGNATURE));
+      finite(whole.sound, 'sound');
+      // Without the options: the loudness alone
+      const measured = await session.call('hearAudio', url('sine.wav'), { name: 'sine.wav' });
+      assert.ok(!('sound' in measured) && !('pictures' in measured));
+      const part = await session.call('hearAudio', url('sine.wav'), { name: 'sine.wav', fromSeconds: 0.5, toSeconds: 1.5, sound: true, against: { sound: whole.sound, label: 'the whole file' } });
+      assert.equal(part.seconds, 1);
+      assert.deepEqual(part.range, { fromSeconds: 0.5, toSeconds: 1.5 });
+      assert.match(part.against.notes[0], /sine\.wav against the whole file/);
+      finite(part.against, 'against');
+      const mono = await session.call('hearAudio', url('mono.wav'), { name: 'mono.wav', sound: true });
+      assert.equal(mono.channels, 1);
+      assert.equal(mono.sound.channels, 1);
+      assert.equal(mono.sound.stereo, undefined);
+      // A CD-rate file is heard at its own rate
+      const cd = await session.call('hearAudio', url('cd.wav'), { name: 'cd.wav', sound: true });
+      assert.equal(cd.sound.settings.sampleRate, 44100);
+      assert.equal(cd.seconds, 2);
+      await assert.rejects(session.call('hearAudio', url('notes.txt'), { name: 'notes.txt' }), /notes\.txt can't be read as audio\./);
+      await assert.rejects(session.call('hearAudio', url('sine.wav'), { name: 'sine.wav', fromSeconds: 3 }), /that stretch is outside the file/);
+    },
+    { samples: served }
+  );
+});
+
 test('before and after a suggestion, through the agent helper: only the bars it touches change; render_file writes inside --root', { skip, timeout: 300_000 }, async () => {
   const root = mkdtempSync(join(work, 'root-'));
   copyFileSync(SONG, join(root, 'song.fledgetone.json'));
