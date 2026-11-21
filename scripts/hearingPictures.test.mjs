@@ -19,7 +19,7 @@ register(
 
 const P = await import('../src/audio/hearing/pictures.ts');
 const R = await import('../src/audio/hearing/raster.ts');
-const { hearingOf, parseSavedHearing } = await import('../src/audio/hearing/hearingOf.ts');
+const { hearingOf, parseSavedHearing, detailRanges } = await import('../src/audio/hearing/hearingOf.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
@@ -56,8 +56,9 @@ test('a bar axis is labelled in bars, a plain one in time', () => {
 });
 test('no difference draws as none', () => {
   const x = S.pink(2, -18, 1); const p = P.differencePicture(x, x, 48000, P.axisFor(0, 2), 'difference');
+  // inside the played range (column 700 is 0.95 s in; row 300 is about 1 kHz, where the noise is well over -80 dB), the scale's middle exactly
   const mid = R.ramp(R.DIVERGING, 0.5); const some = R.pixel(p.raster, 700, 300);
-  assert.ok(some.every((v, i) => Math.abs(v - mid[i]) <= 2) || some.join() === R.pixel(p.raster, 2, 2).join());
+  assert.deepEqual(some, mid); assert.deepEqual(P.divergingStep(0.5), mid);
 });
 test('a boost shows on its side of the scale, at its place', () => {
   const x = S.pink(2, -18, 1); const y = S.mix(x, S.band(S.pink(2, -12, 2), 2000, 4000));
@@ -76,11 +77,31 @@ test('a fault gets a close-up named for its place; asked moments too', () => {
   const names = hearingOf([x], 48000, { engine: 't', bars, pictures: true, closeUps: [1.25] }).pictures.map((p) => p.name);
   assert.ok(names.includes('closeup-bar-11-beat-3')); assert.ok(names.includes('closeup-bar-9-beat-3')); assert.ok(!names.includes('stereo'), 'mono has no stereo picture (Review Focus 1)');
 });
-test('a long file gets at most twelve detail pictures; a short hit and silence still get an overview (Review Focus 2, 3)', () => {
-  // 400 s is the shortest length that asks for more than twelve 30 s details (13 x 30 = 390)
-  const long = hearingOf([S.pink(400, -18, 1, 22050)], 22050, { engine: 't', pictures: true }).pictures.filter((p) => /^spectrogram-/.test(p.name));
-  assert.equal(long.length, 12); assert.match(long[0].name, /^spectrogram-\d+m\d\d-\d+m\d\d$/);
+test('detail ranges: none for 8 bars, groups of 8 after, at most twelve spread evenly; every 30 s without bars (Review Focus 2)', () => {
+  const barsOf = (n) => Array.from({ length: n }, (_, i) => ({ bar: 1 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  assert.deepEqual(detailRanges(0, 16, barsOf(8)), []);
+  assert.deepEqual(detailRanges(0, 18, barsOf(9)), [
+    { fromSeconds: 0, toSeconds: 16, name: 'spectrogram-bars-1-8' },
+    { fromSeconds: 16, toSeconds: 18, name: 'spectrogram-bars-9-9' },
+  ]);
+  const hundred = detailRanges(0, 200, barsOf(100));
+  assert.equal(hundred.length, 12);
+  assert.equal(hundred[0].name, 'spectrogram-bars-1-8'); assert.equal(hundred.at(-1).name, 'spectrogram-bars-97-100');
+  assert.ok(hundred.every((d, i) => i === 0 || d.fromSeconds > hundred[i - 1].fromSeconds), 'in order');
+  assert.deepEqual(hundred.at(-1), { fromSeconds: 192, toSeconds: 200, name: 'spectrogram-bars-97-100' });
+  // only the bars inside the range count
+  assert.deepEqual(detailRanges(16, 34, barsOf(100)).map((d) => d.name), ['spectrogram-bars-9-16', 'spectrogram-bars-17-17']);
+  assert.deepEqual(detailRanges(0, 30), []);
+  assert.deepEqual(detailRanges(0, 31), [
+    { fromSeconds: 0, toSeconds: 30, name: 'spectrogram-0m00-0m30' },
+    { fromSeconds: 30, toSeconds: 31, name: 'spectrogram-0m30-0m31' },
+  ]);
+  const long = detailRanges(0, 400); // 400 s asks for 14; 12 are kept
+  assert.equal(long.length, 12); assert.ok(long.every((d) => /^spectrogram-\d+m\d\d-\d+m\d\d$/.test(d.name)));
   assert.equal(long[0].name, 'spectrogram-0m00-0m30'); assert.equal(long.at(-1).name, 'spectrogram-6m30-6m40');
+  assert.ok(long.every((d, i) => i === 0 || d.fromSeconds > long[i - 1].fromSeconds), 'in order');
+});
+test('a short hit and silence still get an overview (Review Focus 3)', () => {
   assert.ok(hearingOf([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])], 48000, { engine: 't', pictures: true }).pictures.some((p) => p.name === 'spectrogram'));
   assert.deepEqual(hearingOf([new Float32Array(48000)], 48000, { engine: 't', pictures: true }).pictures.map((p) => p.name), ['spectrogram', 'level']);
 });
@@ -92,11 +113,11 @@ test('a saved hearing is recognised, anything else refused', () => {
 
 // The controller's additions
 
-test('a sine reads its own peak level in dB, at -6 and at -30', () => {
-  for (const db of [-6, -30]) {
-    const p = P.spectrogramPicture(S.sine(1000, 2, db), 48000, P.axisFor(0, 2), { name: 's', title: 't' });
+test('a sine reads its own peak level in dB through the stepped scale, within 1 dB', () => {
+  for (const hz of [50, 1000, 12000]) for (const db of [-6, -30, -60]) {
+    const p = P.spectrogramPicture(S.sine(hz, 2, db), 48000, P.axisFor(0, 2), { name: 's', title: 't' });
     const y = P.PICTURE.top + argmax(rowBrightness(p));
-    near(dbOfHeat(R.pixel(p.raster, 735, y)), db, 2, `a sine at ${db} dB`);
+    near(dbOfHeat(R.pixel(p.raster, 735, y)), db, 1, `a sine of ${hz} Hz at ${db} dB`);
   }
 });
 test('every sample reaches the picture: a short burst between two column centres still lights its column', () => {
@@ -191,4 +212,22 @@ test('shows says what a picture is without judging it', () => {
     assert.ok(p.shows.split(/\.\s/).length <= 3, `${p.name}: ${p.shows}`);
   }
   assert.match(P.differencePicture(l, r, 48000, P.axisFor(0, 2), 'difference').shows, /Red is where the second is louder than the first/);
+});
+
+test('every picture keeps to 256 colours or fewer, and a spectrogram is written as an indexed PNG', async () => {
+  const { encodePng } = await import('../src/audio/hearing/png.ts');
+  const colours = (p) => { const seen = new Set(); const d = p.raster.data; for (let i = 0; i < d.length; i += 3) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]); return seen.size; };
+  const l = S.mix(S.pink(3, -18, 1), S.sine(220, 3, -12)), r = S.mix(S.pink(3, -18, 2), S.sine(330, 3, -20)); l[60000] += 0.5;
+  const h = hearingOf([l, r], 48000, { engine: 't', pictures: true, closeUps: [1.5], against: { sound: hearingOf([S.pink(3, -24, 3)], 48000, { engine: 't' }).sound, label: 'the other' } });
+  const pictures = [...h.pictures, P.differencePicture(l, S.mix(l, S.band(S.pink(3, -12, 4), 2000, 4000)), 48000, P.axisFor(0, 3), 'difference'), P.spectrumPicture(h.sound.tone.spectrum, 'this', null, 'spectrum-alone')];
+  assert.deepEqual([...new Set(pictures.map((p) => p.kind))].sort(), ['chroma', 'closeup', 'difference', 'level', 'spectrogram', 'spectrum', 'stereo']);
+  for (const p of pictures) assert.ok(colours(p) <= 256, `${p.name} has ${colours(p)} colours`);
+  const png = await encodePng(h.pictures[0].raster);
+  assert.equal(png[25], 3, 'colour type 3, indexed');
+});
+test('the grid stays under the data: visible on silence, never in place of a level', () => {
+  const axis = P.axisFor(0, 2); const inside = (p, c) => { let n = 0; for (let y = P.PICTURE.top; y < P.PICTURE.bottom; y++) for (let x = P.PICTURE.left; x < P.PICTURE.right; x++) if (R.pixel(p.raster, x, y).join() === c.join()) n++; return n; };
+  assert.ok(inside(P.spectrogramPicture(new Float32Array(96000), 48000, axis, { name: 's', title: 't' }), R.GRID) > 100, 'the grid shows on silence');
+  const loud = P.spectrogramPicture(S.white(2, -10, 1), 48000, axis, { name: 's', title: 't' });
+  assert.equal(inside(loud, R.GRID), 0, 'no grid dot over the noise');
 });

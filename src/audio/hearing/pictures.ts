@@ -7,7 +7,7 @@
  */
 import { fftInPlace } from '../fft';
 import type { BandSpectrum } from '../mixAnalysis';
-import { DIVERGING, fillRect, GRID, HEAT, INK, line, PAPER, ramp, raster, setPixel, text, textWidth, type Raster, type Rgb } from './raster';
+import { DIVERGING, fillRect, GRID, HEAT, INK, line, PAPER, pixel, ramp, raster, setPixel, text, textWidth, type Raster, type Rgb } from './raster';
 
 export type PictureKind = 'spectrogram' | 'stereo' | 'level' | 'spectrum' | 'chroma' | 'closeup' | 'difference';
 export interface PictureInfo {
@@ -186,10 +186,39 @@ function leftLabel(r: Raster, s: string, y: number, c: Rgb = INK): void {
   text(r, s, Math.max(0, PICTURE.left - 8 - w), Math.round(y - CELL_H / 2), c, BIG);
 }
 
-/** A dotted line across the plot (dots every 4 pixels), to grid a picture without hiding it. */
+// ---------------------------------------------------------------- stepped colour scales
+
+/** Steps of the heat scale: 90 dB in 127 steps, about 0.7 dB each, so a picture keeps to 256 colours or fewer. */
+export const HEAT_STEPS = 128;
+/** Steps of the difference scale: an odd count, so no difference is the scale's own middle colour. */
+export const DIVERGING_STEPS = 95;
+const steps = (stops: readonly Rgb[], n: number): Rgb[] => Array.from({ length: n }, (_, i) => ramp(stops, i / (n - 1)));
+const HEAT_TABLE = steps(HEAT, HEAT_STEPS);
+const DIVERGING_TABLE = steps(DIVERGING, DIVERGING_STEPS);
+/** The step of `table` nearest `t` (0 to 1, clamped; NaN gives the first). */
+const stepOf = (table: readonly Rgb[], t: number): Rgb => table[t > 0 ? Math.min(table.length - 1, Math.round(t * (table.length - 1))) : 0];
+/** The heat scale's colour at `t`, stepped. */
+export const heatStep = (t: number): Rgb => stepOf(HEAT_TABLE, t);
+/** The difference scale's colour at `t`, stepped (0.5 is its middle exactly). */
+export const divergingStep = (t: number): Rgb => stepOf(DIVERGING_TABLE, t);
+const sameColour = (a: Rgb, b: Rgb) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+
+/** A dotted line (dots every 4 pixels), for a marker over the data. */
 function dotted(r: Raster, x0: number, y0: number, x1: number, y1: number, c: Rgb): void {
   if (y0 === y1) for (let x = Math.ceil(x0); x <= x1; x += 4) setPixel(r, x, Math.round(y0), c);
   else for (let y = Math.ceil(y0); y <= y1; y += 4) setPixel(r, Math.round(x0), y, c);
+}
+/**
+ * A dotted grid line that stays under the data: a dot is drawn only where the pixel is the ground or
+ * the bottom of the heat scale (nothing there), so it never stands in for a level.
+ */
+function gridDots(r: Raster, x0: number, y0: number, x1: number, y1: number): void {
+  const dot = (x: number, y: number) => {
+    const c = pixel(r, x, y);
+    if (sameColour(c, PAPER) || sameColour(c, HEAT_TABLE[0])) setPixel(r, x, y, GRID);
+  };
+  if (y0 === y1) for (let x = Math.ceil(x0); x <= x1; x += 4) dot(x, Math.round(y0));
+  else for (let y = Math.ceil(y0); y <= y1; y += 4) dot(Math.round(x0), y);
 }
 
 /** The frequency axis on the left from `top` to `bottom`: labels in Hz (k for kHz) with faint grid lines across the plot. */
@@ -198,7 +227,7 @@ function frequencyAxis(r: Raster, top: number, bottom: number, solid: boolean): 
     const y = Math.round(yOfHzIn(hz, top, bottom));
     const at = Math.min(bottom - 1, Math.max(top, y));
     if (solid) line(r, PICTURE.left, at, PICTURE.right - 1, at, GRID);
-    else dotted(r, PICTURE.left, at, PICTURE.right - 1, at, GRID);
+    else gridDots(r, PICTURE.left, at, PICTURE.right - 1, at);
     line(r, PICTURE.left - 6, at, PICTURE.left - 2, at, GRID);
     leftLabel(r, label, y);
   }
@@ -219,7 +248,7 @@ function timeTicks(r: Raster, ticks: ReadonlyArray<{ x: number; label: string }>
     const x = Math.round(t.x);
     if (grid) {
       if (solid) line(r, x, top, x, PICTURE.bottom - 1, GRID);
-      else dotted(r, x, top, x, PICTURE.bottom - 1, GRID);
+      else gridDots(r, x, top, x, PICTURE.bottom - 1);
     }
   }
   for (const t of shown) {
@@ -267,7 +296,7 @@ function legend(r: Raster, top: number, bottom: number, colourAt: (t: number) =>
   }
 }
 const dbLegend = (r: Raster, top: number = PICTURE.top, bottom: number = PICTURE.bottom) =>
-  legend(r, top, bottom, (t) => ramp(HEAT, t), [[1, '0 dB'], [0.5, '-45'], [0, '-90 dB']]);
+  legend(r, top, bottom, heatStep, [[1, '0 dB'], [0.5, '-45'], [0, '-90 dB']]);
 
 // ---------------------------------------------------------------- the spectrogram's maths
 
@@ -412,7 +441,7 @@ function eachColumn(
 }
 
 const toDb = (p: number) => 10 * Math.log10(p > 1e-30 ? p : 1e-30);
-const heatOf = (db: number) => ramp(HEAT, (db - LEVEL_DB.floor) / (LEVEL_DB.top - LEVEL_DB.floor));
+const heatOf = (db: number) => heatStep((db - LEVEL_DB.floor) / (LEVEL_DB.top - LEVEL_DB.floor));
 
 /** Paint one column's spectrum into rows `top` to `bottom` of the plot, coloured by level; above half the sample rate, ground. */
 function paintColumn(r: Raster, x: number, p: Float64Array, reading: ReturnType<typeof rowReading>, top: number): void {
@@ -657,15 +686,15 @@ export function chromaPicture(chroma: readonly number[][], stepSeconds: number, 
     if (x1 <= x0) return;
     for (let n = 0; n < 12; n++) {
       const y0 = Math.round(PICTURE.bottom - (n + 1) * rowH), y1 = Math.round(PICTURE.bottom - n * rowH);
-      fillRect(r, x0, y0, x1 - x0, y1 - y0, ramp(HEAT, step[n] ?? 0));
+      fillRect(r, x0, y0, x1 - x0, y1 - y0, heatStep(step[n] ?? 0));
     }
   });
   for (let n = 0; n < 12; n++) {
     leftLabel(r, NOTE_NAMES[n], PICTURE.bottom - (n + 0.5) * rowH);
-    if (n > 0) dotted(r, PICTURE.left, Math.round(PICTURE.bottom - n * rowH), PICTURE.right - 1, Math.round(PICTURE.bottom - n * rowH), GRID);
+    if (n > 0) gridDots(r, PICTURE.left, Math.round(PICTURE.bottom - n * rowH), PICTURE.right - 1, Math.round(PICTURE.bottom - n * rowH));
   }
   timeAxis(r, axis);
-  legend(r, PICTURE.top, PICTURE.bottom, (t) => ramp(HEAT, t), [[1, '1'], [0.5, '0.5'], [0, '0']]);
+  legend(r, PICTURE.top, PICTURE.bottom, heatStep, [[1, '1'], [0.5, '0.5'], [0, '0']]);
   box(r);
   return p;
 }
@@ -737,11 +766,11 @@ export function differencePicture(before: Float32Array, after: Float32Array, sam
       const y = PICTURE.top + i;
       if (p0 < 0) { setPixel(r, PICTURE.left + c, y, PAPER); continue; }
       const d0 = toDb(p0), d1 = toDb(p1);
-      setPixel(r, PICTURE.left + c, y, d0 < QUIET_DB && d1 < QUIET_DB ? PAPER : ramp(DIVERGING, 0.5 + (d1 - d0) / (2 * DIFFERENCE_DB)));
+      setPixel(r, PICTURE.left + c, y, d0 < QUIET_DB && d1 < QUIET_DB ? PAPER : divergingStep(0.5 + (d1 - d0) / (2 * DIFFERENCE_DB)));
     }
   });
   frequencyFrame(p, axis);
-  legend(r, PICTURE.top, PICTURE.bottom, (t) => ramp(DIVERGING, t), [[1, `+${DIFFERENCE_DB} dB`], [0.5, '0'], [0, `-${DIFFERENCE_DB} dB`]]);
+  legend(r, PICTURE.top, PICTURE.bottom, divergingStep, [[1, `+${DIFFERENCE_DB} dB`], [0.5, '0'], [0, `-${DIFFERENCE_DB} dB`]]);
   text(r, 'more', LEGEND_LABEL_X, PICTURE.top + 12, INK, BIG);
   text(r, 'less', LEGEND_LABEL_X, PICTURE.bottom - 7 - CELL_H - 6, INK, BIG);
   return p;

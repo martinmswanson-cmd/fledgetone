@@ -81,22 +81,34 @@ function spread<T>(items: readonly T[], most: number): T[] {
   return Array.from({ length: most }, (_, i) => items[Math.round((i * (items.length - 1)) / (most - 1))]);
 }
 
-/** The detail stretches of a range: every DETAIL_BARS bars, or every DETAIL_SECONDS without bars. */
-function detailsOf(seconds: number, bars: readonly BarSpan[] | undefined): Array<{ from: number; to: number; name: string }> {
-  const out: Array<{ from: number; to: number; name: string }> = [];
+/** One detail spectrogram's stretch, in seconds from the start of the audio, and its picture's name. */
+export interface DetailRange {
+  fromSeconds: number;
+  toSeconds: number;
+  name: string;
+}
+
+/**
+ * The detail stretches of a range: with bars, one per DETAIL_BARS bars of those in the range (none for
+ * DETAIL_BARS or fewer), named `spectrogram-bars-9-16`; without, one per DETAIL_SECONDS when the range
+ * is longer than that, named `spectrogram-0m30-1m00`. At most MAX_DETAILS, spread evenly (the first and
+ * last kept, in order) when there would be more.
+ */
+export function detailRanges(fromSeconds: number, toSeconds: number, bars?: readonly BarSpan[]): DetailRange[] {
+  const out: DetailRange[] = [];
   if (bars && bars.length > 0) {
-    const inside = bars.filter((b) => b.start < seconds && b.end > 0);
+    const inside = bars.filter((b) => b.start < toSeconds && b.end > fromSeconds);
     if (inside.length > DETAIL_BARS) {
       for (let i = 0; i < inside.length; i += DETAIL_BARS) {
         const group = inside.slice(i, i + DETAIL_BARS);
         const last = group[group.length - 1];
-        out.push({ from: group[0].start, to: Math.min(seconds, last.end), name: `spectrogram-bars-${group[0].bar}-${last.bar}` });
+        out.push({ fromSeconds: Math.max(fromSeconds, group[0].start), toSeconds: Math.min(toSeconds, last.end), name: `spectrogram-bars-${group[0].bar}-${last.bar}` });
       }
     }
-  } else if (seconds > DETAIL_SECONDS) {
-    for (let from = 0; from < seconds; from += DETAIL_SECONDS) {
-      const to = Math.min(seconds, from + DETAIL_SECONDS);
-      out.push({ from, to, name: `spectrogram-${minutesName(from)}-${minutesName(to)}` });
+  } else if (toSeconds - fromSeconds > DETAIL_SECONDS) {
+    for (let from = fromSeconds; from < toSeconds; from += DETAIL_SECONDS) {
+      const to = Math.min(toSeconds, from + DETAIL_SECONDS);
+      out.push({ fromSeconds: from, toSeconds: to, name: `spectrogram-${minutesName(from)}-${minutesName(to)}` });
     }
   }
   return spread(out, MAX_DETAILS);
@@ -139,8 +151,8 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
     return { sound, pictures: out };
   }
 
-  for (const d of detailsOf(seconds, bars)) {
-    const axis = axisFor(d.from, d.to, bars);
+  for (const d of detailRanges(0, seconds, bars)) {
+    const axis = axisFor(d.fromSeconds, d.toSeconds, bars);
     out.push(...spectrogramPictures(mid, null, sampleRate, axis, { name: named(d.name), title: `Spectrogram: ${rangeText(axis)}` }, null));
   }
   if (stereoPicture) out.push(stereoPicture);
