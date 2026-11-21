@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.21 — A new version is easier to see
 
 - **A new version is easier to see**: when one is ready, **Version … is ready** and its **Reload** button are a bar across the top of the page, in the studio and in Pocket. It was a small notice in the bottom right corner, easy to miss. The page moves down to make room for it, and it stays on top of whatever is open.
 
