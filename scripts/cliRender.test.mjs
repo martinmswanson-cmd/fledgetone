@@ -586,6 +586,15 @@ test('measure through the browser: an MP3 heard, a WAV it cannot read in Node, a
   const text = await slowCli('measure', 'song.mp3', '--offline');
   assert.equal(text.code, 0, text.stderr);
   assert.match(text.stdout, /^song\.mp3: 0:0\d, 2 channels\nLoudness /);
+  // A stretch of it, heard in the page: every time is a time in the file, as for a WAV
+  const part = await slowCli('measure', 'song.mp3', '--from', '1', '--to', '3', '--close', '2', '--pictures', join(tmp, 'mp3-part'), '--offline');
+  assert.equal(part.code, 0, part.stderr);
+  assert.match(part.stdout, /^song\.mp3: 0:01 to 0:03 of 0:0\d, 2 channels\n/);
+  assert.ok(existsSync(join(tmp, 'mp3-part', 'closeup-2.00s.png')), 'the close-up is named for its time in the file');
+  assert.match(part.stdout, /spectrogram\.png: [^\n]* over 0:01\.0 to 0:03\.0 /);
+  const partJson = JSON.parse((await slowCli('measure', 'song.mp3', '--from', '1', '--to', '3', '--sound', '--offline', '--json')).stdout);
+  assert.deepEqual([partJson.range, partJson.sound.settings.stretch], [{ fromSeconds: 1, toSeconds: 3 }, { fromSeconds: 1, toSeconds: 3 }]);
+  assert.ok(partJson.fileSeconds > 3 && !('along' in partJson.sound));
   // An 8-bit WAV, which Node's reader leaves to the browser
   const frames = 48000;
   const eight = Buffer.alloc(44 + frames);

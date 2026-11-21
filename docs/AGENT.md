@@ -262,10 +262,10 @@ in Hz; a quieter channel's is how far it is under the other, in dB. Digital sile
 
 For an audio file every time read or given is a time in the file, whatever stretch of it was
 heard: a fault's `seconds`, the words, the pictures' titles, labels and ranges, the close-ups'
-names, `closeUps`, and `againstFromSeconds` and `againstToSeconds` (of a saved hearing too). The
+names, `closeUps`, and `againstFromSeconds` and `againstToSeconds` (of a saved hearing as well). The
 answer's `range` is the stretch heard, with `fileSeconds`, the file's length, when a stretch was
 asked for. For a song, places are bars and beats; where seconds appear they are counted from the
-start of the bars heard. A moment is written as minutes, seconds and hundredths (`0:26.53`).
+start of the bars heard (a stretch of a hearing saved from a song as well). A moment is written as minutes, seconds and hundredths (`0:26.53`).
 
 ### The pictures and their axes
 

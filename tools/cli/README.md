@@ -152,7 +152,8 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
   goes stale when the rules of one of its groups change: that group can't be compared any more
   (it says so), and the hearing is to be made again from the audio. It isn't written over
   unless `--overwrite`. With `listen --suggestion` (or `--ops`), it saves the hearing of the
-  after version.
+  after version. A hearing saved from a song says which bars it is of (`range`); a stretch of
+  it (`--against-from`, `--against-to`) is counted in seconds from the start of those bars.
 - `--bpm <n>` (`measure`): the tempo, when you know it (else it is found from the sound).
 - `--from` and `--to` (`measure`): a stretch of the file. Every time read or given stays a time
   in the file: the first line says the stretch (`click.wav: 0:10 to 0:20 of 1:00, 2 channels`), a
