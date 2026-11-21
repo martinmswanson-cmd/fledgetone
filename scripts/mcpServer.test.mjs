@@ -319,6 +319,31 @@ test('hear_audio: the report as text, its pictures as image content, one at a ti
   }
 });
 
+test('listen with a song file: the bars and close-ups are checked before the sound to read against is read; a file that is no saved hearing is said in the tool\'s own words', { skip, timeout: 60_000 }, async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(work, 'not-a-hearing.json'), JSON.stringify({ fledgetoneHearing: 1, of: 'x.wav', range: { fromSeconds: 0, toSeconds: 1 }, sound: { versions: {}, along: {}, seconds: 1, faults: [], words: [] } }));
+  writeFileSync(join(work, 'a-tone.wav'), sineWav(2));
+  const client = await connect();
+  try {
+    // a close-up outside the bars, and a sound to read against that can't be read: the close-up is what is said
+    const r = await client.callTool({ name: 'listen', arguments: { file: 'song.fledgetone.json', fromBar: 1, toBar: 3, closeUps: ['99'], against: 'not-a-hearing.json' } });
+    assert.ok(r.isError);
+    assert.match(text(r), /^closeUps 99 is outside the bars heard/);
+    // the hint names the tool's own input, not the command line's option
+    const h = await client.callTool({ name: 'hear_audio', arguments: { file: 'a-tone.wav', against: 'not-a-hearing.json' } });
+    assert.ok(h.isError);
+    assert.equal(text(h), "not-a-hearing.json isn't a saved hearing (hear_audio or listen with save makes one)");
+    // the descriptions use the report's own words
+    const { tools } = await client.listTools();
+    const hear = tools.find((t) => t.name === 'hear_audio');
+    assert.match(hear.description, /tone, texture, movement, dynamics, attack, stereo, pitch, faults/);
+    assert.doesNotMatch(hear.description, /rhythm|harmony/);
+    assert.doesNotMatch(JSON.stringify(tools), /gritty/);
+  } finally {
+    await client.close();
+  }
+});
+
 test('hear_audio: a reply leaves the per-second grids out (60 seconds in under 12,000 characters); a saved hearing keeps them, written compactly', { skip, timeout: 120_000 }, async () => {
   const { writeFileSync } = await import('node:fs');
   writeFileSync(join(work, 'minute.wav'), sineWav(60));

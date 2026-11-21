@@ -362,7 +362,8 @@ export async function listenSongFile(
   return result;
 }
 
-function reportText(r: WithWrittenPictures<ListenReport>, label = ''): string[] {
+/** A listen report in words: the mix, bar by bar, and each track (with its own sound in words, indented under its line, when it was heard). */
+export function reportText(r: WithWrittenPictures<ListenReport>, label = ''): string[] {
   const m = r.mix;
   const lines = [
     `${label}${barsText(r.range.fromBar, r.range.toBar)}, ${r.heard}: ${clock(r.seconds)}`,
@@ -371,7 +372,10 @@ function reportText(r: WithWrittenPictures<ListenReport>, label = ''): string[] 
   ];
   if (m.regions.length) lines.push(`  Balance: ${m.regions.map((x) => `${x.name} ${signed(x.db)}`).join(', ')}`);
   lines.push(`  Bar by bar (LUFS): ${r.bars.map((b) => `${b.bar}: ${r1(b.lufs)}`).join(', ')}`);
-  for (const t of r.tracks ?? []) lines.push(`  "${t.name}": ${r1(t.lufs)} LUFS, peak ${r1(t.truePeakDbtp)} dBTP${t.regions.length ? `; ${t.regions.map((x) => `${x.name} ${signed(x.db)}`).join(', ')}` : ''}`);
+  for (const t of r.tracks ?? []) {
+    lines.push(`  "${t.name}": ${r1(t.lufs)} LUFS, peak ${r1(t.truePeakDbtp)} dBTP${t.regions.length ? `; ${t.regions.map((x) => `${x.name} ${signed(x.db)}`).join(', ')}` : ''}`);
+    for (const w of t.sound?.words ?? []) lines.push(`      ${w}`);
+  }
   return lines;
 }
 

@@ -186,8 +186,9 @@ fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --aga
   flat tops), movement (change over time, slow wobbles of a band), dynamics (loudness, true peak,
   crest, range), attack (how often and how fast things start), stereo (correlation, balance,
   mono loss, width), pitch (tempo, key, tuning, pitch classes) and faults (clicks, clipping, DC
-  offset, hum, digital silence, a channel fault), each with plain `words` that describe and never
-  judge. The text output prints the words after the usual lines. With any of the hearing
+  offset, hum, digital silence, a channel fault), and one list of plain `words` for them all,
+  which describe and never judge. The text output prints the words after the usual lines (with
+  `--per-track`, each track's own under its line). With any of the hearing
   options (or `--from` / `--to`, or audio other than WAV), `measure --json` is the file's hearing:
   `file`, `range`, `seconds`, `channels`, `silent`, the loudness numbers rounded to a tenth,
   `regions`, a `note` when one is needed, and `sound`, `against` and `pictures` when asked.
@@ -233,7 +234,9 @@ returned. `pictures` names a folder inside `--root` (made if it isn't there; a p
 
 ### What the sound report tells
 
-`sound` has eight groups, each with plain `words` that describe the sound and never judge it:
+`sound` has eight groups of measures and one list of plain `words` (a line for each finding that
+applies, in the groups' order, then a line for each fault) that describe the sound and never
+judge it:
 
 - tone: the balance of the spectrum, where its weight sits (centre), its tilt and roll-off, and
   narrow peaks (a held note reads as one too; the words name the three strongest and list the
@@ -271,6 +274,9 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
 
 - `spectrogram`: time left to right, frequency bottom to top on a log scale (20 Hz to 20 kHz),
   colour is level from dark (-90 dB) through blue, purple, red and orange to pale yellow (0 dB).
+  A range of more than 8 bars, or more than 30 seconds of a file, also gets detail spectrograms
+  of 8 bars or 30 seconds each: at most twelve, spread evenly from the first to the last, so the
+  details of a very long range do not cover all of it (hear a stretch for the rest).
   `stereo` is the same of the side signal (left minus right): wide sound shows, centred sound
   doesn't.
 - `level`: the waveform of each channel against time, from -1 to +1, with each second's loudness
@@ -283,7 +289,7 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
   (`against` makes no difference picture).
 - `chroma`: the twelve pitch classes (C at the bottom to B at the top) against time; brightness is
   each note's strength.
-- close-ups (`closeUps`, and one for each fault the report names): 0.15 seconds round
+- close-ups (`closeUps`, and one for each of the first six faults that have a place): 0.15 seconds round
   a moment, the waveform above and frequency (log scale) coloured by level below, with time in
   milliseconds from that moment. For a song file a close-up is a bar and its quarter beat, `"9.3"`
   (bar 9, beat 3) or `"9"` (its first beat), counted in bars of four quarter notes whatever the
@@ -333,7 +339,8 @@ These are limits of the tool, measured, not advice:
   played on the beat both read this way, and the report can't tell them apart.
 - Faults can be missed: a hum within a hertz or two of a loud held bass note, under a walking
   bassline, or under a loud kick; a click within a fraction of a millisecond of a square wave's own
-  corner. Dense crackle reads as a few clicks, not hundreds, and kick rolls of ten a second or more
+  corner; a small click (4 times the level around it) under hiss that is within about 20 dB of
+  the sound it sits in. Dense crackle reads as a few clicks, not hundreds, and kick rolls of ten a second or more
   can read as a DC offset. Nothing reported is certain to be a fault: a close-up picture is made for
   each one so it can be looked at.
 - A description does not change with playback level down to about 20 dB quieter. At 40 dB quieter

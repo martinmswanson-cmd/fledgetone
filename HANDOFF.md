@@ -299,8 +299,10 @@ To read a sound's character as well as its level (to see what a change did to th
 the attacks or the faults, or where a click is), use the hearing: `fledgetone measure <file>
 --sound --pictures <folder>` on a WAV or MP3, or `fledgetone listen <song> --sound --pictures
 <folder>` on bars of a song (add `--ops` or `--suggestion` for before and after, `--against` to read
-it against another sound or a saved hearing, `--close 9.3` for a close-up of bar 9, beat 3). It
-runs in Node, without the dev server, and describes rather than judges. After a change to anything
+it against another sound or a saved hearing, `--close 9.3` for a close-up of bar 9, beat 3). A
+WAV is heard in Node; a song, and audio of any other type, needs the built runtime and a headless
+browser (`npm run build:runtime`, `FLEDGETONE_BROWSER`). None of it needs the dev server, and it
+describes rather than judges. After a change to anything
 in `src/audio/hearing/`, run the reading check (`scripts/audio-check/hearing/README.md`): made
 sounds, two starters and a heavy test song, each with one thing planted in it, are heard, and each
 hearing alone is given to a fresh agent with one question; it passes when every agent names what

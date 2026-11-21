@@ -22,6 +22,7 @@ const R = await import('../src/audio/hearing/raster.ts');
 const { hearingOf, parseSavedHearing, detailRanges } = await import('../src/audio/hearing/hearingOf.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 const compare = await import('../src/audio/hearing/compareSound.ts');
+const toneModule = await import('../src/audio/hearing/tone.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -110,6 +111,42 @@ test('a saved hearing is recognised, anything else refused', () => {
   const sound = hearingOf([S.pink(2, -18, 1)], 48000, { engine: 't' }).sound;
   assert.equal(parseSavedHearing({ fledgetoneHearing: 1, of: 'a.wav', range: { fromSeconds: 0, toSeconds: 2 }, sound }).of, 'a.wav');
   for (const bad of [null, {}, { fledgetoneHearing: 2, sound }, { fledgetoneHearing: 1 }]) assert.throws(() => parseSavedHearing(bad), /not a saved hearing/);
+});
+test('a saved hearing is checked as far as it is used: its settings, versions and the fields of its grids (M2)', () => {
+  const sound = JSON.parse(JSON.stringify(hearingOf([S.pink(2, -18, 1), S.pink(2, -18, 2)], 48000, { engine: 't' }).sound));
+  const saved = (s) => ({ fledgetoneHearing: 1, of: 'a.wav', range: { fromSeconds: 0, toSeconds: 2 }, sound: s });
+  assert.equal(parseSavedHearing(saved(sound)).sound.along.mid.length, 2);
+  // what passed the first look and then threw "Cannot read properties of undefined (reading 'stretch')"
+  const shallow = { versions: {}, along: {}, seconds: 1, faults: [], words: [] };
+  const without = (key) => { const { [key]: _gone, ...rest } = sound; return rest; };
+  const bad = {
+    'the shallow shape': shallow,
+    'no settings': without('settings'),
+    'settings without a sample rate': { ...sound, settings: {} },
+    'a stretch that is not one': { ...sound, settings: { ...sound.settings, stretch: { fromSeconds: 'x' } } },
+    'versions that are not numbers': { ...sound, versions: { tone: 'one' } },
+    'no grids': without('along'),
+    'empty grids': { ...sound, along: {} },
+    'no step': { ...sound, along: { ...sound.along, stepSeconds: 0 } },
+    'rows that are not arrays': { ...sound, along: { ...sound.along, mid: [1, 2] } },
+    'no loudness rows': { ...sound, along: { ...sound.along, lufs: undefined } },
+    'no channels': without('channels'),
+    'faults that are not faults': { ...sound, faults: ['a click'] },
+  };
+  for (const [name, s] of Object.entries(bad)) assert.throws(() => parseSavedHearing(saved(s)), { message: 'not a saved hearing' }, name);
+  // a stretch's own settings pass, and null loudness rows (too quiet to measure)
+  assert.ok(parseSavedHearing(saved({ ...sound, settings: { ...sound.settings, stretch: { fromSeconds: 10, toSeconds: 12 } }, along: { ...sound.along, lufs: [null, -20] } })));
+});
+test("a narrow peak's frequency is where the power sits in its band, not the band's centre (M10)", () => {
+  const { toneOf } = toneModule;
+  for (const hz of [440, 1000, 3000, 110, 61.74]) {
+    const peak = toneOf([S.mix(S.pink(6, -40, 1), S.sine(hz, 6, -12))], 48000).peaks[0];
+    assert.ok(peak, `a peak at ${hz} Hz`);
+    // (a twenty-fourth of an octave is 2.9%: the band's centre can be 1.5% off, as 440 Hz read "446 Hz")
+    assert.ok(Math.abs(peak.hz / hz - 1) < 0.006, `${hz} Hz reads ${peak.hz} Hz`);
+  }
+  const words = hearingOf([S.mix(S.pink(6, -40, 1), S.sine(440, 6, -12))], 48000, { engine: 't' }).sound.words;
+  assert.ok(words.some((w) => /^A narrow peak at 44[01] Hz /.test(w)), words.join('\n'));
 });
 
 // The controller's additions

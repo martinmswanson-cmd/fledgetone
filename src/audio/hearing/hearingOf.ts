@@ -193,13 +193,30 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 const isNumber = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 
-/** A saved hearing read back from JSON; throws Error('not a saved hearing') on any other shape or version. */
+const isNumbers = (x: unknown): x is number[] => Array.isArray(x) && x.every(isNumber);
+/** A grid of the along rows: one array a row (of numbers, or for the loudness a number or null a row). */
+const isRows = (x: unknown, cell: (v: unknown) => boolean): boolean => Array.isArray(x) && x.every(cell);
+
+/**
+ * A saved hearing read back from JSON; throws Error('not a saved hearing') on any other shape or
+ * version. Everything that reading it, comparing it or taking a stretch of it relies on is checked:
+ * the range, the report's settings, versions, length, faults and words, and the fields of its
+ * per-second grids.
+ */
 export function parseSavedHearing(json: unknown): SavedHearing {
   const refuse = () => new Error('not a saved hearing');
   if (!isObject(json) || json.fledgetoneHearing !== HEARING_FILE || typeof json.of !== 'string') throw refuse();
   const { range, sound } = json;
   if (!isObject(range) || !isNumber(range.fromSeconds) || !isNumber(range.toSeconds)) throw refuse();
   if ((range.fromBar !== undefined && !isNumber(range.fromBar)) || (range.toBar !== undefined && !isNumber(range.toBar))) throw refuse();
-  if (!isObject(sound) || !isObject(sound.versions) || !isObject(sound.along) || !isNumber(sound.seconds) || !Array.isArray(sound.faults) || !Array.isArray(sound.words)) throw refuse();
+  if (!isObject(sound) || !isNumber(sound.seconds) || !Array.isArray(sound.faults) || !sound.faults.every(isObject) || !Array.isArray(sound.words) || typeof sound.silent !== 'boolean') throw refuse();
+  if (sound.channels !== 1 && sound.channels !== 2) throw refuse();
+  const { settings, versions, along } = sound;
+  if (!isObject(settings) || !isNumber(settings.sampleRate)) throw refuse();
+  const stretch = settings.stretch;
+  if (stretch !== undefined && (!isObject(stretch) || !isNumber(stretch.fromSeconds) || !isNumber(stretch.toSeconds))) throw refuse();
+  if (!isObject(versions) || !Object.values(versions).every(isNumber)) throw refuse();
+  if (!isObject(along) || !isNumber(along.stepSeconds) || !(along.stepSeconds > 0) || !isNumbers(along.freqs)) throw refuse();
+  if (!isRows(along.mid, isNumbers) || !isRows(along.side, isNumbers) || !isRows(along.chroma, isNumbers) || !isRows(along.lufs, (v) => v === null || isNumber(v))) throw refuse();
   return json as unknown as SavedHearing;
 }

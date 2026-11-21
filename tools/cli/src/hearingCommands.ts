@@ -156,7 +156,8 @@ function checkWritable(option: string, path: string, kind: 'file' | 'folder'): v
   const there = nearestThere(kind === 'file' ? dirname(resolve(path)) : path);
   const folder = kind === 'file' ? dirname(resolve(path)) : resolve(path);
   if (there && !statSync(there).isDirectory()) {
-    if (there === folder) throw new UsageError(`${option} ${path} isn't a folder`);
+    // (the folder itself is a file: of a folder to write in, said of it; of a file to write, its folder is named)
+    if (there === folder && kind === 'folder') throw new UsageError(`${option} ${path} isn't a folder`);
     const shown = relative(process.cwd(), there);
     throw new UsageError(`${option} ${path}: ${shown && !shown.startsWith('..') && !isAbsolute(shown) ? shown : there} is a file, not a folder`);
   }
@@ -466,11 +467,39 @@ export function writeSavedHearing(path: string, saved: SavedHearing): void {
   writeFileSafe(path, JSON.stringify(saved) + '\n');
 }
 
-/** The lines a hearing adds to what a command prints: the sound in words, what it was read against (the notes, the faults the two do not share, the differences), the pictures written. */
-export function hearingLines(h: { sound?: SoundReport; against?: SoundComparison; pictures?: ReadonlyArray<{ path: string; shows: string }> }, againstLabel?: string, heading = 'Sound'): string[] {
+/** m:ss, for a stretch of a file. */
+const minutesText = (seconds: number) => {
+  const whole = Math.round(Math.max(0, seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+};
+
+/**
+ * When a long range's detail spectrograms do not cover all of it (there are at most twelve, spread
+ * evenly), one line saying which stretches they cover; else nothing.
+ */
+export function detailsLine(pictures: ReadonlyArray<{ name?: string; kind?: string; fromSeconds?: number; toSeconds?: number }>): string[] {
+  const spectrograms = pictures.filter((p) => p.kind === 'spectrogram' && p.name !== undefined && p.fromSeconds !== undefined && p.toSeconds !== undefined);
+  // (a track's or the after version's pictures have a name before "spectrogram": each set is told apart by it)
+  const lines: string[] = [];
+  for (const overview of spectrograms.filter((p) => /(^|-)spectrogram$/.test(p.name!))) {
+    const prefix = overview.name!.slice(0, -'spectrogram'.length);
+    const details = spectrograms.filter((p) => p.name!.startsWith(`${prefix}spectrogram-`));
+    const covered = details.reduce((sum, d) => sum + (d.toSeconds! - d.fromSeconds!), 0);
+    if (details.length === 0 || covered >= overview.toSeconds! - overview.fromSeconds! - 0.5) continue;
+    const said = details.map((d) => {
+      const bars = /spectrogram-bars-(\d+)-(\d+)$/.exec(d.name!);
+      return bars ? (bars[1] === bars[2] ? `bar ${bars[1]}` : `bars ${bars[1]} to ${bars[2]}`) : `${minutesText(d.fromSeconds!)} to ${minutesText(d.toSeconds!)}`;
+    });
+    lines.push(`The detail spectrograms cover ${said.join(', ')}: ${details.length} stretches, not all of it. The overview covers it all; hear a stretch for the details of the rest.`);
+  }
+  return lines;
+}
+
+/** The lines a hearing adds to what a command prints: the sound in words, what it was read against (the notes, the faults the two do not share, the differences), the pictures written (and, of a long range, which stretches its detail spectrograms cover). */
+export function hearingLines(h: { sound?: SoundReport; against?: SoundComparison; pictures?: ReadonlyArray<{ path: string; shows: string; name?: string; kind?: string; fromSeconds?: number; toSeconds?: number }> }, againstLabel?: string, heading = 'Sound'): string[] {
   const lines: string[] = [];
   if (h.sound) lines.push(`${heading}:`, ...h.sound.words.map((w) => `  ${w}`));
   if (h.against) lines.push(`Against ${againstLabel ?? 'the other sound'}:`, ...h.against.notes.map((n) => `  ${n}`), ...(h.against.faults ?? []).map((f) => `  ${f}`), ...h.against.differences.map((d) => `  ${d.words}`));
-  if (h.pictures?.length) lines.push('Pictures:', ...h.pictures.map((p) => `  ${p.path}: ${p.shows}`));
+  if (h.pictures?.length) lines.push('Pictures:', ...h.pictures.map((p) => `  ${p.path}: ${p.shows}`), ...detailsLine(h.pictures).map((l) => `  ${l}`));
   return lines;
 }

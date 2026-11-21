@@ -562,6 +562,26 @@ test('measure --against: another sound or a saved hearing, read as this one agai
   const notOne = await cli('measure', join(dir, 'c.wav'), '--against', SONG);
   assert.equal(notOne.code, 2);
   assert.match(notOne.stderr, /isn't a saved hearing/);
+  // One that only looks like one at a glance (no settings, grids without their fields): the same line, not a crash
+  const whole = JSON.parse(readFileSync(join(dir, 'long.hearing.json'), 'utf8'));
+  const { settings: _settings, ...noSettings } = whole.sound;
+  const shallow = [
+    { ...whole, sound: noSettings },
+    { ...whole, sound: { ...whole.sound, along: {} } },
+    { ...whole, sound: { ...whole.sound, along: { ...whole.sound.along, mid: 'x' } } },
+    { ...whole, sound: { ...whole.sound, versions: { tone: 'one' } } },
+    { fledgetoneHearing: 1, of: 'x.wav', range: { fromSeconds: 0, toSeconds: 1 }, sound: { versions: {}, along: {}, seconds: 1, faults: [], words: [] } },
+  ];
+  for (const [i, bad] of shallow.entries()) {
+    const path = join(dir, `shallow-${i}.json`);
+    writeFileSync(path, JSON.stringify(bad));
+    for (const extra of [[], ['--against-from', '0', '--against-to', '5']]) {
+      const r = await cli('measure', join(dir, 'c.wav'), '--against', path, ...extra);
+      assert.equal(r.code, 2, `shallow ${i}`);
+      assert.ok(r.stderr.startsWith(`fledgetone: shallow-${i}.json isn't a saved hearing (fledgetone measure --save makes one)\n`), `shallow ${i}: ${r.stderr}`);
+      assert.doesNotMatch(r.stderr, /Cannot read|undefined|\n\s+at /, `shallow ${i}`);
+    }
+  }
 });
 
 test('measure --from --to: a stretch of the file; outside it, or over 15 minutes heard, one plain line', { skip, timeout: 120_000 }, async () => {
@@ -667,6 +687,11 @@ test('measure: negative numbers, a missing file and folders that are not there a
   const pictures = await cli('measure', wav, '--pictures', join(afile, 'sub'));
   assert.equal(pictures.code, 2);
   assert.match(pictures.stderr, /^fledgetone: --pictures .*sub: .*a-plain-file is a file, not a folder\n/);
+  // --save under a file: the file is named, not the path to save in
+  const saveUnder = await cli('measure', wav, '--save', join(afile, 'h.json'));
+  assert.equal(saveUnder.code, 2);
+  assert.match(saveUnder.stderr, /^fledgetone: --save .*h\.json: .*a-plain-file is a file, not a folder\n/);
+  assert.doesNotMatch(saveUnder.stderr, /h\.json isn't a folder/);
   const save = await cli('measure', wav, '--save', join(tmp, 'nodir', 'h.json'));
   assert.equal(save.code, 2);
   assert.match(save.stderr, /^fledgetone: --save .*h\.json: the folder .*nodir isn't there\n/);

@@ -186,8 +186,12 @@ test('listen track by track hears each stem: a small hearing, its pictures named
     for (const track of rep.tracks) {
       assert.equal(typeof track.sound, 'object', track.name);
       finite(track.sound, `${track.name}.sound`);
-      assert.deepEqual(track.pictures.map((p) => p.name), [`track-${track.id}-spectrogram`, `track-${track.id}-spectrum`]);
+      // (named for the track's id, which begins "track-" already; a small hearing has no per-second grids)
+      assert.match(track.id, /^track-/);
+      assert.deepEqual(track.pictures.map((p) => p.name), [`${track.id}-spectrogram`, `${track.id}-spectrum`]);
+      assert.equal('along' in track.sound, false, `${track.name} has no grids`);
     }
+    assert.equal(rep.sound.along.mid.length, Math.ceil(rep.seconds), 'the mix keeps its grids, for the pictures and a saved hearing');
     assert.ok(!rep.pictures.some((p) => p.name.startsWith('track-')), 'the mix keeps its own pictures');
   });
 });
@@ -209,9 +213,15 @@ test('compare hears both versions: the sound difference, the after version pictu
     assert.equal(picture.kind, 'difference');
     const png = await session.take(picture.id, picture.bytes);
     assert.ok(png.subarray(0, 8).equals(PNG_SIGNATURE));
-    // The summary ends with the sound's differences in words
-    const words = ab.difference.sound.differences.slice(0, 5).map((d) => d.words);
-    assert.deepEqual(ab.difference.summary.slice(ab.difference.summary.length - words.length), words);
+    // The summary ends with the sound's differences in words: at most five, in the comparison's order, each region
+    // given once (one the balance above already gives is not said again from the sound report)
+    const all = ab.difference.sound.differences.map((d) => d.words);
+    const said = ab.difference.summary.filter((line) => all.includes(line));
+    assert.ok(said.length > 0 && said.length <= 5, ab.difference.summary.join('\n'));
+    assert.deepEqual(said, all.filter((w) => said.includes(w)));
+    assert.deepEqual(ab.difference.summary.slice(-said.length), said);
+    for (const r of ab.difference.mix.regions) assert.ok(ab.difference.summary.filter((line) => line.toLowerCase().startsWith(`${r.name.toLowerCase()}:`)).length <= 1, `${r.name} is given once`);
+    assert.ok(Array.isArray(ab.difference.sound.faults));
   });
 });
 

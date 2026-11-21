@@ -416,7 +416,8 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
         const t = await measureRender(bufferOf(ch, sampleRate));
         const id = idOf(track.id);
         trackBlocks.set(id, t.blocks);
-        const heardTrack = hearing ? await heardSound(ch, sampleRate, { ...hearOpts!, small: true, prefix: `track-${id}-` }) : {};
+        // (its pictures are named for its id, which as a rule begins "track-" already)
+        const heardTrack = hearing ? await heardSound(ch, sampleRate, { ...hearOpts!, small: true, prefix: `${id.startsWith('track-') ? id : `track-${id}`}-` }) : {};
         tracks!.push({ id, name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions, ...heardTrack });
         measures.push({
           id: track.id,

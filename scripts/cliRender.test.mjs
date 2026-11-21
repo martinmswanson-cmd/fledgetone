@@ -212,6 +212,60 @@ test("a before-and-after's summary: the faults the two do not share, and each re
   assert.ok(summary.indexOf('Clicks: 1 after (at bar 2, beat 3), none before.') < summary.indexOf('Centre: 1.4 kHz against 1.2 kHz (+0.22 octaves).'));
 });
 
+test('a long range says which stretches its detail spectrograms cover, when they do not cover all of it', async () => {
+  const { detailsLine, hearingLines } = await import('../tools/cli/src/hearingCommands.ts');
+  const { detailRanges } = await import('../src/audio/hearing/hearingOf.ts');
+  const pictures = (seconds, bars, prefix = '') => [
+    { name: `${prefix}spectrogram`, kind: 'spectrogram', fromSeconds: 0, toSeconds: seconds, path: `p/${prefix}spectrogram.png`, shows: 's' },
+    ...detailRanges(0, seconds, bars).map((d) => ({ name: `${prefix}${d.name}`, kind: 'spectrogram', fromSeconds: d.fromSeconds, toSeconds: d.toSeconds, path: `p/${prefix}${d.name}.png`, shows: 's' })),
+    { name: `${prefix}level`, kind: 'level', fromSeconds: 0, toSeconds: seconds, path: `p/${prefix}level.png`, shows: 's' },
+  ];
+  // 15 minutes: 30 stretches of 30 seconds, of which twelve are drawn
+  const long = detailsLine(pictures(900));
+  assert.equal(long.length, 1);
+  assert.match(long[0], /^The detail spectrograms cover 0:00 to 0:30, 1:30 to 2:00, .*, 14:30 to 15:00: 12 stretches, not all of it\. The overview covers it all; hear a stretch for the details of the rest\.$/);
+  assert.doesNotMatch(long[0], /\b(good|bad|too|should)\b/i);
+  // six minutes: every stretch is drawn, so nothing is added; nor for a short one with no details
+  assert.deepEqual(detailsLine(pictures(360)), []);
+  assert.deepEqual(detailsLine(pictures(20)), []);
+  // a song of 128 bars: sixteen groups of 8 bars, twelve drawn, said in bars
+  const bars = Array.from({ length: 128 }, (_, i) => ({ bar: 1 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  assert.match(detailsLine(pictures(256, bars, 'after-'))[0], /^The detail spectrograms cover bars 1 to 8, bars 9 to 16, .*bars 121 to 128: 12 stretches, not all of it\./);
+  // in the text output it follows the pictures
+  const lines = hearingLines({ pictures: pictures(900) });
+  assert.equal(lines.at(-1), `  ${long[0]}`);
+  assert.equal(lines[0], 'Pictures:');
+});
+
+test("listen --per-track --sound in words: each track's words, indented under its line", () => {
+  const sound = (words) => ({ words });
+  const report = {
+    range: { fromBar: 1, toBar: 3 },
+    seconds: 4,
+    heard: 'the song as it is',
+    renderMode: 'playback',
+    mix: { lufs: -16, shortTermMaxLufs: -14, truePeakDbtp: -1, crestDb: 12, regions: [{ name: 'bass', db: -3 }], master: { limiterMaxGrDb: 1, clipperMaxDb: null } },
+    bars: [{ bar: 1, lufs: -16 }, { bar: 2, lufs: -16 }],
+    tracks: [
+      { id: 'track-1', name: 'Keys', lufs: -20, truePeakDbtp: -6, crestDb: 10, regions: [{ name: 'bass', db: -9 }], sound: sound(['Tonal (flatness 0.01).', 'Nearly mono (correlation 0.99).']) },
+      { id: 'track-2', name: 'Drums', lufs: -18, truePeakDbtp: -3, crestDb: 14, regions: [], sound: sound(['Mostly hits (80% percussive).']) },
+      { id: 'track-3', name: 'Muted', lufs: null, truePeakDbtp: null, crestDb: null, regions: [], sound: sound(['It is silent.']) },
+      { id: 'track-4', name: 'Not heard', lufs: -30, truePeakDbtp: -20, crestDb: 9, regions: [] },
+    ],
+    findings: [],
+  };
+  const lines = rc.reportText(report);
+  const at = (start) => lines.findIndex((l) => l.startsWith(start));
+  assert.deepEqual(lines.slice(at('  "Keys"'), at('  "Keys"') + 3), ['  "Keys": -20.0 LUFS, peak -6.0 dBTP; bass -9.0', '      Tonal (flatness 0.01).', '      Nearly mono (correlation 0.99).']);
+  assert.deepEqual(lines.slice(at('  "Drums"'), at('  "Drums"') + 2), ['  "Drums": -18.0 LUFS, peak -3.0 dBTP', '      Mostly hits (80% percussive).']);
+  assert.equal(lines[at('  "Muted"') + 1], '      It is silent.');
+  assert.equal(lines.at(-1), '  "Not heard": -30.0 LUFS, peak -20.0 dBTP', 'a track with no hearing has its line alone');
+  // without the hearing, the lines are as they were
+  const plain = rc.reportText({ ...report, tracks: report.tracks.map(({ sound: _s, ...t }) => t) });
+  assert.equal(plain.filter((l) => l.startsWith('      ')).length, 0);
+  assert.equal(plain.length, lines.length - 4);
+});
+
 test('hearing an audio file: at most MAX_HEAR_SECONDS at a time, said in minutes and seconds', async () => {
   const { MAX_HEAR_SECONDS } = await import('../src/audio/hearing/hearingOf.ts');
   const { tooLongToHear } = await import('../src/agent/listenReport.ts');
@@ -464,13 +518,26 @@ test('listen --sound --pictures --close --save: the sound, its pictures written 
   const tracks = await slowCli('listen', SONG, '--bars', '1-2', '--per-track', '--pictures', join(tmp, 'track-pictures'), '--offline', '--json');
   assert.equal(tracks.code, 0, tracks.stderr);
   const each = JSON.parse(tracks.stdout).tracks;
-  for (const track of each) assert.ok(existsSync(join(tmp, 'track-pictures', `track-${track.id}-spectrogram.png`)), track.id);
+  // (named for the track's id, which begins "track-" already: not "track-track-...")
+  for (const track of each) {
+    assert.match(track.id, /^track-/);
+    assert.ok(existsSync(join(tmp, 'track-pictures', `${track.id}-spectrogram.png`)), track.id);
+    assert.ok(!existsSync(join(tmp, 'track-pictures', `track-${track.id}-spectrogram.png`)), `no track-${track.id}`);
+  }
   // --json leaves the per-second grids out, of the mix and of every track; the saved hearing keeps them
   assert.equal(r.stdout.includes('"along"'), false, 'no grids in the mix');
   assert.equal(tracks.stdout.includes('"along"'), false, 'no grids in any track');
   assert.ok(each.every((track) => track.sound && track.sound.words), 'each track is heard');
   assert.ok(tracks.stdout.length < 60_000, `listen --per-track --json of 2 bars is ${tracks.stdout.length} characters`);
   assert.ok(hearing.sound.along.mid.length >= 1, 'the saved hearing has its grids');
+  // In words, each track's own words are under its line
+  const trackWords = await slowCli('listen', SONG, '--bars', '1-2', '--per-track', '--sound', '--offline');
+  assert.equal(trackWords.code, 0, trackWords.stderr);
+  for (const track of each) {
+    const said = new RegExp(`\\n {2}"${track.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}": [^\\n]*\\n {6}\\S`);
+    assert.match(trackWords.stdout, said, `${track.name} has words under its line`);
+    assert.ok(trackWords.stdout.includes(`      ${track.sound.words[0]}\n`), `${track.name}: ${track.sound.words[0]}`);
+  }
 });
 
 test('listen --suggestion --sound: the sound difference and the difference picture; --against compares the after version', { skip: browserSkip, timeout: 300_000 }, async () => {

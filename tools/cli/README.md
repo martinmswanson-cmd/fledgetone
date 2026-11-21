@@ -120,12 +120,16 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
 
   The words describe the sound; they never judge it. What to do about it is yours to decide.
 - `--pictures <folder>`: PNG pictures of it, written there (the folder is made if it isn't there,
-  and a picture of the same name is written over): `spectrogram` (frequency against time; with
-  details every 8 bars, or every 30 seconds, of a long one), `stereo` (the side signal), `level`
+  and a picture of the same name is written over): `spectrogram` (frequency against time; a range of
+  more than 8 bars, or 30 seconds of a file, also gets detail spectrograms of 8 bars or 30
+  seconds each, at most twelve, spread evenly: the details of a very long range do not cover all
+  of it, and the text then says which stretches they cover), `stereo` (the side signal), `level`
   (the waveform and loudness), `spectrum` (with the other sound's, when there is one: the two
   are then drawn level-matched, each total against its own whole level), `chroma`
-  (the pitch classes over time), a close-up of each fault, and `difference` (with a suggestion:
-  where the after version differs). With `--per-track`, each track's are named `track-<id>-...`;
+  (the pitch classes over time), a close-up of each of the first six faults that have a place,
+  and `difference` (with a suggestion: where the after version differs). With `--per-track`,
+  each track's are named for its id (`track-3-spectrogram`; an id that doesn't begin `track-`
+  gets that put before it), and the text gives each track's own words under its line;
   with a suggestion, the after version's `after-...`. The text lists each with what it shows;
   `--json` lists them by path. Nothing is written beside the audio or the song unless asked.
 - `--close`: a close-up picture of a moment (it turns `--sound` on, as `--pictures`, `--against`

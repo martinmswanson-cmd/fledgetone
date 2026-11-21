@@ -30,7 +30,7 @@ import { agentText, cleanForAgent } from '../../../src/agent/agentText';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED, portTakenMessage } from './bridgeServer';
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
-import { AUDIO_TYPES, UsageError, againstOf, checkProblems, hearAudioFile, hearPlan, suggestionIdBase, withoutGrids, type Flags } from './commands';
+import { AUDIO_TYPES, UsageError, checkProblems, hearAudioFile, hearPlan, suggestionIdBase, withoutGrids, type Flags } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
 import { Conversation, CONVERSATION_INSTRUCTIONS, registerConversationTools } from './conversation';
 import { audioFormatOf, opsToHear, listenPlan, listenSongFile, renderSongFile, secondsBetween, songEndBar, type ListenHearing } from './renderCommands';
@@ -109,6 +109,7 @@ const askedFor = (err: unknown): unknown =>
   err instanceof UsageError
     ? new Error(
         err.message
+          .replace('(fledgetone measure --save makes one)', '(hear_audio or listen with save makes one)')
           .replace(/--against-from/g, 'againstFromSeconds')
           .replace(/--against-to/g, 'againstToSeconds')
           .replace(/--close/g, 'closeUps')
@@ -132,7 +133,7 @@ Two ways to work: with files (pass "file" to read a .fledgetone.json song from t
 
 With files you can also hear the song without the studio: listen with "file" measures bars of it (with "suggestion" or "ops", before and after), and render_file writes a WAV or MP3 file, both rendered on this computer as the app's Export renders.
 
-listen with a file and hear_audio can also describe a sound's character (bright, dark, gritty, wide...) and return pictures of it: a spectrogram, a level picture, close-ups of moments you name.
+listen with a file and hear_audio can also describe a sound's character (bright, dark, rough, wide...) and return pictures of it: a spectrogram, a level picture, close-ups of moments you name.
 
 Read the fledgetone://docs/ops resource for the ops and their units before you suggest. Try ops with preview_suggestion first. Keep suggestions small and say why in plain words.`;
 
@@ -393,10 +394,10 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
           limited(listenRate, 'listen');
           listening = true;
           try {
-            // (an audio file read against is heard here, inside the one-at-a-time hold)
-            const read = plan.against ? await againstOf(plan.against, render, { fromSeconds: plan.againstFromSeconds, toSeconds: plan.againstToSeconds }) : undefined;
+            // (the sound to read it against is heard by listenSongFile, inside the one-at-a-time hold, once the bars and the close-ups are checked: as the command line does)
+            const againstFile = plan.against ? { path: plan.against, fromSeconds: plan.againstFromSeconds, toSeconds: plan.againstToSeconds } : undefined;
             const hearing: ListenHearing | undefined = plan.sound
-              ? { sound: true, ...(plan.pictures !== undefined ? { pictures: plan.pictures } : {}), ...(plan.closeBars ? { closeBars: plan.closeBars } : {}), ...(read ? { against: read } : {}), ...(plan.save ? { save: plan.save } : {}) }
+              ? { sound: true, ...(plan.pictures !== undefined ? { pictures: plan.pictures } : {}), ...(plan.closeBars ? { closeBars: plan.closeBars } : {}), ...(againstFile ? { againstFile } : {}), ...(plan.save ? { save: plan.save } : {}) }
               : undefined;
             const result = await listenSongFile(songPath, { fromBar, toBar, perTrack, with: hearWith, ...(hearing ? { hearing } : {}), limits: { maxBars: LIMITS.listenMaxBars, maxSeconds: LIMITS.listenMaxSeconds } }, render);
             if (!hearing) return result;
@@ -428,7 +429,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     'hear_audio',
     {
       title: 'Hear an audio file',
-      description: `Measure an audio file in the working folder (${AUDIO_TYPES.join(', ')}) and describe its sound in plain words: loudness, then its character (tone, level and movement over time, stereo width, rhythm, harmony, faults), with pictures of it (a spectrogram, a level picture, a spectrum, close-ups of the seconds you name in closeUps) written to a folder in the working folder and returned as images. It measures and draws; it does not hear, and the words describe without judging. Nothing is sent anywhere: no model and no outside service is involved, it is all signal maths on this computer. At most 15 minutes at a time (name a stretch with fromSeconds and toSeconds), one at a time, ${LIMITS.listensPerMinute} a minute. against reads it against another audio file or a saved hearing (.json), level-matched: compare like with like, a stretch of similar length. save writes the hearing (measurements, never audio) to a new .json file.`,
+      description: `Measure an audio file in the working folder (${AUDIO_TYPES.join(', ')}) and describe its sound in plain words: loudness, then its character in eight groups (tone, texture, movement, dynamics, attack, stereo, pitch, faults), with pictures of it (a spectrogram, a level picture, a spectrum, close-ups of the seconds you name in closeUps) written to a folder in the working folder and returned as images. It measures and draws; it does not hear, and the words describe without judging. Nothing is sent anywhere: no model and no outside service is involved, it is all signal maths on this computer. At most 15 minutes at a time (name a stretch with fromSeconds and toSeconds), one at a time, ${LIMITS.listensPerMinute} a minute. against reads it against another audio file or a saved hearing (.json), level-matched: compare like with like, a stretch of similar length. save writes the hearing (measurements, never audio) to a new .json file.`,
       inputSchema: {
         file: z.string().describe(`An audio file in the working folder: ${AUDIO_TYPES.join(', ')}`),
         fromSeconds: z.number().min(0).optional(),
