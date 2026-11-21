@@ -242,7 +242,9 @@ returned. `pictures` names a folder inside `--root` (made if it isn't there; a p
   inside a band: distortion, notes close together and noise all read that way.
 - movement: how the sound changes over time, and slow wobbles of a band, with their rate.
 - dynamics: loudness, true peak, crest and loudness range.
-- attack: how many things start each second and how fast they start ("busy", "sparse").
+- attack: how many things start each second and how fast they start ("busy" and "sparse" are
+  said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
+  fall and how loud its loudest 10 ms reads).
 - stereo: correlation between the channels, balance, what is lost in mono, width.
 - pitch: tempo, key, tuning and the pitch classes that sound.
 - faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
@@ -327,6 +329,8 @@ These are limits of the tool, measured, not advice:
   that is still opening can be missed. "Busy" and "sparse" follow that number.
 - A wobble bass with no drum hits reads as slow soft pulses at most; its rate is in the movement
   group.
+- A mid band that dips and returns on every beat is said as that: sidechain pumping and parts
+  played on the beat both read this way, and the report can't tell them apart.
 - Faults can be missed: a hum within a hertz or two of a loud held bass note, under a walking
   bassline, or under a loud kick; a click within a fraction of a millisecond of a square wave's own
   corner. Dense crackle reads as a few clicks, not hundreds, and kick rolls of ten a second or more
@@ -337,7 +341,9 @@ These are limits of the tool, measured, not advice:
 - A spectrogram's windows are about 85 ms long at 48 kHz (each picture's `shows` gives its own), so a hit is smeared over that long, and a line
   below about 40 Hz is drawn a few pixels wide. A close-up is fine in time and coarse in pitch.
   Levels read from colour are within about 1 dB.
-- Key and tempo are estimates; a three-note chord does not settle a key. Give `bpm` to
+- Key and tempo are estimates; a three-note chord does not settle a key. The words give a key
+  and a tuning only for a pitched sound (flatness of 0.15 or less) whose key is sure enough
+  (confidence of 0.5 or more), so noise gets neither. Give `bpm` to
   `hear_audio` when the tempo is known. For a song, whose tempo is known and whose key is read
   from its notes, the words leave both out; the estimates stay in `pitch`.
 - A comparison is level-matched and only fair between like stretches of similar length. A saved

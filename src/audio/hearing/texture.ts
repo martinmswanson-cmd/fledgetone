@@ -11,7 +11,13 @@ import type { Texture } from './types';
 const round2 = (x: number) => Math.round(x * 100) / 100;
 const finite = (x: number) => (Number.isFinite(x) ? x : 0);
 
-/** Geometric over arithmetic mean of the power from 100 Hz to 10 kHz, averaged over frames louder than -60 dB. */
+/** A frame whose power from 100 Hz to 10 kHz is this far under its whole power has nothing there to be flat or peaked (a steady offset alone). */
+const IN_BAND_FLOOR = 1e-8;
+
+/**
+ * Geometric over arithmetic mean of the power from 100 Hz to 10 kHz, averaged over frames louder than
+ * -60 dB that have sound in that range; 0 (all in one place) to 1 (as flat as white noise).
+ */
 function flatnessOf(mid: Float32Array, sampleRate: number): number {
   const size = 4096;
   const { power } = framesOf(mid, sampleRate, size, size / 2);
@@ -31,11 +37,11 @@ function flatnessOf(mid: Float32Array, sampleRate: number): number {
       arith += frame[k];
       n++;
     }
-    if (db(total) <= -60 || n === 0 || arith <= 0) continue;
+    if (db(total) <= -60 || n === 0 || arith <= 0 || arith <= total * IN_BAND_FLOOR) continue;
     sum += Math.exp(logs / n) / (arith / n);
     used++;
   }
-  return used > 0 ? sum / used : 0;
+  return used > 0 ? Math.max(0, Math.min(1, sum / used)) : 0;
 }
 
 /** Roughness is measured over stretches of this many samples, which bounds the memory the transforms take. */

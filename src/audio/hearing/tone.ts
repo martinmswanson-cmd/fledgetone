@@ -8,6 +8,8 @@ import { bandEdges, db, framesOf, midOf, sideOf, toBands } from './frames';
 import type { Tone } from './types';
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
+/** With less than this share of its power between 20 Hz and 20 kHz (80 dB under the whole), a sound has no tone to describe. */
+const IN_BAND_FLOOR = 1e-8;
 
 /** The mean power per bin of the middle plus the sides, over frames of `size`. */
 function totalPower(channels: readonly Float32Array[], sampleRate: number, size: number, hop: number): Float64Array {
@@ -33,7 +35,6 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
 
   const bands = totalBands(raw);
   const total = sumDb(bands);
-  const regions = REGIONS.map((x) => ({ name: x.name, db: Number.isFinite(total) ? round1(levelBetween(raw, bands, x.lo, x.hi) - total) : 0 }));
 
   // Where the weight sits, from the bins between 20 Hz and 20 kHz
   const size = 4096;
@@ -41,15 +42,21 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
   const binHz = sampleRate / size;
   let sum = 0;
   let weighted = 0;
+  let all = 0;
   for (let k = 0; k < power.length; k++) {
+    all += power[k];
     const f = k * binHz;
     if (f < 20 || f > 20000) continue;
     sum += power[k];
     weighted += power[k] * f;
   }
+  // Whether anything sounds between 20 Hz and 20 kHz: a steady offset alone has all its power under
+  // them, and what its bands hold is rounding, with no balance, centre or tilt to speak of
+  const sounding = sum > 0 && sum > all * IN_BAND_FLOOR;
+  const regions = REGIONS.map((x) => ({ name: x.name, db: sounding && Number.isFinite(total) ? round1(levelBetween(raw, bands, x.lo, x.hi) - total) : 0 }));
   let centreHz = 0;
   let rolloffHz = 0;
-  if (sum > 0) {
+  if (sounding) {
     centreHz = weighted / sum;
     let acc = 0;
     for (let k = 0; k < power.length; k++) {
@@ -73,7 +80,7 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
     }
   });
   let tilt = 0;
-  if (xs.length > 1) {
+  if (sounding && xs.length > 1) {
     const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
     const my = ys.reduce((a, b) => a + b, 0) / ys.length;
     let num = 0;
@@ -85,7 +92,7 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
     tilt = den > 0 ? num / den : 0;
   }
 
-  const subVsBassDb = Number.isFinite(total) ? levelBetween(raw, bands, 20, 60) - levelBetween(raw, bands, 60, 200) : 0;
+  const subVsBassDb = sounding && Number.isFinite(total) ? levelBetween(raw, bands, 20, 60) - levelBetween(raw, bands, 60, 200) : 0;
 
   return {
     spectrum,
@@ -94,7 +101,7 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
     tiltDbPerOctave: round1(tilt),
     rolloffHz: Math.round(rolloffHz),
     subVsBassDb: round1(subVsBassDb),
-    peaks: sum > 0 ? peaksOf(channels, sampleRate) : [],
+    peaks: sounding ? peaksOf(channels, sampleRate) : [],
   };
 }
 

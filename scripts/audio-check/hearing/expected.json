@@ -47,7 +47,7 @@
       "bpm": 120,
       "property": "pump",
       "planted": "two saws at 440 and 554 Hz dipped 6 dB twice a second, with a 100 ms 60 Hz thump on each dip; heard with --bpm 120",
-      "find": "it pumps on the beat (quarter notes at 120 bpm, twice a second), about 6 dB",
+      "find": "the mid band dips and returns on the beat (quarter notes at 120 bpm, twice a second), about 6 dB; called pumping, or a dip on every beat",
       "value": 6,
       "unit": "dB",
       "tolerance": "on the quarter-note beat; the depth within 3 dB of 6 dB"

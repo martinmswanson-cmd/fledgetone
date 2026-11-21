@@ -92,7 +92,7 @@ const checks = {
     assert.ok(low, JSON.stringify(r.movement.modulations));
     near(low.hz, e.value, 0.2, 'the low band wobble');
   },
-  pump: (r) => assert.ok(r.words.some((w) => /^It pumps on the beat/.test(w)), r.words.join('\n')),
+  pump: (r) => assert.ok(r.words.some((w) => /^The mid band dips and returns on the beat \(\d+\.\d dB\): sidechain pumping and parts played on the beat both read this way\.$/.test(w)), r.words.join('\n')),
   'side-band': (r) => {
     const width = (name) => r.stereo.width.find((w) => w.name.startsWith(name)).db;
     assert.ok(width('presence') >= width('mids') + 10, JSON.stringify(r.stereo.width));

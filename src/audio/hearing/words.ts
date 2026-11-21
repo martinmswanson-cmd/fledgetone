@@ -73,6 +73,13 @@ function modulationWords(m: Modulation): string {
   return `The ${m.band} band (${rangeText(lo, hi)}) moves at ${one(m.hz)} Hz${note}, ${one(m.depthDb)} dB deep.`;
 }
 
+/** Shorter than this, seconds, a sound is not called busy or sparse. */
+const BUSY_MIN_SECONDS = 2;
+/** Under this correlation the channels are more out of phase than in. */
+const OUT_OF_PHASE = -0.1;
+/** Up to this flatness a sound is pitched enough to have a key and a tuning. */
+const PITCHED_FLATNESS = 0.15;
+
 /** A key's short name ("C maj", "A min") written out. */
 const keyText = (name: string) => name.replace(/ maj$/, ' major').replace(/ min$/, ' minor');
 
@@ -83,7 +90,8 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
 
   if (tone) {
     if (tone.centreHz > 3000) out.push(`The spectral centre sits at ${freqText(tone.centreHz)}: bright.`);
-    else if (tone.centreHz < 700) out.push(`The spectral centre sits at ${freqText(tone.centreHz)}: dark.`);
+    // (a centre of 0 is no centre: nothing sounds between 20 Hz and 20 kHz)
+    else if (tone.centreHz > 0 && tone.centreHz < 700) out.push(`The spectral centre sits at ${freqText(tone.centreHz)}: dark.`);
     if (tone.tiltDbPerOctave > 1) out.push(`Its weight is toward the top (${signed(tone.tiltDbPerOctave)} dB an octave).`);
     else if (tone.tiltDbPerOctave < -3) out.push(`Its weight is toward the bottom (${signed(tone.tiltDbPerOctave)} dB an octave).`);
     if (tone.subVsBassDb > 3) out.push(`Sub bass stands ${one(tone.subVsBassDb)} dB over the bass.`);
@@ -112,7 +120,8 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
   if (movement) {
     for (const m of movement.modulations) out.push(modulationWords(m));
     for (const m of movement.modulations) {
-      if (m.band === 'mid' && m.note === '1/4' && m.depthDb >= 3) out.push(`It pumps on the beat (${one(m.depthDb)} dB in the mid band).`);
+      // (said as what is measured: ducking to a kick and parts that play on the beat move the band alike)
+      if (m.band === 'mid' && m.note === '1/4' && m.depthDb >= 3) out.push(`The mid band dips and returns on the beat (${one(m.depthDb)} dB): sidechain pumping and parts played on the beat both read this way.`);
     }
     if (movement.modulations.length === 0 && movement.changeDb < 0.3) out.push('Static: its spectrum barely changes.');
   }
@@ -129,16 +138,29 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
   }
 
   if (attack) {
-    if (attack.riseMs !== null) {
+    const hit = attack.single;
+    if (hit) {
+      // One hit: what was measured of it (its loudest 10 ms is K-weighted, how loud it hits; not its sample peak)
+      const parts = [
+        ...(Number.isFinite(hit.riseMs) ? [`rises in ${one(hit.riseMs)} ms`] : []),
+        ...(Number.isFinite(hit.fall20Ms) ? [`falls 20 dB in ${one(hit.fall20Ms)} ms`] : []),
+        ...(Number.isFinite(hit.peakDb) ? [`its loudest 10 ms reads ${one(hit.peakDb)} dB`] : []),
+      ];
+      out.push(parts.length ? `A single hit: ${parts.join(', ')}.` : 'A single hit.');
+    } else if (attack.riseMs !== null) {
       if (attack.riseMs < 5) out.push(`Sharp attacks (${one(attack.riseMs)} ms).`);
       else if (attack.riseMs > 40) out.push(`Soft attacks (${one(attack.riseMs)} ms).`);
     }
-    if (attack.onsetsPerSecond > 8) out.push(`Busy (${one(attack.onsetsPerSecond)} onsets a second).`);
-    else if (attack.onsetsPerSecond < 1) out.push(`Sparse (${one(attack.onsetsPerSecond)} onsets a second).`);
+    // (a rate of onsets says little of a sound under 2 seconds: one hit in 80 ms is not 12.5 a second)
+    if (!hit && r.seconds >= BUSY_MIN_SECONDS) {
+      if (attack.onsetsPerSecond > 8) out.push(`Busy (${one(attack.onsetsPerSecond)} onsets a second).`);
+      else if (attack.onsetsPerSecond < 1) out.push(`Sparse (${one(attack.onsetsPerSecond)} onsets a second).`);
+    }
   }
 
   if (stereo) {
-    if (stereo.correlation < 0) out.push(`More out of phase than in (correlation ${two(stereo.correlation)}).`);
+    // (uncorrelated channels read a little either side of 0: out of phase is said only well under it)
+    if (stereo.correlation < OUT_OF_PHASE) out.push(`More out of phase than in (correlation ${two(stereo.correlation)}).`);
     else if (stereo.correlation > 0.95) out.push(`Nearly mono (correlation ${two(stereo.correlation)}).`);
     else if (stereo.correlation < 0.3) out.push(`Very wide (correlation ${two(stereo.correlation)}).`);
     if (stereo.monoLossDb < -3) out.push(`Folding to mono loses ${one(-stereo.monoLossDb)} dB.`);
@@ -157,8 +179,13 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
       const alt = Math.round(pitch.tempo.alternative) !== Math.round(pitch.tempo.bpm) ? ` (or ${Math.round(pitch.tempo.alternative)})` : '';
       out.push(`About ${Math.round(pitch.tempo.bpm)} bpm${alt}.`);
     }
-    if (pitch.key && pitch.key.confidence >= 0.5 && r.settings.knownKey === undefined) out.push(`Sounds in ${keyText(pitch.key.name)} (or ${keyText(pitch.key.runnerUp)}).`);
-    if (pitch.tuningCents !== null && Math.abs(pitch.tuningCents) > 10) {
+    // A key and a tuning are said of a pitched sound whose key is sure enough (noise has a strongest pitch
+    // class too, and a "tuning"), and not of a song, whose own key is known
+    const pitched = texture === undefined || texture.flatness <= PITCHED_FLATNESS;
+    const sure = pitch.key === null || pitch.key.confidence >= 0.5;
+    const guessed = pitched && sure && r.settings.knownKey === undefined;
+    if (pitch.key && guessed) out.push(`Sounds in ${keyText(pitch.key.name)} (or ${keyText(pitch.key.runnerUp)}).`);
+    if (pitch.tuningCents !== null && Math.abs(pitch.tuningCents) > 10 && guessed) {
       out.push(`Tuned ${Math.abs(pitch.tuningCents)} cents ${pitch.tuningCents > 0 ? 'sharp' : 'flat'} of A440.`);
     }
   }

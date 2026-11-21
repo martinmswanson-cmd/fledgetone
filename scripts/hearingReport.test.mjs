@@ -309,7 +309,7 @@ test('words: movement', () => {
   assert.deepEqual(words(m([{ band: 'high', hz: 0.5, depthDb: 3.5 }])), ['The high band (4-16 kHz) moves at 0.5 Hz, 3.5 dB deep.']);
   assert.deepEqual(words(m([{ band: 'mid', hz: 2, depthDb: 6, note: '1/4' }])), [
     'The mid band (250 Hz-4 kHz) moves at 2.0 Hz (1/4 notes), 6.0 dB deep.',
-    'It pumps on the beat (6.0 dB in the mid band).',
+    'The mid band dips and returns on the beat (6.0 dB): sidechain pumping and parts played on the beat both read this way.',
   ]);
   assert.equal(words(m([{ band: 'mid', hz: 2, depthDb: 3, note: '1/4' }])).length, 2);
   assert.equal(words(m([{ band: 'mid', hz: 2, depthDb: 2.9, note: '1/4' }])).length, 1);
@@ -342,6 +342,62 @@ test('words: attack', () => {
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 8 }) }), []);
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 0.6 }) }), ['Sparse (0.6 onsets a second).']);
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 1 }) }), []);
+  // a sound under 2 seconds is neither busy nor sparse: one hit in 80 ms is not 12.5 hits a second of anything
+  assert.deepEqual(words({ seconds: 1.99, attack: atk({ onsetsPerSecond: 12.5 }) }), []);
+  assert.deepEqual(words({ seconds: 1.99, attack: atk({ onsetsPerSecond: 0.5 }) }), []);
+  assert.deepEqual(words({ seconds: 2, attack: atk({ onsetsPerSecond: 12.5 }) }), ['Busy (12.5 onsets a second).']);
+  // a single hit has its own line, with what was measured of it
+  const single = { riseMs: 1.2, fall20Ms: 64, peakDb: -6 };
+  assert.deepEqual(words({ seconds: 0.08, attack: atk({ onsetsPerSecond: 12.5, riseMs: 1.2, single }) }), ['A single hit: rises in 1.2 ms, falls 20 dB in 64.0 ms, its loudest 10 ms reads -6.0 dB.']);
+  assert.deepEqual(words({ seconds: 0.08, attack: atk({ onsetsPerSecond: 12.5, riseMs: 1.2, single: { ...single, fall20Ms: NaN } }) }), ['A single hit: rises in 1.2 ms, its loudest 10 ms reads -6.0 dB.']);
+});
+
+test('an 80 ms hit reads as a single hit, not as busy', () => {
+  const r = hear([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])]);
+  assert.ok(r.attack.single);
+  assert.ok(r.words.some((w) => /^A single hit: rises in \d+\.\d ms, falls 20 dB in \d+\.\d ms, its loudest 10 ms reads -?\d+\.\d dB\.$/.test(w)), r.words.join('\n'));
+  assert.ok(!r.words.some((w) => /^(Busy|Sparse|Sharp attacks|Soft attacks)/.test(w)), r.words.join('\n'));
+});
+
+test('noise gets no key and no tuning line, and uncorrelated noise is very wide, not out of phase', () => {
+  for (const [name, ch] of [['white', [S.white(8, -18, 1)]], ['pink', [S.pink(8, -18, 1)]], ['white, a channel each', [S.white(4, -18, 1), S.white(4, -18, 2)]], ['pink, a channel each', [S.pink(4, -18, 3), S.pink(4, -18, 4)]]]) {
+    const r = hear(ch);
+    assert.ok(!r.words.some((w) => /^(Sounds in|Tuned)/.test(w)), `${name}: ${r.words.filter((w) => /^(Sounds in|Tuned)/.test(w)).join(' ')}`);
+    assert.ok(!r.words.some((w) => /out of phase/.test(w)), `${name}: ${r.words.join(' | ')}`);
+    if (ch.length === 2) assert.ok(r.words.some((w) => /^Very wide \(correlation -?0\.0\d\)\.$/.test(w)), `${name}: ${r.words.join(' | ')}`);
+  }
+  // a pitched sound still gets both
+  const sharp = hear([S.saw(110 * 2 ** (30 / 1200), 4, -6)]);
+  assert.ok(sharp.words.some((w) => /^Sounds in A /.test(w)), sharp.words.join('\n'));
+  assert.ok(sharp.words.some((w) => /^Tuned (2\d|3\d) cents sharp of A440\.$/.test(w)), sharp.words.join('\n'));
+});
+
+test('words: the key and the tuning need a sure key and a pitched sound, and both give way to a known key', () => {
+  const key = { name: 'A maj', confidence: 0.8, runnerUp: 'A min' };
+  const both = ['Sounds in A major (or A minor).', 'Tuned 22 cents flat of A440.'];
+  const lines = (o, settings = { sampleRate: 48000 }) => words({ settings, pitch: pit({ key, tuningCents: -22, ...o.pitch }), ...(o.flatness === undefined ? {} : { texture: texture({ flatness: o.flatness }) }) }).filter((w) => /^(Sounds in|Tuned)/.test(w));
+  assert.deepEqual(lines({ flatness: 0.15 }), both);
+  assert.deepEqual(lines({ flatness: 0.16 }), [], 'too noisy to have a key or a tuning');
+  assert.deepEqual(lines({ flatness: 0.05, pitch: { key: { ...key, confidence: 0.49 } } }), [], 'not sure enough of the key to say its tuning either');
+  assert.deepEqual(lines({ flatness: 0.05, pitch: { key: { ...key, confidence: 0.5 } } }), both);
+  assert.deepEqual(lines({ flatness: 0.05 }, { sampleRate: 48000, knownKey: 'A major' }), [], 'a known key: neither is guessed');
+});
+
+test('a steady offset alone (no sound in the range heard) gets no tone or texture words, and finite numbers (M3)', () => {
+  for (const [name, ch] of [['mono', [new Float32Array(96000).fill(0.25)]], ['stereo', [new Float32Array(96000).fill(0.25), new Float32Array(96000).fill(-0.25)]]]) {
+    const r = hear(ch);
+    finite(r, name);
+    assert.ok(r.texture.flatness >= 0 && r.texture.flatness <= 1, `${name}: flatness ${r.texture.flatness}`);
+    assert.ok(!r.words.some((w) => /spectral centre|Sub bass|sub bass|weight is toward|Noisy|narrow peak/.test(w)), `${name}: ${r.words.join(' | ')}`);
+    assert.deepEqual([r.tone.centreHz, r.tone.subVsBassDb, r.tone.tiltDbPerOctave, r.tone.peaks], [0, 0, 0, []], name);
+    assert.ok(r.words.some((w) => /^A DC offset of -12\.0 dBFS/.test(w)), r.words.join(' | '));
+  }
+  // flatness stays between 0 and 1 for sound that repeats exactly, and for noise
+  const square = Float32Array.from({ length: 96000 }, (_, i) => (Math.floor(i / 54) % 2 ? 0.99 : -0.99));
+  for (const x of [square, S.white(2, -12, 1), S.sine(1000, 2, -6)]) { const f = hear([x]).texture.flatness; assert.ok(f >= 0 && f <= 1, `flatness ${f}`); }
+  // an offset under a real sound leaves the sound its words
+  const under = hear([S.pink(2, -18, 1).map((v) => v + 0.25)]);
+  assert.ok(under.tone.centreHz > 500 && under.words.some((w) => /^Noisy/.test(w)), under.words.join(' | '));
 });
 
 test('words: stereo', () => {
@@ -351,6 +407,10 @@ test('words: stereo', () => {
   assert.deepEqual(words({ stereo: ster({ correlation: 0.3 }) }), []);
   assert.deepEqual(words({ stereo: ster({ correlation: -0.32 }) }), ['More out of phase than in (correlation -0.32).']);
   assert.deepEqual(words({ stereo: ster({ correlation: 0 }) }), ['Very wide (correlation 0.00).']);
+  // uncorrelated channels wander a little either side of 0: out of phase is said from -0.1 down
+  assert.deepEqual(words({ stereo: ster({ correlation: -0.02 }) }), ['Very wide (correlation -0.02).']);
+  assert.deepEqual(words({ stereo: ster({ correlation: -0.1 }) }), ['Very wide (correlation -0.10).']);
+  assert.deepEqual(words({ stereo: ster({ correlation: -0.11 }) }), ['More out of phase than in (correlation -0.11).']);
   assert.deepEqual(words({ stereo: ster({ monoLossDb: -4.1 }) }), ['Folding to mono loses 4.1 dB.']);
   assert.deepEqual(words({ stereo: ster({ monoLossDb: -3 }) }), []);
   assert.deepEqual(words({ stereo: ster({ lowSideDb: -8.2 }) }), ['The low end is wide (sides 8.2 dB under the middle below 120 Hz).']);
@@ -417,20 +477,20 @@ test('faults in a real report: each detail gives its value with its unit, and ea
 test('words: the order is tone, texture, movement, dynamics, attack, stereo, pitch', () => {
   const w = words({
     tone: tone({ centreHz: 4000 }),
-    texture: texture({ flatness: 0.5 }),
+    texture: texture({ flatness: 0.01 }), // (tonal: a noisy sound, flatness over 0.15, gets no tuning line)
     movement: { changeDb: 0, modulations: [] },
     dynamics: dyn({ crestDb: 3 }),
     attack: atk({ riseMs: 1 }),
     stereo: ster({ correlation: 0.99 }),
     pitch: pit({ tuningCents: 20 }),
   });
-  assert.deepEqual(w.map((x) => x.split(' ')[0]), ['The', 'Noisy', 'Static:', 'Squashed', 'Sharp', 'Nearly', 'Tuned']);
+  assert.deepEqual(w.map((x) => x.split(' ')[0]), ['The', 'Tonal', 'Static:', 'Squashed', 'Sharp', 'Nearly', 'Tuned']);
 });
 
 test('words never judge', () => {
   const all = words({
     tone: tone({ centreHz: 4000, tiltDbPerOctave: 2, subVsBassDb: -20, peaks: [{ hz: 100, overDb: 9 }] }),
-    texture: texture({ flatness: 0.5, roughness: 0.5, percussiveShare: 0.9, flatTops: { share: 0.3, levelDb: -1 } }),
+    texture: texture({ flatness: 0.01, roughness: 0.5, percussiveShare: 0.9, flatTops: { share: 0.3, levelDb: -1 } }),
     movement: { changeDb: 0, modulations: [{ band: 'mid', hz: 2, depthDb: 5, note: '1/4' }] },
     dynamics: dyn({ crestDb: 3, rangeLu: 12 }),
     attack: atk({ riseMs: 1, onsetsPerSecond: 12 }),
@@ -438,7 +498,13 @@ test('words never judge', () => {
     pitch: pit({ tempo: { bpm: 100, confidence: 1, alternative: 50 }, key: { name: 'C maj', confidence: 1, runnerUp: 'A min' }, tuningCents: 30 }),
   });
   assert.ok(all.length > 15);
-  assert.ok(all.every((w) => !/\b(good|bad|too|should)\b/i.test(w) && !/—/.test(w)));
+  assert.ok(all.some((w) => w.startsWith('Sounds in')) && all.some((w) => w.startsWith('Tuned')) && all.some((w) => w.startsWith('The mid band dips')), 'the key, tuning and beat lines are among them');
+  const more = [
+    ...words({ texture: texture({ flatness: 0.5 }), attack: atk({ riseMs: 1, single: { riseMs: 1, fall20Ms: 30, peakDb: -9 } }), stereo: ster({ correlation: 0.1 }) }),
+    ...words({ faults: [{ kind: 'click', seconds: 1, value: -3, detail: 'A click, a jump of -3.0 dBFS', at: { seconds: 1 } }, { kind: 'silence', seconds: 1, endSeconds: 2, detail: 'Digital silence', at: { seconds: 1 } }] }),
+  ];
+  assert.ok(more.length >= 5);
+  assert.ok([...all, ...more].every((w) => !/\b(good|bad|too|should)\b/i.test(w) && !/—/.test(w)));
 });
 
 test("a place where the musician's ruler counts otherwise names the ruler's measure and beat too", () => {
