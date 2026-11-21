@@ -206,9 +206,31 @@ agent. A full run passes when every sound passes.
 
 That first run asked 17 fresh agents, one sound each: 17 of 17 passed, with nothing false on the clean sound or on the heavy song as it is.
 
-Since that run the words, the comparison and the spectrum picture changed (a moment reads
+After that run the words, the comparison and the spectrum picture changed (a moment reads
 `0:26.53`, a fault line gives its value with its unit and ends with a full stop, a dip on the beat
 is said as that, a comparison lists the faults the two do not share and says when nothing differs,
 and the spectrum picture draws the two sounds level-matched; `--json` leaves the per-second grids
-out, so a `sound-NN.json` is about 11 to 34 KB). The check is due again on material made with the
-commands above.
+out, so a `sound-NN.json` is about 11 to 34 KB). So the check was run again, on material made
+afresh with the commands above, with 17 new agents:
+
+| Date | Version | Sound | What the agent said | Pass or fail |
+|---|---|---|---|---|
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-01, clean.wav | Steady noise with two constant tones at 220 and 330 Hz; nothing faulty | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-02, click.wav | A single click at 5.00 s, a jump of about -4.1 dBFS in both channels | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-03, resonance.wav | A constant narrow tone near 3.0 kHz, 13.3 dB over the noise around it | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-04, wobble.wav | It pulses steadily at 6 Hz, 12.5 dB deep in the low band | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-05, pump.wav | A thump every half second; the mid band dips and returns at 2 Hz, 5.6 dB deep: pumping, or parts played on the beat | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-06, side-band.wav | The side signal exists only between about 5 and 10 kHz | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-07, clipping.wav | Clipped for the whole 8 s: 6400 places at 0.0 dBFS, flat tops on 66% of it | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-08, hum.wav | Hum at 60 Hz, with a second peak at 120 Hz | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-09, bright.wav against dull.wav | The second is bright: raised from about 5 kHz to 15 or 16 kHz | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-10, distorted-bass.wav against clean-bass.wav | Flat tops at -6.0 dBFS on 92% of it, with harmonics the first lacks | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-11, Plaza with a click | One click at 0:23.94 (unsure whether a fault, as it lands on a bass note) | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-12, Plaza with a boost | In bars 9 to 16 only, a narrow band around 1.1 to 1.4 kHz, up to +4.7 dB | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-13, Eastern with a click | One click at 0:16.07, a jump of -3.3 dBFS | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-14, Eastern with a boost | A narrow boost of about +3 dB at 1.1 kHz across all 16 bars | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-15, the heavy song as it is | No fault; the limiter takes up to 11.3 dB off; bass-heavy, pumping on the quarter note | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-16, the heavy song with a click | One click at 21.107 s, a jump of -2.5 dBFS | pass |
+| 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-17, the heavy song with a boost | Extra energy around 285 to 570 Hz, peaking at +3.0 dB near 403 Hz, in every bar | pass |
+
+The second run: 17 of 17 again, with nothing false on the clean sound or on the heavy song as it is.

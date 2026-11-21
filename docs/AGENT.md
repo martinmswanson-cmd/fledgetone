@@ -354,7 +354,8 @@ These are limits of the tool, measured, not advice:
   and a tuning only for a pitched sound (flatness of 0.15 or less) whose key is sure enough
   (confidence of 0.5 or more), so noise gets neither. Give `bpm` to
   `hear_audio` when the tempo is known. For a song, whose tempo is known and whose key is read
-  from its notes, the words leave both out; the estimates stay in `pitch`.
+  from its notes, the words leave both out, and the tuning line with them; the estimates stay
+  in `pitch`.
 - A comparison is level-matched and only fair between like stretches of similar length. A saved
   hearing holds measurements, never audio, and must be made again from the audio when a group's rule
   version changes.
