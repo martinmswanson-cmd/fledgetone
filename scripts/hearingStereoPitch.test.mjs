@@ -72,3 +72,18 @@ test('silence and odd input stay finite', () => {
   const short = stereoOf([S.pink(2, -12, 1), S.pink(1, -12, 2)], 48000, toneOf([z, z], 48000).spectrum);
   assert.ok(Number.isFinite(short.correlation));
 });
+test('a C major scale up and down settles on C major', () => {
+  const hz = [261.63, 293.66, 329.63, 349.23, 392.0, 440.0, 493.88, 523.25];
+  const notes = [...hz, ...hz.slice(0, -1).reverse()].map((f) => S.sine(f, 0.25, -12));
+  const x = S.at(notes.length * 0.25, notes.map((n, i) => [i * 0.25, n]));
+  const p = pitchOf([x], 48000);
+  assert.ok([p.key.name, p.key.runnerUp].includes('C major'), `${p.key.name} / ${p.key.runnerUp}`);
+});
+test('chroma along keeps a part step at the end', () => {
+  const x = S.sine(440, 2.5, -6);
+  const c = chromaAlong([x], 48000, 1);
+  assert.equal(c.length, 3); assert.ok(c.every((r) => r.length === 12 && r.every(Number.isFinite)));
+  const short = chromaAlong([S.sine(440, 0.3, -6)], 48000, 1);
+  assert.equal(short.length, 1); assert.ok(short[0].every(Number.isFinite));
+  assert.deepEqual(chromaAlong([new Float32Array(0)], 48000, 1), []);
+});

@@ -37,16 +37,15 @@ export function pitchOf(channels: readonly Float32Array[], sampleRate: number, k
   };
 }
 
-/** The pitch classes of each step of the middle, C first, each normalised to its strongest. */
+/** The pitch classes of each step of the middle, C first, each normalised to its strongest; a trailing part step counts as a step. */
 export function chromaAlong(channels: readonly Float32Array[], sampleRate: number, stepSeconds: number): number[][] {
   const cut = trimmed(channels);
   const length = cut[0]?.length ?? 0;
   const step = Math.max(1, Math.round(stepSeconds * sampleRate));
   const out: number[][] = [];
-  for (let at = 0; at + step <= length || (at === 0 && length > 0); at += step) {
-    const x = forAnalysis(cut.map((c) => c.subarray(at, at + step)), sampleRate);
-    const { chroma } = chromaOf(x, ANALYSIS_RATE);
-    out.push(chroma.map(round2));
+  for (let at = 0; at < length; at += step) {
+    const x = forAnalysis(cut.map((c) => c.subarray(at, Math.min(length, at + step))), sampleRate);
+    out.push(x.length ? chromaOf(x, ANALYSIS_RATE).chroma.map(round2) : zeros());
   }
   return out;
 }
