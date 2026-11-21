@@ -127,13 +127,14 @@ export const App: React.FC = () => {
   const agentPanel = useUiStore((s) => s.agentPanelOpen);
   return (
     <div className={`min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30 ${agentPanel ? 'sm:pr-[380px]' : ''}`}>
+      {/* A new version is ready: above everything else */}
+      <UpdateNotice />
       {/* Top DAW Header */}
       <Header />
       <ProjectDrop />
       <VideoPreview />
       <MobileNotice />
       <SharedLinkOpener />
-      <UpdateNotice />
       <PianoPanel />
       <ResampleDialog />
       <SearchPalette />
