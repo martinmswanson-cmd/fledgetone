@@ -21,9 +21,11 @@ const LOOK_BACK_MS = 100;
 const LOOK_AHEAD_MS = 300;
 /** A window ends this long before the next onset's time, which is stamped at the end of its frame, ms. */
 const END_GAP_MS = 5;
-/** How far the level must step up at an onset to count as one, dB (3 let slow ripples of pink noise count; 6 lost the hits on a bed). */
-const STEP_DB = 5;
-/** The span of the smoothed level, ms (a little over a period of a 220 Hz tone). */
+/** An onset counts when the level climbs this far over the quiet before it, dB (steady noise ripples up to about 10)... */
+const CLEAR_STEP_DB = 15;
+/** ...or when its onset strength is this many times the mean strength (steady noise: under 10; hits on a bed: 30 and up). */
+const STANDS_OUT = 15;
+/** The span of the smoothed level, ms (longer than the period of a 55 Hz tone, 18 ms). */
 const SMOOTH_MS = 20;
 /** The span of the level the climb is followed on, ms: short enough to keep a sharp attack sharp, long enough that noise in a slow climb does not cut it short. */
 const WALK_MS = 2;
@@ -35,7 +37,8 @@ function smoothed(env: readonly number[], width: number): number[] {
   for (let i = 0; i < env.length; i++) {
     sum += 10 ** (env[i] / 10);
     if (i >= width) sum -= 10 ** (env[i - width] / 10);
-    out.push(10 * Math.log10(sum / Math.min(width, i + 1) + 1e-20));
+    // (the running sum can drift a hair under zero after silence)
+    out.push(10 * Math.log10(Math.max(0, sum) / Math.min(width, i + 1) + 1e-20));
   }
   return out;
 }
@@ -45,9 +48,9 @@ function smoothed(env: readonly number[], width: number): number[] {
  * 10% to 90% of the way (in amplitude) from the quietest level before the peak up to the peak. Null
  * when the peak is at the start of the window or stands less than 3 dB over that quietest level
  * (both judged on `slow`, the smoothed level, so a steady low tone's ripple is not a climb), since no
- * climb was seen.
+ * climb was seen. `step` is the peak over that quietest level, dB.
  */
-function riseOf(env: readonly number[], slow: readonly number[], from: number, to: number): number | null {
+function riseOf(env: readonly number[], slow: readonly number[], from: number, to: number): { rise: number; step: number } | null {
   if (to <= from) return null;
   let top = from;
   for (let i = from; i < to; i++) if (env[i] > env[top]) top = i;
@@ -64,16 +67,7 @@ function riseOf(env: readonly number[], slow: readonly number[], from: number, t
   while (at90 > low && 10 ** (env[at90] / 20) > at(0.9)) at90--;
   let at10 = at90;
   while (at10 > low && 10 ** (env[at10] / 20) > at(0.1)) at10--;
-  return at90 - at10;
-}
-
-/** The loudest of the smoothed level `slow` in the 120 ms from 20 ms before the onset at frame `at`, over its loudest in the 80 ms before that, dB. */
-function stepDb(slow: readonly number[], at: number): number {
-  let before = -200;
-  for (let i = Math.max(0, at - 120); i < Math.min(slow.length, at - 40); i++) before = Math.max(before, slow[i]);
-  let after = -200;
-  for (let i = Math.max(0, at - 20); i < Math.min(slow.length, at + 100); i++) after = Math.max(after, slow[i]);
-  return after - before;
+  return { rise: at90 - at10, step: env[top] - slow[low] };
 }
 
 function median(values: number[]): number {
@@ -95,17 +89,20 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   const env = frameDb(mono, sampleRate, 1);
   const slow = smoothed(env, SMOOTH_MS);
   const fine = smoothed(env, WALK_MS);
+  const usual = Array.from(strength).reduce((a, b) => a + b, 0) / Math.max(1, strength.length);
   const ms = (t: number) => Math.round(t * 1000);
-  // Only onsets where the level really steps up (a measurable rise) count: a held tone or steady noise has flux ripple but no hits
+  // Only real hits count: a held tone or steady noise has flux ripple but no hits
   const rises: Array<{ strength: number; rise: number }> = [];
   times.forEach((t, k) => {
     // Back from the onset's time to half way to the one before, on to the next one or a while after
     const from = Math.max(0, k > 0 ? ms((times[k - 1] + t) / 2) : ms(t) - LOOK_BACK_MS, ms(t) - LOOK_BACK_MS);
     const to = Math.min(env.length, k + 1 < times.length ? ms(times[k + 1]) - END_GAP_MS : env.length, ms(t) + LOOK_AHEAD_MS);
     const rise = riseOf(fine, slow, from, to);
-    if (rise !== null && stepDb(slow, ms(t)) < STEP_DB) return;
+    if (rise === null) return;
     const frame = Math.round((t * sampleRate - FLUX_SIZE / 2) / FLUX_HOP - 0.5);
-    if (rise !== null) rises.push({ strength: strength[frame] ?? 0, rise });
+    const flux = strength[frame] ?? 0;
+    // A real hit either leaves the level far over the quiet before it, or is far stronger in flux than the sound's usual ripple
+    if (rise.step >= CLEAR_STEP_DB || flux >= STANDS_OUT * usual) rises.push({ strength: flux, rise: rise.rise });
   });
   const strongest = rises.sort((a, b) => b.strength - a.strength).slice(0, MAX_ONSETS).map((r) => r.rise);
   const riseMs = strongest.length > 0 ? round1(median(strongest)) : null;

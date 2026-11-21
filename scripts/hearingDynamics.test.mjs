@@ -86,3 +86,13 @@ test('sharp hits on a bed are counted at their own rate', () => {
   const hits = S.at(4, Array.from({ length: 4 }, (_, i) => [i + 0.2, S.burst(0.2, 50, 0, -8, i)]));
   near(attackOf([S.mix(S.sine(220, 4, -20), hits)], 48000).onsetsPerSecond, 1, 0.3);
 });
+test('evenly spaced hits read at their own rate from 2 to 16 a second, all sharp', () => {
+  for (const n of [2, 4, 6, 8, 12, 16]) {
+    const x = S.at(4, Array.from({ length: n * 4 }, (_, i) => [i / n, S.burst(Math.min(0.2, 0.9 / n), Math.min(50, 300 / n), 0, -6, i)]));
+    const a = attackOf([x], 48000);
+    near(a.onsetsPerSecond, n, n * 0.15, `${n} a second`); assert.ok(a.riseMs < 5, `${n} a second: rise ${a.riseMs}`);
+  }
+});
+test('steady pink noise has no onsets whatever the seed', () => {
+  for (let seed = 1; seed <= 8; seed++) assert.ok(attackOf([S.pink(4, -18, seed)], 48000).onsetsPerSecond < 1, `seed ${seed}`);
+});
