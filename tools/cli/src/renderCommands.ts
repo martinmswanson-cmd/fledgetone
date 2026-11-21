@@ -2,6 +2,8 @@
  * `fledgetone render` and `fledgetone listen`: a song file rendered to WAV or MP3 (or its stems),
  * or bars of it rendered and measured (a listen report, or a before-and-after with a suggestion),
  * in a headless browser by the app's own export path (browserRender.ts, src/runtime/render.ts).
+ * When asked, a listen also hears the sound (its character in words, pictures written to a folder,
+ * close-ups at bars and beats, a comparison with another sound or a saved hearing, a saved hearing).
  * The agent helper's render_file and listen with a file use the same functions (renderSongFile,
  * listenSongFile). Arguments are checked before any browser starts (renderPlan, listenPlan).
  */
@@ -12,11 +14,13 @@ import { audibleIds } from '../../../src/store/buses';
 import { barToSeconds } from '../../../src/audio/tempoMap';
 import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/suggestion';
 import { applyOps, checkOpsShape, OPS_VERSION } from '../../../src/agent/ops';
-import type { ListenComparison, ListenReport } from '../../../src/agent/listenReport';
-import { readJson, readSong, sameFile, writeFileSafe } from './files';
-import { withRenderer, type BrowserOptions } from './browserRender';
+import { tooLongToHear, type KeptPicture, type ListenComparison, type ListenReport } from '../../../src/agent/listenReport';
+import { HEARING_FILE, type SavedHearing } from '../../../src/audio/hearing/hearingOf';
+import type { SoundReport } from '../../../src/audio/hearing/types';
+import { readJson, readSong, sameFile, writeFileSafe, writeJson } from './files';
+import { withRenderer, type BrowserOptions, type RenderSession } from './browserRender';
 import { printErr, printOut, safeText } from './print';
-import { barRange, loudnessText, sayLeftOut, suggestionIdBase, UsageError, type Flags } from './commands';
+import { againstOf, barRange, hearingFlags, hearingLines, loudnessText, sayLeftOut, suggestionIdBase, takePictures, UsageError, type Flags, type WrittenPicture } from './commands';
 import { maxOf } from '../../../src/support/minMax';
 
 const say = printOut;
@@ -215,6 +219,23 @@ export interface ListenPlan {
   suggestion?: string;
   ops?: string;
   force: boolean;
+  /** The hearing options (each only when given): the sound in words, the pictures' folder, close-ups at bars and quarter beats, another sound to read it against, the file to save it in. */
+  sound?: true;
+  pictures?: string;
+  closeBars?: Array<{ bar: number; beat: number }>;
+  against?: string;
+  againstFromSeconds?: number;
+  againstToSeconds?: number;
+  save?: string;
+}
+
+/** A bar, or a bar and its quarter beat: `9` (bar 9, beat 1) or `9.3` (bar 9, beat 3). */
+function closeBar(text: string): { bar: number; beat: number } {
+  const m = /^(\d+)(?:\.(\d+))?$/.exec(text);
+  const bar = m ? Number(m[1]) : NaN;
+  const beat = m?.[2] === undefined ? 1 : Number(m[2]);
+  if (!m || bar < 1 || !(beat >= 1 && beat <= 4)) throw new UsageError(`--close ${text}: give a bar, or a bar and its quarter beat (1 to 4), like 9 or 9.3`);
+  return { bar, beat };
 }
 
 export function listenPlan(args: string[], flags: Flags): ListenPlan {
@@ -223,6 +244,8 @@ export function listenPlan(args: string[], flags: Flags): ListenPlan {
   if (args.length > 1) throw new UsageError(`listen takes one song (got ${args.length}); a suggestion goes with --suggestion`);
   if (typeof flags.suggestion === 'string' && typeof flags.ops === 'string') throw new UsageError('give --suggestion or --ops, not both');
   const range = typeof flags.bars === 'string' ? barRange(flags.bars) : {};
+  const closeBars = (Array.isArray(flags.close) ? flags.close : typeof flags.close === 'string' ? [flags.close] : []).map(closeBar);
+  const { sound, ...hearing } = hearingFlags(flags, closeBars.length);
   return {
     song,
     ...range,
@@ -230,6 +253,9 @@ export function listenPlan(args: string[], flags: Flags): ListenPlan {
     ...(typeof flags.suggestion === 'string' ? { suggestion: flags.suggestion } : {}),
     ...(typeof flags.ops === 'string' ? { ops: flags.ops } : {}),
     force: flags.force === true,
+    ...(sound ? { sound } : {}),
+    ...hearing,
+    ...(closeBars.length ? { closeBars } : {}),
   };
 }
 
@@ -259,12 +285,38 @@ export function opsToHear(song: ProjectSnapshot, plan: { suggestion?: string; op
   return null;
 }
 
-/** Bars [fromBar, toBar) of a song file (whole song if not given): a listen report, or with ops a before-and-after. */
+/** A report whose pictures were written to files: each listed by its path in place of the page's id. */
+export type WithWrittenPictures<T> = T extends KeptPicture ? WrittenPicture : T extends object ? { [K in keyof T]: WithWrittenPictures<T[K]> } : T;
+
+/** What a listen hears beyond its report, when asked: the sound, pictures written to a folder, close-ups, another sound to read it against, a saved hearing. */
+export interface ListenHearing {
+  sound?: boolean;
+  /** The folder to write the pictures in (none: no pictures). */
+  pictures?: string;
+  /** Moments to picture close up: the agent's bars and their quarter beats. */
+  closeBars?: ReadonlyArray<{ bar: number; beat: number }>;
+  against?: { sound: SoundReport; label: string };
+  /** The file to save the mix's hearing in (with a suggestion, the after version's). */
+  save?: string;
+}
+
+/** Each picture of a report (the mix's and each track's) read from the page and written to `folder`. */
+async function writeReportPictures(session: RenderSession, r: ListenReport, folder: string, written: string[]): Promise<WithWrittenPictures<ListenReport>> {
+  const out = { ...r } as unknown as WithWrittenPictures<ListenReport>;
+  if (r.pictures) out.pictures = await takePictures(session, r.pictures, folder, written);
+  if (r.tracks) out.tracks = await Promise.all(r.tracks.map(async (t) => ({ ...t, ...(t.pictures ? { pictures: await takePictures(session, t.pictures, folder, written) } : {}) }) as WithWrittenPictures<typeof t>));
+  return out;
+}
+
+/**
+ * Bars [fromBar, toBar) of a song file (whole song if not given): a listen report, or with ops a
+ * before-and-after; heard too when `hearing` asks (its pictures written to its folder, listed by path).
+ */
 export async function listenSongFile(
   path: string,
-  opts: { fromBar?: number; toBar?: number; perTrack?: boolean; with?: { ops: unknown[]; idBase: string } | null; limits?: { maxBars: number; maxSeconds: number } },
+  opts: { fromBar?: number; toBar?: number; perTrack?: boolean; with?: { ops: unknown[]; idBase: string } | null; limits?: { maxBars: number; maxSeconds: number }; hearing?: ListenHearing },
   browser: BrowserOptions
-): Promise<ListenReport | ListenComparison> {
+): Promise<WithWrittenPictures<ListenReport | ListenComparison>> {
   const song = readSong(path);
   const raw = readJson(path);
   const end = songEndBar(song);
@@ -282,11 +334,47 @@ export async function listenSongFile(
     const seconds = Math.max(secondsBetween(song, fromBar, toBar), after ? secondsBetween(after, fromBar, toBar) : 0);
     if (seconds > opts.limits.maxSeconds) throw new UsageError(`At most ${opts.limits.maxSeconds} seconds at a time (bars ${fromBar} to ${toBar} are ${Math.round(seconds)}).`);
   }
-  const listenOpts = { fromBar, toBar, perTrack: opts.perTrack === true, ...(opts.with ? { ops: opts.with.ops, idBase: opts.with.idBase } : {}) };
-  return withRenderer<ListenReport | ListenComparison>(browser, (session) => (opts.with ? session.call<ListenComparison>('compare', raw, listenOpts) : session.call<ListenReport>('listen', raw, listenOpts)));
+  const listenOpts: Record<string, unknown> = { fromBar, toBar, perTrack: opts.perTrack === true, ...(opts.with ? { ops: opts.with.ops, idBase: opts.with.idBase } : {}) };
+  const h = opts.hearing;
+  const heard = h && (h.sound || h.pictures !== undefined || h.save !== undefined || h.against || h.closeBars?.length);
+  // (what is pictured is the after version, when there is one: close-ups are placed by its tempo)
+  const pictured = after ?? song;
+  if (heard) {
+    const long = tooLongToHear(secondsBetween(pictured, fromBar, toBar));
+    if (long) throw new Error(long);
+    const closeUps = (h.closeBars ?? []).map(({ bar, beat }) => {
+      const at = bar + (beat - 1) / 4;
+      if (!(at >= fromBar && at < toBar)) throw new UsageError(`--close ${bar}.${beat} is outside the bars heard (${barsText(fromBar, toBar).toLowerCase()})`);
+      return secondsBetween(pictured, fromBar, at);
+    });
+    Object.assign(listenOpts, { sound: true, ...(h.pictures !== undefined ? { pictures: true } : {}), ...(closeUps.length ? { closeUps } : {}), ...(h.against ? { against: h.against } : {}) });
+  }
+  const written: string[] = [];
+  const result = await withRenderer<WithWrittenPictures<ListenReport | ListenComparison>>(browser, async (session) => {
+    if (opts.with) {
+      const c = await session.call<ListenComparison>('compare', raw, listenOpts);
+      const folder = h?.pictures;
+      if (!heard || folder === undefined) return c as WithWrittenPictures<ListenComparison>;
+      const pictures = c.difference.pictures ? await takePictures(session, c.difference.pictures, folder, written) : undefined;
+      return {
+        before: await writeReportPictures(session, c.before, folder, written),
+        after: await writeReportPictures(session, c.after, folder, written),
+        difference: { ...c.difference, ...(pictures ? { pictures } : {}) },
+      } as WithWrittenPictures<ListenComparison>;
+    }
+    const r = await session.call<ListenReport>('listen', raw, listenOpts);
+    return heard && h.pictures !== undefined ? writeReportPictures(session, r, h.pictures, written) : (r as WithWrittenPictures<ListenReport>);
+  });
+  const mix = 'difference' in result ? result.after.sound : result.sound;
+  if (h?.save && mix) {
+    const fromSeconds = secondsBetween(pictured, 1, fromBar);
+    const saved: SavedHearing = { fledgetoneHearing: HEARING_FILE, of: basename(path), range: { fromSeconds, toSeconds: fromSeconds + secondsBetween(pictured, fromBar, toBar), fromBar, toBar }, sound: mix };
+    writeJson(h.save, saved);
+  }
+  return result;
 }
 
-function reportText(r: ListenReport, label = ''): string[] {
+function reportText(r: WithWrittenPictures<ListenReport>, label = ''): string[] {
   const m = r.mix;
   const lines = [
     `${label}${barsText(r.range.fromBar, r.range.toBar)}, ${r.heard}: ${clock(r.seconds)}`,
@@ -299,16 +387,27 @@ function reportText(r: ListenReport, label = ''): string[] {
   return lines;
 }
 
+/** A report's hearing in words: the mix's sound, what it was read against, every picture written (the mix's, each track's, and `more`). */
+function heardText(r: WithWrittenPictures<ListenReport>, against: string | undefined, heading: string, more: readonly WrittenPicture[] = []): string[] {
+  const pictures = [...(r.pictures ?? []), ...(r.tracks ?? []).flatMap((t) => t.pictures ?? []), ...more];
+  return hearingLines({ sound: r.sound, against: r.against, pictures }, against, heading);
+}
+
 export async function listen(args: string[], flags: Flags): Promise<number> {
   const plan = listenPlan(args, flags);
   const song = readSong(plan.song);
   sayLeftOut(song);
   const hearWith = opsToHear(song, plan);
-  const result = await listenSongFile(plan.song, { fromBar: plan.fromBar, toBar: plan.toBar, perTrack: plan.perTrack, with: hearWith }, browserOptions(flags, 'Listening'));
+  const against = plan.against ? await againstOf(plan.against, browserOptions(flags, 'Hearing'), { fromSeconds: plan.againstFromSeconds, toSeconds: plan.againstToSeconds }) : undefined;
+  const hearing: ListenHearing | undefined = plan.sound
+    ? { sound: true, ...(plan.pictures !== undefined ? { pictures: plan.pictures } : {}), ...(plan.closeBars ? { closeBars: plan.closeBars } : {}), ...(against ? { against } : {}), ...(plan.save ? { save: plan.save } : {}) }
+    : undefined;
+  const result = await listenSongFile(plan.song, { fromBar: plan.fromBar, toBar: plan.toBar, perTrack: plan.perTrack, with: hearWith, ...(hearing ? { hearing } : {}) }, browserOptions(flags, 'Listening'));
   if (flags.json) {
     say(JSON.stringify(result, null, 2));
     return 0;
   }
+  const saved = plan.save ? [`Saved the hearing in ${plan.save}.`] : [];
   if ('difference' in result) {
     const d = result.difference;
     say(
@@ -320,12 +419,13 @@ export async function listen(args: string[], flags: Flags): Promise<number> {
         ...reportText(result.before, 'Before. '),
         '',
         ...reportText(result.after, 'After. '),
+        ...heardText(result.after, against?.label, 'Sound (after)', d.pictures ?? []),
+        ...saved,
         ...(result.after.findings.length ? ['', 'Findings (after):', ...result.after.findings.map((f) => `  - ${f}`)] : []),
       ].join('\n')
     );
     return 0;
   }
-  say([...reportText(result), ...(result.findings.length ? ['', 'Findings:', ...result.findings.map((f) => `  - ${f}`)] : ['', 'Nothing to flag.'])].join('\n'));
+  say([...reportText(result), ...heardText(result, against?.label, 'Sound'), ...saved, ...(result.findings.length ? ['', 'Findings:', ...result.findings.map((f) => `  - ${f}`)] : ['', 'Nothing to flag.'])].join('\n'));
   return 0;
 }
-

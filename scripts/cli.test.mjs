@@ -402,3 +402,186 @@ test('a file whose name only starts with two dots is inside the folder (the help
   assert.equal(fileInside(root, '..page.html'), join(realpathSync(root), '..page.html'));
   assert.equal(fileInside(root, '../cli.test.mjs'), null);
 });
+
+// ---------- Hearing more on the command line: measure --sound, --pictures, --against, --save ----------
+
+/** A 32-bit float WAV of one or two Float32Array channels. */
+function floatWav(channels, rate = 48000) {
+  const frames = channels[0].length;
+  const size = frames * channels.length * 4;
+  const buf = Buffer.alloc(44 + size);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + size, 4);
+  buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(3, 20);
+  buf.writeUInt16LE(channels.length, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * channels.length * 4, 28);
+  buf.writeUInt16LE(channels.length * 4, 32);
+  buf.writeUInt16LE(32, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(size, 40);
+  for (let i = 0; i < frames; i++) for (let c = 0; c < channels.length; c++) buf.writeFloatLE(channels[c][i], 44 + (i * channels.length + c) * 4);
+  return buf;
+}
+
+const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+/** The made signals and the hearing code, loaded through the command line's TypeScript hook. */
+const hearingKit = async () => {
+  await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
+  const S = await import('./fixtures/hearingSignals.mjs');
+  const { parseSavedHearing } = await import(pathToFileURL(join(ROOT, 'src/audio/hearing/hearingOf.ts')).href);
+  return { S, parseSavedHearing };
+};
+
+test("measure's hearing options: checked before anything is read, times as seconds or minutes and seconds", { skip }, async () => {
+  await import(pathToFileURL(join(CLI, 'src/tsHook.mjs')).href);
+  const { hearPlan, UsageError, AUDIO_TYPES } = await import(pathToFileURL(join(CLI, 'src/commands.ts')).href);
+  assert.deepEqual([...AUDIO_TYPES], ['.wav', '.mp3', '.flac', '.ogg', '.opus', '.m4a', '.aac']);
+  assert.equal(hearPlan(['a.wav'], { pictures: 'out' }).sound, true);
+  assert.equal(hearPlan(['a.wav'], {}).sound, false);
+  for (const flags of [{ against: 'b.wav' }, { save: 'a.hearing.json' }, { close: ['1'] }, { sound: true }]) assert.equal(hearPlan(['a.wav'], flags).sound, true, JSON.stringify(flags));
+  assert.throws(() => hearPlan(['a.txt'], {}), (err) => err instanceof UsageError && /\.wav, \.mp3, \.flac/.test(err.message));
+  const plan = hearPlan(['a.wav'], { from: '1:30', to: '100' });
+  assert.equal(plan.fromSeconds, 90);
+  assert.equal(plan.toSeconds, 100);
+  assert.equal(hearPlan(['a.wav'], { from: '1:30.5', to: '90.75' }).fromSeconds, 90.5);
+  assert.deepEqual(hearPlan(['a.wav'], { close: ['0:01', '2.5'] }).closeUps, [1, 2.5]);
+  assert.equal(hearPlan(['a.wav'], { bpm: '120' }).bpm, 120);
+  assert.throws(() => hearPlan(['a.wav'], { from: '100', to: '1:30' }), UsageError);
+  assert.throws(() => hearPlan(['a.wav'], { from: '5', to: '5' }), UsageError);
+  for (const [flags, re] of [
+    [{ from: 'soon' }, /--from/],
+    [{ to: '1:75' }, /--to/],
+    [{ close: ['x'] }, /--close/],
+    [{ bpm: 'fast' }, /--bpm/],
+    [{ against: 'b.txt' }, /--against/],
+    [{ 'against-from': '1' }, /--against-from/],
+    [{ save: 'a.txt' }, /--save/],
+  ])
+    assert.throws(() => hearPlan(['a.wav'], flags), (err) => err instanceof UsageError && re.test(err.message), JSON.stringify(flags));
+  // A --pictures path that is there and not a folder
+  const afile = join(tmp, 'not-a-folder');
+  writeFileSync(afile, 'x');
+  assert.throws(() => hearPlan(['a.wav'], { pictures: afile }), /isn't a folder/);
+});
+
+test('measure without the hearing options prints what it did before, text and --json', { skip }, async () => {
+  const wav = join(tmp, 'snapshot-sine.wav');
+  writeFileSync(wav, makeWav());
+  const j = await cli('measure', wav, '--json');
+  assert.equal(j.code, 0, j.stderr);
+  assert.deepEqual(JSON.parse(j.stdout), JSON.parse(readFileSync(join(FIX, 'cli-measure-snapshot.json'), 'utf8')));
+  assert.ok(!('sound' in JSON.parse(j.stdout)));
+  const t = await cli('measure', wav);
+  assert.equal(t.stdout.replace(wav, 'sine.wav'), readFileSync(join(FIX, 'cli-measure-snapshot.txt'), 'utf8'));
+});
+
+test('measure --sound --pictures --save: the sound report, its pictures as PNG files, a saved hearing of measurements only', { skip, timeout: 240_000 }, async (t) => {
+  const { S, parseSavedHearing } = await hearingKit();
+  const dir = mkdtempSync(join(tmp, 'hear-'));
+  const tone = S.sine(1000, 30, -6);
+  writeFileSync(join(dir, 'a.wav'), floatWav([tone, tone]));
+  const pictures = join(dir, 'pictures');
+  const saved = join(dir, 'a.hearing.json');
+  const started = Date.now();
+  const r = await cli('measure', join(dir, 'a.wav'), '--sound', '--pictures', pictures, '--save', saved, '--json');
+  t.diagnostic(`measure --sound --pictures --save of 30 seconds: ${Date.now() - started} ms`);
+  assert.equal(r.code, 0, r.stderr);
+  const m = JSON.parse(r.stdout);
+  near(m.sound.tone.centreHz, 1000, 30, 'centre');
+  assert.ok(Array.isArray(m.sound.words) && m.sound.words.length > 0);
+  const spectrogram = join(pictures, 'spectrogram.png');
+  assert.ok(readFileSync(spectrogram).subarray(0, 8).equals(PNG_SIGNATURE), 'a PNG file');
+  assert.ok(m.pictures.some((p) => p.path === spectrogram && p.kind === 'spectrogram' && !('id' in p)), JSON.stringify(m.pictures.map((p) => p.path)));
+  for (const p of m.pictures) assert.ok(existsSync(p.path), p.path);
+  // The saved hearing: measurements only, no audio
+  const text = readFileSync(saved, 'utf8');
+  const hearing = parseSavedHearing(JSON.parse(text));
+  assert.equal(hearing.of, 'a.wav');
+  assert.deepEqual(hearing.range, { fromSeconds: 0, toSeconds: 30 });
+  const sampleData = (x) => (Array.isArray(x) ? x.some(sampleData) : x && typeof x === 'object' ? Object.entries(x).some(([k, v]) => (k === 'channels' && typeof v === 'object') || sampleData(v)) : false);
+  assert.ok(!sampleData(JSON.parse(text)), 'no channels of samples');
+  assert.ok(Buffer.byteLength(text) < 2 * 1024 * 1024, `${Buffer.byteLength(text)} bytes`);
+  // In plain words: the report's lines, then the sound, then the pictures
+  const words = await cli('measure', join(dir, 'a.wav'), '--pictures', pictures);
+  assert.equal(words.code, 0, words.stderr);
+  assert.match(words.stdout, /^Loudness [^]*\nSound:\n {2}\S/m);
+  assert.match(words.stdout, /\nPictures:\n {2}.*spectrogram\.png: /);
+  assert.doesNotMatch(words.stdout, /\b(good|bad|too|should)\b/i);
+  // A saved hearing isn't written over unasked
+  const again = await cli('measure', join(dir, 'a.wav'), '--save', saved);
+  assert.equal(again.code, 2);
+  assert.match(again.stderr, /already exists/);
+});
+
+test('measure --against: another sound or a saved hearing, read as this one against it, a stretch of either', { skip, timeout: 240_000 }, async () => {
+  const { S } = await hearingKit();
+  const dir = mkdtempSync(join(tmp, 'against-'));
+  const tone = S.sine(1000, 30, -6);
+  writeFileSync(join(dir, 'a.wav'), floatWav([tone, tone]));
+  assert.equal((await cli('measure', join(dir, 'a.wav'), '--save', join(dir, 'a.hearing.json'))).code, 0);
+  // b: a with a band of noise added up high
+  const added = S.mix(tone, S.band(S.pink(30, -24, 4), 4000, 9000));
+  writeFileSync(join(dir, 'b.wav'), floatWav([added, added]));
+  const b = await cli('measure', join(dir, 'b.wav'), '--against', join(dir, 'a.hearing.json'));
+  assert.equal(b.code, 0, b.stderr);
+  assert.match(b.stdout, /^Against a\.hearing\.json:$/m);
+  assert.match(b.stdout, /^ {2}Read as b\.wav against a\.hearing\.json\.$/m);
+  const json = JSON.parse((await cli('measure', join(dir, 'b.wav'), '--against', join(dir, 'a.hearing.json'), '--json')).stdout);
+  const tones = json.against.differences.filter((d) => d.group === 'tone');
+  assert.ok(tones.length > 0, 'a tone difference');
+  assert.ok(b.stdout.includes(`  ${tones[0].words}`), 'said in words');
+  // Against a stretch of a saved hearing: 20 seconds of low noise, then high
+  const low = S.band(S.pink(10, -18, 1), 40, 400);
+  const high = S.band(S.pink(10, -18, 2), 2000, 12000);
+  const long = S.at(20, [[0, low], [10, high]]);
+  writeFileSync(join(dir, 'long.wav'), floatWav([long, long]));
+  assert.equal((await cli('measure', join(dir, 'long.wav'), '--save', join(dir, 'long.hearing.json'))).code, 0);
+  const c = S.band(S.pink(10, -18, 3), 2000, 12000);
+  writeFileSync(join(dir, 'c.wav'), floatWav([c, c]));
+  const same = await cli('measure', join(dir, 'c.wav'), '--against', join(dir, 'long.hearing.json'), '--against-from', '10', '--against-to', '20', '--json');
+  assert.equal(same.code, 0, same.stderr);
+  const sameJson = JSON.parse(same.stdout);
+  assert.ok(!sameJson.against.differences.some((d) => d.group === 'tone' && d.size >= 2), JSON.stringify(sameJson.against.differences));
+  const other = await cli('measure', join(dir, 'c.wav'), '--against', join(dir, 'long.hearing.json'), '--against-from', '0', '--against-to', '10');
+  assert.equal(other.code, 0, other.stderr);
+  assert.match(other.stdout, /^ {2}Centre: /m);
+  assert.match(other.stdout, /Compared from saved measurements of a stretch/);
+  // A stretch the saved hearing doesn't hold
+  const outside = await cli('measure', join(dir, 'c.wav'), '--against', join(dir, 'long.hearing.json'), '--against-from', '40');
+  assert.equal(outside.code, 2);
+  assert.equal(outside.stderr.trim(), 'fledgetone: that stretch is outside the file');
+  // A .json that isn't a saved hearing
+  const notOne = await cli('measure', join(dir, 'c.wav'), '--against', SONG);
+  assert.equal(notOne.code, 2);
+  assert.match(notOne.stderr, /isn't a saved hearing/);
+});
+
+test('measure --from --to: a stretch of the file; outside it, or over 15 minutes heard, one plain line', { skip, timeout: 120_000 }, async () => {
+  const wav = join(tmp, 'stretch-sine.wav');
+  writeFileSync(wav, makeWav());
+  const part = await cli('measure', wav, '--from', '0.5', '--to', '1.5', '--json');
+  assert.equal(part.code, 0, part.stderr);
+  assert.equal(JSON.parse(part.stdout).seconds, 1);
+  const outside = await cli('measure', wav, '--from', '5');
+  assert.equal(outside.code, 2);
+  assert.equal(outside.stderr.trim(), 'fledgetone: that stretch is outside the file');
+  assert.doesNotMatch(outside.stderr, /\n\s+at /);
+  // 16 minutes of silence at 8 kHz, mono, 16-bit (about 15 MB): refused when heard, measured as before when not
+  const long = join(tmp, 'sixteen-minutes.wav');
+  writeFileSync(long, makeWav({ channels: 1, rate: 8000, seconds: 960, level: () => 0 }));
+  try {
+    const heard = await cli('measure', long, '--sound');
+    assert.equal(heard.code, 2);
+    assert.equal(heard.stderr.trim(), 'fledgetone: At most 15 minutes at a time (this is 16:00); name a stretch.');
+    const plain = await cli('measure', long, '--json');
+    assert.equal(plain.code, 0, plain.stderr);
+    assert.equal(JSON.parse(plain.stdout).seconds, 960);
+    assert.equal((await cli('measure', long, '--sound', '--from', '0', '--to', '15:00', '--json')).code, 0);
+  } finally {
+    rmSync(long, { force: true });
+  }
+});

@@ -10,7 +10,8 @@
  * addresses the app downloads them from); every other request is refused. Recordings downloaded
  * once are kept (in ~/.cache/fledgetone/downloads, or FLEDGETONE_CACHE) and served from there
  * next time; a folder of recordings (--samples, or public/fledgetone-samples in a copy of the
- * repository) is served first, and --offline downloads nothing.
+ * repository) is served first, and --offline downloads nothing. Audio files to hear (`serve`) are
+ * served each at an address of its own, and nothing else of their folders.
  *
  * Every run starts its own browser and server and shuts both down when it ends, also when it
  * fails or takes too long (the browser is killed by its process if it won't close).
@@ -289,6 +290,8 @@ export interface BrowserOptions {
   onProgress?: (fraction: number, what: string) => void;
   /** Told what the page logged (its errors), for --verbose. */
   onLog?: (line: string) => void;
+  /** Local files the page may fetch, each at its address (`/heard/<n>`): the audio files `measure` hears. */
+  serve?: Array<{ path: string; file: string }>;
 }
 
 /** An open renderer: a page with fledgetone-render.js loaded. */
@@ -329,6 +332,7 @@ export async function withRenderer<T>(opts: BrowserOptions, job: (session: Rende
   const server = new StaticServer(
     [
       { path: '/', body: '<!doctype html><meta charset="utf-8"><title>Fledgetone renderer</title><p>Fledgetone is rendering here.</p>' },
+      ...(opts.serve ?? []).map((s) => ({ path: s.path, file: resolve(s.file) })),
       ...(runtime ? [{ prefix: '/runtime', dir: dirname(runtime) }] : []),
       ...[
         ['/fledgetone-samples', samples],

@@ -1,11 +1,14 @@
 /**
  * The command line's commands (all but `mcp`): reading a song (info, notes, check), comparing two
  * (diff), the app's lists (list), making one from a starter (new), applying a suggestion file
- * (apply), measuring a WAV file's loudness (measure), and share links (link, from-link). Each
- * writes to stdout and returns the exit code: 0 done, 1 done with something to fix or refused,
- * 2 a mistake in the command or an unreadable file.
+ * (apply), measuring an audio file's loudness and, when asked, hearing it (measure: its sound in
+ * words, pictures of it, a comparison with another sound or a saved hearing, a saved hearing; a WAV
+ * in Node, other audio in the headless browser), and share links (link, from-link). Each writes to
+ * stdout and returns the exit code: 0 done, 1 done with something to fix or refused, 2 a mistake in
+ * the command or an unreadable file.
  */
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
+import { basename, extname, join } from 'node:path';
 import { createStarter, isStarterId, STARTERS } from '../../../src/store/starters';
 import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../../../src/store/project';
 import { SONG_CAPS } from '../../../src/store/songCaps';
@@ -18,7 +21,15 @@ import { fingerprint, firstDifference, stableJson } from '../../../src/agent/fin
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { createLoudnessAnalyser, shortTermWindowFull } from '../../../src/audio/loudness';
 import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../../../src/audio/mixAnalysis';
-import { readJson, readSong, readWav, sameFile, writeSong } from './files';
+import { hearingOf, HEARING_FILE, parseSavedHearing, type SavedHearing } from '../../../src/audio/hearing/hearingOf';
+import { compareSound, stretchOf, type SoundComparison } from '../../../src/audio/hearing/compareSound';
+import { encodePng } from '../../../src/audio/hearing/png';
+import type { PictureInfo } from '../../../src/audio/hearing/pictures';
+import type { SoundReport } from '../../../src/audio/hearing/types';
+import { tenth, tooLongToHear, wavHeader, type AudioHearing, type KeptPicture } from '../../../src/agent/listenReport';
+import { readJson, readSong, readWav, sameFile, WavFormatError, writeFileSafe, writeJson, writeSong } from './files';
+import { withRenderer, type BrowserOptions, type RenderSession } from './browserRender';
+import { browserOptions } from './renderCommands';
 import { APP_VERSION } from './meta';
 import { printErr, printOut } from './print';
 
@@ -371,22 +382,322 @@ export function measureAudio(channels: Float32Array[], sampleRate: number) {
   };
 }
 
-export function measure(args: string[], flags: Flags): number {
-  const path = need(args[0], 'the WAV file');
-  if (!/\.wav$/i.test(path)) throw new UsageError('measure reads WAV files (export one from Fledgetone)');
-  const { sampleRate, channels } = readWav(path);
-  const m = measureAudio(channels, sampleRate);
-  if (flags.json) json(m);
-  else if (m.silent) say([`${path}: ${clock(m.seconds)}, silent: nothing to measure.`, ...(m.note ? [`(${m.note})`] : [])].join('\n'));
-  else
-    say(
-      [
-        `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
-        `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
-        ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
-        ...(m.note ? [`(Note: ${m.note}.)`] : []),
-      ].join('\n')
-    );
+/** The audio files `measure` reads (a WAV in Node; the others, and a WAV Node can't read, in the headless browser). */
+export const AUDIO_TYPES = ['.wav', '.mp3', '.flac', '.ogg', '.opus', '.m4a', '.aac'] as const;
+const isAudio = (path: string) => (AUDIO_TYPES as readonly string[]).includes(extname(path).toLowerCase());
+const isWav = (path: string) => extname(path).toLowerCase() === '.wav';
+
+/** Seconds from `90`, `90.5`, `1:30` or `1:30.5`; anything else is a mistake in `option`. */
+export function secondsArg(text: string, option: string): number {
+  const plain = /^\d+(?:\.\d+)?$/.exec(text);
+  if (plain) return Number(text);
+  const m = /^(\d+):([0-5]\d(?:\.\d+)?)$/.exec(text);
+  if (!m) throw new UsageError(`${option} takes seconds, like 90, 90.5 or 1:30 (got ${text})`);
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** A string option's values (one, or several where it may be given again). */
+const values = (v: Flags[string]): string[] => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []);
+const stringFlag = (flags: Flags, name: string) => (typeof flags[name] === 'string' ? (flags[name] as string) : undefined);
+
+/** A stretch from two time options, checked: the end after the start. */
+function stretchFlags(flags: Flags, from: string, to: string): { fromSeconds?: number; toSeconds?: number } {
+  const a = stringFlag(flags, from) === undefined ? undefined : secondsArg(stringFlag(flags, from)!, `--${from}`);
+  const b = stringFlag(flags, to) === undefined ? undefined : secondsArg(stringFlag(flags, to)!, `--${to}`);
+  if (a !== undefined && b !== undefined && !(b > a)) throw new UsageError(`--${to} ${stringFlag(flags, to)} isn't after --${from} ${stringFlag(flags, from)}: the stretch ends before it starts`);
+  return { ...(a !== undefined ? { fromSeconds: a } : {}), ...(b !== undefined ? { toSeconds: b } : {}) };
+}
+
+/** The hearing options `measure` and `listen` share, checked (nothing is read or written here). */
+export interface HearingFlags {
+  /** The folder to write the pictures in. */
+  pictures?: string;
+  /** Another sound (an audio file) or a saved hearing (.json) to read this one against, and a stretch of it (seconds). */
+  against?: string;
+  againstFromSeconds?: number;
+  againstToSeconds?: number;
+  /** The file to save the hearing in. */
+  save?: string;
+  /** Whether a hearing was asked for, by --sound or an option that needs one. */
+  sound: boolean;
+}
+
+export function hearingFlags(flags: Flags, closes: number): HearingFlags {
+  const pictures = stringFlag(flags, 'pictures');
+  if (pictures !== undefined && existsSync(pictures) && !statSync(pictures).isDirectory()) throw new UsageError(`--pictures ${pictures} isn't a folder`);
+  const against = stringFlag(flags, 'against');
+  if (against !== undefined && !/\.json$/i.test(against) && !isAudio(against)) throw new UsageError(`--against takes an audio file (${AUDIO_TYPES.join(', ')}) or a saved hearing (.json)`);
+  const stretch = stretchFlags(flags, 'against-from', 'against-to');
+  if (against === undefined) for (const name of ['against-from', 'against-to']) if (flags[name] !== undefined) throw new UsageError(`--${name} goes with --against (a stretch of that sound)`);
+  const save = stringFlag(flags, 'save');
+  if (save !== undefined) {
+    if (!/\.json$/i.test(save)) throw new UsageError(`--save writes a .json file (like song.hearing.json)`);
+    if (against !== undefined && sameFile(save, against)) throw new UsageError(`--save ${save} is the file given with --against`);
+    if (existsSync(save) && !flags.overwrite) throw new UsageError(`${save} already exists: give another file, or --overwrite`);
+  }
+  return {
+    ...(pictures !== undefined ? { pictures } : {}),
+    ...(against !== undefined ? { against } : {}),
+    ...(stretch.fromSeconds !== undefined ? { againstFromSeconds: stretch.fromSeconds } : {}),
+    ...(stretch.toSeconds !== undefined ? { againstToSeconds: stretch.toSeconds } : {}),
+    ...(save !== undefined ? { save } : {}),
+    sound: flags.sound === true || pictures !== undefined || against !== undefined || save !== undefined || closes > 0,
+  };
+}
+
+/** What `measure` was asked: the file, its stretch, and the hearing options. */
+export interface HearPlan {
+  file: string;
+  fromSeconds?: number;
+  toSeconds?: number;
+  sound: boolean;
+  pictures?: string;
+  /** Moments to picture close up, seconds from the start of the file. */
+  closeUps: number[];
+  bpm?: number;
+  against?: string;
+  againstFromSeconds?: number;
+  againstToSeconds?: number;
+  save?: string;
+}
+
+/** `measure`'s arguments, checked (nothing is read or written here). */
+export function hearPlan(args: string[], flags: Flags): HearPlan {
+  const file = need(args[0], 'the audio file');
+  if (!isAudio(file)) throw new UsageError(`measure reads ${AUDIO_TYPES.join(', ')} files`);
+  const stretch = stretchFlags(flags, 'from', 'to');
+  const closeUps = values(flags.close).map((c) => {
+    const at = secondsArg(c, '--close');
+    if ((stretch.fromSeconds !== undefined && at < stretch.fromSeconds) || (stretch.toSeconds !== undefined && at >= stretch.toSeconds)) throw new UsageError(`--close ${c} is outside the stretch heard`);
+    return at;
+  });
+  let bpm: number | undefined;
+  const bpmText = stringFlag(flags, 'bpm');
+  if (bpmText !== undefined) {
+    bpm = Number(bpmText);
+    if (!/^\d+(?:\.\d+)?$/.test(bpmText) || !(bpm >= 20 && bpm <= 400)) throw new UsageError('--bpm takes the tempo in beats a minute, 20 to 400');
+  }
+  return { file, ...stretch, ...hearingFlags(flags, closeUps.length), closeUps, ...(bpm !== undefined ? { bpm } : {}) };
+}
+
+/** A picture written to a file: what it shows, and where it is. */
+export type WrittenPicture = PictureInfo & { path: string; bytes: number };
+
+/** Each picture as `<folder>/<name>.png` (the folder made if it isn't there; a file of that name is written over). Returns the paths. */
+export async function writePictures(folder: string, pictures: ReadonlyArray<{ name: string; png: Uint8Array }>): Promise<string[]> {
+  mkdirSync(folder, { recursive: true });
+  const paths: string[] = [];
+  for (const p of pictures) {
+    // (a name is the hearing's own, letters, digits and dashes; anything else can't reach another folder)
+    const path = join(folder, `${p.name.replace(/[^A-Za-z0-9._-]/g, '-')}.png`);
+    writeFileSafe(path, p.png);
+    paths.push(path);
+  }
+  return paths;
+}
+
+/** Pictures kept in the renderer's page, read and written to `folder`, each listed by its path. */
+export async function takePictures(session: RenderSession, kept: readonly KeptPicture[], folder: string, written: string[]): Promise<WrittenPicture[]> {
+  const out: WrittenPicture[] = [];
+  for (const { id, ...info } of kept) {
+    const [path] = await writePictures(folder, [{ name: info.name, png: await session.take(id, info.bytes) }]);
+    written.push(path);
+    out.push({ ...info, path });
+  }
+  return out;
+}
+
+/** An audio file heard: as the renderer's AudioHearing, its pictures listed by where they were written. */
+export type HeardFile = Omit<AudioHearing, 'pictures'> & { pictures?: WrittenPicture[]; written: string[] };
+
+/** A WAV file's length from its header (null when it doesn't say), read from its first bytes only. */
+function wavSeconds(path: string): number | null {
+  const fd = openSync(path, 'r');
+  try {
+    const head = Buffer.alloc(Math.min(1 << 20, statSync(path).size));
+    readSync(fd, head, 0, head.length, 0);
+    return wavHeader(head)?.seconds ?? null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** A stretch `measure` can't hear: outside the file, or longer than a hearing takes. Said in one line, as the renderer says it. */
+const outsideTheFile = () => new Error('that stretch is outside the file');
+
+/** A WAV file heard in Node (null: a WAV format Node doesn't read, for the browser to try). */
+async function hearWav(plan: HearPlan, against: { sound: SoundReport; label: string } | undefined): Promise<HeardFile | null> {
+  const name = basename(plan.file);
+  const from = plan.fromSeconds ?? 0;
+  if (plan.sound) {
+    // (a file over the limit is refused before it is read, where its header says how long it is)
+    const said = wavSeconds(plan.file);
+    if (said !== null && from < said) {
+      const early = tooLongToHear(Math.min(plan.toSeconds ?? said, said) - from);
+      if (early) throw new Error(early);
+    }
+  }
+  let wav;
+  try {
+    wav = readWav(plan.file);
+  } catch (err) {
+    if (err instanceof WavFormatError) return null;
+    throw err;
+  }
+  const { sampleRate, channels } = wav;
+  const frames = channels[0]?.length ?? 0;
+  const length = frames / sampleRate;
+  const to = Math.min(plan.toSeconds ?? length, length);
+  if ((plan.fromSeconds !== undefined || plan.toSeconds !== undefined) && !(from < length && to > from)) throw outsideTheFile();
+  if (plan.sound) {
+    const long = tooLongToHear(to - from);
+    if (long) throw new Error(long);
+  }
+  const outside = plan.closeUps.find((s) => s >= to);
+  if (outside !== undefined) throw new UsageError(`--close ${outside} is past the end of ${name}`);
+  const a = Math.round(from * sampleRate);
+  const b = plan.toSeconds === undefined ? frames : Math.max(a + 1, Math.round(to * sampleRate));
+  const cut = a === 0 && b === frames ? channels : channels.map((c) => c.slice(a, b));
+  const m = measureAudio(cut, sampleRate);
+  const ms = (x: number) => Math.round(x * 1000) / 1000;
+  const out: HeardFile = {
+    file: name,
+    range: { fromSeconds: ms(from), toSeconds: ms(to) },
+    seconds: ms((cut[0]?.length ?? 0) / sampleRate),
+    channels: cut.length,
+    silent: m.silent,
+    lufs: tenth(m.lufs),
+    shortTermMaxLufs: tenth(m.shortTermMaxLufs),
+    truePeakDbtp: tenth(m.truePeakDbtp),
+    crestDb: tenth(m.crestDb),
+    regions: m.regions,
+    ...(m.note ? { note: m.note } : {}),
+    written: [],
+  };
+  if (!plan.sound) return out;
+  const heard = hearingOf(cut, sampleRate, { engine: APP_VERSION, tempoBpm: plan.bpm, closeUps: plan.closeUps.map((s) => s - from), pictures: plan.pictures !== undefined, against });
+  out.sound = heard.sound;
+  if (plan.pictures !== undefined) {
+    const pictures: WrittenPicture[] = [];
+    // (each encoded and written in turn, its raster let go once it is)
+    while (heard.pictures.length) {
+      const { raster, ...info } = heard.pictures.shift()!;
+      const png = await encodePng(raster);
+      const [path] = await writePictures(plan.pictures, [{ name: info.name, png }]);
+      out.written.push(path);
+      pictures.push({ ...info, path, bytes: png.length });
+    }
+    out.pictures = pictures;
+  }
+  if (against) out.against = compareSound(against.sound, heard.sound, { a: against.label, b: name });
+  return out;
+}
+
+/**
+ * An audio file measured and, when the plan asks, heard: its sound report, its pictures written to
+ * the plan's folder, read against another sound, and saved. A WAV is read in Node (no browser);
+ * other audio, or a WAV Node can't read, is decoded and heard in the headless browser.
+ */
+export async function hearAudioFile(plan: HearPlan, browser: BrowserOptions): Promise<HeardFile> {
+  if (!existsSync(plan.file) || !statSync(plan.file).isFile()) throw new Error(`can't read ${plan.file}`);
+  const against = plan.against ? await againstOf(plan.against, browser, { fromSeconds: plan.againstFromSeconds, toSeconds: plan.againstToSeconds }) : undefined;
+  const name = basename(plan.file);
+  let out = isWav(plan.file) ? await hearWav(plan, against) : null;
+  if (!out) {
+    const from = plan.fromSeconds ?? 0;
+    const address = '/heard/0';
+    out = await withRenderer({ ...browser, serve: [{ path: address, file: plan.file }] }, async (session) => {
+      const res = await session.call<AudioHearing>('hearAudio', address, {
+        name,
+        ...(plan.fromSeconds !== undefined ? { fromSeconds: plan.fromSeconds } : {}),
+        ...(plan.toSeconds !== undefined ? { toSeconds: plan.toSeconds } : {}),
+        sound: plan.sound,
+        pictures: plan.pictures !== undefined,
+        closeUps: plan.closeUps.map((s) => s - from),
+        ...(plan.bpm !== undefined ? { tempoBpm: plan.bpm } : {}),
+        ...(against ? { against } : {}),
+      });
+      const written: string[] = [];
+      const { pictures, ...rest } = res;
+      return { ...rest, ...(pictures && plan.pictures !== undefined ? { pictures: await takePictures(session, pictures, plan.pictures, written) } : {}), written };
+    });
+  }
+  if (plan.save && out.sound) {
+    const saved: SavedHearing = { fledgetoneHearing: HEARING_FILE, of: name, range: { fromSeconds: out.range.fromSeconds, toSeconds: out.range.toSeconds }, sound: out.sound };
+    writeJson(plan.save, saved);
+    out.written.push(plan.save);
+  }
+  return out;
+}
+
+/**
+ * The sound to read another against, and its name: a saved hearing (.json), or a stretch of it
+ * (from its per-second grid: stretchOf), or an audio file heard as `measure` hears one.
+ */
+export async function againstOf(path: string, browser: BrowserOptions, stretch: { fromSeconds?: number; toSeconds?: number } = {}): Promise<{ sound: SoundReport; label: string }> {
+  const label = basename(path);
+  if (/\.json$/i.test(path)) {
+    const raw = readJson(path);
+    let saved: SavedHearing;
+    try {
+      saved = parseSavedHearing(raw);
+    } catch {
+      throw new UsageError(`${label} isn't a saved hearing (fledgetone measure --save makes one)`);
+    }
+    if (stretch.fromSeconds === undefined && stretch.toSeconds === undefined) return { sound: saved.sound, label };
+    try {
+      return { sound: stretchOf(saved.sound, stretch.fromSeconds ?? 0, stretch.toSeconds ?? saved.sound.seconds), label };
+    } catch (err) {
+      if (err instanceof RangeError) throw outsideTheFile();
+      throw err;
+    }
+  }
+  const heard = await hearAudioFile({ file: path, ...stretch, sound: true, closeUps: [] }, browser);
+  return { sound: heard.sound!, label };
+}
+
+/** The lines a hearing adds to what a command prints: the sound in words, what it was read against, the pictures written. */
+export function hearingLines(h: { sound?: SoundReport; against?: SoundComparison; pictures?: ReadonlyArray<{ path: string; shows: string }> }, againstLabel?: string, heading = 'Sound'): string[] {
+  const lines: string[] = [];
+  if (h.sound) lines.push(`${heading}:`, ...h.sound.words.map((w) => `  ${w}`));
+  if (h.against) lines.push(`Against ${againstLabel ?? 'the other sound'}:`, ...h.against.notes.map((n) => `  ${n}`), ...h.against.differences.map((d) => `  ${d.words}`));
+  if (h.pictures?.length) lines.push('Pictures:', ...h.pictures.map((p) => `  ${p.path}: ${p.shows}`));
+  return lines;
+}
+
+/** What `measure` prints of a file's loudness and balance, as it always has. */
+function measureText(path: string, m: { seconds: number; channels: number; silent: boolean; lufs: number | null; shortTermMaxLufs: number | null; truePeakDbtp: number | null; crestDb: number | null; regions: Array<{ name: string; db: number }>; note?: string }): string[] {
+  const note = m.note?.replace(/\.$/, '');
+  if (m.silent) return [`${path}: ${clock(m.seconds)}, silent: nothing to measure.`, ...(note ? [`(${note})`] : [])];
+  return [
+    `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
+    `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp ?? -Infinity)} dBTP, crest ${r1(m.crestDb!)} dB`,
+    ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
+    ...(note ? [`(Note: ${note}.)`] : []),
+  ];
+}
+
+export async function measure(args: string[], flags: Flags): Promise<number> {
+  const plan = hearPlan(args, flags);
+  // A whole WAV, not heard: measured as it always was
+  if (!plan.sound && plan.fromSeconds === undefined && plan.toSeconds === undefined && isWav(plan.file)) {
+    let wav;
+    try {
+      wav = readWav(plan.file);
+    } catch (err) {
+      if (!(err instanceof WavFormatError)) throw err;
+    }
+    if (wav) {
+      const m = measureAudio(wav.channels, wav.sampleRate);
+      if (flags.json) json(m);
+      else say(measureText(plan.file, m).join('\n'));
+      return 0;
+    }
+  }
+  const heard = await hearAudioFile(plan, browserOptions(flags, 'Hearing'));
+  const { written: _written, ...result } = heard;
+  if (flags.json) json(result);
+  else say([...measureText(plan.file, heard), ...hearingLines(heard, plan.against && basename(plan.against)), ...(plan.save ? [`Saved the hearing in ${plan.save}.`] : [])].join('\n'));
   return 0;
 }
 

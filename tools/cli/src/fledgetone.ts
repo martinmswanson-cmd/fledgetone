@@ -122,6 +122,16 @@ async function main(argv: string[]): Promise<number> {
       studio: { type: 'boolean' },
       'studio-port': { type: 'string' },
       app: { type: 'string' },
+      sound: { type: 'boolean' },
+      pictures: { type: 'string' },
+      close: { type: 'string', multiple: true },
+      against: { type: 'string' },
+      save: { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
+      'against-from': { type: 'string' },
+      'against-to': { type: 'string' },
+      bpm: { type: 'string' },
     },
   });
   const flags: cmd.Flags = { ...values, o: values.o ?? values.out };
@@ -150,7 +160,7 @@ async function main(argv: string[]): Promise<number> {
     case 'apply':
       return cmd.apply(args, flags);
     case 'measure':
-      return cmd.measure(args, flags);
+      return await cmd.measure(args, flags);
     case 'link':
       return cmd.link(args, flags);
     case 'from-link':

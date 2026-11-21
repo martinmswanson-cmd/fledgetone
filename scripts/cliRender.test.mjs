@@ -38,6 +38,17 @@ const rc = await import('../tools/cli/src/renderCommands.ts');
 const { compareListens, HEARD_DIFFERENCE_DB } = await import('../src/agent/listenReport.ts');
 const br = await import('../tools/cli/src/browserRender.ts');
 
+// (before any test is declared: a top-level await after them would let the folder's clean-up run early under a name filter)
+async function whyNoBrowser() {
+  if (skip) return skip;
+  if (!existsSync(join(ROOT, 'dist-runtime/fledgetone-render.js'))) return 'the renderer is not built (npm run build:runtime)';
+  const no = await br.canRender();
+  return no ? `no browser to render with: ${no}` : false;
+}
+const browserSkip = await whyNoBrowser();
+if (browserSkip) console.log(`# cliRender: the browser tests are skipped: ${browserSkip}`);
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
 const tmp = mkdtempSync(join(tmpdir(), 'fledgetone-render-args-'));
 test.after(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -347,4 +358,145 @@ test("a WAV's header: its rate and length, so a file over the limit is refused b
   assert.match(tooLongToHear(long.seconds), /this is 16:00/);
   assert.equal(wavHeader(header(48000, 1, 0xffffffff)).seconds, null, 'a stream: no length');
   assert.equal(wavHeader(new TextEncoder().encode('These are not sounds.')), null);
+});
+
+// ---------- Hearing more on the command line: listen and measure with a browser ----------
+
+const browserEnv = { ...process.env, FLEDGETONE_CACHE: join(tmp, 'cache') };
+
+/** The command line, given the time a render takes. */
+function slowCli(...args) {
+  return new Promise((resolve) => {
+    execFile(process.execPath, ['--import', join(CLI, 'src/tsHook.mjs'), join(CLI, 'src/fledgetone.ts'), ...args], { cwd: tmp, env: browserEnv, timeout: 240_000, maxBuffer: 16 << 20 }, (err, stdout, stderr) =>
+      resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout, stderr })
+    );
+  });
+}
+
+test("listen's hearing options: --close as a bar and quarter beat, checked against the bars before any browser starts", { skip }, async () => {
+  const plan = rc.listenPlan([SONG], { pictures: join(tmp, 'pics'), close: ['9.3', '2'], against: 'a.hearing.json' });
+  assert.equal(plan.sound, true);
+  assert.deepEqual(plan.closeBars, [{ bar: 9, beat: 3 }, { bar: 2, beat: 1 }]);
+  assert.ok(!rc.listenPlan([SONG], {}).sound);
+  assert.ok(!('closeBars' in rc.listenPlan([SONG], {})), 'a plan without the options is as it was');
+  for (const close of ['9.5', '9.0', 'x', '-1', '1:30']) assert.throws(() => rc.listenPlan([SONG], { close: [close] }), /--close/, close);
+  assert.throws(() => rc.listenPlan([SONG], { 'against-to': '3' }), /--against-to/);
+  // A bar outside the range: before any browser starts
+  const r = await cli('listen', SONG, '--close', '99', '--offline');
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /--close 99/);
+  const before = await cli('listen', SONG, '--bars', '3-4', '--close', '2.1', '--offline');
+  assert.equal(before.code, 2);
+  assert.match(before.stderr, /--close 2\.1/);
+});
+
+test('listen with none of the hearing options prints what it did before, text and --json', { skip: browserSkip, timeout: 300_000 }, async () => {
+  const text = await slowCli('listen', SONG, '--offline');
+  assert.equal(text.code, 0, text.stderr);
+  assert.equal(text.stdout, readFileSync(join(ROOT, 'scripts/fixtures/cli-listen-snapshot.txt'), 'utf8'));
+  const json = await slowCli('listen', SONG, '--offline', '--json');
+  assert.equal(json.code, 0, json.stderr);
+  assert.equal(json.stdout, readFileSync(join(ROOT, 'scripts/fixtures/cli-listen-snapshot.json'), 'utf8'));
+});
+
+test('listen --sound --pictures --close --save: the sound, its pictures written by name, a close-up at a bar and beat, a saved hearing', { skip: browserSkip, timeout: 300_000 }, async (t) => {
+  const pictures = join(tmp, 'listen-pictures');
+  const saved = join(tmp, 'song.hearing.json');
+  const started = Date.now();
+  const r = await slowCli('listen', SONG, '--bars', '1-4', '--sound', '--pictures', pictures, '--close', '2.3', '--save', saved, '--offline', '--json');
+  t.diagnostic(`listen --sound --pictures of bars 1 to 4: ${Date.now() - started} ms`);
+  assert.equal(r.code, 0, r.stderr);
+  const rep = JSON.parse(r.stdout);
+  assert.equal(typeof rep.sound, 'object');
+  const closeUp = join(pictures, 'closeup-bar-2-beat-3.png');
+  assert.ok(readFileSync(closeUp).subarray(0, 8).equals(PNG_SIGNATURE));
+  assert.ok(rep.pictures.some((p) => p.path === closeUp), rep.pictures.map((p) => p.path).join(', '));
+  assert.ok(rep.pictures.every((p) => existsSync(p.path) && !('id' in p)));
+  const hearing = JSON.parse(readFileSync(saved, 'utf8'));
+  assert.equal(hearing.fledgetoneHearing, 1);
+  assert.equal(hearing.of, 'render-song.fledgetone.json');
+  assert.equal(hearing.range.fromBar, 1);
+  assert.equal(hearing.range.toBar, 5);
+  // In words: the report's lines, then the sound and the pictures, then the findings
+  const words = await slowCli('listen', SONG, '--bars', '1-4', '--against', saved, '--pictures', pictures, '--offline');
+  assert.equal(words.code, 0, words.stderr);
+  assert.match(words.stdout, /Bar by bar \(LUFS\)[^\n]*\nSound:\n {2}\S[^]*\nAgainst song\.hearing\.json:\n {2}Read as the song against song\.hearing\.json\.[^]*\nPictures:\n {2}[^\n]*spectrogram\.png: [^]*\n\n(Findings:|Nothing to flag\.)/);
+  // Track by track: each track's pictures by its own names
+  const tracks = await slowCli('listen', SONG, '--bars', '1-2', '--per-track', '--pictures', join(tmp, 'track-pictures'), '--offline', '--json');
+  assert.equal(tracks.code, 0, tracks.stderr);
+  const each = JSON.parse(tracks.stdout).tracks;
+  for (const track of each) assert.ok(existsSync(join(tmp, 'track-pictures', `track-${track.id}-spectrogram.png`)), track.id);
+});
+
+test('listen --suggestion --sound: the sound difference and the difference picture; --against compares the after version', { skip: browserSkip, timeout: 300_000 }, async () => {
+  const ops = join(tmp, 'louder-keys.json');
+  writeFileSync(ops, JSON.stringify([{ op: 'set_track', trackId: 'track-fixture-1p', volumeDb: 6 }]));
+  const pictures = join(tmp, 'compare-pictures');
+  const r = await slowCli('listen', SONG, '--bars', '1-2', '--ops', ops, '--pictures', pictures, '--offline', '--json');
+  assert.equal(r.code, 0, r.stderr);
+  const ab = JSON.parse(r.stdout);
+  assert.ok(ab.difference.sound.levelDb > 0);
+  assert.ok(existsSync(join(pictures, 'difference.png')));
+  assert.ok(ab.after.pictures.every((p) => p.path.startsWith(join(pictures, 'after-'))));
+  const words = await slowCli('listen', SONG, '--bars', '1-2', '--ops', ops, '--sound', '--offline');
+  assert.equal(words.code, 0, words.stderr);
+  assert.match(words.stdout, /\nSound \(after\):\n {2}\S/);
+  // Against another sound: the after version is read against it
+  const tone = Buffer.alloc(44 + 48000 * 4);
+  tone.write('RIFF', 0);
+  tone.writeUInt32LE(36 + 48000 * 4, 4);
+  tone.write('WAVEfmt ', 8);
+  tone.writeUInt32LE(16, 16);
+  tone.writeUInt16LE(1, 20);
+  tone.writeUInt16LE(2, 22);
+  tone.writeUInt32LE(48000, 24);
+  tone.writeUInt32LE(48000 * 4, 28);
+  tone.writeUInt16LE(4, 32);
+  tone.writeUInt16LE(16, 34);
+  tone.write('data', 36);
+  tone.writeUInt32LE(48000 * 4, 40);
+  for (let i = 0; i < 48000; i++) for (const c of [0, 1]) tone.writeInt16LE(Math.round(8000 * Math.sin((2 * Math.PI * 440 * i) / 48000)), 44 + i * 4 + c * 2);
+  writeFileSync(join(tmp, 'tone.wav'), tone);
+  const against = await slowCli('listen', SONG, '--bars', '1-2', '--ops', ops, '--against', join(tmp, 'tone.wav'), '--offline', '--json');
+  assert.equal(against.code, 0, against.stderr);
+  assert.match(JSON.parse(against.stdout).after.against.notes[0], /the song against tone\.wav/);
+});
+
+test('measure through the browser: an MP3 heard, a WAV it cannot read in Node, and a file that is not audio in one line', { skip: browserSkip, timeout: 300_000 }, async () => {
+  const mp3 = join(tmp, 'song.mp3');
+  assert.equal((await slowCli('render', SONG, '--bars', '1-2', '-o', mp3, '--offline')).code, 0);
+  const r = await slowCli('measure', mp3, '--sound', '--pictures', join(tmp, 'mp3-pictures'), '--offline', '--json');
+  assert.equal(r.code, 0, r.stderr);
+  const m = JSON.parse(r.stdout);
+  assert.equal(m.file, 'song.mp3');
+  assert.equal(typeof m.sound, 'object');
+  assert.ok(existsSync(join(tmp, 'mp3-pictures', 'spectrogram.png')));
+  const text = await slowCli('measure', 'song.mp3', '--offline');
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, /^song\.mp3: 0:0\d, 2 channels\nLoudness /);
+  // An 8-bit WAV, which Node's reader leaves to the browser
+  const frames = 48000;
+  const eight = Buffer.alloc(44 + frames);
+  eight.write('RIFF', 0);
+  eight.writeUInt32LE(36 + frames, 4);
+  eight.write('WAVEfmt ', 8);
+  eight.writeUInt32LE(16, 16);
+  eight.writeUInt16LE(1, 20);
+  eight.writeUInt16LE(1, 22);
+  eight.writeUInt32LE(48000, 24);
+  eight.writeUInt32LE(48000, 28);
+  eight.writeUInt16LE(1, 32);
+  eight.writeUInt16LE(8, 34);
+  eight.write('data', 36);
+  eight.writeUInt32LE(frames, 40);
+  for (let i = 0; i < frames; i++) eight[44 + i] = 128 + Math.round(60 * Math.sin((2 * Math.PI * 1000 * i) / 48000));
+  writeFileSync(join(tmp, 'eight.wav'), eight);
+  const e = await slowCli('measure', join(tmp, 'eight.wav'), '--sound', '--offline', '--json');
+  assert.equal(e.code, 0, e.stderr);
+  assert.ok(Math.abs(JSON.parse(e.stdout).sound.tone.centreHz - 1000) < 50);
+  // Not audio at all
+  writeFileSync(join(tmp, 'x.mp3'), 'These are not sounds.\n');
+  const bad = await slowCli('measure', join(tmp, 'x.mp3'), '--offline');
+  assert.notEqual(bad.code, 0);
+  assert.equal(bad.stderr.trim(), "fledgetone: x.mp3 can't be read as audio.");
 });

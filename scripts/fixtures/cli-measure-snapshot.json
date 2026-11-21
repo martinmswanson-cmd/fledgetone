@@ -1,0 +1,39 @@
+{
+  "seconds": 2,
+  "channels": 2,
+  "silent": false,
+  "lufs": -6.014182784211624,
+  "shortTermMaxLufs": null,
+  "truePeakDbtp": -6.020599913279624,
+  "crestDb": 3.0105695990537624,
+  "regions": [
+    {
+      "name": "sub bass (under 60 Hz)",
+      "db": -119.8
+    },
+    {
+      "name": "bass (60-200 Hz)",
+      "db": -113.9
+    },
+    {
+      "name": "low mids (200-500 Hz)",
+      "db": -103
+    },
+    {
+      "name": "mids (500 Hz-2 kHz)",
+      "db": 0
+    },
+    {
+      "name": "upper mids (2-5 kHz)",
+      "db": -98
+    },
+    {
+      "name": "presence (5-10 kHz)",
+      "db": -95.8
+    },
+    {
+      "name": "air (over 10 kHz)",
+      "db": -95.2
+    }
+  ]
+}
