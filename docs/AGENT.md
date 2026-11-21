@@ -295,7 +295,15 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
 `against` takes an audio file or a saved hearing (a `.json` made by `save`) in `--root`, with
 `againstFromSeconds` and `againstToSeconds` for a stretch of it. The two are level-matched first,
 so the differences are of character and not of volume, and `against` in the answer lists them
-largest first with `notes` saying which was read against which. Like must be compared with like: a
+largest first (`differences`) with `notes` saying which was read against which and `faults`, one
+line for each kind of fault the two do not have the same number of (`Clicks: 1 in click.wav (at
+0:12.50), none in clean.wav.`). When nothing differs by more than a step and the faults are the
+same, the notes end by saying so. What only one of the two has is not compared as a number: a
+band's movement that one lacks is one difference that says which has it, with its rate and
+depth, and a width is compared only where a side level stands above 50 dB under its sound's
+whole in one of the two. Rise time and onsets are given as a ratio (`4 times as long`). A stretch
+of a saved hearing is compared in tone, width and loudness only, and has no faults to compare.
+Like must be compared with like: a
 comparison is fair only between stretches of similar length and of the same kind of material (a
 chorus with a chorus, a drum loop with a drum loop). With a suggestion, `listen` compares the after
 version, and the before and after are compared with each other (`difference.sound`).

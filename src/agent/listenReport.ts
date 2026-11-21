@@ -252,7 +252,8 @@ const minus = (a: number | null, b: number | null): number | null => (a === null
  * The difference between two listens of the same bars: `before` (the song) and `after` (with a
  * suggestion). `differenceDb` is each bar's level of after minus before (see CompareBar), measured
  * by the caller from the two renders. `sound`: the two versions' sound reports compared (and its
- * pictures), put on the difference, its first differences ending the summary in words.
+ * pictures), put on the difference; the summary ends with the kinds of fault the two do not share
+ * and the sound's first differences in words, each region given once.
  */
 export function compareListens(
   before: ListenReport,
@@ -309,7 +310,13 @@ export function compareListens(
   if (mix.truePeakDbtp !== null && Math.abs(mix.truePeakDbtp) >= 0.1) summary.push(`The true peak moves ${mix.truePeakDbtp > 0 ? 'up' : 'down'} ${Math.abs(mix.truePeakDbtp).toFixed(1)} dB, to ${after.mix.truePeakDbtp} dBTP.`);
   for (const r of mix.regions) if (Math.abs(r.db) >= 1) summary.push(`${r.name}: ${r.db > 0 ? '+' : ''}${r.db.toFixed(1)} dB against the whole.`);
   for (const t of tracks ?? []) if (t.lufs !== null && Math.abs(t.lufs) >= 0.5) summary.push(`"${t.name}" is ${Math.abs(t.lufs).toFixed(1)} LU ${t.lufs > 0 ? 'louder' : 'quieter'}.`);
-  if (sound) for (const d of sound.comparison.differences.slice(0, SUMMARY_DIFFERENCES)) summary.push(d.words);
+  if (sound) {
+    // The kinds of fault the two do not share, then the largest differences of the sound: each region
+    // once (a region the balance above already gives is not said again from the sound report)
+    summary.push(...(sound.comparison.faults ?? []));
+    const saidRegions = new Set(mix.regions.filter((r) => Math.abs(r.db) >= 1).map((r) => r.name));
+    for (const d of sound.comparison.differences.filter((x) => !(x.group === 'tone' && saidRegions.has(x.measure))).slice(0, SUMMARY_DIFFERENCES)) summary.push(d.words);
+  }
   const heard = sound ? { sound: sound.comparison, ...(sound.pictures.length ? { pictures: sound.pictures } : {}) } : {};
   return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary, ...heard } };
 }

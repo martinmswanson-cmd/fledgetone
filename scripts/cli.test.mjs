@@ -630,6 +630,14 @@ test('measure --from --to: every time read or given is a time in the file (the w
   const before = await cli('measure', wav, '--against', saved, '--against-from', '2', '--against-to', '8');
   assert.equal(before.code, 2);
   assert.equal(before.stderr.trim(), 'fledgetone: that stretch is outside the file');
+  // Read against the same sound without the click: the click is said, after the notes and before the differences
+  const clean = join(dir, 'clean.wav');
+  writeFileSync(clean, floatWav([bed(3), bed(4)]));
+  const faults = await cli('measure', wav, '--against', clean);
+  assert.equal(faults.code, 0, faults.stderr);
+  assert.match(faults.stdout, /\nAgainst clean\.wav:\n {2}Read as click\.wav against clean\.wav\.\n {2}Clicks: 1 in click\.wav \(at 0:12\.50\), none in clean\.wav\.\n/);
+  const nothing = await cli('measure', clean, '--against', clean);
+  assert.match(nothing.stdout, /\nAgainst clean\.wav:\n {2}Read as clean\.wav against clean\.wav\.\n {2}Nothing differs by more than a step\.\n?$/);
   // An audio file read against, a stretch of it: in its own file time
   const other = await cli('measure', wav, '--from', '0', '--to', '6', '--against', wav, '--against-from', '12', '--against-to', '18', '--json');
   assert.equal(other.code, 0, other.stderr);

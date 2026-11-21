@@ -84,7 +84,11 @@ test('a group measured by another version is skipped, and said', () => {
 
 test('unequal lengths are said first of the cautions', () => {
   const c = compareSound(hear([S.pink(2, -18, 1)]), hear([S.pink(4, -18, 1)]));
-  assert.match(c.notes[1], /different lengths \(0:02 against 0:04\)/);
+  // (the lengths in the order of the names: "Read as the second against the first", so the second's first)
+  assert.match(c.notes[1], /different lengths \(0:04 against 0:02\)/);
+  const named = compareSound(hear([S.pink(4, -18, 1)]), hear([S.pink(2, -18, 1)]), { a: 'clean.wav', b: 'bright.wav' });
+  assert.equal(named.notes[0], 'Read as bright.wav against clean.wav.');
+  assert.match(named.notes[1], /different lengths \(0:02 against 0:04\)/);
 });
 
 test('a stretch of a saved report', () => {
@@ -269,7 +273,158 @@ test('known limits at 40 dB down, from absolute floors in other modules', () => 
   // 12.2 then 14.0 (frames.ts floors band levels at -120 dB, so the 60 dB range no longer fits); a pure 220 Hz
   // sine reads tilt -15.4 then -14.4 dB an octave (its empty bands sit at the spectrum's own noise floor).
   const drum = compareSound(hear(made('a drum pattern')), hear(made('a drum pattern').map((ch) => S.gain(ch, -40))));
-  assert.deepEqual(drum.differences.map((d) => d.measure).sort(), ['change', 'loudness', 'roughness']);
+  assert.deepEqual(drum.differences.map((d) => d.measure).sort(), ['loudness', 'roughness', 'spectral movement']);
   const sine = compareSound(hear(made('a pure sine')), hear(made('a pure sine').map((ch) => S.gain(ch, -40))));
   assert.deepEqual(sine.differences.map((d) => d.measure).sort(), ['loudness', 'tilt']);
+});
+
+// The final review's findings on the comparison (I3, I4, M9)
+
+const bedOf = (sec, seed = 3) => S.mix(S.sine(110, sec, -12), S.sine(440, sec, -18), S.band(S.pink(sec, -30, seed), 100, 4000));
+
+test("a band's movement that only one of the two has is said once, with its rate and depth, and never compared as 0 dB (I3)", () => {
+  const noise = S.pink(6, -34, 1);
+  const steady = hear([S.mix(S.saw(55, 6, -6), noise)]);
+  const gated = hear([S.mix(S.gate(S.saw(55, 6, -6), 4, -30), noise)]);
+  const low = (r) => r.movement.modulations.find((m) => m.band === 'low');
+  assert.equal(low(steady), undefined, 'the steady one has no low band movement');
+  assert.ok(low(gated) && Math.abs(low(gated).hz - 4) < 0.2 && low(gated).depthDb > 12, JSON.stringify(gated.movement.modulations));
+  const c = compareSound(steady, gated);
+  const d = c.differences.find((x) => x.measure === 'low band movement');
+  assert.ok(d, c.differences.map((x) => x.words).join('\n'));
+  assert.equal(d.a, null);
+  near(d.b, low(gated).depthDb, 0.05, 'its depth');
+  assert.ok(d.size <= 3 && d.size > 0, `its size is ${d.size}: no more than 3 steps, so it does not lead by itself`);
+  assert.match(d.words, /^Low band movement: only in the second \(4\.0 Hz, \d+\.\d dB deep\)\.$/);
+  assert.equal(c.differences.find((x) => /band depth$/.test(x.measure) && (x.a === 0 || x.b === 0)), undefined, 'no depth against 0.0 dB');
+  assert.ok(!c.differences.some((x) => x.group === 'movement' && / 0\.0 dB/.test(x.words)), c.differences.map((x) => x.words).join('\n'));
+  // the other way round: only in the first, the change negated, the size kept
+  const back = compareSound(gated, steady).differences.find((x) => x.measure === 'low band movement');
+  assert.match(back.words, /^Low band movement: only in the first \(4\.0 Hz, /);
+  assert.deepEqual([back.a, back.b, back.change, back.size], [d.b, null, -d.change, d.size]);
+  // named as the two are named
+  assert.match(compareSound(steady, gated, { a: 'clean.wav', b: 'wobble.wav' }).differences.find((x) => x.measure === 'low band movement').words, /only in wobble\.wav \(/);
+  assert.match(compareSound(steady, gated, { a: 'before', b: 'after' }).differences.find((x) => x.measure === 'low band movement').words, /only after \(/);
+  // both have it: the depths are compared as numbers
+  const shallow = hear([S.mix(S.gate(S.saw(55, 6, -6), 4, -8), noise)]);
+  assert.ok(low(shallow), 'the shallow one moves too');
+  const both = compareSound(shallow, gated).differences.find((x) => x.measure === 'low band depth');
+  assert.ok(both && both.a !== null && both.b !== null && both.change > 2, JSON.stringify(both));
+  assert.match(both.words, /^Low band depth: \d+\.\d dB against \d+\.\d dB \(\+\d+\.\d dB\)\.$/);
+});
+
+test('a width is compared only where a side level stands above 50 dB under the whole, and is read at that floor where it is under it (I3)', () => {
+  const mid = S.pink(4, -18, 1);
+  const sub = S.band(S.pink(4, -18, 2), 20, 60);
+  /** The middle with `side` in the sides only: left is their sum, right their difference. */
+  const wide = (side) => [S.mix(mid, side), S.mix(mid, Float32Array.from(side, (v) => -v))];
+  const mono = hear([mid, mid.slice()]);
+  // a trace in the sides of the sub bass, far under the sound: as an MP3 of the same bars leaves
+  const trace = hear(wide(S.gain(sub, -50)));
+  const width = (r) => r.stereo.width.find((w) => w.name.startsWith('sub bass')).db;
+  assert.ok(width(trace) > -58 && width(trace) < -40, `the trace reads ${width(trace)} dB`);
+  assert.equal(width(mono), -60);
+  const c = compareSound(mono, trace);
+  assert.deepEqual(c.differences.filter((d) => d.group === 'stereo').map((d) => d.words), [], 'nothing of the floor is compared');
+  // sides that stand well over the floor are compared, the other read at the floor: 50 dB under its whole, not -60
+  const real = hear(wide(S.gain(sub, -12)));
+  const d = compareSound(mono, real).differences.find((x) => x.measure.startsWith('width: sub bass'));
+  assert.ok(d, 'a real width is compared');
+  near(d.b, width(real), 0.05, 'the real one, as its report gives it');
+  const spectrum = mono.tone.spectrum;
+  const whole = 10 * Math.log10(spectrum.mid.reduce((p, v, i) => p + 10 ** (v / 10) + 10 ** (spectrum.side[i] / 10), 0));
+  const midThere = 10 * Math.log10(spectrum.freqs.reduce((p, f, i) => (f >= 20 && f < 60 ? p + 10 ** (spectrum.mid[i] / 10) : p), 0)) - whole;
+  near(d.a, -50 - midThere, 0.2, 'the one with no sides, at the floor');
+  assert.ok(d.a > -60);
+  // and the low end's width the same way
+  assert.ok(compareSound(mono, real).differences.some((x) => x.measure === 'low end width'));
+  assert.equal(compareSound(mono, trace).differences.find((x) => x.measure === 'low end width'), undefined);
+});
+
+test('faults are compared: one line for each kind the two do not have the same number of, placed where it is in the newer one (I4)', () => {
+  const clean = bedOf(4);
+  const clicked = clean.slice(); clicked[2.5 * 48000] += 0.4;
+  const a = hear([clean]), b = hear([clicked]);
+  const c = compareSound(a, b);
+  assert.deepEqual(c.faults, ['Clicks: 1 in the second (at 0:02.50), none in the first.']);
+  assert.ok(!c.notes.includes('Nothing differs by more than a step.'));
+  assert.deepEqual(compareSound(b, a).faults, ['Clicks: none in the second, 1 in the first.']);
+  assert.deepEqual(compareSound(a, b, { a: 'clean.wav', b: 'click.wav' }).faults, ['Clicks: 1 in click.wav (at 0:02.50), none in clean.wav.']);
+  assert.deepEqual(compareSound(a, b, { a: 'before', b: 'after' }).faults, ['Clicks: 1 after (at 0:02.50), none before.']);
+  // the same faults on both sides: no line
+  assert.deepEqual(compareSound(b, b).faults, []);
+  // two clicks against one: the first of them placed
+  const twice = clicked.slice(); twice[3.2 * 48000] -= 0.4;
+  assert.deepEqual(compareSound(b, hear([twice])).faults, ['Clicks: 2 in the second (first at 0:02.50), 1 in the first.']);
+  // placed in bars and beats where the newer report is of a song
+  const inSong = hearSound([clicked], 48000, { engine: 'test', place: (s) => ({ seconds: s, bar: 3, beat: 2 }) });
+  assert.deepEqual(compareSound(a, inSong, { a: 'before', b: 'after' }).faults, ['Clicks: 1 after (at bar 3, beat 2), none before.']);
+  // the other kinds
+  const tone = S.sine(200, 6, -6);
+  const broken = S.mix(S.clip(S.sine(200, 6, 6), 1.0), S.sine(60, 6, -20), S.sine(120, 6, -26)).map((v) => v + 0.02);
+  broken.fill(0, 4 * 48000, 4.1 * 48000);
+  const lines = compareSound(hear([tone, tone.slice()]), hear([broken, S.gain(broken, -20)])).faults;
+  assert.match(lines[0], /^Clipping: \d+ places in the second \(first at 0:00\.\d\d\), none in the first\.$/);
+  assert.equal(lines[1], 'Digital silence: 1 stretch in the second (at 0:04.00), none in the first.');
+  assert.equal(lines[2], 'Hum: at 60 Hz in the second, none in the first.');
+  assert.equal(lines[3], 'A DC offset: in the second, not in the first.');
+  assert.equal(lines[4], 'A quiet or silent channel: in the second, not in the first.');
+  assert.equal(lines.length, 5);
+  for (const l of lines) assert.doesNotMatch(l, /\b(good|bad|too|should)\b/i);
+});
+
+test('a comparison in which nothing differs says so; a stretch of a saved hearing says nothing about faults (I4)', () => {
+  const r = pinkReport(-18, 1);
+  const same = compareSound(r, r);
+  assert.deepEqual([same.differences, same.faults], [[], []]);
+  assert.equal(same.notes.at(-1), 'Nothing differs by more than a step.');
+  assert.deepEqual(same.notes, ['Read as the second against the first.', 'Nothing differs by more than a step.']);
+  // a click in the audio; its saved hearing's stretch has no faults to compare
+  const clicked = bedOf(4); clicked[2.5 * 48000] += 0.4;
+  const full = hear([clicked]);
+  assert.equal(full.faults.length, 1);
+  const stretch = stretchOf(JSON.parse(JSON.stringify(full)), 0, 4);
+  const c = compareSound(stretch, hear([bedOf(4)]));
+  assert.deepEqual(c.faults, []);
+  assert.ok(!c.notes.some((n) => /click|fault/i.test(n)), c.notes.join('\n'));
+  // silence: not "nothing differs"
+  assert.ok(!compareSound(hear([new Float32Array(96000)]), r).notes.includes('Nothing differs by more than a step.'));
+});
+
+test('a stretch of a saved hearing gives one note of what cannot be compared, listing the groups (M9)', () => {
+  const full = hear([bedOf(4)]);
+  const stretch = stretchOf(JSON.parse(JSON.stringify(full)), 0, 4);
+  const c = compareSound(stretch, full);
+  assert.deepEqual(c.skipped, ['texture', 'movement', 'attack']);
+  const said = c.notes.filter((n) => /can't be compared/.test(n));
+  assert.deepEqual(said, ["Compared from saved measurements of a stretch: tone, width and loudness only (texture, movement and attack can't be compared)."]);
+});
+
+test('rise time and onsets are given as a plain ratio, and the change of the spectrum over time is named for what it is (M9)', () => {
+  const hits = (rate, rampMs) => hear([S.every(rate, 4, (i) => S.burst(0.1, 20, rampMs, -6, i + 1))]);
+  const sharp = hits(2, 0), soft = hits(8, 40);
+  const c = compareSound(sharp, soft);
+  const rise = c.differences.find((d) => d.measure === 'rise');
+  assert.ok(rise, c.differences.map((d) => d.words).join('\n'));
+  assert.match(rise.words, /^Rise: \d+\.\d ms against \d+\.\d ms \(\d+(\.\d)? times as long\)\.$/);
+  const [, to, from, times] = /^Rise: (\S+) ms against (\S+) ms \((\S+) times/.exec(rise.words);
+  near(Number(times), Number(to) / Number(from), 0.06 * Number(times) + 0.06, 'the ratio said');
+  const onsets = c.differences.find((d) => d.measure === 'onsets a second');
+  assert.match(onsets.words, /^Onsets a second: \d+\.\d against \d+\.\d \(\d+(\.\d)? times as many\)\.$/);
+  // the other way round: a share
+  const back = compareSound(soft, sharp);
+  assert.match(back.differences.find((d) => d.measure === 'rise').words, /\(\d+% as long\)\.$/);
+  assert.match(back.differences.find((d) => d.measure === 'onsets a second').words, /\(\d+% as many\)\.$/);
+  // none against some
+  const none = hear([S.sine(220, 4, -12)]);
+  assert.match(compareSound(none, soft).differences.find((d) => d.measure === 'onsets a second').words, /against 0\.0 \(from none\)\.$/);
+  assert.match(compareSound(soft, none).differences.find((d) => d.measure === 'onsets a second').words, /^Onsets a second: 0\.0 against \d+\.\d \(to none\)\.$/);
+  for (const d of [...c.differences, ...back.differences]) assert.doesNotMatch(d.words, /octaves\)\.$/.test(d.words) && d.group === 'attack' ? /./ : /^$/, d.words);
+  // the numbers keep their sense: a doubling is a change of 1
+  assert.ok(rise.change > 0 && onsets.change > 1.5);
+  // "Change" is "Spectral movement"
+  const drum = made('a drum pattern');
+  const moved = compareSound(hear(drum), hear(drum.map((ch) => S.gain(ch, -40))));
+  assert.ok(moved.differences.some((d) => /^Spectral movement: /.test(d.words)));
+  assert.ok(![...moved.differences, ...c.differences].some((d) => /^Change: /.test(d.words)));
 });

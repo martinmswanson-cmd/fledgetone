@@ -173,6 +173,45 @@ test("a before-and-after's sound comparison: on the difference when given, its f
   assert.ok(!('pictures' in compareListens(before, after, diffs, undefined, undefined, { comparison, pictures: [] }).difference), 'no pictures: no pictures key');
 });
 
+test("a before-and-after's summary: the faults the two do not share, and each region once", () => {
+  const report = (regions) => ({
+    range: { fromBar: 1, toBar: 3 },
+    seconds: 4,
+    heard: 'x',
+    renderMode: 'playback',
+    mix: { lufs: -16, shortTermMaxLufs: -14, truePeakDbtp: -1, crestDb: 12, regions, master: { limiterMaxGrDb: 1, clipperMaxDb: null } },
+    bars: [{ bar: 1, lufs: -16 }, { bar: 2, lufs: -16 }],
+    findings: [],
+  });
+  const before = report([{ name: 'bass (60-200 Hz)', db: -3 }, { name: 'mids (500 Hz-2 kHz)', db: -10 }]);
+  const after = report([{ name: 'bass (60-200 Hz)', db: -3.4 }, { name: 'mids (500 Hz-2 kHz)', db: -8.3 }]);
+  const difference = (group, measure, words) => ({ group, measure, a: 1, b: 2, change: 1, size: 1, words });
+  const comparison = {
+    levelDb: 0,
+    differences: [
+      difference('tone', 'mids (500 Hz-2 kHz)', 'Mids (500 Hz-2 kHz): -8.3 dB against -10.0 dB (+1.7 dB).'),
+      difference('tone', 'bass (60-200 Hz)', 'Bass (60-200 Hz): -3.4 dB against -1.9 dB (-1.5 dB).'),
+      difference('tone', 'centre', 'Centre: 1.4 kHz against 1.2 kHz (+0.22 octaves).'),
+      difference('stereo', 'width: mids (500 Hz-2 kHz)', 'Width: mids (500 Hz-2 kHz): -10.0 dB against -14.0 dB (+4.0 dB).'),
+    ],
+    faults: ['Clicks: 1 after (at bar 2, beat 3), none before.'],
+    spectrum: { freqs: [], changeDb: [] },
+    skipped: [],
+    notes: [],
+  };
+  const summary = compareListens(before, after, [null, -30], undefined, undefined, { comparison, pictures: [] }).difference.summary;
+  // the mids moved by more than 1 dB of the balance, so the balance says them, and the sound report does not say them again
+  assert.equal(summary.filter((line) => /^mids \(500 Hz-2 kHz\)/i.test(line)).length, 1, summary.join('\n'));
+  assert.ok(summary.includes('mids (500 Hz-2 kHz): +1.7 dB against the whole.'));
+  // the bass moved by less than that of the balance: only the sound report's line gives it
+  assert.equal(summary.filter((line) => /^bass /i.test(line)).length, 1);
+  assert.ok(summary.includes('Bass (60-200 Hz): -3.4 dB against -1.9 dB (-1.5 dB).'));
+  // a width of a region is another measure, and is kept; the faults come before the differences
+  assert.ok(summary.includes('Width: mids (500 Hz-2 kHz): -10.0 dB against -14.0 dB (+4.0 dB).'));
+  assert.ok(summary.indexOf('Clicks: 1 after (at bar 2, beat 3), none before.') > 0);
+  assert.ok(summary.indexOf('Clicks: 1 after (at bar 2, beat 3), none before.') < summary.indexOf('Centre: 1.4 kHz against 1.2 kHz (+0.22 octaves).'));
+});
+
 test('hearing an audio file: at most MAX_HEAR_SECONDS at a time, said in minutes and seconds', async () => {
   const { MAX_HEAR_SECONDS } = await import('../src/audio/hearing/hearingOf.ts');
   const { tooLongToHear } = await import('../src/agent/listenReport.ts');

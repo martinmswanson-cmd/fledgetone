@@ -137,8 +137,11 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
 - `--against <file>`: read this sound against another: an audio file (heard the same way) or a
   saved hearing. `--against-from` and `--against-to` take a stretch of it (of a saved hearing too,
   from its second-by-second measurements: tone, width and loudness only). The comparison is
-  level-matched (the overall level is taken out before the tone is compared) and lists the
-  differences, largest first. Compare like with like: the same kind of stretch, of a similar
+  level-matched (the overall level is taken out before the tone is compared) and lists, after
+  its notes, the kinds of fault the two do not share (`Clicks: 1 in click.wav (at 0:12.50), none
+  in clean.wav.`) and then the differences, largest first; when nothing differs by more than a
+  step, it says so. What only one of the two has (a band's movement, a width down at the floor)
+  is said as that, not compared as a number. Compare like with like: the same kind of stretch, of a similar
   length (a short loud stretch reads brighter, louder and more squashed than a whole track, and
   it says so when the lengths differ).
 - `--save <file.json>`: save the hearing: measurements only, never the audio. A saved hearing

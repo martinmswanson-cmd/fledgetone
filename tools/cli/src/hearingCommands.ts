@@ -466,11 +466,11 @@ export function writeSavedHearing(path: string, saved: SavedHearing): void {
   writeFileSafe(path, JSON.stringify(saved) + '\n');
 }
 
-/** The lines a hearing adds to what a command prints: the sound in words, what it was read against, the pictures written. */
+/** The lines a hearing adds to what a command prints: the sound in words, what it was read against (the notes, the faults the two do not share, the differences), the pictures written. */
 export function hearingLines(h: { sound?: SoundReport; against?: SoundComparison; pictures?: ReadonlyArray<{ path: string; shows: string }> }, againstLabel?: string, heading = 'Sound'): string[] {
   const lines: string[] = [];
   if (h.sound) lines.push(`${heading}:`, ...h.sound.words.map((w) => `  ${w}`));
-  if (h.against) lines.push(`Against ${againstLabel ?? 'the other sound'}:`, ...h.against.notes.map((n) => `  ${n}`), ...h.against.differences.map((d) => `  ${d.words}`));
+  if (h.against) lines.push(`Against ${againstLabel ?? 'the other sound'}:`, ...h.against.notes.map((n) => `  ${n}`), ...(h.against.faults ?? []).map((f) => `  ${f}`), ...h.against.differences.map((d) => `  ${d.words}`));
   if (h.pictures?.length) lines.push('Pictures:', ...h.pictures.map((p) => `  ${p.path}: ${p.shows}`));
   return lines;
 }
