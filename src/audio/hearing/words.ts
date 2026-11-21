@@ -8,13 +8,13 @@ import { LOW_SIDE_LIMIT_DB } from '../mixCheck';
 import { MOVEMENT_BANDS } from './movement';
 import type { Modulation, Place, SoundReport } from './types';
 
-const one = (x: number) => (Object.is(Math.round(x * 10) / 10, -0) ? 0 : x).toFixed(1);
-const two = (x: number) => (Object.is(Math.round(x * 100) / 100, -0) ? 0 : x).toFixed(2);
-const signed = (x: number) => (x >= 0 ? `+${one(x)}` : one(x));
-const percent = (share: number) => `${Math.round(share * 100)}%`;
+export const one = (x: number) => (Object.is(Math.round(x * 10) / 10, -0) ? 0 : x).toFixed(1);
+export const two = (x: number) => (Object.is(Math.round(x * 100) / 100, -0) ? 0 : x).toFixed(2);
+export const signed = (x: number) => (x >= 0 ? `+${one(x)}` : one(x));
+export const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 /** "650 Hz", "3.1 kHz" */
-function freqText(hz: number): string {
+export function freqText(hz: number): string {
   const whole = Math.round(hz);
   return whole >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${whole} Hz`;
 }
