@@ -150,7 +150,9 @@ the hearing of the file: `file`, `range` (the stretch, seconds), `seconds`, `cha
 the loudness numbers rounded to a tenth (`lufs`, `shortTermMaxLufs`, `truePeakDbtp`, `crestDb`),
 `regions`, a `note` when something was done to measure it, and, when asked, `sound`, `against`
 and `pictures` (each with its `path`). `listen --json` is its report with `sound`, `against` and
-`pictures` added. Mistakes in these options are said in one line before anything is heard: a
+`pictures` added. The per-second grids (`sound.along`: the spectrum, loudness and pitch classes
+of each second, about 2 KB a second) are in a saved hearing only (`--save`, written on one
+line); `--json` leaves them out. Mistakes in these options are said in one line before anything is heard: a
 time that isn't one, a `--close` outside the bars or past the end of the file, a `--pictures` or
 `--save` place that can't be written to; the file to read against is heard only once the rest is
 checked.

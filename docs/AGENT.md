@@ -283,7 +283,10 @@ chorus with a chorus, a drum loop with a drum loop). With a suggestion, `listen`
 version, and the before and after are compared with each other (`difference.sound`).
 
 `save` writes a new `.json` file (one that already exists is never written over) holding the
-measurements, never the audio. A saved hearing goes stale: when the rules of a group change in a
+measurements, never the audio. Only a saved hearing holds the per-second grids (`sound.along`: the
+spectrum of the middle and the sides, the loudness and the pitch classes of each second, about 2 KB
+a second), which a stretch of it is read from. Replies leave `along` out, of the mix, of each
+track, and of a before and an after. A saved hearing goes stale: when the rules of a group change in a
 later version, that group can't be compared with it, the answer says so, and the hearing must be
 made again from the audio.
 

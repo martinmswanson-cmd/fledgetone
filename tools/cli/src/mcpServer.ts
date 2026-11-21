@@ -30,7 +30,7 @@ import { agentText, cleanForAgent } from '../../../src/agent/agentText';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED, portTakenMessage } from './bridgeServer';
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
-import { AUDIO_TYPES, UsageError, againstOf, checkProblems, hearAudioFile, hearPlan, suggestionIdBase, type Flags } from './commands';
+import { AUDIO_TYPES, UsageError, againstOf, checkProblems, hearAudioFile, hearPlan, suggestionIdBase, withoutGrids, type Flags } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
 import { Conversation, CONVERSATION_INSTRUCTIONS, registerConversationTools } from './conversation';
 import { audioFormatOf, opsToHear, listenPlan, listenSongFile, renderSongFile, secondsBetween, songEndBar, type ListenHearing } from './renderCommands';
@@ -199,8 +199,12 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     const out = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, underRoot(v)]));
     return isPic(value) ? { ...out, path: inRoot(value.path) } : out;
   };
-  /** A hearing's report as text (every picture named with its path), then up to six of its pictures as images, 3 MB in all. */
-  const withImages = (report: Record<string, unknown>, shown: readonly Pic[]): CallToolResult => {
+  /**
+   * A hearing's report as text (every picture named with its path; every sound report without its
+   * per-second grids, which a saved hearing keeps), then up to six of its pictures as images, 3 MB in all.
+   */
+  const withImages = (heard: Record<string, unknown>, shown: readonly Pic[]): CallToolResult => {
+    const report = withoutGrids(heard);
     const { attached, notAttached } = pickImages(shown.map((p) => ({ ...p, size: p.bytes ?? statSync(p.path).size })));
     const images = attached.map((p) => ({ type: 'image' as const, data: readFileSync(p.path).toString('base64'), mimeType: 'image/png' as const }));
     const result = ok(shown.length ? { ...(underRoot(report) as object), pictureImages: { attached: attached.map((p) => inRoot(p.path)), notAttached: notAttached.map((p) => inRoot(p.path)) } } : underRoot(report));

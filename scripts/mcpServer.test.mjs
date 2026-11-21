@@ -319,6 +319,36 @@ test('hear_audio: the report as text, its pictures as image content, one at a ti
   }
 });
 
+test('hear_audio: a reply leaves the per-second grids out (60 seconds in under 12,000 characters); a saved hearing keeps them, written compactly', { skip, timeout: 120_000 }, async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(work, 'minute.wav'), sineWav(60));
+  const client = await connect();
+  try {
+    const r = await client.callTool({ name: 'hear_audio', arguments: { file: 'minute.wav', sound: true, save: 'minute.hearing.json' } });
+    assert.ok(!r.isError, text(r));
+    const reply = text(r);
+    assert.ok(reply.length < 12_000, `the reply is ${reply.length} characters`);
+    const report = JSON.parse(reply);
+    assert.ok(report.sound.words.length > 0 && report.sound.tone);
+    assert.equal('along' in report.sound, false, 'no per-second grids in a reply');
+    // The saved hearing has them, on one line
+    const savedText = readFileSync(join(work, 'minute.hearing.json'), 'utf8');
+    assert.equal(savedText.trimEnd().split('\n').length, 1, 'written without indentation');
+    const saved = JSON.parse(savedText);
+    assert.equal(saved.sound.along.mid.length, 60);
+    assert.equal(saved.sound.along.lufs.length, 60);
+    // And a stretch of it can still be read against
+    const against = await client.callTool({ name: 'hear_audio', arguments: { file: 'minute.wav', against: 'minute.hearing.json', againstFromSeconds: 10, againstToSeconds: 40 } });
+    assert.ok(!against.isError, text(against));
+    const read = JSON.parse(text(against));
+    assert.ok(text(against).length < 12_000, `the reply against a saved hearing is ${text(against).length} characters`);
+    assert.ok(read.against.notes.some((n) => /saved measurements of a stretch/.test(n)));
+    assert.equal(JSON.stringify(read).includes('"along"'), false);
+  } finally {
+    await client.close();
+  }
+});
+
 test('listen with a song file: the options give pictures as images, the mix first', { skip, timeout: 180_000 }, async (t) => {
   const br = await import('../tools/cli/src/browserRender.ts');
   if (!existsSync(join(ROOT, 'dist-runtime/fledgetone-render.js'))) return t.skip('the renderer is not built (npm run build:runtime)');

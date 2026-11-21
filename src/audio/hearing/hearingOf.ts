@@ -122,7 +122,8 @@ export function detailRanges(fromSeconds: number, toSeconds: number, bars?: read
 export function hearingOf(channels: readonly Float32Array[], sampleRate: number, opts: HearingOptions): Hearing {
   const { bars, closeUps, pictures, prefix = '', small, against, ...hear } = opts;
   const place = opts.place ?? (bars && bars.length > 0 ? placeIn(bars) : undefined);
-  const sound = hearSound(channels, sampleRate, place ? { ...hear, place } : hear);
+  // (a small hearing draws no level or pitch-class picture and is never saved: it has no per-second grids)
+  const sound = hearSound(channels, sampleRate, { ...hear, ...(place ? { place } : {}), ...(small ? { along: false } : {}) });
   if (!pictures) return { sound, pictures: [] };
 
   // draw from what hearSound measured: at most two channels, NaN and Infinity as 0
@@ -151,7 +152,7 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
     return { sound, pictures: out };
   }
   if (quiet) {
-    out.push(levelPicture(heard, sampleRate, whole, sound.along.lufs, named('level')));
+    out.push(levelPicture(heard, sampleRate, whole, sound.along?.lufs ?? [], named('level')));
     return { sound, pictures: out };
   }
 
@@ -160,9 +161,9 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
     out.push(...spectrogramPictures(mid, null, sampleRate, axis, { name: named(d.name), title: `Spectrogram: ${rangeText(axis)}` }, null));
   }
   if (stereoPicture) out.push(stereoPicture);
-  out.push(levelPicture(heard, sampleRate, whole, sound.along.lufs, named('level')));
+  out.push(levelPicture(heard, sampleRate, whole, sound.along?.lufs ?? [], named('level')));
   spectrum();
-  if (sound.along.chroma.length > 0) out.push(chromaPicture(sound.along.chroma, sound.along.stepSeconds, whole, named('chroma')));
+  if (sound.along && sound.along.chroma.length > 0) out.push(chromaPicture(sound.along.chroma, sound.along.stepSeconds, whole, named('chroma')));
 
   const taken = new Set(out.map((p) => p.name));
   const closeUp = (at: Place, where: string) => {

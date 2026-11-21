@@ -426,6 +426,12 @@ test('listen --sound --pictures --close --save: the sound, its pictures written 
   assert.equal(tracks.code, 0, tracks.stderr);
   const each = JSON.parse(tracks.stdout).tracks;
   for (const track of each) assert.ok(existsSync(join(tmp, 'track-pictures', `track-${track.id}-spectrogram.png`)), track.id);
+  // --json leaves the per-second grids out, of the mix and of every track; the saved hearing keeps them
+  assert.equal(r.stdout.includes('"along"'), false, 'no grids in the mix');
+  assert.equal(tracks.stdout.includes('"along"'), false, 'no grids in any track');
+  assert.ok(each.every((track) => track.sound && track.sound.words), 'each track is heard');
+  assert.ok(tracks.stdout.length < 60_000, `listen --per-track --json of 2 bars is ${tracks.stdout.length} characters`);
+  assert.ok(hearing.sound.along.mid.length >= 1, 'the saved hearing has its grids');
 });
 
 test('listen --suggestion --sound: the sound difference and the difference picture; --against compares the after version', { skip: browserSkip, timeout: 300_000 }, async () => {

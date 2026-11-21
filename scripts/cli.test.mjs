@@ -493,6 +493,7 @@ test('measure --sound --pictures --save: the sound report, its pictures as PNG f
   const m = JSON.parse(r.stdout);
   near(m.sound.tone.centreHz, 1000, 30, 'centre');
   assert.ok(Array.isArray(m.sound.words) && m.sound.words.length > 0);
+  assert.equal('along' in m.sound, false, '--json leaves the per-second grids out');
   const spectrogram = join(pictures, 'spectrogram.png');
   assert.ok(readFileSync(spectrogram).subarray(0, 8).equals(PNG_SIGNATURE), 'a PNG file');
   assert.ok(m.pictures.some((p) => p.path === spectrogram && p.kind === 'spectrogram' && !('id' in p)), JSON.stringify(m.pictures.map((p) => p.path)));
@@ -505,6 +506,9 @@ test('measure --sound --pictures --save: the sound report, its pictures as PNG f
   const sampleData = (x) => (Array.isArray(x) ? x.some(sampleData) : x && typeof x === 'object' ? Object.entries(x).some(([k, v]) => (k === 'channels' && typeof v === 'object') || sampleData(v)) : false);
   assert.ok(!sampleData(JSON.parse(text)), 'no channels of samples');
   assert.ok(Buffer.byteLength(text) < 2 * 1024 * 1024, `${Buffer.byteLength(text)} bytes`);
+  // It keeps the per-second grids (what a stretch of it is read from), and is written without indentation
+  assert.equal(hearing.sound.along.mid.length, 30);
+  assert.equal(text.trimEnd().split('\n').length, 1, 'one line');
   // In plain words: the report's lines, then the sound, then the pictures
   const words = await cli('measure', join(dir, 'a.wav'), '--pictures', pictures);
   assert.equal(words.code, 0, words.stderr);

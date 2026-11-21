@@ -277,20 +277,22 @@ function sideOverMid(freqs: number[], mid: number[], side: number[], lo: number,
 
 /** A report of the part of a saved one from `fromSeconds` up to `toSeconds`, from its "along" rows alone. */
 export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number): SoundReport {
-  const step = r.along.stepSeconds;
-  if (!Number.isFinite(fromSeconds) || Number.isNaN(toSeconds)) throw new RangeError('that stretch holds nothing');
+  // (a reply's report has no grids: only a saved hearing can give a stretch)
+  const along = r.along;
+  if (!along || !Number.isFinite(fromSeconds) || Number.isNaN(toSeconds)) throw new RangeError('that stretch holds nothing');
+  const step = along.stepSeconds;
   const from = Math.max(0, fromSeconds);
   const to = Math.min(toSeconds, r.seconds);
   const rows: number[] = [];
-  for (let i = 0; i < r.along.mid.length; i++) {
+  for (let i = 0; i < along.mid.length; i++) {
     const at = i * step;
     if (at >= from && at < to) rows.push(i);
   }
   if (rows.length === 0) throw new RangeError('that stretch holds nothing');
   const stretch = { fromSeconds: from, toSeconds: to, fromSaved: true };
 
-  const freqs = r.along.freqs;
-  const stereo = r.channels === 2 && rows.every((i) => r.along.side[i]?.length === freqs.length);
+  const freqs = along.freqs;
+  const stereo = r.channels === 2 && rows.every((i) => along.side[i]?.length === freqs.length);
   const average = (pick: (i: number) => number[] | undefined): number[] =>
     freqs.map((_, k) => {
       let p = 0;
@@ -298,8 +300,8 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
       p /= rows.length;
       return p > 1e-20 ? round1(10 * Math.log10(p)) : FLOOR_DB;
     });
-  const mid = average((i) => r.along.mid[i]);
-  const side = stereo ? average((i) => r.along.side[i]) : freqs.map(() => FLOOR_DB);
+  const mid = average((i) => along.mid[i]);
+  const side = stereo ? average((i) => along.side[i]) : freqs.map(() => FLOOR_DB);
   const spectrum: BandSpectrum = { freqs, mid, side };
 
   const bands = totalBands(spectrum);
@@ -347,7 +349,7 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
     peaks: [],
   } as unknown as Tone;
 
-  const lufs = powerMean(rows.map((i) => r.along.lufs[i] ?? null));
+  const lufs = powerMean(rows.map((i) => along.lufs[i] ?? null));
   const dynamics: Dynamics = { lufs: lufs === null ? null : round1(lufs), shortTermMaxLufs: null, truePeakDbtp: null, crestDb: null, rangeLu: null };
 
   const first = rows[0] * step;
@@ -365,10 +367,10 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
     along: {
       stepSeconds: step,
       freqs,
-      mid: rows.map((i) => r.along.mid[i]),
-      side: rows.map((i) => r.along.side[i] ?? []),
-      lufs: rows.map((i) => r.along.lufs[i] ?? null),
-      chroma: rows.map((i) => r.along.chroma[i] ?? []),
+      mid: rows.map((i) => along.mid[i]),
+      side: rows.map((i) => along.side[i] ?? []),
+      lufs: rows.map((i) => along.lufs[i] ?? null),
+      chroma: rows.map((i) => along.chroma[i] ?? []),
     },
   };
   if (stereo) {

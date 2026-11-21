@@ -190,6 +190,16 @@ test('a short hit gets no spectrum picture; small makes only the overview and th
   const small = hearingOf([S.pink(3, -18, 1), S.pink(3, -18, 2)], 48000, { engine: 't', pictures: true, small: true, prefix: 'bass-' });
   assert.deepEqual(small.pictures.map((p) => p.name), ['bass-spectrogram', 'bass-spectrum']);
 });
+test('a small hearing (a track of a per-track listen) has no per-second grids; a full one keeps them', () => {
+  const x = [S.pink(3, -18, 1), S.pink(3, -18, 2)];
+  const small = hearingOf(x, 48000, { engine: 't', small: true });
+  assert.equal('along' in small.sound, false, 'a small hearing computes no grids');
+  assert.ok(small.sound.tone && small.sound.words.length > 0, 'the rest of the report is there');
+  const full = hearingOf(x, 48000, { engine: 't' });
+  assert.equal(full.sound.along.mid.length, 3);
+  const { along: _along, ...rest } = full.sound;
+  assert.deepEqual(small.sound, rest, 'and is otherwise the same report');
+});
 test('the spectrum picture is drawn from the report itself, with what it is set against', () => {
   const a = [S.pink(3, -18, 1)]; const b = hearingOf([S.pink(3, -24, 2)], 48000, { engine: 't' }).sound;
   const h = hearingOf(a, 48000, { engine: 't', pictures: true, against: { sound: b, label: 'the reference' } });

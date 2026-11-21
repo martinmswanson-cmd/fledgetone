@@ -22,6 +22,8 @@ export interface HearOptions {
   /** The song's own key as the app names it: the words then do not guess one. */
   key?: string;
   place?: (seconds: number) => Place;
+  /** false: the per-second grids (`along`) are not measured, and the report has none. */
+  along?: boolean;
 }
 
 /** Shorter than this, a sound is too short for the tone, texture, movement, stereo and pitch groups. */
@@ -92,13 +94,14 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
   };
   const silent = !heard.some((c) => c.some((v) => v !== 0));
   if (silent) {
-    const report = { ...head, silent: true, faults: [], along: emptyAlong() };
+    const report = { ...head, silent: true, faults: [], ...(opts.along !== false ? { along: emptyAlong() } : {}) };
     return { ...report, words: ['It is silent.'] };
   }
 
   const faults = faultsOf(heard, sampleRate).map((f) => (f.seconds === null ? f : { ...f, at: opts.place ? opts.place(f.seconds) : { seconds: f.seconds } }));
   const { shortTerm: _shortTerm, ...dynamics } = dynamicsOf(heard, sampleRate);
-  const report: Omit<SoundReport, 'words'> = { ...head, silent: false, dynamics, attack: attackOf(heard, sampleRate), faults, along: emptyAlong() };
+  const grids = opts.along !== false;
+  const report: Omit<SoundReport, 'words'> = { ...head, silent: false, dynamics, attack: attackOf(heard, sampleRate), faults, ...(grids ? { along: emptyAlong() } : {}) };
 
   if (length / sampleRate >= MIN_SECONDS) {
     const tone = toneOf(heard, sampleRate);
@@ -108,7 +111,7 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
     const stereo = stereoOf(heard, sampleRate, tone.spectrum);
     if (stereo) report.stereo = stereo;
     report.pitch = pitchOf(heard, sampleRate, opts.tempoBpm === undefined ? undefined : { bpm: opts.tempoBpm });
-    report.along = alongOf(heard, sampleRate);
+    if (grids) report.along = alongOf(heard, sampleRate);
   }
   return { ...report, words: soundWords(report) };
 }

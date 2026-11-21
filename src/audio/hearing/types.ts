@@ -103,7 +103,11 @@ export interface Fault {
   detail: string;
 }
 
-/** The sound over time, on a coarse grid: spectra of middle and sides, loudness and pitch classes. */
+/**
+ * The sound over time, on a coarse grid: spectra of middle and sides, loudness and pitch classes.
+ * Row i covers the step that starts i steps after the start of the audio heard (after the start of
+ * the stretch, `settings.stretch.fromSeconds`, when a stretch of a file was heard).
+ */
 export interface Along {
   stepSeconds: number;
   freqs: number[];
@@ -129,6 +133,11 @@ export interface SoundReport {
   stereo?: Stereo;
   pitch?: Pitch;
   faults: Fault[];
-  along: Along;
+  /**
+   * The per-second grids: what the pictures are drawn from and what a stretch of a saved hearing is
+   * read from. A saved hearing keeps them; a reply and `--json` leave them out (they are about 2 KB a
+   * second), and a small hearing (one track of a per-track listen) never has them.
+   */
+  along?: Along;
   words: string[];
 }

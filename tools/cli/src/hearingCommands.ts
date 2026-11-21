@@ -16,7 +16,7 @@ import { encodePng } from '../../../src/audio/hearing/png';
 import type { PictureInfo } from '../../../src/audio/hearing/pictures';
 import type { SoundReport } from '../../../src/audio/hearing/types';
 import { tenth, tooLongToHear, wavHeader, type AudioHearing, type KeptPicture } from '../../../src/agent/listenReport';
-import { readJson, readWav, sameFile, WavFormatError, writeFileSafe, writeJson } from './files';
+import { readJson, readWav, sameFile, WavFormatError, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions, type RenderSession } from './browserRender';
 import { APP_VERSION } from './meta';
 import { printErr, safeText } from './print';
@@ -430,7 +430,7 @@ export async function hearAudioFile(plan: HearPlan, browser: BrowserOptions): Pr
   }
   if (plan.save && out.sound) {
     const saved: SavedHearing = { fledgetoneHearing: HEARING_FILE, of: name, range: { fromSeconds: out.range.fromSeconds, toSeconds: out.range.toSeconds }, sound: out.sound };
-    writeJson(plan.save, saved);
+    writeSavedHearing(plan.save, saved);
     out.written.push(plan.save);
   }
   return out;
@@ -444,6 +444,22 @@ export async function againstOf(path: string, browser: BrowserOptions, stretch: 
   if (isJson(path)) return savedAgainst(path, stretch);
   const heard = await hearAudioFile({ file: path, ...definedStretch(stretch), sound: true, closeUps: [] }, browser);
   return { sound: heard.sound!, label: basename(path) };
+}
+
+/**
+ * A result as a reply or `--json` gives it: every sound report in it without its per-second grids
+ * (`along`, about 2 KB a second), which only a saved hearing keeps. Nothing else is changed.
+ */
+export function withoutGrids<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withoutGrids) as T;
+  if (!value || typeof value !== 'object') return value;
+  const isSound = 'along' in value && 'versions' in value && 'words' in value;
+  return Object.fromEntries(Object.entries(value).filter(([k]) => !(isSound && k === 'along')).map(([k, v]) => [k, withoutGrids(v)])) as T;
+}
+
+/** A saved hearing written to `path`: on one line (its grids are most of it, and indented they are several times the size). */
+export function writeSavedHearing(path: string, saved: SavedHearing): void {
+  writeFileSafe(path, JSON.stringify(saved) + '\n');
 }
 
 /** The lines a hearing adds to what a command prints: the sound in words, what it was read against, the pictures written. */

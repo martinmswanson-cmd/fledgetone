@@ -16,11 +16,11 @@ import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/sugg
 import { applyOps, checkOpsShape, OPS_VERSION } from '../../../src/agent/ops';
 import { tooLongToHear, type KeptPicture, type ListenComparison, type ListenReport } from '../../../src/agent/listenReport';
 import { HEARING_FILE, type SavedHearing } from '../../../src/audio/hearing/hearingOf';
-import { readJson, readSong, sameFile, writeFileSafe, writeJson } from './files';
+import { readJson, readSong, sameFile, writeFileSafe } from './files';
 import { withRenderer, type BrowserOptions, type RenderSession } from './browserRender';
 import { printOut } from './print';
 import { barRange, loudnessText, sayLeftOut, suggestionIdBase } from './commands';
-import { againstFrom, againstInPage, browserOptions, hearingFlags, hearingLines, takePictures, UsageError, type AgainstSound, type Flags, type WrittenPicture } from './hearingCommands';
+import { againstFrom, againstInPage, browserOptions, hearingFlags, hearingLines, takePictures, UsageError, withoutGrids, writeSavedHearing, type AgainstSound, type Flags, type WrittenPicture } from './hearingCommands';
 
 export { browserOptions } from './hearingCommands';
 import { maxOf } from '../../../src/support/minMax';
@@ -357,7 +357,7 @@ export async function listenSongFile(
   if (h?.save && mix) {
     const fromSeconds = secondsBetween(pictured, 1, fromBar);
     const saved: SavedHearing = { fledgetoneHearing: HEARING_FILE, of: basename(path), range: { fromSeconds, toSeconds: fromSeconds + secondsBetween(pictured, fromBar, toBar), fromBar, toBar }, sound: mix };
-    writeJson(h.save, saved);
+    writeSavedHearing(h.save, saved);
   }
   return result;
 }
@@ -394,7 +394,8 @@ export async function listen(args: string[], flags: Flags): Promise<number> {
   const againstLabel = plan.against ? basename(plan.against) : undefined;
   const result = await listenSongFile(plan.song, { fromBar: plan.fromBar, toBar: plan.toBar, perTrack: plan.perTrack, with: hearWith, ...(hearing ? { hearing } : {}) }, browserOptions(flags, 'Listening'));
   if (flags.json) {
-    say(JSON.stringify(result, null, 2));
+    // (the per-second grids are for a saved hearing and the pictures: --json leaves them out)
+    say(JSON.stringify(hearing ? withoutGrids(result) : result, null, 2));
     return 0;
   }
   const saved = plan.save ? [`Saved the hearing in ${plan.save}.`] : [];

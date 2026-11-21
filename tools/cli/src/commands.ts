@@ -20,11 +20,11 @@ import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/sugg
 import { fingerprint, firstDifference, stableJson } from '../../../src/agent/fingerprint';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { readJson, readSong, readWav, sameFile, WavFormatError, writeSong } from './files';
-import { browserOptions, hearAudioFile, hearingLines, hearPlan, isWav, measureAudio, UsageError, type Flags } from './hearingCommands';
+import { browserOptions, hearAudioFile, hearingLines, hearPlan, isWav, measureAudio, UsageError, withoutGrids, type Flags } from './hearingCommands';
 import { APP_VERSION } from './meta';
 import { printErr, printOut } from './print';
 
-export { AUDIO_TYPES, againstOf, hearAudioFile, hearingFlags, hearingLines, hearPlan, measureAudio, secondsArg, takePictures, UsageError, writePictures } from './hearingCommands';
+export { AUDIO_TYPES, againstOf, hearAudioFile, hearingFlags, hearingLines, hearPlan, measureAudio, secondsArg, takePictures, UsageError, withoutGrids, writePictures } from './hearingCommands';
 export type { Flags, HeardFile, HearingFlags, HearPlan, WrittenPicture } from './hearingCommands';
 type Out = (text: string) => void;
 
@@ -344,7 +344,8 @@ export async function measure(args: string[], flags: Flags): Promise<number> {
   }
   const heard = await hearAudioFile(plan, browserOptions(flags, 'Hearing'));
   // (what was written is in the result already: the pictures by path, the saved file as asked)
-  if (flags.json) json({ ...heard, written: undefined });
+  // (and the per-second grids are for a saved hearing and the pictures: --json leaves them out)
+  if (flags.json) json(withoutGrids({ ...heard, written: undefined }));
   else say([...measureText(plan.file, heard), ...hearingLines(heard, plan.against && basename(plan.against)), ...(plan.save ? [`Saved the hearing in ${plan.save}.`] : [])].join('\n'));
   return 0;
 }
