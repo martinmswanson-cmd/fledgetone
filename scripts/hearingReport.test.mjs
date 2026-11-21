@@ -64,6 +64,16 @@ test('a fault is placed in words', () => {
   assert.deepEqual(r.faults[0].at, { seconds: r.faults[0].seconds, bar: 9, beat: 3 });
 });
 
+test('a known key is kept out of the words, and the estimate stays in the report', () => {
+  const l = S.saw(110, 3, -6);
+  const guessed = hear([l, l]);
+  const known = hear([l, l], { key: 'D minor' });
+  assert.ok(guessed.pitch.key);
+  assert.deepEqual(known.pitch.key, guessed.pitch.key);
+  assert.equal(known.settings.knownKey, 'D minor');
+  assert.ok(!known.words.some((w) => w.startsWith('Sounds in')));
+});
+
 test('a fault without a place function is placed by its seconds', () => {
   const x = S.mix(S.sine(110, 4, -12), S.sine(440, 4, -18));
   x[96000] += 0.5;
@@ -246,12 +256,37 @@ test('words: tone', () => {
   ]);
 });
 
+test('words: at most three narrow peaks, then one line for the rest', () => {
+  const peaks = (n) => Array.from({ length: n }, (_, i) => ({ hz: [3000, 440, 1200, 473, 595][i], overDb: [12, 7, 9, 5, 6][i] }));
+  const peakWords = (n) => words({ tone: tone({ peaks: peaks(n) }) });
+  const five = peakWords(5);
+  assert.deepEqual(five, [
+    'A narrow peak at 3.0 kHz stands 12.0 dB over its surroundings (a resonance, or a held note).',
+    'A narrow peak at 1.2 kHz stands 9.0 dB over its surroundings (a resonance, or a held note).',
+    'A narrow peak at 440 Hz stands 7.0 dB over its surroundings (a resonance, or a held note).',
+    '2 more narrow peaks: 595 Hz, 473 Hz.',
+  ]);
+  assert.deepEqual(peakWords(4).slice(3), ['1 more narrow peak: 473 Hz.']);
+  assert.equal(peakWords(4).length, 4);
+  assert.equal(peakWords(3).length, 3);
+  assert.ok(peakWords(3).every((w) => w.startsWith('A narrow peak')));
+  assert.deepEqual(peakWords(0), []);
+});
+
+test('words: a known key gives no key line, a guessed one does', () => {
+  const key = { name: 'G maj', confidence: 0.9, runnerUp: 'C maj' };
+  assert.deepEqual(words({ pitch: pit({ key }) }), ['Sounds in G major (or C major).']);
+  assert.deepEqual(words({ pitch: pit({ key }), settings: { sampleRate: 48000, knownKey: 'D minor' } }), []);
+});
+
 test('words: texture', () => {
   assert.deepEqual(words({ texture: texture({ flatness: 0.41 }) }), ['Noisy (flatness 0.41).']);
   assert.deepEqual(words({ texture: texture({ flatness: 0.3 }) }), []);
   assert.deepEqual(words({ texture: texture({ flatness: 0.01 }) }), ['Tonal (flatness 0.01).']);
   assert.deepEqual(words({ texture: texture({ flatness: 0.02 }) }), []);
-  assert.deepEqual(words({ texture: texture({ roughness: 0.52 }) }), ['Gritty: fast beating inside its bands (roughness 0.52).']);
+  assert.deepEqual(words({ texture: texture({ roughness: 0.52 }) }), ['Rough: fast beating inside its bands (roughness 0.52); distortion, notes close together and noise all read this way.']);
+  assert.deepEqual(words({ texture: texture({ roughness: 0.48 }) }), ['Rough: fast beating inside its bands (roughness 0.48); distortion, notes close together and noise all read this way.']);
+  assert.deepEqual(words({ texture: texture({ roughness: 0.2 }) }), []);
   assert.deepEqual(words({ texture: texture({ roughness: 0.35 }) }), []);
   assert.deepEqual(words({ texture: texture({ roughness: 0.03 }) }), ['Smooth (roughness 0.03).']);
   assert.deepEqual(words({ texture: texture({ roughness: 0.08 }) }), []);

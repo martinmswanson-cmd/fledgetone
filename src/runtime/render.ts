@@ -25,6 +25,7 @@
 import { parseProject, safeFileName, type ProjectSnapshot } from '../store/project';
 import { importEmbeddedSounds, withLibrarySamples } from '../audio/soundLibrary';
 import { withCheckedSounds } from '../audio/soundIds';
+import { detectKey } from '../store/songKey';
 import { DEFAULT_MASTER_FX, defaultMasterSettings, normalizeTrackFx } from '../store/timelineTypes';
 import { pluginFamilies } from '../audio/plugins/pluginSources';
 import { preloadFamily } from '../audio/plugins/builtinHost';
@@ -176,6 +177,11 @@ function songEnd(p: ProjectSnapshot): number {
   return maxOf(1, p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
 }
 
+/** The song's key as `info` names it (from its notes), for the words not to guess one; nothing when it has none. */
+const songKeyOf = (p: Pick<ProjectSnapshot, 'clips' | 'tracks'>): { key?: string } => {
+  const key = detectKey(p.clips, p.tracks);
+  return key ? { key: key.name } : {};
+};
 const tempoOf = (p: Pick<ProjectSnapshot, 'bpm' | 'tempoPoints'>) => ({ bpm: p.bpm, points: p.tempoPoints ?? [] });
 /** The song's meter: its groove feels count from its measures (there's no store here to keep the studio's). */
 const meterOf = (p: Pick<ProjectSnapshot, 'meter' | 'meterPoints'>): MeterMap => ({ base: p.meter ?? FOUR_FOUR, points: p.meterPoints ?? [] });
@@ -398,7 +404,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   const hearing = opts.sound || opts.pictures;
   const spans = hearing ? hearingBars(p, fromBar, toBar) : undefined;
   const hearOpts: HearingOptions | undefined = hearing
-    ? { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, place: songPlaces(tempoOf(p), meterOf(p), fromBar, toBar), pictures: !!opts.pictures }
+    ? { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), ...songKeyOf(p), bars: spans, place: songPlaces(tempoOf(p), meterOf(p), fromBar, toBar), pictures: !!opts.pictures }
     : undefined;
   if (opts.perTrack) {
     tracks = [];

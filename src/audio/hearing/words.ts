@@ -63,15 +63,19 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
     else if (tone.tiltDbPerOctave < -3) out.push(`Its weight is toward the bottom (${signed(tone.tiltDbPerOctave)} dB an octave).`);
     if (tone.subVsBassDb > 3) out.push(`Sub bass stands ${one(tone.subVsBassDb)} dB over the bass.`);
     else if (tone.subVsBassDb < -12) out.push(`There is little sub bass (${one(-tone.subVsBassDb)} dB under the bass).`);
-    for (const p of tone.peaks) {
+    // The three that stand out most, then the rest in one line
+    const peaks = tone.peaks.map((p, i) => ({ p, i })).sort((a, b) => b.p.overDb - a.p.overDb || a.i - b.i).map(({ p }) => p);
+    for (const p of peaks.slice(0, 3)) {
       out.push(`A narrow peak at ${freqText(p.hz)} stands ${one(p.overDb)} dB over its surroundings (a resonance, or a held note).`);
     }
+    const more = peaks.slice(3);
+    if (more.length > 0) out.push(`${more.length} more narrow peak${more.length === 1 ? '' : 's'}: ${more.map((p) => freqText(p.hz)).join(', ')}.`);
   }
 
   if (texture) {
     if (texture.flatness > 0.3) out.push(`Noisy (flatness ${two(texture.flatness)}).`);
     else if (texture.flatness < 0.02) out.push(`Tonal (flatness ${two(texture.flatness)}).`);
-    if (texture.roughness > 0.35) out.push(`Gritty: fast beating inside its bands (roughness ${two(texture.roughness)}).`);
+    if (texture.roughness > 0.35) out.push(`Rough: fast beating inside its bands (roughness ${two(texture.roughness)}); distortion, notes close together and noise all read this way.`);
     else if (texture.roughness < 0.08) out.push(`Smooth (roughness ${two(texture.roughness)}).`);
     if (texture.percussiveShare > 0.6) out.push(`Mostly hits (${percent(texture.percussiveShare)} percussive).`);
     else if (texture.percussiveShare < 0.15) out.push(`Mostly held sound (${percent(texture.percussiveShare)} percussive).`);
@@ -128,7 +132,7 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
       const alt = Math.round(pitch.tempo.alternative) !== Math.round(pitch.tempo.bpm) ? ` (or ${Math.round(pitch.tempo.alternative)})` : '';
       out.push(`About ${Math.round(pitch.tempo.bpm)} bpm${alt}.`);
     }
-    if (pitch.key && pitch.key.confidence >= 0.5) out.push(`Sounds in ${keyText(pitch.key.name)} (or ${keyText(pitch.key.runnerUp)}).`);
+    if (pitch.key && pitch.key.confidence >= 0.5 && r.settings.knownKey === undefined) out.push(`Sounds in ${keyText(pitch.key.name)} (or ${keyText(pitch.key.runnerUp)}).`);
     if (pitch.tuningCents !== null && Math.abs(pitch.tuningCents) > 10) {
       out.push(`Tuned ${Math.abs(pitch.tuningCents)} cents ${pitch.tuningCents > 0 ? 'sharp' : 'flat'} of A440.`);
     }

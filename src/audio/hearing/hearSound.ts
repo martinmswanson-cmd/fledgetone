@@ -19,6 +19,8 @@ import { soundWords } from './words';
 export interface HearOptions {
   engine: string;
   tempoBpm?: number;
+  /** The song's own key as the app names it: the words then do not guess one. */
+  key?: string;
   place?: (seconds: number) => Place;
 }
 
@@ -84,7 +86,7 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
   const head = {
     versions: { ...HEARING_VERSIONS },
     engine: opts.engine,
-    settings: { sampleRate },
+    settings: opts.key === undefined ? { sampleRate } : { sampleRate, knownKey: opts.key },
     seconds: round2(length / sampleRate),
     channels: (heard.length >= 2 ? 2 : 1) as 1 | 2,
   };

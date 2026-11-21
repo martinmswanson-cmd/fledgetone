@@ -117,7 +117,7 @@ export interface Along {
 export interface SoundReport {
   versions: Record<HearingGroup, number>;
   engine: string;
-  settings: { sampleRate: number; stretch?: { fromSeconds: number; toSeconds: number; fromSaved?: boolean } };
+  settings: { sampleRate: number; knownKey?: string; stretch?: { fromSeconds: number; toSeconds: number; fromSaved?: boolean } };
   seconds: number;
   channels: 1 | 2;
   silent: boolean;

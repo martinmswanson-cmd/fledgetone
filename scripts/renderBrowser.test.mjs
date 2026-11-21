@@ -167,6 +167,9 @@ test('listen hears the sound when asked: a sound report and pictures kept as PNG
     const sound = await session.call('listen', song, { fromBar: 1, toBar: 3, sound: true });
     assert.equal(typeof sound.sound, 'object');
     assert.ok(!('pictures' in sound));
+    // The song's key is known, so its words do not guess one (the estimate stays in the report)
+    assert.equal(typeof sound.sound.settings.knownKey, 'string');
+    assert.ok(!sound.sound.words.some((w) => w.startsWith('Sounds in')));
     // Against another sound report: read as the song against it
     const against = await session.call('listen', song, { fromBar: 5, toBar: 7, sound: true, against: { sound: sound.sound, label: 'bars 1 to 2' } });
     assert.match(against.against.notes[0], /the song against bars 1 to 2/);
