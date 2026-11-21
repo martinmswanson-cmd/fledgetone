@@ -176,3 +176,25 @@ test('a big picture of full-colour noise encodes quickly and reads back the same
   assert.ok(ms < 2000, `took ${ms} ms`);
   assert.equal(same(r, png).type, 2);
 });
+test('a line never loops, whatever its coordinates', () => {
+  const M = Number.MAX_VALUE; const big = [M, -M, 1e308, -1e308, 1.797e308, -1.797e308, 1e9, -1e9];
+  const r = R.raster(20, 10, [5, 5, 5]);
+  const calls = [[-1.797e308, 0, 1.797e308, 5], [1e308, 0, -1e308, 5]];
+  for (const v of big) for (let pos = 0; pos < 4; pos++) { const a = [3, 4, 12, 6]; a[pos] = v; calls.push(a); for (const w of big) { const b = [3, 4, 12, 6]; b[pos] = v; b[(pos + 2) % 4] = w; calls.push(b); } }
+  for (const a of calls) {
+    const t0 = performance.now(); R.line(r, ...a, [9, 9, 9]);
+    assert.ok(performance.now() - t0 < 50, `line(${a}) was slow`);
+    assert.equal(r.data.length, 600);
+  }
+  const q = R.raster(20, 10, [0, 0, 0]); R.line(q, -1.797e308, 0, 1.797e308, 5, [9, 9, 9]); R.line(q, 1e308, 0, -1e308, 5, [9, 9, 9]);
+  assert.ok(q.data.every((v) => v === 0 || v === 9));
+});
+test('fillRect gives the same picture as painting pixel by pixel', () => {
+  const rects = [[2, 3, 5, 4], [-3, -2, 8, 6], [15, 7, 10, 10], [-10, -10, 5, 5], [30, 2, 4, 4], [2.4, 2.6, 3.5, 2.5], [4, 4, 0, 3], [4, 4, 3, 0], [4, 4, -3, 3], [4, 4, 3, -3], [-5, -5, 50, 50], [0.5, 0.5, 1, 1], [2.5, 2.5, 1.5, 1.5]];
+  for (const [x, y, w, h] of rects) {
+    const a = R.raster(20, 10, [0, 0, 0]); const b = R.raster(20, 10, [0, 0, 0]);
+    R.fillRect(a, x, y, w, h, [1, 2, 3]);
+    for (let j = Math.round(y); j < Math.round(y) + Math.round(h); j++) for (let i = Math.round(x); i < Math.round(x) + Math.round(w); i++) R.setPixel(b, i, j, [1, 2, 3]);
+    assert.deepEqual(a.data, b.data, `rectangle ${[x, y, w, h]}`);
+  }
+});
