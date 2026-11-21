@@ -7,7 +7,7 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -340,5 +340,77 @@ test('listen with a song file: the options give pictures as images, the mix firs
     assert.match(text(bad), /closeUps/);
   } finally {
     await client.close();
+  }
+});
+
+test('pickImages: six at most, 3 MB at most, in order, the rest named', async () => {
+  const { pickImages } = await import('../tools/cli/src/mcpServer.ts');
+  const MB = 1024 * 1024;
+  const pic = (name, size) => ({ name, size });
+  const names = (l) => l.map((p) => p.name);
+  const six = ['spectrogram', 'difference', 'closeup-a', 'closeup-b', 'level', 'spectrum'].map((n) => pic(n, 1000));
+  let r = pickImages(six);
+  assert.deepEqual(names(r.attached), names(six));
+  assert.equal(r.notAttached.length, 0);
+  // Eight: six attached, two named (the stereo and pitch pictures are only ever named)
+  r = pickImages([...six, pic('stereo', 10), pic('chroma', 10)]);
+  assert.equal(r.attached.length, 6);
+  assert.deepEqual(names(r.notAttached), ['stereo', 'chroma']);
+  // Eight of the ranked kind: the sixth is the last, the rest named
+  r = pickImages(['spectrogram', 'closeup-1', 'closeup-2', 'closeup-3', 'closeup-4', 'closeup-5', 'level', 'spectrum'].map((n) => pic(n, 10)));
+  assert.equal(r.attached.length, 6);
+  assert.deepEqual(names(r.notAttached), ['level', 'spectrum']);
+  // Three of 1.2 MB: two attached, one named
+  r = pickImages([pic('spectrogram', 1.2 * MB), pic('level', 1.2 * MB), pic('spectrum', 1.2 * MB)]);
+  assert.deepEqual(names(r.attached), ['spectrogram', 'level']);
+  assert.deepEqual(names(r.notAttached), ['spectrum']);
+  // One of 4 MB: none attached, named
+  r = pickImages([pic('spectrogram', 4 * MB)]);
+  assert.equal(r.attached.length, 0);
+  assert.deepEqual(names(r.notAttached), ['spectrogram']);
+  // Order kept: given out of order, attached in the reply's order
+  r = pickImages([pic('spectrum', 1), pic('level', 1), pic('closeup-x', 1), pic('difference', 1), pic('spectrogram', 1)]);
+  assert.deepEqual(names(r.attached), ['spectrogram', 'difference', 'closeup-x', 'level', 'spectrum']);
+});
+
+test('hear_audio: pictures need a folder of their own, inside the root, in plain words; a second call into a folder of PNGs works', { skip, timeout: 120_000 }, async () => {
+  const { writeFileSync, mkdirSync } = await import('node:fs');
+  writeFileSync(join(work, 'brief.wav'), sineWav(2));
+  const outside = mkdtempSync(join(tmpdir(), 'fledgetone-mcp-link-'));
+  symlinkSync(outside, join(work, 'linked'));
+  symlinkSync(join(outside, 'nowhere'), join(work, 'dangling'));
+  mkdirSync(join(work, 'mine'));
+  writeFileSync(join(work, 'mine', 'level.png'), 'not really');
+  mkdirSync(join(work, 'otherfiles'));
+  writeFileSync(join(work, 'otherfiles', 'notes.txt'), 'x');
+  const client = await connect();
+  const hear = (pictures) => client.callTool({ name: 'hear_audio', arguments: { file: 'brief.wav', pictures } });
+  try {
+    for (const p of ['linked', 'dangling', '../elsewhere', outside]) {
+      const r = await hear(p);
+      assert.ok(r.isError, p);
+      assert.equal(text(r), `pictures ${p} is outside the folder the helper works in.`);
+    }
+    assert.deepEqual(readdirSync(outside), [], 'nothing written through the links');
+    const file = await hear('brief.wav');
+    assert.equal(text(file), 'pictures brief.wav is a file.');
+    // The root itself holds a song and other files; a folder with a text file in it
+    for (const p of ['.', 'otherfiles']) {
+      const r = await hear(p);
+      assert.ok(r.isError, p);
+      assert.equal(text(r), `pictures needs a folder of its own: ${p} holds other files.`);
+    }
+    assert.equal(readFileSync(join(work, 'otherfiles', 'notes.txt'), 'utf8'), 'x');
+    // Only PNGs in it: fine, and the same folder again
+    const one = await hear('mine');
+    assert.ok(!one.isError, text(one));
+    assert.notEqual(readFileSync(join(work, 'mine', 'level.png'), 'utf8'), 'not really');
+    const two = await hear('mine');
+    assert.ok(!two.isError, text(two));
+    const tools = (await client.listTools()).tools;
+    assert.equal(tools.find((t) => t.name === 'listen').annotations.readOnlyHint, false);
+  } finally {
+    await client.close();
+    rmSync(outside, { recursive: true, force: true });
   }
 });

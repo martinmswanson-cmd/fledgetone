@@ -224,7 +224,8 @@ image content, at most 3 MB of PNG in all: the spectrogram, the difference if th
 close-ups, the level picture, the spectrum. Any picture not attached is named in the text
 (`pictureImages.notAttached`). With `sound` and no `pictures`, no file is written and no image is
 returned. `pictures` names a folder inside `--root` (made if it isn't there; a path that leaves
-`--root` is refused as any file is) and pictures of the same name are written over.
+`--root`, through a link too, is refused) and must be a folder of its own: new, empty or holding only
+`.png` files, since pictures of the same name are written over.
 
 ### What the sound report tells
 
@@ -252,7 +253,8 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
 - `level`: the waveform of each channel against time, from -1 to +1, with each second's loudness
   as a line and the true peak marked.
 - `spectrum`: level against frequency on a log scale; the gold line is the middle, the dim line
-  the sides, and with `against` a blue line is the other sound.
+  the sides, and with `against` a blue line is the other sound (`against` makes no difference
+  picture).
 - `chroma`: the twelve pitch classes (C at the bottom to B at the top) against time; brightness is
   each note's strength.
 - close-ups (`closeUps`, and one for each fault the report names): 0.15 seconds round
@@ -260,7 +262,7 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
   milliseconds from that moment. For a song file a close-up is a bar and its quarter beat, `"9.3"`
   (bar 9, beat 3) or `"9"` (its first beat), counted in bars of four quarter notes whatever the
   meter; for `hear_audio` it is seconds from the start of the file.
-- `difference` (a before-and-after, or `against`): frequency against time, colour is the second
+- `difference` (a before-and-after only): frequency against time, colour is the second
   sound's level minus the first's, red where the second is louder, blue where it is quieter,
   near-black where they match.
 
@@ -297,7 +299,7 @@ These are limits of the tool, measured, not advice:
   each one so it can be looked at.
 - A description does not change with playback level down to about 20 dB quieter. At 40 dB quieter
   some measures (the roughness of drums, the tilt of a pure tone, movement) shift.
-- A spectrogram's windows are about 85 ms long, so a hit is smeared over that long, and a line
+- A spectrogram's windows are about 85 ms long at 48 kHz (each picture's `shows` gives its own), so a hit is smeared over that long, and a line
   below about 40 Hz is drawn a few pixels wide. A close-up is fine in time and coarse in pitch.
   Levels read from colour are within about 1 dB.
 - Key and tempo are estimates; a three-note chord does not settle a key. Give `bpm` to
@@ -322,7 +324,7 @@ These are limits of the tool, measured, not advice:
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`). The helper keeps the last 200 events, and your messages apart from them (an edit never pushes one out); if some after `since` were dropped unread, the answer has `missed: true` and a hint: call `get_messages` and answer its `unanswered` |
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them, and so is the release of one that ends just before it (it renders from up to 8 bars earlier and measures only the range, what the master's limiter and clipper did included; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
-| `listen {file, fromBar, toBar, sound?, pictures?, closeUps?, against?, againstFromSeconds?, againstToSeconds?, save?}` | With a song file, the same, and the sound heard as well: its character in words (`sound`), pictures written to a folder in `--root` (`pictures`) and returned as images (up to six, 3 MB in all, the rest named in the text), moments close up (`closeUps`: `"9.3"` is bar 9, quarter beat 3), the sound read against an audio file or a saved hearing (`against`, and its stretch), and the hearing saved (`save`, a new `.json` file). Not for the studio's live listen (see [Hearing more than loudness](#hearing-more-than-loudness)) |
+| `listen {file, fromBar, toBar, sound?, pictures?, closeUps?, against?, againstFromSeconds?, againstToSeconds?, save?}` | With a song file, the same, and the sound heard as well (it writes only when `pictures` or `save` is given): its character in words (`sound`), pictures written to a folder in `--root` (`pictures`) and returned as images (up to six, 3 MB in all, the rest named in the text), moments close up (`closeUps`: `"9.3"` is bar 9, quarter beat 3), the sound read against an audio file or a saved hearing (`against`, and its stretch), and the hearing saved (`save`, a new `.json` file). Not for the studio's live listen (see [Hearing more than loudness](#hearing-more-than-loudness)) |
 | `hear_audio {file, fromSeconds?, toSeconds?, sound?, pictures?, closeUps?, bpm?, against?, againstFromSeconds?, againstToSeconds?, save?}` | Measures an audio file in `--root` (`.wav`, `.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) and describes its sound in words (`sound`, on unless `false`), with pictures as for `listen`, `closeUps` in seconds, and `bpm` when the tempo is known. At most 15 minutes at a time; it shares `listen`'s one-at-a-time rule and rate limit |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them. Ops that change nothing are refused: "These changes leave the song as it is." (live, the error `no_change`), and no card appears |

@@ -15,8 +15,8 @@
  * The helper enforces the agent's limits (LIMITS in protocol.ts); the studio enforces its own and
  * what the musician allowed.
  */
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -87,6 +87,23 @@ function imageRank(name: string): number {
   return 5;
 }
 
+/**
+ * Which pictures a reply attaches as images: in the order spectrogram, difference, close-ups, level,
+ * spectrum (the others are only named), at most six and 3 MB in all; it stops at the first that
+ * would pass a limit. Everything not attached is returned too, so the text can name it.
+ */
+export function pickImages<T extends { name: string; size: number }>(pictures: readonly T[]): { attached: T[]; notAttached: T[] } {
+  const ranked = pictures.map((p, i) => ({ p, i })).filter(({ p }) => imageRank(p.name) < 5).sort((a, b) => imageRank(a.p.name) - imageRank(b.p.name) || a.i - b.i);
+  const attached: T[] = [];
+  let total = 0;
+  for (const { p } of ranked) {
+    if (attached.length >= MAX_IMAGES || total + p.size > MAX_IMAGE_BYTES) break;
+    attached.push(p);
+    total += p.size;
+  }
+  return { attached, notAttached: pictures.filter((p) => !attached.includes(p)) };
+}
+
 /** The names of the hearing options as the tool's inputs spell them, in place of the command line's. */
 const askedFor = (err: unknown): unknown =>
   err instanceof UsageError
@@ -134,17 +151,38 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     if (wait) throw new Error(`Too many ${what} calls: try again in ${Math.ceil(wait / 100) / 10} seconds.`);
   };
 
-  /** A folder for pictures inside the root (made when a picture is written): the folder it's in, links followed, must be inside the root. */
+  /**
+   * A folder for pictures inside the root (made when a picture is written): links followed, it must
+   * be inside the root, and it must be the pictures' own (new, empty, or holding only .png files),
+   * since pictures of the same names are written over.
+   */
   const folderInRoot = (folder: string): string => {
     const realRoot = realpathSync.native(root);
+    const outside = () => new Error(`pictures ${folder} is outside the folder the helper works in.`);
     let probe = resolve(realRoot, folder);
     const fresh: string[] = [];
-    while (!existsSync(probe) && dirname(probe) !== probe) {
+    for (;;) {
+      let st = lstatSync(probe, { throwIfNoEntry: false });
+      if (st?.isSymbolicLink()) {
+        // (a link is followed; one that leads nowhere is an escape)
+        try {
+          probe = realpathSync.native(probe);
+        } catch {
+          throw outside();
+        }
+        st = lstatSync(probe);
+      }
+      if (st) break;
       fresh.unshift(basename(probe));
-      probe = dirname(probe);
+      const up = dirname(probe);
+      if (up === probe) break;
+      probe = up;
     }
-    if (existsSync(probe) && !statSync(probe).isDirectory()) throw new Error(`${folder} isn't a folder`);
-    const real = dirname(fileInRoot(root, join(probe, 'check.png'), { types: ['.png'], write: true }));
+    const real = realpathSync.native(probe);
+    const rel = relative(realRoot, real);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw outside();
+    if (!statSync(real).isDirectory()) throw new Error(`pictures ${folder} is a file.`);
+    if (!fresh.length && readdirSync(real, { withFileTypes: true }).some((e) => !e.isFile() || !/\.png$/i.test(e.name))) throw new Error(`pictures needs a folder of its own: ${folder} holds other files.`);
     return join(real, ...fresh);
   };
   /** A path made by a hearing, as the agent names it: relative to the root. */
@@ -157,19 +195,9 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
   };
   /** A hearing's report as text (every picture named with its path), then up to six of its pictures as images, 3 MB in all. */
   const withImages = (report: Record<string, unknown>, shown: readonly Pic[]): CallToolResult => {
-    const ranked = shown.map((p, i) => ({ p, i })).sort((a, b) => imageRank(a.p.name) - imageRank(b.p.name) || a.i - b.i).filter(({ p }) => imageRank(p.name) < 5);
-    const images: Array<{ type: 'image'; data: string; mimeType: 'image/png' }> = [];
-    const attached: string[] = [];
-    let total = 0;
-    for (const { p } of ranked) {
-      const size = p.bytes ?? statSync(p.path).size;
-      if (images.length >= MAX_IMAGES || total + size > MAX_IMAGE_BYTES) break;
-      images.push({ type: 'image', data: readFileSync(p.path).toString('base64'), mimeType: 'image/png' });
-      attached.push(inRoot(p.path));
-      total += size;
-    }
-    const all = shown.map((p) => inRoot(p.path));
-    const result = ok(shown.length ? { ...(underRoot(report) as object), pictureImages: { attached, notAttached: all.filter((p) => !attached.includes(p)) } } : underRoot(report));
+    const { attached, notAttached } = pickImages(shown.map((p) => ({ ...p, size: p.bytes ?? statSync(p.path).size })));
+    const images = attached.map((p) => ({ type: 'image' as const, data: readFileSync(p.path).toString('base64'), mimeType: 'image/png' as const }));
+    const result = ok(shown.length ? { ...(underRoot(report) as object), pictureImages: { attached: attached.map((p) => inRoot(p.path)), notAttached: notAttached.map((p) => inRoot(p.path)) } } : underRoot(report));
     result.content.push(...images);
     return result;
   };
@@ -316,7 +344,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     'listen',
     {
       title: 'Listen',
-      description: `Render a stretch of the song and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, what the master's limiter and clipper did, and findings in plain words. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute (toBar not included). Live: in the studio (the musician must allow listening); with suggestionId (or ops) it measures the song as that suggestion would make it. With "file": a song file in the working folder, rendered on this computer with no studio open, with the loudness bar by bar too; perTrack adds each track's own loudness and balance (and the mix findings that name tracks), and "suggestion" (a suggestion file) or "ops" gives a before-and-after: both reports and the difference bar by bar, so you can tell which bars change. With "file" it can also describe the sound's character in words (sound: true), write pictures of it into a folder in the working folder (pictures) and return them as images, picture moments close up (closeUps, like "9.3" for bar 9, quarter beat 3), read it against another sound (against, with the stretch of that sound) and save the hearing (save). It measures and draws; it does not hear, and the words describe without judging. Nothing is sent anywhere.`,
+      description: `Render a stretch of the song and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, what the master's limiter and clipper did, and findings in plain words. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute (toBar not included). Live: in the studio (the musician must allow listening); with suggestionId (or ops) it measures the song as that suggestion would make it. With "file": a song file in the working folder, rendered on this computer with no studio open, with the loudness bar by bar too; perTrack adds each track's own loudness and balance (and the mix findings that name tracks), and "suggestion" (a suggestion file) or "ops" gives a before-and-after: both reports and the difference bar by bar, so you can tell which bars change. With "file" it can also describe the sound's character in words (sound: true), write pictures of it into a folder in the working folder (pictures) and return them as images, picture moments close up (closeUps, like "9.3" for bar 9, quarter beat 3), read it against another sound (against, with the stretch of that sound) and save the hearing (save). It measures and draws; it does not hear, and the words describe without judging. It writes (pictures into the folder you name, a saved hearing) only when pictures or save is given. Nothing is sent anywhere.`,
       inputSchema: {
         file: z.string().optional(),
         fromBar: z.number().min(1),
@@ -326,14 +354,14 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
         suggestionId: z.string().optional(),
         ops: opsSchema.optional(),
         sound: z.boolean().optional().describe('File mode: describe the sound\'s character in words'),
-        pictures: z.string().min(1).optional().describe('File mode: a folder in the working folder to write pictures in (made if it is not there); they come back as images too'),
+        pictures: z.string().min(1).optional().describe('File mode: a folder in the working folder to write pictures in (made if it is not there); they come back as images as well. It must be a folder of its own: new, empty or holding only .png files'),
         closeUps: z.array(z.string()).max(6).optional().describe('File mode: moments to picture close up, as a bar and its quarter beat: "9.3" is bar 9, beat 3; "9" is its first beat'),
         against: z.string().optional().describe('File mode: an audio file or a saved hearing (.json) in the working folder to read this sound against (like with like)'),
         againstFromSeconds: z.number().min(0).optional().describe('File mode: the stretch of "against" to read against, from (seconds)'),
         againstToSeconds: z.number().min(0).optional().describe('File mode: the stretch of "against", to (seconds)'),
         save: z.string().optional().describe('File mode: a new .json file in the working folder to save the hearing (measurements, never audio) in'),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: false },
     },
     ({ file, fromBar, toBar, perTrack, suggestion, suggestionId, ops, sound, pictures, closeUps, against, againstFromSeconds, againstToSeconds, save }) =>
       guard(async () => {
@@ -396,7 +424,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
         fromSeconds: z.number().min(0).optional(),
         toSeconds: z.number().min(0).optional(),
         sound: z.boolean().optional().describe('Describe the sound\'s character in words (default true; false is the loudness and balance alone)'),
-        pictures: z.string().min(1).optional().describe('A folder in the working folder to write pictures in (made if it is not there); they come back as images too'),
+        pictures: z.string().min(1).optional().describe('A folder in the working folder to write pictures in (made if it is not there); they come back as images as well. It must be a folder of its own: new, empty or holding only .png files'),
         closeUps: z.array(z.number().min(0)).max(6).optional().describe('Moments to picture close up, in seconds from the start of the file'),
         bpm: z.number().optional().describe('The tempo, when you know it (20 to 400); it is estimated otherwise'),
         against: z.string().optional().describe('An audio file or a saved hearing (.json) in the working folder to read this against'),
