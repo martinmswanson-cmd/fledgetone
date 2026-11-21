@@ -236,8 +236,10 @@ returned. `pictures` names a folder inside `--root` (made if it isn't there; a p
 `sound` has eight groups, each with plain `words` that describe the sound and never judge it:
 
 - tone: the balance of the spectrum, where its weight sits (centre), its tilt and roll-off, and
-  narrow peaks. The words are things like bright and dark.
-- texture: tonal or noisy, smooth or rough, percussive, flat tops (gritty, sharp, smooth).
+  narrow peaks (a held note reads as one too; the words name the three strongest and list the
+  rest). The words are things like bright and dark.
+- texture: tonal or noisy, smooth or rough, percussive, flat tops. Rough means fast beating
+  inside a band: distortion, notes close together and noise all read that way.
 - movement: how the sound changes over time, and slow wobbles of a band, with their rate.
 - dynamics: loudness, true peak, crest and loudness range.
 - attack: how many things start each second and how fast they start ("busy", "sparse").
@@ -289,7 +291,7 @@ made again from the audio.
 
 These are limits of the tool, measured, not advice:
 
-- It measures and draws; it does not hear. The words describe (bright, dark, gritty, sharp, wide)
+- It measures and draws; it does not hear. The words describe (bright, dark, rough, sharp, wide)
   and never say whether something is right for the song.
 - Onsets a second is approximate: hits faster than about 22 a second are not counted; tonal notes
   over a pad read a little low; an arpeggio over a thick pad can read high; hits folded into a swell
@@ -307,7 +309,8 @@ These are limits of the tool, measured, not advice:
   below about 40 Hz is drawn a few pixels wide. A close-up is fine in time and coarse in pitch.
   Levels read from colour are within about 1 dB.
 - Key and tempo are estimates; a three-note chord does not settle a key. Give `bpm` to
-  `hear_audio` when the tempo is known.
+  `hear_audio` when the tempo is known. For a song, whose tempo is known and whose key is read
+  from its notes, the words leave both out; the estimates stay in `pitch`.
 - A comparison is level-matched and only fair between like stretches of similar length. A saved
   hearing holds measurements, never audio, and must be made again from the audio when a group's rule
   version changes.
