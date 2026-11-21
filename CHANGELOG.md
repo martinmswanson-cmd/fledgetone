@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.11.21 — A new version is easier to see
+
+- **A new version is easier to see**: when one is ready, **Version … is ready** and its **Reload** button are a bar across the top of the page, in the studio and in Pocket. It was a small notice in the bottom right corner, easy to miss. The page moves down to make room for it, and it stays on top of whatever is open.
+
 ## 2026.11.20 — Pigeons video, and Pigeons on the keys for your own pages
 
 - **A new video picture, Pigeons** (Export › Video › Picture, or search *pigeons video*): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. The birds are proper low-poly rock doves, with wings that spread and beat on any jump longer than a key and a half, and a bird playing the same key twice hops on the spot between. Drums aren't played by the birds.
