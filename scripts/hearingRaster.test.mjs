@@ -69,7 +69,8 @@ test('easily confused characters differ by at least 3 pixels', () => {
 });
 
 test('drawing outside the picture, with odd sizes or fractions, is safe', () => {
-  const r = R.raster(20, 10, [5, 5, 5]); const before = r.data.slice();
+  const guard = 16; const big = new Uint8Array(20 * 10 * 3 + 2 * guard).fill(77);
+  const r = R.raster(20, 10, [5, 5, 5]); r.data = big.subarray(guard, guard + 600); r.data.fill(5); const before = r.data.slice();
   R.fillRect(r, -50, -50, 10, 10, [9, 9, 9]); R.fillRect(r, 5, 5, -4, 3, [9, 9, 9]); R.fillRect(r, 5, 5, 3, -3, [9, 9, 9]); R.fillRect(r, 100, 100, 5, 5, [9, 9, 9]);
   R.fillRect(r, NaN, 0, 5, 5, [9, 9, 9]); R.fillRect(r, 0, 0, Infinity, 5, [9, 9, 9]);
   R.line(r, -1e9, -1e9, -5e8, -3e8, [9, 9, 9]); R.line(r, 1e9, 3, 2e9, 4, [9, 9, 9]); R.line(r, NaN, 0, 3, 3, [9, 9, 9]);
@@ -79,6 +80,7 @@ test('drawing outside the picture, with odd sizes or fractions, is safe', () => 
   assert.doesNotThrow(() => { R.text(r, 'x', 2, 2, [9, 9, 9], -2); R.text(r, 'x', 2, 2, [9, 9, 9], NaN); R.text(r, 'x', 2, 2, [9, 9, 9], 1e9); });
   R.text(r, 'WIDE TEXT THAT RUNS OFF THE RIGHT EDGE', 10.6, 3.4, [9, 9, 9], 2); R.line(r, -5, -5, 30, 20, [9, 9, 9]); R.fillRect(r, -3, -3, 8, 8, [9, 9, 9]);
   assert.equal(r.data.length, 20 * 10 * 3);
+  assert.ok(big.subarray(0, guard).every((v) => v === 77) && big.subarray(guard + 600).every((v) => v === 77), 'nothing written outside the picture');
   R.fillRect(r, 2.4, 2.6, 2, 2, [1, 2, 3]); assert.deepEqual(R.pixel(r, 2, 3), [1, 2, 3]);
   const q = R.raster(5, 5, [0, 0, 0]); R.line(q, 0, 0, 4, 4, [7, 7, 7]);
   for (let i = 0; i < 5; i++) assert.deepEqual(R.pixel(q, i, i), [7, 7, 7]);
@@ -113,4 +115,26 @@ test('a big picture encodes quickly and reads back the same', async () => {
   while (at < png.length) { const n = dv.getUint32(at); const body = png.subarray(at + 4, at + 8 + n); if (String.fromCharCode(...body.subarray(0, 4)) === 'IDAT') idat.push(body.subarray(4)); at += 12 + n; }
   const raw = inflateSync(Buffer.concat(idat)); assert.equal(raw.length, h * (1 + w * 3));
   for (const y of [0, 1, 450, 899]) { assert.equal(raw[y * (1 + w * 3)], 0); assert.deepEqual(new Uint8Array(raw.subarray(y * (1 + w * 3) + 1, (y + 1) * (1 + w * 3))), r.data.subarray(y * w * 3, (y + 1) * w * 3)); }
+});
+test('a line never loops, whatever its coordinates', () => {
+  const M = Number.MAX_VALUE; const big = [M, -M, 1e308, -1e308, 1.797e308, -1.797e308, 1e9, -1e9];
+  const r = R.raster(20, 10, [5, 5, 5]);
+  const calls = [[-1.797e308, 0, 1.797e308, 5], [1e308, 0, -1e308, 5]];
+  for (const v of big) for (let pos = 0; pos < 4; pos++) { const a = [3, 4, 12, 6]; a[pos] = v; calls.push(a); for (const w of big) { const b = [3, 4, 12, 6]; b[pos] = v; b[(pos + 2) % 4] = w; calls.push(b); } }
+  for (const a of calls) {
+    const t0 = performance.now(); R.line(r, ...a, [9, 9, 9]);
+    assert.ok(performance.now() - t0 < 50, `line(${a}) was slow`);
+    assert.equal(r.data.length, 600);
+  }
+  const q = R.raster(20, 10, [0, 0, 0]); R.line(q, -1.797e308, 0, 1.797e308, 5, [9, 9, 9]); R.line(q, 1e308, 0, -1e308, 5, [9, 9, 9]);
+  assert.ok(q.data.every((v) => v === 0 || v === 9));
+});
+test('fillRect gives the same picture as painting pixel by pixel', () => {
+  const rects = [[2, 3, 5, 4], [-3, -2, 8, 6], [15, 7, 10, 10], [-10, -10, 5, 5], [30, 2, 4, 4], [2.4, 2.6, 3.5, 2.5], [4, 4, 0, 3], [4, 4, 3, 0], [4, 4, -3, 3], [4, 4, 3, -3], [-5, -5, 50, 50], [0.5, 0.5, 1, 1], [2.5, 2.5, 1.5, 1.5]];
+  for (const [x, y, w, h] of rects) {
+    const a = R.raster(20, 10, [0, 0, 0]); const b = R.raster(20, 10, [0, 0, 0]);
+    R.fillRect(a, x, y, w, h, [1, 2, 3]);
+    for (let j = Math.round(y); j < Math.round(y) + Math.round(h); j++) for (let i = Math.round(x); i < Math.round(x) + Math.round(w); i++) R.setPixel(b, i, j, [1, 2, 3]);
+    assert.deepEqual(a.data, b.data, `rectangle ${[x, y, w, h]}`);
+  }
 });

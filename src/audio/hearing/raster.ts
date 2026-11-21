@@ -37,7 +37,9 @@ export function fillRect(r: Raster, x: number, y: number, w: number, h: number, 
   if (![x, y, w, h].every(Number.isFinite)) return;
   const x0 = Math.max(0, Math.round(x)); const y0 = Math.max(0, Math.round(y));
   const x1 = Math.min(r.width, Math.round(x) + Math.round(w)); const y1 = Math.min(r.height, Math.round(y) + Math.round(h));
-  for (let j = y0; j < y1; j++) for (let i = x0; i < x1; i++) setPixel(r, i, j, c);
+  if (x0 >= x1 || y0 >= y1) return;
+  const d = r.data;
+  for (let j = y0; j < y1; j++) for (let k = (j * r.width + x0) * 3, end = (j * r.width + x1) * 3; k < end; k += 3) { d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; }
 }
 
 /** Cut the segment to the picture (Liang-Barsky); null when none of it is inside. */
@@ -58,7 +60,7 @@ export function line(r: Raster, x0: number, y0: number, x1: number, y1: number, 
   const inside = (x: number, y: number) => x >= 0 && y >= 0 && x <= r.width - 1 && y <= r.height - 1;
   let seg: [number, number, number, number] | null = [x0, y0, x1, y1];
   if (!(inside(Math.round(x0), Math.round(y0)) && inside(Math.round(x1), Math.round(y1)))) seg = clipLine(r, x0, y0, x1, y1);
-  if (!seg) return;
+  if (!seg || !seg.every(Number.isFinite)) return; // an overflowing difference clips to NaN: draw nothing, never loop
   let [a, b, e, f] = seg.map(Math.round);
   const dx = Math.abs(e - a); const dy = -Math.abs(f - b); const sx = a < e ? 1 : -1; const sy = b < f ? 1 : -1;
   let err = dx + dy;
