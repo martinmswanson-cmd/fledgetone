@@ -34,7 +34,7 @@ const CHANGE_RANGE_DB = 60;
 /** How far under its own 95th-percentile level a band's envelope is floored, dB. */
 const ENVELOPE_RANGE_DB = 48;
 /** A band whose loudest envelope frame is more than this under the loudest band's loudest frame gives no modulation, dB. */
-const BAND_RANGE_DB = 60;
+const BAND_RANGE_DB = 45;
 /** An envelope whose loudest frame is under this, dB, is digital silence (a numeric floor only). */
 const ENVELOPE_SILENT_DB = -110;
 const BANDS = ['low', 'mid', 'high'] as const;
