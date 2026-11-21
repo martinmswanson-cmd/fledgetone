@@ -338,10 +338,25 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   all of it and `drift` is its drifting things' top speed; the calm ones are low on purpose and a
   test holds them there (the clouds: under a key's width in six seconds). The look's `motion`
   (the dialog's With the music, Calmly, Still) scales everything.
-  At most 30 birds: denser music still lights every key. Drums aren't played. The same scene is
+  At most 30 birds on the keyboard: denser music still lights every key.
+  **A stage for fast songs** (after 2026.11.20; `src/audio/pigeonStage.ts`, no three.js):
+  `stageFor` sorts the song. A fast track (`isFastPart`: 16 notes or more, median length and
+  median gap under 0.3 s, 16 pitches or fewer) gets a bank of pads in front of the keyboard (up
+  to three, busiest first, never every pitched track), drum hits get drum pads behind it
+  (`drumKind`: kick, snare, hats, other), and the keyboard gets the rest and a snug range
+  (`keyboardRange(…, true)`). `planPigeons(data, { pads })` (off by default, on in the look)
+  gives each bank resident birds (`role: 'pad'`, `playPads`: the bird on the pad re-strikes,
+  else the nearest free bird hops, landing as the note starts), the kick a stomping bird
+  (`role: 'kick'`) and each drum a bird that pecks (`role: 'drum'`, `pecks`, `peckAt`). Resident
+  birds are never pushed by `solveSpacing`; the keyboard's spare birds then wait at its two
+  ends. The scene builds the stage (`buildStage`), lights pads as it does keys (`light`,
+  `byPad`/`padKey`) and frames the whole of `stageBox`, still. `PigeonLook.pads` /
+  `PigeonChoices.pads` is the switch (the dialog's tick box; the tool's `pads` option). Tests:
+  the stage's sorting, no contact on a fast song, every fast note with a bird on its pad at its
+  start, pecks and stomps on the hits. The same scene is
   the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
   minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with
-  three's licence in the zip). Not done: drums (a pad beside the keyboard?), a look at it on a phone's GPU; from some
+  three's licence in the zip). Not done: in a tall video a wide stage is small (the pads could go under the keyboard's end instead), a look at it on a phone's GPU; from some
   angles the keyboard passes under the title (its halo keeps it readable).
 - **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no

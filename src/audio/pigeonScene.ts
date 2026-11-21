@@ -13,7 +13,8 @@
 import * as T from 'three';
 import type { ShowcaseData, ShowcaseNote } from '../store/showcase';
 import { maxOf, minOf } from '../support/minMax';
-import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, energyAt, flaresAt, pulseAt, senseMusic, travelAt, uprightRoll, type BackgroundId, type MusicSense, type PigeonBackground, type PigeonCamera, type PigeonLook } from './pigeonLooks';
+import { bankSize, DRUM_R, DRUM_TOP, KICK_SIZE, PAD_D, PAD_GAP, PAD_TOP, PAD_W, padSpot, stageBox, stageFor, type DrumPad, type PadBank, type Stage } from './pigeonStage';
+import { backgroundAt, backgroundOf, cameraAt, cameraOf, cleanLook, energyAt, flaresAt, pulseAt, senseMusic, travelAt, turnAt, uprightRoll, type BackgroundId, type MusicSense, type PigeonBackground, type PigeonCamera, type PigeonLook } from './pigeonLooks';
 
 // ---------------------------------------------------------------------------------------------
 // The keyboard, in scene units: a white key is 1 wide; the keys run along x, their fronts toward +z
@@ -34,6 +35,16 @@ const PRESS = 0.22;
 const WHITE_STAND_Z = WHITE_L / 2 - 1;
 const BLACK_STAND_Z = -0.85;
 /** The floor's lines where pigeons wait: in front of the keys and behind them */
+/**
+ * On a stage (pads in front of the keys, drums behind) the keyboard's spare birds wait at its two
+ * ends instead: this far from the end at the nearest, over this much floor, and no further forward
+ * or back than this (inside the lanes beside the keys, so their way to a key never crosses a pad)
+ */
+const WINGS_NEAR = 1.6;
+const WINGS_DEEP = 3.4;
+const WINGS_REACH = 4.6;
+/** How far behind its drum a drum's bird stands: its beak, pecking, comes down on the drum's top */
+const DRUM_STAND = 1.5;
 const FRONT_Z = WHITE_L / 2 + 2.2;
 const BACK_Z = -WHITE_L / 2 - 2.4;
 
@@ -134,6 +145,10 @@ interface PigeonPlan {
   seed: number;
   /** The bird's size (its model's scale): a little under 1 to a little over */
   size: number;
+  /** What it plays: the keyboard (not said), a bank of pads it never leaves, the kick's pad, or a drum it stands at and pecks */
+  role?: 'pad' | 'kick' | 'drum';
+  /** A drum's bird: when it pecks (seconds, in order) */
+  pecks?: number[];
 }
 
 /** Walking pace (units a second) and the hop and flight times */
@@ -186,24 +201,53 @@ export interface PigeonPlanResult {
   high: number;
   /** The notes on each key, in order */
   byKey: Map<number, ShowcaseNote[]>;
+  /** The banks of pads and the drum pads beside the keyboard (none: everything's on the keyboard) */
+  stage: Stage;
+  /** The notes on each pad, in order: by padKey(its bank's place in stage.banks, its pitch) */
+  byPad: Map<number, ShowcaseNote[]>;
 }
 
-export function planPigeons(data: ShowcaseData): PigeonPlanResult {
-  const notes = data.notes.filter((n) => !n.drum && !n.perc && n.end > n.start).sort((a, b) => a.start - b.start || a.midi - b.midi);
-  const mids = notes.map((n) => n.midi);
-  // Whole octaves around what's played, at least three
+/** A pad's key in PigeonPlanResult.byPad */
+export const padKey = (bank: number, midi: number): number => bank * 1000 + midi;
+
+/**
+ * The keys a keyboard needs for these pitches: whole octaves around what's played, at least four of
+ * them. `snug` (on a stage, where the camera holds the whole keyboard): just the octaves played, at
+ * least three, so nothing is spent on keys nobody touches
+ */
+function keyboardRange(mids: number[], snug = false): { low: number; high: number } {
   let low = mids.length ? minOf(mids) : 48;
   let high = mids.length ? maxOf(mids) : 72;
+  if (snug) {
+    low = Math.floor(low / 12) * 12;
+    high = Math.max(low + 36, Math.ceil(high / 12) * 12);
+    return { low: Math.max(0, low), high: Math.min(127, high) };
+  }
   low = Math.floor(low / 12) * 12 - 12;
   high = Math.ceil((high + 1) / 12) * 12 + 12;
   while (high - low < 48) {
     low -= 6;
     high += 6;
   }
-  low = Math.max(0, Math.floor(low / 12) * 12);
-  high = Math.min(127, Math.ceil(high / 12) * 12);
+  return { low: Math.max(0, Math.floor(low / 12) * 12), high: Math.min(127, Math.ceil(high / 12) * 12) };
+}
 
-  const count = Math.min(30, Math.max(6, polyphony(notes) * 2 + 4));
+export interface PlanOptions {
+  /** Fast parts on banks of pads and the drums on drum pads, each with birds of their own (pigeonStage.ts); off, everything pitched is on the keyboard and the drums aren't played */
+  pads?: boolean;
+}
+
+export function planPigeons(data: ShowcaseData, opts: PlanOptions = {}): PigeonPlanResult {
+  const stage = stageFor(data, !!opts.pads, (keys) => {
+    const range = keyboardRange(keys.map((n) => n.midi), true);
+    return (keyX(range.low) + keyX(range.high)) / 2;
+  });
+  const staged = stage.banks.length > 0 || stage.drums.length > 0;
+  const notes = [...stage.keys].sort((a, b) => a.start - b.start || a.midi - b.midi);
+  const { low, high } = keyboardRange(notes.map((n) => n.midi), staged);
+
+  // (on a stage the keyboard has the slower parts alone: it needs fewer birds to spare)
+  const count = staged ? Math.min(24, Math.max(4, polyphony(notes) + 5)) : Math.min(30, Math.max(6, polyphony(notes) * 2 + 4));
   const r = rand(1234);
   const x0 = keyX(low);
   const x1 = keyX(high);
@@ -216,7 +260,10 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
   const birds: Bird[] = [];
   for (let i = 0; i < count; i++) {
     const front = i % 2 === 0;
-    const at = new T.Vector3(x0 + ((i + 0.5) / count) * (x1 - x0) + (r() - 0.5) * 2, 0, (front ? FRONT_Z : BACK_Z) + (front ? 1 : -1) * r() * 3);
+    // Waiting in front of the keys and behind them; on a stage (pads in front, drums behind) at the keyboard's two ends
+    const at = staged
+      ? new T.Vector3(i % 2 ? x1 + WINGS_NEAR + r() * WINGS_DEEP : x0 - WINGS_NEAR - r() * WINGS_DEEP, 0, (r() * 2 - 1) * WINGS_REACH)
+      : new T.Vector3(x0 + ((i + 0.5) / count) * (x1 - x0) + (r() - 0.5) * 2, 0, (front ? FRONT_Z : BACK_Z) + (front ? 1 : -1) * r() * 3);
     birds.push({ plan: { legs: [], seed: Math.floor(r() * 1e9), size: 1 + r() * 0.06 }, at, free: -10, onKeys: false });
   }
 
@@ -226,7 +273,10 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
     let best = new T.Vector3();
     let bestRoom = -1;
     for (let tries = 0; tries < 6; tries++) {
-      const spot = new T.Vector3(x + (r() - 0.5) * 5, 0, front ? FRONT_Z + r() * 4 : BACK_Z - r() * 4);
+      // (on a stage: at the nearer end of the keyboard, on that side of it, within the lanes beside the keys)
+      const spot = staged
+        ? new T.Vector3(x < (x0 + x1) / 2 ? x0 - WINGS_NEAR - r() * WINGS_DEEP : x1 + WINGS_NEAR + r() * WINGS_DEEP, 0, (front ? 1 : -1) * r() * WINGS_REACH)
+        : new T.Vector3(x + (r() - 0.5) * 5, 0, front ? FRONT_Z + r() * 4 : BACK_Z - r() * 4);
       let room = Infinity;
       for (const b of birds) room = Math.min(room, flatDist(b.at, spot));
       if (room > bestRoom) {
@@ -356,6 +406,90 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
   }
   // Off the keys at the end
   for (const b of birds) if (b.onKeys) stepOff(b, b.free + 0.2);
+
+  // The stage's own birds: each bank of pads has a few that never leave it, the kick's pad one that stomps it, each drum one that pecks it
+  const byPad = new Map<number, ShowcaseNote[]>();
+  const resident = (role: PigeonPlan['role'], at: T.Vector3): Bird => {
+    const b: Bird = { plan: { legs: [], seed: Math.floor(r() * 1e9), size: 1 + r() * 0.06, role }, at, free: -10, onKeys: true };
+    birds.push(b);
+    return b;
+  };
+  /** A hop between pads: as late as it can be, so it lands as the note starts; a hop on the spot for the same pad again */
+  const padHop = (b: Bird, to: T.Vector3, arrive: number) => {
+    const d = flatDist(b.at, to);
+    const time = d < 0.05 ? REHOP_TIME : Math.min(0.24, 0.1 + d * 0.03);
+    const t0 = Math.max(b.free, arrive - time);
+    if (arrive - t0 > 0.03) push(b, { kind: 'hop', t0, t1: arrive, from: b.at.clone(), to: to.clone() });
+    b.at = to.clone();
+    b.free = Math.max(b.free, arrive);
+  };
+  /** Plays `list` (in order) on spots: each note to the bird on its spot already, else the free bird nearest, else the one free soonest */
+  const playPads = (flock: Bird[], list: ShowcaseNote[], spotOf: (n: ShowcaseNote) => T.Vector3 | null) => {
+    for (const n of list) {
+      const spot = spotOf(n);
+      if (!spot) continue;
+      const len = n.end - n.start;
+      const leave = len > 0.4 ? n.end : n.start + Math.max(0.05, len * 0.5);
+      const here = flock.find((b) => flatDist(b.at, spot) < 0.05);
+      let b = here;
+      if (!b) {
+        const free = flock.filter((x) => x.free <= n.start - 0.06);
+        b = (free.length ? free : flock).reduce((best, x) => (free.length ? flatDist(x.at, spot) < flatDist(best.at, spot) : x.free < best.free) ? x : best);
+      }
+      const last = b.plan.legs[b.plan.legs.length - 1];
+      if (here && last?.kind === 'press' && last.t1 > n.start - 0.05) {
+        // It's on this pad, playing still (or only just done): it lifts off in time to strike it again, if there's time to
+        const off = Math.max(last.t0 + 0.05, n.start - REHOP_TIME);
+        if (n.start - off <= 0.04) {
+          last.t1 = Math.max(last.t1, leave);
+          b.free = last.t1;
+          continue;
+        }
+        last.t1 = off;
+        b.free = off;
+      }
+      padHop(b, spot, n.start);
+      const t0 = Math.max(n.start, b.free);
+      push(b, { kind: 'press', t0, t1: Math.max(leave, t0 + 0.04), from: spot.clone(), to: spot.clone(), note: n });
+      b.free = Math.max(leave, t0 + 0.04);
+    }
+  };
+  stage.banks.forEach((bank, bi) => {
+    const spotOf = (midi: number) => {
+      const at = padSpot(bank, midi);
+      return at ? new T.Vector3(at.x, PAD_TOP, at.z) : null;
+    };
+    // Its birds start spread along its pads
+    const flock = Array.from({ length: bank.birds }, (_, i) => resident('pad', spotOf(bank.pitches[Math.min(bank.pitches.length - 1, Math.round(((i + 0.5) / bank.birds) * bank.pitches.length - 0.5))])!));
+    // (no two on one pad to begin with: a bank with fewer pads than birds has fewer birds)
+    const seen = new Set<string>();
+    const placed = flock.filter((b) => {
+      const k = `${b.at.x.toFixed(2)},${b.at.z.toFixed(2)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    for (const b of flock) if (!placed.includes(b)) birds.splice(birds.indexOf(b), 1);
+    const list = [...bank.notes].sort((a, b) => a.start - b.start || a.midi - b.midi);
+    playPads(placed, list, (n) => spotOf(n.midi));
+    for (const n of list) {
+      const k = padKey(bi, n.midi);
+      const at = byPad.get(k);
+      if (at) at.push(n);
+      else byPad.set(k, [n]);
+    }
+  });
+  for (const drum of stage.drums) {
+    if (drum.kind === 'kick') {
+      // The kick's bird stands on its pad and stomps it: a hop on the spot, down on each hit
+      const spot = new T.Vector3(drum.x, PAD_TOP, drum.z);
+      const bird = resident('kick', spot.clone());
+      playPads([bird], drum.hits.map((t): ShowcaseNote => ({ start: t, end: t + 0.12, midi: 0, color: drum.color, track: -1, drum: true })), () => spot);
+    } else {
+      // A drum's bird stands behind it and pecks it
+      resident('drum', new T.Vector3(drum.x, 0, drum.z - DRUM_STAND)).plan.pecks = drum.hits;
+    }
+  }
   // Fill the gaps between legs with standing still
   for (const b of birds) {
     const legs: Leg[] = [];
@@ -379,7 +513,7 @@ export function planPigeons(data: ShowcaseData): PigeonPlanResult {
     if (list) list.push(n);
     else byKey.set(n.midi, [n]);
   }
-  return { pigeons: birds.map((b) => b.plan), notes, low, high, byKey };
+  return { pigeons: birds.map((b) => b.plan), notes, low, high, byKey, stage, byPad };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -830,7 +964,15 @@ function rawPose(plan: PigeonPlan, t: number, byKey: Map<number, ShowcaseNote[]>
       // A hop up onto the keys or down off them is a flap up over the heads of the birds there (so
       // it can turn round up in the air); a hop on the spot strikes the same key again; a
       // side-step to the next key is a little hop
-      const over = leg.from.y > 0 !== leg.to.y > 0 ? CLEAR_HOP : far < 0.05 ? Math.min(REHOP_HEIGHT, (leg.t1 - leg.t0) * (REHOP_HEIGHT / REHOP_TIME)) : 0.35 + Math.abs(leg.to.y - leg.from.y) * 0.5;
+      // (between pads: a little hop to the next pad, a higher one over the pads between to a further one)
+      const over =
+        leg.from.y > 0 !== leg.to.y > 0
+          ? CLEAR_HOP
+          : far < 0.05
+            ? Math.min(REHOP_HEIGHT, (leg.t1 - leg.t0) * (REHOP_HEIGHT / REHOP_TIME))
+            : plan.role === 'pad'
+              ? far < PAD_W + PAD_GAP + 0.3 ? 0.4 : Math.min(2.3, 0.7 + far * 0.4)
+              : 0.35 + Math.abs(leg.to.y - leg.from.y) * 0.5;
       lift = Math.sin(k * Math.PI) * over;
       // (a long enough jump is flown, wings out)
       if (far >= FLAP_DISTANCE) wants = clamp01(lift / 0.5);
@@ -850,7 +992,11 @@ function rawPose(plan: PigeonPlan, t: number, byKey: Map<number, ShowcaseNote[]>
     case 'stand': {
       pos.copy(leg.from);
       // Idle on the floor: a peck now and then
-      if (leg.from.y === 0) {
+      if (plan.pecks) {
+        // A drum's bird: its beak comes down onto the drum as each hit lands, and lifts after
+        peck = peckAt(plan.pecks, t);
+        give = 0;
+      } else if (leg.from.y === 0) {
         const cycle = (t * 0.6 + (seed % 97) / 13) % 3.5;
         peck = cycle < 0.5 ? Math.sin((cycle / 0.5) * Math.PI) : 0;
       } else give = 0.5;
@@ -858,6 +1004,8 @@ function rawPose(plan: PigeonPlan, t: number, byKey: Map<number, ShowcaseNote[]>
     }
   }
   if (arriving) give = 1 - ease(k);
+  // (a bird on its bank of pads, or the kick's, is never pushed off it)
+  if (plan.role === 'pad' || plan.role === 'kick') give = Math.min(give, leg.kind === 'press' ? 0 : 0.15);
   // On a key, it goes down with it as it's played
   if (leg.key !== undefined) pos.y -= keyDownAt(byKey.get(leg.key), t);
   // On a key it faces the viewer, square to the key (so birds on neighbouring keys stand side by
@@ -868,7 +1016,8 @@ function rawPose(plan: PigeonPlan, t: number, byKey: Map<number, ShowcaseNote[]>
   // (it stays square to its key until it's up off it, and is square again before it lands: turning
   // down among its neighbours would swing its tail into them)
   const leaving = leg.from.y > 0 && (leg.kind === 'hop' || leg.kind === 'fly' || leg.kind === 'walk');
-  let h = onKey ? FACE : way;
+  // (a drum's bird faces its drum, which is in front of it)
+  let h = onKey || plan.pecks ? FACE : way;
   // (turning only while it's up above the others' heads: the middle third of its hop or flight)
   if (leaving && !onKey) h = turn(FACE, way, ease(clamp01((k - 1 / 3) / (1 / 6))));
   if (arriving && !onKey) h = turn(h, FACE, ease(clamp01((k - 1 / 2) / (1 / 6))));
@@ -1009,10 +1158,29 @@ export function solveSpacing(birds: Posed[]) {
  */
 const onTheKeys = (leg: Leg) => leg.from.y > 0 && leg.to.y > 0 && leg.kind !== 'fly';
 
+/** How long a drum bird's beak takes to come down onto the drum, and to lift again (seconds) */
+const PECK_DOWN = 0.07;
+const PECK_UP = 0.13;
+
+/** How far down a drum bird's head is at t (0 up, 1 on the drum): down as each hit lands, up after; between quick hits it only comes part of the way up */
+export function peckAt(hits: readonly number[], t: number): number {
+  let lo = 0;
+  let hi = hits.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (hits[mid] <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  // (the hit just gone, lifting; the hit coming, on its way down)
+  const up = lo > 0 ? 1 - clamp01((t - hits[lo - 1]) / PECK_UP) : 0;
+  const down = lo < hits.length ? clamp01(1 - (hits[lo] - t) / PECK_DOWN) : 0;
+  return Math.max(ease(up), ease(down));
+}
+
 /** How many birds are on the keys at t: what the picture's count says, and what you'd count yourself */
 export function birdsOnKeys(plan: PigeonPlanResult, t: number): number {
   let n = 0;
-  for (const p of plan.pigeons) if (onTheKeys(findLeg(p.legs, t))) n++;
+  for (const p of plan.pigeons) if (!p.role && onTheKeys(findLeg(p.legs, t))) n++;
   return n;
 }
 
@@ -1636,12 +1804,19 @@ export class PigeonScene {
   private sense: MusicSense;
   /** When the song ends (the sunset is down by then) */
   private songEnd: number;
+  /** The floor the stage takes up, if there's one (pads, drums): the camera holds all of it */
+  private box: { x0: number; x1: number; z0: number; z1: number } | null = null;
+  /** Each pad: its mesh, its colours, and its key in plan.byPad */
+  private pads: Array<{ mesh: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; key: number }> = [];
+  /** Each drum (and the kick's pad): its skin, and when it's hit */
+  private drums: Array<{ skin: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; hits: number[]; rest: number }> = [];
   /** Rings that spread across the floor from each key as it's struck (a pool, reused) */
   private rings: Array<{ mesh: T.Mesh; mat: T.MeshBasicMaterial }> = [];
   private disposables: Array<{ dispose(): void }> = [];
 
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
-    this.plan = planPigeons(data);
+    this.look = cleanLook(opts.look);
+    this.plan = planPigeons(data, { pads: this.look.pads });
     this.canvas = opts.canvas ?? document.createElement('canvas');
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -1649,7 +1824,6 @@ export class PigeonScene {
     this.camera = new T.OrthographicCamera(-1, 1, 1, -1, -400, 600);
     this.across = opts.across;
     this.centerY = opts.centerY ?? 0.5;
-    this.look = cleanLook(opts.look);
     this.sense = senseMusic(data.notes, data.bars);
     this.songEnd = maxOf(data.notes.map((n) => n.end), 1);
     this.ownFloor = opts.floor ? new T.Color(opts.floor) : null;
@@ -1661,6 +1835,7 @@ export class PigeonScene {
     this.scene.add(this.sky, this.sun);
 
     this.buildKeyboard();
+    this.buildStage();
     const shadowGeo = new T.CircleGeometry(0.55, 16);
     const shadowMat = new T.MeshBasicMaterial({ color: 0x1b1a24, transparent: true, opacity: 0.22, depthWrite: false });
     this.disposables.push(shadowGeo, shadowMat);
@@ -1826,11 +2001,103 @@ export class PigeonScene {
     const slope = this.tall ? cam.slope.tall : cam.slope.wide;
     // (the lesser turn that gives that slope: the camera stays the right way up)
     this.camera.rotateZ(uprightRoll(rx, ux, slope));
-    // How many keys fit along the frame at this slope, and so how far to pull back
-    const fits = 0.92 * Math.min(this.view.w / Math.max(1e-6, seen * Math.abs(Math.cos(slope))), this.view.h / Math.max(1e-6, seen * Math.abs(Math.sin(slope))));
-    this.camera.zoom = Math.min(1, Math.max(cam.furthest, fits / (2.2 * spread + 10)));
+    if (this.box) {
+      // A stage (pads, drums): the camera holds all of it, the same all through, however the music moves about it;
+      // the close-up comes in by half again, toward what the keyboard's playing
+      this.camera.updateMatrixWorld();
+      const m = this.camera.matrixWorld.elements;
+      const { x0, x1, z0, z1 } = this.box;
+      const mid = new T.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
+      let across = 0;
+      let up = 0;
+      for (const x of [x0, x1]) for (const z of [z0, z1]) for (const y of [0, 2.4]) {
+        const dx = x - mid.x;
+        const dz = z - mid.z;
+        across = Math.max(across, Math.abs(dx * m[0] + y * m[1] + dz * m[2]));
+        up = Math.max(up, Math.abs(dx * m[4] + y * m[5] + dz * m[6]));
+      }
+      const close = cam.furthest > 0.6;
+      this.camera.zoom = Math.min(1.5, 0.9 * Math.min(this.view.w / 2 / across, this.view.h / 2 / up)) * (close ? 1.5 : 1);
+      if (close) mid.x += (fx - mid.x) * 0.6;
+      // (moved so the stage's middle is in the middle of the picture, keeping the way it looks)
+      const from = new T.Vector3(mid.x - target.x, 0, mid.z - target.z);
+      this.camera.position.add(from);
+    } else {
+      // How many keys fit along the frame at this slope, and so how far to pull back
+      const fits = 0.92 * Math.min(this.view.w / Math.max(1e-6, seen * Math.abs(Math.cos(slope))), this.view.h / Math.max(1e-6, seen * Math.abs(Math.sin(slope))));
+      this.camera.zoom = Math.min(1, Math.max(cam.furthest, fits / (2.2 * spread + 10)));
+    }
     this.camera.updateProjectionMatrix();
     this.camera.translateY(((this.centerY - 0.5) * this.view.h) / this.camera.zoom);
+  }
+
+  /** The banks of pads and the drums, if the song has them (pigeonStage.ts): dark slabs with a pad for each note, drums with a skin that flashes */
+  private buildStage() {
+    const { stage, low, high } = this.plan;
+    if (!stage.banks.length && !stage.drums.length) return;
+    // (with room at the keyboard's ends for the birds waiting there)
+    this.box = stageBox(stage, keyX(low) - WHITE_W - WINGS_NEAR - WINGS_DEEP * 0.6, keyX(high) + WHITE_W + WINGS_NEAR + WINGS_DEEP * 0.6);
+    const slabMat = flat(0x2a2833);
+    this.disposables.push(slabMat);
+    const add = (geo: T.BufferGeometry, mat: T.Material, x: number, y: number, z: number) => {
+      this.disposables.push(geo);
+      const mesh = new T.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+      return mesh;
+    };
+    stage.banks.forEach((bank: PadBank, bi) => {
+      const { w, d } = bankSize(bank);
+      add(new T.BoxGeometry(w + 0.5, 0.07, d + 0.5), slabMat, bank.x, 0.035, bank.z);
+      const padGeo = new T.BoxGeometry(PAD_W, PAD_TOP - 0.05, PAD_D);
+      this.disposables.push(padGeo);
+      for (const midi of bank.pitches) {
+        const at = padSpot(bank, midi)!;
+        // Unlit, a pad is a dim shade of its part's colour; lit, the colour itself
+        const lit = new T.Color(bank.color);
+        const base = lit.clone().multiplyScalar(0.3).lerp(new T.Color(0x3a3846), 0.45);
+        const mat = flat(base.getHex());
+        this.disposables.push(mat);
+        const mesh = new T.Mesh(padGeo, mat);
+        mesh.position.set(at.x, 0.05 + (PAD_TOP - 0.05) / 2, at.z);
+        this.scene.add(mesh);
+        this.pads.push({ mesh, mat, base, lit, key: padKey(bi, midi) });
+      }
+    });
+    for (const drum of stage.drums as DrumPad[]) {
+      const lit = new T.Color(drum.color);
+      const base = lit.clone().multiplyScalar(0.55);
+      const mat = flat(base.getHex());
+      this.disposables.push(mat);
+      if (drum.kind === 'kick') {
+        add(new T.BoxGeometry(KICK_SIZE + 0.4, 0.07, KICK_SIZE + 0.4), slabMat, drum.x, 0.035, drum.z);
+        const skin = add(new T.BoxGeometry(KICK_SIZE, PAD_TOP - 0.05, KICK_SIZE), mat, drum.x, 0.05 + (PAD_TOP - 0.05) / 2, drum.z);
+        this.drums.push({ skin, mat, base, lit, hits: drum.hits, rest: skin.position.y });
+      } else {
+        // A drum: a dark shell, its skin on top
+        add(new T.CylinderGeometry(DRUM_R, DRUM_R * 0.9, DRUM_TOP - 0.06, 20), slabMat, drum.x, (DRUM_TOP - 0.06) / 2, drum.z);
+        const skin = add(new T.CylinderGeometry(DRUM_R * 0.94, DRUM_R * 0.94, 0.06, 20), mat, drum.x, DRUM_TOP - 0.03, drum.z);
+        this.drums.push({ skin, mat, base, lit, hits: drum.hits, rest: skin.position.y });
+      }
+    }
+  }
+
+  /** The pads and drums at t: a pad lit (and a little down) while its note sounds, struck afresh as a key is; a drum's skin flashing as it's hit */
+  private light(t: number) {
+    for (const pad of this.pads) {
+      const { down, lit } = keyAt(this.plan.byPad.get(pad.key), t);
+      const on = Math.min(1, down / (PRESS * (1 - RESTRIKE)));
+      pad.mesh.position.y = 0.05 + (PAD_TOP - 0.05) / 2 - (down / PRESS) * 0.035;
+      pad.mat.color.copy(pad.base).lerp(pad.lit, lit ? on : 0);
+      pad.mat.emissive.copy(pad.lit).multiplyScalar(lit ? 0.55 * on : 0);
+    }
+    for (const drum of this.drums) {
+      const { turns, since } = turnAt(drum.hits, t);
+      const flash = turns ? Math.exp(-since / 0.09) : 0;
+      drum.skin.position.y = drum.rest - flash * 0.03;
+      drum.mat.color.copy(drum.base).lerp(drum.lit, flash);
+      drum.mat.emissive.copy(drum.lit).multiplyScalar(0.6 * flash);
+    }
   }
 
   private buildKeyboard() {
@@ -1934,6 +2201,7 @@ export class PigeonScene {
   render(t: number): HTMLCanvasElement {
     this.dress(t);
     this.aim(t);
+    this.light(t);
 
     // Keys: down and coloured while played
     for (const [midi, k] of this.keys) {

@@ -22,8 +22,10 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  * canvas         A canvas nothing has drawn on yet (it's given a WebGL context).
  * song.notes     [{ start, end, pitch, track?, drum?, kick? }]: seconds, a MIDI note number (60
  *                is middle C), and which track (an index into song.tracks; 0 if left out). The
- *                birds play pitched notes: one with `drum: true` or `kick: true` isn't played,
- *                but the backgrounds jump on the kicks.
+ *                keyboard's birds play pitched notes. One with `drum: true` or `kick: true` is a
+ *                drum hit: with options.pads on, a bird stomps the kick's pad and others peck the
+ *                snare (pitch 26, 27 or 38 to 40), the hats (30, 34, 42, 44, 46) and a drum for
+ *                anything else; and the backgrounds jump on the kicks either way.
  * song.bars      When each bar line falls, in seconds (optional): the beat the backgrounds jump
  *                on, for a song with no kicks.
  * song.tracks    The tracks, for the colour their keys light up in: a CSS colour each, or
@@ -42,6 +44,11 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  * options.cameraAt      When it cuts to the next angle, in seconds. Never, if left out.
  * options.motion        How much the backgrounds move with the music, 0 (still) to 1 (fully; 1 if
  *                       left out). The calm backgrounds only ever move gently.
+ * options.pads          Whether fast parts and the drums get instruments of their own beside the
+ *                       keyboard (true if left out). A track of short, quick notes on 16 pitches
+ *                       or fewer gets a bank of touch pads, one pad a note, with birds of its
+ *                       own (up to three banks); the drums get drum pads. false: every pitched
+ *                       note is played on the keyboard and the drums aren't shown.
  * options.floor         A floor colour of your own (any CSS colour) in place of the backgrounds'.
  * options.across        How many white keys fit across the canvas's narrow side at the closest
  *                       the camera comes (each angle has its own, about 16): a smaller number
@@ -58,7 +65,7 @@ export function createPigeons(canvas, song, options = {}) {
     const midi = Math.round(number(n.pitch, NaN));
     const track = Math.max(0, Math.floor(number(n.track, 0)));
     if (!Number.isFinite(start) || !Number.isFinite(midi) || midi < 0 || midi > 127) continue;
-    // (drum hits aren't played by the birds, but the backgrounds hear them: they jump on the kicks)
+    // (drum hits aren't played on the keyboard: they go to the drum pads, and the backgrounds jump on the kicks)
     const drum = !!(n.drum || n.kick);
     notes.push({ start, end, midi, track, color: colors[track] ?? TRACK_COLORS[track % TRACK_COLORS.length], drum, ...(n.kick ? { kick: true } : {}) });
     if (end > lastEnd) lastEnd = end;
@@ -69,7 +76,7 @@ export function createPigeons(canvas, song, options = {}) {
   let width = canvas.width;
   let height = canvas.height;
   let tall = isTall();
-  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt, motion: options.motion };
+  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt, motion: options.motion, pads: options.pads };
   const bars = (Array.isArray(song.bars) ? song.bars : []).filter((t) => typeof t === 'number' && Number.isFinite(t)).sort((a, b) => a - b);
   const scene = new PigeonScene({ notes, tracks: [], bars }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor, look });
 

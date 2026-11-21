@@ -859,7 +859,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   value={settings.picture}
                   onChange={(e) => update({ picture: e.target.value as ExportSettings['picture'] })}
                   className="h-7 bg-forge-bg border border-forge-border rounded px-1"
-                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : settings.picture === 'pigeons' ? 'Low-poly pigeons walk, hop and fly across a big keyboard, a bird standing on each key as it plays (drums are left out)' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
+                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : settings.picture === 'lines' ? 'A glowing line for each instrument: it rises and falls, and changes colour, with the notes it plays' : settings.picture === 'pigeons' ? 'Low-poly pigeons walk, hop and fly across a big keyboard, a bird standing on each key as it plays. Fast parts and the drums get pads of their own' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
                 >
                   <option value="showcase">Showcase: the notes playing</option>
                   <option value="lines">Lines: each instrument's path</option>
@@ -965,6 +965,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="flex items-center gap-1.5 text-forge-text" title="A fast part (short, quick notes on a few pitches) gets a bank of touch pads in front of the keyboard, one pad a note, with birds of its own. The kick gets a pad a bird stomps, and the other drums get drums birds peck. The keyboard keeps the slower parts. Off: every pitched part is played on the keyboard and the drums aren't shown.">
+                  <input type="checkbox" checked={settings.pigeons.pads} onChange={(e) => update({ pigeons: { ...settings.pigeons, pads: e.target.checked } })} className="accent-cyan-400" />
+                  Touch pads for fast parts, and drum pads
                 </label>
                 {(
                   [

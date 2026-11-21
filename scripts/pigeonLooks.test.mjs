@@ -51,8 +51,8 @@ test('backgrounds go round in the order chosen, each fading in; cameras cut', ()
 });
 
 test('a look is made safe: unknown ids dropped, at least one of each, times in order and after the start', () => {
-  assert.deepEqual(cleanLook(), { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1 });
-  assert.deepEqual(cleanLook({ backgrounds: ['moon', 'snow', 'snow', 7], backgroundAt: [9, 'x', 3, 0, -1, NaN], cameras: [], cameraAt: null }), { backgrounds: ['snow'], backgroundAt: [3, 9], cameras: ['diagonal'], cameraAt: [], motion: 1 });
+  assert.deepEqual(cleanLook(), { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1, pads: true });
+  assert.deepEqual(cleanLook({ backgrounds: ['moon', 'snow', 'snow', 7], backgroundAt: [9, 'x', 3, 0, -1, NaN], cameras: [], cameraAt: null }), { backgrounds: ['snow'], backgroundAt: [3, 9], cameras: ['diagonal'], cameraAt: [], motion: 1, pads: true });
   assert.deepEqual([cleanLook({ motion: 0.3 }).motion, cleanLook({ motion: 7 }).motion, cleanLook({ motion: -1 }).motion, cleanLook({ motion: 'lots' }).motion], [0.3, 1, 0, 1]);
   // (the order given is kept: it's the order they appear in)
   assert.deepEqual(cleanLook({ backgrounds: ['beach', 'plaza'] }).backgrounds, ['beach', 'plaza']);
@@ -69,16 +69,18 @@ test("the dialog's choices: read back safely, and made into a look from the song
     cameraWhen: 'none',
     cameraBars: 3,
     motion: 'music',
+    pads: true,
   });
+  assert.equal(readPigeonChoices({ pads: false }).pads, false);
   assert.equal(readPigeonChoices({ motion: 'still' }).motion, 'still');
   const bars = [0, 2, 4, 6, 8, 10];
   const sections = [0, 4, 8];
-  const choices = { backgrounds: ['plaza', 'night'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal', 'above', 'close'], cameraWhen: 'bars', cameraBars: 2, motion: 'calm' };
+  const choices = { backgrounds: ['plaza', 'night'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal', 'above', 'close'], cameraWhen: 'bars', cameraBars: 2, motion: 'calm', pads: true };
   // (the section at the very start isn't a change)
-  assert.deepEqual(lookFor(choices, bars, sections), { backgrounds: ['plaza', 'night'], backgroundAt: [4, 8], cameras: ['diagonal', 'above', 'close'], cameraAt: [4, 8], motion: 0.5 });
+  assert.deepEqual(lookFor(choices, bars, sections), { backgrounds: ['plaza', 'night'], backgroundAt: [4, 8], cameras: ['diagonal', 'above', 'close'], cameraAt: [4, 8], motion: 0.5, pads: true });
   assert.deepEqual(lookFor({ ...choices, backgroundWhen: 'none', cameraWhen: 'sections' }, bars, sections).backgroundAt, []);
   // One ticked: nothing to change to
-  assert.deepEqual(lookFor({ ...choices, backgrounds: ['night'], cameras: ['low'] }, bars, sections), { backgrounds: ['night'], backgroundAt: [], cameras: ['low'], cameraAt: [], motion: 0.5 });
+  assert.deepEqual(lookFor({ ...choices, backgrounds: ['night'], cameras: ['low'] }, bars, sections), { backgrounds: ['night'], backgroundAt: [], cameras: ['low'], cameraAt: [], motion: 0.5, pads: true });
   assert.deepEqual(MOTIONS.map((m) => [m.id, m.amount]), [['music', 1], ['calm', 0.5], ['still', 0]]);
 });
 
