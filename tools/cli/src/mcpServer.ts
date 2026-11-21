@@ -162,7 +162,13 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     let probe = resolve(realRoot, folder);
     const fresh: string[] = [];
     for (;;) {
-      let st = lstatSync(probe, { throwIfNoEntry: false });
+      let st;
+      try {
+        st = lstatSync(probe, { throwIfNoEntry: false });
+      } catch (err) {
+        // (a file on the way: looked for as the folders above it are)
+        if ((err as NodeJS.ErrnoException).code !== 'ENOTDIR') throw err;
+      }
       if (st?.isSymbolicLink()) {
         // (a link is followed; one that leads nowhere is an escape)
         try {
@@ -181,7 +187,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     const real = realpathSync.native(probe);
     const rel = relative(realRoot, real);
     if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw outside();
-    if (!statSync(real).isDirectory()) throw new Error(`pictures ${folder} is a file.`);
+    if (!statSync(real).isDirectory()) throw new Error(fresh.length ? `pictures ${folder}: ${rel.split(sep).join('/')} is a file.` : `pictures ${folder} is a file.`);
     if (!fresh.length && readdirSync(real, { withFileTypes: true }).some((e) => !e.isFile() || !/\.png$/i.test(e.name))) throw new Error(`pictures needs a folder of its own: ${folder} holds other files.`);
     return join(real, ...fresh);
   };

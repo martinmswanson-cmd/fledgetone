@@ -500,3 +500,27 @@ test('measure through the browser: an MP3 heard, a WAV it cannot read in Node, a
   assert.notEqual(bad.code, 0);
   assert.equal(bad.stderr.trim(), "fledgetone: x.mp3 can't be read as audio.");
 });
+
+test('listen --close: the message says what was typed; the bars are checked before the sound to read against is heard', { skip }, async () => {
+  const r = await cli('listen', SONG, '--close', '99', '--offline');
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /^fledgetone: --close 99 is outside the bars heard/);
+  writeFileSync(join(tmp, 'not-audio-either.mp3'), 'These are not sounds.\n');
+  const against = await cli('listen', SONG, '--close', '99', '--against', join(tmp, 'not-audio-either.mp3'), '--offline');
+  assert.equal(against.code, 2);
+  assert.match(against.stderr, /^fledgetone: --close 99 is outside the bars heard/);
+  assert.match((await cli('listen', SONG, '--close', '-1')).stderr, /^fledgetone: --close -1: give a bar/);
+});
+
+test('measure through the browser: a close-up past the end is refused as for a WAV, before the sound to read against is heard', { skip: browserSkip, timeout: 300_000 }, async () => {
+  const mp3 = join(tmp, 'short.mp3');
+  assert.equal((await slowCli('render', SONG, '--bars', '1', '-o', mp3, '--offline')).code, 0);
+  writeFileSync(join(tmp, 'y.mp3'), 'These are not sounds.\n');
+  const r = await slowCli('measure', mp3, '--close', '99', '--against', join(tmp, 'y.mp3'), '--offline');
+  assert.equal(r.code, 2);
+  assert.equal(r.stderr.trim(), 'fledgetone: --close 99 is past the end of short.mp3');
+  // An MP3 read against an MP3, in one page
+  const both = await slowCli('measure', mp3, '--against', mp3, '--offline', '--json');
+  assert.equal(both.code, 0, both.stderr);
+  assert.match(JSON.parse(both.stdout).against.notes[0], /short\.mp3 against short\.mp3/);
+});

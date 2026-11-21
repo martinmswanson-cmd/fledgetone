@@ -94,7 +94,8 @@ Rendering and listening
   --bpm <n>           measure: the tempo, when you know it
   --against <file>    Read it against another sound or a saved hearing, level-matched; compare like
                       with like. --against-from <s> --against-to <s>: a stretch of that one
-  --save <file.json>  Save the hearing (measurements only, no audio; --overwrite to replace one)
+  --save <file.json>  Save the hearing (measurements only, no audio; --overwrite to replace one);
+                      with --suggestion or --ops, the after version's
   At most 15 minutes are heard at a time. --pictures, --close, --against and --save turn --sound on
   -h, --help          This help
   -v, --version       The version
@@ -102,9 +103,13 @@ Rendering and listening
 Fledgetone sends nothing anywhere. Your agent sends what it reads to whoever runs it.
 `;
 
+/** The options that take a number, given as `--from -1`: joined as `--from=-1`, so the option's own check says what it takes (parseArgs would take -1 for an option). */
+const NUMBER_OPTIONS = new Set(['--from', '--to', '--close', '--against-from', '--against-to', '--bpm']);
+const joinNegatives = (argv: string[]): string[] => argv.flatMap((a, i) => (NUMBER_OPTIONS.has(a) && /^-[\d.]/.test(argv[i + 1] ?? '') ? [`${a}=${argv[i + 1]}`] : i > 0 && NUMBER_OPTIONS.has(argv[i - 1]) && /^-[\d.]/.test(a) ? [] : [a]));
+
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
-    args: argv,
+    args: joinNegatives(argv),
     allowPositionals: true,
     strict: true,
     options: {

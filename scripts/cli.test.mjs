@@ -585,3 +585,36 @@ test('measure --from --to: a stretch of the file; outside it, or over 15 minutes
     rmSync(long, { force: true });
   }
 });
+
+test('measure: negative numbers, a missing file and folders that are not there are one plain line each, before any hearing', { skip, timeout: 120_000 }, async () => {
+  const wav = join(tmp, 'follow-up.wav');
+  writeFileSync(wav, makeWav());
+  for (const option of ['from', 'to', 'close', 'bpm']) {
+    const r = await cli('measure', wav, `--${option}`, '-1');
+    assert.equal(r.code, 2, option);
+    assert.match(r.stderr, new RegExp(`^fledgetone: --${option} takes .*\\(got -1\\)\\n`), option);
+  }
+  for (const option of ['against-from', 'against-to']) {
+    const r = await cli('measure', wav, '--against', wav.replace(/\.wav$/, '.hearing.json'), `--${option}`, '-1');
+    assert.equal(r.code, 2, option);
+    assert.match(r.stderr, new RegExp(`^fledgetone: --${option} takes seconds, like 90, 90\\.5 or 1:30 \\(got -1\\)\\n`), option);
+  }
+  for (const extra of [[], ['--sound']]) {
+    const r = await cli('measure', join(tmp, 'nothere.wav'), ...extra);
+    assert.equal(r.code, 2);
+    assert.equal(r.stderr.trim(), `fledgetone: can't read ${join(tmp, 'nothere.wav')}`);
+  }
+  const afile = join(tmp, 'a-plain-file');
+  writeFileSync(afile, 'x');
+  const pictures = await cli('measure', wav, '--pictures', join(afile, 'sub'));
+  assert.equal(pictures.code, 2);
+  assert.match(pictures.stderr, /^fledgetone: --pictures .*sub: .*a-plain-file is a file, not a folder\n/);
+  const save = await cli('measure', wav, '--save', join(tmp, 'nodir', 'h.json'));
+  assert.equal(save.code, 2);
+  assert.match(save.stderr, /^fledgetone: --save .*h\.json: the folder .*nodir isn't there\n/);
+  // The subject is checked before the sound it is read against is heard (that one isn't audio at all)
+  writeFileSync(join(tmp, 'not-audio.mp3'), 'These are not sounds.\n');
+  const close = await cli('measure', wav, '--close', '99', '--against', join(tmp, 'not-audio.mp3'));
+  assert.equal(close.code, 2);
+  assert.match(close.stderr, /^fledgetone: --close 99 is past the end of follow-up\.wav\n/);
+});

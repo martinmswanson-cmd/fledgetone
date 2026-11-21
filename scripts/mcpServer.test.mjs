@@ -394,6 +394,10 @@ test('hear_audio: pictures need a folder of their own, inside the root, in plain
     assert.deepEqual(readdirSync(outside), [], 'nothing written through the links');
     const file = await hear('brief.wav');
     assert.equal(text(file), 'pictures brief.wav is a file.');
+    // A folder under a file: its parent is a file, in plain words
+    const under = await hear('brief.wav/sub');
+    assert.ok(under.isError);
+    assert.equal(text(under), 'pictures brief.wav/sub: brief.wav is a file.');
     // The root itself holds a song and other files; a folder with a text file in it
     for (const p of ['.', 'otherfiles']) {
       const r = await hear(p);
