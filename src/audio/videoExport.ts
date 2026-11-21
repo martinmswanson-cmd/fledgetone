@@ -449,7 +449,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const total = Math.ceil(seconds * fps);
     footage = opts.footage ? await openVideo(opts.footage.url) : null;
     const skinMemory: SkinMemory = {};
-    pigeons = opts.pigeons && !footage ? new PigeonScene(opts.pigeons, { width: size.w, height: size.h, tall, centerY: (picture.y + picture.h / 2) / H - (tall ? 0 : 0.08), look: opts.pigeonLook }) : null;
+    pigeons = opts.pigeons && !footage ? new PigeonScene(opts.pigeons, { width: size.w, height: size.h, tall, centerY: (picture.y + picture.h / 2) / H - (tall ? 0 : 0.08), safe: { top: picture.y / H / 2, bottom: pictureEnd / H }, look: opts.pigeonLook }) : null;
     // The text's colours: light on the dark backgrounds, dark ink on the pigeons' pale floors
     // (their dark ones, the night street and space, take light text with a soft shade behind it)
     const LIGHT_INK = { title: '#e4e4e7', sub: '#9ca3af', wave: '#3a3a44', played: '#06b6d4', head: '#f59e0b', section: '#f59e0b', mark: '#6b7280' };

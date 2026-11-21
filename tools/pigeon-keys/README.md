@@ -68,7 +68,7 @@ frame();
 
 | In `song` | What it is |
 | --- | --- |
-| `notes` | `{ start, end, pitch, track?, drum?, kick? }` each: seconds from the song's start, a MIDI note number, the index of its track (0 if left out). The birds play pitched notes: one with `drum: true` or `kick: true` isn't played, but the backgrounds jump on the kicks |
+| `notes` | `{ start, end, pitch, track?, drum?, kick? }` each: seconds from the song's start, a MIDI note number, the index of its track (0 if left out). The keyboard's birds play pitched notes. One with `drum: true` or `kick: true` is a drum hit: it goes to the drum pads (see `pads`), and the backgrounds jump on the kicks |
 | `bars` | When each bar line falls, in seconds (optional): the beat the backgrounds jump on, in a song with no kicks |
 | `tracks` | The colour each track's keys light up in: a CSS colour each, or `{ color }` (optional; `TRACK_COLORS` in turn if left out) |
 | `duration` | The song's length in seconds (if left out: when the last note ends) |
@@ -81,6 +81,7 @@ frame();
 | `cameras` | The camera angles to use, by id, in order (`['diagonal']` if left out) |
 | `cameraAt` | When it cuts to the next angle, in seconds. Never, if left out |
 | `motion` | How much the backgrounds move with the music, from 0 (still) to 1 (fully; 1 if left out) |
+| `pads` | Whether fast parts and the drums get instruments of their own beside the keyboard (`true` if left out; `false` keeps every pitched note on the keyboard and leaves the drums out). Set when the pigeons are made: `setLook` doesn't change it |
 | `floor` | A floor colour of your own, any CSS colour, in place of the backgrounds' |
 | `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (each angle has its own, about 16); a smaller number makes everything bigger |
 | `centerY` | Where the keyboard's middle sits, from the top of the canvas, from 0 to 1 (0.5) |
@@ -102,6 +103,16 @@ through the song. The calm ones (the clouds, the plaza, the beach, the sunset) o
 gently: the clouds drift at about a key's width every eight seconds, whatever the music does. It
 follows the notes you give, not the sound, so it's the same every time. `motion: 0` keeps them
 still.
+
+A keyboard can't show a fast part well: the birds can't cross it in time, and the notes go by
+before a key has moved. So a track of short, quick notes (half of them under 0.3 seconds long and
+under 0.3 seconds apart, on 16 pitches or fewer) gets a bank of touch pads in front of the
+keyboard, one pad for each pitch it uses, low to high, in its track's colour, with two to four
+birds of its own that hop from pad to pad. Up to three tracks get one, the busiest first. Drum
+hits get drum pads behind the keyboard: a bird stomps the kick's pad, and birds peck a snare (pitch
+26, 27 or 38 to 40), the hats (30, 34, 42, 44, 46) and one drum for anything else. The keyboard
+keeps the slower parts, and is only as long as they need. `pads: false` puts every pitched note
+back on the keyboard.
 
 `everyBars(barTimes, n)` gives the times of every `n`th bar line, for `backgroundAt` and `cameraAt`:
 `cameraAt: everyBars(bars, 4)` cuts every four bars. For changes at a song's sections, give the
