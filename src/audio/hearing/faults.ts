@@ -50,6 +50,8 @@ const CLICK_FLOOR = 0.003;
 const JUMP_OVER_SLOPE = 3;
 /** The click must stand this many times over everything else within 2 ms (a noise burst or a busy wave does not). */
 const ISOLATION = 3;
+/** Two corners whose waves correlate this well are alike. */
+const LIKE = 0.8;
 /** Faults listed one by one before the rest are only counted. */
 const LISTED = 20;
 
@@ -119,12 +121,15 @@ function zeroFrom(x: Float32Array, from: number, to: number): boolean {
 
 /**
  * The clicks in one channel, read on its second difference d (zero on any straight stretch, large where
- * the wave jumps). A candidate stands far over the level of d on both sides of it; it is kept only if
- * the wave itself jumps there (not merely bends), it stands alone within 2 ms, the sound does not go on
- * louder after it (a hit's attack), and no like corner at least a quarter its size lies within 60 ms (a
- * clipped or distorted wave repeats its corners each cycle, at sizes that vary with where the cycle falls
- * between samples). A jump right beside digital silence (a dropout's edge) is a click whatever repeats
- * near it, as a wave's corners never border exact zeros. Within 2 ms of either end of the sound nothing is read: the file's own edges are no click.
+ * the wave jumps). A candidate stands far over the level of d on both sides of it, the larger side
+ * setting the bar, so the start of a hit (whose own sound sets the level after it) is none. It is kept
+ * only if the wave itself jumps there (not merely bends, as at a clean cut on a zero crossing), it stands
+ * alone within 2 ms (not a noise burst or a busy wave), and no like corner at least a quarter its size
+ * lies within 150 ms: a clipped or distorted wave repeats its corners each cycle, at sizes that vary
+ * with where the cycle falls between samples, and a gate or tremolo can leave one corner in each burst.
+ * A jump right beside digital silence (a dropout's edge) is a click whatever repeats near it, as a
+ * wave's corners never border exact zeros. Every test is centred on the candidate's peak, and nothing
+ * is read within 2 ms of either end of the sound: the file's own edges are no click.
  */
 function clicksIn(x: Float32Array, sampleRate: number): Click[] {
   const n = x.length;
@@ -165,30 +170,29 @@ function clicksIn(x: Float32Array, sampleRate: number): Click[] {
   }
 
   const near = Math.round(sampleRate * 0.002);
-  const repeat = Math.round(sampleRate * 0.06);
+  const repeat = Math.round(sampleRate * 0.15);
   const out: Click[] = [];
   let first = 0; // the first group within `repeat` before the one at hand
-  groups.forEach(([start, end, peak], g) => {
+  groups.forEach(([, , peak], g) => {
     if (peak < near || peak >= n - near) return;
     const size = Math.abs(d[peak]);
     // The wave jumps here, by more than its steepest step just around
-    const jump = steepest(x, start - 1, end);
-    const slope = Math.max(steepest(x, start - 11, start - 3), steepest(x, end + 2, end + 10));
+    const jump = steepest(x, peak - 2, peak + 1);
+    const slope = Math.max(steepest(x, peak - 11, peak - 3), steepest(x, peak + 2, peak + 10));
     if (jump < JUMP_OVER_SLOPE * slope) return;
     // It stands alone within 2 ms
     let around = 0;
-    for (let k = Math.max(1, start - near); k <= start - 4; k++) around = Math.max(around, Math.abs(d[k]));
-    for (let k = end + 4; k <= Math.min(n - 2, end + near); k++) around = Math.max(around, Math.abs(d[k]));
+    for (let k = Math.max(1, peak - near); k <= peak - 4; k++) around = Math.max(around, Math.abs(d[k]));
+    for (let k = peak + 4; k <= Math.min(n - 2, peak + near); k++) around = Math.max(around, Math.abs(d[k]));
     if (size < ISOLATION * around) return;
-    // The sound does not go on louder after it
-    if (medianAbs(d, end + 4, end + 40, scratch) > 2 * medianAbs(d, start - 40, start - 4, scratch) + CLICK_FLOOR / 10) return;
-    // It is not one of a row of like corners, unless it borders digital silence
-    while (groups[first][2] < peak - repeat) first++;
-    const intoSilence = zeroFrom(x, end + 1, end + block) || zeroFrom(x, start - block, start - 1);
-    for (let h = first; !intoSilence && h < groups.length && groups[h][2] <= peak + repeat; h++) {
-      if (h === g) continue;
-      const other = groups[h][2];
-      if (Math.abs(d[other]) >= size / 4 && sameShape(x, peak, other, 24) >= 0.9) return;
+    // It is not one of a row of like corners, unless it borders digital silence (a dropout's edge)
+    if (!zeroFrom(x, peak + 2, peak + 1 + block) && !zeroFrom(x, peak - 1 - block, peak - 2)) {
+      while (groups[first][2] < peak - repeat) first++;
+      for (let h = first; h < groups.length && groups[h][2] <= peak + repeat; h++) {
+        if (h === g) continue;
+        const other = groups[h][2];
+        if (Math.abs(d[other]) >= size / 4 && sameShape(x, peak, other, 24) >= LIKE) return;
+      }
     }
     out.push({ at: peak, jump, size });
   });

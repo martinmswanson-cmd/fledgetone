@@ -171,12 +171,12 @@ test('a 5 ms dropout that cuts mid-wave reads as a click at its place', () => {
   }
 });
 test('more than twenty clicks: the first twenty, then how many more', () => {
-  const x = bed(4);
-  for (let k = 0; k < 25; k++) { const i = Math.round((0.2 + k * 0.13) * 48000); x[i] += 4 * rmsAround(x, i); }
+  const x = bed(5);
+  for (let k = 0; k < 25; k++) { const i = Math.round((0.2 + k * 0.17) * 48000); x[i] += (k % 2 ? 4 : -4) * rmsAround(x, i); }
   const clicks = clicksOf([x]);
   assert.equal(clicks.length, 21);
   assert.deepEqual([clicks[20].seconds, clicks[20].count], [null, 5]);
-  near(clicks[19].seconds, 0.2 + 19 * 0.13, 0.001);
+  near(clicks[19].seconds, 0.2 + 19 * 0.17, 0.001);
 });
 
 // The other faults, more closely
@@ -220,4 +220,22 @@ test('a quieter channel, and nothing at all from silence', () => {
   assert.equal(faultsOf([S.gain(l, -8), l], 48000).find((x) => x.kind === 'channel'), undefined);
   assert.deepEqual(faultsOf([new Float32Array(48000), new Float32Array(48000)], 48000), []);
   assert.deepEqual(faultsOf([new Float32Array(0)], 48000), []);
+});
+
+// Known limits, measured: what the click rules cannot tell apart, kept here so a change that moves them shows
+
+test('known limit: like clicks closer than 150 ms read as a wave repeating its corners', () => {
+  const x = bed(4);
+  for (let k = 0; k < 8; k++) { const i = Math.round((1 + k * 0.1) * 48000); x[i] += 4 * rmsAround(x, i); }
+  assert.equal(clicksOf([x]).length, 0);
+});
+test('known limit: a click within a few samples of a clipped bass corner merges with it', () => {
+  // 3 of 40 such clicks placed every 89.1 ms are lost this way, 37 are found
+  const x = S.clip(S.saw(55, 4, 0), 0.5);
+  let found = 0;
+  for (let k = 0; k < 40; k++) {
+    const y = x.slice(); const i = Math.round((0.2 + k * 0.0891) * 48000); y[i] += (k % 2 ? 1 : -1) * 4 * rmsAround(y, i);
+    if (clicksOf([y]).some((c) => Math.abs(c.seconds - i / 48000) <= 0.001)) found++;
+  }
+  assert.equal(found, 37);
 });
