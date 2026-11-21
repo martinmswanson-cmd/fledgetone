@@ -31,7 +31,7 @@ browser and save to `.fledgetone.json` files.
 npm install
 npm run dev            # dev server
 npx tsc -b             # type check
-npx oxlint src         # lint (17 known warnings, all only-export-components: files that export a helper next to their component)
+npx oxlint src         # lint (20 known warnings: 17 only-export-components, files that export a helper next to their component, and 3 purity)
 npm test               # node --test scripts/*.test.mjs
 npm run build          # production build of the app alone
 npm run build:single   # the one-file build (dist-single/index.html)

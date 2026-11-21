@@ -186,4 +186,22 @@ agent. A full run passes when every sound passes.
 
 | Date | Version | Sound | What the agent said | Pass or fail |
 |---|---|---|---|---|
-| | | | | |
+| 2026-11-21 | 2026.11.18-4 | sound-01, clean.wav | Steady noise with two steady tones near 223 and 334 Hz, constant level, no faults | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-02, click.wav | A click at 5.00 s, a single spike of about 10 ms | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-03, resonance.wav | A steady pure tone at about 3.0 kHz, 13 dB above the noise around it | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-04, wobble.wav | A regular 6 Hz pulse throughout, 12.5 dB deep in the low band | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-05, pump.wav | A low thump every 0.5 s (120 bpm); the mid and high bands pump about 5.5 dB on the same beat | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-06, side-band.wav | Only 5 to 10 kHz differs between left and right; mono below about 5 kHz | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-07, clipping.wav | Clipped for the whole 8 s, flat tops at full scale on 66% of it | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-08, hum.wav | The report flags 60 Hz hum; a narrow peak near 59 Hz and its second harmonic near 122 Hz | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-09, bright.wav against dull.wav | The second is brighter: raised from about 5 kHz to 15 or 16 kHz (presence +4.6 dB, air +5.8 dB) | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-10, distorted-bass.wav against clean-bass.wav | Flat tops at -6.0 dBFS on 92% of it, with harmonics the first lacks: distortion from clipping | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-11, Plaza with a click | A click at 0:23.94 (unsure whether a fault, as it sits on a bass hit) | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-12, Plaza with a boost | A rise centred around 1.1 to 1.4 kHz in bars 9 to 16, mids +1.7 dB (read as an added line) | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-13, Eastern with a click | A click at 16.07 s, the only fault listed | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-14, Eastern with a boost | A narrow boost of about +3.1 dB at roughly 1.14 kHz | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-15, the heavy song as it is | No click and no fault; the limiter takes up to 11.3 dB off; dark, pumping on quarter notes | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-16, the heavy song with a click | A single click at 21.107 s | pass |
+| 2026-11-21 | 2026.11.18-4 | sound-17, the heavy song with a boost | A boost of about +2 to +3 dB centred near 360 to 450 Hz, +3 dB at about 400 Hz | pass |
+
+That first run asked 17 fresh agents, one sound each: 17 of 17 passed, with nothing false on the clean sound or on the heavy song as it is.
