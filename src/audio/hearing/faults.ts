@@ -291,26 +291,70 @@ function clippingFault(channels: readonly Float32Array[], sampleRate: number): F
 
 // ---- DC
 
-/** A channel's mean above -50 dBFS, also in the median of its 50 ms means (so a row of kicks, each with a lean, is no offset). */
-function dcFaults(channels: readonly Float32Array[], sampleRate: number): Fault[] {
+/** A moving average of `x` over `n` values (each value the mean of itself and the n - 1 before it). */
+function movingAverage(x: Float64Array, n: number): Float64Array {
+  const out = new Float64Array(x.length);
+  let sum = 0;
+  for (let i = 0; i < x.length; i++) {
+    sum += x[i];
+    if (i >= n) sum -= x[i - n];
+    out[i] = sum / Math.min(i + 1, n);
+  }
+  return out;
+}
+
+/**
+ * A channel's offset, or null. Its trend (the wave smoothed by two 50 ms averages, read every 1 ms) is
+ * off zero by more than -50 dBFS: as a median over time, and at its quietest moments (the fifth of the
+ * time with the least power about the trend), and it keeps that sign at least 90% of the time; its mean
+ * is off zero too, on the same side. A kick that starts on the rise leans one way as it starts, so a kick
+ * loop has a mean off zero; but its lean comes and goes with the hits, gone when they are quiet and back
+ * to zero between them, while an offset stays through everything. The value is the trend's median.
+ */
+function offsetOf(x: Float32Array, sampleRate: number): number | null {
   const limit = 0.00316;
-  const offsets: Array<number | null> = channels.map((x) => {
-    if (x.length === 0) return null;
-    let sum = 0;
-    for (let i = 0; i < x.length; i++) sum += x[i];
-    const mean = sum / x.length;
-    if (Math.abs(mean) <= limit) return null;
-    const block = Math.max(1, Math.round(sampleRate * 0.05));
-    const means = new Float64Array(Math.ceil(x.length / block));
-    for (let b = 0; b < means.length; b++) {
-      let s = 0;
-      const to = Math.min(x.length, (b + 1) * block);
-      for (let i = b * block; i < to; i++) s += x[i];
-      means[b] = s / (to - b * block);
+  let sum = 0;
+  for (let i = 0; i < x.length; i++) sum += x[i];
+  const mean = sum / Math.max(1, x.length);
+  if (!(Math.abs(mean) > limit)) return null;
+  const step = Math.max(1, Math.round(sampleRate / 1000));
+  const span = 50;
+  const count = Math.floor(x.length / step);
+  if (count < 4 * span) return null;
+  const level = new Float64Array(count);
+  const power = new Float64Array(count);
+  for (let b = 0; b < count; b++) {
+    let s1 = 0;
+    let s2 = 0;
+    for (let i = b * step; i < (b + 1) * step; i++) {
+      s1 += x[i];
+      s2 += x[i] * x[i];
     }
-    const typical = medianInPlace(means, means.length);
-    return Math.abs(typical) > limit && Math.sign(typical) === Math.sign(mean) ? mean : null;
-  });
+    level[b] = s1 / step;
+    power[b] = s2 / step;
+  }
+  const trend = movingAverage(movingAverage(level, span), span).subarray(2 * span);
+  const square = movingAverage(movingAverage(power, span), span).subarray(2 * span);
+  const n = trend.length;
+  const sorted = Float64Array.from(trend);
+  const typical = medianInPlace(sorted, n);
+  if (!(Math.abs(typical) > limit) || Math.sign(typical) !== Math.sign(mean)) return null;
+  let same = 0;
+  for (let i = 0; i < n; i++) if (Math.sign(trend[i]) === Math.sign(typical)) same++;
+  if (same < 0.9 * n) return null;
+  // The trend at the quietest fifth of the time
+  const about = Float64Array.from(square, (p, i) => p - trend[i] * trend[i]);
+  const bar = Float64Array.from(about).sort()[Math.floor(n / 5)];
+  const quiet = new Float64Array(n);
+  let q = 0;
+  for (let i = 0; i < n; i++) if (about[i] <= bar) quiet[q++] = trend[i];
+  const atQuiet = medianInPlace(quiet, q);
+  return Math.abs(atQuiet) > limit && Math.sign(atQuiet) === Math.sign(typical) ? typical : null;
+}
+
+/** A DC offset (see offsetOf) in any channel, as one fault. */
+function dcFaults(channels: readonly Float32Array[], sampleRate: number): Fault[] {
+  const offsets = channels.map((x) => offsetOf(x, sampleRate));
   const found = offsets.flatMap((v, c) => (v === null ? [] : [{ v, c }]));
   if (found.length === 0) return [];
   let largest = found[0];
@@ -361,18 +405,26 @@ function humBins(channels: readonly Float32Array[], sampleRate: number, needed: 
 
 /** The bins 2 to 5 Hz either side of `hz` (the window spreads a steady tone into the bins 1 Hz either side, so those are left out). */
 const NEIGHBOURS = [-5, -4, -3, -2, 2, 3, 4, 5];
+/** How far either side of a mains line other lines are looked for (a pattern repeating a whole number of times a second puts a comb of lines across it). */
+const COMB = 20;
 
 /**
  * Mains hum at 50 or 60 Hz, read in 1-second frames (1 Hz bins). On the spectrum averaged over the
  * frames, the bin is a peak at least 12 dB over the median of its neighbours, and its second or third
  * harmonic a peak at least 6 dB over theirs. In each frame it stands at least 6 dB over its neighbours
- * in 90% of the frames, and its level there spans less than 3 dB (the middle 80% of frames). A note or a
- * wobble comes and goes, or peaks off the mains frequency; hum stays on it.
+ * in 90% of the frames, and its level there spans less than 3 dB (the middle 80% of frames). And no other
+ * line within 20 Hz of it, within 20 dB of its level, stands 12 dB over its own neighbours: a kick or a
+ * note repeated a whole number of times a second (6, 10, 12) makes a comb of lines that lands on 50 or
+ * 60 Hz, while hum is one line with its harmonics. A note or a wobble comes and goes, or peaks off the
+ * mains frequency; hum stays on it.
  */
 function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault[] {
   if (Math.floor((channels[0]?.length ?? 0) / Math.round(sampleRate)) < 4) return [];
   const needed = new Set<number>();
-  for (const base of [50, 60]) for (const h of [1, 2, 3]) for (let k = -5; k <= 5; k++) needed.add(base * h + k);
+  for (const base of [50, 60]) {
+    for (const h of [2, 3]) for (let k = -5; k <= 5; k++) needed.add(base * h + k);
+    for (let k = -COMB - 5; k <= COMB + 5; k++) needed.add(base + k);
+  }
   const { frames, perFrame, mean } = humBins(channels, sampleRate, needed);
   const scratch = new Float64Array(NEIGHBOURS.length);
   /** The median of the neighbours of `hz` in `power` (the mean of the middle two). */
@@ -385,6 +437,17 @@ function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault
   const peak = (hz: number, overDb: number): boolean => {
     const p = mean.get(hz)!;
     return p > 1e-10 && p >= mean.get(hz - 1)! && p >= mean.get(hz + 1)! && p >= 10 ** (overDb / 10) * floorOf(hz, (f) => mean.get(f)!);
+  };
+  /** Whether another line within COMB Hz of `hz` (and within 20 dB of it) stands 12 dB over its own neighbours: a comb. */
+  const comb = (hz: number): boolean => {
+    const level = mean.get(hz)!;
+    for (let k = -COMB; k <= COMB; k++) {
+      if (Math.abs(k) <= 1) continue;
+      const f = hz + k;
+      const p = mean.get(f)!;
+      if (p >= level / 100 && p >= mean.get(f - 1)! && p >= mean.get(f + 1)! && p >= 16 * floorOf(f, (g) => mean.get(g)!)) return true;
+    }
+    return false;
   };
   /** Whether `hz` stands 6 dB over its neighbours in 90% of the frames, steady within 3 dB there. */
   const steady = (hz: number): boolean => {
@@ -399,7 +462,7 @@ function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault
     return levels[levels.length - 1 - cut] - levels[cut] < 3;
   };
   return [50, 60]
-    .filter((base) => peak(base, 12) && steady(base) && (peak(2 * base, 6) || peak(3 * base, 6)))
+    .filter((base) => peak(base, 12) && !comb(base) && steady(base) && (peak(2 * base, 6) || peak(3 * base, 6)))
     .map((base): Fault => ({ kind: 'hum', seconds: null, value: base, detail: `Hum at ${base} Hz` }));
 }
 

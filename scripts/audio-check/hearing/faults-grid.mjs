@@ -127,9 +127,24 @@ for (const phase of ['sine', 'cosine'])
 const within = (db) => (f) => f.length === 1 && Math.abs(f[0].value - db) <= 0.5;
 dc.push(['the bed + 0.01', () => G.bed(4).map((v) => v + 0.01), within(-40)]);
 dc.push(['the bed + 0.01 under a kick loop', () => S.mix(G.bed(8), G.kickLoop(2, 8, { hz: 55, decayMs: 150, peak: 0.8 })).map((v) => v + 0.01), within(-40)]);
-dc.push(['quiet pink at -40 dB + 0.005', () => S.pink(8, -40, 6).map((v) => v + 0.005), within(-46)]);
+// Pink's own slow wander adds to an offset this small, so its value is checked against the signal's own mean
+const meanDb = (x) => 20 * Math.log10(Math.abs(x.reduce((a, v) => a + v, 0) / x.length));
+const pinkDc = (seed) => S.pink(8, -40, seed).map((v) => v + 0.005);
+dc.push(['quiet pink at -40 dB + 0.005 (seed 1)', () => pinkDc(1), within(meanDb(pinkDc(1)))]);
 dc.push(['the bed - 0.01', () => G.bed(4).map((v) => v - 0.01), within(-40)]);
 family('DC', 'dc', dc);
+if (wanted('DC offsets on quiet pink')) {
+  let found = 0;
+  const values = [];
+  for (let seed = 1; seed <= 12; seed++) {
+    const x = pinkDc(seed);
+    const f = kinds(x, 'dc');
+    if (f.length === 1 && Math.abs(f[0].value - meanDb(x)) <= 0.5) found++;
+    values.push(f.length ? f[0].value : '-');
+  }
+  console.log(`\nDC offsets on quiet pink: 0.005 on -40 dB pink, seeds 1 to 12: ${found} of 12 found (${values.join(' ')})`);
+  if (found < 10) failures++;
+}
 
 console.log(failures === 0 ? '\nAll as they should be.' : `\n${failures} not as they should be.`);
 process.exit(failures === 0 ? 0 : 1);

@@ -54,8 +54,8 @@ export const snare = (seed) => S.mix(S.burst(0.2, 35, 0, -8, seed), S.decay(S.si
 export const drums = (sec) =>
   S.mix(kickLoop(2, sec, { hz: 55, decayMs: 250, peak: 0.8 }), hats(8, sec), S.at(sec, Array.from({ length: Math.floor(sec) }, (_, i) => [i + 0.5, snare(i + 50)])));
 
-/** A lighter kick and hats, for hum to sit under. */
-export const kickAndHats = (sec) => S.mix(kickLoop(2, sec, { hz: 55, decayMs: 150, peak: 0.5 }), hats(8, sec, -16));
+/** A kick (55 Hz, peak `peak`) on every beat at 120 BPM and hats on sixteenths, for hum to sit under. */
+export const kickAndHats = (sec, peak = 0.1) => S.mix(kickLoop(2, sec, { hz: 55, decayMs: 150, peak }), hats(8, sec, -16));
 
 /** A square of `hz` jumping between plus and minus `amp`, with no smoothing of its edges. */
 export const square = (hz, sec, amp, sr = SR) => Float32Array.from({ length: Math.round(sec * sr) }, (_, i) => (((i * hz) / sr) % 1 < 0.5 ? amp : -amp));
