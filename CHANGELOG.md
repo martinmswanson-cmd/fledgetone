@@ -4,6 +4,13 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **The lag warning gets out of the way**: once you close it, it stays closed for the rest of your visit (the **LAG** badge in the header still shows when playback lags, and opens the same help). It comes back once only if the sound engine itself then falls behind, which needs different fixes. It no longer sits on top of an open dialog.
+- **The game kit says when it's done**: when **Export game kit (.zip)** has finished, a line under the button names the file in your downloads and what's inside: how many seamless loops, stems, transition sounds, stingers and sound effects, and the players that come with them.
+- **Seamless loop explains itself**: when it's greyed out in the Export dialog, a line underneath now says it's made from the loop region, with a button that picks the loop region and the seamless ending in one click. Before, the reason was only in a tooltip.
+- **The games page names the formats**: plain files come as WAV, OGG or MP3.
+
 ## 2026.11.20 — Pigeons video, and Pigeons on the keys for your own pages
 
 - **A new video picture, Pigeons** (Export › Video › Picture, or search *pigeons video*): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. The birds are proper low-poly rock doves, with wings that spread and beat on any jump longer than a key and a half, and a bird playing the same key twice hops on the spot between. Drums aren't played by the birds.

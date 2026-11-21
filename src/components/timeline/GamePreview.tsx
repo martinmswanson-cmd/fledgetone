@@ -24,7 +24,8 @@ import { hasRecordings, loadSamplesForNotes } from '../../audio/samplers/sampler
 import { livePlayhead } from '../../store/playheadClock';
 import { createZip } from '../../audio/zip';
 import { kitFileName, uniqueKitNames } from '../../store/kitNames';
-import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
+import { buildGameKit, KIT_LAYOUTS, type AudioManifest, type KitLayout } from '../../audio/gameKit';
+import { kitSummary } from '../../audio/gameKitSummary';
 import { buildRuntimeKit } from '../../audio/runtimeKit';
 import { songPlugins } from '../../audio/runtimePlugins';
 import { pluginFamilies } from '../../audio/plugins/pluginSources';
@@ -134,6 +135,8 @@ const KIT_LAYOUT_LABELS: Record<KitLayout, string> = { any: 'Any engine (web, Go
 
 const GameKitButton: React.FC = () => {
   const [progress, setProgress] = useState<string | null>(null);
+  /** What the last kit held, said under the button once it has downloaded */
+  const [saved, setSaved] = useState<string | null>(null);
   const [layout, setLayout] = useState<KitLayout>(() => {
     try {
       const v = localStorage.getItem('bosBeatbox.kitLayout');
@@ -146,9 +149,14 @@ const GameKitButton: React.FC = () => {
   const run = async () => {
     const s = useTimelineStore.getState();
     setProgress('0%');
+    setSaved(null);
     try {
-      const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`), 44100, layout);
-      downloadBlob(blob, `${kitFileName(s.projectName || 'Untitled')} game kit${layout === 'any' ? '' : ` for ${layout === 'godot' ? 'Godot' : 'Unity'}`}.zip`);
+      let manifest: AudioManifest | undefined;
+      const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`), 44100, layout, (m) => (manifest = m));
+      const fileName = `${kitFileName(s.projectName || 'Untitled')} game kit${layout === 'any' ? '' : ` for ${layout === 'godot' ? 'Godot' : 'Unity'}`}.zip`;
+      downloadBlob(blob, fileName);
+      if (manifest) setSaved(kitSummary(fileName, manifest, layout));
+      showToast(`The game kit is in your downloads: "${fileName}".`);
     } catch (err) {
       showToast(`Couldn't build the game kit: ${err instanceof Error ? err.message : String(err)}.`);
     } finally {
@@ -189,6 +197,9 @@ const GameKitButton: React.FC = () => {
       >
         <Package className="w-4 h-4" /> {progress === null ? 'Export game kit (.zip)' : `Building… ${progress}`}
       </button>
+      <p role="status" className={saved ? 'text-[11px] text-emerald-200' : 'sr-only'}>
+        {saved}
+      </p>
       <TryOutButton />
       <AuditionButton />
       <RuntimeKitButton />

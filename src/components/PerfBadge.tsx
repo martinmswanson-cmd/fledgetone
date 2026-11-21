@@ -8,6 +8,7 @@ import { clearMemory, heaviestTracks, usePerfStore } from '../audio/perfMonitor'
 import { useTimelineStore } from '../store/timelineStore';
 import { canFreeze, freezeTrack, notFrozenMessage, useFreezing } from '../store/freezeActions';
 import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from '../audio/playbackMode';
+import { lagWarningShows } from '../audio/playbackChoice';
 import { Popover } from './Popover';
 import { showToast } from './timeline/toastStore';
 
@@ -94,7 +95,8 @@ export const PerfBadge: React.FC = () => {
   const audioSpeed = usePerfStore((s) => s.audioSpeed);
   const behind = audioBehind(audioSpeed);
   const memory = usePerfStore((s) => s.memoryMB);
-  const dismissed = usePerfStore((s) => s.dismissed);
+  const closedFor = usePerfStore((s) => s.closedFor);
+  const kind = behind ? 'behind' : 'busy';
   const smoothing = usePerfStore((s) => s.smoothing);
   const stableNext = usePerfStore((s) => s.stableNext);
   const [open, setOpen] = useState(false);
@@ -149,11 +151,11 @@ export const PerfBadge: React.FC = () => {
           <Tips />
         </Popover>
       )}
-      {lagging && !dismissed && !open && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[min(92vw,460px)] rounded-lg border border-amber-400/70 bg-forge-panel shadow-2xl p-3 text-xs flex flex-col gap-2" role="alert">
+      {lagWarningShows(lagging, kind, closedFor) && !open && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 w-[min(92vw,460px)] rounded-lg border border-amber-400/70 bg-forge-panel shadow-2xl p-3 text-xs flex flex-col gap-2" role="alert">
           <div className="flex items-center gap-2 text-amber-200 font-semibold">
             <TriangleAlert className="w-4 h-4" /> Playback is lagging
-            <button type="button" onClick={() => usePerfStore.getState().dismiss()} className="ml-auto text-forge-muted hover:text-forge-text" title="Hide until playback starts again">
+            <button type="button" onClick={() => usePerfStore.getState().dismiss(kind)} className="ml-auto text-forge-muted hover:text-forge-text" title="Close (the LAG badge in the header keeps this help)" aria-label="Close">
               <X className="w-4 h-4" />
             </button>
           </div>

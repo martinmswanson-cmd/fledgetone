@@ -1150,6 +1150,18 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           ]}
         />
         <p>{endingDetail}</p>
+        {range !== 'loop' && (
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            A seamless loop is made from the loop region (the yellow In and Out on the ruler, now {loopRange}).
+            <button
+              type="button"
+              onClick={() => update({ range: 'loop', ending: 'seamless' })}
+              className="h-6 px-2 rounded-md border border-cyan-400/60 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
+            >
+              Export the loop region as a seamless loop
+            </button>
+          </p>
+        )}
       </Section>}
 
       {!videoOut && <Section title="Format">

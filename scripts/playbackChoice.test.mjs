@@ -22,3 +22,17 @@ test('lagging twice switches to Stable only when nobody chose Responsive', () =>
   assert.equal(shouldSwitchToStable(3, 'responsive', 'stable'), false);
   assert.equal(shouldSwitchToStable(3, 'stable', null), false);
 });
+
+const { lagWarningShows } = await import('../src/audio/playbackChoice.ts');
+
+test('the lag warning, once closed, stays closed for the visit; it returns once if the audio engine then falls behind', () => {
+  assert.equal(lagWarningShows(false, 'behind', null), false);
+  assert.equal(lagWarningShows(true, 'busy', null), true);
+  assert.equal(lagWarningShows(true, 'behind', null), true);
+  // Closed while the page was busy: quiet for more of the same, back for the other problem
+  assert.equal(lagWarningShows(true, 'busy', 'busy'), false);
+  assert.equal(lagWarningShows(true, 'behind', 'busy'), true);
+  // Closed while the engine was behind: nothing brings it back
+  assert.equal(lagWarningShows(true, 'behind', 'behind'), false);
+  assert.equal(lagWarningShows(true, 'busy', 'behind'), false);
+});

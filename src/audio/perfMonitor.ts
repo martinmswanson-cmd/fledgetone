@@ -1,5 +1,5 @@
 import { PLAYBACK_MODE, storedPlaybackChoice, switchToStableByItself } from './playbackMode';
-import { shouldSwitchToStable } from './playbackChoice';
+import { shouldSwitchToStable, type LagKind } from './playbackChoice';
 import { showToast } from '../components/timeline/toastStore';
 import { create } from 'zustand';
 import { lateNotes } from './presets/monotonic';
@@ -25,7 +25,8 @@ import { maxOf } from '../support/minMax';
  * actually made, so when the audio thread can't finish each block in time (too many voices and
  * effects at once: the sound crackles) it advances slower than the wall clock; under 97% of real
  * time over a few seconds counts. A few of the first two in a few seconds, or the third, counts as
- * lagging; a while without any clears it.
+ * lagging; a while without any clears it. The warning that pops up is closed for the rest of the
+ * visit; the LAG badge goes on saying so.
  *
  * It also steps in: at the first late note or freeze of a playback, the Transport schedules further
  * ahead (liveContext.ts) so later freezes are absorbed instead of heard, until Stop; and while
@@ -48,11 +49,11 @@ interface PerfState {
   memoryMB: number | null;
   /** Scheduling further ahead for this playback, after a late note or a freeze (until Stop) */
   smoothing: boolean;
-  /** The warning was closed: don't show it again until playback stops and starts */
-  dismissed: boolean;
+  /** The warning was closed while it was about this: it stays away for the rest of the visit (see lagWarningShows) */
+  closedFor: LagKind | null;
   /** Lag came back after smoothing in this session, so the next start uses Stable playback (playbackMode.ts) */
   stableNext: boolean;
-  dismiss: () => void;
+  dismiss: (kind: LagKind) => void;
 }
 
 export const usePerfStore = create<PerfState>((set) => ({
@@ -63,9 +64,9 @@ export const usePerfStore = create<PerfState>((set) => ({
   audioSpeed: null,
   memoryMB: null,
   smoothing: false,
-  dismissed: false,
+  closedFor: null,
   stableNext: false,
-  dismiss: () => set({ dismissed: true }),
+  dismiss: (kind) => set({ closedFor: kind }),
 }));
 
 const WINDOW_MS = 4000;
@@ -135,7 +136,6 @@ export function startPerfMonitor(): void {
     const playing = useTimelineStore.getState().isPlaying;
     if (playing && !wasPlaying) {
       playingSince = now;
-      usePerfStore.setState({ dismissed: false });
       // A playback that needed it once starts with it next time (this page): a heavy song's first
       // seconds are its busiest
       if (needsSmoothing && widenLookAhead()) usePerfStore.setState({ smoothing: true });

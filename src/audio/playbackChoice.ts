@@ -5,6 +5,20 @@
  * made on purpose, Responsive included, is kept. Pure, so Node can test it.
  */
 
+/** What the lag warning is about: the page freezing (notes sent late), or the audio engine itself falling behind. */
+export type LagKind = 'busy' | 'behind';
+
+/**
+ * Whether the lag warning pops up. Once closed it stays away for the rest of the visit (the LAG
+ * badge in the header still says so and opens the same help), except that a warning closed while
+ * only the page was busy comes back once if the audio engine itself then falls behind: that's a
+ * different problem, with different fixes.
+ */
+export function lagWarningShows(lagging: boolean, kind: LagKind, closedFor: LagKind | null): boolean {
+  if (!lagging) return false;
+  return closedFor === null || (closedFor === 'busy' && kind === 'behind');
+}
+
 export type PlaybackMode = 'responsive' | 'stable';
 
 /** What's stored when the app switched to Stable by itself (a choice is stored as its mode) */

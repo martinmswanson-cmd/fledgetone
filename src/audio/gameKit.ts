@@ -428,9 +428,10 @@ export type KitLayout = (typeof KIT_LAYOUTS)[number];
 const json = (v: unknown) => new Blob([JSON.stringify(v, null, 2)], { type: 'application/json' });
 const text = (v: string, type = 'text/plain') => new Blob([v], { type });
 
-/** Build the kit as a .zip: the parts, the manifest, the players (or one engine's) and a README. */
-export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: number, detail: string) => void, sampleRate: SampleRate = 44100, layout: KitLayout = 'any'): Promise<Blob> {
+/** Build the kit as a .zip: the parts, the manifest, the players (or one engine's) and a README. `onManifest` is handed the manifest, to say what's inside (gameKitSummary.ts). */
+export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: number, detail: string) => void, sampleRate: SampleRate = 44100, layout: KitLayout = 'any', onManifest?: (manifest: AudioManifest) => void): Promise<Blob> {
   const { manifest, files } = await buildGameKitParts(song, (f, d) => onProgress?.(f * 0.97, d), sampleRate);
+  onManifest?.(manifest);
   const out: ZipEntry[] = [];
   if (layout === 'godot') {
     const slug = sfxFileName(manifest.name);
