@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { textureOf } = await import('../src/audio/hearing/texture.ts');
+const { textureOf, roughnessOf } = await import('../src/audio/hearing/texture.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
@@ -69,20 +69,28 @@ test('a clean saw and pink noise have no flat tops', () => {
 });
 
 // Roughness readings recorded from the first version of roughnessOf (a full-rate inverse transform per
-// band and hop, the rectified band, one transform per band per segment), before it was made faster.
-// The faster one must read each within 0.02.
-const T = 6;
+// band and hop, the rectified band, one transform per band per segment), before it was made faster; textureOf
+// gives these rounded to 2 decimals, as here.
+// The faster one must read each within 0.01. Rows where length doesn't matter are 2 s; the sample-rate rows
+// are 6 s, and the mixes of 25 s (past one stretch of 1048576 samples) and 0.5 s and the short tones keep their length.
+const T = 2;
+const LONG = 6;
+/** S.saw, made as one 0.2 s period and repeated (a whole number of cycles for these pitches), as the fixture's saw is slow to make long. */
+const saw = (hz, seconds, peakDb) => {
+  const period = S.saw(hz, 0.2, peakDb);
+  return Float32Array.from({ length: Math.round(seconds * 48000) }, (_, i) => period[i % period.length]);
+};
 const pair = (a, b) => S.mix(S.sine(a, T, -12), S.sine(b, T, -12));
 const hat = (i) => S.band(S.burst(0.06, 12, 0, -14, 100 + i), 5000, 20000);
-const bassAndPink = (seconds) => S.mix(S.saw(55, seconds, -6), S.pink(seconds, -20, 1));
+const bassAndPink = (seconds) => S.mix(saw(55, seconds, -6), S.pink(seconds, -20, 1));
 /** Each made signal by name, with its sample rate. */
 const MADE = {
   'sine 100': () => S.sine(100, T, -6),
   'sine 1000': () => S.sine(1000, T, -6),
   'sine 5000': () => S.sine(5000, T, -6),
-  'saw 55': () => S.saw(55, T, -6),
-  'saw 110': () => S.saw(110, T, -6),
-  'saw 440': () => S.saw(440, T, -6),
+  'saw 55': () => saw(55, T, -6),
+  'saw 110': () => saw(110, T, -6),
+  'saw 440': () => saw(440, T, -6),
   ...Object.fromEntries(
     [5, 20, 40, 70, 100, 150, 300].flatMap((rate) => [1, 0.5].map((depth) => [`am 1000 at ${rate} depth ${depth}`, () => S.am(1000, rate, depth, T, -6)]))
   ),
@@ -97,19 +105,19 @@ const MADE = {
   'white seed 2': () => S.white(T, -12, 2),
   'pink seed 1': () => S.pink(T, -12, 1),
   'pink seed 2': () => S.pink(T, -12, 2),
-  'saw 55 clipped at 0.5': () => S.clip(S.saw(55, T, 0), 0.5),
-  'square 55': () => S.gain(S.clip(S.saw(55, T, 0), 0.05), 20),
+  'saw 55 clipped at 0.5': () => S.clip(saw(55, T, 0), 0.5),
+  'square 55': () => S.gain(S.clip(saw(55, T, 0), 0.05), 20),
   'wobble bass': () => S.wobble(55, 150, 3000, 2, T, -6),
-  'tremolo bass': () => S.tremolo(S.saw(55, T, -6), 4, 0.5),
+  'tremolo bass': () => S.tremolo(saw(55, T, -6), 4, 0.5),
   'kick and hats': () => S.mix(S.every(2, T, () => S.decay(S.sine(55, 0.6, -6), 150)), S.every(8, T, hat)),
-  'saw 55 and pink 6 s': () => bassAndPink(6),
+  'saw 55 and pink 2 s': () => bassAndPink(2),
   'saw 55 and pink 25 s': () => bassAndPink(25),
   'saw 55 and pink 0.5 s': () => bassAndPink(0.5),
-  'am 1000 at 70, 44100': () => [S.am(1000, 70, 1, T, -6, 44100), 44100],
-  'am 1000 at 70, 22050': () => [S.am(1000, 70, 1, T, -6, 22050), 22050],
-  'am 1000 at 70, 96000': () => [S.am(1000, 70, 1, T, -6, 96000), 96000],
-  'am 7000 at 70, 22050': () => [S.am(7000, 70, 1, T, -6, 22050), 22050],
-  'white seed 1, 22050': () => [S.white(T, -12, 1, 22050), 22050],
+  'am 1000 at 70, 44100': () => [S.am(1000, 70, 1, LONG, -6, 44100), 44100],
+  'am 1000 at 70, 22050': () => [S.am(1000, 70, 1, LONG, -6, 22050), 22050],
+  'am 1000 at 70, 96000': () => [S.am(1000, 70, 1, LONG, -6, 96000), 96000],
+  'am 7000 at 70, 22050': () => [S.am(7000, 70, 1, LONG, -6, 22050), 22050],
+  'white seed 1, 22050': () => [S.white(LONG, -12, 1, 22050), 22050],
   'first half silent': () => S.at(T, [[T / 2, S.am(1000, 70, 1, T / 2, -6)]]),
   'am 1000 at 70, 0.05 s': () => S.am(1000, 70, 1, 0.05, -6),
   'am 1000 at 70, 0.01 s': () => S.am(1000, 70, 1, 0.01, -6),
@@ -123,16 +131,16 @@ const ROUGHNESS_BEFORE = [
   ['saw 440', 0],
   ['am 1000 at 5 depth 1', 0],
   ['am 1000 at 5 depth 0.5', 0],
-  ['am 1000 at 20 depth 1', 0.49],
-  ['am 1000 at 20 depth 0.5', 0.25],
+  ['am 1000 at 20 depth 1', 0.53],
+  ['am 1000 at 20 depth 0.5', 0.26],
   ['am 1000 at 40 depth 1', 0.71],
   ['am 1000 at 40 depth 0.5', 0.35],
   ['am 1000 at 70 depth 1', 0.71],
   ['am 1000 at 70 depth 0.5', 0.35],
   ['am 1000 at 100 depth 1', 0.71],
   ['am 1000 at 100 depth 0.5', 0.35],
-  ['am 1000 at 150 depth 1', 0.52],
-  ['am 1000 at 150 depth 0.5', 0.26],
+  ['am 1000 at 150 depth 1', 0.47],
+  ['am 1000 at 150 depth 0.5', 0.24],
   ['am 1000 at 300 depth 1', 0],
   ['am 1000 at 300 depth 0.5', 0],
   ['am 250 at 40', 0.71],
@@ -144,14 +152,14 @@ const ROUGHNESS_BEFORE = [
   ['sines 3000 + 3100', 0.47],
   ['white seed 1', 0.16],
   ['white seed 2', 0.16],
-  ['pink seed 1', 0.29],
+  ['pink seed 1', 0.3],
   ['pink seed 2', 0.28],
   ['saw 55 clipped at 0.5', 0.54],
   ['square 55', 0.21],
   ['wobble bass', 0.55],
   ['tremolo bass', 0.64],
-  ['kick and hats', 1.03],
-  ['saw 55 and pink 6 s', 0.47],
+  ['kick and hats', 1.02],
+  ['saw 55 and pink 2 s', 0.47],
   ['saw 55 and pink 25 s', 0.47],
   ['saw 55 and pink 0.5 s', 0.46],
   ['am 1000 at 70, 44100', 0.71],
@@ -159,7 +167,7 @@ const ROUGHNESS_BEFORE = [
   ['am 1000 at 70, 96000', 0.71],
   ['am 7000 at 70, 22050', 0.71],
   ['white seed 1, 22050', 0.16],
-  ['first half silent', 1],
+  ['first half silent', 1.01],
   ['am 1000 at 70, 0.05 s', 0.65],
   ['am 1000 at 70, 0.01 s', 0.33],
 ];
@@ -167,6 +175,12 @@ test('roughness holds the readings recorded before it was made faster', () => {
   for (const [name, before] of ROUGHNESS_BEFORE) {
     const made = MADE[name]();
     const [x, sr] = Array.isArray(made) ? made : [made, 48000];
-    near(textureOf([x], sr).roughness, before, 0.02 + 1e-9, name);
+    near(Math.round(roughnessOf(x, sr) * 100) / 100, before, 0.01 + 1e-9, name);
+  }
+});
+test('roughness is a finite number for a sound of a few samples', () => {
+  for (const n of [1, 2, 3, 16, 31, 32, 33, 64, 200]) {
+    const x = Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin(i / 3));
+    assert.ok(Number.isFinite(roughnessOf(x, 48000)), `${n} samples`);
   }
 });

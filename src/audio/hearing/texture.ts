@@ -168,8 +168,11 @@ function octaveBands(x: Float32Array, sampleRate: number): Array<Envelope | null
   });
 }
 
-/** The power-weighted mean, over seven octave bands, of how strongly each band's envelope beats at 20 to 150 Hz. */
-function roughnessOf(mid: Float32Array, sampleRate: number): number {
+/**
+ * The power-weighted mean, over seven octave bands, of how strongly each band's envelope beats at 20 to 150 Hz.
+ * Exported so the tests can read it alone, without the rest of textureOf.
+ */
+export function roughnessOf(mid: Float32Array, sampleRate: number): number {
   let weighted = 0;
   let weights = 0;
   for (let from = 0; from < mid.length; from += SEGMENT) {
@@ -180,6 +183,7 @@ function roughnessOf(mid: Float32Array, sampleRate: number): number {
       const { envelope, rate, power } = band;
       if (db(power) < -70) continue;
       const n = envelope.length;
+      if (n < 2) continue; // one sample has no beating to read (and a one-sample window has no power)
       let mean = 0;
       for (let i = 0; i < n; i++) mean += envelope[i];
       mean /= n;
@@ -190,6 +194,7 @@ function roughnessOf(mid: Float32Array, sampleRate: number): number {
       const window = hann(n);
       let windowPower = 0;
       for (const w of window) windowPower += w * w;
+      if (!(windowPower > 0)) continue;
       const re = new Float64Array(size);
       const im = new Float64Array(size);
       for (let i = 0; i < n; i++) re[i] = (envelope[i] - mean) * window[i];
