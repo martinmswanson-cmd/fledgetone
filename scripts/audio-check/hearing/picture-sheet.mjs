@@ -98,4 +98,4 @@ lines.push(`difference: ${diff.shows}`);
 
 writeFileSync(join(out, 'index.txt'), lines.join('\n\n') + '\n');
 console.log(`wrote ${h.pictures.length + 1} pictures to ${out} (hearingOf with pictures took ${taken.toFixed(1)} s)`);
-console.log(h.sound.faults.map((f) => `${f.kind} ${f.seconds} ${f.at ? JSON.stringify(f.at) : ''}`).join('\n'));
+console.log(`faults the report found: ${h.sound.faults.map((f) => `${f.kind} at ${f.seconds ?? 'no one time'}${f.at?.bar ? ` (bar ${f.at.bar}, beat ${f.at.beat})` : ''}`).join('; ') || 'none'}`);
