@@ -151,6 +151,9 @@ function zeroFrom(x: Float32Array, from: number, to: number): boolean {
  * alone within 2 ms (not a noise burst or a busy wave), and no like corner at least a quarter its size
  * lies within 150 ms: a clipped or distorted wave repeats its corners each cycle, at sizes that vary
  * with where the cycle falls between samples, and a gate or tremolo can leave one corner in each burst.
+ * The like corners are looked for among every peak of d that size, candidates or not: under noise near
+ * the level where the wave's corners stop standing over the scale, only some of them are candidates,
+ * and one left without a candidate beside it would read as a click.
  * A jump right beside digital silence (a dropout's edge) is a click whatever repeats near it, as a
  * wave's corners never border exact zeros. Every test is centred on the candidate's peak, and nothing
  * is read within 2 ms of either end of the sound: the file's own edges are no click.
@@ -219,6 +222,14 @@ function clicksIn(x: Float32Array, sampleRate: number): Click[] {
         if (h === g) continue;
         const other = groups[h][2];
         if (Math.abs(d[other]) >= size / 4 && sameShape(x, peak, other, basis, u, v) >= LIKE) return;
+      }
+      // (the candidates first, which is quick for a clean wave; then every other peak of d that size)
+      const quarter = size / 4;
+      for (let k = Math.max(1, peak - repeat); k <= Math.min(n - 2, peak + repeat); k++) {
+        if (Math.abs(k - peak) <= 3) continue;
+        const w = Math.abs(d[k]);
+        if (w < quarter || w < Math.abs(d[k - 1]) || w < Math.abs(d[k + 1])) continue;
+        if (sameShape(x, peak, k, basis, u, v) >= LIKE) return;
       }
     }
     out.push({ at: peak, jump, size });

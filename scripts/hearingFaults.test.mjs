@@ -120,6 +120,26 @@ test('no clicks in a square wave at 110 Hz', () => {
 test('no clicks in white and pink noise, quiet to loud', () => {
   for (const db of [-6, -18, -40]) { noClicks(S.white(5, db, 1), `white ${db} dB`); noClicks(S.pink(5, db, 1), `pink ${db} dB`); }
 });
+test('no clicks in a steady saw bass with noise near the level where its corners stop standing over the noise', () => {
+  // A slice of the grid in scripts/audio-check/hearing/faults-grid.mjs (saws at five pitches, plain and clipped, with
+  // pink and white noise from -60 to -12 dB). At these levels only some of the saw's corners are candidates; each must
+  // still be read as one of a row of like corners. Measured before that was so: 1, 1, 2 and 2 false clicks in these 4 s.
+  const sec = 4;
+  const plain = S.gain(saw(55, sec, 0), -10);
+  const clipped = S.clip(S.gain(plain, 10), 0.5);
+  const pink = S.pink(sec, 0, 1), white = S.white(sec, 0, 1);
+  noClicks(S.mix(plain, S.gain(pink, -21)), 'saw 55 Hz with pink noise at -21 dB');
+  noClicks(S.mix(plain, S.gain(white, -30)), 'saw 55 Hz with white noise at -30 dB');
+  noClicks(S.mix(clipped, S.gain(pink, -15)), 'clipped saw 55 Hz with pink noise at -15 dB');
+  noClicks(S.mix(clipped, S.gain(white, -24)), 'clipped saw 55 Hz with white noise at -24 dB');
+  noClicks(S.mix(plain, Float32Array.from(white, (v, i) => v * 10 ** ((-50 + (40 * i) / white.length) / 20))), 'a white-noise riser over the saw');
+  // and a click planted in that material, away from the saw's corners, is still found
+  const noisy = S.mix(plain, S.gain(pink, -21));
+  const at = G.plantAwayFromCorners(plain, 2.3).at;
+  noisy[at] += (noisy[at] >= 0 ? -4 : 4) * rmsAround(S.mix(plain, S.gain(pink, -21)), at);
+  const clicks = clicksOf([noisy]);
+  assert.equal(clicks.length, 1, 'the planted click, and nothing else'); near(clicks[0].seconds, at / 48000, 0.001);
+});
 test('the file edges are not clicks', () => {
   const cosine = Float32Array.from({ length: 2 * 48000 }, (_, i) => 0.5 * Math.cos((2 * Math.PI * 440 * i) / 48000));
   noClicks(cosine, 'a sound at full level on its first sample');

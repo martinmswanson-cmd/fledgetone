@@ -84,6 +84,80 @@ if (wanted('Planted clicks')) {
   if (found < Math.ceil(planted.length * 0.75)) failures++;
 }
 
+// ---- Clicks: a steady saw bass with noise at every level (the final review's grid)
+
+// Saws at 41, 55, 82, 110 and 165 Hz peaking at -10 dB, plain and clipped (driven 10 dB into a ceiling
+// of 0.5), with pink and with white noise from -60 to -12 dB RMS in 3 dB steps: 20 s each, no click wanted.
+// Near the level where the saw's corners stop standing over the noise only some of them are candidates,
+// and those must still be read as one of a row of like corners.
+if (wanted('Clicks in a saw bass with noise')) {
+  const long = 20;
+  const levels = Array.from({ length: 17 }, (_, i) => -60 + 3 * i);
+  const noises = [['pink', S.pink(long, 0, 1)], ['white', S.white(long, 0, 1)]];
+  console.log('\nClicks in a saw bass with noise, 20 s each (none wanted): false clicks at each noise level');
+  console.log(`  ${''.padEnd(28)} ${levels.map((db) => String(db).padStart(4)).join('')}  dB`);
+  let bad = 0;
+  let cases = 0;
+  const plainSaws = new Map([41, 55, 82, 110, 165].map((hz) => [hz, S.saw(hz, long, -10)]));
+  const count = (x) => kinds(x, 'click').reduce((n, f) => n + (f.seconds === null ? f.count : 1), 0);
+  for (const clipped of [false, true])
+    for (const [name, noise] of noises)
+      for (const [hz, plain] of plainSaws) {
+        const base = clipped ? S.clip(S.gain(plain, 10), 0.5) : plain;
+        const row = levels.map((db) => count(S.mix(base, S.gain(noise, db))));
+        cases += row.length;
+        bad += row.filter((c) => c > 0).length;
+        console.log(`  ${row.some((c) => c > 0) ? 'FAIL' : 'ok  '} ${`saw ${hz} Hz${clipped ? ' clipped' : ''}, ${name}`.padEnd(23)} ${row.map((c) => String(c).padStart(4)).join('')}`);
+      }
+  // A riser: white noise swelling from -50 to -10 dB over each saw (six trials, a seed each)
+  const riserRow = [41, 55, 82, 110, 165, 55].map((hz, k) => {
+    const noise = S.white(long, 0, 11 + k);
+    return count(S.mix(plainSaws.get(hz), Float32Array.from(noise, (v, i) => v * 10 ** ((-50 + (40 * i) / noise.length) / 20))));
+  });
+  cases += riserRow.length;
+  bad += riserRow.filter((c) => c > 0).length;
+  console.log(`  ${riserRow.some((c) => c > 0) ? 'FAIL' : 'ok  '} ${'a white-noise riser, 6 trials'.padEnd(28)} ${riserRow.map((c) => String(c).padStart(4)).join('')}`);
+  console.log(`  ${cases - bad} of ${cases} as they should be`);
+  failures += bad;
+
+  // Planted clicks in the same material (4 times the RMS around, away from the saw's corners): as many are
+  // found as before the like corners were looked for among every peak of that size (642 of 800, the same
+  // ones, where the rule before also read 29 false clicks; the 158 not found are under loud noise, where a
+  // jump of 4 times the RMS does not stand over the noise's own jumps)
+  console.log('\nPlanted clicks in a saw bass with noise, 8 s each, five clicks in each (found, +others)');
+  const short = 8 * SR;
+  const dbs = [-60, -48, -36, -30, -27, -24, -21, -18, -15, -12];
+  console.log(`  ${''.padEnd(28)} ${dbs.map((db) => String(db).padStart(5)).join('')}  dB`);
+  let found = 0;
+  let made = 0;
+  let others = 0;
+  for (const hz of [41, 55, 110, 165])
+    for (const clipped of [false, true])
+      for (const [name, noise] of noises) {
+        const plain = plainSaws.get(hz).subarray(0, short);
+        const base = clipped ? S.clip(S.gain(plain, 10), 0.5) : plain;
+        const row = dbs.map((db) => {
+          let x = S.mix(base, S.gain(noise.subarray(0, short), db));
+          const at = [1.1, 2.3, 3.7, 4.9, 6.2].map((t) => {
+            const i = G.plantAwayFromCorners(base, t).at;
+            const before = x;
+            x = x.slice();
+            x[i] += (before[i] >= 0 ? -4 : 4) * Math.sqrt(before.subarray(i - 1200, i + 1200).reduce((p, v) => p + v * v, 0) / 2400);
+            return i;
+          });
+          const clicks = kinds(x, 'click').filter((f) => f.seconds !== null);
+          const hit = at.filter((i) => clicks.some((c) => Math.abs(c.seconds - i / SR) <= 0.001)).length;
+          made += at.length;
+          found += hit;
+          others += clicks.length - hit;
+          return `${hit}${clicks.length - hit ? `+${clicks.length - hit}` : ''}`;
+        });
+        console.log(`  ${`saw ${hz} Hz${clipped ? ' clipped' : ''}, ${name}`.padEnd(28)} ${row.map((c) => c.padStart(5)).join('')}`);
+      }
+  console.log(`  ${found} of ${made} found, ${others} other clicks`);
+  if (found < 642 || others > 0) failures++;
+}
+
 // ---- Clicks: noise at many levels and seeds
 
 const noise = [];
