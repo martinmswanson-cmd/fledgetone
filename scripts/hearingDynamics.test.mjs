@@ -93,6 +93,19 @@ const hits = (n, db) => S.every(n, SECONDS, (i) => S.burst(Math.min(0.2, 0.9 / n
 const notes = (make, hz, decayMs, db, n) => S.every(n, SECONDS, () => S.decay(make(hz, 0.6, db), decayMs));
 const rate = (x) => attackOf([x], 48000).onsetsPerSecond;
 
+test('wobble opens and closes a saw at the LFO rate, and tremolo swings its level', () => {
+  const x = S.wobble(55, 150, 3000, 2, 1, -6);
+  assert.equal(x.length, 48000);
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  near(20 * Math.log10(peak), -6, 0.01);
+  // high harmonics (above 1.5 kHz) are strong where the cutoff is high (0.125 s) and weak where it is low (0.375 s)
+  const highs = S.band(x, 1500, 20000);
+  const hiss = (from) => highs.subarray(from, from + 2400).reduce((s, v) => s + v * v, 0);
+  assert.ok(10 * Math.log10(hiss(4800) / hiss(16800)) > 30);
+  const t = S.tremolo(new Float32Array(48000).fill(1), 4, 0.5);
+  near(t[0], 1 / 1.5, 1e-6); near(t[3000], 1, 1e-6); near(t[9000], 0.5 / 1.5, 1e-6);
+});
 test('decay fades a sound from its start with the given time constant', () => {
   const x = S.decay(new Float32Array(48000).fill(1), 100);
   near(x[0], 1, 1e-6); near(x[4800], Math.exp(-1), 1e-4); near(x[9600], Math.exp(-2), 1e-4);
@@ -179,6 +192,40 @@ test('soft swells at 2 a second are counted and read slow', () => {
   const a = attackOf([S.every(2, SECONDS, (i) => S.burst(0.4, 200, 80, -6, i))], 48000);
   near(a.onsetsPerSecond, 2, 0.5); assert.ok(a.riseMs > 40 && a.riseMs < 110, `${a.riseMs}`);
 });
+test('a wobble bass reads at most one soft onset per LFO cycle', () => {
+  const cases = [[55, 150, 3000, [2, 4, 8]], [55, 100, 6000, [4]], [55, 200, 2000, [2, 4]], [55, 300, 1200, [4]], [55, 400, 800, [4]], [41.2, 100, 2500, [2, 4]], [110, 200, 2000, [4]]];
+  for (const [hz, lo, hi, rates] of cases) for (const r of rates) {
+    const a = attackOf([S.wobble(hz, lo, hi, r, SECONDS, -6)], 48000);
+    const name = `${hz} Hz saw, ${lo} to ${hi} Hz at ${r} Hz: ${a.onsetsPerSecond} a second, rise ${a.riseMs}`;
+    assert.ok(a.onsetsPerSecond <= 1.35 * r, name); assert.ok(a.riseMs === null || a.riseMs >= 15, name);
+  }
+  for (const depth of [0.8, 0.5]) for (const r of [4, 6, 8]) {
+    const a = attackOf([S.tremolo(saw(55, -6), r, depth)], 48000);
+    const name = `level wobble ${depth} at ${r} Hz: ${a.onsetsPerSecond} a second, rise ${a.riseMs}`;
+    assert.ok(a.onsetsPerSecond <= 1.35 * r, name); assert.ok(a.riseMs === null || a.riseMs >= 15, name);
+  }
+});
+/** A hi-hat: a short burst of noise above 5 kHz. */
+const hat = (i) => S.band(S.burst(0.06, 12, 0, -14, 100 + i), 5000, 20000);
+const kicks = () => notes(S.sine, 55, 150, -6, 2);
+test('a kick and hats are counted at the hats\' rate, alone and over a bass, a sub or a pad', () => {
+  const pad = S.mix(S.saw(261.6, SECONDS, -24), S.saw(329.6, SECONDS, -24), S.saw(392, SECONDS, -24));
+  const groove = S.mix(kicks(), S.every(8, SECONDS, hat));
+  for (const [name, bed] of [['alone', null], ['on a 55 Hz saw', saw(55, -14)], ['on a 41.2 Hz sub', S.sine(41.2, SECONDS, -10)], ['on a pad', pad]]) {
+    const a = attackOf([bed ? S.mix(bed, groove) : groove], 48000);
+    near(a.onsetsPerSecond, 8, 8 * 0.15, name); assert.ok(a.riseMs < 5, `${name}: rise ${a.riseMs}`);
+  }
+  const offbeats = S.at(SECONDS, Array.from({ length: 8 }, (_, i) => [i / 2 + 0.25, hat(i)]));
+  near(rate(S.mix(kicks(), offbeats)), 4, 4 * 0.15, 'kick and offbeat hats');
+  const a = attackOf([S.mix(S.wobble(55, 150, 3000, 4, SECONDS, -10), groove)], 48000);
+  near(a.onsetsPerSecond, 8, 8 * 0.25, 'over a wobble bass'); assert.ok(a.riseMs < 5, `over a wobble bass: rise ${a.riseMs}`);
+});
+test('a rate that rounds to nothing has no rise', () => {
+  for (const [rate, x] of [[0.04, S.at(25, [[10, S.burst(0.2, 50, 0, -6, 1)]])]]) {
+    const a = attackOf([x], 48000);
+    assert.equal(a.onsetsPerSecond, 0, `${rate}`); assert.equal(a.riseMs, null);
+  }
+});
 test('four minutes of stereo are measured in under ten seconds', () => {
   const l = S.mix(S.white(240, -30, 1), S.every(8, 240, (i) => S.burst(0.1, 30, 0, -8, i % 50)));
   const r = S.mix(S.pink(240, -30, 2), S.sine(110, 240, -20));
@@ -193,6 +240,17 @@ test('known limits', () => {
   assert.ok(rate(hits(24, -6)) < 6, 'bursts at 24 a second');
   // Struck notes whose tail is still within 5 dB of their peak 45 ms on are not seen to stand out: 300 Hz, 80 ms, 12 a second
   assert.ok(rate(S.mix(saw(110, -20), notes(S.sine, 300, 80, -10, 12))) < 1, 'struck notes at 12 a second');
+  // Struck 523 Hz notes (80 ms) on a chord pad at 8 a second read 15% under
+  const pad = S.mix(S.saw(261.6, SECONDS, -24), S.saw(329.6, SECONDS, -24), S.saw(392, SECONDS, -24));
+  near(rate(S.mix(pad, notes(S.sine, 523.3, 80, -10, 8))), 6.8, 0.3, 'plucks on a pad at 8 a second');
+  // A four-note saw arpeggio on a seven-voice supersaw pad (voices in phase) reads over at 2 a second; the pad alone
+  // (its voices drifting in and out of phase) reads 2 slow onsets a second, and a phase-aligned C3-E3-G3 saw chord 0.3
+  const supersaw = S.mix(...[-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3].map((d) => S.saw(220 * 2 ** (d / 12), SECONDS, -28)));
+  const arp = [261.6, 329.6, 392, 523.3];
+  near(rate(S.mix(supersaw, S.every(2, SECONDS, (i) => S.decay(S.saw(arp[i % 4], 0.6, -12), 120)))), 3.3, 0.3, 'arpeggio on a supersaw');
+  const pads = attackOf([supersaw], 48000);
+  near(pads.onsetsPerSecond, 2, 0.3, 'supersaw alone'); assert.ok(pads.riseMs > 40, 'supersaw alone reads slow');
+  near(rate(S.mix(S.saw(130.8, SECONDS, -22), S.saw(164.8, SECONDS, -22), S.saw(196, SECONDS, -22))), 0.3, 0.05, 'C3-E3-G3 chord');
   // A hit on the first sample of a bed that starts with it counts only when the whole sound falls 6 dB after it
   near(rate(S.mix(S.sine(220, SECONDS, -20), hits(2, -8))), 1.8, 0.05, 'bursts at 2 a second on a bed starting with the first');
 });
