@@ -28,7 +28,7 @@ const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
 /** `channels` as they are, or, when a float file holds NaN or Infinity, copies with those samples set to 0. */
-function cleaned(channels: readonly Float32Array[]): Float32Array[] {
+export function cleaned(channels: readonly Float32Array[]): Float32Array[] {
   return channels.map((c) => {
     let bad = false;
     for (let i = 0; i < c.length; i++) {
