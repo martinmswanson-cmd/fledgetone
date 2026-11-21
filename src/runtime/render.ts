@@ -397,7 +397,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   // The hearing (asked for only): placed in the range's bars, at the song's tempo where it starts
   const hearing = opts.sound || opts.pictures;
   const spans = hearing ? hearingBars(p, fromBar, toBar) : undefined;
-  const hearOpts: HearingOptions = { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, pictures: !!opts.pictures };
+  const hearOpts: HearingOptions | undefined = hearing ? { engine: APP_VERSION, tempoBpm: tempoAt(fromBar, tempoOf(p)), bars: spans, pictures: !!opts.pictures } : undefined;
   if (opts.perTrack) {
     tracks = [];
     await renderRangeStems(
@@ -408,7 +408,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
         const t = await measureRender(bufferOf(ch, sampleRate));
         const id = idOf(track.id);
         trackBlocks.set(id, t.blocks);
-        const heardTrack = hearing ? await heardSound(ch, sampleRate, { ...hearOpts, small: true, prefix: `track-${id}-` }) : {};
+        const heardTrack = hearing ? await heardSound(ch, sampleRate, { ...hearOpts!, small: true, prefix: `track-${id}-` }) : {};
         tracks!.push({ id, name: track.name, lufs: tenth(t.lufs), truePeakDbtp: tenth(t.truePeakDbtp), crestDb: tenth(t.crestDb), regions: t.regions, ...heardTrack });
         measures.push({
           id: track.id,
@@ -442,7 +442,7 @@ async function hear(p: ProjectSnapshot, opts: ListenOptions, heard: string, prog
   if (hearing) {
     progress(at(0.97), `Hearing ${heard}`);
     const against = opts.against;
-    const mix = await heardSound(channels, rate, { ...hearOpts, closeUps: opts.closeUps, against, prefix: picturePrefix });
+    const mix = await heardSound(channels, rate, { ...hearOpts!, closeUps: opts.closeUps, against, prefix: picturePrefix });
     Object.assign(report, mix);
     if (against) report.against = compareSound(against.sound, mix.sound, { a: against.label, b: 'the song' });
   }
