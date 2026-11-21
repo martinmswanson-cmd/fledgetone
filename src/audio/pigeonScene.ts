@@ -45,6 +45,8 @@ const WINGS_DEEP = 3.4;
 const WINGS_REACH = 4.6;
 /** How far beyond the keyboard's last key a bird rounds its corner, walking between the end and the lane beside the keys */
 const WINGS_CORNER = 1.9;
+/** How steeply a stage runs up a tall frame at the least, and across a wide one at the most (radians up from level) */
+const STAGE_SLOPE = { tall: 1.42, wide: 0.1 };
 /** How far behind its drum a drum's bird stands: its beak, pecking, comes down on the drum's top */
 const DRUM_STAND = 1.5;
 const FRONT_Z = WHITE_L / 2 + 2.2;
@@ -1796,6 +1798,12 @@ export interface PigeonSceneOptions {
   across?: number;
   /** Where the keys' middle goes, from the top of the frame (0 to 1; the middle if not given) */
   centerY?: number;
+  /**
+   * The part of the frame a stage (the keyboard with its pads and drums) is kept inside: its top
+   * and bottom, from the top of the frame (0 to 1). For a frame with things drawn over its edges
+   * (a title, a waveform). The whole frame, if not given.
+   */
+  safe?: { top: number; bottom: number };
   /** The canvas to draw on (one of its own, if not given). It mustn't have a context yet */
   canvas?: HTMLCanvasElement;
   /** A floor colour of your own, in place of the backgrounds' (their floor details are still drawn) */
@@ -1825,6 +1833,7 @@ export class PigeonScene {
   private tall = false;
   private aspect = 1;
   private centerY: number;
+  private safe: { top: number; bottom: number };
   private across?: number;
   private look: PigeonLook;
   /** A floor colour given in place of the backgrounds' */
@@ -1857,6 +1866,8 @@ export class PigeonScene {
     this.camera = new T.OrthographicCamera(-1, 1, 1, -1, -400, 600);
     this.across = opts.across;
     this.centerY = opts.centerY ?? 0.5;
+    const top = Math.min(0.8, Math.max(0, opts.safe?.top ?? 0));
+    this.safe = { top, bottom: Math.min(1, Math.max(top + 0.2, opts.safe?.bottom ?? 1)) };
     this.sense = senseMusic(data.notes, data.bars);
     this.songEnd = maxOf(data.notes.map((n) => n.end), 1);
     this.ownFloor = opts.floor ? new T.Color(opts.floor) : null;
@@ -2031,30 +2042,40 @@ export class PigeonScene {
     const rx = e[0];
     const ux = e[4];
     const seen = Math.hypot(rx, ux);
-    const slope = this.tall ? cam.slope.tall : cam.slope.wide;
+    // (a stage in a tall frame runs steeply up it, and nearly level across a wide one: it's long, and so fills the frame)
+    const slope = !this.box ? (this.tall ? cam.slope.tall : cam.slope.wide) : this.tall ? Math.sign(cam.slope.tall || 1) * Math.max(Math.abs(cam.slope.tall), STAGE_SLOPE.tall) : Math.sign(cam.slope.wide) * Math.min(Math.abs(cam.slope.wide), STAGE_SLOPE.wide);
     // (the lesser turn that gives that slope: the camera stays the right way up)
     this.camera.rotateZ(uprightRoll(rx, ux, slope));
     if (this.box) {
-      // A stage (pads, drums): the camera holds all of it, the same all through, however the music moves about it;
-      // the close-up comes in by half again, toward what the keyboard's playing
+      // A stage (pads, drums): the camera holds all of it, the same all through, however the music
+      // moves about it, inside the frame's safe part. Every angle does, the close-up too (it's
+      // the nearest and lowest of them): a part out of the frame would be a part not seen
       this.camera.updateMatrixWorld();
       const m = this.camera.matrixWorld.elements;
       const { x0, x1, z0, z1 } = this.box;
       const mid = new T.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
-      let across = 0;
-      let up = 0;
+      let a0 = Infinity;
+      let a1 = -Infinity;
+      let u0 = Infinity;
+      let u1 = -Infinity;
       for (const x of [x0, x1]) for (const z of [z0, z1]) for (const y of [0, 2.4]) {
         const dx = x - mid.x;
         const dz = z - mid.z;
-        across = Math.max(across, Math.abs(dx * m[0] + y * m[1] + dz * m[2]));
-        up = Math.max(up, Math.abs(dx * m[4] + y * m[5] + dz * m[6]));
+        const ac = dx * m[0] + y * m[1] + dz * m[2];
+        const upw = dx * m[4] + y * m[5] + dz * m[6];
+        a0 = Math.min(a0, ac);
+        a1 = Math.max(a1, ac);
+        u0 = Math.min(u0, upw);
+        u1 = Math.max(u1, upw);
       }
-      const close = cam.furthest > 0.6;
-      this.camera.zoom = Math.min(1.5, 0.9 * Math.min(this.view.w / 2 / across, this.view.h / 2 / up)) * (close ? 1.5 : 1);
-      if (close) mid.x += (fx - mid.x) * 0.6;
-      // (moved so the stage's middle is in the middle of the picture, keeping the way it looks)
-      const from = new T.Vector3(mid.x - target.x, 0, mid.z - target.z);
-      this.camera.position.add(from);
+      const room = this.safe.bottom - this.safe.top;
+      this.camera.zoom = Math.min(1.8, 0.94 * Math.min(this.view.w / (a1 - a0), (this.view.h * room) / (u1 - u0)));
+      // (moved so the stage is in the middle of the safe part, keeping the way it looks)
+      this.camera.position.add(new T.Vector3(mid.x - target.x, 0, mid.z - target.z));
+      this.camera.updateProjectionMatrix();
+      this.camera.translateX((a0 + a1) / 2);
+      this.camera.translateY((u0 + u1) / 2 + (((this.safe.top + this.safe.bottom) / 2 - 0.5) * this.view.h) / this.camera.zoom);
+      return;
     } else {
       // How many keys fit along the frame at this slope, and so how far to pull back
       const fits = 0.92 * Math.min(this.view.w / Math.max(1e-6, seen * Math.abs(Math.cos(slope))), this.view.h / Math.max(1e-6, seen * Math.abs(Math.sin(slope))));

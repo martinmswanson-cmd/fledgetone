@@ -10,6 +10,7 @@ second update on the same day gets `-2`, and so on).
   - **The drums are played too**: behind the keyboard a bird stomps a kick pad, and birds peck a snare, the hats and a drum for any other percussion. Before, drums weren't shown.
   - The keyboard keeps the slower parts (chords, tunes) and is only as long as they need, so everything is bigger and the camera holds the whole stage still.
   - The keyboard's spare birds wait at its two ends, and walk round its corner and along the lane beside the keys to get on: never through the keyboard.
+  - The whole stage stays in the picture at every camera angle, the close-up too, clear of the title and the waveform. In a portrait video it runs straight up the frame and fills it.
   - Songs with no fast parts and no drums look as they did. To keep everything on the keyboard, untick **Touch pads for fast parts, and drum pads** (Export › Video, with the Pigeons picture).
   - The same in the **Pigeons on the keys** tool: `pads: false` turns it off, and notes marked `drum` or `kick` are now played on the drum pads.
 

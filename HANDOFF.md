@@ -350,13 +350,13 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   (`role: 'kick'`) and each drum a bird that pecks (`role: 'drum'`, `pecks`, `peckAt`). Resident
   birds are never pushed by `solveSpacing`; the keyboard's spare birds then wait at its two
   ends. The scene builds the stage (`buildStage`), lights pads as it does keys (`light`,
-  `byPad`/`padKey`) and frames the whole of `stageBox`, still. `PigeonLook.pads` /
+  `byPad`/`padKey`) and frames the whole of `stageBox`, still, at every angle (the close-up too), inside the frame's `safe` part (an option: the export gives it the room between the title and the waveform), running steeply up a tall frame and nearly level across a wide one (`STAGE_SLOPE`). `PigeonLook.pads` /
   `PigeonChoices.pads` is the switch (the dialog's tick box; the tool's `pads` option). Tests:
   the stage's sorting, no contact on a fast song, every fast note with a bird on its pad at its
   start, pecks and stomps on the hits. The same scene is
   the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
   minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with
-  three's licence in the zip). Not done: in a tall video a wide stage is small (the pads could go under the keyboard's end instead), a look at it on a phone's GPU; from some
+  three's licence in the zip). Not done: on a stage the close-up is much like the diagonal (it holds everything), a look at it on a phone's GPU; from some
   angles the keyboard passes under the title (its halo keeps it readable).
 - **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no
