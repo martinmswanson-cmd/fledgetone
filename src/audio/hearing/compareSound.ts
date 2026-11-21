@@ -38,6 +38,8 @@ const ONSETS_FLOOR = 0.1;
  * reverb's last trace): a width is compared only where one of the two stands above it.
  */
 const SIDE_FLOOR_DB = -50;
+/** A change this large in one band of the spectrum, dB (a region's step), is said when no measure differs. */
+const BAND_STEP_DB = 1.5;
 /** A band's movement that only one of the two has counts for at most this many steps, so it does not lead the list by itself. */
 const ONE_SIDED_STEPS = 3;
 /** Band and region levels are floored this far under their report's whole, dB: under it is rounding noise, and not a tone. */
@@ -331,7 +333,8 @@ const listed = (names: readonly string[]) => (names.length <= 1 ? names.join('')
 
 /**
  * The differences between two sound reports, b against a, level-matched, largest first; the kinds of
- * fault they do not share; and notes on how to read it, which end by saying so when nothing differs.
+ * fault they do not share; and notes on how to read it, which end by saying so when nothing differs
+ * (or, when no measure does but one band of the spectrum does, by saying that).
  */
 export function compareSound(a: SoundReport, b: SoundReport, labels: { a: string; b: string } = { a: 'the first', b: 'the second' }): SoundComparison {
   const notes = [`Read as ${labels.b} against ${labels.a}.`];
@@ -378,7 +381,20 @@ export function compareSound(a: SoundReport, b: SoundReport, labels: { a: string
   out.differences = found.map(({ _raw, ...d }) => d);
   out.faults = faultLines(a, b, labels);
   if (fromSaved) notes.push(`Compared from saved measurements of a stretch: tone, width and loudness only${lacking.length ? ` (${listed(lacking)} can't be compared)` : ''}.`);
-  if (out.differences.length === 0 && out.faults.length === 0) notes.push('Nothing differs by more than a step.');
+  if (out.differences.length === 0 && out.faults.length === 0) {
+    // Nothing in the list: said, so an empty comparison is not read as one that failed. A change in one
+    // narrow band can still stand in the spectrum under every measure's step (a boost of a third of an
+    // octave moves its region little): then that is said, as "nothing differs" would not be true
+    let top = -1;
+    out.spectrum.changeDb.forEach((v, i) => {
+      if (Math.abs(v) >= BAND_STEP_DB && (top < 0 || Math.abs(v) > Math.abs(out.spectrum.changeDb[top]))) top = i;
+    });
+    if (top < 0) notes.push('Nothing differs by more than a step.');
+    else {
+      const change = out.spectrum.changeDb[top];
+      notes.push(`No measure differs by more than a step; the largest change in one sixth of an octave is ${change >= 0 ? '+' : '-'}${one(Math.abs(change))} dB, at ${freqText(out.spectrum.freqs[top])}.`);
+    }
+  }
   return out;
 }
 

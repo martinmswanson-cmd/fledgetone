@@ -144,7 +144,7 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
   level-matched (the overall level is taken out before the tone is compared) and lists, after
   its notes, the kinds of fault the two do not share (`Clicks: 1 in click.wav (at 0:12.50), none
   in clean.wav.`) and then the differences, largest first; when nothing differs by more than a
-  step, it says so. What only one of the two has (a band's movement, a width down at the floor)
+  step, it says so (or, when one narrow band of the spectrum still does, names that band). What only one of the two has (a band's movement, a width down at the floor)
   is said as that, not compared as a number. Compare like with like: the same kind of stretch, of a similar
   length (a short loud stretch reads brighter, louder and more squashed than a whole track, and
   it says so when the lengths differ).

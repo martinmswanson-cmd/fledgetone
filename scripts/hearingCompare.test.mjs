@@ -391,6 +391,24 @@ test('a comparison in which nothing differs says so; a stretch of a saved hearin
   assert.ok(!compareSound(hear([new Float32Array(96000)]), r).notes.includes('Nothing differs by more than a step.'));
 });
 
+test('when no measure differs but one narrow band does, the notes say that, not that nothing differs', () => {
+  // a sixth of an octave raised 4 dB: under every measure's step (its region moves about half a dB), plain in the spectrum
+  const x = S.pink(4, -18, 1);
+  const raised = S.mix(x, S.gain(S.band(x, 1070, 1210), -4.3));
+  const c = compareSound(hear([x]), hear([raised]));
+  assert.deepEqual([c.differences, c.faults], [[], []], c.differences.map((d) => d.words).join('\n'));
+  const largest = c.spectrum.changeDb.reduce((best, v, i) => (Math.abs(v) > Math.abs(c.spectrum.changeDb[best]) ? i : best), 0);
+  assert.ok(c.spectrum.changeDb[largest] > 2.5 && Math.abs(Math.log2(c.spectrum.freqs[largest] / 1140)) < 1 / 6, `${c.spectrum.changeDb[largest]} dB at ${c.spectrum.freqs[largest]} Hz`);
+  assert.ok(!c.notes.includes('Nothing differs by more than a step.'));
+  assert.match(c.notes.at(-1), /^No measure differs by more than a step; the largest change in one sixth of an octave is \+\d\.\d dB, at 1\.1 kHz\.$/);
+  assert.ok(c.notes.at(-1).includes(`+${c.spectrum.changeDb[largest].toFixed(1)} dB`));
+  // the other way round, the band is down
+  assert.match(compareSound(hear([raised]), hear([x])).notes.at(-1), /the largest change in one sixth of an octave is -\d\.\d dB, at 1\.1 kHz\.$/);
+  // a change of level alone leaves the spectrum as it was: loudness is the one difference, and no such note
+  const quieter = compareSound(hear([x]), hear([S.gain(x, -6)]));
+  assert.ok(!quieter.notes.some((n) => /^(Nothing|No measure) differs/.test(n)));
+});
+
 test('a stretch of a saved hearing gives one note of what cannot be compared, listing the groups (M9)', () => {
   const full = hear([bedOf(4)]);
   const stretch = stretchOf(JSON.parse(JSON.stringify(full)), 0, 4);
