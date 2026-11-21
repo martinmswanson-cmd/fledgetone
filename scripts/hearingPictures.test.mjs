@@ -304,3 +304,53 @@ test('channels of unequal length are heard over the shorter, with no sample that
   assert.ok(h.sound.stereo && h.sound.tone.spectrum.mid.every(Number.isFinite));
   assert.equal(hearingOf([r, l], 48000, { engine: 't' }).sound.seconds, 2);
 });
+
+// The spectrum picture's second curve (the final review's I2): like with like, and level-matched
+
+/** For each column of the plot, the rows where a pixel of `colour` shows. */
+const rowsOfColour = (p, colour) => Array.from({ length: P.PICTURE.right - P.PICTURE.left }, (_, i) => {
+  const rows = [];
+  for (let y = P.PICTURE.top; y < P.PICTURE.bottom; y++) { const c = R.pixel(p.raster, P.PICTURE.left + i, y); if (c[0] === colour[0] && c[1] === colour[1] && c[2] === colour[2]) rows.push(y); }
+  return rows;
+});
+/** Per column where the other sound's line shows, how many rows it lies from this sound's (negative: above it). */
+const apart = (p) => {
+  const gold = rowsOfColour(p, P.SPECTRUM_LINES.main), blue = rowsOfColour(p, P.SPECTRUM_LINES.other);
+  return blue.map((rows, i) => (rows.length && gold[i].length ? rows.map((y) => gold[i].reduce((best, g) => (Math.abs(y - g) < Math.abs(best) ? y - g : best), Infinity)).reduce((worst, d) => (Math.abs(d) > Math.abs(worst) ? d : worst), 0) : null));
+};
+const xOfHz = (hz) => Math.round((Math.log10(hz / 20) / 3) * (P.PICTURE.right - P.PICTURE.left));
+
+test('the spectrum picture: a sound against itself 10 dB down draws one curve (both totals, level-matched)', () => {
+  const l = S.pink(4, -18, 1), r = S.pink(4, -18, 2);
+  const a = hearingOf([l, r], 48000, { engine: 't' }).sound, b = hearingOf([S.gain(l, -10), S.gain(r, -10)], 48000, { engine: 't' }).sound;
+  const p = P.spectrumPicture(a.tone.spectrum, 'this sound', { spectrum: b.tone.spectrum, label: 'the other' }, 'spectrum');
+  const d = apart(p).filter((v) => v !== null);
+  assert.ok(Math.max(0, ...d.map(Math.abs)) <= 1, `the other sound's line lies up to ${Math.max(0, ...d.map(Math.abs))} rows from this one's`);
+  assert.ok(rowsOfColour(p, P.SPECTRUM_LINES.main).filter((rows) => rows.length).length > 1000, 'this sound is drawn all across');
+  assert.ok(rowsOfColour(p, P.SPECTRUM_LINES.sides).some((rows) => rows.length), 'and its sides, dimmer');
+  assert.match(p.shows, /level-matched/);
+  assert.match(p.shows, /middle and sides together/);
+  assert.doesNotMatch(p.shows, /\b(good|bad|too|should)\b/i);
+  // the other way round, and against itself: the same
+  assert.ok(apart(P.spectrumPicture(b.tone.spectrum, 'this sound', { spectrum: a.tone.spectrum, label: 'the other' }, 'spectrum')).every((v) => v === null || Math.abs(v) <= 1));
+});
+test('the spectrum picture: a sound against itself with 2 to 4 kHz raised 6 dB differs only there', () => {
+  // (a sound whose weight is low, so the raise does not move its whole level)
+  const make = (seed) => S.mix(S.sine(100, 4, -6), S.pink(4, -30, seed));
+  const l = make(1), r = make(2);
+  const raise = (x) => S.mix(x, S.band(x, 2000, 4000));
+  const a = hearingOf([l, r], 48000, { engine: 't' }).sound, b = hearingOf([raise(l), raise(r)], 48000, { engine: 't' }).sound;
+  const d = apart(P.spectrumPicture(a.tone.spectrum, 'this sound', { spectrum: b.tone.spectrum, label: 'the raised one' }, 'spectrum'));
+  const perDb = (P.PICTURE.bottom - P.PICTURE.top - 1) / 90;
+  for (let hz = 30; hz < 18000; hz *= 1.05) {
+    const v = d[xOfHz(hz)];
+    if (hz < 1500 || hz > 5300) assert.ok(v === null || Math.abs(v) <= 1, `at ${Math.round(hz)} Hz the lines are ${v} rows apart`);
+    else if (hz > 2300 && hz < 3500) assert.ok(v !== null && Math.abs(-v - 6 * perDb) <= 0.7 * perDb, `at ${Math.round(hz)} Hz the raised one is ${v === null ? 'not drawn' : (-v / perDb).toFixed(1)} dB up`);
+  }
+});
+test('the spectrum picture of one sound alone is as it was: its middle and its sides, in dB against full scale', () => {
+  const a = hearingOf([S.pink(3, -18, 1), S.pink(3, -18, 2)], 48000, { engine: 't' }).sound;
+  const p = P.spectrumPicture(a.tone.spectrum, 'this sound', null, 'spectrum');
+  assert.match(p.shows, /the gold line is the middle \(left plus right\), the dim line the sides/);
+  assert.doesNotMatch(p.shows, /level-matched/);
+});

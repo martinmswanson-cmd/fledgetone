@@ -6,7 +6,7 @@
  * shows. Levels are dB against a full-scale sine. Pure code on samples, no DOM, no Web Audio.
  */
 import { fftInPlace } from '../fft';
-import type { BandSpectrum } from '../mixAnalysis';
+import { sumDb, totalBands, type BandSpectrum } from '../mixAnalysis';
 import { momentText } from './words';
 import { DIVERGING, fillRect, GRID, HEAT, INK, line, PAPER, pixel, ramp, raster, setPixel, text, textWidth, type Raster, type Rgb } from './raster';
 
@@ -89,6 +89,8 @@ const MID_LINE: Rgb = [250, 205, 90];
 const SIDE_LINE: Rgb = [150, 125, 70];
 const OTHER_LINE: Rgb = [90, 200, 250];
 const FAINT: Rgb = [150, 156, 168];
+/** The spectrum picture's lines: this sound (gold), its sides (dim), and the other sound (blue). */
+export const SPECTRUM_LINES = { main: MID_LINE, sides: SIDE_LINE, other: OTHER_LINE } as const;
 
 const FREQ_TICKS: Array<[number, string]> = [
   [20, '20'], [50, '50'], [100, '100'], [200, '200'], [500, '500'],
@@ -646,13 +648,21 @@ const SPECTRUM_TICKS: Array<[number, string]> = [
   [1000, '1 kHz'], [2000, '2 kHz'], [5000, '5 kHz'], [10000, '10 kHz'], [20000, '20 kHz'],
 ];
 
-/** Level against frequency: `a`'s middle as a solid line and its sides dimmer, and `other`'s total in another colour, both named in a key. */
+/**
+ * Level against frequency. Of one sound: its middle as a solid line and its sides dimmer, in dB against
+ * full scale. With `other`, like with like and level-matched as the comparison of the two is: each
+ * sound's total (middle and sides together) drawn against that sound's own whole level, so two sounds
+ * that differ only in level draw one curve, and `a`'s sides dimmer on the same scale.
+ */
 export function spectrumPicture(a: BandSpectrum, aLabel: string, other: { spectrum: BandSpectrum; label: string } | null, name: string, range?: { fromSeconds: number; toSeconds: number }): Picture {
   const from = range?.fromSeconds ?? 0, to = range?.toSeconds ?? 0;
   const span = range ? ` over ${rangeText(axisFor(from, to))}` : '';
-  const title = `Spectrum of ${aLabel}${other ? ` against ${other.label}` : ''}${range ? `: ${rangeText(axisFor(from, to))}` : ''}`;
+  const title = `Spectrum of ${aLabel}${other ? ` against ${other.label}, level-matched` : ''}${range ? `: ${rangeText(axisFor(from, to))}` : ''}`;
   const hasSide = a.side.some((v) => v > -150);
-  const shows = `Level (dB per sixth of an octave; a full-scale sine reads about -3 dB) against frequency (log scale, 20 Hz to 20 kHz) of ${aLabel}${span}: the gold line is the middle (left plus right)${hasSide ? ', the dim line the sides (left minus right)' : ''}${other ? `, and the blue line is ${other.label}, middle and sides together` : ''}.`;
+  const axes = `against frequency (log scale, 20 Hz to 20 kHz) of ${aLabel}${span}`;
+  const shows = other
+    ? `Level (dB per sixth of an octave) ${axes}, against ${other.label}, level-matched: each sound's level is drawn against that sound's own whole level (0 dB), so a difference in loudness does not show and a difference in tone does. The gold line is ${aLabel}, middle and sides together${hasSide ? '; the dim line is its sides alone (left minus right)' : ''}; the blue line is ${other.label}, middle and sides together.`
+    : `Level (dB per sixth of an octave; a full-scale sine reads about -3 dB) ${axes}: the gold line is the middle (left plus right)${hasSide ? ', the dim line the sides (left minus right)' : ''}.`;
   const p = blank('spectrum', name, title, shows, from, to);
   const r = p.raster;
   const xOfHz = (hz: number) => PICTURE.left + (Math.log10(hz / LOW_HZ) / DECADES) * COLUMNS;
@@ -665,22 +675,32 @@ export function spectrumPicture(a: BandSpectrum, aLabel: string, other: { spectr
   unitWord(r, 'dB');
   timeTicks(r, SPECTRUM_TICKS.map(([hz, label]) => ({ x: xOfHz(hz), label })), PICTURE.top, true, true);
   axisName(r, 'frequency');
-  const curve = (s: BandSpectrum, levels: readonly number[], c: Rgb, thick: boolean) => {
+  /** One curve: `levels` (dB against full scale; a band under -150 is empty and breaks the line), each drawn `under` dB lower. */
+  const curve = (s: BandSpectrum, levels: readonly number[], c: Rgb, thick: boolean, under = 0) => {
     let prev: [number, number] | null = null;
     s.freqs.forEach((hz, i) => {
       const v = levels[i];
       if (!(Number.isFinite(v) && v > -150 && hz >= LOW_HZ * 0.999 && hz <= 20000 * 1.001)) { prev = null; return; }
-      const pt: [number, number] = [xOfHz(hz), Math.min(PICTURE.bottom - 1, Math.max(PICTURE.top, yOfDb(v)))];
+      const pt: [number, number] = [xOfHz(hz), Math.min(PICTURE.bottom - 1, Math.max(PICTURE.top, yOfDb(v - under)))];
       if (prev) { line(r, prev[0], prev[1], pt[0], pt[1], c); if (thick) line(r, prev[0], prev[1] + 1, pt[0], pt[1] + 1, c); }
       prev = pt;
     });
   };
-  const total = (s: BandSpectrum) => s.mid.map((m, i) => { const sd = s.side[i]; return 10 * Math.log10(10 ** (m / 10) + (Number.isFinite(sd) ? 10 ** (sd / 10) : 0)); });
-  if (hasSide) curve(a, a.side, SIDE_LINE, false);
-  if (other) curve(other.spectrum, total(other.spectrum), OTHER_LINE, true);
-  curve(a, a.mid, MID_LINE, true);
+  if (other) {
+    // (a spectrum with no sides, a saved one of a mono sound, is its middle)
+    const total = (s: BandSpectrum) => (s.side.length === s.mid.length && s.side.every(Number.isFinite) ? totalBands(s) : [...s.mid]);
+    const mine = total(a), theirs = total(other.spectrum);
+    const whole = (levels: readonly number[]) => { const w = sumDb(levels); return Number.isFinite(w) ? w : 0; };
+    const myWhole = whole(mine);
+    if (hasSide) curve(a, a.side, SIDE_LINE, false, myWhole);
+    curve(other.spectrum, theirs, OTHER_LINE, true, whole(theirs));
+    curve(a, mine, MID_LINE, true, myWhole);
+  } else {
+    if (hasSide) curve(a, a.side, SIDE_LINE, false);
+    curve(a, a.mid, MID_LINE, true);
+  }
   keys(r, [
-    { colour: MID_LINE, label: `${aLabel}, middle` },
+    { colour: MID_LINE, label: `${aLabel}, ${other ? 'total' : 'middle'}` },
     ...(hasSide ? [{ colour: SIDE_LINE, label: `${aLabel}, sides` }] : []),
     ...(other ? [{ colour: OTHER_LINE, label: `${other.label}, total` }] : []),
   ]);

@@ -122,7 +122,8 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
 - `--pictures <folder>`: PNG pictures of it, written there (the folder is made if it isn't there,
   and a picture of the same name is written over): `spectrogram` (frequency against time; with
   details every 8 bars, or every 30 seconds, of a long one), `stereo` (the side signal), `level`
-  (the waveform and loudness), `spectrum` (with the other sound's, when there is one), `chroma`
+  (the waveform and loudness), `spectrum` (with the other sound's, when there is one: the two
+  are then drawn level-matched, each total against its own whole level), `chroma`
   (the pitch classes over time), a close-up of each fault, and `difference` (with a suggestion:
   where the after version differs). With `--per-track`, each track's are named `track-<id>-...`;
   with a suggestion, the after version's `after-...`. The text lists each with what it shows;

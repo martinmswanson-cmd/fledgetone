@@ -274,8 +274,11 @@ are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
 - `level`: the waveform of each channel against time, from -1 to +1, with each second's loudness
   as a line and the true peak marked.
 - `spectrum`: level against frequency on a log scale; the gold line is the middle, the dim line
-  the sides, and with `against` a blue line is the other sound (`against` makes no difference
-  picture).
+  the sides, in dB against full scale. With `against` it is drawn level-matched, as the
+  comparison is: the gold line is this sound's total (middle and sides together) and the blue
+  line the other sound's total, each against its own whole level (0 dB), so a difference in
+  loudness does not show and a difference in tone does; the dim line is still this sound's sides
+  (`against` makes no difference picture).
 - `chroma`: the twelve pitch classes (C at the bottom to B at the top) against time; brightness is
   each note's strength.
 - close-ups (`closeUps`, and one for each fault the report names): 0.15 seconds round
