@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## 2026.11.21 — Pigeons video: touch pads and drum pads for fast songs
+## 2026.11.21-2 — Pigeons video: touch pads and drum pads for fast songs
 
 - **Pigeons video: fast songs get touch pads and drum pads.** A keyboard can't show a fast part well: the birds can't cross it in time, and each note is gone before its key has moved. Now a fast part (short, quick notes on 16 pitches or fewer, like an arpeggio or a busy bass line) gets a bank of touch pads in front of the keyboard: one pad for each note it uses, low to high, in its track's colour, with two to four birds of its own that hop from pad to pad and land as each note starts. Up to three parts get one, the busiest first.
   - **The drums are played too**: behind the keyboard a bird stomps a kick pad, and birds peck a snare, the hats and a drum for any other percussion. Before, drums weren't shown.
@@ -13,6 +13,9 @@ second update on the same day gets `-2`, and so on).
   - The whole stage stays in the picture at every camera angle, the close-up too, clear of the title and the waveform. In a portrait video it runs straight up the frame and fills it.
   - Songs with no fast parts and no drums look as they did. To keep everything on the keyboard, untick **Touch pads for fast parts, and drum pads** (Export › Video, with the Pigeons picture).
   - The same in the **Pigeons on the keys** tool: `pads: false` turns it off, and notes marked `drum` or `kick` are now played on the drum pads.
+## 2026.11.21 — A new version is easier to see
+
+- **A new version is easier to see**: when one is ready, **Version … is ready** and its **Reload** button are a bar across the top of the page, in the studio and in Pocket. It was a small notice in the bottom right corner, easy to miss. The page moves down to make room for it, and it stays on top of whatever is open.
 
 ## 2026.11.20 — Pigeons video, and Pigeons on the keys for your own pages
 

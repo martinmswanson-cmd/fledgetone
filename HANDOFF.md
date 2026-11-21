@@ -339,7 +339,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   test holds them there (the clouds: under a key's width in six seconds). The look's `motion`
   (the dialog's With the music, Calmly, Still) scales everything.
   At most 30 birds on the keyboard: denser music still lights every key.
-  **A stage for fast songs** (2026.11.21; `src/audio/pigeonStage.ts`, no three.js):
+  **A stage for fast songs** (2026.11.21-2; `src/audio/pigeonStage.ts`, no three.js):
   `stageFor` sorts the song. A fast track (`isFastPart`: 16 notes or more, median length and
   median gap under 0.3 s, 16 pitches or fewer) gets a bank of pads in front of the keyboard (up
   to three, busiest first, never every pitched track), drum hits get drum pads behind it

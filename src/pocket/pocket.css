@@ -146,4 +146,11 @@
 .pk-app.land > .pk-tport { grid-column: 1; grid-row: 3; padding-block: 6px; }
 .pk-app.land > .pk-drawer { grid-column: 2; grid-row: 2 / 4; border-top: 0; border-left: 2px solid var(--c); padding-top: 8px; }
 .pk-app.land .pk-handle { display: none; }
+/* With the "new version is ready" bar across the top, everything sits a row lower */
+.pk-app.land:has(> .pk-update) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.pk-app.land > .pk-update { grid-column: 1 / -1; grid-row: 1; }
+.pk-app.land:has(> .pk-update) > .pk-top { grid-row: 2; }
+.pk-app.land:has(> .pk-update) > .pk-arr { grid-row: 3; }
+.pk-app.land:has(> .pk-update) > .pk-tport { grid-row: 4; }
+.pk-app.land:has(> .pk-update) > .pk-drawer { grid-row: 3 / 5; }
 @media (max-width: 720px) { .pk-app.land .pk-rec-label { display: none; } }

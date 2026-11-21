@@ -228,12 +228,12 @@ export const PocketApp: React.FC = () => {
   }, [isPlaying]);
   return (
     <div ref={app} className={`pk-app font-sans select-none ${land ? 'land' : ''}`} style={{ ['--dh' as string]: `${Math.round(DRAWER_SIZES[drawer] * 100)}%` }}>
+      <UpdateNotice />
       <TopBar />
       <PocketGrid land={land} />
       <Transport />
       <PocketDrawer land={land} appRef={app} />
       <SharedLinkOpener />
-      <UpdateNotice />
       <PocketNotice />
       <PocketSheets />
       {starting && <StartScreen canGoBack={hasWork(currentProject())} />}
