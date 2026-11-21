@@ -141,12 +141,25 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
 - `--save <file.json>`: save the hearing: measurements only, never the audio. A saved hearing
   goes stale when the rules of one of its groups change: that group can't be compared any more
   (it says so), and the hearing is to be made again from the audio. It isn't written over
-  unless `--overwrite`.
+  unless `--overwrite`. With `listen --suggestion` (or `--ops`), it saves the hearing of the
+  after version.
 - `--bpm <n>` (`measure`): the tempo, when you know it (else it is found from the sound).
+
+`measure --json` with any of these options (or `--from` / `--to`, or a file other than a WAV) is
+the hearing of the file: `file`, `range` (the stretch, seconds), `seconds`, `channels`, `silent`,
+the loudness numbers rounded to a tenth (`lufs`, `shortTermMaxLufs`, `truePeakDbtp`, `crestDb`),
+`regions`, a `note` when something was done to measure it, and, when asked, `sound`, `against`
+and `pictures` (each with its `path`). `listen --json` is its report with `sound`, `against` and
+`pictures` added. Mistakes in these options are said in one line before anything is heard: a
+time that isn't one, a `--close` outside the bars or past the end of the file, a `--pictures` or
+`--save` place that can't be written to; the file to read against is heard only once the rest is
+checked.
 
 It hears at most 15 minutes at a time (name a stretch of a longer file with `--from` and `--to`).
 A 4-minute WAV takes about 40 seconds with every picture. Without these options, `measure` and
-`listen` print just what they did before, and do no more work.
+`listen` print just what they did before, `--json` included, and do no more work (only a WAV this
+command line can't read itself, such as 8-bit or A-law, is now decoded in the headless browser
+rather than refused).
 
 ## Licences
 

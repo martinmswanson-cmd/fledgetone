@@ -187,7 +187,11 @@ fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --aga
   crest, range), attack (how often and how fast things start), stereo (correlation, balance,
   mono loss, width), pitch (tempo, key, tuning, pitch classes) and faults (clicks, clipping, DC
   offset, hum, digital silence, a channel fault), each with plain `words` that describe and never
-  judge. The text output prints the words after the usual lines.
+  judge. The text output prints the words after the usual lines. With any of the hearing
+  options (or `--from` / `--to`, or audio other than WAV), `measure --json` is the file's hearing:
+  `file`, `range`, `seconds`, `channels`, `silent`, the loudness numbers rounded to a tenth,
+  `regions`, a `note` when one is needed, and `sound`, `against` and `pictures` when asked.
+  Without them, `measure --json` on a WAV is as it always was.
 - `--pictures <folder>` writes PNG pictures there (a spectrogram, the stereo side signal, the
   level, the spectrum, the pitch classes, close-ups of faults and of moments asked for; with a
   suggestion, the after version's and a picture of the difference). `--json` lists each in
@@ -201,7 +205,7 @@ fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --aga
   version is the one compared; the before and after are compared with each other as well
   (`difference.sound`).
 - `--save <file.json>` writes a saved hearing: `{ "fledgetoneHearing": 1, "of", "range", "sound" }`,
-  measurements only. A group whose rules have changed since can't be compared, and says so: hear
+  measurements only (with a suggestion, of the after version). A group whose rules have changed since can't be compared, and says so: hear
   the audio again.
 - At most 15 minutes are heard at a time; `measure --from <s> --to <s>` names a stretch.
 
