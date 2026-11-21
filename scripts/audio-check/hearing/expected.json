@@ -1,0 +1,126 @@
+{
+  "about": "The reading check's made sounds (make.mjs): what is planted in each, what an agent reading its hearing is to find, and how close is a pass. A pair's second file is heard --against its first.",
+  "question": "What do you find in this sound? Name anything unusual, and where or how much. If nothing is unusual, say so.",
+  "sounds": [
+    {
+      "file": "clean.wav",
+      "read": "alone",
+      "property": "clean",
+      "planted": "nothing: the bed, sines at 220 and 330 Hz over pink noise from 40 Hz to 16 kHz, its own noise in each channel",
+      "find": "nothing unusual: no fault; the two sines may be named as narrow peaks or held notes",
+      "value": null,
+      "tolerance": "any fault, or any other unusual property named, is a fail"
+    },
+    {
+      "file": "click.wav",
+      "read": "alone",
+      "property": "click",
+      "planted": "the bed, with one sample at 5.000 s raised by 4 times the RMS of the 50 ms around it",
+      "find": "a click at 5.0 s",
+      "value": 5.0,
+      "unit": "seconds",
+      "tolerance": 0.05
+    },
+    {
+      "file": "resonance.wav",
+      "read": "alone",
+      "property": "resonance",
+      "planted": "pink noise at -18 dB RMS and a sine at 3000 Hz 12 dB under it",
+      "find": "a narrow peak (a resonance or a held note) near 3 kHz",
+      "value": 3000,
+      "unit": "Hz",
+      "tolerance": "a sixth of an octave (2670 to 3370 Hz)"
+    },
+    {
+      "file": "wobble.wav",
+      "read": "alone",
+      "property": "wobble",
+      "planted": "a saw at 55 Hz gated at 6 Hz, 12 dB deep, with pink noise above 300 Hz 12 dB under it",
+      "find": "the low band moves at 6 Hz, about 12 dB deep",
+      "value": 6,
+      "unit": "Hz",
+      "tolerance": "0.5 Hz; the depth within 4 dB of 12 dB"
+    },
+    {
+      "file": "pump.wav",
+      "read": "alone",
+      "bpm": 120,
+      "property": "pump",
+      "planted": "two saws at 440 and 554 Hz dipped 6 dB twice a second, with a 100 ms 60 Hz thump on each dip; heard with --bpm 120",
+      "find": "it pumps on the beat (quarter notes at 120 bpm, twice a second), about 6 dB",
+      "value": 6,
+      "unit": "dB",
+      "tolerance": "on the quarter-note beat; the depth within 3 dB of 6 dB"
+    },
+    {
+      "file": "side-band.wav",
+      "read": "alone",
+      "property": "side-band",
+      "planted": "the same pink noise in both channels, with noise from 5 to 10 kHz in the sides only",
+      "find": "wide in the presence region (5 to 10 kHz) only; narrow or mono everywhere else",
+      "value": "5 to 10 kHz",
+      "tolerance": "the wide part named as the presence region, or as a range inside 4 to 12 kHz"
+    },
+    {
+      "file": "clipping.wav",
+      "read": "alone",
+      "property": "clipping",
+      "planted": "a 200 Hz sine driven 6 dB past full scale and clipped at it",
+      "find": "clipping at full scale (flat tops at 0 dB), all through",
+      "value": 0,
+      "unit": "dB full scale",
+      "tolerance": "clipping named, at or within 0.5 dB of full scale"
+    },
+    {
+      "file": "hum.wav",
+      "read": "alone",
+      "property": "hum",
+      "planted": "pink noise at -18 dB RMS with sines at 60 and 120 Hz, each 6 dB under it (the brief had 12 dB under; there the hum measure finds it in only 9 of 10 noise seeds, so it is planted more plainly)",
+      "find": "hum at 60 Hz",
+      "value": 60,
+      "unit": "Hz",
+      "tolerance": "2 Hz"
+    },
+    {
+      "file": "dull.wav",
+      "read": "pair",
+      "against": null,
+      "property": "brightness (the first of the pair)",
+      "planted": "pink noise at -18 dB RMS",
+      "find": "the sound bright.wav is read against; asked about only as part of the pair",
+      "value": null,
+      "tolerance": null
+    },
+    {
+      "file": "bright.wav",
+      "read": "pair",
+      "against": "dull.wav",
+      "property": "brightness",
+      "planted": "the same pink noise as dull.wav, with noise from 5 to 16 kHz added at the same level",
+      "find": "bright.wav is brighter than dull.wav, and the difference is above 5 kHz (presence and air)",
+      "value": "5 to 16 kHz",
+      "tolerance": "brighter named, and the place named as presence or air, or a range inside 4 to 20 kHz"
+    },
+    {
+      "file": "clean-bass.wav",
+      "read": "pair",
+      "against": null,
+      "property": "distortion (the first of the pair)",
+      "planted": "a 55 Hz sine peaking at -6 dB",
+      "find": "the sound distorted-bass.wav is read against; asked about only as part of the pair",
+      "value": null,
+      "tolerance": null
+    },
+    {
+      "file": "distorted-bass.wav",
+      "read": "pair",
+      "against": "clean-bass.wav",
+      "property": "distortion",
+      "planted": "the same 55 Hz sine driven 18 dB and clipped at half scale",
+      "find": "distorted-bass.wav is distorted (rough, clipped or flat-topped, with harmonics clean-bass.wav does not have)",
+      "value": -6,
+      "unit": "dB full scale, the clipping level",
+      "tolerance": "distortion, roughness, clipping or flat tops named; a level, if given, within 1 dB of -6 dB"
+    }
+  ]
+}
