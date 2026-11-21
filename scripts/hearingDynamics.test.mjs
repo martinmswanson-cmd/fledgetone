@@ -96,3 +96,33 @@ test('evenly spaced hits read at their own rate from 2 to 16 a second, all sharp
 test('steady pink noise has no onsets whatever the seed', () => {
   for (let seed = 1; seed <= 8; seed++) assert.ok(attackOf([S.pink(4, -18, seed)], 48000).onsetsPerSecond < 1, `seed ${seed}`);
 });
+
+const hits = (n, db) => S.at(4, Array.from({ length: n * 4 }, (_, i) => [i / n, S.burst(Math.min(0.2, 0.9 / n), Math.min(50, 300 / n), 0, db, i)]));
+test('hits on a tone bed are counted at their own rate whatever the levels', () => {
+  for (const [bed, level] of [[-20, -8], [-20, -12], [-14, -6], [-30, -8]]) {
+    for (const n of [2, 4, 8, 12]) {
+      const a = attackOf([S.mix(S.sine(220, 4, bed), hits(n, level))], 48000);
+      near(a.onsetsPerSecond, n, n * 0.2, `bed ${bed} hits ${level} at ${n} a second`);
+    }
+  }
+});
+test('hits on a pink-noise bed are counted at their own rate', () => {
+  for (const n of [4, 8]) near(attackOf([S.mix(S.pink(4, -30, 1), hits(n, -8))], 48000).onsetsPerSecond, n, n * 0.2, `${n} a second`);
+});
+test('quiet hits in silence are still counted', () => {
+  for (const db of [-30, -50, -60]) near(attackOf([hits(4, db)], 48000).onsetsPerSecond, 4, 0.8, `${db} dB`);
+});
+test('steady sounds read no onsets', () => {
+  const chord = S.mix(S.saw(261.6, 4, -24), S.saw(329.6, 4, -24), S.saw(392, 4, -24));
+  for (const [name, x] of [['sine', S.sine(220, 4, -20)], ['saw', S.saw(55, 4, -20)], ['chord', chord], ['tremolo', S.am(440, 3, 0.5, 4, -6)]]) {
+    assert.ok(attackOf([x], 48000).onsetsPerSecond < 1, name);
+  }
+  for (const db of [-18, -40, -60]) for (const make of [S.pink, S.white]) for (let seed = 1; seed <= 8; seed++) {
+    assert.ok(attackOf([make(4, db, seed)], 48000).onsetsPerSecond < 1, `${make.name} ${db} dB seed ${seed}`);
+  }
+});
+test('soft swells at 2 a second are counted and read slow', () => {
+  const swells = S.at(4, Array.from({ length: 8 }, (_, i) => [i / 2, S.burst(0.4, 200, 80, -6, i)]));
+  const a = attackOf([swells], 48000);
+  near(a.onsetsPerSecond, 2, 0.5); assert.ok(a.riseMs > 40 && a.riseMs < 110);
+});
