@@ -15,7 +15,8 @@ const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 /** "650 Hz", "3.1 kHz" */
 function freqText(hz: number): string {
-  return hz >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${Math.round(hz)} Hz`;
+  const whole = Math.round(hz);
+  return whole >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${whole} Hz`;
 }
 
 /** A band's range: "40-250 Hz", "250 Hz-4 kHz", "4-16 kHz" */

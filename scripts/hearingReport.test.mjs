@@ -23,14 +23,18 @@ const { HEARING_VERSIONS } = await import('../src/audio/hearing/types.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 
 const hear = (ch, o = {}, sr = 48000) => hearSound(ch, sr, { engine: 'test', ...o });
-const finite = (r) => {
-  const s = JSON.stringify(r);
-  assert.ok(!/NaN|Infinity/.test(s));
-  JSON.parse(s, (k, v) => {
-    assert.ok(typeof v !== 'number' || Number.isFinite(v), k);
-    return v;
-  });
+/** Asserts every number anywhere in `x` is finite, naming the path of the first that is not. */
+const finite = (x, path = 'report') => {
+  if (typeof x === 'number') assert.ok(Number.isFinite(x), `${path} is ${x}`);
+  else if (x && typeof x === 'object') for (const k of Object.keys(x)) finite(x[k], `${path}.${k}`);
 };
+
+test('the finite helper fails on a number that is not', () => {
+  assert.throws(() => finite({ a: NaN }), /report\.a is NaN/);
+  assert.throws(() => finite({ a: [Infinity] }), /report\.a\.0 is Infinity/);
+  assert.throws(() => finite({ a: { b: -Infinity } }), /report\.a\.b is -Infinity/);
+  finite({ a: [1, { b: 0 }], c: null, d: 'x' });
+});
 
 test('a stereo sound gets every group, and words that match its numbers', () => {
   const l = S.gate(S.saw(110, 8, -6), 4, -12);
@@ -79,6 +83,7 @@ test('a mono file has no stereo group (Review Focus 1)', () => {
 test('an 80 ms hit (Review Focus 2)', () => {
   const r = hear([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])]);
   assert.ok(r.attack.single);
+  for (const k of ['riseMs', 'fall20Ms', 'peakDb']) assert.ok(Number.isFinite(r.attack.single[k]), k);
   assert.equal(r.tone, undefined);
   assert.equal(r.movement, undefined);
   assert.ok(r.dynamics);
@@ -114,6 +119,32 @@ test('along has one row per whole or part second, in every grid', () => {
   assert.equal(short.along.lufs[2], null, 'under 0.4 s is too short to measure');
   finite(short);
   finite(st);
+});
+
+test('edge cases give a finite report', () => {
+  const ten = S.sine(440, 1, -12);
+  const dc = (n, v) => new Float32Array(n).fill(v);
+  const spike = new Float32Array(48000);
+  spike[24000] = 1;
+  const square = Float32Array.from({ length: 96000 }, (_, i) => (Math.floor(i / 54) % 2 ? 0.99 : -0.99));
+  const cases = {
+    '0.3 s': [S.pink(0.3, -12, 1)],
+    'exactly 0.4 s': [S.pink(0.4, -12, 1)],
+    'DC mono': [dc(48000, 0.3)],
+    'DC stereo': [dc(48000, 0.3), dc(48000, -0.3)],
+    'one spike in silence': [spike],
+    'one sample': [Float32Array.of(0.5)],
+    'one silent channel': [ten, new Float32Array(48000)],
+    'full-scale square': [square],
+  };
+  for (const [name, ch] of Object.entries(cases)) {
+    const r = hear(ch);
+    finite(r, name);
+    assert.ok(r.words.length >= 0 && r.words.every((w) => typeof w === 'string' && !/NaN|Infinity|undefined/.test(w)), name);
+  }
+  const hi = hear([S.pink(2, -14, 7, 96000), S.pink(2, -14, 8, 96000)], {}, 96000);
+  finite(hi, '96000 Hz');
+  assert.ok(hi.tone);
 });
 
 test('other sample rates give every group and no band above half the rate', () => {
@@ -182,6 +213,17 @@ const words = (o) => soundWords({ ...base, ...o });
 
 test('words: a plain sound has no lines', () => {
   assert.deepEqual(words({ tone: tone(), texture: texture(), movement: { changeDb: 2, modulations: [] }, dynamics: dyn(), attack: atk(), stereo: ster(), pitch: pit() }), []);
+});
+
+test('words: a frequency rounds before it picks its unit', () => {
+  const at = (hz) => words({ tone: tone({ centreHz: hz }) })[0];
+  assert.equal(at(999.4), undefined, 'neither dark nor bright, no line');
+  const peak = (hz) => words({ tone: tone({ peaks: [{ hz, overDb: 5 }] }) })[0];
+  assert.match(peak(999.4), /at 999 Hz /);
+  assert.match(peak(999.6), /at 1\.0 kHz /);
+  assert.match(peak(1000), /at 1\.0 kHz /);
+  assert.match(peak(1049), /at 1\.0 kHz /);
+  assert.match(peak(1050), /at 1\.1 kHz /);
 });
 
 test('words: tone', () => {

@@ -3,6 +3,7 @@
  * dynamics, attack, stereo, pitch), the faults and the sound over time (one reading a second) into
  * one report with its plain-word lines. Plain maths on samples, no Web Audio, so Node can test it.
  */
+import { createLoudnessAnalyser } from '../loudness';
 import { bandSpectrum } from '../mixAnalysis';
 import { attackOf } from './attack';
 import { dynamicsOf } from './dynamics';
@@ -43,6 +44,15 @@ function cleaned(channels: readonly Float32Array[]): Float32Array[] {
   });
 }
 
+/** The integrated loudness of `part`, 0.1 LUFS; null when it is too short or too quiet to measure (as dynamicsOf reads it). */
+function integratedLufs(part: readonly Float32Array[], sampleRate: number): number | null {
+  const analyser = createLoudnessAnalyser(sampleRate);
+  const left = part[0];
+  analyser.feed(left, part[1] ?? new Float32Array(left.length), left.length);
+  const lufs = analyser.read().integrated;
+  return Number.isFinite(lufs) ? round1(lufs) : null;
+}
+
 const emptyAlong = (): Along => ({ stepSeconds: 1, freqs: [], mid: [], side: [], lufs: [], chroma: [] });
 
 /** The sound over time: the spectra of middle and sides, the loudness and the pitch classes of each whole or part second. */
@@ -61,7 +71,7 @@ function alongOf(channels: readonly Float32Array[], sampleRate: number): Along {
     }
     along.mid.push(spectrum.mid.slice(0, keep).map(round1));
     along.side.push(channels.length > 1 ? spectrum.side.slice(0, keep).map(round1) : []);
-    along.lufs.push(dynamicsOf(part, sampleRate).lufs);
+    along.lufs.push(integratedLufs(part, sampleRate));
   }
   along.chroma = chromaAlong(channels, sampleRate, 1);
   return along;
