@@ -59,6 +59,16 @@ const NAME_Y = PICTURE.bottom + 32;
 const LEGEND_X = 1410;
 const LEGEND_LABEL_X = 1426;
 const SPECTROGRAM_SIZE = 8192;
+/**
+ * The spectrogram's window: at most half its frame (zero-padded to the frame), so a wobble of a 16th
+ * note at 140 bpm still shows in time; shorter for a short range (an eighth of it, at least 512), so a
+ * hit's start shows where it is.
+ */
+function spectrogramWindow(axis: Pick<TimeAxis, 'fromSeconds' | 'toSeconds'>, sampleRate: number): number {
+  let length = 4096;
+  while (length > 512 && length > (spanOf(axis) * sampleRate) / 8) length /= 2;
+  return length;
+}
 const CLOSE_UP_SIZE = 512;
 const CLOSE_UP_SECONDS = 0.15;
 /** The shortest range an axis covers (one sample at 48000), so a range of nothing still has a scale. */
@@ -261,16 +271,21 @@ const dbLegend = (r: Raster, top: number = PICTURE.top, bottom: number = PICTURE
 
 // ---------------------------------------------------------------- the spectrogram's maths
 
-const windows = new Map<number, { w: Float64Array; norm: number }>();
-/** A periodic Hann window, and the factor that turns |X|^2 into power against a full-scale sine (4 / sum(w)^2). */
-function hann(size: number): { w: Float64Array; norm: number } {
-  let got = windows.get(size);
+const windows = new Map<string, { w: Float64Array; norm: number }>();
+/**
+ * A periodic Hann window `length` long in the middle of a frame of `size` (zero beyond it), and the
+ * factor that turns |X|^2 into power against a full-scale sine (4 / sum(w)^2).
+ */
+function hann(size: number, length: number): { w: Float64Array; norm: number } {
+  const key = `${size}/${length}`;
+  let got = windows.get(key);
   if (!got) {
     const w = new Float64Array(size);
+    const offset = (size - length) / 2;
     let sum = 0;
-    for (let i = 0; i < size; i++) sum += w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / size);
+    for (let i = 0; i < length; i++) sum += w[offset + i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / length);
     got = { w, norm: 4 / (sum * sum) };
-    windows.set(size, got);
+    windows.set(key, got);
   }
   return got;
 }
@@ -312,8 +327,9 @@ function rowPower(p: Float64Array, reading: ReturnType<typeof rowReading>, i: nu
 /**
  * The power spectrum (against a full-scale sine) of each pixel column of `axis`, for one signal or two
  * at once (two real signals ride one complex transform, as its real and imaginary parts). A column
- * is one frame centred on its time, or, when it spans more samples than half a frame, the mean of
- * frames hopped by half a frame across its span, so every sample reaches the picture. Outside the
+ * is one frame centred on its time, or, when it spans more samples than half a window, the mean of
+ * frames hopped by half a window across its span, so every sample reaches the picture. The window is
+ * `length` long in a frame of `size` (zero-padded: finer bins than the window alone). Outside the
  * signal counts as silence. `each` gets the column and its spectra (reused between calls).
  */
 function eachColumn(
@@ -322,47 +338,76 @@ function eachColumn(
   sampleRate: number,
   axis: Pick<TimeAxis, 'fromSeconds' | 'toSeconds'>,
   size: number,
+  length: number,
   each: (column: number, pa: Float64Array, pb: Float64Array | null) => void,
 ): void {
-  const { w, norm } = hann(size);
+  const { w, norm } = hann(size, length);
+  const first = (size - length) / 2, end = first + length;
   const re = new Float64Array(size), im = new Float64Array(size);
   const bins = size / 2 + 1;
-  const pa = new Float64Array(bins), pb = b ? new Float64Array(bins) : null;
   const from = axis.fromSeconds * sampleRate;
   const span = (spanOf(axis) * sampleRate) / COLUMNS;
-  const frames = span > size / 2 ? Math.ceil(span / (size / 2)) : 1;
-  const half = size / 2;
-  for (let c = 0; c < COLUMNS; c++) {
-    pa.fill(0);
-    pb?.fill(0);
-    for (let j = 0; j < frames; j++) {
-      const start = Math.round(from + (c + (j + 0.5) / frames) * span) - half;
-      let any = false;
-      for (let i = 0; i < size; i++) {
-        const n = start + i;
-        const inside = n >= 0 && n < a.length;
-        const va = inside ? a[n] : 0;
-        const vb = b && n >= 0 && n < b.length ? b[n] : 0;
-        re[i] = va * w[i];
-        im[i] = vb * w[i];
-        if (va !== 0 || vb !== 0) any = true;
-      }
-      if (!any) continue;
-      fftInPlace(re, im);
-      const k0 = norm / frames;
-      if (!pb) {
-        for (let k = 0; k < bins; k++) pa[k] += (re[k] * re[k] + im[k] * im[k]) * k0;
-      } else {
-        for (let k = 0; k < bins; k++) {
-          const n = (size - k) % size;
-          const ar = (re[k] + re[n]) / 2, ai = (im[k] - im[n]) / 2;
-          const br = (im[k] + im[n]) / 2, bi = (re[n] - re[k]) / 2;
-          pa[k] += (ar * ar + ai * ai) * k0;
-          pb[k] += (br * br + bi * bi) * k0;
-        }
-      }
+  const frames = span > length / 2 ? Math.ceil(span / (length / 2)) : 1;
+  const k0 = norm / frames;
+  /** The windowed frame of `x` starting at `start` into `into`; false when it is all zero. */
+  const load = (into: Float64Array, x: Float32Array | null, start: number): boolean => {
+    into.fill(0);
+    if (!x) return false;
+    let any = false;
+    const lo = Math.max(first, -start), hi = Math.min(end, x.length - start);
+    for (let i = lo; i < hi; i++) {
+      const v = x[start + i];
+      into[i] = v * w[i];
+      if (v !== 0) any = true;
     }
-    each(c, pa, pb);
+    return any;
+  };
+  /** The two real frames riding in re and im, apart: each one's power added to its spectrum. */
+  const split = (pa: Float64Array, pb: Float64Array) => {
+    for (let k = 0; k < bins; k++) {
+      const n = (size - k) % size;
+      const ar = (re[k] + re[n]) / 2, ai = (im[k] - im[n]) / 2;
+      const br = (im[k] + im[n]) / 2, bi = (re[n] - re[k]) / 2;
+      pa[k] += (ar * ar + ai * ai) * k0;
+      pb[k] += (br * br + bi * bi) * k0;
+    }
+  };
+  const startOf = (c: number, j: number) => Math.round(from + (c + (j + 0.5) / frames) * span) - size / 2;
+
+  if (b) {
+    // two signals: each frame of both in one transform
+    const pa = new Float64Array(bins), pb = new Float64Array(bins);
+    for (let c = 0; c < COLUMNS; c++) {
+      pa.fill(0);
+      pb.fill(0);
+      for (let j = 0; j < frames; j++) {
+        const start = startOf(c, j);
+        const anyA = load(re, a, start), anyB = load(im, b, start);
+        if (!anyA && !anyB) continue;
+        fftInPlace(re, im);
+        split(pa, pb);
+      }
+      each(c, pa, pb);
+    }
+    return;
+  }
+  // one signal: its frames two at a time in one transform (a column's next frame, or the next column's)
+  const spectra = [new Float64Array(bins), new Float64Array(bins)];
+  const jobs = COLUMNS * frames;
+  for (let q = 0; q < jobs; q += 2) {
+    const c1 = Math.floor(q / frames), j1 = q % frames;
+    const second = q + 1 < jobs;
+    const c2 = Math.floor((q + 1) / frames), j2 = (q + 1) % frames;
+    const any1 = load(re, a, startOf(c1, j1));
+    const any2 = second && load(im, a, startOf(c2, j2));
+    if (!second) im.fill(0);
+    if (any1 || any2) {
+      fftInPlace(re, im);
+      if (c1 === c2) split(spectra[c1 & 1], spectra[c1 & 1]);
+      else split(spectra[c1 & 1], spectra[c2 & 1]);
+    }
+    if (j1 === frames - 1) { each(c1, spectra[c1 & 1], null); spectra[c1 & 1].fill(0); }
+    if (second && j2 === frames - 1) { each(c2, spectra[c2 & 1], null); spectra[c2 & 1].fill(0); }
   }
 }
 
@@ -388,7 +433,8 @@ const nyquistWords = (sampleRate: number) => (sampleRate / 2 < 20000 ? ` Above $
 const hzWords = (hz: number) => (hz >= 1000 ? `${Math.round(hz / 100) / 10} kHz` : `${Math.round(hz)} Hz`);
 
 function spectrogramShows(axis: TimeAxis, sampleRate: number, of: string): string {
-  return `Frequency (log scale, 20 Hz at the bottom to 20 kHz at the top) against ${axis.unit === 'bars' ? 'bars' : 'time'} over ${rangeText(axis)} ${of}; colour is level in dB against a full-scale sine, from dark at -90 dB through blue, purple, red and orange to pale yellow at 0 dB.${nyquistWords(sampleRate)}`;
+  const ms = Math.round((spectrogramWindow(axis, sampleRate) / sampleRate) * 1000);
+  return `Frequency (log scale, 20 Hz at the bottom to 20 kHz at the top) against time over ${rangeText(axis)} ${of}, from windows of ${ms} ms; colour is level in dB against a full-scale sine, from dark at -90 dB through blue, purple, red and orange to pale yellow at 0 dB.${nyquistWords(sampleRate)}`;
 }
 
 /** A spectrogram of `x` over `axis`: one column a pixel (frames of 8192), rows on the log frequency scale, coloured by dB. */
@@ -417,7 +463,7 @@ export function spectrogramPictures(
   const pa = make(aOpts);
   const pb = b && bOpts ? make(bOpts) : null;
   const reading = rowReading(SPECTROGRAM_SIZE, sampleRate, PICTURE.top, PICTURE.bottom);
-  eachColumn(a, pb ? b : null, sampleRate, axis, SPECTROGRAM_SIZE, (c, sa, sb) => {
+  eachColumn(a, pb ? b : null, sampleRate, axis, SPECTROGRAM_SIZE, spectrogramWindow(axis, sampleRate), (c, sa, sb) => {
     paintColumn(pa.raster, PICTURE.left + c, sa, reading, PICTURE.top);
     if (pb && sb) paintColumn(pb.raster, PICTURE.left + c, sb, reading, PICTURE.top);
   });
@@ -461,7 +507,7 @@ function waveform(r: Raster, x: Float32Array, sampleRate: number, axis: Pick<Tim
 function lanes(count: number, top: number, bottom: number): Array<{ centre: number; half: number }> {
   const n = Math.max(1, Math.min(2, count));
   const h = (bottom - top) / n;
-  return Array.from({ length: n }, (_, i) => ({ centre: top + h * (i + 0.5), half: h / 2 - 10 }));
+  return Array.from({ length: n }, (_, i) => ({ centre: top + h * (i + 0.5), half: h / 2 - 16 }));
 }
 function laneLabels(r: Raster, lane: { centre: number; half: number }, name: string | null): void {
   line(r, PICTURE.left, Math.round(lane.centre), PICTURE.right - 1, Math.round(lane.centre), GRID);
@@ -511,7 +557,7 @@ export function levelPicture(channels: readonly Float32Array[], sampleRate: numb
   const peak = peakOf(channels.slice(0, 2), from, to);
   const peakWords = peak ? `; true peak ${peak.db.toFixed(1)} dBTP at ${clock(peak.at / sampleRate, 2)}` : '';
   const title = `Level${stereo ? ', left above and right below' : ''}: ${rangeText(axis)}`;
-  const shows = `The waveform${stereo ? 's of the left channel (upper half) and the right (lower half)' : ''}, from -1 to +1 full scale, against ${axis.unit === 'bars' ? 'bars' : 'time'} over ${rangeText(axis)}; the orange line is each second's loudness on the right-hand scale (-40 to 0 LUFS) and the red mark is where the true peak lies${peakWords}.`;
+  const shows = `The waveform${stereo ? 's of the left channel (upper half) and the right (lower half)' : ''}, from -1 to +1 full scale, against time over ${rangeText(axis)}; the orange line is each second's loudness on the right-hand scale (-40 to 0 LUFS) and the red mark is where the true peak lies${peakWords}.`;
   const p = blank('level', name, title, shows, axis.fromSeconds, axis.toSeconds);
   const r = p.raster;
   const ls = lanes(stereo ? 2 : 1, PICTURE.top, PICTURE.bottom);
@@ -528,9 +574,11 @@ export function levelPicture(channels: readonly Float32Array[], sampleRate: numb
   }
   text(r, 'LUFS', PICTURE.right + 10, TITLE_Y, LOUDNESS, BIG);
   let prev: [number, number] | null = null;
+  let drawn = false;
   loudness.forEach((l, i) => {
     if (l === null || !Number.isFinite(l)) { prev = null; return; }
     const pt: [number, number] = [xOfSeconds(i + 0.5, axis), yOfLufs(l)];
+    drawn = true;
     if (prev) { line(r, prev[0], prev[1], pt[0], pt[1], LOUDNESS); line(r, prev[0], prev[1] - 1, pt[0], pt[1] - 1, LOUDNESS); }
     else if (pt[0] >= PICTURE.left && pt[0] < PICTURE.right) fillRect(r, pt[0] - 1, pt[1] - 1, 3, 3, LOUDNESS);
     prev = pt;
@@ -540,7 +588,7 @@ export function levelPicture(channels: readonly Float32Array[], sampleRate: numb
     dotted(r, x, PICTURE.top, x, PICTURE.bottom - 1, PEAK);
     for (let k = 0; k < 6; k++) line(r, x - k, PICTURE.top - 2 - k, x + k, PICTURE.top - 2 - k, PEAK);
   }
-  keys(r, [{ colour: LOUDNESS, label: 'loudness (LUFS)' }, ...(peak ? [{ colour: PEAK, label: `true peak ${peak.db.toFixed(1)} dBTP` }] : [])]);
+  keys(r, [...(drawn ? [{ colour: LOUDNESS, label: 'loudness (LUFS)' }] : []), ...(peak ? [{ colour: PEAK, label: `true peak ${peak.db.toFixed(1)} dBTP` }] : [])]);
   box(r);
   return p;
 }
@@ -599,7 +647,7 @@ export function spectrumPicture(a: BandSpectrum, aLabel: string, other: { spectr
 /** The pitch classes over time: twelve rows, C at the bottom, each step's strength of each as brightness. */
 export function chromaPicture(chroma: readonly number[][], stepSeconds: number, axis: TimeAxis, name: string): Picture {
   const title = `Notes (pitch classes): ${rangeText(axis)}`;
-  const shows = `The twelve pitch classes (C at the bottom to B at the top, any octave) against ${axis.unit === 'bars' ? 'bars' : 'time'} over ${rangeText(axis)}, one column every ${stepSeconds} s; brightness is each note's strength in that step against the strongest note of the step (pale yellow 1, dark 0).`;
+  const shows = `The twelve pitch classes (C at the bottom to B at the top, any octave) against time over ${rangeText(axis)}, one column every ${stepSeconds} s; brightness is each note's strength in that step against the strongest note of the step (pale yellow 1, dark 0).`;
   const p = blank('chroma', name, title, shows, axis.fromSeconds, axis.toSeconds);
   const r = p.raster;
   const rowH = PLOT_H / 12;
@@ -616,7 +664,6 @@ export function chromaPicture(chroma: readonly number[][], stepSeconds: number, 
     leftLabel(r, NOTE_NAMES[n], PICTURE.bottom - (n + 0.5) * rowH);
     if (n > 0) dotted(r, PICTURE.left, Math.round(PICTURE.bottom - n * rowH), PICTURE.right - 1, Math.round(PICTURE.bottom - n * rowH), GRID);
   }
-  unitWord(r, 'note');
   timeAxis(r, axis);
   legend(r, PICTURE.top, PICTURE.bottom, (t) => ramp(HEAT, t), [[1, '1'], [0.5, '0.5'], [0, '0']]);
   box(r);
@@ -639,7 +686,7 @@ export function closeUpPicture(channels: readonly Float32Array[], sampleRate: nu
   const p = blank('closeup', name, title, shows, range.fromSeconds, range.toSeconds);
   const r = p.raster;
   const waveBottom = PICTURE.top + Math.round(PLOT_H / 3);
-  const specTop = waveBottom + 14;
+  const specTop = waveBottom + 30;
   // the waveform lanes
   const ls = lanes(stereo ? 2 : 1, PICTURE.top, waveBottom);
   ls.forEach((lane, i) => laneLabels(r, lane, stereo ? (i === 0 ? 'L' : 'R') : null));
@@ -647,7 +694,7 @@ export function closeUpPicture(channels: readonly Float32Array[], sampleRate: nu
   // the spectrogram of the middle
   const mid = channels.length >= 2 ? middleOf(channels[0], channels[1]) : (channels[0] ?? new Float32Array(0));
   const reading = rowReading(CLOSE_UP_SIZE, sampleRate, specTop, PICTURE.bottom);
-  eachColumn(mid, null, sampleRate, range, CLOSE_UP_SIZE, (c, pa) => paintColumn(r, PICTURE.left + c, pa, reading, specTop));
+  eachColumn(mid, null, sampleRate, range, CLOSE_UP_SIZE, CLOSE_UP_SIZE, (c, pa) => paintColumn(r, PICTURE.left + c, pa, reading, specTop));
   frequencyAxis(r, specTop, PICTURE.bottom, false);
   // ticks every 25 ms (or finer for a shorter stretch) from the moment
   const relFrom = range.fromSeconds - at, relTo = range.toSeconds - at;
@@ -661,7 +708,7 @@ export function closeUpPicture(channels: readonly Float32Array[], sampleRate: nu
   axisName(r, 'ms from the moment');
   const x = Math.round(xOfSeconds(at, range));
   dotted(r, x, PICTURE.top, x, PICTURE.bottom - 1, INK);
-  unitWord(r, 'Hz');
+  text(r, 'Hz', 8, waveBottom + 4, FAINT, BIG);
   dbLegend(r, specTop, PICTURE.bottom);
   box(r, PICTURE.top, waveBottom);
   box(r, specTop, PICTURE.bottom);
@@ -679,11 +726,11 @@ export function differencePicture(before: Float32Array, after: Float32Array, sam
   const n = Math.min(before.length, after.length);
   const a = before.subarray(0, n), b = after.subarray(0, n);
   const title = `Difference, second sound minus first: ${rangeText(axis)}`;
-  const shows = `Frequency (log scale, 20 Hz to 20 kHz) against ${axis.unit === 'bars' ? 'bars' : 'time'} over ${rangeText(axis)}; colour is the second sound's level minus the first's in dB, from -${DIFFERENCE_DB} to +${DIFFERENCE_DB}. Red is where the second is louder than the first, blue where it is quieter, near-black where they match, and blank where both are under ${QUIET_DB} dB.${nyquistWords(sampleRate)}`;
+  const shows = `Frequency (log scale, 20 Hz to 20 kHz) against time over ${rangeText(axis)}; colour is the second sound's level minus the first's in dB, from -${DIFFERENCE_DB} to +${DIFFERENCE_DB}. Red is where the second is louder than the first, blue where it is quieter, near-black where they match, and blank where both are under ${QUIET_DB} dB.${nyquistWords(sampleRate)}`;
   const p = blank('difference', name, title, shows, axis.fromSeconds, axis.toSeconds);
   const r = p.raster;
   const reading = rowReading(SPECTROGRAM_SIZE, sampleRate, PICTURE.top, PICTURE.bottom);
-  eachColumn(a, b, sampleRate, axis, SPECTROGRAM_SIZE, (c, pa, pb) => {
+  eachColumn(a, b, sampleRate, axis, SPECTROGRAM_SIZE, spectrogramWindow(axis, sampleRate), (c, pa, pb) => {
     if (!pb) return;
     for (let i = 0; i < reading.lo.length; i++) {
       const p0 = rowPower(pa, reading, i), p1 = rowPower(pb, reading, i);

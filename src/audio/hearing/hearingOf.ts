@@ -52,12 +52,16 @@ export const MAX_DETAILS = 12;
 /** At most this many close-ups of faults, and as many again of moments asked for. */
 export const MAX_CLOSE_UPS = 6;
 
+/** Faults are placed to the ms, so a time this close before a bar or beat counts as on it. */
+const ROUNDING = 0.0005;
+
 /** Where `seconds` falls in the bars: the bar it is in and its beat (1 plus the whole part of the bar's fraction times its beats). */
 function placeIn(bars: readonly BarSpan[]): (seconds: number) => Place {
   return (seconds) => {
-    const bar = bars.find((b, i) => seconds >= b.start && (seconds < b.end || (i === bars.length - 1 && seconds <= b.end)));
+    const s = seconds + ROUNDING;
+    const bar = bars.find((b, i) => s >= b.start && (s < b.end || (i === bars.length - 1 && seconds <= b.end)));
     if (!bar || !(bar.end > bar.start)) return { seconds };
-    const beat = Math.min(bar.beats, 1 + Math.floor(((seconds - bar.start) / (bar.end - bar.start)) * bar.beats));
+    const beat = Math.min(bar.beats, 1 + Math.floor(((s - bar.start) / (bar.end - bar.start)) * bar.beats));
     return { seconds, bar: bar.bar, beat };
   };
 }
