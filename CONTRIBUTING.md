@@ -238,6 +238,13 @@ the commands, the question and the table to record each run in are in
 `scripts/audio-check/hearing/README.md`. `node --test scripts/hearingCheckSet.test.mjs` (part of
 `npm test`) checks first that every made sound's report holds what was planted.
 
+When a change moves a group's numbers or the thresholds behind its words (tone, texture, movement,
+dynamics, attack, stereo, pitch or faults), raise that group's version in `HEARING_VERSIONS`
+(`src/audio/hearing/types.ts`) and update its pin in `scripts/hearingVersions.test.mjs`, which
+fails and names the group when a pinned number moves. A hearing saved at the older version is then
+said to be stale in that group (it can't be compared there until it is made again from its audio)
+instead of being compared as if nothing had changed.
+
 When a change touches a menu, a popover or another popup, run `node scripts/ui-check/popup-tab.cjs`
 (the same dev server): each kind of popup opened with the keyboard and the mouse, left with Tab and
 Shift+Tab, closed, focus where it should be, and the shortcuts working again.
