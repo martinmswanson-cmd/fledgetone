@@ -11,7 +11,9 @@
  * whatever its level. How far is "well over" is set per band from how much steady noise wobbles in a
  * band of that width read over that span, so it is the same at any level. A band 40 dB or more under
  * the loudest band at the time is not listened to. The onsets of all the bands within about 25 ms of
- * each other are one hit. A hit's rise is measured on the sharpest band it stood out in.
+ * each other are one hit. A hit's rise is measured on the sharpest band it stood out in. The sound
+ * is read as if silence came before it, so a hit on its first sample is heard; a climb over that
+ * silence counts only when the sound then falls back, so a held sound starting abruptly is not a hit.
  */
 import { band, fallMs, frameDb, kPeakDb } from '../drumMeasure';
 import { maxOf } from '../../support/minMax';
@@ -47,6 +49,8 @@ const MAX_ONSETS = 32;
 /** How far back from an onset the climb may begin, and how long after it the peak may come, ms. */
 const LOOK_BACK_MS = 100;
 const LOOK_AHEAD_MS = 300;
+/** A hit at the very start of the sound counts only when the sound then falls by this much, dB (see fallsAfter). */
+const START_FALL_DB = 6;
 /** A rise window ends this long before the next onset, ms. */
 const END_GAP_MS = 5;
 /** The rise is followed on the band's level read over this span, ms, or over half a cycle of its lower edge if longer. */
@@ -61,11 +65,13 @@ interface Band {
   power: Float64Array;
 }
 
-/** An onset in one band: the 1 ms frame its climb began at, how far it stood over the level before (dB), and its band. */
+/** An onset in one band: the 1 ms frame its climb began at, how far it stood over the level before (dB), its band, and whether it is at the start. */
 interface Climb {
   at: number;
   over: number;
   band: number;
+  /** Whether what it stood over reached back into the silence put before the sound. */
+  early: boolean;
 }
 
 /** The mean power of each 1 ms frame of `y`, `w` samples a frame. */
@@ -139,6 +145,25 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/**
+ * Whether the whole sound falls after frame `at`: its mean power over the last third of the LOOK_AHEAD_MS after it (cut
+ * short at frame `until`, the next hit, or the end) at least START_FALL_DB under its mean power over the first third. A
+ * climb at the start of the sound stands over the silence put before it, which was not heard, so it counts only when the
+ * sound then falls back, as a hit does and a held sound does not.
+ */
+function fallsAfter(bands: Band[], at: number, until: number): boolean {
+  const mean = (from: number, to: number) => {
+    let sum = 0;
+    for (const { power } of bands) for (let i = from; i < to; i++) sum += power[i];
+    return to > from ? sum / (to - from) : 0;
+  };
+  const end = Math.min(until, at + LOOK_AHEAD_MS);
+  const third = Math.floor((end - at) / 3);
+  const first = mean(at, at + third);
+  const last = mean(end - third, end);
+  return first > 0 && (last <= 0 || 10 * Math.log10(first / last) >= START_FALL_DB);
+}
+
 /** The bands of `mono`, each with its span, how far a climb must stand out in it and its 1 ms frame power. */
 function bandsOf(mono: Float32Array, sampleRate: number): Band[] {
   const w = Math.max(1, Math.round(sampleRate / 1000));
@@ -151,7 +176,7 @@ function bandsOf(mono: Float32Array, sampleRate: number): Band[] {
 }
 
 /** The hits: each band's climbs that stand out enough, in a band not too far under the loudest, joined across bands. */
-function hitsOf(bands: Band[]): Climb[][] {
+function hitsOf(bands: Band[], lead: number): Climb[][] {
   let loudest = 0;
   const frames = bands[0].power.length;
   for (const { power, span } of bands) {
@@ -179,7 +204,7 @@ function hitsOf(bands: Band[]): Climb[][] {
       let peak = true;
       for (let k = Math.max(0, f - reach); k <= Math.min(frames - 1, f + reach) && peak; k++) peak = over[k] < v || (over[k] === v && k >= f);
       // (the level read spans the frames ending here, so the climb began a span back)
-      if (peak) climbs.push({ at: f - span + 1, over: v, band: b });
+      if (peak) climbs.push({ at: f - span + 1, over: v, band: b, early: f - span - HOLD_MS < lead });
     }
   });
   // One hit across the bands: the sharpest bands place a hit best, so they go first; a climb joins the nearest hit within
@@ -194,17 +219,23 @@ function hitsOf(bands: Band[]): Climb[][] {
     if (gap(near) <= SAME_HIT_MS + bands[c.band].span / 2) hits[near].push(c);
     else hits.splice(after, 0, [c]);
   }
-  return hits;
+  return hits.filter((h, k) => !h.some((c) => c.early) || fallsAfter(bands, h[0].at, k + 1 < hits.length ? hits[k + 1][0].at : frames));
 }
 
 /** How `channels` start; silent and empty input give no onsets and nulls. */
 export function attackOf(channels: readonly Float32Array[], sampleRate: number): Attack {
   const none: Attack = { onsetsPerSecond: 0, riseMs: null, single: null };
   if (channels.length === 0 || channels[0].length < sampleRate / 1000) return none;
-  const mono = midOf(channels);
-  const seconds = mono.length / sampleRate;
+  // The sound is read as if silence came before it, long enough for the longest span read twice and the hold, so a hit
+  // on its first sample stands over that silence like any other
+  const lead = 2 * Math.round((1000 * TIME_BANDWIDTH) / (BAND_EDGES[1] - BAND_EDGES[0])) + HOLD_MS;
+  const heard = midOf(channels);
+  const w = Math.max(1, Math.round(sampleRate / 1000));
+  const mono = new Float32Array(lead * w + heard.length);
+  mono.set(heard, lead * w);
+  const seconds = heard.length / sampleRate;
   const bands = bandsOf(mono, sampleRate);
-  const hits = hitsOf(bands);
+  const hits = hitsOf(bands, lead);
   if (hits.length === 0) return none;
 
   // The rise of each hit, on the sharpest band it stood out in
@@ -225,11 +256,11 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   const riseMs = strongest.length > 0 ? round1(median(strongest)) : null;
   let single: Attack['single'] = null;
   if (hits.length === 1 && seconds < 2 && riseMs !== null) {
-    const env = frameDb(mono, sampleRate, 1);
+    const env = frameDb(heard, sampleRate, 1);
     // kPeakDb reads the first 70 ms, so it starts where the hit does: the first frame within 40 dB of the loudest
     const top = maxOf(env);
     const begin = env.findIndex((v) => v > top - 40);
-    const hit = mono.subarray(Math.max(0, Math.round((begin / 1000) * sampleRate)));
+    const hit = heard.subarray(Math.max(0, Math.round((begin / 1000) * sampleRate)));
     single = { riseMs, fall20Ms: round1(fallMs(env, 20)), peakDb: round1(kPeakDb(hit, sampleRate)) };
   }
   return { onsetsPerSecond: round1(hits.length / seconds), riseMs, single };

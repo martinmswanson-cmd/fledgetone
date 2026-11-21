@@ -78,8 +78,8 @@ test('stereo input gives finite attack values', () => {
   assert.ok(Number.isFinite(a.onsetsPerSecond) && Number.isFinite(a.riseMs));
 });
 
-// The onset grid. Hits come n a second over 4 s, the first at 0 s; a hit at the very start has nothing before it to
-// stand over and is not counted, so a count reads about n - 0.25 (hence the tolerances).
+// The onset grid. Hits come n a second over 4 s, the first at 0 s (the sound is read as if silence came before it, so a
+// hit there is heard; on a bed that starts with it, it may not be, hence the tolerances).
 const SECONDS = 4;
 const saws = new Map();
 /** A 4 s saw, made once per pitch (the low ones have hundreds of harmonics). */
@@ -193,6 +193,19 @@ test('known limits', () => {
   assert.ok(rate(hits(24, -6)) < 6, 'bursts at 24 a second');
   // Struck notes whose tail is still within 5 dB of their peak 45 ms on are not seen to stand out: 300 Hz, 80 ms, 12 a second
   assert.ok(rate(S.mix(saw(110, -20), notes(S.sine, 300, 80, -10, 12))) < 1, 'struck notes at 12 a second');
-  // Nothing before the first 50 ms is heard, so a hit right at the start is not counted
-  assert.deepEqual(attackOf([S.burst(0.6, 50, 0, -6, 1)], 48000), { onsetsPerSecond: 0, riseMs: null, single: null });
+  // A hit on the first sample of a bed that starts with it counts only when the whole sound falls 6 dB after it
+  near(rate(S.mix(S.sine(220, SECONDS, -20), hits(2, -8))), 1.8, 0.05, 'bursts at 2 a second on a bed starting with the first');
+});
+test('a hit at or near the first sample is heard and measured as a single hit', () => {
+  const short = attackOf([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])], 48000);
+  assert.notEqual(short.single, null); assert.ok(short.single.riseMs < 3, `${short.single.riseMs}`); assert.ok(short.onsetsPerSecond > 0);
+  const atZero = attackOf([S.at(1, [[0, S.burst(0.6, 50, 0, -6, 1)]])], 48000);
+  assert.notEqual(atZero.single, null); assert.ok(atZero.single.riseMs < 3);
+  near(rate(S.every(4, SECONDS, (i) => S.burst(0.2, 50, 0, -6, i))), 4, 0.3, 'bursts at 4 a second from 0 s');
+});
+test('a held sound starting abruptly on its first sample is not an onset', () => {
+  for (const [name, x] of [['220 Hz sine', S.sine(220, SECONDS, -20)], ['55 Hz saw', saw(55, -20)], ['pink noise', S.pink(SECONDS, -18, 1)]]) {
+    const a = attackOf([x], 48000);
+    assert.ok(a.onsetsPerSecond <= 0.25, `${name}: ${a.onsetsPerSecond}`); assert.equal(a.onsetsPerSecond, 0, name);
+  }
 });
