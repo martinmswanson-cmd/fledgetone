@@ -304,7 +304,12 @@ export interface ListenHearing {
 async function writeReportPictures(session: RenderSession, r: ListenReport, folder: string, written: string[]): Promise<WithWrittenPictures<ListenReport>> {
   const out = { ...r } as unknown as WithWrittenPictures<ListenReport>;
   if (r.pictures) out.pictures = await takePictures(session, r.pictures, folder, written);
-  if (r.tracks) out.tracks = await Promise.all(r.tracks.map(async (t) => ({ ...t, ...(t.pictures ? { pictures: await takePictures(session, t.pictures, folder, written) } : {}) }) as WithWrittenPictures<typeof t>));
+  if (r.tracks) {
+    // (one at a time, in the report's order)
+    const tracks: WithWrittenPictures<ListenReport>['tracks'] = [];
+    for (const t of r.tracks) tracks.push({ ...t, ...(t.pictures ? { pictures: await takePictures(session, t.pictures, folder, written) } : {}) } as WithWrittenPictures<typeof t>);
+    out.tracks = tracks;
+  }
   return out;
 }
 
