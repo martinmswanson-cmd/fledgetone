@@ -144,6 +144,17 @@ export function at(seconds, pieces, sr = SR) {
   return out;
 }
 
+/** `x` fading from its start: each sample times e^(-t / decayMs), so a sine or saw becomes a plucked or struck note. */
+export function decay(x, decayMs, sr = SR) {
+  const tau = (decayMs / 1000) * sr;
+  return Float32Array.from(x, (v, i) => v * Math.exp(-i / tau));
+}
+
+/** `rate` evenly spaced pieces a second over `seconds`, the first at 0 s; `make(i)` gives the i-th. */
+export function every(rate, seconds, make, sr = SR) {
+  return at(seconds, Array.from({ length: Math.round(rate * seconds) }, (_, i) => [i / rate, make(i)]), sr);
+}
+
 /** The sum of the arrays, as long as the longest. */
 export function mix(...arrays) {
   const out = new Float32Array(Math.max(0, ...arrays.map((a) => a.length)));
