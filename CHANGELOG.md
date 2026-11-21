@@ -9,6 +9,21 @@ second update on the same day gets `-2`, and so on).
 - **Your agent can hear more of a sound**: `fledgetone measure` and `fledgetone listen`, and the agent helper's listening, can now describe a sound in plain words: its tone, texture, movement, dynamics, attacks, stereo and pitch, and faults such as clicks, clipping and hum, each with where it is (in a song, by bar and beat). The words describe the sound; they never judge it.
 - **Pictures of a sound** for an agent to look at: a spectrogram, the stereo side signal, the level, the spectrum, the pitch classes, and a close-up of each fault (the first six) or of any moment asked for. A sound can be read against another sound or a saved hearing (measurements only, never the audio), and a suggestion's before and after are compared and pictured. All of it is worked out on your computer, and nothing is sent anywhere.
 
+## 2026.11.21 — A new version is easier to see
+
+- **A new version is easier to see**: when one is ready, **Version … is ready** and its **Reload** button are a bar across the top of the page, in the studio and in Pocket. It was a small notice in the bottom right corner, easy to miss. The page moves down to make room for it, and it stays on top of whatever is open.
+
+## 2026.11.20 — Pigeons video, and Pigeons on the keys for your own pages
+
+- **A new video picture, Pigeons** (Export › Video › Picture, or search *pigeons video*): low-poly pigeons walk and hop across a big piano keyboard and stand on each key as it plays, the key lighting up in its track's colour. The camera follows the music and zooms out when the parts are far apart. No two pigeons ever bump into or pass through each other: birds on neighbouring keys stand side by side, and birds on the move step round, side-step or fly over. The birds are proper low-poly rock doves, with wings that spread and beat on any jump longer than a key and a half, and a bird playing the same key twice hops on the spot between. Drums aren't played by the birds.
+  - A key goes down as its note starts, and the bird lands on it then: the press is seen when the note is heard.
+  - Every note is seen played: when two parts play the same note, or one starts while the key is still held, the bird on it hops and strikes it again, and the key shows the new note's colour.
+  - The keyboard is built like a real one: white keys cut away at the back where the black keys stand between them, all of them going down into the key bed as they're played.
+  - **Nine backgrounds**: a plaza, a park, a rooftop at sunset, a night street, snow, space, a future city, above the clouds and a beach. Tick the ones you want, and say when the video changes to the next (one fades into the other): at each section, every so many bars, or never.
+  - **The backgrounds move with the music**: a ring spreads from each key as it's struck, the future city's grid brightens on the beat and light runs to its circuits on the notes, the stars flare, more snow falls in busy passages, the rooftop's sun goes down through the song. The calm backgrounds (the clouds, the plaza, the beach) only ever move gently. Under **The backgrounds move**, choose with the music, calmly or still.
+  - **Five camera angles**: diagonal, from above, low from the front, from behind and close up. Tick the ones you want, and say when the camera cuts to the next.
+- **A new tool, Pigeons on the keys**, on fledgetone.com/tools: the same picture as a JavaScript module for your own web pages (MIT licence). Give it a canvas and a song's notes, and it draws the pigeons for any moment of it: beside a player, under a scrub bar, or frame by frame for a video. It has the same backgrounds and camera angles, changing at the times you give.
+
 ## 2026.11.18-4 — Every screenshot in the guide and the lessons retaken
 
 - **Every screenshot in the guide and the lessons is new**: the pictures on fledgetone.com/guide and fledgetone.com/learn were retaken from the studio as it is now. Some were from before the starter songs changed (one showed a starter that no longer exists) and before the header and the File menu grew.

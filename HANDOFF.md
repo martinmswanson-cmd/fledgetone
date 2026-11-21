@@ -320,6 +320,43 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Pigeons video picture, and the Pigeons on the keys tool** (2026.11.20): a fourth Picture for
+  the MP4 export (Export › Video › Picture, or search *pigeons video*): low-poly pigeons play the
+  song's notes on a big keyboard, in three.js (`src/audio/pigeonScene.ts`; `videoExport.ts` draws
+  the scene's canvas as the frame's background, its text in dark ink on the pale floor). Every
+  bird's moves are planned once (`planPigeons`: legs of stand, walk, hop, fly, press) and a frame
+  is drawn from the time alone. **No two birds ever touch**: each has a footprint (a capsule,
+  `BIRD_SHAPE`, that holds its whole model; wider with the wings out), `solveSpacing` pushes
+  touching birds apart each frame, `spreadWings` opens wings only as far as there's room, and the
+  planner avoids jams (birds are under a key wide; white keys are got on from the front and black
+  from the back; a step to the next key is a side-step, further is a flight; turns happen up in the
+  air; a key held by two tracks has one bird; idle birds get down). `scripts/pigeonScene.test.mjs`
+  checks all of it at 60 frames a second, and that the footprint holds the model in every pose:
+  **run it after any change to the model, the planner or the poses**. A bird playing the same key
+  again hops on the spot (`REHOP_TIME`); a jump of `FLAP_DISTANCE` or more is flown, wings out.
+  **Backgrounds and camera angles** are data in `src/audio/pigeonLooks.ts` (no three.js: nine
+  backgrounds, five angles, `lookFor` turning the dialog's choices into change times from the bar
+  lines and markers; `scripts/pigeonLooks.test.mjs`). The scene fades one background into the next
+  (`dress`: floor colour, light, and each background's flat floor details from `floorDetails`,
+  which lie on the floor so nothing stands in a bird's way) and cuts between angles (`aim`: an
+  angle is where the camera stands and how steeply the keyboard runs across the frame; how far it
+  pulls back is worked out from that). To add one, add it to the list (and, for a background, a
+  case in `floorDetails`): the dialog, the tool and its README pick it up.
+  **The backgrounds move with the music**: `senseMusic` (pigeonLooks.ts) works out once, from the
+  notes, the beat (the kicks, else the bar lines), how busy the music is and how far drifting
+  things have travelled; `pulseAt`, `energyAt`, `travelAt` and `flaresAt` read those by time alone.
+  Each floor detail says how it moves (`FloorMove`: grow or glow on the beat, twinkle, sway, drift,
+  flare on a struck note, show only in busy passages) and the moving is done in the details'
+  shader (`floorMaterial`) from a handful of uniforms `dress` sets each frame, so it costs nothing
+  per detail. `ripple` spreads a ring from each struck key. A background's `lively` (0 to 1) scales
+  all of it and `drift` is its drifting things' top speed; the calm ones are low on purpose and a
+  test holds them there (the clouds: under a key's width in six seconds). The look's `motion`
+  (the dialog's With the music, Calmly, Still) scales everything.
+  At most 30 birds: denser music still lights every key. Drums aren't played. The same scene is
+  the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
+  minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with
+  three's licence in the zip). Not done: drums (a pad beside the keyboard?), a look at it on a phone's GPU; from some
+  angles the keyboard passes under the title (its halo keeps it readable).
 - **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no
   pitch to follow). `lines.ts` and `linesDraw.ts` read no app state, so they can be lifted into a

@@ -1,7 +1,7 @@
 // The Tools page for fledgetone.com (/tools/): Fledgetone's own tools as zips people can use in
 // their own programs, built from the repository on every site build (so they're always current)
 // into dist-site/tools/: the game music players, Fledge Synth (WebAssembly with a Web Audio
-// wrapper), the Fledge effects (the same way), the Drop pad's effects and the song player (the web runtime). Each zip has its README
+// wrapper), the Fledge effects (the same way), the Drop pad's effects, the Lines and Pigeons video pictures and the song player (the web runtime). Each zip has its README
 // (tools/<tool>/README.md, with parts filled in here), the MIT licence's text (tools/LICENSE; the song player keeps the GPL, with a permission) and a notice; each README is
 // also a page at /tools/<tool>/. The hand-written parts of the packages (wrappers, examples,
 // READMEs) are in tools/; the rest comes from src/, engine/ and public/.
@@ -362,6 +362,14 @@ export const TOOLS = [
     inZip: ['The lines as a JavaScript module, with a helper for a canvas', 'An example page: a small song whose lines follow the audio clock', 'Its TypeScript source'],
   },
   {
+    id: 'pigeon-keys',
+    title: 'Pigeons on the keys',
+    color: '--green',
+    who: 'For web developers and music app makers',
+    what: 'The studio\'s Pigeons video picture for any web page: a song played by low-poly pigeons on a big piano keyboard, a bird on each key as it plays, and no two birds ever touching, with nine backgrounds and five camera angles to change between. Give it the notes and a time; it draws that moment.',
+    inZip: ['The pigeons as a JavaScript module (WebGL, with three.js inside), and a helper for a canvas', 'An example page: a small song whose pigeons follow the audio clock', 'Its TypeScript source'],
+  },
+  {
     id: 'song-player',
     title: 'Song player',
     color: '--purple',
@@ -513,7 +521,7 @@ function filesUnder(dir, skip = []) {
  * Bundle `entry` (TypeScript welcome) to one plain ES module with Vite, not minified, and the npm
  * packages that went into it. `config` is a Vite config file to start from (else none).
  */
-async function bundle(entry, { config, env = {} } = {}) {
+async function bundle(entry, { config, env = {}, minify = false } = {}) {
   const { build } = await import('vite');
   const saved = {};
   for (const [k, v] of Object.entries(env)) {
@@ -541,7 +549,7 @@ async function bundle(entry, { config, env = {} } = {}) {
       build: {
         write: false,
         emptyOutDir: false,
-        minify: config ? undefined : false,
+        minify: config ? undefined : minify,
         lib: { entry: join(ROOT, entry), formats: ['es'], fileName: () => 'out.js' },
         rollupOptions: { output: { codeSplitting: false } },
       },
@@ -823,6 +831,47 @@ export async function instrumentLines() {
   };
 }
 
+export async function pigeonKeys() {
+  const { code, packages } = await bundle('src/audio/pigeonKit.ts', { minify: true });
+  const libs = packageLicences(packages);
+  if (libs.some((l) => l.name !== 'three')) throw new Error(`pigeonKit.ts now takes in more than three.js (${libs.map((l) => l.name).join(', ')}): check their licences suit an MIT tool`);
+  const kit = await importCode(code);
+  for (const name of ['PigeonScene', 'PIGEON_BACKGROUNDS', 'PIGEON_CAMERAS', 'everyBars', 'planPigeons', 'posedAt']) if (!(name in kit)) throw new Error(`tools/pigeon-keys imports or documents ${name} from pigeon-scene.js: pigeonKit.ts no longer exports it`);
+  const top = '// Pigeons on the keys. Part of Fledgetone (https://fledgetone.com), © Martin Swanson,\n// MIT licence. Bundled from src/audio/pigeonScene.ts, with three.js inside (THIRD-PARTY-LICENSES.txt)';
+  const scene = Buffer.from(`${top}.\n${code}`);
+  const THIRD_PARTY = [
+    '`pigeon-scene.js` has this open-source library inside it, under its own licence (which permits this). Its full text is in `THIRD-PARTY-LICENSES.txt`.',
+    '',
+    '| Library | Version | Licence |',
+    '| --- | --- | --- |',
+    ...libs.map((l) => `| ${cell(l.name)} | ${cell(l.version)} | ${cell(l.licence)} |`),
+  ].join('\n');
+  const thirdParty = `Pigeons on the keys (pigeon-scene.js) includes the following open-source software.\n\n${libs
+    .map((l) => `${l.name} ${l.version} (${l.licence})\n${'='.repeat(60)}\n${l.text}`)
+    .join('\n\n\n')}\n`;
+  return {
+    readme: fill(readText('tools/pigeon-keys/README.md'), {
+      SCENE_SIZE: formatSize(scene.length),
+      SCENE_GZIP: formatSize(gzipSync(scene).length),
+      THIRD_PARTY,
+      // (the lists as the scene itself has them)
+      BACKGROUNDS: kit.PIGEON_BACKGROUNDS.map((b) => `| \`'${b.id}'\` | ${cell(b.name)}: ${cell(b.blurb.charAt(0).toLowerCase() + b.blurb.slice(1))} |`).join('\n'),
+      CAMERAS: kit.PIGEON_CAMERAS.map((c) => `| \`'${c.id}'\` | ${cell(c.name)}: ${cell(c.blurb.charAt(0).toLowerCase() + c.blurb.slice(1))} |`).join('\n'),
+    }),
+    files: [
+      { name: 'pigeon-keys.js', data: read('tools/pigeon-keys/pigeon-keys.js') },
+      { name: 'pigeon-scene.js', data: scene },
+      { name: 'pigeonScene.ts', data: read('src/audio/pigeonScene.ts') },
+      { name: 'index.html', data: read('tools/pigeon-keys/index.html') },
+      { name: 'THIRD-PARTY-LICENSES.txt', data: thirdParty },
+    ],
+    notice: notice(
+      'Pigeons on the keys',
+      `Fledgetone's own code, with this open-source library bundled inside pigeon-scene.js, under its own licence (text in THIRD-PARTY-LICENSES.txt):\n${libs.map((l) => `  ${l.name} ${l.version} (${l.licence})`).join('\n')}`,
+    ),
+  };
+}
+
 async function songPlayer() {
   // As the site's own studio: with the GPL plugins (songs made on the site can use them)
   const { code, packages } = await bundle('src/runtime/player.ts', { config: 'vite.runtime.config.ts', env: { VITE_GPL_PLUGINS: '1' } });
@@ -863,7 +912,7 @@ async function songPlayer() {
   };
 }
 
-const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'fledge-effects': fledgeEffects, 'drop-effects': dropEffects, 'instrument-lines': instrumentLines, 'song-player': songPlayer };
+const BUILDERS = { 'game-music-players': gameMusicPlayers, 'fledge-synth': fledgeSynth, 'fledge-effects': fledgeEffects, 'drop-effects': dropEffects, 'instrument-lines': instrumentLines, 'pigeon-keys': pigeonKeys, 'song-player': songPlayer };
 
 /** The date the zips' files carry: the version's (package.json's version is the release date). */
 function versionDate() {
