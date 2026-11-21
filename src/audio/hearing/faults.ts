@@ -429,7 +429,7 @@ const COMB = 20;
  * frames, the bin is a peak at least 12 dB over the median of its neighbours, and its second or third
  * harmonic a peak at least 6 dB over theirs. In each frame it stands at least 6 dB over its neighbours
  * in 90% of the frames, and its level there spans less than 3 dB (the middle 80% of frames). And no other
- * line within 20 Hz of it, within 20 dB of its level, stands 12 dB over its own neighbours: a kick or a
+ * line within 20 Hz of it, within 20 dB of its level, stands 6 dB over its own neighbours: a kick or a
  * note repeated a whole number of times a second (6, 10, 12) makes a comb of lines that lands on 50 or
  * 60 Hz, while hum is one line with its harmonics. A note or a wobble comes and goes, or peaks off the
  * mains frequency; hum stays on it.
@@ -454,14 +454,14 @@ function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault
     const p = mean.get(hz)!;
     return p > 1e-10 && p >= mean.get(hz - 1)! && p >= mean.get(hz + 1)! && p >= 10 ** (overDb / 10) * floorOf(hz, (f) => mean.get(f)!);
   };
-  /** Whether another line within COMB Hz of `hz` (and within 20 dB of it) stands 12 dB over its own neighbours: a comb. */
+  /** Whether another line within COMB Hz of `hz` (and within 20 dB of it) stands 6 dB over its own neighbours: a comb. */
   const comb = (hz: number): boolean => {
     const level = mean.get(hz)!;
     for (let k = -COMB; k <= COMB; k++) {
       if (Math.abs(k) <= 1) continue;
       const f = hz + k;
       const p = mean.get(f)!;
-      if (p >= level / 100 && p >= mean.get(f - 1)! && p >= mean.get(f + 1)! && p >= 16 * floorOf(f, (g) => mean.get(g)!)) return true;
+      if (p >= level / 100 && p >= mean.get(f - 1)! && p >= mean.get(f + 1)! && p >= 4 * floorOf(f, (g) => mean.get(g)!)) return true;
     }
     return false;
   };
