@@ -32,13 +32,21 @@ Songs
                                         Apply a suggestion file, writing a new song
   link <song> [--base <url>]            A share link that opens the song in Fledgetone
   from-link <link> -o <out>             The song in a share link, as a file
-  measure <file.wav> [--json]           Loudness (LUFS), true peak and balance of an export
+  measure <audio> [--sound] [--pictures <folder>] [--from <s>] [--to <s>] [--close <s>]...
+          [--bpm <n>] [--against <audio|hearing.json> [--against-from <s>] [--against-to <s>]]
+          [--save <hearing.json>] [--json]
+                                        Loudness (LUFS), true peak and balance of an audio file
+                                        (.wav, .mp3, .flac, .ogg, .opus, .m4a, .aac); with
+                                        --sound, its character too (see below)
 
 Rendering (in a headless browser on this computer, by the app's own export)
   render <song> -o <out.wav|out.mp3> [--bars 1-16] [--rate 44100|48000] [--bits 16|24|32f]
          [--stems <folder>] [--target <id>|none] [--json]
                                         The song as a WAV or MP3 file, as Export makes it
   listen <song> [--bars 9-16] [--per-track] [--suggestion <s.json> | --ops <ops.json>] [--json]
+         [--sound] [--pictures <folder>] [--close <bar[.beat]>]...
+         [--against <audio|hearing.json> [--against-from <s>] [--against-to <s>]]
+         [--save <hearing.json>]
                                         Bars rendered and measured: loudness, peaks, balance,
                                         bar by bar, findings; with a suggestion, before and after
 
@@ -73,6 +81,21 @@ Rendering and listening
   --app-url <url>     Render with a running dev server's code (working on Fledgetone)
   --timeout <s>       Give up after this many seconds (default 600)
   --verbose           Say what the page logs and refuses
+  --sound             measure and listen: the sound's character in words (tone, texture,
+                      movement, dynamics, attack, stereo, pitch, faults), worked out on this
+                      computer. Words that describe, never judge
+  --pictures <folder> PNG pictures of it written there (spectrogram, stereo, level, spectrum,
+                      chroma, close-ups), each listed with what it shows; same names written over
+  --close <s|bar.beat> A close-up picture of a moment; again for more. measure: seconds from the
+                      start (90 or 1:30). listen: bar 9, beat 3 is 9.3 (9: its first beat); bars
+                      are four quarter notes in any meter, beats 1 to 4, and where the ruler
+                      counts otherwise the words give its measure too
+  --from <s> --to <s> measure: a stretch of the file, in seconds (90, 90.5, 1:30)
+  --bpm <n>           measure: the tempo, when you know it
+  --against <file>    Read it against another sound or a saved hearing, level-matched; compare like
+                      with like. --against-from <s> --against-to <s>: a stretch of that one
+  --save <file.json>  Save the hearing (measurements only, no audio; --overwrite to replace one)
+  At most 15 minutes are heard at a time. --pictures, --close, --against and --save turn --sound on
   -h, --help          This help
   -v, --version       The version
 

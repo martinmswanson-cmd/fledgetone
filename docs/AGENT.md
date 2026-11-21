@@ -70,7 +70,7 @@ Options of `fledgetone mcp`:
 
 | Option | What it does |
 | --- | --- |
-| `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files (`.json`) and audio (`.wav`, `.mp3`) only. |
+| `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files and saved hearings (`.json`), audio (`.wav`, `.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) and pictures (`.png`) only. |
 | `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one (the pairing message says which). If 47123 is taken by another program, the helper doesn't move to another port by itself: it says so (on stderr, and `connect_studio` answers with what to do), tries 47123 again at each `connect_studio`, and the file tools work meanwhile. A port given with `--port` that's taken stops the helper with an error. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
@@ -168,6 +168,42 @@ song, is refused, as `fledgetone apply` refuses it.
 Limits are the live listen's: at most 64 bars or 90 seconds (before and after each), one listen or
 render at a time, 10 listens a minute. `render_file` makes at most 10 minutes of audio, never
 writes over a file unless `overwrite: true`, and only `.wav` and `.mp3` files inside `--root`.
+
+On the command line, `fledgetone listen` and `fledgetone measure` (any audio file: `.wav`,
+`.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) can also hear the sound, on your computer and
+with nothing sent anywhere:
+
+```sh
+fledgetone measure mix.wav --sound                                   # its character in words
+fledgetone measure mix.wav --pictures pics --close 1:12              # PNG pictures, a close-up at 1:12
+fledgetone listen song.fledgetone.json --bars 9-16 --pictures pics --close 12.3
+fledgetone measure mix.wav --save mix.hearing.json                   # measurements only, no audio
+fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --against-to 90
+```
+
+- `--sound` adds `sound`, the sound report, in eight groups: tone (the spectrum's balance, its
+  centre, tilt and roll-off, narrow peaks), texture (tonal or noisy, smooth or rough, percussive,
+  flat tops), movement (change over time, slow wobbles of a band), dynamics (loudness, true peak,
+  crest, range), attack (how often and how fast things start), stereo (correlation, balance,
+  mono loss, width), pitch (tempo, key, tuning, pitch classes) and faults (clicks, clipping, DC
+  offset, hum, digital silence, a channel fault), each with plain `words` that describe and never
+  judge. The text output prints the words after the usual lines.
+- `--pictures <folder>` writes PNG pictures there (a spectrogram, the stereo side signal, the
+  level, the spectrum, the pitch classes, close-ups of faults and of moments asked for; with a
+  suggestion, the after version's and a picture of the difference). `--json` lists each in
+  `pictures` by `path`, with `shows`: a sentence saying what it shows.
+- `--close`: a close-up. For `measure`, seconds (`90`, `1:30`) from the start of the file; for
+  `listen`, a bar and quarter beat (`12.3`: bar 12, beat 3), counted in bars of four quarter notes
+  whatever the meter. Where the ruler counts otherwise, the words also give its measure and beat.
+- `--against <audio|hearing.json>` adds `against`: this sound read against the other,
+  level-matched, its `differences` largest first and `notes` (read as which against which, and
+  cautions such as different lengths). Compare like with like. With a suggestion, the after
+  version is the one compared; the before and after are compared with each other as well
+  (`difference.sound`).
+- `--save <file.json>` writes a saved hearing: `{ "fledgetoneHearing": 1, "of", "range", "sound" }`,
+  measurements only. A group whose rules have changed since can't be compared, and says so: hear
+  the audio again.
+- At most 15 minutes are heard at a time; `measure --from <s> --to <s>` names a stretch.
 
 The first time a song uses a recorded instrument, its recordings download from fledgetone.com (the
 same files, from the same addresses, the app downloads); they're kept (in `~/.cache/fledgetone`,
