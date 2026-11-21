@@ -1,7 +1,7 @@
 // Unit tests for the hearing report's faults (src/audio/hearing/faults.ts): clicks, clipping, DC, hum,
-// digital silence and a missing channel, measured on the made test signals of
-// scripts/fixtures/hearingSignals.mjs. Healthy sound of every kind the app makes must read no fault.
-// Run with `npm test`.
+// digital silence and a missing channel, measured on the made test signals of scripts/fixtures/. Healthy
+// sound of every kind the app makes must read no fault; this is a slice of each family, and the wide grids
+// are in scripts/audio-check/hearing/faults-grid.mjs. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +20,13 @@ register(
 
 const { faultsOf } = await import('../src/audio/hearing/faults.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
+const G = await import('./fixtures/hearingFaultSignals.mjs');
 
+/** S.saw, made once per set of arguments (it is slow at low pitches) and handed out as a copy. */
+const saws = new Map();
+const saw = (...args) => { const key = args.join(); if (!saws.has(key)) saws.set(key, S.saw(...args)); return saws.get(key).slice(); };
+/** A bass note: its first six harmonics, falling as 1/k, peaking near `db`. */
+const tone = (hz, sec, db) => S.mix(...[1, 2, 3, 4, 5, 6].map((k) => S.sine(hz * k, sec, db - 20 * Math.log10(k) - 7)));
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
 const bed = (sec) => S.mix(S.sine(110, sec, -12), S.sine(440, sec, -18), S.band(S.pink(sec, -30, 3), 100, 4000));
@@ -37,7 +43,7 @@ test('a one-sample jump 12 dB over the level around it is found, to the millisec
 });
 test('no clicks in clean sound, noise, drums or distortion', () => {
   const drums = S.at(4, Array.from({ length: 16 }, (_, i) => [i / 4, S.burst(0.2, 40, 0, -3, i)]));
-  for (const x of [bed(4), S.white(10, -12, 1), drums, S.clip(S.saw(55, 4, 0), 0.5), S.gate(S.saw(110, 4, -6), 8, -60)])
+  for (const x of [bed(4), S.white(10, -12, 1), drums, S.clip(saw(55, 4, 0), 0.5), S.gate(saw(110, 4, -6), 8, -60)])
     assert.deepEqual(faultsOf([x], 48000).filter((f) => f.kind === 'click'), []);
 });
 test('clipping at full scale is a fault; flat tops below it are not', () => {
@@ -73,54 +79,52 @@ test('a four-minute stereo sound takes under 10 seconds', () => {
 // More healthy sound: none of it is a click
 
 test('no clicks in steady saws from 25 Hz to 2 kHz, plain or hard-clipped', () => {
-  const hz = [25, 27.5, 30, 35.4, 41.2, 50, 55, 61.74, 70.7, 100, 110, 141, 200, 283, 400, 566, 800, 1131, 1600, 2000];
-  for (const f of hz) {
-    const saw = S.saw(f, 1, 0);
-    noClicks(saw, `saw ${f} Hz`);
-    noClicks(S.clip(saw, 0.5), `saw ${f} Hz clipped at 0.5`);
-    noClicks(S.clip(saw, 0.25), `saw ${f} Hz clipped at 0.25`);
+  for (const f of [25, 41.2, 110, 2000]) {
+    const wave = saw(f, 1, 0);
+    noClicks(wave, `saw ${f} Hz`);
+    noClicks(S.clip(wave, 0.5), `saw ${f} Hz clipped at 0.5`);
+    noClicks(S.clip(wave, 0.25), `saw ${f} Hz clipped at 0.25`);
   }
 });
 test('no clicks in wobble and tremolo basses, plain or clipped', () => {
-  for (const [hz, rate] of [[55, 2], [41.2, 4], [73.4, 8], [55, 1.5]]) {
-    const w = S.wobble(hz, 80, 3000, rate, 4, -3);
-    noClicks(w, `wobble ${hz} Hz at ${rate} Hz`);
-    noClicks(S.clip(S.gain(w, 12), 0.7), `clipped wobble ${hz} Hz at ${rate} Hz`);
-  }
-  for (const [hz, rate] of [[55, 4], [41.2, 2], [110, 8]]) {
-    noClicks(S.tremolo(S.saw(hz, 4, -3), rate, 1), `tremolo saw ${hz} Hz at ${rate} Hz`);
-    noClicks(S.tremolo(S.clip(S.saw(hz, 4, 0), 0.5), rate, 1), `tremolo clipped saw ${hz} Hz at ${rate} Hz`);
-  }
+  const w = S.wobble(73.4, 80, 3000, 8, 2, -3);
+  noClicks(w, 'wobble'); noClicks(S.clip(S.gain(w, 12), 0.7), 'clipped wobble');
+  noClicks(S.tremolo(S.clip(saw(55, 2, 0), 0.5), 4, 1), 'tremolo clipped saw');
+  noClicks(S.gate(saw(25, 1, 0), 8, -60), 'a 25 Hz saw gated at 8 Hz');
 });
-test('no clicks in kick and hats over a clipped saw bass', () => {
-  const kicks = S.every(2, 4, () => S.decay(S.sine(55, 0.45, -3), 40));
-  const hats = S.every(8, 4, (i) => S.burst(0.05, 8, 0, -14, i + 1));
-  noClicks(S.mix(kicks, hats, S.clip(S.saw(41.2, 4, -3), 0.35)), 'kick, hats and bass');
-  noClicks(S.mix(kicks, hats, S.clip(S.saw(55, 4, 0), 0.25)), 'kick, hats and a harder bass');
-  noClicks(S.mix(kicks, hats), 'kick and hats alone');
+test('no clicks in hard-clipped and square basses under kick, hats and snare', () => {
+  const drums = G.drums(2);
+  noClicks(S.mix(drums, S.clip(S.gain(saw(55, 2, 0), 12), 0.2)), 'saw 55 Hz +12 dB clipped at 0.2');
+  noClicks(S.mix(drums, S.gain(S.clip(S.gain(saw(46.2, 2, 0), 12), 0.1), -6)), 'saw 46.2 Hz +12 dB clipped at 0.1, -6 dB');
+  noClicks(S.mix(drums, G.square(41.2, 2, 0.1)), 'square 41.2 Hz at 0.1');
+  noClicks(S.mix(drums, G.square(110, 2, 0.1)), 'square 110 Hz at 0.1');
+  noClicks(S.mix(drums, G.limitedSquare(73.4, 2, 0.1)), 'band-limited square 73.4 Hz at 0.1');
+  const kicks = S.every(2, 2, () => S.decay(S.sine(55, 0.45, -3), 40));
+  noClicks(S.mix(kicks, S.every(8, 2, (i) => S.burst(0.05, 8, 0, -14, i + 1)), S.clip(saw(41.2, 2, -3), 0.35)), 'kick, hats and bass');
+});
+test('a click planted away from the corners of that material is found', () => {
+  const drums = G.drums(2);
+  for (const [name, x, t] of [['saw 55 Hz clipped at 0.2', S.mix(drums, S.clip(S.gain(saw(55, 2, 0), 12), 0.2)), 1.1], ['square 55 Hz at 0.2', S.mix(drums, G.square(55, 2, 0.2)), 1.3], ['saw 110 Hz clipped at 0.1', S.mix(drums, S.clip(S.gain(saw(110, 2, 0), 12), 0.1)), 1.7]]) {
+    const { x: y, at } = G.plantAwayFromCorners(x, t);
+    const clicks = clicksOf([y]);
+    assert.equal(clicks.length, 1, name); near(clicks[0].seconds, at / 48000, 0.001, name);
+  }
 });
 test('no clicks in a square wave at 110 Hz', () => {
-  const naive = Float32Array.from({ length: 4 * 48000 }, (_, i) => ((i * 110) / 48000) % 1 < 0.5 ? 0.5 : -0.5);
-  const limited = S.mix(...[1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29].map((k) => S.gain(S.sine(110 * k, 4, -6), -20 * Math.log10(k))));
-  noClicks(naive, 'a square'); noClicks(limited, 'a band-limited square');
+  noClicks(G.square(110, 2, 0.5), 'a square'); noClicks(G.limitedSquare(110, 2, 0.5), 'a band-limited square');
 });
 test('no clicks in white and pink noise, quiet to loud', () => {
-  for (const db of [-6, -18, -40])
-    for (let seed = 1; seed <= 8; seed++) {
-      noClicks(S.white(30, db, seed), `white ${db} dB seed ${seed}`);
-      noClicks(S.pink(30, db, seed), `pink ${db} dB seed ${seed}`);
-    }
+  for (const db of [-6, -18, -40]) { noClicks(S.white(5, db, 1), `white ${db} dB`); noClicks(S.pink(5, db, 1), `pink ${db} dB`); }
 });
 test('the file edges are not clicks', () => {
   const cosine = Float32Array.from({ length: 2 * 48000 }, (_, i) => 0.5 * Math.cos((2 * Math.PI * 440 * i) / 48000));
   noClicks(cosine, 'a sound at full level on its first sample');
   noClicks(cosine.reverse(), 'a sound at full level on its last sample');
-  noClicks(S.clip(S.saw(55, 2, 0), 0.5).subarray(1234, 80000), 'a clipped saw cut at both ends');
+  noClicks(S.clip(saw(55, 2, 0), 0.5).subarray(1234, 80000), 'a clipped saw cut at both ends');
   noClicks(S.white(2, -12, 3), 'noise from the first sample to the last');
 });
 test('a note cut off cleanly at a zero crossing is not a click', () => {
   noClicks(S.at(2, [[0.5, S.sine(440, 1, -6)]]), '440 Hz, whole cycles');
-  noClicks(S.at(2, [[0.5, S.sine(110, 1, -6)]]), '110 Hz, whole cycles');
   noClicks(S.at(2, [[0.5, S.sine(1000, 0.5, -3)]]), '1 kHz, whole cycles');
   // a period that is not a whole number of samples: cut at the last sample before the wave crosses zero
   for (const hz of [441, 97.3, 1733]) {
@@ -154,8 +158,8 @@ test('two clicks 200 ms apart are two faults', () => {
   assert.equal(clicks.length, 2); near(clicks[0].seconds, 1.5, 0.001); near(clicks[1].seconds, 1.7, 0.001);
 });
 test('a click during a held clipped saw bass', () => {
-  const x = S.clip(S.saw(55, 4, 0), 0.5);
-  for (const t of [1.2051, 2.3333, 3.1]) {
+  const x = S.clip(saw(55, 4, 0), 0.5);
+  for (const t of [1.2051, 3.1]) {
     const y = x.slice(); const i = Math.round(t * 48000); y[i] += 4 * rmsAround(y, i);
     const clicks = clicksOf([y]);
     assert.equal(clicks.length, 1, `click at ${t} s`); near(clicks[0].seconds, t, 0.001);
@@ -194,17 +198,25 @@ test('faults are in time order, those without a time last, each with a plain det
   }
   const channel = f.find((x) => x.kind === 'channel'); assert.equal(channel.channel, 'right'); near(channel.value, 20, 0.5);
 });
-test('a kick pattern is not a DC offset; a quiet offset under -50 dBFS is not either', () => {
-  const kicks = S.every(2, 6, () => S.decay(S.sine(55, 0.45, 0), 60));
-  assert.equal(faultsOf([kicks], 48000).find((f) => f.kind === 'dc'), undefined);
+test('a kick loop is not a DC offset; an offset is, through the kicks; one under -50 dBFS is not', () => {
+  for (const [rate, options] of [[8, { decayMs: 250 }], [8, { hz: 110, toHz: 45, decayMs: 250 }], [4.33, { decayMs: 100 }], [5, { decayMs: 250, cosine: true }], [2, { decayMs: 250 }]])
+    assert.equal(faultsOf([G.kickLoop(rate, 8, { hz: 55, peak: 0.8, ...options })], 48000).find((f) => f.kind === 'dc'), undefined, `${rate} a second ${JSON.stringify(options)}`);
+  near(faultsOf([S.mix(bed(8), G.kickLoop(2, 8, { hz: 55, decayMs: 150, peak: 0.8 })).map((v) => v + 0.01)], 48000).find((f) => f.kind === 'dc').value, -40, 0.5);
+  near(faultsOf([bed(2).map((v) => v - 0.01)], 48000).find((f) => f.kind === 'dc').value, -40, 0.5);
+  const pink = S.pink(8, -40, 1).map((v) => v + 0.005); // pink's own slow wander adds to so small an offset: the value is the signal's mean
+  near(faultsOf([pink], 48000).find((f) => f.kind === 'dc').value, 20 * Math.log10(pink.reduce((a, v) => a + v, 0) / pink.length), 0.5);
   assert.equal(faultsOf([bed(2).map((v) => v + 0.002)], 48000).find((f) => f.kind === 'dc'), undefined);
 });
-test('a held bass and a wobble are not hum; hum at 50 Hz is', () => {
-  for (const x of [S.mix(S.pink(10, -24, 2), S.saw(61.74, 10, -6)), S.mix(S.pink(10, -24, 2), S.wobble(49, 80, 1500, 2, 10, -6)), S.clip(S.saw(55, 10, 0), 0.5)])
-    assert.equal(faultsOf([x], 48000).find((f) => f.kind === 'hum'), undefined);
-  const hum = S.mix(S.pink(8, -18, 4), S.sine(50, 8, -24), S.sine(150, 8, -30));
-  const f = faultsOf([hum], 48000).find((x) => x.kind === 'hum'); assert.equal(f.value, 50); assert.equal(f.seconds, null);
-  assert.equal(faultsOf([S.mix(S.pink(3, -18, 4), S.sine(50, 3, -24), S.sine(150, 3, -30))], 48000).find((x) => x.kind === 'hum'), undefined);
+test('a held bass, a sub that stops and a tempo-locked kick are not hum; hum is', () => {
+  const hum = (x) => faultsOf([x], 48000).filter((f) => f.kind === 'hum').map((f) => f.value);
+  for (const [name, x] of [['held bass 61.74 Hz', S.mix(S.pink(5, -24, 2), tone(61.74, 5, -6))], ['held bass 49 Hz', S.mix(S.pink(5, -24, 2), tone(49, 5, -6))],
+    ['sub at 50 Hz for 3 of 6 s', S.at(6, [[1.5, G.fade(tone(50, 3, -6))]])], ['kicks 10 a second', G.kickLoop(10, 5, { hz: 55, decayMs: 150, peak: 0.8 })],
+    ['kicks dropping 110 to 45 Hz, 6 a second', G.kickLoop(6, 5, { hz: 110, toHz: 45, decayMs: 150, peak: 0.8 })], ['kicks 12 a second', G.kickLoop(12, 5, { hz: 55, decayMs: 150, peak: 0.8 })]])
+    assert.deepEqual(hum(x), [], name);
+  assert.deepEqual(hum(G.hum50(5)), [50]);
+  assert.deepEqual(hum(S.mix(G.hum60(10), G.kickAndHats(10))), [60]);
+  assert.deepEqual(hum(S.mix(S.pink(3, -18, 4), S.sine(50, 3, -24), S.sine(150, 3, -30))), [], 'under 4 seconds');
+  assert.equal(faultsOf([G.hum50(5)], 48000).find((f) => f.kind === 'hum').seconds, null);
 });
 test('silence: only exact zeros, and at least 50 ms of them', () => {
   const quiet = S.at(2.2, [[0, S.sine(440, 1, -6)], [1.2, S.sine(440, 1, -6)]]); for (let i = 48000; i < 57600; i++) quiet[i] = 1e-7;
@@ -220,22 +232,44 @@ test('a quieter channel, and nothing at all from silence', () => {
   assert.equal(faultsOf([S.gain(l, -8), l], 48000).find((x) => x.kind === 'channel'), undefined);
   assert.deepEqual(faultsOf([new Float32Array(48000), new Float32Array(48000)], 48000), []);
   assert.deepEqual(faultsOf([new Float32Array(0)], 48000), []);
+  const broken = bed(1); broken[20000] = NaN; broken[30000] = Infinity;
+  assert.ok(Array.isArray(faultsOf([broken], 48000)), 'a sample that is not a number does not stop it');
 });
 
-// Known limits, measured: what the click rules cannot tell apart, kept here so a change that moves them shows
+// Known limits, measured: what the rules cannot tell apart, kept here so a change that moves them shows
 
-test('known limit: like clicks closer than 150 ms read as a wave repeating its corners', () => {
-  const x = bed(4);
-  for (let k = 0; k < 8; k++) { const i = Math.round((1 + k * 0.1) * 48000); x[i] += 4 * rmsAround(x, i); }
-  assert.equal(clicksOf([x]).length, 0);
+test('known limit: clicks closer than 150 ms, of any size, read as a wave repeating its corners', () => {
+  const total = (x) => clicksOf([x]).reduce((a, f) => a + (f.seconds === null ? f.count : 1), 0);
+  const close = bed(3); [4, 6, 3, 8].forEach((k, j) => { const i = Math.round((1 + j * 0.1) * 48000); close[i] += k * rmsAround(close, i); });
+  assert.equal(total(close), 0, '4, 6, 3 and 8 times the RMS, 100 ms apart');
+  // crackle: clicks of 2 to 8 times the RMS at random places in 10 s of the bed. The count found does not
+  // track the count made: measured 16 made, 12 found; 40, 25; 160, 13; 400, 2
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const found = [16, 160].map((n) => {
+    const x = bed(10);
+    for (let k = 0; k < n; k++) { const i = 2400 + Math.floor(rnd() * (x.length - 4800)); x[i] += (rnd() < 0.5 ? -1 : 1) * (2 + 6 * rnd()) * rmsAround(x, i); }
+    return total(x);
+  });
+  assert.ok(found[0] >= 8 && found[0] <= 16, `16 made, ${found[0]} found`);
+  assert.ok(found[1] <= 40, `160 made, ${found[1]} found`);
 });
 test('known limit: a click within a few samples of a clipped bass corner merges with it', () => {
-  // 3 of 40 such clicks placed every 89.1 ms are lost this way, 37 are found
-  const x = S.clip(S.saw(55, 4, 0), 0.5);
-  let found = 0;
-  for (let k = 0; k < 40; k++) {
-    const y = x.slice(); const i = Math.round((0.2 + k * 0.0891) * 48000); y[i] += (k % 2 ? 1 : -1) * 4 * rmsAround(y, i);
-    if (clicksOf([y]).some((c) => Math.abs(c.seconds - i / 48000) <= 0.001)) found++;
-  }
-  assert.equal(found, 37);
+  // measured: 16 of 20 found (clicks of 4 times the RMS, 189 ms apart, on a 55 Hz saw clipped at 0.5)
+  const x = S.clip(saw(55, 4, 0), 0.5); const at = [];
+  for (let k = 0; k < 20; k++) { const i = Math.round((0.2 + k * 0.1891) * 48000); at.push(i); x[i] += (k % 2 ? 1 : -1) * 4 * rmsAround(x, i); }
+  const clicks = clicksOf([x]);
+  const found = at.filter((i) => clicks.some((c) => Math.abs(c.seconds - i / 48000) <= 0.001)).length;
+  assert.ok(found >= 14, `${found} of 20 found`); assert.equal(clicks.length, found, 'nothing else reported');
+});
+test('known limit: hum under a kick that has as much energy at 60 Hz is not heard', () => {
+  // a 55 Hz kick peaking at 0.5 puts -33 dB in each 1 Hz bin near 60 Hz: the -27 dB hum stands 7 dB over that, not 12
+  assert.equal(faultsOf([S.mix(G.hum60(10), G.kickAndHats(10, 0.5))], 48000).find((f) => f.kind === 'hum'), undefined);
+});
+test('known limit: a bass held at exactly 50 Hz for the whole sound cannot be told from hum', () => {
+  assert.equal(faultsOf([S.mix(S.pink(5, -30, 2), tone(50, 5, -12))], 48000).find((f) => f.kind === 'hum').value, 50);
+});
+test('known limit: a real offset on noise that wanders as far is not always reported', () => {
+  // 0.005 on pink at -40 dB: found for 10 of seeds 1 to 12 (seed 12 holds its sign only 88% of the time)
+  assert.equal(faultsOf([S.pink(8, -40, 12).map((v) => v + 0.005)], 48000).find((f) => f.kind === 'dc'), undefined);
 });

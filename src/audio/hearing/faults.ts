@@ -261,8 +261,8 @@ function clippingFault(channels: readonly Float32Array[], sampleRate: number): F
   for (const x of channels) {
     let i = 0;
     while (i < x.length) {
-      if (Math.abs(x[i]) < 0.99) {
-        i++;
+      if (!(Math.abs(x[i]) >= 0.99)) {
+        i++; // NaN too
         continue;
       }
       const sign = Math.sign(x[i]);
@@ -380,10 +380,26 @@ function binPower(frame: Float64Array, hz: number, sampleRate: number): number {
   return ((s1 * s1 + s2 * s2 - c * s1 * s2) * 16) / (n * n);
 }
 
+/**
+ * The middle, smoothed and kept every `step` samples (`step` divides the sample rate, so a second is a
+ * whole number of them, and the rate stays near 3 kHz, far above the 185 Hz the hum bins reach). The
+ * smoothing is two moving averages of `step`, whose nulls fall on the frequencies that would fold down.
+ */
+function slowMid(channels: readonly Float32Array[], sampleRate: number): { x: Float64Array; rate: number } {
+  let step = Math.max(1, Math.floor(sampleRate / 3000));
+  while (step > 1 && sampleRate % step !== 0) step--;
+  const mid = midOf(channels);
+  const once = movingAverage(Float64Array.from(mid), step);
+  const twice = movingAverage(once, step);
+  const x = new Float64Array(Math.floor(mid.length / step));
+  for (let i = 0; i < x.length; i++) x[i] = twice[i * step + step - 1];
+  return { x, rate: sampleRate / step };
+}
+
 /** The mean power at each needed bin and the power in each frame, of the middle in Hann-windowed 1-second frames (1 Hz bins). */
 function humBins(channels: readonly Float32Array[], sampleRate: number, needed: Iterable<number>) {
-  const size = Math.round(sampleRate);
-  const mid = midOf(channels);
+  const { x: mid, rate } = slowMid(channels, sampleRate);
+  const size = Math.round(rate);
   const frames = Math.floor(mid.length / size);
   const window = new Float64Array(size);
   for (let i = 0; i < size; i++) window[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / size);
@@ -392,7 +408,7 @@ function humBins(channels: readonly Float32Array[], sampleRate: number, needed: 
   const frame = new Float64Array(size);
   for (let f = 0; f < frames; f++) {
     for (let i = 0; i < size; i++) frame[i] = mid[f * size + i] * window[i];
-    for (const [hz, power] of perFrame) power[f] = binPower(frame, (hz * sampleRate) / size, sampleRate);
+    for (const [hz, power] of perFrame) power[f] = binPower(frame, (hz * rate) / size, rate);
   }
   const mean = new Map<number, number>();
   for (const [hz, power] of perFrame) {
