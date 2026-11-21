@@ -15,7 +15,8 @@
  * The helper enforces the agent's limits (LIMITS in protocol.ts); the studio enforces its own and
  * what the musician allowed.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
@@ -29,10 +30,10 @@ import { agentText, cleanForAgent } from '../../../src/agent/agentText';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
 import { BridgeError, BridgeServer, DEFAULT_PORT, NOT_CONNECTED, portTakenMessage } from './bridgeServer';
 import { fileInRoot, readJson, readSong, sameFile, writeJson } from './files';
-import { checkProblems, suggestionIdBase } from './commands';
+import { AUDIO_TYPES, UsageError, againstOf, checkProblems, hearAudioFile, hearPlan, suggestionIdBase, type Flags } from './commands';
 import { AGENT_DOC, APP_VERSION } from './meta';
 import { Conversation, CONVERSATION_INSTRUCTIONS, registerConversationTools } from './conversation';
-import { audioFormatOf, opsToHear, listenSongFile, renderSongFile, secondsBetween, songEndBar } from './renderCommands';
+import { audioFormatOf, opsToHear, listenPlan, listenSongFile, renderSongFile, secondsBetween, songEndBar, type ListenHearing } from './renderCommands';
 import type { BrowserOptions } from './browserRender';
 
 export interface McpOptions {
@@ -70,6 +71,42 @@ async function guard(body: () => unknown): Promise<CallToolResult> {
   }
 }
 
+
+/** The most pictures a reply attaches as images, and the most PNG bytes in all (the rest are named in the text by path). */
+const MAX_IMAGES = 6;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+/** Where a picture goes among the images attached: the spectrogram, the difference, close-ups, the level picture, the spectrum; others are named only. */
+function imageRank(name: string): number {
+  const n = name.replace(/^(?:before|after)-/, '');
+  if (n.startsWith('spectrogram')) return 0;
+  if (n.startsWith('difference')) return 1;
+  if (n.startsWith('closeup')) return 2;
+  if (n.startsWith('level')) return 3;
+  if (n.startsWith('spectrum')) return 4;
+  return 5;
+}
+
+/** The names of the hearing options as the tool's inputs spell them, in place of the command line's. */
+const askedFor = (err: unknown): unknown =>
+  err instanceof UsageError
+    ? new Error(
+        err.message
+          .replace(/--against-from/g, 'againstFromSeconds')
+          .replace(/--against-to/g, 'againstToSeconds')
+          .replace(/--close/g, 'closeUps')
+          .replace(/--against/g, 'against')
+          .replace(/--pictures/g, 'pictures')
+          .replace(/--save/g, 'save')
+          .replace(/--bpm/g, 'bpm')
+          .replace(/--from/g, 'fromSeconds')
+          .replace(/--to/g, 'toSeconds')
+      )
+    : err;
+
+type Pic = { name: string; path: string; bytes?: number };
+const isPic = (v: unknown): v is Pic => !!v && typeof v === 'object' && typeof (v as Pic).path === 'string' && typeof (v as Pic).name === 'string' && 'shows' in v;
+
 const opsSchema = z.array(z.record(z.string(), z.unknown())).max(LIMITS.maxOps).describe('The ops, version 1 (see the fledgetone://docs/ops resource). Ids may be "$name" refs to things earlier ops made with ref.');
 
 export const SERVER_INSTRUCTIONS = `Fledgetone is a music studio. These tools let you read a song and suggest changes to it; the musician hears each suggestion before and after, then accepts or dismisses it. You never change the song yourself.
@@ -77,6 +114,8 @@ export const SERVER_INSTRUCTIONS = `Fledgetone is a music studio. These tools le
 Two ways to work: with files (pass "file" to read a .fledgetone.json song from the working folder; suggest with "file" and "out" writes a suggestion file), or live with the studio (call connect_studio, tell the musician the code, call connect_studio again with waitSeconds to wait for them; then get_song reads the song on screen and suggest puts a suggestion on their Suggestions panel).
 
 With files you can also hear the song without the studio: listen with "file" measures bars of it (with "suggestion" or "ops", before and after), and render_file writes a WAV or MP3 file, both rendered on this computer as the app's Export renders.
+
+listen with a file and hear_audio can also describe a sound's character (bright, dark, gritty, wide...) and return pictures of it: a spectrogram, a level picture, close-ups of moments you name.
 
 Read the fledgetone://docs/ops resource for the ops and their units before you suggest. Try ops with preview_suggestion first. Keep suggestions small and say why in plain words.`;
 
@@ -93,6 +132,60 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
   const limited = (limiter: RateLimiter, what: string) => {
     const wait = limiter.take();
     if (wait) throw new Error(`Too many ${what} calls: try again in ${Math.ceil(wait / 100) / 10} seconds.`);
+  };
+
+  /** A folder for pictures inside the root (made when a picture is written): the folder it's in, links followed, must be inside the root. */
+  const folderInRoot = (folder: string): string => {
+    const realRoot = realpathSync.native(root);
+    let probe = resolve(realRoot, folder);
+    const fresh: string[] = [];
+    while (!existsSync(probe) && dirname(probe) !== probe) {
+      fresh.unshift(basename(probe));
+      probe = dirname(probe);
+    }
+    if (existsSync(probe) && !statSync(probe).isDirectory()) throw new Error(`${folder} isn't a folder`);
+    const real = dirname(fileInRoot(root, join(probe, 'check.png'), { types: ['.png'], write: true }));
+    return join(real, ...fresh);
+  };
+  /** A path made by a hearing, as the agent names it: relative to the root. */
+  const inRoot = (path: string) => relative(realpathSync.native(root), path).split(sep).join('/');
+  const underRoot = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(underRoot);
+    if (!value || typeof value !== 'object') return value;
+    const out = Object.fromEntries(Object.entries(value).map(([k, v]) => [k, underRoot(v)]));
+    return isPic(value) ? { ...out, path: inRoot(value.path) } : out;
+  };
+  /** A hearing's report as text (every picture named with its path), then up to six of its pictures as images, 3 MB in all. */
+  const withImages = (report: Record<string, unknown>, shown: readonly Pic[]): CallToolResult => {
+    const ranked = shown.map((p, i) => ({ p, i })).sort((a, b) => imageRank(a.p.name) - imageRank(b.p.name) || a.i - b.i).filter(({ p }) => imageRank(p.name) < 5);
+    const images: Array<{ type: 'image'; data: string; mimeType: 'image/png' }> = [];
+    const attached: string[] = [];
+    let total = 0;
+    for (const { p } of ranked) {
+      const size = p.bytes ?? statSync(p.path).size;
+      if (images.length >= MAX_IMAGES || total + size > MAX_IMAGE_BYTES) break;
+      images.push({ type: 'image', data: readFileSync(p.path).toString('base64'), mimeType: 'image/png' });
+      attached.push(inRoot(p.path));
+      total += size;
+    }
+    const all = shown.map((p) => inRoot(p.path));
+    const result = ok(shown.length ? { ...(underRoot(report) as object), pictureImages: { attached, notAttached: all.filter((p) => !attached.includes(p)) } } : underRoot(report));
+    result.content.push(...images);
+    return result;
+  };
+  /** The checked inputs of a hearing: the options in the command line's own words, so `hearPlan` and `listenPlan` check them as they check the command line. */
+  const hearingInputs = (o: { pictures?: string; closeUps?: Array<string | number>; against?: string; againstFromSeconds?: number; againstToSeconds?: number; save?: string; sound?: boolean }): Flags => {
+    const save = o.save === undefined ? undefined : fileInRoot(root, o.save, { types: ['.json'], write: true });
+    if (save && existsSync(save)) throw new Error(`${o.save} already exists: choose another name.`);
+    return {
+      ...(o.sound ? { sound: true } : {}),
+      ...(o.pictures !== undefined ? { pictures: folderInRoot(o.pictures) } : {}),
+      ...(o.closeUps?.length ? { close: o.closeUps.map(String) } : {}),
+      ...(o.against !== undefined ? { against: fileInRoot(root, o.against, { types: [...AUDIO_TYPES, '.json'], mustExist: true }) } : {}),
+      ...(o.againstFromSeconds !== undefined ? { 'against-from': String(o.againstFromSeconds) } : {}),
+      ...(o.againstToSeconds !== undefined ? { 'against-to': String(o.againstToSeconds) } : {}),
+      ...(save !== undefined ? { save } : {}),
+    };
   };
 
   const getSongRate = new RateLimiter(LIMITS.getSongPerSecond, 1000);
@@ -223,7 +316,7 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
     'listen',
     {
       title: 'Listen',
-      description: `Render a stretch of the song and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, what the master's limiter and clipper did, and findings in plain words. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute (toBar not included). Live: in the studio (the musician must allow listening); with suggestionId (or ops) it measures the song as that suggestion would make it. With "file": a song file in the working folder, rendered on this computer with no studio open, with the loudness bar by bar too; perTrack adds each track's own loudness and balance (and the mix findings that name tracks), and "suggestion" (a suggestion file) or "ops" gives a before-and-after: both reports and the difference bar by bar, so you can tell which bars change.`,
+      description: `Render a stretch of the song and measure it: loudness (LUFS), true peak, crest, balance across the spectrum, what the master's limiter and clipper did, and findings in plain words. At most ${LIMITS.listenMaxBars} bars or ${LIMITS.listenMaxSeconds} seconds, one at a time, ${LIMITS.listensPerMinute} a minute (toBar not included). Live: in the studio (the musician must allow listening); with suggestionId (or ops) it measures the song as that suggestion would make it. With "file": a song file in the working folder, rendered on this computer with no studio open, with the loudness bar by bar too; perTrack adds each track's own loudness and balance (and the mix findings that name tracks), and "suggestion" (a suggestion file) or "ops" gives a before-and-after: both reports and the difference bar by bar, so you can tell which bars change. With "file" it can also describe the sound's character in words (sound: true), write pictures of it into a folder in the working folder (pictures) and return them as images, picture moments close up (closeUps, like "9.3" for bar 9, quarter beat 3), read it against another sound (against, with the stretch of that sound) and save the hearing (save). It measures and draws; it does not hear, and the words describe without judging. Nothing is sent anywhere.`,
       inputSchema: {
         file: z.string().optional(),
         fromBar: z.number().min(1),
@@ -232,10 +325,17 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
         suggestion: z.string().optional().describe('File mode: a suggestion file (.json) in the working folder, to hear before and after'),
         suggestionId: z.string().optional(),
         ops: opsSchema.optional(),
+        sound: z.boolean().optional().describe('File mode: describe the sound\'s character in words'),
+        pictures: z.string().min(1).optional().describe('File mode: a folder in the working folder to write pictures in (made if it is not there); they come back as images too'),
+        closeUps: z.array(z.string()).max(6).optional().describe('File mode: moments to picture close up, as a bar and its quarter beat: "9.3" is bar 9, beat 3; "9" is its first beat'),
+        against: z.string().optional().describe('File mode: an audio file or a saved hearing (.json) in the working folder to read this sound against (like with like)'),
+        againstFromSeconds: z.number().min(0).optional().describe('File mode: the stretch of "against" to read against, from (seconds)'),
+        againstToSeconds: z.number().min(0).optional().describe('File mode: the stretch of "against", to (seconds)'),
+        save: z.string().optional().describe('File mode: a new .json file in the working folder to save the hearing (measurements, never audio) in'),
       },
       annotations: { readOnlyHint: true },
     },
-    ({ file, fromBar, toBar, perTrack, suggestion, suggestionId, ops }) =>
+    ({ file, fromBar, toBar, perTrack, suggestion, suggestionId, ops, sound, pictures, closeUps, against, againstFromSeconds, againstToSeconds, save }) =>
       guard(async () => {
         if (toBar <= fromBar) throw new Error('toBar must come after fromBar (toBar not included).');
         if (toBar - fromBar > LIMITS.listenMaxBars) throw new Error(`At most ${LIMITS.listenMaxBars} bars at a time.`);
@@ -245,15 +345,34 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
           const songPath = fileInRoot(root, file, { types: SONG_TYPES, mustExist: true });
           const song = readSong(songPath);
           const hearWith = suggestion ? opsToHear(song, { suggestion: fileInRoot(root, suggestion, { types: ['.json'], mustExist: true }) }) : ops ? { ops, idBase: 'listen' } : null;
+          let plan;
+          try {
+            plan = listenPlan([songPath], hearingInputs({ sound, pictures, closeUps, against, againstFromSeconds, againstToSeconds, save }));
+          } catch (err) {
+            throw askedFor(err);
+          }
           if (listening) throw new Error('One listen at a time: wait for the one under way.');
           limited(listenRate, 'listen');
           listening = true;
           try {
-            return await listenSongFile(songPath, { fromBar, toBar, perTrack, with: hearWith, limits: { maxBars: LIMITS.listenMaxBars, maxSeconds: LIMITS.listenMaxSeconds } }, render);
+            // (an audio file read against is heard here, inside the one-at-a-time hold)
+            const read = plan.against ? await againstOf(plan.against, render, { fromSeconds: plan.againstFromSeconds, toSeconds: plan.againstToSeconds }) : undefined;
+            const hearing: ListenHearing | undefined = plan.sound
+              ? { sound: true, ...(plan.pictures !== undefined ? { pictures: plan.pictures } : {}), ...(plan.closeBars ? { closeBars: plan.closeBars } : {}), ...(read ? { against: read } : {}), ...(plan.save ? { save: plan.save } : {}) }
+              : undefined;
+            const result = await listenSongFile(songPath, { fromBar, toBar, perTrack, with: hearWith, ...(hearing ? { hearing } : {}), limits: { maxBars: LIMITS.listenMaxBars, maxSeconds: LIMITS.listenMaxSeconds } }, render);
+            if (!hearing) return result;
+            // (the mix's pictures, with a suggestion the after version's and the difference; each track's are named only)
+            const reports = 'difference' in result ? [result.after] : [result];
+            const shown: Pic[] = [...reports.flatMap((r) => r.pictures ?? []), ...('difference' in result ? (result.difference.pictures ?? []) : []), ...reports.flatMap((r) => (r.tracks ?? []).flatMap((t) => t.pictures ?? []))];
+            return withImages(result as unknown as Record<string, unknown>, shown);
+          } catch (err) {
+            throw askedFor(err);
           } finally {
             listening = false;
           }
         }
+        if (sound !== undefined || pictures !== undefined || closeUps !== undefined || against !== undefined || againstFromSeconds !== undefined || againstToSeconds !== undefined || save !== undefined) throw new Error('sound, pictures, closeUps, against and save are for listening to a file (give "file").');
         if (perTrack || suggestion) throw new Error('perTrack and suggestion files are for listening to a file (give "file"); the studio’s listen measures the mix.');
         needStudio();
         if (listening) throw new Error('One listen at a time: wait for the one under way.');
@@ -261,6 +380,55 @@ export function createMcpServer({ root, bridge, render = {} }: McpOptions): McpS
         listening = true;
         try {
           return await live('listen', { fromBar, toBar, ...(suggestionId ? { suggestionId } : {}), ...(ops ? { opsVersion: OPS_VERSION, ops } : {}) }, LIMITS.listenTimeoutMs);
+        } finally {
+          listening = false;
+        }
+      })
+  );
+
+  server.registerTool(
+    'hear_audio',
+    {
+      title: 'Hear an audio file',
+      description: `Measure an audio file in the working folder (${AUDIO_TYPES.join(', ')}) and describe its sound in plain words: loudness, then its character (tone, level and movement over time, stereo width, rhythm, harmony, faults), with pictures of it (a spectrogram, a level picture, a spectrum, close-ups of the seconds you name in closeUps) written to a folder in the working folder and returned as images. It measures and draws; it does not hear, and the words describe without judging. Nothing is sent anywhere: no model and no outside service is involved, it is all signal maths on this computer. At most 15 minutes at a time (name a stretch with fromSeconds and toSeconds), one at a time, ${LIMITS.listensPerMinute} a minute. against reads it against another audio file or a saved hearing (.json), level-matched: compare like with like, a stretch of similar length. save writes the hearing (measurements, never audio) to a new .json file.`,
+      inputSchema: {
+        file: z.string().describe(`An audio file in the working folder: ${AUDIO_TYPES.join(', ')}`),
+        fromSeconds: z.number().min(0).optional(),
+        toSeconds: z.number().min(0).optional(),
+        sound: z.boolean().optional().describe('Describe the sound\'s character in words (default true; false is the loudness and balance alone)'),
+        pictures: z.string().min(1).optional().describe('A folder in the working folder to write pictures in (made if it is not there); they come back as images too'),
+        closeUps: z.array(z.number().min(0)).max(6).optional().describe('Moments to picture close up, in seconds from the start of the file'),
+        bpm: z.number().optional().describe('The tempo, when you know it (20 to 400); it is estimated otherwise'),
+        against: z.string().optional().describe('An audio file or a saved hearing (.json) in the working folder to read this against'),
+        againstFromSeconds: z.number().min(0).optional(),
+        againstToSeconds: z.number().min(0).optional(),
+        save: z.string().optional().describe('A new .json file in the working folder to save the hearing in'),
+      },
+      annotations: { readOnlyHint: false },
+    },
+    ({ file, fromSeconds, toSeconds, sound, pictures, closeUps, bpm, against, againstFromSeconds, againstToSeconds, save }) =>
+      guard(async () => {
+        const path = fileInRoot(root, file, { types: [...AUDIO_TYPES], mustExist: true });
+        let plan;
+        try {
+          plan = hearPlan([path], {
+            ...hearingInputs({ sound: sound !== false, pictures, closeUps, against, againstFromSeconds, againstToSeconds, save }),
+            ...(fromSeconds !== undefined ? { from: String(fromSeconds) } : {}),
+            ...(toSeconds !== undefined ? { to: String(toSeconds) } : {}),
+            ...(bpm !== undefined ? { bpm: String(bpm) } : {}),
+          });
+        } catch (err) {
+          throw askedFor(err);
+        }
+        if (sound === false && plan.sound && pictures === undefined && against === undefined && save === undefined && !closeUps?.length) plan.sound = false;
+        if (listening) throw new Error('One listen at a time: wait for the one under way.');
+        limited(listenRate, 'listen');
+        listening = true;
+        try {
+          const { written: _written, ...heard } = await hearAudioFile(plan, render);
+          return withImages({ ...heard, ...(plan.save ? { saved: inRoot(plan.save) } : {}) }, heard.pictures ?? []);
+        } catch (err) {
+          throw askedFor(err);
         } finally {
           listening = false;
         }

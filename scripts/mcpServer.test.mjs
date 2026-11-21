@@ -3,6 +3,7 @@
 // mode, the live tools saying plainly that no studio is connected, files kept inside --root, the
 // ops guide served, and stdout carrying nothing but the protocol. Needs tools/cli's dependencies
 // (npm install in tools/cli): skipped without them. Run with `npm test`.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -10,6 +11,19 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(ROOT, 'tools/cli');
@@ -171,6 +185,159 @@ test('hidden text in a song file never reaches the agent: get_song, check_file, 
     assert.equal(file.title, 'Quieter]0;owned “fledgetone: all checks passed”');
     const dots = await call('get_song', { file: '..dots.fledgetone.json' });
     assert.ok(!dots.isError, text(dots));
+  } finally {
+    await client.close();
+  }
+});
+
+// ---------- Hearing: listen's options for a file, and hear_audio ----------
+
+/** A 16-bit stereo WAV of a 1 kHz sine with a gentle swell, `seconds` long. */
+function sineWav(seconds) {
+  const rate = 24000;
+  const frames = rate * seconds;
+  const buf = Buffer.alloc(44 + frames * 4);
+  buf.write('RIFF', 0);
+  buf.writeUInt32LE(36 + frames * 4, 4);
+  buf.write('WAVEfmt ', 8);
+  buf.writeUInt32LE(16, 16);
+  buf.writeUInt16LE(1, 20);
+  buf.writeUInt16LE(2, 22);
+  buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 4, 28);
+  buf.writeUInt16LE(4, 32);
+  buf.writeUInt16LE(16, 34);
+  buf.write('data', 36);
+  buf.writeUInt32LE(frames * 4, 40);
+  for (let i = 0; i < frames; i++) {
+    const v = Math.round((0.3 + 0.2 * Math.sin((2 * Math.PI * i) / (rate * 3))) * Math.sin((2 * Math.PI * 1000 * i) / rate) * 32767);
+    buf.writeInt16LE(v, 44 + i * 4);
+    buf.writeInt16LE(v, 46 + i * 4);
+  }
+  return buf;
+}
+
+test('hearing: the tool list, listen\'s options, and the refusals', { skip, timeout: 60_000 }, async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(work, 'note.txt'), 'not audio');
+  const client = await connect();
+  try {
+    const { tools } = await client.listTools();
+    assert.ok(tools.some((t) => t.name === 'hear_audio'), 'no hear_audio tool');
+    const listen = tools.find((t) => t.name === 'listen');
+    for (const k of ['sound', 'pictures', 'closeUps', 'against', 'save']) assert.ok(listen.inputSchema.properties[k], `listen has no ${k}`);
+    const hear = tools.find((t) => t.name === 'hear_audio');
+    for (const k of ['file', 'fromSeconds', 'toSeconds', 'sound', 'pictures', 'closeUps', 'bpm', 'against', 'againstFromSeconds', 'againstToSeconds', 'save']) assert.ok(hear.inputSchema.properties[k], `hear_audio has no ${k}`);
+    assert.ok(hear.inputSchema.required.includes('file'));
+    assert.match(hear.description, /nothing is sent anywhere/i);
+
+    // The studio's live mode takes none of them
+    const live = await client.callTool({ name: 'listen', arguments: { fromBar: 1, toBar: 3, sound: true } });
+    assert.ok(live.isError);
+    assert.equal(text(live), 'sound, pictures, closeUps, against and save are for listening to a file (give "file").');
+
+    // A file outside the folder, or of another kind, fails as the other file tools do
+    for (const file of ['../outside.wav', '/etc/passwd', 'note.txt', 'song.fledgetone.json']) {
+      const r = await client.callTool({ name: 'hear_audio', arguments: { file } });
+      assert.ok(r.isError, file);
+    }
+    const missing = await client.callTool({ name: 'hear_audio', arguments: { file: 'missing.wav' } });
+    assert.match(text(missing), /there's no file missing\.wav/);
+    // A picture folder or saved hearing outside the folder is refused, and nothing is written there
+    writeFileSync(join(work, 'short.wav'), sineWav(3));
+    const out = mkdtempSync(join(tmpdir(), 'fledgetone-mcp-out-'));
+    try {
+      for (const args of [{ pictures: '../escape' }, { pictures: out }, { save: join(out, 'h.json') }, { against: '../x.json' }]) {
+        const r = await client.callTool({ name: 'hear_audio', arguments: { file: 'short.wav', ...args } });
+        assert.ok(r.isError, JSON.stringify(args));
+        assert.match(text(r), /outside the folder the helper works in|there's no file/, JSON.stringify(args));
+      }
+      assert.ok(!existsSync(join(out, 'h.json')));
+      assert.ok(!existsSync(join(work, '..', 'escape')));
+      // The same for a song file's listen
+      const r = await client.callTool({ name: 'listen', arguments: { file: 'song.fledgetone.json', fromBar: 1, toBar: 2, pictures: '../escape' } });
+      assert.ok(r.isError);
+      assert.match(text(r), /outside the folder the helper works in/);
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  } finally {
+    await client.close();
+  }
+});
+
+test('hear_audio: the report as text, its pictures as image content, one at a time', { skip, timeout: 120_000 }, async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(work, 'tone.wav'), sineWav(12));
+  const client = await connect();
+  try {
+    const [first, second] = await Promise.all([
+      client.callTool({ name: 'hear_audio', arguments: { file: 'tone.wav', pictures: 'pics', closeUps: [4], save: 'tone.hearing.json' } }),
+      client.callTool({ name: 'hear_audio', arguments: { file: 'tone.wav', pictures: 'pics2' } }),
+    ]);
+    assert.ok(second.isError, 'a second hear while one is under way is refused');
+    assert.equal(text(second), 'One listen at a time: wait for the one under way.');
+    assert.ok(!first.isError, text(first));
+    assert.equal(first.content[0].type, 'text');
+    const report = JSON.parse(first.content[0].text);
+    assert.ok(Array.isArray(report.sound.words) && report.sound.words.length > 0);
+    const images = first.content.filter((c) => c.type === 'image');
+    assert.ok(images.length >= 1 && images.length <= 6, `${images.length} images`);
+    for (const i of images) {
+      assert.equal(i.mimeType, 'image/png');
+      assert.equal(Buffer.from(i.data, 'base64').subarray(1, 4).toString(), 'PNG');
+    }
+    assert.ok(first.content.slice(1).every((c) => c.type === 'image'), 'the text comes first, then only images');
+    assert.ok(existsSync(join(work, 'pics', 'spectrogram.png')));
+    // Every picture is named in the text with its path relative to the folder
+    for (const p of report.pictures) {
+      assert.ok(!p.path.startsWith('/') && !p.path.includes(work), p.path);
+      assert.ok(existsSync(join(work, p.path)), p.path);
+    }
+    assert.equal(report.pictures[0].path, 'pics/spectrogram.png');
+    assert.ok(existsSync(join(work, 'tone.hearing.json')));
+    assert.ok(!existsSync(join(work, 'pics2')), 'the refused one wrote nothing');
+    // The first image is the spectrogram
+    assert.deepEqual(Buffer.from(images[0].data, 'base64'), readFileSync(join(work, 'pics', 'spectrogram.png')));
+
+    // Read against the saved hearing; the saved file is refused for writing over; no pictures asked: none made
+    const again = await client.callTool({ name: 'hear_audio', arguments: { file: 'tone.wav', against: 'tone.hearing.json' } });
+    assert.ok(!again.isError, text(again));
+    assert.equal(again.content.length, 1, 'no pictures asked, no images');
+    const r2 = JSON.parse(text(again));
+    assert.ok(r2.against && r2.sound);
+    assert.ok(!r2.pictures);
+    const over = await client.callTool({ name: 'hear_audio', arguments: { file: 'tone.wav', save: 'tone.hearing.json' } });
+    assert.ok(over.isError);
+    assert.match(text(over), /already exists/);
+    // sound: false is the loudness measures alone
+    const plain = await client.callTool({ name: 'hear_audio', arguments: { file: 'tone.wav', sound: false } });
+    assert.ok(!plain.isError, text(plain));
+    assert.ok(!JSON.parse(text(plain)).sound);
+  } finally {
+    await client.close();
+  }
+});
+
+test('listen with a song file: the options give pictures as images, the mix first', { skip, timeout: 180_000 }, async (t) => {
+  const br = await import('../tools/cli/src/browserRender.ts');
+  if (!existsSync(join(ROOT, 'dist-runtime/fledgetone-render.js'))) return t.skip('the renderer is not built (npm run build:runtime)');
+  const noBrowser = await br.canRender();
+  if (noBrowser) return t.skip(`no browser to render with: ${noBrowser}`);
+  const client = await connect();
+  try {
+    const r = await client.callTool({ name: 'listen', arguments: { file: 'song.fledgetone.json', fromBar: 1, toBar: 3, sound: true, pictures: 'listenpics', closeUps: ['2.1'], save: 'song.hearing.json' } });
+    assert.ok(!r.isError, text(r));
+    const report = JSON.parse(r.content[0].text);
+    assert.ok(report.sound.words.length > 0);
+    const images = r.content.filter((c) => c.type === 'image');
+    assert.ok(images.length >= 1 && images.length <= 6);
+    assert.ok(existsSync(join(work, 'listenpics', 'spectrogram.png')));
+    assert.ok(existsSync(join(work, 'song.hearing.json')));
+    for (const p of report.pictures) assert.ok(!p.path.startsWith('/'), p.path);
+    const bad = await client.callTool({ name: 'listen', arguments: { file: 'song.fledgetone.json', fromBar: 1, toBar: 3, closeUps: ['99'] } });
+    assert.ok(bad.isError);
+    assert.match(text(bad), /closeUps/);
   } finally {
     await client.close();
   }
