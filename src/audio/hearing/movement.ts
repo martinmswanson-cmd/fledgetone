@@ -33,8 +33,23 @@ export function noteOf(hz: number, bpm: number): string | undefined {
 const CHANGE_RANGE_DB = 60;
 /** How far under its own 95th-percentile level a band's envelope is floored, dB. */
 const ENVELOPE_RANGE_DB = 48;
-/** A band whose loudest envelope frame is under this, dB, is taken as silent and gives no modulation. */
-const ENVELOPE_SILENT_DB = -70;
+/** A band whose loudest envelope frame is more than this under the loudest band's loudest frame gives no modulation, dB. */
+const BAND_RANGE_DB = 60;
+/** An envelope whose loudest frame is under this, dB, is digital silence (a numeric floor only). */
+const ENVELOPE_SILENT_DB = -110;
+const BANDS = ['low', 'mid', 'high'] as const;
+
+/** One band's envelope levels (20 log10 of the amplitude envelope), dB; null when the band lies above the Nyquist or the sound is too short. */
+function levelsOf(channels: readonly Float32Array[], sampleRate: number, band: Modulation['band']): Float64Array | null {
+  const [lo, hi] = MOVEMENT_BANDS[band];
+  if (lo >= sampleRate / 2) return null;
+  const envelope = bandEnvelope(channels, sampleRate, lo, hi);
+  const n = envelope.length;
+  if (n < 8) return null;
+  const levels = new Float64Array(n);
+  for (let i = 0; i < n; i++) levels[i] = finite(20 * Math.log10(Math.max(envelope[i], 1e-12)));
+  return levels;
+}
 
 /** The mean absolute frame-to-frame change of the third-octave band levels, over bands within 60 dB of the loudest band level found. */
 function changeOf(mid: Float32Array, sampleRate: number): number {
@@ -70,26 +85,14 @@ function percentile(sorted: Float64Array, fraction: number): number {
   return sorted[i] + (sorted[next] - sorted[i]) * (at - i);
 }
 
-/** The wobble of one band's level, or null when it has no clear steady rate. */
-function modulationOf(
-  channels: readonly Float32Array[],
-  sampleRate: number,
-  band: Modulation['band'],
-  tempoBpm: number | undefined
-): Modulation | null {
-  const [lo, hi] = MOVEMENT_BANDS[band];
-  if (lo >= sampleRate / 2) return null;
-  const envelope = bandEnvelope(channels, sampleRate, lo, hi);
-  const n = envelope.length;
-  if (n < 8) return null;
+/** The wobble of one band's level (its envelope `levels`), or null when it has no clear steady rate. */
+function modulationOf(levels: Float64Array, loudestDb: number, sampleRate: number, band: Modulation['band'], tempoBpm: number | undefined): Modulation | null {
+  const n = levels.length;
   const frame = Math.max(1, Math.round(0.02 * sampleRate));
   const rate = sampleRate / frame;
-  // The envelope is amplitude, so 20 log10
-  const levels = new Float64Array(n);
-  for (let i = 0; i < n; i++) levels[i] = finite(20 * Math.log10(Math.max(envelope[i], 1e-12)));
   const sorted = Float64Array.from(levels).sort();
   // Floored relative to the envelope's own level, so the reading is the same at any playback level
-  if (sorted[n - 1] < ENVELOPE_SILENT_DB) return null;
+  if (sorted[n - 1] < ENVELOPE_SILENT_DB || sorted[n - 1] < loudestDb - BAND_RANGE_DB) return null;
   const floor = percentile(sorted, 0.95) - ENVELOPE_RANGE_DB;
   let mean = 0;
   for (let i = 0; i < n; i++) {
@@ -144,10 +147,14 @@ export function movementOf(channels: readonly Float32Array[], sampleRate: number
   const changeDb = round1(finite(changeOf(midOf(channels), sampleRate)));
   const modulations: Modulation[] = [];
   if (channels[0].length >= 2 * sampleRate) {
-    for (const band of ['low', 'mid', 'high'] as const) {
-      const m = modulationOf(channels, sampleRate, band, tempoBpm);
+    const envelopes = BANDS.map((band) => levelsOf(channels, sampleRate, band));
+    let loudestDb = -Infinity;
+    for (const levels of envelopes) if (levels) for (const v of levels) if (v > loudestDb) loudestDb = v;
+    BANDS.forEach((band, i) => {
+      const levels = envelopes[i];
+      const m = levels ? modulationOf(levels, loudestDb, sampleRate, band, tempoBpm) : null;
       if (m) modulations.push(m);
-    }
+    });
   }
   return { changeDb, modulations };
 }

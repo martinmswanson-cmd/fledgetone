@@ -45,3 +45,22 @@ test('silent and empty input give finite numbers and no modulations', () => {
     assert.deepEqual(m.modulations, []); assert.equal(m.changeDb, 0);
   }
 });
+
+/** A strong gated low sine (4 Hz) with a gated high noise band (3 Hz) `under` dB below it, `down` dB quieter overall. */
+const withHigh = (under, down) => {
+  const low = S.gate(S.sine(110, 6, -6 - down), 4, -12);
+  const high = S.gate(S.band(S.white(6, -6 - under - down, 1), 5000, 12000), 3, -12);
+  return [S.mix(low, high)];
+};
+test('a band 70 dB under the loudest band gives no wobble, at any level', () => {
+  for (const down of [0, 20]) {
+    const m = movementOf(withHigh(70, down), 48000);
+    assert.ok(m.modulations.some((x) => x.band === 'low'), `low at ${down}`);
+    assert.equal(m.modulations.some((x) => x.band === 'high'), false, `high at ${down}`);
+  }
+});
+test('a band 30 dB under the loudest band gives its wobble, the same at any level', () => {
+  const [full, quiet] = [0, 20].map((down) => movementOf(withHigh(30, down), 48000).modulations.find((x) => x.band === 'high'));
+  assert.ok(full && quiet, 'high band wobble found at both levels');
+  near(quiet.hz, full.hz, 0.1, 'rate'); near(quiet.depthDb, full.depthDb, 0.1, 'depth');
+});

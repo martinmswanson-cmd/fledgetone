@@ -249,11 +249,14 @@ const levelSounds = {
   'a stereo sound': () => [S.mix(S.saw(110, 2, -6), S.pink(2, -14, 3)), S.mix(S.saw(165, 2, -6), S.pink(2, -14, 4))],
 };
 
+/** Sounds that read differently 40 dB down, for a reason outside this task (see the known limits test). */
+const KNOWN_LIMIT_AT_40 = new Set(['a drum pattern', 'a pure sine']);
+
 for (const name of Object.keys(levelSounds)) {
   test(`level: ${name} turned down differs only in loudness`, () => {
     const x = made(name);
     const whole = hear(x);
-    for (const down of name === 'a wobble bass' ? [6] : [6, 20]) {
+    for (const down of KNOWN_LIMIT_AT_40.has(name) ? [6, 20] : [6, 20, 40]) {
       const c = compareSound(whole, hear(x.map((ch) => S.gain(ch, -down))));
       near(c.levelDb, -down, 0.2, 'level');
       assert.deepEqual(c.differences.map((d) => d.measure), ['loudness'], `${down} dB down`);
@@ -261,12 +264,12 @@ for (const name of Object.keys(levelSounds)) {
   });
 }
 
-test('known limit: a band that is nearly silent in absolute terms gives no wobble', () => {
-  // The wobble bass's high band peaks near -75 dB at 20 dB down, under movement.ts's silent gate (-70 dB),
-  // so its 43.6 dB deep wobble at 2 Hz is no longer reported; the mid band's 18.6 dB is.
-  const x = made('a wobble bass');
-  const loud = hear(x);
-  const quiet = compareSound(loud, hear(x.map((ch) => S.gain(ch, -20))));
-  assert.deepEqual(quiet.differences.map((d) => d.measure).sort(), ['high band depth', 'loudness']);
-  assert.equal(quiet.differences.find((d) => d.measure === 'high band depth').b, 0);
+test('known limits at 40 dB down, from absolute floors in other modules', () => {
+  // Measured: a drum pattern reads roughness 0.62 then 0 (texture.ts's absolute gate) and movement change
+  // 12.2 then 14.0 (frames.ts floors band levels at -120 dB, so the 60 dB range no longer fits); a pure 220 Hz
+  // sine reads tilt -15.4 then -14.4 dB an octave (its empty bands sit at the spectrum's own noise floor).
+  const drum = compareSound(hear(made('a drum pattern')), hear(made('a drum pattern').map((ch) => S.gain(ch, -40))));
+  assert.deepEqual(drum.differences.map((d) => d.measure).sort(), ['change', 'loudness', 'roughness']);
+  const sine = compareSound(hear(made('a pure sine')), hear(made('a pure sine').map((ch) => S.gain(ch, -40))));
+  assert.deepEqual(sine.differences.map((d) => d.measure).sort(), ['loudness', 'tilt']);
 });
