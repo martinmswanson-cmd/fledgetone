@@ -155,6 +155,37 @@ export function every(rate, seconds, make, sr = SR) {
   return at(seconds, Array.from({ length: Math.round(rate * seconds) }, (_, i) => [i / rate, make(i)]), sr);
 }
 
+/**
+ * A wobble bass: a saw of `hz` through a 12 dB-per-octave low-pass (a two-pole state-variable filter, Q 0.707) whose
+ * cutoff swings between `loHz` and `hiHz` on a log scale with a sine LFO of `rateHz`, starting half way; peak `peakDb`.
+ */
+export function wobble(hz, loHz, hiHz, rateHz, seconds, peakDb, sr = SR) {
+  const x = saw(hz, seconds, 0, sr);
+  const out = new Float64Array(x.length);
+  const mid = Math.log(loHz * hiHz) / 2;
+  const half = Math.log(hiHz / loHz) / 2;
+  const k = Math.SQRT2;
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const fc = Math.exp(mid + half * Math.sin((2 * Math.PI * rateHz * i) / sr));
+    const g = Math.tan((Math.PI * Math.min(fc, sr * 0.45)) / sr);
+    // (Zavalishin's trapezoidal state-variable filter, stable while the cutoff moves)
+    const hp = (x[i] - (g + k) * s1 - s2) / (1 + g * (g + k));
+    const bp = g * hp + s1;
+    const lp = g * bp + s2;
+    s1 = g * hp + bp;
+    s2 = g * bp + lp;
+    out[i] = lp;
+  }
+  return toPeak(out, peakDb);
+}
+
+/** `x` with its level swung by a sine LFO of `rateHz`: each sample times (1 + depth sin) / (1 + depth). */
+export function tremolo(x, rateHz, depth, sr = SR) {
+  return Float32Array.from(x, (v, i) => (v * (1 + depth * Math.sin((2 * Math.PI * rateHz * i) / sr))) / (1 + depth));
+}
+
 /** The sum of the arrays, as long as the longest. */
 export function mix(...arrays) {
   const out = new Float32Array(Math.max(0, ...arrays.map((a) => a.length)));

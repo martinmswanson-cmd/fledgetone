@@ -42,7 +42,10 @@ const STAND_DB = [10, 7.5, 7, 5, 5.5, 4.5, 4, 4, 4];
 const UNDER_LOUDEST_DB = 40;
 /** Levels this far under the loudest level of the whole sound read as silence, dB. */
 const FLOOR_DB = 80;
-/** A band's onsets within this of a sharper band's (plus half its own span) are the same hit, ms. */
+/** Climbs in bands read over spans up to CHAIN_SPAN_MS, each within CHAIN_MS of the one before, are one hit, ms. */
+const CHAIN_SPAN_MS = 25;
+const CHAIN_MS = 30;
+/** A narrower band's climb within this of a hit (plus half its own span) is part of it, ms. */
 const SAME_HIT_MS = 25;
 /** At most this many of the strongest onsets are measured for the rise. */
 const MAX_ONSETS = 32;
@@ -139,6 +142,24 @@ function riseOf(env: Float64Array, from: number, to: number): number | null {
   return at90 - at10;
 }
 
+/**
+ * The level `env` held at the loudest of the HOLD_MS frames up to each frame, as a peak meter holds it. A low saw is a
+ * click a period in a high band; held, it reads as the level of its clicks, so its rise is that of the clicks' level
+ * and not the click itself. A hit's own climb comes through at once.
+ */
+function held(env: Float64Array): Float64Array {
+  const out = new Float64Array(env.length);
+  const queue: number[] = [];
+  let head = 0;
+  for (let i = 0; i < env.length; i++) {
+    while (queue.length > head && env[queue[queue.length - 1]] <= env[i]) queue.pop();
+    queue.push(i);
+    while (queue[head] <= i - HOLD_MS) head++;
+    out[i] = env[queue[head]];
+  }
+  return out;
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = sorted.length >> 1;
@@ -207,11 +228,21 @@ function hitsOf(bands: Band[], lead: number): Climb[][] {
       if (peak) climbs.push({ at: f - span + 1, over: v, band: b, early: f - span - HOLD_MS < lead });
     }
   });
-  // One hit across the bands: the sharpest bands place a hit best, so they go first; a climb joins the nearest hit within
-  // reach, else starts one (the hits are kept in time order, so the nearest is one of the two either side)
-  climbs.sort((a, b) => bands[a.band].span - bands[b.band].span || b.over - a.over);
+  // One hit across the bands. The bands up to CHAIN_SPAN_MS place a climb well: taken in time order, each climb within
+  // CHAIN_MS of the last one joins its hit, so a hit's bands climbing together are one, and so is a filter opening band
+  // after band, a low saw's clicks growing one period after another (a step each period, which stands over the hold
+  // each time), until the climbing stops
+  const placed = (c: Climb) => bands[c.band].span <= CHAIN_SPAN_MS;
   const hits: Climb[][] = [];
-  for (const c of climbs) {
+  let last = -Infinity;
+  for (const c of climbs.filter(placed).sort((x, y) => x.at - y.at)) {
+    if (c.at <= last + CHAIN_MS) hits[hits.length - 1].push(c);
+    else hits.push([c]);
+    last = Math.max(last, c.at);
+  }
+  // The narrow low bands' climbs, placed less well, join the nearest hit within reach, else start one (the hits are kept
+  // in time order, so the nearest is one of the two either side)
+  for (const c of climbs.filter((x) => !placed(x)).sort((x, y) => bands[x.band].span - bands[y.band].span || y.over - x.over)) {
     let after = 0;
     for (let step = hits.length; step > 0; step >>= 1) while (after + step <= hits.length && hits[after + step - 1][0].at < c.at) after += step;
     const gap = (i: number) => (i >= 0 && i < hits.length ? Math.abs(hits[i][0].at - c.at) : Infinity);
@@ -238,22 +269,29 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   const hits = hitsOf(bands, lead);
   if (hits.length === 0) return none;
 
-  // The rise of each hit, on the sharpest band it stood out in
+  // The rise of each hit: the quickest of its bands' rises, so a hit heard over a filter opening reads as the hit, and
+  // an opening alone, slow in every band, reads slow
   const frames = bands[0].power.length;
   const floor = -300;
   const rises: Array<{ over: number; rise: number }> = [];
   hits.forEach((h, k) => {
     const at = h[0].at;
-    const { power, lo } = bands[h[0].band];
     const from = Math.max(0, k > 0 ? Math.round((hits[k - 1][0].at + at) / 2) : 0, at - LOOK_BACK_MS);
     const to = Math.min(frames, k + 1 < hits.length ? hits[k + 1][0].at - END_GAP_MS : frames, at + LOOK_AHEAD_MS);
-    const walk = Math.max(WALK_MS, Math.round(500 / lo));
-    const start = Math.max(0, from - walk + 1);
-    const rise = riseOf(levels(power.subarray(start, to), walk, floor), from - start, to - start);
-    if (rise !== null) rises.push({ over: maxOf(h.map((c) => c.over - bands[c.band].stand)), rise });
+    let quickest: number | null = null;
+    for (const b of new Set(h.map((c) => c.band))) {
+      const { power, lo } = bands[b];
+      const walk = Math.max(WALK_MS, Math.round(500 / lo));
+      const start = Math.max(0, from - walk - HOLD_MS + 1);
+      const rise = riseOf(held(levels(power.subarray(start, to), walk, floor)), from - start, to - start);
+      if (rise !== null && (quickest === null || rise < quickest)) quickest = rise;
+    }
+    if (quickest !== null) rises.push({ over: maxOf(h.map((c) => c.over - bands[c.band].stand)), rise: quickest });
   });
   const strongest = rises.sort((a, b) => b.over - a.over).slice(0, MAX_ONSETS).map((r) => r.rise);
-  const riseMs = strongest.length > 0 ? round1(median(strongest)) : null;
+  const onsetsPerSecond = round1(hits.length / seconds);
+  // (a rate that rounds to nothing has no rise to tell either)
+  const riseMs = strongest.length > 0 && onsetsPerSecond > 0 ? round1(median(strongest)) : null;
   let single: Attack['single'] = null;
   if (hits.length === 1 && seconds < 2 && riseMs !== null) {
     const env = frameDb(heard, sampleRate, 1);
@@ -263,5 +301,5 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
     const hit = heard.subarray(Math.max(0, Math.round((begin / 1000) * sampleRate)));
     single = { riseMs, fall20Ms: round1(fallMs(env, 20)), peakDb: round1(kPeakDb(hit, sampleRate)) };
   }
-  return { onsetsPerSecond: round1(hits.length / seconds), riseMs, single };
+  return { onsetsPerSecond, riseMs, single };
 }
