@@ -205,3 +205,10 @@ agent. A full run passes when every sound passes.
 | 2026-11-21 | 2026.11.18-4 | sound-17, the heavy song with a boost | A boost of about +2 to +3 dB centred near 360 to 450 Hz, +3 dB at about 400 Hz | pass |
 
 That first run asked 17 fresh agents, one sound each: 17 of 17 passed, with nothing false on the clean sound or on the heavy song as it is.
+
+Since that run the words, the comparison and the spectrum picture changed (a moment reads
+`0:26.53`, a fault line gives its value with its unit and ends with a full stop, a dip on the beat
+is said as that, a comparison lists the faults the two do not share and says when nothing differs,
+and the spectrum picture draws the two sounds level-matched; `--json` leaves the per-second grids
+out, so a `sound-NN.json` is about 11 to 34 KB). The check is due again on material made with the
+commands above.
