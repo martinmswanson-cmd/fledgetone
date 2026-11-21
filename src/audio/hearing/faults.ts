@@ -50,6 +50,8 @@ const CLICK_FLOOR = 0.003;
 const JUMP_OVER_SLOPE = 3;
 /** The click must stand this many times over everything else within 2 ms (a noise burst or a busy wave does not). */
 const ISOLATION = 3;
+/** Corners are compared over this many samples either side. */
+const SHAPE_HALF = 24;
 /** Two corners whose waves correlate this well are alike. */
 const LIKE = 0.8;
 /** Faults listed one by one before the rest are only counted. */
@@ -76,38 +78,60 @@ function medianAbs(d: Float32Array, from: number, to: number, scratch: Float64Ar
   return medianInPlace(scratch, n);
 }
 
+/** Orthonormal constant, linear and quadratic shapes over 2 * half + 1 samples. */
+function trendBasis(half: number): Float64Array[] {
+  const n = 2 * half + 1;
+  const basis: Float64Array[] = [];
+  for (let power = 0; power <= 2; power++) {
+    const v = new Float64Array(n);
+    for (let k = 0; k < n; k++) v[k] = ((k - half) / half) ** power;
+    for (const q of basis) {
+      let dot = 0;
+      for (let k = 0; k < n; k++) dot += v[k] * q[k];
+      for (let k = 0; k < n; k++) v[k] -= dot * q[k];
+    }
+    let norm = 0;
+    for (let k = 0; k < n; k++) norm += v[k] * v[k];
+    norm = Math.sqrt(norm);
+    for (let k = 0; k < n; k++) v[k] /= norm;
+    basis.push(v);
+  }
+  return basis;
+}
+
+/** `out` = x from `at - half` to `at + half` with its best-fitting quadratic taken off; false if that reaches outside x. */
+function detrended(x: Float32Array, at: number, basis: Float64Array[], out: Float64Array): boolean {
+  const half = (out.length - 1) / 2;
+  if (at - half < 0 || at + half >= x.length) return false;
+  for (let k = 0; k < out.length; k++) out[k] = x[at - half + k];
+  for (const q of basis) {
+    let dot = 0;
+    for (let k = 0; k < out.length; k++) dot += out[k] * q[k];
+    for (let k = 0; k < out.length; k++) out[k] -= dot * q[k];
+  }
+  return true;
+}
+
 /**
- * How alike the wave is around a and around b, `half` samples either side: their correlation (an
- * offset or a slow wave beneath, such as a kick under a bass, barely counts), at the best of a few
- * small shifts, so a clipped wave's corners match cycle after cycle wherever they fall between samples.
+ * How alike the wave is around a and around b, `half` samples either side, once each stretch has its
+ * best-fitting quadratic taken off (so an offset or a slower wave beneath, a kick or a snare's tone
+ * under a bass, drops out): their correlation, at the best of a few small shifts, so a clipped wave's
+ * corners match cycle after cycle wherever they fall between samples.
  */
-function sameShape(x: Float32Array, a: number, b: number, half: number): number {
+function sameShape(x: Float32Array, a: number, b: number, basis: Float64Array[], u: Float64Array, v: Float64Array): number {
+  if (!detrended(x, a, basis, u)) return -1;
+  let uu = 0;
+  for (const value of u) uu += value * value;
   let best = -1;
   for (let shift = -2; shift <= 2; shift++) {
-    let sa = 0;
-    let sb = 0;
-    let saa = 0;
-    let sbb = 0;
-    let sab = 0;
-    let n = 0;
-    for (let k = -half; k <= half; k++) {
-      const i = a + k;
-      const j = b + k + shift;
-      if (i < 0 || j < 0 || i >= x.length || j >= x.length) continue;
-      const u = x[i];
-      const v = x[j];
-      sa += u;
-      sb += v;
-      saa += u * u;
-      sbb += v * v;
-      sab += u * v;
-      n++;
+    if (!detrended(x, b + shift, basis, v)) continue;
+    let vv = 0;
+    let uv = 0;
+    for (let k = 0; k < v.length; k++) {
+      vv += v[k] * v[k];
+      uv += u[k] * v[k];
     }
-    if (n < 4) continue;
-    const cov = sab - (sa * sb) / n;
-    const va = saa - (sa * sa) / n;
-    const vb = sbb - (sb * sb) / n;
-    if (va > 0 && vb > 0) best = Math.max(best, cov / Math.sqrt(va * vb));
+    if (uu > 0 && vv > 0) best = Math.max(best, uv / Math.sqrt(uu * vv));
   }
   return best;
 }
@@ -171,6 +195,9 @@ function clicksIn(x: Float32Array, sampleRate: number): Click[] {
 
   const near = Math.round(sampleRate * 0.002);
   const repeat = Math.round(sampleRate * 0.15);
+  const basis = trendBasis(SHAPE_HALF);
+  const u = new Float64Array(2 * SHAPE_HALF + 1);
+  const v = new Float64Array(2 * SHAPE_HALF + 1);
   const out: Click[] = [];
   let first = 0; // the first group within `repeat` before the one at hand
   groups.forEach(([, , peak], g) => {
@@ -191,7 +218,7 @@ function clicksIn(x: Float32Array, sampleRate: number): Click[] {
       for (let h = first; h < groups.length && groups[h][2] <= peak + repeat; h++) {
         if (h === g) continue;
         const other = groups[h][2];
-        if (Math.abs(d[other]) >= size / 4 && sameShape(x, peak, other, 24) >= LIKE) return;
+        if (Math.abs(d[other]) >= size / 4 && sameShape(x, peak, other, basis, u, v) >= LIKE) return;
       }
     }
     out.push({ at: peak, jump, size });
