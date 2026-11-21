@@ -105,11 +105,38 @@ export function toneOf(channels: readonly Float32Array[], sampleRate: number): T
   };
 }
 
-/** Narrow peaks on a 1/24-octave spectrum: local maxima 6 dB or more over their surroundings, at most 5, largest first. */
+/**
+ * Where a peak found in the band `lo` to `hi` sits, from the averaged spectrum the band was summed
+ * from: the power-weighted mean frequency of the band's strongest bin and the two either side of it
+ * (a windowed tone's whole peak, which below about 100 Hz is wider than the band), kept within a bin
+ * of the band; the band's centre when it holds no power.
+ */
+function peakHz(power: ArrayLike<number>, sampleRate: number, size: number, lo: number, hi: number): number {
+  const binHz = sampleRate / size;
+  const first = Math.max(1, Math.floor(lo / binHz - 0.5));
+  const last = Math.min(power.length - 1, Math.ceil(hi / binHz + 0.5));
+  let top = first;
+  for (let k = first; k <= last; k++) if (power[k] > power[top]) top = k;
+  let sum = 0;
+  let weighted = 0;
+  for (let k = Math.max(1, top - 2); k <= Math.min(power.length - 1, top + 2); k++) {
+    sum += power[k];
+    weighted += power[k] * k * binHz;
+  }
+  if (!(sum > 0)) return Math.sqrt(lo * hi);
+  return Math.max(lo - binHz, Math.min(hi + binHz, weighted / sum));
+}
+
+/**
+ * Narrow peaks on a 1/24-octave spectrum: local maxima 6 dB or more over their surroundings, at most 5,
+ * largest first. A peak's frequency is where its power sits (peakHz), which for a held note is the
+ * note's own frequency to within a fraction of a bin, where the band's centre can be 1.5% off.
+ */
 function peaksOf(channels: readonly Float32Array[], sampleRate: number): Tone['peaks'] {
   const size = 16384;
-  const { centres, edges } = bandEdges(24, sampleRate);
-  const levels = Array.from(toBands(totalPower(channels, sampleRate, size, size / 2), sampleRate, size, edges), db);
+  const { edges } = bandEdges(24, sampleRate);
+  const power = totalPower(channels, sampleRate, size, size / 2);
+  const levels = Array.from(toBands(power, sampleRate, size, edges), db);
   const reach = 16; // two thirds of an octave, in bands
   const found: Array<{ i: number; overDb: number }> = [];
   for (let i = 1; i < levels.length - 1; i++) {
@@ -124,5 +151,5 @@ function peaksOf(channels: readonly Float32Array[], sampleRate: number): Tone['p
   for (const p of found) {
     if (kept.length < 5 && kept.every((k) => Math.abs(k.i - p.i) > 4)) kept.push(p); // within a sixth of an octave is one peak
   }
-  return kept.map((p) => ({ hz: round1(centres[p.i]), overDb: round1(p.overDb) }));
+  return kept.map((p) => ({ hz: round1(peakHz(power, sampleRate, size, edges[p.i], edges[p.i + 1])), overDb: round1(p.overDb) }));
 }
