@@ -13,7 +13,7 @@ import { chromaAlong, pitchOf } from './pitch';
 import { stereoOf } from './stereo';
 import { textureOf } from './texture';
 import { toneOf } from './tone';
-import { HEARING_VERSIONS, type Along, type Place, type SoundReport } from './types';
+import { HEARING_VERSIONS, type Along, type Fault, type Place, type SoundReport } from './types';
 import { soundWords } from './words';
 
 export interface HearOptions {
@@ -24,16 +24,29 @@ export interface HearOptions {
   place?: (seconds: number) => Place;
   /** false: the per-second grids (`along`) are not measured, and the report has none. */
   along?: boolean;
+  /**
+   * The audio is this stretch of a file, in file time (given only when a stretch was asked for): it is
+   * recorded in the report's settings, and every time in the report is then a time in the file.
+   */
+  stretch?: { fromSeconds: number; toSeconds: number };
 }
 
 /** Shorter than this, a sound is too short for the tone, texture, movement, stereo and pitch groups. */
 const MIN_SECONDS = 0.4;
 const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
-/** `channels` as they are, or, when a float file holds NaN or Infinity, copies with those samples set to 0. */
+/**
+ * `channels` as they are, or, when a float file holds NaN or Infinity, copies with those samples set
+ * to 0; and, when two channels differ in length, both cut to the shorter (a middle and sides of
+ * unequal channels would hold samples that are not numbers).
+ */
 export function cleaned(channels: readonly Float32Array[]): Float32Array[] {
-  return channels.map((c) => {
+  let shortest = Infinity;
+  for (const c of channels) shortest = Math.min(shortest, c.length);
+  const even = channels.every((c) => c.length === shortest) ? channels : channels.map((c) => c.subarray(0, shortest));
+  return even.map((c) => {
     let bad = false;
     for (let i = 0; i < c.length; i++) {
       if (!Number.isFinite(c[i])) {
@@ -85,10 +98,13 @@ function alongOf(channels: readonly Float32Array[], sampleRate: number): Along {
 export function hearSound(channels: readonly Float32Array[], sampleRate: number, opts: HearOptions): SoundReport {
   const heard = cleaned(channels.slice(0, 2));
   const length = heard[0]?.length ?? 0;
+  const stretch = opts.stretch ? { fromSeconds: opts.stretch.fromSeconds, toSeconds: opts.stretch.toSeconds } : undefined;
+  /** Where the audio starts in its file: what its times are counted from. */
+  const offset = stretch?.fromSeconds ?? 0;
   const head = {
     versions: { ...HEARING_VERSIONS },
     engine: opts.engine,
-    settings: opts.key === undefined ? { sampleRate } : { sampleRate, knownKey: opts.key },
+    settings: { sampleRate, ...(opts.key === undefined ? {} : { knownKey: opts.key }), ...(stretch ? { stretch } : {}) },
     seconds: round2(length / sampleRate),
     channels: (heard.length >= 2 ? 2 : 1) as 1 | 2,
   };
@@ -98,7 +114,13 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
     return { ...report, words: ['It is silent.'] };
   }
 
-  const faults = faultsOf(heard, sampleRate).map((f) => (f.seconds === null ? f : { ...f, at: opts.place ? opts.place(f.seconds) : { seconds: f.seconds } }));
+  const faults = faultsOf(heard, sampleRate).map((f): Fault => {
+    if (f.seconds === null) return f;
+    const at = opts.place ? opts.place(f.seconds) : { seconds: f.seconds };
+    if (!offset) return { ...f, at };
+    // (of a stretch of a file: the times are times in the file)
+    return { ...f, seconds: round3(f.seconds + offset), ...(f.endSeconds !== undefined ? { endSeconds: round3(f.endSeconds + offset) } : {}), at: { ...at, seconds: round3(at.seconds + offset) } };
+  });
   const { shortTerm: _shortTerm, ...dynamics } = dynamicsOf(heard, sampleRate);
   const grids = opts.along !== false;
   const report: Omit<SoundReport, 'words'> = { ...head, silent: false, dynamics, attack: attackOf(heard, sampleRate), faults, ...(grids ? { along: emptyAlong() } : {}) };

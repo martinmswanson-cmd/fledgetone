@@ -6,7 +6,7 @@
  */
 import { LOW_SIDE_LIMIT_DB } from '../mixCheck';
 import { MOVEMENT_BANDS } from './movement';
-import type { Modulation, Place, SoundReport } from './types';
+import type { Fault, Modulation, Place, SoundReport } from './types';
 
 export const one = (x: number) => (Object.is(Math.round(x * 10) / 10, -0) ? 0 : x).toFixed(1);
 export const two = (x: number) => (Object.is(Math.round(x * 100) / 100, -0) ? 0 : x).toFixed(2);
@@ -28,18 +28,43 @@ function rangeText(lo: number, hi: number): string {
 }
 
 /**
+ * A moment in a file, as a person reads it wherever one is written (the words, a picture's title and
+ * its `shows`): minutes, seconds and hundredths, "0:26.53", so two moments 50 ms apart read differently.
+ */
+export function momentText(seconds: number): string {
+  const hundredths = Math.round(Math.max(0, seconds) * 100);
+  const minutes = Math.floor(hundredths / 6000);
+  const rest = hundredths - minutes * 6000;
+  return `${minutes}:${String(Math.floor(rest / 100)).padStart(2, '0')}.${String(rest % 100).padStart(2, '0')}`;
+}
+
+/**
  * "bar 9, beat 3" when the place has a bar (with "(measure 12, beat 1 on the ruler)" where the ruler
- * counts otherwise), else minutes and seconds: "0:12.5".
+ * counts otherwise), else the moment: "0:12.50".
  */
 export function placeText(p: Place): string {
   if (p.bar !== undefined) {
     const at = p.beat !== undefined ? `bar ${p.bar}, beat ${p.beat}` : `bar ${p.bar}`;
     return p.ruler ? `${at} (measure ${p.ruler.measure}, beat ${p.ruler.beat} on the ruler)` : at;
   }
-  const tenths = Math.round(Math.max(0, p.seconds) * 10);
-  const minutes = Math.floor(tenths / 600);
-  const seconds = (tenths % 600) / 10;
-  return `${minutes}:${seconds < 10 ? '0' : ''}${seconds.toFixed(1)}`;
+  return momentText(p.seconds);
+}
+
+/**
+ * A fault in one line, ending with a full stop: its detail, and where it is when it has a place. Clipping
+ * says where it first is (it runs on from there); digital silence says where it ends, or for how long it
+ * lasts where places are bars and beats.
+ */
+export function faultWords(f: Fault): string {
+  if (!f.at) return `${f.detail}.`;
+  const where = placeText(f.at);
+  if (f.kind === 'clipping') return `${f.detail}, ${f.count !== undefined && f.count > 1 ? 'first ' : ''}at ${where}.`;
+  if (f.kind === 'silence' && f.seconds !== null && f.endSeconds !== undefined) {
+    if (f.at.bar === undefined) return `${f.detail} from ${where} to ${momentText(f.endSeconds)}.`;
+    return `${f.detail} for ${Math.round((f.endSeconds - f.seconds) * 1000)} ms from ${where}.`;
+  }
+  // (a detail with a clause of its own, "A click, a jump of -5.8 dBFS", closes it before the place)
+  return `${f.detail}${f.detail.includes(',') ? ',' : ''} at ${where}.`;
 }
 
 function modulationWords(m: Modulation): string {
@@ -138,6 +163,6 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
     }
   }
 
-  for (const f of r.faults) out.push(f.at ? `${f.detail} at ${placeText(f.at)}` : f.detail);
+  for (const f of r.faults) out.push(faultWords(f));
   return out;
 }

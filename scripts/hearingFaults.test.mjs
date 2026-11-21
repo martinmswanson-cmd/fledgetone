@@ -197,7 +197,7 @@ test('faults are in time order, those without a time last, each with a plain det
   assert.deepEqual(timed.map((x) => x.seconds), [...timed.map((x) => x.seconds)].sort((a, b) => a - b));
   assert.ok(f.findIndex((x) => x.seconds === null) >= timed.length);
   for (const x of f) {
-    assert.match(x.detail, /^[A-Z0-9][^.]*$/, x.detail);
+    assert.match(x.detail, /^[A-Z0-9].*[^.]$/, x.detail); // (no full stop at its end: the words add it; a value has a decimal point)
     assert.doesNotMatch(x.detail, /\b(good|bad|too|should)\b|second|\d ?s\b/i, x.detail);
   }
   const channel = f.find((x) => x.kind === 'channel'); assert.equal(channel.channel, 'right'); near(channel.value, 20, 0.5);

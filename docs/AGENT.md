@@ -247,6 +247,21 @@ returned. `pictures` names a folder inside `--root` (made if it isn't there; a p
 - pitch: tempo, key, tuning and the pitch classes that sound.
 - faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
 
+Each fault in `faults` has its `kind`, a `detail` in words, where it is (`seconds`, and `at` with
+the bar and beat for a song; `null` for a fault with no place, such as hum) and, for most kinds, a
+`value` whose unit goes by the kind: a click's is the size of its jump from one sample to the
+next, in dBFS; clipping's is its highest peak, in dBFS (with `count`, the number of places it
+clips, `seconds` being the first); a DC offset's is the offset, in dBFS; hum's is its frequency,
+in Hz; a quieter channel's is how far it is under the other, in dB. Digital silence has
+`endSeconds` instead.
+
+For an audio file every time read or given is a time in the file, whatever stretch of it was
+heard: a fault's `seconds`, the words, the pictures' titles, labels and ranges, the close-ups'
+names, `closeUps`, and `againstFromSeconds` and `againstToSeconds` (of a saved hearing too). The
+answer's `range` is the stretch heard, with `fileSeconds`, the file's length, when a stretch was
+asked for. For a song, places are bars and beats; where seconds appear they are counted from the
+start of the bars heard. A moment is written as minutes, seconds and hundredths (`0:26.53`).
+
 ### The pictures and their axes
 
 Every picture says what it shows in a `shows` sentence, and has labelled axes and a legend. Levels

@@ -77,10 +77,15 @@ export interface ListenReport {
   against?: SoundComparison;
 }
 
-/** An audio file heard: its stretch, its loudness as a listen measures a mix, and, when asked, its sound report and pictures. */
+/**
+ * An audio file heard: its stretch, its loudness as a listen measures a mix, and, when asked, its
+ * sound report and pictures. Every time in it is a time in the file, whatever stretch was heard.
+ */
 export interface AudioHearing {
   file: string;
   range: { fromSeconds: number; toSeconds: number };
+  /** The whole file's length, when a stretch of it was asked for. */
+  fileSeconds?: number;
   seconds: number;
   channels: number;
   silent: boolean;

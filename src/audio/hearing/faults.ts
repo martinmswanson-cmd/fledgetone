@@ -239,11 +239,13 @@ function clickFaults(channels: readonly Float32Array[], sampleRate: number): Fau
     } else merged.push({ at: k.at, jump: k.jump, channels: new Set([k.channel]) });
   }
   const faults: Fault[] = merged.slice(0, LISTED).map((k) => {
-    const fault: Fault = { kind: 'click', seconds: round3(k.at / sampleRate), value: round1(dbfs(k.jump)), detail: 'A click' };
+    const value = round1(dbfs(k.jump));
+    const fault: Fault = { kind: 'click', seconds: round3(k.at / sampleRate), value, detail: '' };
     if (channels.length === 2 && k.channels.size === 1) {
       const [c] = k.channels;
       fault.channel = sideName(c);
     }
+    fault.detail = `A click${fault.channel ? ` in the ${fault.channel} channel` : ''}, a jump of ${value.toFixed(1)} dBFS`;
     return fault;
   });
   const left = merged.length - LISTED;
@@ -278,13 +280,14 @@ function clippingFault(channels: readonly Float32Array[], sampleRate: number): F
     }
   }
   if (runs === 0) return [];
+  const value = round1(dbfs(peak));
   return [
     {
       kind: 'clipping',
       seconds: round3(firstAt / sampleRate),
       count: runs,
-      value: round1(dbfs(peak)),
-      detail: `Clipping at full scale, ${runs} ${runs === 1 ? 'run' : 'runs'}`,
+      value,
+      detail: `Clipping at full scale (peaks of ${value.toFixed(1)} dBFS) in ${runs} ${runs === 1 ? 'place' : 'places'}`,
     },
   ];
 }
@@ -359,8 +362,12 @@ function dcFaults(channels: readonly Float32Array[], sampleRate: number): Fault[
   if (found.length === 0) return [];
   let largest = found[0];
   for (const f of found) if (Math.abs(f.v) > Math.abs(largest.v)) largest = f;
-  const fault: Fault = { kind: 'dc', seconds: null, value: round1(dbfs(Math.abs(largest.v))), detail: 'A DC offset' };
-  if (channels.length === 2 && found.length === 1) fault.channel = sideName(largest.c);
+  const value = round1(dbfs(Math.abs(largest.v)));
+  const fault: Fault = { kind: 'dc', seconds: null, value, detail: `A DC offset of ${value.toFixed(1)} dBFS` };
+  if (channels.length === 2 && found.length === 1) {
+    fault.channel = sideName(largest.c);
+    fault.detail += ` in the ${fault.channel} channel`;
+  }
   return [fault];
 }
 
@@ -543,12 +550,15 @@ function channelFaults(channels: readonly Float32Array[]): Fault[] {
   if (power[quiet] === 0) return [{ kind: 'channel', seconds: null, channel: name, detail: `${capital} channel is silent` }];
   const under = 10 * Math.log10(power[loud] / power[quiet]);
   if (under <= 10) return [];
-  return [{ kind: 'channel', seconds: null, channel: name, value: round1(under), detail: `${capital} channel is ${round1(under)} dB under the ${other}` }];
+  return [{ kind: 'channel', seconds: null, channel: name, value: round1(under), detail: `${capital} channel is ${round1(under).toFixed(1)} dB under the ${other}` }];
 }
 
 /**
  * The faults in some sound, ordered by time, those without a time last. Each detail is one plain
- * sentence without the place, which the report adds.
+ * sentence without its place or its full stop, which the report's words add, and says what its
+ * `value` is and in what unit: a click's is the size of its jump from one sample to the next and
+ * clipping's its highest peak, both dBFS; a DC offset's is the offset, dBFS; hum's is its frequency,
+ * Hz; a quieter channel's is how far it is under the other, dB.
  */
 export function faultsOf(channels: readonly Float32Array[], sampleRate: number): Fault[] {
   if (channels.length === 0 || channels[0].length === 0) return [];

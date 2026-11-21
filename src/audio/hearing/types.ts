@@ -91,7 +91,13 @@ export interface Pitch {
 
 export type FaultKind = 'click' | 'clipping' | 'dc' | 'hum' | 'silence' | 'channel';
 
-/** Something wrong with the sound, and where. */
+/**
+ * Something wrong with the sound, and where. `seconds` (and `endSeconds`, `at.seconds`) are counted
+ * from the start of the audio heard: the start of the bars of a song, and for an audio file the start
+ * of the file, whatever stretch of it was heard. `value` by kind: a click's is the size of its jump
+ * from one sample to the next, dBFS; clipping's its highest peak, dBFS; a DC offset's the offset,
+ * dBFS; hum's its frequency, Hz; a quieter channel's how far it is under the other, dB.
+ */
 export interface Fault {
   kind: FaultKind;
   seconds: number | null;
@@ -121,6 +127,11 @@ export interface Along {
 export interface SoundReport {
   versions: Record<HearingGroup, number>;
   engine: string;
+  /**
+   * `stretch`: the stretch of the file that was heard, in file time, when one was asked for (and
+   * `fromSaved` when the report was made from a saved hearing's grids): the rows of `along` count
+   * from its `fromSeconds`.
+   */
   settings: { sampleRate: number; knownKey?: string; stretch?: { fromSeconds: number; toSeconds: number; fromSaved?: boolean } };
   seconds: number;
   channels: 1 | 2;

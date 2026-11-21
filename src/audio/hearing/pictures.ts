@@ -7,6 +7,7 @@
  */
 import { fftInPlace } from '../fft';
 import type { BandSpectrum } from '../mixAnalysis';
+import { momentText } from './words';
 import { DIVERGING, fillRect, GRID, HEAT, INK, line, PAPER, pixel, ramp, raster, setPixel, text, textWidth, type Raster, type Rgb } from './raster';
 
 export type PictureKind = 'spectrogram' | 'stereo' | 'level' | 'spectrum' | 'chroma' | 'closeup' | 'difference';
@@ -29,7 +30,12 @@ export interface BarSpan {
   end: number;
   beats: number;
 }
-/** A time axis: its range, its labelled ticks, and (for a bar axis) the first and last bar it covers. */
+/**
+ * A time axis: its range (seconds from the start of the audio drawn), its labelled ticks, and (for a
+ * bar axis) the first and last bar it covers. `offsetSeconds`: where the audio drawn starts in its
+ * file, when it is a stretch of one; every time a person reads (a label, a title, `shows`, a
+ * picture's own range) has it added, so they are times in the file.
+ */
 export interface TimeAxis {
   fromSeconds: number;
   toSeconds: number;
@@ -37,6 +43,7 @@ export interface TimeAxis {
   unit: 'bars' | 'seconds';
   fromBar?: number;
   toBar?: number;
+  offsetSeconds?: number;
 }
 
 /** The size of every picture, and the plot's box inside it. */
@@ -107,6 +114,8 @@ export function hzOfY(y: number): number {
   return hzOfYIn(y, PICTURE.top, PICTURE.bottom);
 }
 const spanOf = (axis: Pick<TimeAxis, 'fromSeconds' | 'toSeconds'>) => Math.max(MIN_SPAN, axis.toSeconds - axis.fromSeconds);
+/** Where the axis's audio starts in its file (0 unless it is a stretch of one). */
+const offsetOf = (axis: Pick<TimeAxis, 'offsetSeconds'>) => axis.offsetSeconds ?? 0;
 /** The x of a time on the axis, left edge of the plot to its right. */
 export function xOfSeconds(seconds: number, axis: Pick<TimeAxis, 'fromSeconds' | 'toSeconds'>): number {
   return PICTURE.left + ((seconds - axis.fromSeconds) / spanOf(axis)) * COLUMNS;
@@ -126,10 +135,11 @@ function clock(seconds: number, decimals = 0): string {
   const frac = decimals > 0 ? '.' + String(Math.round((rest - sec) * scale)).padStart(decimals, '0') : '';
   return `${m}:${pad2(sec)}${frac}`;
 }
-/** A range in words: `bars 9 to 16 (0:16.0 to 0:32.0)`, or `0:16.0 to 0:32.0`. */
+/** A range in words: `bars 9 to 16 (0:16.0 to 0:32.0)`, or `0:16.0 to 0:32.0` (times in the file, for a stretch of one). */
 export function rangeText(axis: TimeAxis): string {
   const decimals = spanOf(axis) < 1 ? 3 : 1;
-  const times = `${clock(axis.fromSeconds, decimals)} to ${clock(axis.toSeconds, decimals)}`;
+  const off = offsetOf(axis);
+  const times = `${clock(axis.fromSeconds + off, decimals)} to ${clock(axis.toSeconds + off, decimals)}`;
   if (axis.fromBar === undefined || axis.toBar === undefined) return times;
   const bars = axis.fromBar === axis.toBar ? `bar ${axis.fromBar}` : `bars ${axis.fromBar} to ${axis.toBar}`;
   return `${bars} (${times})`;
@@ -139,28 +149,35 @@ export function rangeText(axis: TimeAxis): string {
 
 const TIME_STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 
-/** The axis for a range: ticks at each bar start (thinned for long stretches) when bars are given, else round times about ten across. */
-export function axisFor(fromSeconds: number, toSeconds: number, bars?: readonly BarSpan[]): TimeAxis {
+/**
+ * The axis for a range: ticks at each bar start (thinned for long stretches) when bars are given, else
+ * round times about ten across. With `offsetSeconds` (the audio is a stretch of a file starting there),
+ * the ticks fall on round times of the file and are labelled with them.
+ */
+export function axisFor(fromSeconds: number, toSeconds: number, bars?: readonly BarSpan[], offsetSeconds = 0): TimeAxis {
   const from = Number.isFinite(fromSeconds) ? fromSeconds : 0;
   const to = Number.isFinite(toSeconds) && toSeconds > from ? toSeconds : from + MIN_SPAN;
   const eps = 1e-6;
+  const off = Number.isFinite(offsetSeconds) && offsetSeconds > 0 ? offsetSeconds : 0;
+  const offset = off > 0 ? { offsetSeconds: off } : {};
   if (bars && bars.length > 0) {
     const inside = bars.filter((b) => b.start < to - eps && b.end > from + eps);
     if (inside.length > 0) {
       const every = inside.length > 64 ? 8 : inside.length > 32 ? 4 : inside.length > 16 ? 2 : 1;
       const ticks = inside.filter((b) => b.start >= from - eps && (b.bar - 1) % every === 0).map((b) => ({ seconds: b.start, label: String(b.bar) }));
-      return { fromSeconds: from, toSeconds: to, ticks, unit: 'bars', fromBar: inside[0].bar, toBar: inside[inside.length - 1].bar };
+      return { fromSeconds: from, toSeconds: to, ticks, unit: 'bars', fromBar: inside[0].bar, toBar: inside[inside.length - 1].bar, ...offset };
     }
   }
   const span = to - from;
   const step = TIME_STEPS.find((s) => span / s <= 12) ?? 3600;
   const ticks: TimeAxis['ticks'] = [];
-  for (let k = Math.ceil((from - eps) / step); k * step <= to + eps; k++) {
-    const seconds = Math.round(k * step * 1e6) / 1e6;
-    const label = step < 0.1 ? `${Math.round(seconds * 1000)} ms` : clock(seconds, step < 1 ? 1 : 0);
-    ticks.push({ seconds, label: label === '0 ms' ? '0' : label });
+  for (let k = Math.ceil((from + off - eps) / step); k * step <= to + off + eps; k++) {
+    const inFile = Math.round(k * step * 1e6) / 1e6;
+    // (ms from the start of the audio; of a stretch of a file, the time in the file to the ms)
+    const label = step < 0.1 ? (off > 0 ? clock(inFile, 3) : `${Math.round(inFile * 1000)} ms`) : clock(inFile, step < 1 ? 1 : 0);
+    ticks.push({ seconds: Math.round((inFile - off) * 1e6) / 1e6, label: label === '0 ms' ? '0' : label });
   }
-  return { fromSeconds: from, toSeconds: to, ticks, unit: 'seconds' };
+  return { fromSeconds: from, toSeconds: to, ticks, unit: 'seconds', ...offset };
 }
 
 /** A new picture: dark ground and its title. */
@@ -487,7 +504,7 @@ export function spectrogramPictures(
     const stereo = o.kind === 'stereo';
     const title = stereo && !/side/i.test(o.title) ? `Stereo side signal: ${o.title}` : o.title;
     const of = stereo ? 'of the side signal (left minus right, halved: what differs between the channels, so sound panned or wide shows and sound in the centre does not)' : 'of the sound';
-    return blank(stereo ? 'stereo' : 'spectrogram', o.name, title, spectrogramShows(axis, sampleRate, of), axis.fromSeconds, axis.toSeconds);
+    return blank(stereo ? 'stereo' : 'spectrogram', o.name, title, spectrogramShows(axis, sampleRate, of), axis.fromSeconds + offsetOf(axis), axis.toSeconds + offsetOf(axis));
   };
   const pa = make(aOpts);
   const pb = b && bOpts ? make(bOpts) : null;
@@ -584,10 +601,10 @@ export function levelPicture(channels: readonly Float32Array[], sampleRate: numb
   const stereo = channels.length >= 2;
   const from = Math.floor(axis.fromSeconds * sampleRate), to = Math.ceil(axis.toSeconds * sampleRate);
   const peak = peakOf(channels.slice(0, 2), from, to);
-  const peakWords = peak ? `; true peak ${peak.db.toFixed(1)} dBTP at ${clock(peak.at / sampleRate, 2)}` : '';
+  const peakWords = peak ? `; true peak ${peak.db.toFixed(1)} dBTP at ${momentText(peak.at / sampleRate + offsetOf(axis))}` : '';
   const title = `Level${stereo ? ', left above and right below' : ''}: ${rangeText(axis)}`;
   const shows = `The waveform${stereo ? 's of the left channel (upper half) and the right (lower half)' : ''}, from -1 to +1 full scale, against time over ${rangeText(axis)}; the orange line is each second's loudness on the right-hand scale (-40 to 0 LUFS) and the red mark is where the true peak lies${peakWords}.`;
-  const p = blank('level', name, title, shows, axis.fromSeconds, axis.toSeconds);
+  const p = blank('level', name, title, shows, axis.fromSeconds + offsetOf(axis), axis.toSeconds + offsetOf(axis));
   const r = p.raster;
   const ls = lanes(stereo ? 2 : 1, PICTURE.top, PICTURE.bottom);
   ls.forEach((lane, i) => laneLabels(r, lane, stereo ? (i === 0 ? 'L' : 'R') : null));
@@ -677,7 +694,7 @@ export function spectrumPicture(a: BandSpectrum, aLabel: string, other: { spectr
 export function chromaPicture(chroma: readonly number[][], stepSeconds: number, axis: TimeAxis, name: string): Picture {
   const title = `Notes (pitch classes): ${rangeText(axis)}`;
   const shows = `The twelve pitch classes (C at the bottom to B at the top, any octave) against time over ${rangeText(axis)}, one column every ${stepSeconds} s; brightness is each note's strength in that step against the strongest note of the step (pale yellow 1, dark 0).`;
-  const p = blank('chroma', name, title, shows, axis.fromSeconds, axis.toSeconds);
+  const p = blank('chroma', name, title, shows, axis.fromSeconds + offsetOf(axis), axis.toSeconds + offsetOf(axis));
   const r = p.raster;
   const rowH = PLOT_H / 12;
   chroma.forEach((step, i) => {
@@ -701,8 +718,12 @@ export function chromaPicture(chroma: readonly number[][], stepSeconds: number, 
 
 // ---------------------------------------------------------------- close-up
 
-/** The 150 ms round `atSeconds` (clamped to the audio): the waveform in the top third, a fine spectrogram (frames of 512) below, ms from the moment. */
-export function closeUpPicture(channels: readonly Float32Array[], sampleRate: number, atSeconds: number, where: string, name: string): Picture {
+/**
+ * The 150 ms round `atSeconds` (from the start of the audio, clamped to it): the waveform in the top
+ * third, a fine spectrogram (frames of 512) below, ms from the moment. `offsetSeconds`: where the audio
+ * starts in its file, added to the times in the title, `shows` and the picture's range.
+ */
+export function closeUpPicture(channels: readonly Float32Array[], sampleRate: number, atSeconds: number, where: string, name: string, offsetSeconds = 0): Picture {
   const length = channels[0]?.length ?? 0;
   const seconds = length / sampleRate;
   const span = Math.max(MIN_SPAN, Math.min(CLOSE_UP_SECONDS, seconds));
@@ -710,9 +731,10 @@ export function closeUpPicture(channels: readonly Float32Array[], sampleRate: nu
   const from = Math.max(0, Math.min(seconds - span, at - span / 2));
   const range = { fromSeconds: from, toSeconds: from + span };
   const stereo = channels.length >= 2;
-  const title = `Close-up of ${where}: ${clock(range.fromSeconds, 3)} to ${clock(range.toSeconds, 3)}`;
-  const shows = `The ${Math.round(span * 1000)} ms round ${clock(at, 3)} (${where}), time in ms from that moment (the faint line): the waveform${stereo ? 's (left, then right)' : ''} from -1 to +1 at the top, and below it frequency (log scale, 20 Hz to 20 kHz) coloured by level in dB, dark -90 to pale yellow 0, from frames of ${CLOSE_UP_SIZE} samples (fine in time, coarse in pitch).${nyquistWords(sampleRate)}`;
-  const p = blank('closeup', name, title, shows, range.fromSeconds, range.toSeconds);
+  const off = Number.isFinite(offsetSeconds) ? offsetSeconds : 0;
+  const title = `Close-up of ${where}: ${clock(range.fromSeconds + off, 3)} to ${clock(range.toSeconds + off, 3)}`;
+  const shows = `The ${Math.round(span * 1000)} ms round ${momentText(at + off)} (${where}), time in ms from that moment (the faint line): the waveform${stereo ? 's (left, then right)' : ''} from -1 to +1 at the top, and below it frequency (log scale, 20 Hz to 20 kHz) coloured by level in dB, dark -90 to pale yellow 0, from frames of ${CLOSE_UP_SIZE} samples (fine in time, coarse in pitch).${nyquistWords(sampleRate)}`;
+  const p = blank('closeup', name, title, shows, range.fromSeconds + off, range.toSeconds + off);
   const r = p.raster;
   const waveBottom = PICTURE.top + Math.round(PLOT_H / 3);
   const specTop = waveBottom + 30;
@@ -756,7 +778,7 @@ export function differencePicture(before: Float32Array, after: Float32Array, sam
   const a = before.subarray(0, n), b = after.subarray(0, n);
   const title = `Difference, second sound minus first: ${rangeText(axis)}`;
   const shows = `Frequency (log scale, 20 Hz to 20 kHz) against time over ${rangeText(axis)}; colour is the second sound's level minus the first's in dB, from -${DIFFERENCE_DB} to +${DIFFERENCE_DB}. Red is where the second is louder than the first, blue where it is quieter, near-black where they match, and blank where both are under ${QUIET_DB} dB.${nyquistWords(sampleRate)}`;
-  const p = blank('difference', name, title, shows, axis.fromSeconds, axis.toSeconds);
+  const p = blank('difference', name, title, shows, axis.fromSeconds + offsetOf(axis), axis.toSeconds + offsetOf(axis));
   const r = p.raster;
   const reading = rowReading(SPECTROGRAM_SIZE, sampleRate, PICTURE.top, PICTURE.bottom);
   eachColumn(a, b, sampleRate, axis, SPECTROGRAM_SIZE, spectrogramWindow(axis, sampleRate), (c, pa, pb) => {

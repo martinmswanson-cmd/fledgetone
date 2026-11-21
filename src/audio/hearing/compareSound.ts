@@ -275,17 +275,23 @@ function sideOverMid(freqs: number[], mid: number[], side: number[], lo: number,
   return round1(Math.max(WIDTH_FLOOR_DB, s - m));
 }
 
-/** A report of the part of a saved one from `fromSeconds` up to `toSeconds`, from its "along" rows alone. */
+/**
+ * A report of the part of a saved one from `fromSeconds` up to `toSeconds`, from its "along" rows
+ * alone. The times are as the saved report counts them: times in the file when it is of a stretch of
+ * one (its rows then count from that stretch's start), else from the start of what was heard.
+ */
 export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number): SoundReport {
   // (a reply's report has no grids: only a saved hearing can give a stretch)
   const along = r.along;
   if (!along || !Number.isFinite(fromSeconds) || Number.isNaN(toSeconds)) throw new RangeError('that stretch holds nothing');
   const step = along.stepSeconds;
-  const from = Math.max(0, fromSeconds);
-  const to = Math.min(toSeconds, r.seconds);
+  /** Where row 0 starts. */
+  const start = r.settings.stretch?.fromSeconds ?? 0;
+  const from = Math.max(start, fromSeconds);
+  const to = Math.min(toSeconds, start + r.seconds);
   const rows: number[] = [];
   for (let i = 0; i < along.mid.length; i++) {
-    const at = i * step;
+    const at = start + i * step;
     if (at >= from && at < to) rows.push(i);
   }
   if (rows.length === 0) throw new RangeError('that stretch holds nothing');
@@ -352,9 +358,9 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
   const lufs = powerMean(rows.map((i) => along.lufs[i] ?? null));
   const dynamics: Dynamics = { lufs: lufs === null ? null : round1(lufs), shortTermMaxLufs: null, truePeakDbtp: null, crestDb: null, rangeLu: null };
 
-  const first = rows[0] * step;
+  const first = start + rows[0] * step;
   const head = { versions: { ...r.versions }, engine: r.engine, settings: { ...r.settings, stretch }, channels: r.channels };
-  const last = Math.min(to, (rows[rows.length - 1] + 1) * step);
+  const last = Math.min(to, start + (rows[rows.length - 1] + 1) * step);
   const seconds = Math.round(Math.max(0, last - first) * 100) / 100;
   if (!live) return { ...head, seconds, silent: true, faults: [], along: { stepSeconds: step, freqs: [], mid: [], side: [], lufs: [], chroma: [] }, words: ['It is silent.'] };
   const report: Omit<SoundReport, 'words'> = {

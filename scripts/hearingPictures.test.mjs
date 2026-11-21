@@ -21,6 +21,7 @@ const P = await import('../src/audio/hearing/pictures.ts');
 const R = await import('../src/audio/hearing/raster.ts');
 const { hearingOf, parseSavedHearing, detailRanges } = await import('../src/audio/hearing/hearingOf.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
+const compare = await import('../src/audio/hearing/compareSound.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -240,4 +241,66 @@ test('the grid stays under the data: visible on silence, never in place of a lev
   assert.ok(inside(P.spectrogramPicture(new Float32Array(96000), 48000, axis, { name: 's', title: 't' }), R.GRID) > 100, 'the grid shows on silence');
   const loud = P.spectrogramPicture(S.white(2, -10, 1), 48000, axis, { name: 's', title: 't' });
   assert.equal(inside(loud, R.GRID), 0, 'no grid dot over the noise');
+});
+
+// A stretch of a file: every time is a time in the file (the final review's I1), and a moment reads the same everywhere (M6)
+
+test('a stretch of a file is told in file time: the fault, the words, the pictures, their names and their ranges', () => {
+  const { stretchOf } = compare;
+  // what the command line cuts from a file for --from 10 --to 20: ten seconds, a click 2.5 s into them (12.5 s into the file)
+  const x = S.mix(S.sine(110, 10, -12), S.sine(440, 10, -18)); x[2.5 * 48000] += 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true, closeUps: [2], stretch: { fromSeconds: 10, toSeconds: 20 } });
+  const click = h.sound.faults.find((f) => f.kind === 'click');
+  near(click.seconds, 12.5, 0.001, 'the click, in the file'); near(click.at.seconds, 12.5, 0.001, 'its place');
+  assert.ok(h.sound.words.some((w) => /^A click, a jump of -?\d+\.\d dBFS, at 0:12\.50\.$/.test(w)), h.sound.words.join('\n'));
+  assert.deepEqual(h.sound.settings.stretch, { fromSeconds: 10, toSeconds: 20 });
+  const names = h.pictures.map((p) => p.name);
+  assert.ok(names.includes('closeup-12.50s') && names.includes('closeup-12.00s'), names.join(' '));
+  const by = (name) => h.pictures.find((p) => p.name === name);
+  assert.deepEqual([by('spectrogram').fromSeconds, by('spectrogram').toSeconds], [10, 20]);
+  assert.match(by('spectrogram').shows, /over 0:10\.0 to 0:20\.0 /);
+  assert.match(by('level').shows, /over 0:10\.0 to 0:20\.0;.* true peak -?\d+\.\d dBTP at 0:1\d\.\d\d\.$/);
+  assert.match(by('spectrum').shows, /over 0:10\.0 to 0:20\.0/);
+  near(by('closeup-12.50s').fromSeconds, 12.425, 0.001); near(by('closeup-12.50s').toSeconds, 12.575, 0.001);
+  assert.match(by('closeup-12.50s').shows, /^The 150 ms round 0:12\.50 \(a click at 0:12\.50\)/);
+  assert.match(by('closeup-12.00s').shows, /^The 150 ms round 0:12\.00 \(0:12\.00\)/);
+  // the axis: ticks on round times of the file, labelled with them, placed in the audio
+  const axis = P.axisFor(0, 10, undefined, 10);
+  assert.equal(P.rangeText(axis), '0:10.0 to 0:20.0');
+  assert.deepEqual(axis.ticks.map((t) => [t.seconds, t.label]).slice(0, 3), [[0, '0:10'], [1, '0:11'], [2, '0:12']]);
+  assert.deepEqual(P.axisFor(0.5, 9.5, undefined, 10.25).ticks[0], { seconds: 0.75, label: '0:11' });
+  // the grids' rows count from the stretch's start, and a stretch of the saved report is asked for in file time
+  assert.equal(h.sound.along.mid.length, 10);
+  const part = stretchOf(h.sound, 12, 18);
+  assert.equal(part.along.mid.length, 6); assert.deepEqual(part.settings.stretch, { fromSeconds: 12, toSeconds: 18, fromSaved: true });
+  assert.deepEqual(part.along.mid[0], h.sound.along.mid[2]);
+  assert.throws(() => stretchOf(h.sound, 2, 8), /that stretch holds nothing/, '2 to 8 s is outside a hearing of 10 to 20 s');
+  assert.equal(stretchOf(h.sound, 0, 100).along.mid.length, 10);
+  // a stretch of that stretch counts from its own start
+  assert.deepEqual(stretchOf(part, 14, 16).along.mid, h.sound.along.mid.slice(4, 6));
+  // long stretches: the details are named by their time in the file
+  assert.deepEqual(detailRanges(0, 61, undefined, 90).map((d) => d.name), ['spectrogram-1m30-2m00', 'spectrogram-2m00-2m30', 'spectrogram-2m30-2m31']);
+});
+test('without a stretch nothing is offset: a whole file, and a song, read as before', () => {
+  const x = S.mix(S.sine(110, 4, -12), S.sine(440, 4, -18)); x[2.5 * 48000] += 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true });
+  near(h.sound.faults[0].seconds, 2.5, 0.001); assert.equal('stretch' in h.sound.settings, false);
+  assert.ok(h.pictures.some((p) => p.name === 'closeup-2.50s'));
+  assert.equal('offsetSeconds' in P.axisFor(0, 4), false);
+});
+test('two clicks 50 ms apart read as two moments, in the words and in the close-ups', () => {
+  const x = S.mix(S.sine(110, 30, -12), S.sine(440, 30, -18)); x[Math.round(26.53 * 48000)] += 0.5; x[Math.round(26.58 * 48000)] -= 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true, closeUps: [26.53, 26.58] });
+  const shows = h.pictures.filter((p) => p.kind === 'closeup').map((p) => p.shows.slice(0, 40));
+  assert.ok(shows.some((s) => s.includes('0:26.53')) && shows.some((s) => s.includes('0:26.58')), shows.join(' | '));
+  assert.ok(h.pictures.some((p) => p.name === 'closeup-26.53s') && h.pictures.some((p) => p.name === 'closeup-26.58s'));
+});
+test('channels of unequal length are heard over the shorter, with no sample that is not a number (M4)', () => {
+  const l = S.pink(2, -18, 1), r = S.pink(2.5, -18, 2);
+  const h = hearingOf([l, r], 48000, { engine: 't', pictures: true });
+  const walk = (v, path) => { if (typeof v === 'number') assert.ok(Number.isFinite(v), `${path} is ${v}`); else if (v && typeof v === 'object' && !ArrayBuffer.isView(v)) for (const k of Object.keys(v)) walk(v[k], `${path}.${k}`); };
+  walk(h.sound, 'sound');
+  assert.equal(h.sound.seconds, 2); assert.equal(h.sound.channels, 2);
+  assert.ok(h.sound.stereo && h.sound.tone.spectrum.mid.every(Number.isFinite));
+  assert.equal(hearingOf([r, l], 48000, { engine: 't' }).sound.seconds, 2);
 });

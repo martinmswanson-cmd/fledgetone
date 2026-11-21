@@ -572,9 +572,12 @@ export async function hearAudio(url: string, opts: HearAudioOptions): Promise<Au
   progress(0.3, `Measuring ${name}`);
   const m = await measureRender(bufferOf(channels, rate));
   const ms = (s: number) => Math.round(s * 1000) / 1000;
+  // A stretch asked for: every time read or given is then a time in the file
+  const stretch = opts.fromSeconds !== undefined || opts.toSeconds !== undefined ? { fromSeconds: ms(fromSeconds), toSeconds: ms(toSeconds) } : undefined;
   const out: AudioHearing = {
     file: name,
     range: { fromSeconds: ms(fromSeconds), toSeconds: ms(toSeconds) },
+    ...(stretch ? { fileSeconds: ms(length) } : {}),
     seconds: ms(channels[0].length / rate),
     channels: channels.length,
     silent: isSilent(m.truePeakDbtp),
@@ -588,7 +591,7 @@ export async function hearAudio(url: string, opts: HearAudioOptions): Promise<Au
   if (opts.sound || opts.pictures) {
     progress(0.6, `Hearing ${name}`);
     const { against } = opts;
-    Object.assign(out, await heardSound(channels, rate, { engine: APP_VERSION, tempoBpm: opts.tempoBpm, closeUps: opts.closeUps, pictures: !!opts.pictures, against }));
+    Object.assign(out, await heardSound(channels, rate, { engine: APP_VERSION, tempoBpm: opts.tempoBpm, closeUps: opts.closeUps, pictures: !!opts.pictures, against, ...(stretch ? { stretch } : {}) }));
     if (against) out.against = compareSound(against.sound, out.sound!, { a: against.label, b: name });
   }
   progress(1, 'Done');

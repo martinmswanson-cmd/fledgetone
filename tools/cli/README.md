@@ -114,7 +114,9 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
     width of each part of the spectrum, and how wide the low end is;
   - **pitch**: the tempo (and how sure it is), the key, the tuning, and the twelve pitch classes;
   - **faults**: clicks, clipping, a DC offset, hum, digital silence and a channel that is silent
-    or much quieter than the other, each with where it is.
+    or much quieter than the other, each with where it is (a moment is written as minutes,
+    seconds and hundredths, `0:26.53`) and its size with its unit (a click's jump and clipping's
+    highest peak in dBFS, a DC offset in dBFS, hum in Hz, a quieter channel in dB).
 
   The words describe the sound; they never judge it. What to do about it is yours to decide.
 - `--pictures <folder>`: PNG pictures of it, written there (the folder is made if it isn't there,
@@ -144,9 +146,16 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
   unless `--overwrite`. With `listen --suggestion` (or `--ops`), it saves the hearing of the
   after version.
 - `--bpm <n>` (`measure`): the tempo, when you know it (else it is found from the sound).
+- `--from` and `--to` (`measure`): a stretch of the file. Every time read or given stays a time
+  in the file: the first line says the stretch (`click.wav: 0:10 to 0:20 of 1:00, 2 channels`), a
+  click 12.5 seconds into the file reads `at 0:12.50` and its close-up is `closeup-12.50s`,
+  `--close 12` is 12 seconds into the file, and `--against-from` and `--against-to` of a hearing
+  saved from that stretch are times in the file as well. For a song (`listen`), places are bars
+  and beats; where seconds appear they are counted from the start of the bars heard.
 
 `measure --json` with any of these options (or `--from` / `--to`, or a file other than a WAV) is
-the hearing of the file: `file`, `range` (the stretch, seconds), `seconds`, `channels`, `silent`,
+the hearing of the file: `file`, `range` (the stretch, seconds), `fileSeconds` (the file's
+length, when a stretch was asked for), `seconds`, `channels`, `silent`,
 the loudness numbers rounded to a tenth (`lufs`, `shortTermMaxLufs`, `truePeakDbtp`, `crestDb`),
 `regions`, a `note` when something was done to measure it, and, when asked, `sound`, `against`
 and `pictures` (each with its `path`). `listen --json` is its report with `sound`, `against` and

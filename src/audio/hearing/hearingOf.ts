@@ -67,7 +67,6 @@ function placeIn(bars: readonly BarSpan[]): (seconds: number) => Place {
   };
 }
 
-const placeWords = (p: Place) => (p.bar !== undefined && p.beat !== undefined ? placeText(p) : `${p.seconds.toFixed(2)} s`);
 const placeName = (p: Place) => (p.bar !== undefined && p.beat !== undefined ? `closeup-bar-${p.bar}-beat-${p.beat}` : `closeup-${p.seconds.toFixed(2)}s`);
 const FAULT_WORDS: Record<Fault['kind'], string> = { click: 'a click', clipping: 'clipping', dc: 'a DC offset', hum: 'hum', silence: 'digital silence', channel: 'a channel fault' };
 /** `5m30` for 330 s. */
@@ -82,7 +81,7 @@ function spread<T>(items: readonly T[], most: number): T[] {
   return Array.from({ length: most }, (_, i) => items[Math.round((i * (items.length - 1)) / (most - 1))]);
 }
 
-/** One detail spectrogram's stretch, in seconds from the start of the audio, and its picture's name. */
+/** One detail spectrogram's stretch, in seconds from the start of the audio, and its picture's name (which gives it in file time). */
 export interface DetailRange {
   fromSeconds: number;
   toSeconds: number;
@@ -92,10 +91,11 @@ export interface DetailRange {
 /**
  * The detail stretches of a range: with bars, one per DETAIL_BARS bars of those in the range (none for
  * DETAIL_BARS or fewer), named `spectrogram-bars-9-16`; without, one per DETAIL_SECONDS when the range
- * is longer than that, named `spectrogram-0m30-1m00`. At most MAX_DETAILS, spread evenly (the first and
- * last kept, in order) when there would be more.
+ * is longer than that, named `spectrogram-0m30-1m00` (by its time in the file: `offsetSeconds` is where
+ * the audio starts in it). At most MAX_DETAILS, spread evenly (the first and last kept, in order) when
+ * there would be more: the details of a long range do not cover all of it.
  */
-export function detailRanges(fromSeconds: number, toSeconds: number, bars?: readonly BarSpan[]): DetailRange[] {
+export function detailRanges(fromSeconds: number, toSeconds: number, bars?: readonly BarSpan[], offsetSeconds = 0): DetailRange[] {
   const out: DetailRange[] = [];
   if (bars && bars.length > 0) {
     const inside = bars.filter((b) => b.start < toSeconds && b.end > fromSeconds);
@@ -109,7 +109,7 @@ export function detailRanges(fromSeconds: number, toSeconds: number, bars?: read
   } else if (toSeconds - fromSeconds > DETAIL_SECONDS) {
     for (let from = fromSeconds; from < toSeconds; from += DETAIL_SECONDS) {
       const to = Math.min(toSeconds, from + DETAIL_SECONDS);
-      out.push({ fromSeconds: from, toSeconds: to, name: `spectrogram-${minutesName(from)}-${minutesName(to)}` });
+      out.push({ fromSeconds: from, toSeconds: to, name: `spectrogram-${minutesName(from + offsetSeconds)}-${minutesName(to + offsetSeconds)}` });
     }
   }
   return spread(out, MAX_DETAILS);
@@ -117,7 +117,9 @@ export function detailRanges(fromSeconds: number, toSeconds: number, bars?: read
 
 /**
  * The sound report of `channels` (one or two) and, with `pictures`, its pictures, named and in a fixed
- * order. Things are placed by `place` when it is given, else by `bars`.
+ * order. Things are placed by `place` when it is given, else by `bars`. With `stretch` (the audio is
+ * that stretch of a file) every time read or named is a time in the file: the faults', the words',
+ * the pictures' titles, labels, ranges and names; `closeUps` stay seconds from the start of the audio.
  */
 export function hearingOf(channels: readonly Float32Array[], sampleRate: number, opts: HearingOptions): Hearing {
   const { bars, closeUps, pictures, prefix = '', small, against, ...hear } = opts;
@@ -135,7 +137,9 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
   const mid = stereo ? middleOf(heard[0], heard[1]) : heard[0];
   const out: Picture[] = [];
   const named = (name: string) => `${prefix}${name}`;
-  const whole = axisFor(0, seconds, bars);
+  /** Where the audio starts in its file (0 unless it is a stretch of one). */
+  const offset = hear.stretch?.fromSeconds ?? 0;
+  const whole = axisFor(0, seconds, bars, offset);
   const quiet = sound.silent || length === 0;
 
   const overview = { name: named('spectrogram'), title: `Spectrogram: ${rangeText(whole)}` };
@@ -145,7 +149,7 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
   const spectrum = () => {
     if (!sound.tone) return;
     const other = against?.sound.tone ? { spectrum: against.sound.tone.spectrum, label: against.label } : null;
-    out.push(spectrumPicture(sound.tone.spectrum, 'this sound', other, named('spectrum'), { fromSeconds: 0, toSeconds: seconds }));
+    out.push(spectrumPicture(sound.tone.spectrum, 'this sound', other, named('spectrum'), { fromSeconds: offset, toSeconds: offset + seconds }));
   };
   if (small) {
     spectrum();
@@ -156,8 +160,8 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
     return { sound, pictures: out };
   }
 
-  for (const d of detailRanges(0, seconds, bars)) {
-    const axis = axisFor(d.fromSeconds, d.toSeconds, bars);
+  for (const d of detailRanges(0, seconds, bars, offset)) {
+    const axis = axisFor(d.fromSeconds, d.toSeconds, bars, offset);
     out.push(...spectrogramPictures(mid, null, sampleRate, axis, { name: named(d.name), title: `Spectrogram: ${rangeText(axis)}` }, null));
   }
   if (stereoPicture) out.push(stereoPicture);
@@ -166,20 +170,22 @@ export function hearingOf(channels: readonly Float32Array[], sampleRate: number,
   if (sound.along && sound.along.chroma.length > 0) out.push(chromaPicture(sound.along.chroma, sound.along.stepSeconds, whole, named('chroma')));
 
   const taken = new Set(out.map((p) => p.name));
+  /** A close-up of the place `at` (its seconds a time in the file), named for it. */
   const closeUp = (at: Place, where: string) => {
     let name = named(placeName(at));
     for (let k = 2; taken.has(name); k++) name = `${named(placeName(at))}-${k}`;
     taken.add(name);
-    out.push(closeUpPicture(heard, sampleRate, at.seconds, where, name));
+    out.push(closeUpPicture(heard, sampleRate, at.seconds - offset, where, name, offset));
   };
-  const placeOf = (s: number): Place => (place ? place(s) : { seconds: s });
+  /** The place of a moment `s` seconds from the start of the audio. */
+  const placeOf = (s: number): Place => ({ ...(place ? place(s) : {}), seconds: offset ? Math.round((s + offset) * 1000) / 1000 : s });
   for (const f of sound.faults.filter((f) => f.seconds !== null).slice(0, MAX_CLOSE_UPS)) {
-    const at = f.at ?? placeOf(f.seconds as number);
-    closeUp(at, `${FAULT_WORDS[f.kind]} at ${placeWords(at)}`);
+    const at = f.at ?? { seconds: f.seconds as number };
+    closeUp(at, `${FAULT_WORDS[f.kind]} at ${placeText(at)}`);
   }
   for (const s of (closeUps ?? []).filter(Number.isFinite).slice(0, MAX_CLOSE_UPS)) {
     const at = placeOf(s);
-    closeUp(at, placeWords(at));
+    closeUp(at, placeText(at));
   }
   return { sound, pictures: out };
 }

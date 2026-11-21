@@ -287,7 +287,7 @@ const outsideTheFile = () => new Error('that stretch is outside the file');
 const pastTheEnd = (at: number, name: string) => new UsageError(`--close ${at} is past the end of ${name}`);
 
 /** A WAV file read in Node, cut to the plan's stretch and checked (null: a WAV format Node doesn't read, for the browser to try). */
-function loadWav(plan: HearPlan): { cut: Float32Array[]; sampleRate: number; from: number; to: number } | null {
+function loadWav(plan: HearPlan): { cut: Float32Array[]; sampleRate: number; from: number; to: number; length: number } | null {
   const from = plan.fromSeconds ?? 0;
   if (plan.sound) {
     // (a file over the limit is refused before it is read, where its header says how long it is)
@@ -318,18 +318,21 @@ function loadWav(plan: HearPlan): { cut: Float32Array[]; sampleRate: number; fro
   const a = Math.round(from * sampleRate);
   const b = plan.toSeconds === undefined ? frames : Math.max(a + 1, Math.round(to * sampleRate));
   const cut = a === 0 && b === frames ? channels : channels.map((c) => c.slice(a, b));
-  return { cut, sampleRate, from, to };
+  return { cut, sampleRate, from, to, length };
 }
 
 /** A WAV loaded by loadWav, measured and, when the plan asks, heard. */
 async function hearLoaded(plan: HearPlan, wav: NonNullable<ReturnType<typeof loadWav>>, against: AgainstSound | undefined): Promise<HeardFile> {
-  const { cut, sampleRate, from, to } = wav;
+  const { cut, sampleRate, from, to, length } = wav;
   const name = basename(plan.file);
   const m = measureAudio(cut, sampleRate);
   const ms = (x: number) => Math.round(x * 1000) / 1000;
+  // A stretch asked for: every time read or given is then a time in the file
+  const stretch = plan.fromSeconds !== undefined || plan.toSeconds !== undefined ? { fromSeconds: ms(from), toSeconds: ms(to) } : undefined;
   const out: HeardFile = {
     file: name,
     range: { fromSeconds: ms(from), toSeconds: ms(to) },
+    ...(stretch ? { fileSeconds: ms(length) } : {}),
     seconds: ms((cut[0]?.length ?? 0) / sampleRate),
     channels: cut.length,
     silent: m.silent,
@@ -342,7 +345,7 @@ async function hearLoaded(plan: HearPlan, wav: NonNullable<ReturnType<typeof loa
     written: [],
   };
   if (!plan.sound) return out;
-  const heard = hearingOf(cut, sampleRate, { engine: APP_VERSION, tempoBpm: plan.bpm, closeUps: plan.closeUps.map((s) => s - from), pictures: plan.pictures !== undefined, against });
+  const heard = hearingOf(cut, sampleRate, { engine: APP_VERSION, tempoBpm: plan.bpm, closeUps: plan.closeUps.map((s) => s - from), pictures: plan.pictures !== undefined, against, ...(stretch ? { stretch } : {}) });
   out.sound = heard.sound;
   if (plan.pictures !== undefined) {
     const pictures: WrittenPicture[] = [];
@@ -372,7 +375,8 @@ function savedAgainst(path: string, stretch: { fromSeconds?: number; toSeconds?:
   }
   if (stretch.fromSeconds === undefined && stretch.toSeconds === undefined) return { sound: saved.sound, label };
   try {
-    return { sound: stretchOf(saved.sound, stretch.fromSeconds ?? 0, stretch.toSeconds ?? saved.sound.seconds), label };
+    // (the times are the saved hearing's own: times in the file it was made from, or from the start of the bars heard)
+    return { sound: stretchOf(saved.sound, stretch.fromSeconds ?? 0, stretch.toSeconds ?? Infinity), label };
   } catch (err) {
     if (err instanceof RangeError) throw outsideTheFile();
     throw err;

@@ -79,7 +79,7 @@ test('a fault without a place function is placed by its seconds', () => {
   x[96000] += 0.5;
   const r = hear([x]);
   assert.deepEqual(r.faults[0].at, { seconds: r.faults[0].seconds });
-  assert.ok(r.words.some((w) => /click.* at 0:02\.0/i.test(w)));
+  assert.ok(r.words.some((w) => /click.* at 0:02\.00\.$/i.test(w)));
 });
 
 test('a mono file has no stereo group (Review Focus 1)', () => {
@@ -192,13 +192,17 @@ test('a sound of only bad samples reads as silent', () => {
 });
 
 test('place text', () => {
-  assert.equal(placeText({ seconds: 12.5 }), '0:12.5');
+  // a moment in a file: minutes, seconds and hundredths, wherever one is written
+  assert.equal(placeText({ seconds: 12.5 }), '0:12.50');
   assert.equal(placeText({ seconds: 3, bar: 9, beat: 3 }), 'bar 9, beat 3');
-  assert.equal(placeText({ seconds: 65 }), '1:05.0');
-  assert.equal(placeText({ seconds: 3 }), '0:03.0');
-  assert.equal(placeText({ seconds: 720 }), '12:00.0');
+  assert.equal(placeText({ seconds: 65 }), '1:05.00');
+  assert.equal(placeText({ seconds: 3 }), '0:03.00');
+  assert.equal(placeText({ seconds: 720 }), '12:00.00');
   assert.equal(placeText({ seconds: 12.5, bar: 4 }), 'bar 4');
-  assert.equal(placeText({ seconds: 59.97 }), '1:00.0');
+  assert.equal(placeText({ seconds: 59.97 }), '0:59.97');
+  assert.equal(placeText({ seconds: 59.996 }), '1:00.00');
+  assert.equal(placeText({ seconds: 26.53 }), '0:26.53');
+  assert.notEqual(placeText({ seconds: 26.53 }), placeText({ seconds: 26.58 }));
 });
 
 // Words, on hand-made reports
@@ -375,7 +379,39 @@ test('words: faults come last, with a place when they have one', () => {
     { kind: 'click', seconds: 12.5, detail: 'A click', at: { seconds: 12.5 } },
     { kind: 'dc', seconds: null, detail: 'A steady offset' },
   ];
-  assert.deepEqual(words({ attack: atk({ riseMs: 1.2 }), faults: f }), ['Sharp attacks (1.2 ms).', 'A click at bar 9, beat 3', 'A click at 0:12.5', 'A steady offset']);
+  assert.deepEqual(words({ attack: atk({ riseMs: 1.2 }), faults: f }), ['Sharp attacks (1.2 ms).', 'A click at bar 9, beat 3.', 'A click at 0:12.50.', 'A steady offset.']);
+});
+
+test('words: a fault line ends with a full stop; clipping says where it first is, silence where it ends or how long it lasts', () => {
+  const line = (f) => words({ faults: [f] })[0];
+  assert.equal(line({ kind: 'clipping', seconds: 0, count: 11910, value: 0, detail: 'Clipping at full scale (peaks of 0.0 dBFS) in 11910 places', at: { seconds: 0 } }), 'Clipping at full scale (peaks of 0.0 dBFS) in 11910 places, first at 0:00.00.');
+  assert.equal(line({ kind: 'clipping', seconds: 1, count: 1, value: 0, detail: 'Clipping at full scale (peaks of 0.0 dBFS) in 1 place', at: { seconds: 1 } }), 'Clipping at full scale (peaks of 0.0 dBFS) in 1 place, at 0:01.00.');
+  assert.equal(line({ kind: 'clipping', seconds: 4, count: 30, value: -0.1, detail: 'Clipping at full scale (peaks of -0.1 dBFS) in 30 places', at: { seconds: 4, bar: 3, beat: 1 } }), 'Clipping at full scale (peaks of -0.1 dBFS) in 30 places, first at bar 3, beat 1.');
+  assert.equal(line({ kind: 'silence', seconds: 1, endSeconds: 1.2, detail: 'Digital silence', at: { seconds: 1 } }), 'Digital silence from 0:01.00 to 0:01.20.');
+  assert.equal(line({ kind: 'silence', seconds: 1, endSeconds: 1.2, detail: 'Digital silence', at: { seconds: 1, bar: 2, beat: 1 } }), 'Digital silence for 200 ms from bar 2, beat 1.');
+  assert.equal(line({ kind: 'silence', seconds: null, count: 3, detail: '3 more stretches of digital silence' }), '3 more stretches of digital silence.');
+  assert.equal(line({ kind: 'hum', seconds: null, value: 60, detail: 'Hum at 60 Hz' }), 'Hum at 60 Hz.');
+});
+
+test('faults in a real report: each detail gives its value with its unit, and each line ends with one full stop', () => {
+  const l = S.mix(S.clip(S.sine(200, 6, 6), 1.0), S.sine(60, 6, -20), S.sine(120, 6, -26)).map((v) => v + 0.02);
+  const r = S.gain(l, -20);
+  r[3 * 48000] += 0.2; l.fill(0, 4 * 48000, 4.1 * 48000); r.fill(0, 4 * 48000, 4.1 * 48000);
+  const report = hear([l, r]);
+  const of = (kind) => report.faults.find((f) => f.kind === kind);
+  const click = of('click');
+  assert.equal(click.detail, `A click in the right channel, a jump of ${click.value.toFixed(1)} dBFS`);
+  assert.match(of('clipping').detail, /^Clipping at full scale \(peaks of -?\d+\.\d dBFS\) in \d+ places$/);
+  assert.equal(of('clipping').detail.includes(`${of('clipping').value.toFixed(1)} dBFS`), true);
+  assert.equal(of('dc').detail, `A DC offset of ${of('dc').value.toFixed(1)} dBFS in the left channel`, 'the right, 20 dB down, has none to speak of');
+  assert.equal(of('channel').detail, `The right channel is ${of('channel').value.toFixed(1)} dB under the left`);
+  assert.equal(of('silence').detail, 'Digital silence');
+  const lines = report.words.slice(-report.faults.length);
+  assert.equal(lines.length, report.faults.length);
+  for (const w of lines) assert.match(w, /[^.]\.$/, w);
+  assert.ok(lines.some((w) => /^A click in the right channel, a jump of -?\d+\.\d dBFS, at 0:03\.00\.$/.test(w)), lines.join('\n'));
+  assert.ok(lines.some((w) => /^Clipping at full scale \(peaks of -?\d+\.\d dBFS\) in \d+ places, first at 0:00\.0\d\.$/.test(w)), lines.join('\n'));
+  assert.ok(lines.includes('Digital silence from 0:04.00 to 0:04.10.'), lines.join('\n'));
 });
 
 test('words: the order is tone, texture, movement, dynamics, attack, stereo, pitch', () => {

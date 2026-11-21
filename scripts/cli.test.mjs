@@ -590,6 +590,52 @@ test('measure --from --to: a stretch of the file; outside it, or over 15 minutes
   }
 });
 
+test('measure --from --to: every time read or given is a time in the file (the words, the header, the close-ups, a saved hearing and a stretch of it)', { skip, timeout: 240_000 }, async () => {
+  const { S, parseSavedHearing } = await hearingKit();
+  const dir = mkdtempSync(join(tmp, 'file-time-'));
+  // 24 seconds with a click 12.5 s in
+  const bed = (seed) => S.mix(S.sine(110, 24, -12), S.sine(440, 24, -18), S.band(S.pink(24, -30, seed), 100, 4000));
+  const l = bed(3), r = bed(4);
+  l[12.5 * 48000] += 0.3; r[12.5 * 48000] += 0.3;
+  const wav = join(dir, 'click.wav');
+  writeFileSync(wav, floatWav([l, r]));
+  const pictures = join(dir, 'pictures');
+  const saved = join(dir, 'ten-to-twenty.hearing.json');
+  const heard = await cli('measure', wav, '--from', '10', '--to', '20', '--close', '12', '--pictures', pictures, '--save', saved);
+  assert.equal(heard.code, 0, heard.stderr);
+  assert.match(heard.stdout, /click\.wav: 0:10 to 0:20 of 0:24, 2 channels\n/);
+  assert.match(heard.stdout, /^ {2}A click, a jump of -?\d+\.\d dBFS, at 0:12\.50\.$/m);
+  assert.doesNotMatch(heard.stdout, /0:02\.5/);
+  for (const name of ['closeup-12.50s.png', 'closeup-12.00s.png']) assert.ok(existsSync(join(pictures, name)), name);
+  assert.match(heard.stdout, /spectrogram\.png: .* over 0:10\.0 to 0:20\.0 /);
+  // --json: the fault, the range and the pictures' ranges in file time
+  const j = JSON.parse((await cli('measure', wav, '--from', '10', '--to', '20', '--sound', '--json')).stdout);
+  assert.deepEqual(j.range, { fromSeconds: 10, toSeconds: 20 });
+  assert.equal(j.fileSeconds, 24);
+  near(j.sound.faults.find((f) => f.kind === 'click').seconds, 12.5, 0.001, 'the click');
+  assert.deepEqual(j.sound.settings.stretch, { fromSeconds: 10, toSeconds: 20 });
+  // A close-up is given in file time too: 12 is inside the stretch, 2.5 is not
+  const outside = await cli('measure', wav, '--from', '10', '--to', '20', '--close', '2.5');
+  assert.equal(outside.code, 2);
+  assert.match(outside.stderr, /--close 2\.5 is outside the stretch heard/);
+  // The whole file says no stretch
+  const whole = await cli('measure', wav, '--sound');
+  assert.match(whole.stdout, /click\.wav: 0:24, 2 channels\n/);
+  assert.match(whole.stdout, /^ {2}A click, a jump of -?\d+\.\d dBFS, at 0:12\.50\.$/m);
+  // The saved hearing is of 10 to 20 s: a stretch of it is asked for in file time
+  assert.deepEqual(parseSavedHearing(JSON.parse(readFileSync(saved, 'utf8'))).range, { fromSeconds: 10, toSeconds: 20 });
+  const inFile = await cli('measure', wav, '--from', '12', '--to', '18', '--against', saved, '--against-from', '12', '--against-to', '18');
+  assert.equal(inFile.code, 0, inFile.stderr);
+  assert.match(inFile.stdout, /Compared from saved measurements of a stretch/);
+  const before = await cli('measure', wav, '--against', saved, '--against-from', '2', '--against-to', '8');
+  assert.equal(before.code, 2);
+  assert.equal(before.stderr.trim(), 'fledgetone: that stretch is outside the file');
+  // An audio file read against, a stretch of it: in its own file time
+  const other = await cli('measure', wav, '--from', '0', '--to', '6', '--against', wav, '--against-from', '12', '--against-to', '18', '--json');
+  assert.equal(other.code, 0, other.stderr);
+  assert.equal(JSON.parse(other.stdout).against.notes[0], 'Read as click.wav against click.wav.');
+});
+
 test('measure: negative numbers, a missing file and folders that are not there are one plain line each, before any hearing', { skip, timeout: 120_000 }, async () => {
   const wav = join(tmp, 'follow-up.wav');
   writeFileSync(wav, makeWav());

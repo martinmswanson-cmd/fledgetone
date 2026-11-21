@@ -313,11 +313,16 @@ export function apply(args: string[], flags: Flags): number {
 }
 
 /** What `measure` prints of a file's loudness and balance, as it always has. */
-function measureText(path: string, m: { seconds: number; channels: number; silent: boolean; lufs: number | null; shortTermMaxLufs: number | null; truePeakDbtp: number | null; crestDb: number | null; regions: Array<{ name: string; db: number }>; note?: string }): string[] {
+function measureText(
+  path: string,
+  m: { seconds: number; channels: number; silent: boolean; lufs: number | null; shortTermMaxLufs: number | null; truePeakDbtp: number | null; crestDb: number | null; regions: Array<{ name: string; db: number }>; note?: string; range?: { fromSeconds: number; toSeconds: number }; fileSeconds?: number }
+): string[] {
   const note = m.note?.replace(/\.$/, '');
-  if (m.silent) return [`${path}: ${clock(m.seconds)}, silent: nothing to measure.`, ...(note ? [`(${note})`] : [])];
+  // (a stretch of the file is said as one, in the file's own time: "0:10 to 0:20 of 1:00")
+  const length = m.range && m.fileSeconds !== undefined ? `${clock(m.range.fromSeconds)} to ${clock(m.range.toSeconds)} of ${clock(m.fileSeconds)}` : clock(m.seconds);
+  if (m.silent) return [`${path}: ${length}, silent: nothing to measure.`, ...(note ? [`(${note})`] : [])];
   return [
-    `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
+    `${path}: ${length}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
     `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp ?? -Infinity)} dBTP, crest ${r1(m.crestDb!)} dB`,
     ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
     ...(note ? [`(Note: ${note}.)`] : []),
