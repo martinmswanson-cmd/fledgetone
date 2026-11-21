@@ -413,6 +413,23 @@ test('on a stage no two pigeons touch, at any frame, and none has to be lifted o
   assert.equal(flutters, 0);
 });
 
+test('on a stage no pigeon walks through the keyboard: from its end they go round the corner and along the lane', () => {
+  const song = fastSong();
+  const plan = planPigeons(song, { pads: true });
+  const bed = bedBox(plan.low, plan.high);
+  const end = Math.max(...song.notes.map((n) => n.end)) + 3;
+  // (some do walk the floor: the test is of something)
+  assert.ok(plan.pigeons.some((p) => !p.role && p.legs.some((l) => l.kind === 'walk')));
+  for (let t = -0.5; t < end; t += 1 / 60) {
+    posedAt(plan, t).forEach((b, i) => {
+      if (plan.pigeons[i].role || b.pos.y + b.lift > 0.2) return;
+      // Its feet are on the floor: then it's clear of the key bed by its own width
+      const inside = b.pos.x > bed.x0 - 0.4 && b.pos.x < bed.x1 + 0.4 && b.pos.z > bed.z0 - 0.4 && b.pos.z < bed.z1 + 0.4;
+      assert.ok(!inside, `bird ${i} (${b.leg.kind}) is on the floor inside the keyboard at t ${t.toFixed(2)}: ${b.pos.x.toFixed(2)}, ${b.pos.z.toFixed(2)}`);
+    });
+  }
+});
+
 test('every fast note is seen struck on its pad as it starts, by a bird that is on that pad', () => {
   const song = fastSong();
   const plan = planPigeons(song, { pads: true });

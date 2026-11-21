@@ -43,6 +43,8 @@ const BLACK_STAND_Z = -0.85;
 const WINGS_NEAR = 1.6;
 const WINGS_DEEP = 3.4;
 const WINGS_REACH = 4.6;
+/** How far beyond the keyboard's last key a bird rounds its corner, walking between the end and the lane beside the keys */
+const WINGS_CORNER = 1.9;
 /** How far behind its drum a drum's bird stands: its beak, pecking, comes down on the drum's top */
 const DRUM_STAND = 1.5;
 const FRONT_Z = WHITE_L / 2 + 2.2;
@@ -319,13 +321,24 @@ export function planPigeons(data: ShowcaseData, opts: PlanOptions = {}): PigeonP
       const key = up ? to : b.at;
       const ground = up ? b.at : to;
       const edge = new T.Vector3(key.x, 0, sideOf(key) * EDGE);
-      const walkTime = flatDist(ground, edge) / WALK_SPEED;
+      // (on a stage it waits beyond the keyboard's end: it walks round the corner and along the lane beside the keys, never through them)
+      const corner = staged ? new T.Vector3(ground.x < (x0 + x1) / 2 ? x0 - WINGS_CORNER : x1 + WINGS_CORNER, 0, edge.z) : null;
+      const cornerTime = corner ? flatDist(ground, corner) / WALK_SPEED : 0;
+      const walkTime = cornerTime + flatDist(corner ?? ground, edge) / WALK_SPEED;
       const time = walkTime + HOP_TIME;
       const t0 = Math.max(b.free, arrive - time);
       const t1 = Math.max(arrive, t0 + time * 0.5);
-      const split = t0 + ((up ? walkTime : HOP_TIME) / time) * (t1 - t0);
-      push(b, { kind: up ? 'walk' : 'hop', t0, t1: split, from: b.at.clone(), to: edge.clone() });
-      push(b, { kind: up ? 'hop' : 'walk', t0: split, t1, from: edge.clone(), to: to.clone() });
+      const pace = (t1 - t0) / time;
+      const split = t0 + (up ? walkTime : HOP_TIME) * pace;
+      if (up) {
+        if (corner) push(b, { kind: 'walk', t0, t1: t0 + cornerTime * pace, from: b.at.clone(), to: corner.clone() });
+        push(b, { kind: 'walk', t0: t0 + cornerTime * pace, t1: split, from: (corner ?? b.at).clone(), to: edge.clone() });
+        push(b, { kind: 'hop', t0: split, t1, from: edge.clone(), to: to.clone() });
+      } else {
+        push(b, { kind: 'hop', t0, t1: split, from: b.at.clone(), to: edge.clone() });
+        push(b, { kind: 'walk', t0: split, t1: t1 - cornerTime * pace, from: edge.clone(), to: (corner ?? to).clone() });
+        if (corner) push(b, { kind: 'walk', t0: t1 - cornerTime * pace, t1, from: corner.clone(), to: to.clone() });
+      }
       arrive = t1;
     } else {
       // Too far to walk: it flies (quickly, if it must)
@@ -1097,7 +1110,24 @@ export function overlapOf(a: Posed, b: Posed): { depth: number; nx: number; nz: 
 }
 
 /** Pushes touching birds apart, each by its give (at least `least`); true if they all came clear */
-function spaceOut(birds: Posed[], least: number): boolean {
+/** Moves a bird on the floor that's been pushed in under the keyboard back out, by the nearest way; how far it had to go */
+function keepOff(b: Posed, box: KeyBox): number {
+  if (b.give <= 0 || b.pos.y + b.lift > 0.2) return 0;
+  const m = BIRD_SHAPE.RADIUS * b.size + GAP;
+  const left = b.pos.x - (box.x0 - m);
+  const right = box.x1 + m - b.pos.x;
+  const back = b.pos.z - (box.z0 - m);
+  const front = box.z1 + m - b.pos.z;
+  const depth = Math.min(left, right, back, front);
+  if (depth <= 0) return 0;
+  if (depth === front) b.pos.z += depth;
+  else if (depth === back) b.pos.z -= depth;
+  else if (depth === left) b.pos.x -= depth;
+  else b.pos.x += depth;
+  return depth;
+}
+
+function spaceOut(birds: Posed[], least: number, keepOut?: KeyBox): boolean {
   for (let round = 0; round < 80; round++) {
     let worst = 0;
     for (let i = 0; i < birds.length; i++) {
@@ -1118,6 +1148,8 @@ function spaceOut(birds: Posed[], least: number): boolean {
         worst = Math.max(worst, depth);
       }
     }
+    // (and none is pushed in under the keyboard: the floor there isn't floor)
+    if (keepOut) for (const bird of birds) worst = Math.max(worst, keepOff(bird, keepOut));
     if (worst <= 1e-4) return true;
   }
   return false;
@@ -1129,10 +1161,10 @@ function spaceOut(birds: Posed[], least: number): boolean {
  * moves). It works from the poses at t alone, so a frame is the same however it's reached, and a
  * push grows and shrinks smoothly as birds come close and part (they step round each other).
  */
-export function solveSpacing(birds: Posed[]) {
+export function solveSpacing(birds: Posed[], keepOut?: KeyBox) {
   // First the birds that give way move; if that can't settle it (one boxed in), the birds playing
   // budge a little too (a small shift on their key, unseen beside a bird popping up)
-  if (spaceOut(birds, 0) || spaceOut(birds, 0.2)) return;
+  if (spaceOut(birds, 0, keepOut) || spaceOut(birds, 0.2, keepOut)) return;
   // Last resort: a bird boxed in (between birds playing their keys) flutters up over the one it
   // still touches, rather than through it
   for (let round = 0; round < 4; round++) {
@@ -1187,7 +1219,8 @@ export function birdsOnKeys(plan: PigeonPlanResult, t: number): number {
 /** Every bird's pose at t, kept clear of one another (what a frame draws) */
 export function posedAt(plan: PigeonPlanResult, t: number): Posed[] {
   const posed = plan.pigeons.map((p) => rawPose(p, t, plan.byKey));
-  solveSpacing(posed);
+  // (on a stage birds walk the floor beside the keyboard: they're kept from being pushed in under it)
+  solveSpacing(posed, plan.stage.banks.length || plan.stage.drums.length ? bedBox(plan.low, plan.high) : undefined);
   spreadWings(posed);
   return posed;
 }

@@ -9,6 +9,7 @@ second update on the same day gets `-2`, and so on).
 - **Pigeons video: fast songs get touch pads and drum pads.** A keyboard can't show a fast part well: the birds can't cross it in time, and each note is gone before its key has moved. Now a fast part (short, quick notes on 16 pitches or fewer, like an arpeggio or a busy bass line) gets a bank of touch pads in front of the keyboard: one pad for each note it uses, low to high, in its track's colour, with two to four birds of its own that hop from pad to pad and land as each note starts. Up to three parts get one, the busiest first.
   - **The drums are played too**: behind the keyboard a bird stomps a kick pad, and birds peck a snare, the hats and a drum for any other percussion. Before, drums weren't shown.
   - The keyboard keeps the slower parts (chords, tunes) and is only as long as they need, so everything is bigger and the camera holds the whole stage still.
+  - The keyboard's spare birds wait at its two ends, and walk round its corner and along the lane beside the keys to get on: never through the keyboard.
   - Songs with no fast parts and no drums look as they did. To keep everything on the keyboard, untick **Touch pads for fast parts, and drum pads** (Export › Video, with the Pigeons picture).
   - The same in the **Pigeons on the keys** tool: `pads: false` turns it off, and notes marked `drum` or `kick` are now played on the drum pads.
 
