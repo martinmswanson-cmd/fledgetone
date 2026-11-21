@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.21 — Pigeons video: touch pads and drum pads for fast songs
 
 - **Pigeons video: fast songs get touch pads and drum pads.** A keyboard can't show a fast part well: the birds can't cross it in time, and each note is gone before its key has moved. Now a fast part (short, quick notes on 16 pitches or fewer, like an arpeggio or a busy bass line) gets a bank of touch pads in front of the keyboard: one pad for each note it uses, low to high, in its track's colour, with two to four birds of its own that hop from pad to pad and land as each note starts. Up to three parts get one, the busiest first.
   - **The drums are played too**: behind the keyboard a bird stomps a kick pad, and birds peck a snare, the hats and a drum for any other percussion. Before, drums weren't shown.
