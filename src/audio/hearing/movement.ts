@@ -29,27 +29,35 @@ export function noteOf(hz: number, bpm: number): string | undefined {
   return undefined;
 }
 
-/** The mean absolute frame-to-frame change of the third-octave band levels, over bands louder than -70 dB. */
+/** How far under the loudest band level a band still counts in the frame-to-frame change, dB (so the reading does not depend on playback level). */
+const CHANGE_RANGE_DB = 60;
+/** How far under its own 95th-percentile level a band's envelope is floored, dB. */
+const ENVELOPE_RANGE_DB = 48;
+/** A band whose loudest envelope frame is under this, dB, is taken as silent and gives no modulation. */
+const ENVELOPE_SILENT_DB = -70;
+
+/** The mean absolute frame-to-frame change of the third-octave band levels, over bands within 60 dB of the loudest band level found. */
 function changeOf(mid: Float32Array, sampleRate: number): number {
   const size = 4096;
   const hop = Math.max(1, Math.round(0.05 * sampleRate));
   if (mid.length < size + hop) return 0;
   const { power } = framesOf(mid, sampleRate, size, hop);
   const { edges } = bandEdges(3, sampleRate);
-  let previous: number[] | null = null;
+  const frames = power.map((frame) => Array.from(toBands(frame, sampleRate, size, edges), db));
+  let loudest = -Infinity;
+  for (const levels of frames) for (const v of levels) if (v > loudest) loudest = v;
+  const gate = loudest - CHANGE_RANGE_DB;
   let sum = 0;
   let count = 0;
-  for (const frame of power) {
-    const levels = Array.from(toBands(frame, sampleRate, size, edges), db);
-    if (previous) {
-      for (let b = 0; b < levels.length; b++) {
-        if (levels[b] > -70 && previous[b] > -70) {
-          sum += Math.abs(levels[b] - previous[b]);
-          count++;
-        }
+  for (let f = 1; f < frames.length; f++) {
+    const levels = frames[f];
+    const previous = frames[f - 1];
+    for (let b = 0; b < levels.length; b++) {
+      if (levels[b] > gate && previous[b] > gate) {
+        sum += Math.abs(levels[b] - previous[b]);
+        count++;
       }
     }
-    previous = levels;
   }
   return count > 0 ? sum / count : 0;
 }
@@ -78,13 +86,19 @@ function modulationOf(
   const rate = sampleRate / frame;
   // The envelope is amplitude, so 20 log10
   const levels = new Float64Array(n);
+  for (let i = 0; i < n; i++) levels[i] = finite(20 * Math.log10(Math.max(envelope[i], 1e-12)));
+  const sorted = Float64Array.from(levels).sort();
+  // Floored relative to the envelope's own level, so the reading is the same at any playback level
+  if (sorted[n - 1] < ENVELOPE_SILENT_DB) return null;
+  const floor = percentile(sorted, 0.95) - ENVELOPE_RANGE_DB;
   let mean = 0;
   for (let i = 0; i < n; i++) {
-    levels[i] = Math.max(-80, finite(20 * Math.log10(Math.max(envelope[i], 1e-12))));
+    levels[i] = Math.max(floor, levels[i]);
     mean += levels[i];
   }
   mean /= n;
-  const sorted = Float64Array.from(levels).sort();
+  sorted.set(levels);
+  sorted.sort();
   const depth = percentile(sorted, 0.9) - percentile(sorted, 0.1);
   if (!(depth >= 2)) return null;
 

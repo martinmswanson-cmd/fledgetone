@@ -31,6 +31,8 @@ const FLOOR_DB = -200;
 const SILENT_DB = -150;
 const WIDTH_FLOOR_DB = -60;
 const ONSETS_FLOOR = 0.1;
+/** Band and region levels are floored this far under their report's whole, dB: under it is rounding noise, and not a tone. */
+const LEVEL_FLOOR_DB = -70;
 
 /** `x` to `places` decimals, rounding away from zero on a tie so that a change and its negation round alike, and never -0. */
 function round(x: number, places: number): number {
@@ -100,7 +102,7 @@ function sharedFreqs(a: number[], b: number[]): Array<{ f: number; i: number; j:
   return out;
 }
 
-/** A report's whole-spectrum-matched band levels (each band's total power minus the sum of all of them), at the shared bands. */
+/** A report's whole-spectrum-matched band levels, not yet floored (each band's total power minus the sum of all of them), at the shared bands. */
 function matchedBands(spectrum: BandSpectrum, picks: number[]): number[] {
   const total = totalBands(spectrum);
   const mine = picks.map((i) => total[i]);
@@ -117,13 +119,14 @@ function toneRows(a: Tone, b: Tone): { rows: Row[]; spectrum: SoundComparison['s
   if (shared.length > 0) {
     const ma = matchedBands(a.spectrum, shared.map((s) => s.i));
     const mb = matchedBands(b.spectrum, shared.map((s) => s.j));
-    changeDb = mb.map((v, k) => round(v - ma[k], 1));
+    changeDb = mb.map((v, k) => round(Math.max(LEVEL_FLOOR_DB, v) - Math.max(LEVEL_FLOOR_DB, ma[k]), 1));
     const here = { freqs };
     for (const r of REGIONS) {
       if (!freqs.some((f) => f >= r.lo && f < r.hi)) continue;
       const la = levelBetween(here, ma, r.lo, r.hi);
       const lb = levelBetween(here, mb, r.lo, r.hi);
-      rows.push({ group: 'tone', measure: r.name, a: la, b: lb, step: 1.5, style: DB, kind: 'dB', changeUnit: 'dB' });
+      if (la < LEVEL_FLOOR_DB && lb < LEVEL_FLOOR_DB) continue;
+      rows.push({ group: 'tone', measure: r.name, a: Math.max(LEVEL_FLOOR_DB, la), b: Math.max(LEVEL_FLOOR_DB, lb), step: 1.5, style: DB, kind: 'dB', changeUnit: 'dB' });
     }
   }
   if (a.centreHz > 0 && b.centreHz > 0) {
@@ -259,7 +262,10 @@ function powerMean(values: Array<number | null>): number | null {
   return n === 0 ? null : 10 * Math.log10(sum / n);
 }
 
-const round1 = (x: number) => Math.round(x * 10) / 10;
+const round1 = (x: number) => {
+  const r = Math.round(x * 10) / 10;
+  return r === 0 ? 0 : r;
+};
 
 /** The sides' level over the middle's across `lo` to `hi` Hz, dB, floored (as the stereo group reads it). */
 function sideOverMid(freqs: number[], mid: number[], side: number[], lo: number, hi: number): number {
@@ -272,12 +278,16 @@ function sideOverMid(freqs: number[], mid: number[], side: number[], lo: number,
 /** A report of the part of a saved one from `fromSeconds` up to `toSeconds`, from its "along" rows alone. */
 export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number): SoundReport {
   const step = r.along.stepSeconds;
+  if (!Number.isFinite(fromSeconds) || Number.isNaN(toSeconds)) throw new RangeError('that stretch holds nothing');
+  const from = Math.max(0, fromSeconds);
+  const to = Math.min(toSeconds, r.seconds);
   const rows: number[] = [];
   for (let i = 0; i < r.along.mid.length; i++) {
     const at = i * step;
-    if (at >= fromSeconds && at < toSeconds) rows.push(i);
+    if (at >= from && at < to) rows.push(i);
   }
   if (rows.length === 0) throw new RangeError('that stretch holds nothing');
+  const stretch = { fromSeconds: from, toSeconds: to, fromSaved: true };
 
   const freqs = r.along.freqs;
   const stereo = r.channels === 2 && rows.every((i) => r.along.side[i]?.length === freqs.length);
@@ -313,18 +323,6 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
     }
   });
   const centreHz = sum > 0 && live ? weighted / sum : 0;
-  let rolloffHz = 0;
-  if (sum > 0 && live) {
-    let acc = 0;
-    for (let i = 0; i < freqs.length; i++) {
-      if (freqs[i] < 20 || freqs[i] > 20000) continue;
-      acc += 10 ** (bands[i] / 10);
-      if (acc >= sum * 0.95) {
-        rolloffHz = freqs[i];
-        break;
-      }
-    }
-  }
   let tilt = 0;
   if (live && xs.length > 1) {
     const mx = xs.reduce((p, q) => p + q, 0) / xs.length;
@@ -339,28 +337,28 @@ export function stretchOf(r: SoundReport, fromSeconds: number, toSeconds: number
   }
   const subVsBassDb = live ? levelBetween(spectrum, bands, 20, 60) - levelBetween(spectrum, bands, 60, 200) : 0;
 
-  const tone: Tone = {
+  // tone.ts owns the roll-off and does not export it, so a stretch leaves it out rather than compute a second version.
+  const tone = {
     spectrum,
     regions,
     centreHz: Math.round(centreHz),
     tiltDbPerOctave: round1(tilt),
-    rolloffHz: Math.round(rolloffHz),
     subVsBassDb: round1(subVsBassDb),
     peaks: [],
-  };
+  } as unknown as Tone;
 
   const lufs = powerMean(rows.map((i) => r.along.lufs[i] ?? null));
   const dynamics: Dynamics = { lufs: lufs === null ? null : round1(lufs), shortTermMaxLufs: null, truePeakDbtp: null, crestDb: null, rangeLu: null };
 
   const first = rows[0] * step;
-  const last = Math.min(toSeconds, r.seconds, (rows[rows.length - 1] + 1) * step);
+  const head = { versions: { ...r.versions }, engine: r.engine, settings: { ...r.settings, stretch }, channels: r.channels };
+  const last = Math.min(to, (rows[rows.length - 1] + 1) * step);
+  const seconds = Math.round(Math.max(0, last - first) * 100) / 100;
+  if (!live) return { ...head, seconds, silent: true, faults: [], along: { stepSeconds: step, freqs: [], mid: [], side: [], lufs: [], chroma: [] }, words: ['It is silent.'] };
   const report: Omit<SoundReport, 'words'> = {
-    versions: { ...r.versions },
-    engine: r.engine,
-    settings: { ...r.settings, stretch: { fromSeconds, toSeconds, fromSaved: true } },
-    seconds: Math.round(Math.max(0, last - first) * 100) / 100,
-    channels: r.channels,
-    silent: !live,
+    ...head,
+    seconds,
+    silent: false,
     tone,
     dynamics,
     faults: [],
