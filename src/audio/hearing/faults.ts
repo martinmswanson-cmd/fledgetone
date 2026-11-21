@@ -421,17 +421,17 @@ function humBins(channels: readonly Float32Array[], sampleRate: number, needed: 
 
 /** The bins 2 to 5 Hz either side of `hz` (the window spreads a steady tone into the bins 1 Hz either side, so those are left out). */
 const NEIGHBOURS = [-5, -4, -3, -2, 2, 3, 4, 5];
-/** How far either side of a mains line other lines are looked for (a pattern repeating a whole number of times a second puts a comb of lines across it). */
+/** The widest comb spacing looked for, Hz (a pattern repeating a whole number of times a second puts a comb of lines at that spacing across the mains line). */
 const COMB = 20;
 
 /**
  * Mains hum at 50 or 60 Hz, read in 1-second frames (1 Hz bins). On the spectrum averaged over the
  * frames, the bin is a peak at least 12 dB over the median of its neighbours, and its second or third
  * harmonic a peak at least 6 dB over theirs. In each frame it stands at least 6 dB over its neighbours
- * in 90% of the frames, and its level there spans less than 3 dB (the middle 80% of frames). And no other
- * line within 20 Hz of it, within 20 dB of its level, stands 6 dB over its own neighbours: a kick or a
- * note repeated a whole number of times a second (6, 10, 12) makes a comb of lines that lands on 50 or
- * 60 Hz, while hum is one line with its harmonics. A note or a wobble comes and goes, or peaks off the
+ * in 90% of the frames, and its level there spans less than 3 dB (the middle 80% of frames). And it is not
+ * in a comb (see comb): a kick or a note repeated a whole number of times a second (5, 6, 10, 12) makes
+ * lines at that spacing which land on 50 or 60 Hz, while hum is one line with its harmonics, and a held
+ * bass note beside it is one more line, not a comb. A note or a wobble comes and goes, or peaks off the
  * mains frequency; hum stays on it.
  */
 function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault[] {
@@ -439,7 +439,7 @@ function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault
   const needed = new Set<number>();
   for (const base of [50, 60]) {
     for (const h of [2, 3]) for (let k = -5; k <= 5; k++) needed.add(base * h + k);
-    for (let k = -COMB - 5; k <= COMB + 5; k++) needed.add(base + k);
+    for (let k = -2 * COMB - 5; k <= 2 * COMB + 5; k++) needed.add(base + k);
   }
   const { frames, perFrame, mean } = humBins(channels, sampleRate, needed);
   const scratch = new Float64Array(NEIGHBOURS.length);
@@ -454,14 +454,25 @@ function humFaults(channels: readonly Float32Array[], sampleRate: number): Fault
     const p = mean.get(hz)!;
     return p > 1e-10 && p >= mean.get(hz - 1)! && p >= mean.get(hz + 1)! && p >= 10 ** (overDb / 10) * floorOf(hz, (f) => mean.get(f)!);
   };
-  /** Whether another line within COMB Hz of `hz` (and within 20 dB of it) stands 6 dB over its own neighbours: a comb. */
+  /** Whether `f` is a line: a local peak within 20 dB of `level`, standing 6 dB over its own neighbours. */
+  const line = (f: number, level: number): boolean => {
+    const p = mean.get(f)!;
+    return p >= level / 100 && p >= mean.get(f - 1)! && p >= mean.get(f + 1)! && p >= 4 * floorOf(f, (g) => mean.get(g)!);
+  };
+  /**
+   * Whether `hz` sits in a comb: for some spacing s of hz / m (m whole, s from 2 to 20 Hz: the rate of a
+   * pattern repeated so many times a second that hz is one of its lines), there are lines at the bin
+   * nearest hz - s or hz + s and at one more of hz - 2s, hz - s, hz + s, hz + 2s. One line beside it (a
+   * held bass note) is no comb.
+   */
   const comb = (hz: number): boolean => {
     const level = mean.get(hz)!;
-    for (let k = -COMB; k <= COMB; k++) {
-      if (Math.abs(k) <= 1) continue;
-      const f = hz + k;
-      const p = mean.get(f)!;
-      if (p >= level / 100 && p >= mean.get(f - 1)! && p >= mean.get(f + 1)! && p >= 4 * floorOf(f, (g) => mean.get(g)!)) return true;
+    for (let m = Math.ceil(hz / COMB); hz / m >= 2; m++) {
+      const spacing = hz / m;
+      const at = (k: number) => line(Math.round(hz + k * spacing), level);
+      const near = [-1, 1].filter(at).length;
+      const far = [-2, 2].filter(at).length;
+      if (near >= 1 && near + far >= 2) return true;
     }
     return false;
   };

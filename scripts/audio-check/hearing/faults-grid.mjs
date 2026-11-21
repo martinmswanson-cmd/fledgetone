@@ -116,6 +116,40 @@ hum.push(['hum: 60 Hz under kick and hats', () => S.mix(G.hum60(10), G.kickAndHa
 hum.push(['hum: 50 Hz under kick and hats', () => S.mix(G.hum50(10), G.kickAndHats(10)), is(50)]);
 family('Hum', 'hum', hum);
 
+// Hum under a held bass note: found (one line beside the mains line is a note, not a comb)
+const heldNote = [];
+const held = new Map();
+const wave = (shape, hz) => {
+  const key = `${shape} ${hz}`;
+  if (!held.has(key)) held.set(key, shape === 'sine' ? S.sine(hz, 10, 0) : shape === 'saw' ? S.saw(hz, 10, 0) : G.limitedSquare(hz, 10, 1));
+  return held.get(key);
+};
+for (const [humHz, make, notes] of [[60, G.hum60, [41.2, 49, 55, 73.4]], [50, G.hum50, [41.2, 55, 61.74, 73.4]]])
+  for (const hz of notes) for (const shape of ['sine', 'saw', 'square']) for (const db of [-12, -20, -30])
+    heldNote.push([`${humHz} Hz hum under a held ${shape} at ${hz} Hz, ${db} dB`, () => S.mix(make(10), S.gain(wave(shape, hz), db)), is(humHz)]);
+family('Hum under a held bass note (found)', 'hum', heldNote);
+
+// Walking basslines with no hum: notes near 50 and 60 Hz changing every 0.5 s or 1 s
+const walks = [];
+const bassline = (notes, every, shape) => S.at(10, Array.from({ length: Math.round(10 / every) }, (_, i) => [i * every, G.fade(S.gain(wave(shape, notes[i % notes.length]).subarray(0, Math.round(every * SR)), -8))]));
+for (const notes of [[49, 55, 61.74, 55], [55, 61.74, 49, 41.2], [61.74, 61.74, 55, 49], [49, 49, 49, 55]])
+  for (const every of [0.5, 1]) for (const shape of ['sine', 'saw']) {
+    walks.push([`bassline ${notes.join(' ')} every ${every} s, ${shape}`, () => bassline(notes, every, shape)]);
+    walks.push([`bassline ${notes.join(' ')} every ${every} s, ${shape}, over pink`, () => S.mix(S.pink(10, -30, 3), bassline(notes, every, shape))]);
+  }
+family('Hum in walking basslines with no hum in them (none wanted)', 'hum', walks);
+
+// Measured, not judged: hum a few hertz from a held note, and hum under a walking bassline
+if (wanted('Hum near a held note')) {
+  console.log('\nHum near a held note, and under a walking bassline (measured; not counted as failures)');
+  for (const [humHz, make, hz] of [[60, G.hum60, 61.74], [60, G.hum60, 58.27], [50, G.hum50, 49], [50, G.hum50, 51.91]])
+    for (const shape of ['sine', 'saw']) {
+      const row = [-12, -20, -30, -40].map((db) => (kinds(S.mix(make(10), S.gain(wave(shape, hz), db)), 'hum').some((f) => f.value === humHz) ? 'found' : 'missed'));
+      console.log(`  ${humHz} Hz hum under a held ${shape} at ${hz} Hz, -12/-20/-30/-40 dB: ${row.join(' ')}`);
+    }
+  for (const every of [0.5, 1]) console.log(`  60 Hz hum under bassline 49 55 61.74 55 every ${every} s: ${kinds(S.mix(G.hum60(10), bassline([49, 55, 61.74, 55], every, 'saw')), 'hum').map((f) => f.value).join(' ') || 'missed'}`);
+}
+
 // ---- DC
 
 const dc = [];
@@ -133,6 +167,10 @@ const pinkDc = (seed) => S.pink(8, -40, seed).map((v) => v + 0.005);
 dc.push(['quiet pink at -40 dB + 0.005 (seed 1)', () => pinkDc(1), within(meanDb(pinkDc(1)))]);
 dc.push(['the bed - 0.01', () => G.bed(4).map((v) => v - 0.01), within(-40)]);
 family('DC', 'dc', dc);
+if (wanted('DC in fast kick rolls')) {
+  console.log('\nDC in fast kick rolls (a known limit: measured, not counted as failures)');
+  for (const rate of [10, 12, 16]) console.log(`  250 ms 55 Hz sine kick, ${rate} a second: ${kinds(G.kickLoop(rate, 8, { hz: 55, decayMs: 250, peak: 0.8 }), 'dc').map((f) => f.value).join(' ') || 'none'}`);
+}
 if (wanted('DC offsets on quiet pink')) {
   let found = 0;
   const values = [];
