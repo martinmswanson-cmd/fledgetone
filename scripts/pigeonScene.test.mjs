@@ -17,7 +17,7 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, keyAt, KEY_TRAVEL, peckAt, padKey } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, keyAt, KEY_TRAVEL, peckAt, padKey, focusAt } = await import('../src/audio/pigeonScene.ts');
 const { stageFor, isFastPart, drumKind, bankShape, padSpot, PAD_W, PAD_D, PAD_GAP } = await import('../src/audio/pigeonStage.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
@@ -470,4 +470,32 @@ test('a drum bird pecks as each hit lands, and the kick bird stomps its pad', ()
   let most = 0;
   for (let t = 0; t < 30; t += 0.25) most = Math.max(most, birdsOnKeys(plan, t));
   assert.ok(most >= 4 && most <= plan.pigeons.filter((p) => !p.role).length);
+});
+
+test('the camera moves smoothly, also in slow music with long held notes: no note drops out of its aim all at once', () => {
+  // Slow piano: chords held for seven seconds, a few notes of a tune over them, every 7.5 seconds
+  const notes = [];
+  for (let b = 0; b < 8; b++) {
+    const at = b * 7.5;
+    for (const [i, m] of [38 + (b % 3) * 5, 54, 57, 61, 64].entries()) notes.push(note(at + i * 0.12, 7.1 - i * 0.12, m, 0));
+    for (const [i, m] of [76, 78, 73].entries()) notes.push(note(at + 2.8 + i * 0.9, 0.9, m + (b % 2) * 2, 1));
+    notes.push(note(at + 5.2, 1.8, 93 - (b % 4) * 3, 2));
+  }
+  const plan = planPigeons(data(notes));
+  let fastest = 0;
+  let zoomJump = 0;
+  let before = focusAt(plan, -1);
+  for (let t = -1 + 1 / 60; t < 64; t += 1 / 60) {
+    const now = focusAt(plan, t);
+    fastest = Math.max(fastest, Math.abs(now.x - before.x) * 60);
+    zoomJump = Math.max(zoomJump, Math.abs(now.spread - before.spread) * 60);
+    before = now;
+  }
+  // (white keys' widths a second: a drift, never a jump. Before, a chord left the sum 8 seconds after it started, still sounding in the ear, and the camera leapt most of a key in one frame)
+  assert.ok(fastest < 8, `the camera's aim moves at ${fastest.toFixed(1)} keys a second`);
+  assert.ok(zoomJump < 8, `how spread the music is changes at ${zoomJump.toFixed(1)} keys a second`);
+  // and it does follow the music: it isn't just held still
+  const aims = [];
+  for (let t = 0; t < 60; t += 0.25) aims.push(focusAt(plan, t).x);
+  assert.ok(Math.max(...aims) - Math.min(...aims) > 0.5);
 });

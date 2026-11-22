@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Pigeons video: the camera no longer jerks in slow songs.** In music with long held notes (a slow piano piece, pads) a chord stopped counting toward where the camera looks eight seconds after it started, all at once, even if it had only just ended: the camera jumped up to a key's width in one frame, again and again. Every note now fades out of the camera's aim, however long it is, so the camera drifts smoothly.
+
 ## 2026.11.21-2 — Pigeons video: touch pads and drum pads for fast songs
 
 - **Pigeons video: fast songs get touch pads and drum pads.** A keyboard can't show a fast part well: the birds can't cross it in time, and each note is gone before its key has moved. Now a fast part (short, quick notes on 16 pitches or fewer, like an arpeggio or a busy bass line) gets a bank of touch pads in front of the keyboard: one pad for each note it uses, low to high, in its track's colour, with two to four birds of its own that hop from pad to pad and land as each note starts. Up to three parts get one, the busiest first.
