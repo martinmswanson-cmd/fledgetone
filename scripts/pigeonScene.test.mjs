@@ -17,7 +17,8 @@ register(
 );
 
 const T = await import('three');
-const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, keyAt, KEY_TRAVEL } = await import('../src/audio/pigeonScene.ts');
+const { planPigeons, posedAt, overlapOf, makePigeon, applyPose, BIRD_SHAPE, keyBoxes, bedBox, KEY_PRESS, birdsOnKeys, keyDown, keyAt, KEY_TRAVEL, peckAt, padKey } = await import('../src/audio/pigeonScene.ts');
+const { stageFor, isFastPart, drumKind, bankShape, padSpot, PAD_W, PAD_D, PAD_GAP } = await import('../src/audio/pigeonStage.ts');
 
 const note = (start, len, midi, track = 0) => ({ start, end: start + len, midi, color: '#888', track, drum: false });
 const data = (notes) => ({ notes: notes.sort((a, b) => a.start - b.start), tracks: [], bars: [] });
@@ -325,4 +326,148 @@ test('every note is seen played: one that starts on a key already held is struck
     }
     assert.ok(seen > p.notes.length * 0.9);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// A fast song's stage (src/audio/pigeonStage.ts): fast parts on banks of pads, the drums on drum pads
+
+/** A busy song: slow chords, a fast arpeggio on eight pitches (16ths at 150 BPM), a fast bass on three, a lead, and drums */
+function fastSong() {
+  const notes = [];
+  const step = 0.1;
+  const arp = [60, 63, 67, 70, 72, 75, 79, 82];
+  let seed = 11;
+  const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let i = 0; i < 300; i++) {
+    notes.push(note(i * step, 0.08, arp[Math.floor(r() * arp.length)], 1));
+    if (i % 2 === 0) notes.push(note(i * step, 0.15, [36, 39, 43][Math.floor(r() * 3)], 2));
+    if (i % 3 === 0) notes.push(note(i * step, 0.09, arp[Math.floor(r() * arp.length)], 1));
+  }
+  for (let b = 0; b < 8; b++) for (const m of [48, 55, 60, 63]) notes.push(note(b * 3.75, 3.6, m, 0));
+  for (let i = 0; i < 40; i++) notes.push(note(i * 0.75, 0.6, 72 + Math.floor(r() * 8), 3));
+  const hit = (t, midi, kick) => ({ start: t, end: t + 0.1, midi, color: '#888', track: 4, drum: true, ...(kick ? { kick: true } : {}) });
+  for (let i = 0; i < 300; i++) {
+    notes.push(hit(i * step, 30));
+    if (i % 4 === 0) notes.push(hit(i * step, 24, true));
+    if (i % 8 === 4) notes.push(hit(i * step, 26));
+  }
+  const d = data(notes);
+  d.tracks = ['Chords', 'Arp', 'Bass', 'Lead', 'Drums'].map((name, i) => ({ name, color: ['#a855f7', '#3b82f6', '#22c55e', '#ec4899', '#888888'][i] }));
+  return d;
+}
+
+test('a stage sorts a song: fast parts to banks of pads, the drums to drum pads, the rest to the keyboard', () => {
+  const song = fastSong();
+  assert.equal(isFastPart(song.notes.filter((n) => n.track === 1)), true);
+  assert.equal(isFastPart(song.notes.filter((n) => n.track === 0)), false, 'slow chords stay on the keys');
+  assert.equal(isFastPart(song.notes.filter((n) => n.track === 3)), false, 'and a tune of longer notes');
+  // (too many pitches for a bank of pads: a fast run over three octaves stays on the keys)
+  assert.equal(isFastPart(Array.from({ length: 80 }, (_, i) => note(i * 0.1, 0.08, 40 + (i % 36)))), false);
+  const stage = stageFor(song, true, () => 0);
+  assert.deepEqual(stage.banks.map((b) => b.name), ['Bass', 'Arp'], 'lowest part at the left');
+  assert.deepEqual(stage.banks[1].pitches, [60, 63, 67, 70, 72, 75, 79, 82]);
+  assert.deepEqual(stage.drums.map((d) => d.kind), ['kick', 'snare', 'hat']);
+  assert.deepEqual([...new Set(stage.keys.map((n) => n.track))].sort(), [0, 3]);
+  assert.equal(stage.keys.length + stage.banks.reduce((a, b) => a + b.notes.length, 0), song.notes.filter((n) => !n.drum).length, 'every pitched note is somewhere');
+  // The pads of a bank: one a pitch, none sharing floor with another, and no bank with another
+  for (const b of stage.banks) {
+    const spots = b.pitches.map((m) => padSpot(b, m));
+    for (let i = 0; i < spots.length; i++) for (let j = i + 1; j < spots.length; j++) assert.ok(Math.abs(spots[i].x - spots[j].x) >= PAD_W + PAD_GAP - 1e-9 || Math.abs(spots[i].z - spots[j].z) >= PAD_D + PAD_GAP - 1e-9);
+  }
+  assert.ok(stage.banks[0].x + (bankShape(3).cols * (PAD_W + PAD_GAP)) / 2 < stage.banks[1].x - (bankShape(8).cols * (PAD_W + PAD_GAP)) / 2);
+  // Off, it's as it was: everything pitched on the keyboard, no drums
+  const plain = stageFor(song, false, () => 0);
+  assert.deepEqual([plain.banks.length, plain.drums.length, plain.keys.length], [0, 0, song.notes.filter((n) => !n.drum).length]);
+  // A song of nothing but fast parts keeps one for the keyboard
+  const allFast = data([...Array.from({ length: 40 }, (_, i) => note(i * 0.1, 0.08, 60 + (i % 4), 0)), ...Array.from({ length: 60 }, (_, i) => note(i * 0.1, 0.08, 72 + (i % 5), 1))]);
+  const one = stageFor(allFast, true, () => 0);
+  assert.equal(one.banks.length, 1);
+  assert.ok(one.keys.length > 0);
+  // Which drum a hit is
+  assert.deepEqual([{ midi: 24 }, { midi: 60, kick: true }, { midi: 38 }, { midi: 42 }, { midi: 50 }].map(drumKind), ['kick', 'kick', 'snare', 'hat', 'other']);
+});
+
+test('on a stage no two pigeons touch, at any frame, and none has to be lifted over another', () => {
+  const song = fastSong();
+  const plan = planPigeons(song, { pads: true });
+  assert.deepEqual([plan.pigeons.filter((p) => p.role === 'kick').length, plan.pigeons.filter((p) => p.role === 'drum').length], [1, 2]);
+  assert.ok(plan.pigeons.filter((p) => p.role === 'pad').length >= 4);
+  const end = Math.max(...song.notes.map((n) => n.end)) + 3;
+  let worst = -Infinity;
+  let where = '';
+  let flutters = 0;
+  for (let t = -0.5; t < end; t += 1 / 60) {
+    const posed = posedAt(plan, t);
+    if (posed.some((b) => b.flutter)) flutters++;
+    for (let i = 0; i < posed.length; i++) {
+      for (let j = i + 1; j < posed.length; j++) {
+        const { depth } = overlapOf(posed[i], posed[j]);
+        if (depth > worst) {
+          worst = depth;
+          where = `t ${t.toFixed(3)}: birds ${i} (${plan.pigeons[i].role ?? 'keys'}) and ${j} (${plan.pigeons[j].role ?? 'keys'})`;
+        }
+      }
+    }
+  }
+  assert.ok(worst < 0.019, `birds touch, ${worst.toFixed(4)} deep, at ${where}`);
+  assert.equal(flutters, 0);
+});
+
+test('on a stage no pigeon walks through the keyboard: from its end they go round the corner and along the lane', () => {
+  const song = fastSong();
+  const plan = planPigeons(song, { pads: true });
+  const bed = bedBox(plan.low, plan.high);
+  const end = Math.max(...song.notes.map((n) => n.end)) + 3;
+  // (some do walk the floor: the test is of something)
+  assert.ok(plan.pigeons.some((p) => !p.role && p.legs.some((l) => l.kind === 'walk')));
+  for (let t = -0.5; t < end; t += 1 / 60) {
+    posedAt(plan, t).forEach((b, i) => {
+      if (plan.pigeons[i].role || b.pos.y + b.lift > 0.2) return;
+      // Its feet are on the floor: then it's clear of the key bed by its own width
+      const inside = b.pos.x > bed.x0 - 0.4 && b.pos.x < bed.x1 + 0.4 && b.pos.z > bed.z0 - 0.4 && b.pos.z < bed.z1 + 0.4;
+      assert.ok(!inside, `bird ${i} (${b.leg.kind}) is on the floor inside the keyboard at t ${t.toFixed(2)}: ${b.pos.x.toFixed(2)}, ${b.pos.z.toFixed(2)}`);
+    });
+  }
+});
+
+test('every fast note is seen struck on its pad as it starts, by a bird that is on that pad', () => {
+  const song = fastSong();
+  const plan = planPigeons(song, { pads: true });
+  plan.stage.banks.forEach((bank, bi) => {
+    const birds = plan.pigeons.filter((p) => p.role === 'pad' && p.legs.some((l) => l.note && l.note.track === bank.track));
+    assert.ok(birds.length >= 2 && birds.length <= 4);
+    for (const n of bank.notes) {
+      const spot = padSpot(bank, n.midi);
+      // A bird is standing on the note's pad as it starts (landed for it, or on it still from the same note a moment before)
+      const on = birds.some((b) => b.legs.some((l) => l.kind === 'press' && l.t0 <= n.start + 1e-6 && l.t1 > n.start && Math.abs(l.to.x - spot.x) < 1e-6 && Math.abs(l.to.z - spot.z) < 1e-6));
+      assert.ok(on, `no bird on the pad for ${n.midi} at ${n.start.toFixed(2)} (${bank.name})`);
+      // and the pad lights for it
+      assert.ok(keyAt(plan.byPad.get(padKey(bi, n.midi)), n.start + KEY_TRAVEL + 0.001).down > 0);
+    }
+    // No bird leaves its bank: every leg of it starts and ends on one of its pads
+    const spots = bank.pitches.map((m) => padSpot(bank, m));
+    for (const b of birds) for (const l of b.legs) assert.ok(spots.some((s) => Math.abs(l.to.x - s.x) < 1e-6 && Math.abs(l.to.z - s.z) < 1e-6));
+  });
+  // The keyboard is only as long as the slow parts need, and its birds play only those
+  assert.ok(plan.low <= 48 && plan.high >= 79 && plan.high - plan.low <= 48);
+  for (const p of plan.pigeons.filter((x) => !x.role)) for (const l of p.legs) if (l.note) assert.ok([0, 3].includes(l.note.track));
+});
+
+test('a drum bird pecks as each hit lands, and the kick bird stomps its pad', () => {
+  const hits = [1, 1.1, 2];
+  assert.equal(peckAt(hits, 0.5), 0);
+  assert.ok(Math.abs(peckAt(hits, 1) - 1) < 1e-9, 'beak on the drum as the hit sounds');
+  assert.ok(peckAt(hits, 1.05) > 0.2 && peckAt(hits, 1.05) < 1, 'between quick hits it only comes part of the way up');
+  assert.ok(Math.abs(peckAt(hits, 1.1) - 1) < 1e-9);
+  assert.equal(peckAt(hits, 1.5), 0);
+  const song = fastSong();
+  const plan = planPigeons(song, { pads: true });
+  const kick = plan.pigeons.find((p) => p.role === 'kick');
+  const stomps = kick.legs.filter((l) => l.kind === 'press').map((l) => +l.t0.toFixed(4));
+  assert.deepEqual(stomps, plan.stage.drums[0].hits.map((t) => +t.toFixed(4)));
+  for (const p of plan.pigeons.filter((x) => x.role === 'drum')) assert.ok(p.pecks.length > 0);
+  // The count of pigeons on the keys is of the keyboard's birds: the pads' and drums' aren't in it
+  let most = 0;
+  for (let t = 0; t < 30; t += 0.25) most = Math.max(most, birdsOnKeys(plan, t));
+  assert.ok(most >= 4 && most <= plan.pigeons.filter((p) => !p.role).length);
 });
