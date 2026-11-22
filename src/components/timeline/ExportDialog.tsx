@@ -970,6 +970,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   <input type="checkbox" checked={settings.pigeons.pads} onChange={(e) => update({ pigeons: { ...settings.pigeons, pads: e.target.checked } })} className="accent-cyan-400" />
                   Touch pads for fast parts, and drum pads
                 </label>
+                <label className="flex items-center gap-1.5 text-forge-text" title="The camera zooms out to hold every key the song plays, from its lowest note to its highest, and stays there: high notes far from the rest are seen pressed. Off: it follows what's playing, closer in, and a note far from the others can be out of the picture.">
+                  <input type="checkbox" checked={settings.pigeons.whole} onChange={(e) => update({ pigeons: { ...settings.pigeons, whole: e.target.checked } })} className="accent-cyan-400" />
+                  Zoom out to show every note played
+                </label>
                 {(
                   [
                     ['Backgrounds', 'backgrounds', 'backgroundWhen', 'backgroundBars', PIGEON_BACKGROUNDS, 'background', 'One fades into the next'],

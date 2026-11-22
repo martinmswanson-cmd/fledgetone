@@ -356,7 +356,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   start, pecks and stomps on the hits. The same scene is
   the Tools page's **Pigeons on the keys** (`tools/pigeon-keys/`, bundled with three.js inside,
   minified, from `src/audio/pigeonKit.ts` by `pigeonKeys()` in `scripts/tools-site.mjs`; MIT, with
-  three's licence in the zip). Not done: on a stage the close-up is much like the diagonal (it holds everything), a look at it on a phone's GPU; from some
+  three's licence in the zip). The camera's aim is `focusAt` (pure, smooth: every note fades out of it however long it is). `PigeonLook.whole` (the dialog's Zoom out to show every note played) makes the camera hold every key the song plays (`played`), by the stage's fitting. Not done: on a stage the close-up is much like the diagonal (it holds everything), a look at it on a phone's GPU; from some
   angles the keyboard passes under the title (its halo keeps it readable).
 - **Lines video picture** (2026.11.17-4): a third Picture for the MP4 export, built from the notes
   `showcaseData` collects (which now also marks a kit's `kick` and `perc`, an instrument with no

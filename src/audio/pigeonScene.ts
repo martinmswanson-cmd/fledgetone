@@ -1218,6 +1218,61 @@ export function birdsOnKeys(plan: PigeonPlanResult, t: number): number {
   return n;
 }
 
+/** How near in time (seconds) a note is to count toward where the camera looks */
+const FOCUS_REACH = 2.5;
+const focusWeight = (d: number) => Math.exp(-(d * d) / 1.5);
+/** Notes further off than that count a little too, out to this far: in a silence the camera stays about where the music was and will be, and doesn't swing to the keyboard's middle and back */
+const FOCUS_FAR = 20;
+const FOCUS_FAR_SHARE = 0.03;
+const farWeight = (d: number) => Math.exp(-(d * d) / 60);
+const longestOf = new WeakMap<ShowcaseNote[], number>();
+
+/**
+ * Where the camera looks along the keyboard at t, and how spread out the music is about there: the
+ * middle of the notes sounding, with those just gone and just coming counting for less the further
+ * off they are, and those further off for a little. It moves smoothly whatever the notes: a note comes into
+ * the sum and leaves it at nothing, however long it is (a held chord that ended a moment ago still
+ * counts, as it fades).
+ */
+export function focusAt(plan: Pick<PigeonPlanResult, 'notes' | 'low' | 'high'>, t: number): { x: number; spread: number } {
+  const notes = plan.notes;
+  let longest = longestOf.get(notes);
+  if (longest === undefined) {
+    longest = 0;
+    for (const n of notes) longest = Math.max(longest, n.end - n.start);
+    longestOf.set(notes, longest);
+  }
+  // (the notes are in order of their starts: none that started before this can still count)
+  const from = t - longest - FOCUS_FAR;
+  let lo = 0;
+  let hi = notes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (notes[mid].start < from) lo = mid + 1;
+    else hi = mid;
+  }
+  const floor = focusWeight(FOCUS_REACH);
+  const farFloor = farWeight(FOCUS_FAR);
+  const xs: number[] = [];
+  const ws: number[] = [];
+  for (let i = lo; i < notes.length && notes[i].start < t + FOCUS_FAR; i++) {
+    const n = notes[i];
+    const d = n.end < t ? t - n.end : n.start > t ? n.start - t : 0;
+    if (d >= FOCUS_FAR) continue;
+    xs.push(keyX(n.midi));
+    ws.push(Math.max(0, focusWeight(d) - floor) + FOCUS_FAR_SHARE * (farWeight(d) - farFloor));
+  }
+  const middle = (keyX(plan.low) + keyX(plan.high)) / 2;
+  // (the least pull toward the middle, for when there's no music for a long way either side)
+  let sum = middle * 0.002;
+  let weight = 0.002;
+  xs.forEach((x, i) => ((sum += x * ws[i]), (weight += ws[i])));
+  const x = sum / weight;
+  let dev = 0;
+  xs.forEach((v, i) => (dev += Math.abs(v - x) * ws[i]));
+  return { x, spread: dev / weight };
+}
+
 /** Every bird's pose at t, kept clear of one another (what a frame draws) */
 export function posedAt(plan: PigeonPlanResult, t: number): Posed[] {
   const posed = plan.pigeons.map((p) => rawPose(p, t, plan.byKey));
@@ -1849,6 +1904,8 @@ export class PigeonScene {
   /** The floor the stage takes up, if there's one (pads, drums): the camera holds all of it */
   private box: { x0: number; x1: number; z0: number; z1: number } | null = null;
   /** Each pad: its mesh, its colours, and its key in plan.byPad */
+  /** The floor under every key the song plays, with a little room round it (what the camera holds with the look's `whole`) */
+  private played: { x0: number; x1: number; z0: number; z1: number } | null = null;
   private pads: Array<{ mesh: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; key: number }> = [];
   /** Each drum (and the kick's pad): its skin, and when it's hit */
   private drums: Array<{ skin: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; hits: number[]; rest: number }> = [];
@@ -1859,6 +1916,8 @@ export class PigeonScene {
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
     this.look = cleanLook(opts.look);
     this.plan = planPigeons(data, { pads: this.look.pads });
+    const mids = this.plan.notes.map((n) => n.midi);
+    if (mids.length) this.played = { x0: keyX(minOf(mids)) - 1.6, x1: keyX(maxOf(mids)) + 1.6, z0: -WHITE_L / 2 - 1.2, z1: WHITE_L / 2 + 1.6 };
     this.canvas = opts.canvas ?? document.createElement('canvas');
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -2043,16 +2102,18 @@ export class PigeonScene {
     const ux = e[4];
     const seen = Math.hypot(rx, ux);
     // (a stage in a tall frame runs steeply up it, and nearly level across a wide one: it's long, and so fills the frame)
-    const slope = !this.box ? (this.tall ? cam.slope.tall : cam.slope.wide) : this.tall ? Math.sign(cam.slope.tall || 1) * Math.max(Math.abs(cam.slope.tall), STAGE_SLOPE.tall) : Math.sign(cam.slope.wide) * Math.min(Math.abs(cam.slope.wide), STAGE_SLOPE.wide);
+    // (what the camera holds all of: a stage, or with the look's `whole` every key the song plays)
+    const box = this.box ?? (this.look.whole ? this.played : null);
+    const slope = !box ? (this.tall ? cam.slope.tall : cam.slope.wide) : this.tall ? Math.sign(cam.slope.tall || 1) * Math.max(Math.abs(cam.slope.tall), STAGE_SLOPE.tall) : Math.sign(cam.slope.wide) * Math.min(Math.abs(cam.slope.wide), STAGE_SLOPE.wide);
     // (the lesser turn that gives that slope: the camera stays the right way up)
     this.camera.rotateZ(uprightRoll(rx, ux, slope));
-    if (this.box) {
+    if (box) {
       // A stage (pads, drums): the camera holds all of it, the same all through, however the music
       // moves about it, inside the frame's safe part. Every angle does, the close-up too (it's
       // the nearest and lowest of them): a part out of the frame would be a part not seen
       this.camera.updateMatrixWorld();
       const m = this.camera.matrixWorld.elements;
-      const { x0, x1, z0, z1 } = this.box;
+      const { x0, x1, z0, z1 } = box;
       const mid = new T.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
       let a0 = Infinity;
       let a1 = -Infinity;
@@ -2223,32 +2284,7 @@ export class PigeonScene {
    * playing around then (the nearer in time counting more), and how far it spreads either side
    */
   private focus(t: number): { x: number; spread: number } {
-    const notes = this.plan.notes;
-    const xs: number[] = [];
-    const ws: number[] = [];
-    let lo = 0;
-    let hi = notes.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (notes[mid].start < t - 8) lo = mid + 1;
-      else hi = mid;
-    }
-    for (let i = lo; i < notes.length && notes[i].start < t + 2.5; i++) {
-      const n = notes[i];
-      const d = n.end < t ? t - n.end : n.start > t ? n.start - t : 0;
-      if (d > 2.5) continue;
-      xs.push(keyX(n.midi));
-      ws.push(Math.exp(-(d * d) / 1.5));
-    }
-    const middle = (keyX(this.plan.low) + keyX(this.plan.high)) / 2;
-    // (a little pull toward the middle, so silence doesn't leave the camera anywhere odd)
-    let sum = middle * 0.05;
-    let weight = 0.05;
-    xs.forEach((x, i) => ((sum += x * ws[i]), (weight += ws[i])));
-    const x = sum / weight;
-    let dev = 0;
-    xs.forEach((v, i) => (dev += Math.abs(v - x) * ws[i]));
-    return { x, spread: dev / weight };
+    return focusAt(this.plan, t);
   }
 
   /** Draws the frame for time t (seconds) into `canvas` */
