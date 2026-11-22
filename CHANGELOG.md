@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.11.22 — Pigeons video: a steady camera in slow songs, and a zoom-out to show every note
 
 - **Pigeons video: the camera no longer jerks in slow songs.** In music with long held notes (a slow piano piece, pads) a chord stopped counting toward where the camera looks eight seconds after it started, all at once, even if it had only just ended: the camera jumped up to a key's width in one frame, again and again. Every note now fades out of the camera's aim, however long it is, so the camera drifts smoothly.
 - **Pigeons video: Zoom out to show every note played.** A new tick box (Export › Video, with the Pigeons picture): the camera holds every key the song plays, from its lowest note to its highest, and stays there, so high notes far from the rest are seen pressed. Off, as before, it follows what's playing, closer in. In the Pigeons on the keys tool it's `whole: true`.
