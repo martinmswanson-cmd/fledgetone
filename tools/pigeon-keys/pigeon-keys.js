@@ -49,6 +49,8 @@ const number = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v
  *                       or fewer gets a bank of touch pads, one pad a note, with birds of its
  *                       own (up to three banks); the drums get drum pads. false: every pitched
  *                       note is played on the keyboard and the drums aren't shown.
+ * options.whole         true: the camera zooms out to hold every key the song plays, lowest note to
+ *                       highest, and stays there. false (if left out): it follows what's playing.
  * options.floor         A floor colour of your own (any CSS colour) in place of the backgrounds'.
  * options.across        How many white keys fit across the canvas's narrow side at the closest
  *                       the camera comes (each angle has its own, about 16): a smaller number
@@ -76,7 +78,7 @@ export function createPigeons(canvas, song, options = {}) {
   let width = canvas.width;
   let height = canvas.height;
   let tall = isTall();
-  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt, motion: options.motion, pads: options.pads };
+  const look = { backgrounds: options.backgrounds, backgroundAt: options.backgroundAt, cameras: options.cameras, cameraAt: options.cameraAt, motion: options.motion, pads: options.pads, whole: options.whole };
   const bars = (Array.isArray(song.bars) ? song.bars : []).filter((t) => typeof t === 'number' && Number.isFinite(t)).sort((a, b) => a - b);
   const scene = new PigeonScene({ notes, tracks: [], bars }, { canvas, width, height, tall, across: options.across, centerY: options.centerY, floor: options.floor, look });
 
@@ -96,7 +98,7 @@ export function createPigeons(canvas, song, options = {}) {
     onKeys(time) {
       return scene.onKeys(number(time, 0));
     },
-    /** Change the backgrounds or camera angles, when they change, or how much the backgrounds move ({ backgrounds, backgroundAt, cameras, cameraAt, motion }: only what you give); the next draw uses them */
+    /** Change the backgrounds or camera angles, when they change, or how much the backgrounds move ({ backgrounds, backgroundAt, cameras, cameraAt, motion, whole }: only what you give); the next draw uses them */
     setLook(changes) {
       scene.setLook(changes);
     },

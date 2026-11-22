@@ -97,9 +97,15 @@ export interface PigeonLook {
    * drums aren't played. Read when the scene is made: it decides which birds there are.
    */
   pads: boolean;
+  /**
+   * The camera holds every key the song plays, from its lowest note to its highest, the same all
+   * through (so the high notes are seen pressed, however far they are from the rest); off, it
+   * follows what's playing, closer in
+   */
+  whole: boolean;
 }
 
-export const DEFAULT_PIGEON_LOOK: PigeonLook = { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1, pads: true };
+export const DEFAULT_PIGEON_LOOK: PigeonLook = { backgrounds: ['plaza'], backgroundAt: [], cameras: ['diagonal'], cameraAt: [], motion: 1, pads: true, whole: false };
 
 /** How long one background takes to fade into the next (seconds) */
 export const BACKGROUND_FADE = 0.8;
@@ -120,6 +126,7 @@ export function cleanLook(look?: Partial<PigeonLook> | null): PigeonLook {
     cameraAt: times(look?.cameraAt),
     motion: typeof look?.motion === 'number' && Number.isFinite(look.motion) ? Math.min(1, Math.max(0, look.motion)) : 1,
     pads: look?.pads !== false,
+    whole: look?.whole === true,
   };
 }
 
@@ -180,6 +187,8 @@ export interface PigeonChoices {
   motion: MotionId;
   /** Whether fast parts and the drums get instruments of their own (touch pads, drum pads) beside the keyboard */
   pads: boolean;
+  /** Whether the camera holds every key the song plays (it then doesn't follow the music) */
+  whole: boolean;
 }
 
 /** The dialog's choices for how much the backgrounds move, and what each comes to */
@@ -190,7 +199,7 @@ export const MOTIONS: Array<{ id: MotionId; name: string; blurb: string; amount:
   { id: 'still', name: 'Still', blurb: 'The backgrounds stay as they are', amount: 0 },
 ];
 
-export const DEFAULT_PIGEON_CHOICES: PigeonChoices = { backgrounds: ['plaza'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal'], cameraWhen: 'bars', cameraBars: 4, motion: 'music', pads: true };
+export const DEFAULT_PIGEON_CHOICES: PigeonChoices = { backgrounds: ['plaza'], backgroundWhen: 'sections', backgroundBars: 8, cameras: ['diagonal'], cameraWhen: 'bars', cameraBars: 4, motion: 'music', pads: true, whole: false };
 
 /** The most bars between changes the dialog takes */
 export const MOST_BARS = 64;
@@ -213,6 +222,7 @@ export function readPigeonChoices(raw: unknown): PigeonChoices {
     cameraBars: bars(r.cameraBars, d.cameraBars),
     motion: MOTIONS.some((m) => m.id === r.motion) ? (r.motion as MotionId) : d.motion,
     pads: r.pads !== false,
+    whole: r.whole === true,
   };
 }
 
@@ -230,6 +240,7 @@ export function lookFor(choices: PigeonChoices, bars: number[], sections: number
     cameraAt: choices.cameras.length > 1 ? at(choices.cameraWhen, choices.cameraBars) : [],
     motion: MOTIONS.find((m) => m.id === choices.motion)?.amount ?? 1,
     pads: choices.pads,
+    whole: choices.whole,
   });
 }
 

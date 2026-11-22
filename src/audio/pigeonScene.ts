@@ -1904,6 +1904,8 @@ export class PigeonScene {
   /** The floor the stage takes up, if there's one (pads, drums): the camera holds all of it */
   private box: { x0: number; x1: number; z0: number; z1: number } | null = null;
   /** Each pad: its mesh, its colours, and its key in plan.byPad */
+  /** The floor under every key the song plays, with a little room round it (what the camera holds with the look's `whole`) */
+  private played: { x0: number; x1: number; z0: number; z1: number } | null = null;
   private pads: Array<{ mesh: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; key: number }> = [];
   /** Each drum (and the kick's pad): its skin, and when it's hit */
   private drums: Array<{ skin: T.Mesh; mat: T.MeshLambertMaterial; base: T.Color; lit: T.Color; hits: number[]; rest: number }> = [];
@@ -1914,6 +1916,8 @@ export class PigeonScene {
   constructor(data: ShowcaseData, opts: PigeonSceneOptions) {
     this.look = cleanLook(opts.look);
     this.plan = planPigeons(data, { pads: this.look.pads });
+    const mids = this.plan.notes.map((n) => n.midi);
+    if (mids.length) this.played = { x0: keyX(minOf(mids)) - 1.6, x1: keyX(maxOf(mids)) + 1.6, z0: -WHITE_L / 2 - 1.2, z1: WHITE_L / 2 + 1.6 };
     this.canvas = opts.canvas ?? document.createElement('canvas');
     this.renderer = new T.WebGLRenderer({ canvas: this.canvas, antialias: true, preserveDrawingBuffer: true, alpha: false });
     this.renderer.setPixelRatio(1);
@@ -2098,16 +2102,18 @@ export class PigeonScene {
     const ux = e[4];
     const seen = Math.hypot(rx, ux);
     // (a stage in a tall frame runs steeply up it, and nearly level across a wide one: it's long, and so fills the frame)
-    const slope = !this.box ? (this.tall ? cam.slope.tall : cam.slope.wide) : this.tall ? Math.sign(cam.slope.tall || 1) * Math.max(Math.abs(cam.slope.tall), STAGE_SLOPE.tall) : Math.sign(cam.slope.wide) * Math.min(Math.abs(cam.slope.wide), STAGE_SLOPE.wide);
+    // (what the camera holds all of: a stage, or with the look's `whole` every key the song plays)
+    const box = this.box ?? (this.look.whole ? this.played : null);
+    const slope = !box ? (this.tall ? cam.slope.tall : cam.slope.wide) : this.tall ? Math.sign(cam.slope.tall || 1) * Math.max(Math.abs(cam.slope.tall), STAGE_SLOPE.tall) : Math.sign(cam.slope.wide) * Math.min(Math.abs(cam.slope.wide), STAGE_SLOPE.wide);
     // (the lesser turn that gives that slope: the camera stays the right way up)
     this.camera.rotateZ(uprightRoll(rx, ux, slope));
-    if (this.box) {
+    if (box) {
       // A stage (pads, drums): the camera holds all of it, the same all through, however the music
       // moves about it, inside the frame's safe part. Every angle does, the close-up too (it's
       // the nearest and lowest of them): a part out of the frame would be a part not seen
       this.camera.updateMatrixWorld();
       const m = this.camera.matrixWorld.elements;
-      const { x0, x1, z0, z1 } = this.box;
+      const { x0, x1, z0, z1 } = box;
       const mid = new T.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2);
       let a0 = Infinity;
       let a1 = -Infinity;

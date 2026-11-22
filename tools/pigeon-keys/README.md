@@ -82,6 +82,7 @@ frame();
 | `cameraAt` | When it cuts to the next angle, in seconds. Never, if left out |
 | `motion` | How much the backgrounds move with the music, from 0 (still) to 1 (fully; 1 if left out) |
 | `pads` | Whether fast parts and the drums get instruments of their own beside the keyboard (`true` if left out; `false` keeps every pitched note on the keyboard and leaves the drums out). Set when the pigeons are made: `setLook` doesn't change it |
+| `whole` | `true`: the camera zooms out to hold every key the song plays, from its lowest note to its highest, and stays there, so no note is out of the picture. `false` (if left out): it follows what's playing, closer in |
 | `floor` | A floor colour of your own, any CSS colour, in place of the backgrounds' |
 | `across` | How many white keys fit across the canvas's narrow side at the closest the camera comes (each angle has its own, about 16); a smaller number makes everything bigger |
 | `centerY` | Where the keyboard's middle sits, from the top of the canvas, from 0 to 1 (0.5) |
@@ -123,7 +124,7 @@ times its sections start.
 | `createPigeons(canvas, song, options?)` | Works out every bird's part once, and returns the calls below. The canvas must be one nothing has drawn on yet: it's given a WebGL context |
 | `draw(time)` | Draws the picture at `time` seconds, at the size the canvas has then |
 | `onKeys(time)` | How many pigeons are on the keys at `time`: standing on a key (playing it or not) or hopping between keys; not the ones flying or waiting on the floor |
-| `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras`, `cameraAt` or `motion` (only the ones you give); the next `draw` uses them |
+| `setLook(changes)` | Changes `backgrounds`, `backgroundAt`, `cameras`, `cameraAt`, `motion` or `whole` (only the ones you give); the next `draw` uses them |
 | `isDark(time)` | Whether the floor is dark at `time`: for choosing the colour of anything you draw over it |
 | `setFloor(color)` | A floor colour of your own in place of the backgrounds' (`null`: theirs again); the next `draw` uses it |
 | `duration` | The song's length |
