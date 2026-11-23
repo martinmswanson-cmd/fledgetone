@@ -101,7 +101,7 @@ export interface Space {
   wetShare: number | null;
   /** A clear echo: its delay, ms, how many repeats stand out where it is heard most clearly, and its note value at the known tempo */
   echo: { ms: number; repeats: number; note?: string } | null;
-  /** Side over mid in the tails less side over mid in the direct sound, dB (1 place); null for one channel or when nothing ends */
+  /** Side over mid in the tails less side over mid in the direct sound, dB (1 place); null for one channel, when nothing ends, beside an echo, or when the tails are digital silence */
   tailWiderDb: number | null;
 }
 

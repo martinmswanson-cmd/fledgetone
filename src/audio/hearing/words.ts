@@ -149,7 +149,8 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
   }
 
   if (space) {
-    if (space.decayMs !== null && space.decayMs < DRY_MS) out.push(`Dry: sounds stop almost at once (they fall 20 dB in ${msText(space.decayMs)}).`);
+    // (beside an echo nothing is said to stop at once: the repeats ring on)
+    if (space.decayMs !== null && space.decayMs < DRY_MS && !space.echo) out.push(`Dry: sounds stop almost at once (they fall 20 dB in ${msText(space.decayMs)}).`);
     else if (space.decayMs !== null && space.decayMs > LONG_TAIL_MS) out.push(`Long tails: sounds ring on, falling 20 dB in ${msText(space.decayMs)}.`);
     if (space.wetShare !== null && space.wetShare >= MUCH_TAIL) out.push(`Much of it is tail rather than direct sound (wet share ${two(space.wetShare)}).`);
     if (space.echo) {

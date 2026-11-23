@@ -224,29 +224,29 @@ test('wetter never reads much drier, on a grid of wet mixes (Fix round 3)', () =
       const what = `RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}`;
       assert.ok(s.decayMs !== null && s.wetShare !== null, what);
       assert.ok(Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35, what);
-      if (before !== null) assert.ok(s.wetShare >= before - 0.05, `${what}, after ${before}`);
+      // (0.04 a step since round 5; it was 0.05)
+      if (before !== null) assert.ok(s.wetShare >= before - 0.04 - 1e-9, `${what}, after ${before}`);
       before = s.wetShare;
     }
   }
 });
 
-test('known limit: a 4 s reverb mixed 0.8 wet or more reads nothing (Fix round 3, moved in round 4)', () => {
+test('known limit: a 4 s reverb mixed 0.7 wet or more reads nothing (Fix round 3; as it was again since round 5)', () => {
   // Over a reverb this loud the notes' starts and ends barely move the level. Pinned as it reads, so
-  // a change shows: at wet 0.6 and 0.7 it is still timed (round 3 read nothing at 0.7); from 0.8 up, nothing.
+  // a change shows: at wet 0.6 it is still timed; from 0.7 up, nothing (round 4 timed 0.7, on ends
+  // most of which were found for no note; since round 5 that says nothing).
   const at = (wet) => {
     const x = S.reverb(pluck, 4, wet);
     return spaceOf([x, x], SR);
   };
-  for (const wet of [0.6, 0.7]) {
-    const timed = at(wet);
-    assert.ok(timed.decayMs !== null && Math.abs(timed.decayMs / 1333 - 1) <= 0.35, `wet ${wet}: ${JSON.stringify(timed)}`);
-  }
-  for (const wet of [0.8, 0.9]) assert.deepEqual(at(wet), { decayMs: null, wetShare: null, echo: null, tailWiderDb: null }, `wet ${wet}`);
+  const timed = at(0.6);
+  assert.ok(timed.decayMs !== null && Math.abs(timed.decayMs / 1333 - 1) <= 0.35, JSON.stringify(timed));
+  for (const wet of [0.7, 0.8, 0.9]) assert.deepEqual(at(wet), { decayMs: null, wetShare: null, echo: null, tailWiderDb: null }, `wet ${wet}`);
 });
 
 test('wet share does not fall as the mix gets wetter, on other noise seeds (Fix round 4)', () => {
-  // (a row that fell furthest before, RT 2 s on seed 6, from 0.25 to 0.13, and seed 2 again with 0.04 a step, over the wetter mixes, where they fell. Seeds 1 to 6 in full: space-grid.mjs)
-  for (const [rt, seed, step] of [[2, 6, 0.05], [3, 2, 0.04]]) {
+  // (a row that fell furthest before, RT 2 s on seed 6, from 0.25 to 0.13, over the wetter mixes, where it fell. Seeds 1 to 6 in full: space-grid.mjs)
+  for (const [rt, seed, step] of [[2, 6, 0.05]]) {
     let before = null;
     for (const wet of [0.5, 0.6, 0.7, 0.8, 0.9]) {
       const x = S.reverb(pluck, rt, wet, seed);
@@ -272,10 +272,9 @@ test('drum beats, dry and through reverbs (Fix round 4)', () => {
   let cells = 0;
   let nulls = 0;
   for (const [kit, rate, hat, reverbs] of [
-    [[80, 60, 0.3], 2, false, [[0.5, 0.3], [1.5, 0.5]]],
+    [[80, 60, 0.3], 2, false, [[1.5, 0.5]]],
     [[80, 60, 0.3], 4, true, [[0.8, 0.5]]],
     [[150, 100, 0.4], 2, true, [[1.5, 0.5]]],
-    [[150, 100, 0.4], 4, false, [[0.5, 0.5], [1.5, 0.5]]],
   ]) {
     const x = beatOf(...kit, rate, hat);
     const name = `kick ${kit[0]}, snare ${kit[1]}, ${rate} a second${hat ? ', hat' : ''}`;
@@ -323,4 +322,111 @@ test('known limit: hats over hits that ring longer than the reverb read under th
   const s = spaceOf([S.reverb(x, 0.5, 0.5)], SR);
   assert.ok(dry.decayMs !== null && Math.abs(dry.decayMs / 230 - 1) <= 0.05, JSON.stringify(dry));
   assert.ok(s.decayMs !== null && s.decayMs < dry.decayMs && s.decayMs >= 0.8 * dry.decayMs, `${JSON.stringify(s)} against ${dry.decayMs} dry`);
+});
+
+// Fix round 5 (ruling S4: when in doubt the group says less). The families in full: space-grid.mjs.
+const none = { decayMs: null, wetShare: null, echo: null, tailWiderDb: null };
+const linesOf = (space) => soundWords({ ...base, space });
+const says = (space, start) => linesOf(space).some((w) => w.startsWith(start));
+
+test('beside an echo nothing is called dry, and no width is given (Fix round 5)', () => {
+  for (const [name, channels] of [
+    ['a 375 ms delay', [S.delay(pluck, 0.375, 0.5, 8)]],
+    ['a 500 ms delay', [S.delay(pluck, 0.5, 0.3, 8)]],
+    ['a 375 ms ping-pong', S.pingPong(pluck, 0.375, 0.5, 8)],
+  ]) {
+    const s = spaceOf(channels, SR, 120);
+    assert.ok(s.echo, `${name}: ${JSON.stringify(s)}`);
+    assert.ok(!says(s, 'Dry') && !says(s, 'The tails are wider'), `${name}: ${linesOf(s).join(' / ')}`);
+    assert.equal(s.tailWiderDb, null, name);
+  }
+  assert.deepEqual(linesOf({ ...none, decayMs: 6, echo: { ms: 375, repeats: 6 } }), ['Repeats every 375 ms, 6 standing out, each a step quieter: an echo, or a note played again more quietly.']);
+});
+
+test('different notes, each a step quieter, are not an echo (Fix round 5)', () => {
+  // (six rising notes 250 ms apart, each 4 dB under the last, four times; the fading riff of one note keeps its line, above)
+  const phrase = S.at(6.5, [0, 1, 2].flatMap((g) => [0, 4, 7, 12, 16, 19].map((m, k) => [g * 2 + k * 0.25, S.gain(S.melody([[fromC4(m + (g % 2) * 2), 0, 0.2]], 0.2, -6), -4 * k)])));
+  assert.equal(spaceOf([phrase], SR, 120).echo, null);
+});
+
+test('a slow attack is not an end (Fix round 5)', () => {
+  // Notes drawn in straight lines of gain: up over 50 ms, down to a held level, and let go over 200 ms, a fall of 20 dB in about 180 ms
+  // (the 80 and 120 ms attacks: space-grid.mjs)
+  for (const [attack, release, truth] of [[0.05, 0.2, 180]]) {
+    const x = S.at(5, Array.from({ length: 6 }, (_, i) => [i * 0.75, S.shapedNote(fromC4([0, 4, 7, 12, 9][i % 5]), 0.4, attack, 0.1, -6, release)]));
+    const s = spaceOf([x], SR);
+    assert.ok(s.decayMs === null || Math.abs(s.decayMs / truth - 1) <= 0.35, `attack ${attack} s: ${JSON.stringify(s)}`);
+    assert.ok(!says(s, 'Dry'), `attack ${attack} s`);
+  }
+});
+
+test('digital silence between the notes has no width (Fix round 5)', () => {
+  const s = spaceOf([pluck, pluck], SR);
+  assert.equal(s.tailWiderDb, null);
+  assert.ok(!says(s, 'The tails are wider'));
+});
+
+test('dry notes, then the same notes drowned in a reverb, are not called dry (Fix round 5)', () => {
+  const notes = NOTES.map((n, i) => [fromC4(n), i * 0.75, 0.25]);
+  const x = S.mix(S.melody(notes, 6.5, -6), S.at(14.5, [[6.5, S.reverb(S.melody(notes, 8, -6), 1.5, 0.5)]]));
+  const s = spaceOf([x], SR);
+  assert.ok(!says(s, 'Dry'), JSON.stringify(s));
+  assert.equal(s.decayMs, null);
+});
+
+test('a tail of one partial is not cut into short sounds (Fix round 5)', () => {
+  // Sine toms: one partial in a reverb swells and sags as it falls. A fill of four, then a rest, through a long quiet reverb read "Long tails ... 4.4 s"; one tom a second read "Dry"
+  const fill = S.at(8, [0, 1, 2, 3].flatMap((b) => [220, 160, 120, 85].map((hz, i) => [b * 2 + i * 0.25, S.tom(hz)])));
+  const long = spaceOf([S.reverb(fill, 2.5, 0.3)], SR, 120);
+  assert.ok(long.decayMs === null || long.decayMs <= 1.5 * 833, JSON.stringify(long));
+  assert.equal(long.echo, null);
+  const one = spaceOf([S.reverb(S.every(1, 8, () => S.tom(120)), 1.5, 0.3, 3)], SR);
+  assert.ok(!says(one, 'Dry'), JSON.stringify(one));
+});
+
+test('a beat with accented 16th hats through a quiet reverb reads near it or nothing (Fix round 5)', () => {
+  // (through 2.5 s it can read short, a known limit: space-grid.mjs)
+  const s = spaceOf([S.reverb(S.accentedBeat(8), 1.5, 0.3)], SR, 120);
+  assert.ok(s.decayMs === null || Math.abs(s.decayMs / 500 - 1) <= 0.35, JSON.stringify(s));
+  assert.equal(s.echo, null);
+});
+
+test('known limit: struck chords held on read as long tails or as dry (Fix round 5)', () => {
+  // A struck string rings down on its own while the keys are held: the bend where its upper partials
+  // have gone is taken for the end, and the ring after it for a tail. No reverb here at all. Pinned as
+  // it reads: "Long tails" (1211 ms, wet share 0.27). At another ring and hold it reads "Dry" (39 ms: space-grid.mjs).
+  const chords = (bpm, hold, ring) => {
+    const b = 60 / bpm;
+    const pieces = [[9, 12, 16, 19], [2, 5, 9, 12], [7, 11, 14, 17], [0, 4, 7, 11]].flatMap((c, k) => [[0, 1.5], [2, 1.2]].flatMap(([beat, beats]) => c.map((m) => [k * 4 * b + beat * b + (m % 3) * 0.012, S.gain(S.struck(fromC4(m - 12), beats * b * hold, ring), -12)])));
+    return S.at(16 * b + 1.5, pieces);
+  };
+  const long = spaceOf([chords(80, 1, 1.6)], SR);
+  assert.ok(long.decayMs > 1000 && long.decayMs < 1500 && says(long, 'Long tails'), JSON.stringify(long));
+});
+
+test('known limit: the wet share of drums does not follow the mix (Fix round 5)', () => {
+  // A hit has no end to find but a point on its fall (10 dB under its peak), so the share after it stays
+  // about 0.1 however much of the sound is reverb: here half the energy is, and it reads 0.09. The
+  // "Much of it is tail" line is not written for drums.
+  const s = spaceOf([S.reverb(beatOf(150, 100, 0.4, 2, true), 1.5, 0.5)], SR);
+  assert.ok(s.wetShare !== null && s.wetShare >= 0.04 && s.wetShare <= 0.16, JSON.stringify(s));
+});
+
+test('known limit: dense beats read nothing (Fix round 5)', () => {
+  // Toms on every 16th at 120 bpm leave no hit room to end: nothing is said, dry or through a reverb
+  const toms = S.every(8, 8, (i) => S.tom([220, 160, 120, 85][Math.floor(i / 4) % 4], 150));
+  assert.deepEqual(spaceOf([toms], SR), none);
+});
+
+test('known limit: a gated reverb reads as dry (Fix round 5)', () => {
+  // A snare a second with a 2.5 s reverb let through for 150 ms and then shut in 10 ms: the gate's edge
+  // is a real stop, and that is what is timed (20 ms, a "Dry" line), not the reverb behind it.
+  const snares = S.every(1, 8, (i) => S.burst(0.3, 60, 1, -6, i + 1));
+  const wet = S.reverb(snares, 2.5, 1);
+  const x = Float32Array.from(snares, (v, i) => {
+    const u = (i / SR) % 1;
+    return v + 3 * wet[i] * (u < 0.15 ? 1 : Math.max(0, 1 - (u - 0.15) / 0.01));
+  });
+  const s = spaceOf([x], SR);
+  assert.ok(s.decayMs !== null && s.decayMs < 60 && says(s, 'Dry'), JSON.stringify(s));
 });

@@ -8,10 +8,14 @@
  * the energy of their middle and sides. A note ends where its level bends or steps down; a hit, which
  * only falls, where it is 10 dB under its peak, so its own ring counts as ringing on. Short sounds
  * over a tail that carries on under them (a hat over a snare's reverb) are passed over. The decay and
- * the tail's share are medians over the ends, each counted by the root of its note's energy. Every
+ * the tail's share are medians over the ends, each counted by the root of its note's energy. When in
+ * doubt nothing is said: three ends at least must fall at the decay's rate, the ends that do not may
+ * not hold most of what comes after ends, an echo's repeats must sound like what they repeat (and
+ * then start no notes of their own, and no width is given beside them). Every
  * level is relative to the sound itself (a note's own peak and end, the loudest frame), so the reading
  * doesn't depend on how loud it plays. Plain maths on samples, no Web Audio, so Node can test it.
  */
+import { fftInPlace } from '../fft';
 import { onsetStrength, onsetTimes } from '../sampleAnalysis';
 import { minOf } from '../../support/minMax';
 import { noteOf } from './movement';
@@ -43,6 +47,8 @@ const FALLEN_DB = 30;
 /** A short sound over a tail (a hat over a snare's reverb) is passed over: a frame BLIP_DB over the level before it, and the level under that again within BLIP frames (100 ms). */
 const BLIP = 10;
 const BLIP_DB = 1.5;
+/** ... and it starts at once: that frame this far over the lower of the two before it, dB. */
+const SHARP_DB = 5;
 /** A note counts only when its peak is within this of the loudest frame of the sound, dB. */
 const NOTE_RANGE_DB = 40;
 /** The fall that is timed, dB. */
@@ -67,6 +73,8 @@ const BEND_FRAMES = 8;
 /** A bend under STEP_DB, dB, where the level is within NEAR_DB of END_DB under the peak, dB, is taken as the fall of a hit. */
 const STEP_DB = 2;
 const NEAR_DB = 2;
+/** A reverb has grown full under a note when the level rose less than this over the BEND_FRAMES before its peak, dB. */
+const GROWN_DB = 5;
 /** A segment's onset has risen within this many frames of the segment's start. */
 const ATTACK = 4;
 /** A sound that peaks as it starts and is over within this many frames of its peak (120 ms) is a hit: the rounded top of a hit through a reverb is no end. */
@@ -77,8 +85,14 @@ const AS_FAR = 0.5;
 const BODY_SPAN_DB = 20;
 /** At most this many frames after an end are looked at (3 s). */
 const MAX_TAIL = 300;
-/** Fewer ends than this, or none whose tail is timed, and nothing is said of decays, tails and their width. */
+/** Fewer ends than this timed, or falling like the timed (LIKE_DB at least along a line, dB, at a rate within LIKE of theirs), and nothing is said of decays, tails and their width. */
 const MIN_ENDS = 3;
+const LIKE_DB = 5;
+const LIKE = 0.35;
+/** Falls under this, ms, are all alike: sounds that stop. */
+const QUICK_MS = 30;
+/** The notes not read as the decay says (no end found, or a tail unlike it) may be this share of the weight of all the notes, at most. */
+const UNREAD = 0.5;
 /** Levels are floored this far under the loudest frame, dB. */
 const FLOOR_DB = -120;
 /** Side-over-mid is read no further than this either side of 0 dB (a mono sound has no side at all). */
@@ -102,6 +116,10 @@ const STEP_SPREAD_DB = 3;
 const REPEAT_RANGE_DB = 40;
 /** An echo's first repeat follows this share of the onsets at least (and two of them at least). */
 const ECHO_SHARE = 0.4;
+/** A repeat sounds like what it repeats: their spectra (SPECTRUM samples from the frame, up to SPECTRUM_TOP_HZ) are alike by this at least (1 the same; two different noises come to about 0.8, two toms a fourth apart over their reverbs to 0.9, two different notes less), at the median over the sounds repeated. */
+const ECHO_ALIKE = 0.95;
+const SPECTRUM = 2048;
+const SPECTRUM_TOP_HZ = 5000;
 /** A lag within this of a whole multiple of a shorter echo's (in multiples) is that echo heard every so many repeats. */
 const MULTIPLE_TOLERANCE = 0.05;
 
@@ -285,7 +303,8 @@ interface End {
  * Where the bends are looked for: in a sound that peaks as it starts, from HIT_FRAMES after its peak
  * (a hit through a reverb has a rounded top, which is no end); in one that peaks later (a note under
  * a heavy reverb, whose level peaks where the note stops), from its peak, the line's frames all past
- * the onset's rise. A line that rises is carried on level. A slight bend (under STEP_DB) where the
+ * the onset's rise, when the level had all but stopped rising there (GROWN_DB): a level still
+ * climbing into its peak is a slow attack, and its bends are looked for past the peak like any note's. A line that rises is carried on level. A slight bend (under STEP_DB) where the
  * level is already within NEAR_DB of END_DB under the peak is a hit's fall, not a note's end.
  */
 function bodyEnd(levels: Float64Array, smooth: Float64Array, start: number, peak: number, lastEnd: number, stop: number): { last: number; bends: Array<[number, number]> } | null {
@@ -308,7 +327,9 @@ function bodyEnd(levels: Float64Array, smooth: Float64Array, start: number, peak
   let furthestInTime = BEND_DB;
   // (searched to where it is END_DB down, or the segment's end, so an end found past `lastEnd` says there is none)
   const until = Math.min(crossed < 0 ? stop - 1 : crossed - 1, levels.length - 1 - BEND_FRAMES);
-  for (let b = peak - start <= ATTACK + 2 ? peak + HIT_FRAMES : Math.max(peak, start + ATTACK + BEND_FRAMES - 1); b <= until; b++) {
+  // (a level still climbing into its peak is a slow attack, not a reverb grown full: the bends are then looked for past the peak, as for any note)
+  const grown = peak - BEND_FRAMES >= start && smooth[peak] - smooth[peak - BEND_FRAMES] < GROWN_DB;
+  for (let b = peak - start <= ATTACK + 2 ? peak + HIT_FRAMES : grown ? Math.max(peak, start + ATTACK + BEND_FRAMES - 1) : peak + BEND_FRAMES - 1; b <= until; b++) {
     // The line through the BEND_FRAMES levels up to b, as level at b plus slope a frame
     let sy = 0;
     let sxy = 0;
@@ -344,7 +365,8 @@ function bodyEnd(levels: Float64Array, smooth: Float64Array, start: number, peak
  * The short sounds that come over something still falling (a hat over a snare's reverb): a frame
  * BLIP_DB over the level just before it, with the level under that again within BLIP frames. What
  * was falling shows through after them, so they start no note and end no tail: `out` marks their
- * frames, and `clean` is the levels with a straight line drawn under them. A short sound in silence
+ * frames (only where the sound starts at once, SHARP_DB in a frame or two: the tail of one partial,
+ * a tom's, swells as far over more frames, and is no short sound), and `clean` is the levels with a straight line drawn under them. A short sound in silence
  * is not one: the level comes back to where it was, not under it.
  */
 function shortSounds(levels: Float64Array): { clean: Float64Array; out: Uint8Array } {
@@ -355,6 +377,8 @@ function shortSounds(levels: Float64Array): { clean: Float64Array; out: Uint8Arr
   for (let g = 4; g < n; g++) {
     const base = Math.min(smooth[g - 4], smooth[g - 3], smooth[g - 2]);
     if (levels[g] <= base + BLIP_DB) continue;
+    // (a short sound starts at once: the grain of a tail of one partial swells as far, over more frames)
+    if (levels[g] - Math.min(levels[g - 1], levels[g - 2]) < SHARP_DB) continue;
     let back = -1;
     for (let h = g + 1; h <= g + BLIP && h < n && back < 0; h++) if (smooth[h] < base) back = h;
     if (back < 0) continue;
@@ -416,24 +440,25 @@ function tailOf(levels: Float64Array, smooth: Float64Array, out: Uint8Array, las
  * tail starts none). In a segment the end is the last frame of the direct sound after the segment's
  * peak (bodyEnd), with ROOM frames still to come, and what follows it must be a tail (tailOf).
  */
-function endsOf(levels: Float64Array, smooth: Float64Array, out: Uint8Array, found: readonly number[]): End[] {
+function endsOf(levels: Float64Array, smooth: Float64Array, out: Uint8Array, found: readonly number[]): { ends: End[]; endless: Array<[number, number]> } {
   const n = levels.length;
   const ends: End[] = [];
+  /** The notes no end is found for: their segments, start and stop. */
+  const endless: Array<[number, number]> = [];
   const onsets = found.filter((o) => !out[o] && !out[Math.min(n - 1, o + 1)]);
   for (let o = 0; o < onsets.length; o++) {
     const start = Math.max(0, onsets[o] - LEAD);
     const stop = o + 1 < onsets.length ? Math.min(n, Math.max(start, onsets[o + 1] - LEAD)) : n;
-    const lastEnd = stop - 1 - ROOM;
-    if (lastEnd < start) continue;
+    const lastEnd = Math.max(start, stop - 1 - ROOM);
     let peak = start;
     for (let f = start; f <= lastEnd; f++) if (smooth[f] > smooth[peak]) peak = f;
     if (levels[peak] < -NOTE_RANGE_DB) continue;
-    const body = bodyEnd(levels, smooth, start, peak, lastEnd, stop);
-    if (!body) continue;
-    const tail = tailOf(levels, smooth, out, body.last, stop);
-    if (tail) ends.push({ start, peak, tail, ...body });
+    const body = stop - 1 - ROOM < start ? null : bodyEnd(levels, smooth, start, peak, lastEnd, stop);
+    const tail = body && tailOf(levels, smooth, out, body.last, stop);
+    if (body && tail) ends.push({ start, peak, tail, ...body });
+    else endless.push([start, stop]);
   }
-  return ends;
+  return { ends, endless };
 }
 
 /**
@@ -491,7 +516,7 @@ function slopeOf(levels: Float64Array, frames: readonly number[], a: number, b: 
  * over ONE_SLOPE times as fast as the rest still holds the direct sound's own fall (a hit that falls
  * fast and then rings on in a quiet reverb), and is left out.
  */
-function fallFrames(levels: Float64Array, { peak, last, tail, bends }: End): number | null {
+function fallFrames(levels: Float64Array, { peak, last, tail, bends }: End, least = TIMED_DB): number | null {
   const quick = tail.findIndex((g) => levels[g] <= levels[last] - FALL_DB);
   /** The time the level crosses `target`, between frame `g` - 1 and `g`, from frame `from`. */
   const at = (g: number, target: number, from: number) => {
@@ -514,7 +539,7 @@ function fallFrames(levels: Float64Array, { peak, last, tail, bends }: End): num
     const count = frames.length;
     if (count < 3) return null;
     const whole = slopeOf(levels, frames, 0, count);
-    if (!(whole.slope < 0) || -whole.slope * whole.span < TIMED_DB || whole.miss > FIT_DB) return null;
+    if (!(whole.slope < 0) || -whole.slope * whole.span < least || whole.miss > FIT_DB) return null;
     // (and its second half falls at least SETTLE as fast as its first: a fall onto a floor flattens; read on 4 frames a half at least)
     const half = count >> 1;
     if (count >= 8 && slopeOf(levels, frames, half, count).slope > SETTLE * slopeOf(levels, frames, 0, half).slope) return null;
@@ -575,6 +600,36 @@ function repeatsAfter(levels: Float64Array, at: number, lag: number): { count: n
   return { count, step };
 }
 
+/** How alike two spectra are: the cosine between them, 0 to 1. */
+function likenessOf(a: Float64Array, b: Float64Array): number {
+  let ab = 0;
+  let aa = 0;
+  let bb = 0;
+  for (let k = 0; k < a.length; k++) {
+    ab += a[k] * b[k];
+    aa += a[k] * a[k];
+    bb += b[k] * b[k];
+  }
+  return aa > 0 && bb > 0 ? ab / Math.sqrt(aa * bb) : 0;
+}
+
+/**
+ * The spectrum of the sound from a frame on: the channels' magnitudes added (so a repeat on the
+ * other side still compares), SPECTRUM samples through a raised-cosine window, up to SPECTRUM_TOP_HZ.
+ */
+function spectrumOf(channels: readonly Float32Array[], sampleRate: number, from: number): Float64Array {
+  const top = Math.min(SPECTRUM / 2, Math.round((SPECTRUM_TOP_HZ / sampleRate) * SPECTRUM));
+  const out = new Float64Array(top);
+  for (const c of channels) {
+    const re = new Float64Array(SPECTRUM);
+    const im = new Float64Array(SPECTRUM);
+    for (let i = 0; i < SPECTRUM && from + i < c.length; i++) re[i] = from + i < 0 ? 0 : c[from + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * (i + 0.5)) / SPECTRUM));
+    fftInPlace(re, im);
+    for (let k = 1; k < top; k++) out[k] += Math.hypot(re[k], im[k]);
+  }
+  return out;
+}
+
 /**
  * A clear echo, or null. The lags tried are the highest peaks, from 60 to 1500 ms, of the
  * autocorrelation of the level envelope's rises. A lag is an echo when repeats follow the onsets at multiples of it,
@@ -583,7 +638,7 @@ function repeatsAfter(levels: Float64Array, at: number, lag: number): { count: n
  * a multiple of a shorter one), the one most onsets are followed by; its repeats, the most that
  * follow any one onset.
  */
-function echoOf(levels: Float64Array, onsets: readonly number[], tempoBpm?: number): Space['echo'] {
+function echoOf(levels: Float64Array, onsets: readonly number[], spectrumAt: (frame: number) => Float64Array, tempoBpm?: number): (NonNullable<Space['echo']> & { lag: number }) | null {
   const n = levels.length;
   // The sounds that could start an echo: each onset's peak
   const peaks = new Set<number>();
@@ -636,6 +691,9 @@ function echoOf(levels: Float64Array, onsets: readonly number[], tempoBpm?: numb
     let repeats = 0;
     for (const r of alike) repeats = Math.max(repeats, r.count);
     if (alike.length < 2 || alike.length < ECHO_SHARE * events.length || repeats < 2) continue;
+    // And the repeats sound like what they repeat: different notes a like step quieter each time are a phrase, not an echo
+    const likeness = events.filter((at) => repeatsAfter(levels, at, lag).count > 0).map((at) => likenessOf(spectrumAt(at), spectrumAt(Math.round(at + lag))));
+    if (median(likeness) < ECHO_ALIKE) continue;
     echoes.push({ lag, share: alike.length / events.length, repeats });
   }
   // An echo repeats at twice its lag too: a lag that is a multiple of another echo's is that echo
@@ -645,7 +703,14 @@ function echoOf(levels: Float64Array, onsets: readonly number[], tempoBpm?: numb
   if (!best) return null;
   const ms = Math.round(best.lag * FRAME_SECONDS * 1000);
   const note = tempoBpm === undefined ? undefined : noteOf(1000 / ms, tempoBpm);
-  return { ms, repeats: best.repeats, ...(note ? { note } : {}) };
+  return { ms, repeats: best.repeats, ...(note ? { note } : {}), lag: best.lag };
+}
+
+/** The highest level about an onset, dB. */
+function peakNear(levels: Float64Array, onset: number): number {
+  let peak = -Infinity;
+  for (let f = Math.max(0, onset - LEAD); f <= Math.min(levels.length - 1, onset + 4); f++) peak = Math.max(peak, levels[f]);
+  return peak;
 }
 
 /** The energy of a note up to its end. */
@@ -698,12 +763,30 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
   const levels = Float64Array.from(bright, (e) => Math.max(FLOOR_DB, 10 * Math.log10(e / loudest)));
 
   const onsets = onsetsOf(cut, sampleRate, levels);
-  const echo = echoOf(levels, onsets, tempoBpm);
+  const found = echoOf(levels, onsets, (frame) => spectrumOf(cut, sampleRate, (frame - 1) * hop), tempoBpm);
+  let echo: Space['echo'] = null;
+  let notes = onsets;
+  if (found) {
+    const { lag, ...rest } = found;
+    echo = rest;
+    // An echo's repeats start no notes of their own: an onset at a multiple of the echo's time after a louder one is its repeat
+    const kept: number[] = [];
+    for (const o of onsets) {
+      const repeat = kept.some((p) => {
+        const times = (o - p) / lag;
+        return Math.round(times) >= 1 && Math.round(times) <= rest.repeats && Math.abs(times - Math.round(times)) * lag <= LEAD && peakNear(levels, o) <= peakNear(levels, p) - STEP_MIN_DB;
+      });
+      if (!repeat) kept.push(o);
+    }
+    notes = kept;
+  }
 
   const { clean, out } = shortSounds(levels);
-  const ends = endsOf(clean, smoothed(clean), out, onsets);
+  const { ends, endless } = endsOf(clean, smoothed(clean), out, notes);
   const falls: Array<[number, number]> = [];
   const shares: Array<[number, number]> = [];
+  /** Every end: the time its tail takes to fall (timed, or else when it falls LIKE_DB at least along a line; else null), whether it is timed, its tail's energy and its weight. */
+  const read: Array<{ fall: number | null; timed: boolean; tail: number; weight: number }> = [];
   const width = { tailSide: 0, tailMid: 0, directSide: 0, directMid: 0 };
   for (const end of ends) {
     // The note and its tail, on the energy the level is read from
@@ -714,6 +797,8 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
     const weight = Math.sqrt(note);
     const fall = fallFrames(clean, end);
     if (fall !== null) falls.push([fall * FRAME_SECONDS * 1000, weight]);
+    const rate = fall ?? fallFrames(clean, end, LIKE_DB);
+    read.push({ fall: rate === null ? null : rate * FRAME_SECONDS * 1000, timed: fall !== null, tail, weight });
     if (note + tail > 0) shares.push([tailShare(bright, end, note + tail), weight]);
     if (!side) continue;
     for (const f of end.tail) {
@@ -727,12 +812,42 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
     }
   }
 
-  // (wet share and width need ends enough; all three need a tail that is timed, or the "tails" may be a held layer or noise)
-  if (ends.length < MIN_ENDS || falls.length === 0 || shares.length === 0) return { ...none, echo };
+  // All three need a tail that is timed, or the "tails" may be a held layer or noise; and when in
+  // doubt nothing is said. An end speaks for the decay when its tail falls at that rate (within
+  // LIKE of it, or both under QUICK_MS): timed, or cut short before it can be timed but falling
+  // LIKE_DB along a line. MIN_ENDS ends at least must; the ends that do not may hold no more than
+  // half of the energy after ends (dry notes beside notes drowned in a reverb read nothing, not
+  // "dry"); and the notes no end is found for, with the ends that do not, no more than UNREAD of
+  // the weight of all the notes (dry drums over plucks ringing in a reverb likewise)
+  if (falls.length === 0 || shares.length === 0) return { ...none, echo };
+  const decay = weightedMedian(falls);
+  const like = (fall: number | null) => fall !== null && (Math.abs(fall / decay - 1) <= LIKE || (fall < QUICK_MS && decay < QUICK_MS));
+  let count = 0;
+  let tails = 0;
+  let unlikeTails = 0;
+  let weights = 0;
+  let unlikeWeights = 0;
+  for (const { fall, tail, weight } of read) {
+    tails += tail;
+    weights += weight;
+    if (like(fall)) count++;
+    else {
+      unlikeTails += tail;
+      unlikeWeights += weight;
+    }
+  }
+  for (const [start, stop] of endless) {
+    let energy = 0;
+    for (let f = start; f < stop; f++) energy += bright[f];
+    weights += Math.sqrt(energy);
+    unlikeWeights += Math.sqrt(energy);
+  }
+  if (count < MIN_ENDS || unlikeTails > tails / 2 || unlikeWeights > UNREAD * weights) return { ...none, echo };
   return {
-    decayMs: Math.round(weightedMedian(falls)),
+    decayMs: Math.round(decay),
     wetShare: round2(weightedMedian(shares)),
     echo,
-    tailWiderDb: side ? round1(sideOverMidDb(width.tailSide, width.tailMid) - sideOverMidDb(width.directSide, width.directMid)) : null,
+    // (tails that are digital silence have no width to speak of; nor is a width given beside an echo, where what comes after the notes is repeats, often thrown from side to side)
+    tailWiderDb: side && !echo && width.tailSide + width.tailMid > 0 ? round1(sideOverMidDb(width.tailSide, width.tailMid) - sideOverMidDb(width.directSide, width.directMid)) : null,
   };
 }
