@@ -201,19 +201,9 @@ test('a long reverb is timed though the next note comes first (Fix round 2)', ()
   }
 });
 
-// (the full grids, every seed, are in scripts/audio-check/hearing/space-grid.mjs)
-test('nearly dry reverbs read dry or near RT/3 (Fix round 3)', () => {
-  for (const rt of [0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) {
-    for (const wet of [0.1, 0.15, 0.2, 0.3]) {
-      const x = S.reverb(pluck, rt, wet);
-      const s = spaceOf([x, x], SR);
-      const what = `RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}`;
-      assert.ok(s.decayMs !== null, what);
-      const near = Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35;
-      assert.ok(near || soundWords({ ...base, space: s }).some((w) => w.startsWith('Dry: ')), what);
-    }
-  }
-});
+// (the full grids, every seed, are in scripts/audio-check/hearing/space-grid.mjs. Fix round 3's test that
+// nearly dry reverbs, RT 0.1 to 0.4 s at wet 0.1 to 0.3, read dry or near RT/3 is there alone since
+// Task 3, to keep this file under 30 s: it was that family's first seed, cell for cell)
 
 test('wetter never reads much drier, on a grid of wet mixes (Fix round 3)', () => {
   for (const rt of [1, 2, 3]) {
@@ -315,8 +305,8 @@ test('known limit: a hat over a hit that falls fast into a quiet long reverb rea
 test('known limit: hats over hits that ring longer than the reverb read under the dry beat (Fix round 4)', () => {
   // A snare that rings on for 230 ms of its own, with hats, through a 0.5 s reverb (which falls 20 dB
   // in 167 ms): each hat's own short reverb tail lies over the snare's ring and falls faster than
-  // it, so the stretches between the hats fall faster than the ring alone. Pinned as it reads (203 ms
-  // against 234 ms dry, 13% under; on the grid's seeds 191 to 226 ms), so a change shows.
+  // it, so the stretches between the hats fall faster than the ring alone. Pinned as it reads (196 ms
+  // against 235 ms dry, 16.6% under; on the grid's seeds 196 to 234 ms), so a change shows.
   const x = beatOf(150, 100, 0.4, 2, true);
   const dry = spaceOf([x], SR);
   const s = spaceOf([S.reverb(x, 0.5, 0.5)], SR);
@@ -429,4 +419,52 @@ test('known limit: a gated reverb reads as dry (Fix round 5)', () => {
   });
   const s = spaceOf([x], SR);
   assert.ok(s.decayMs !== null && s.decayMs < 60 && says(s, 'Dry'), JSON.stringify(s));
+});
+
+// Carried into Task 3 from Task 2's last review (N1, N7, N8)
+test('an echo reads alike at any sample rate (N1)', () => {
+  // The likeness of a repeat to what it repeats is read over the same stretch of time at every rate, and
+  // the repeat's window starts at its exact sample: at 88.2 and 96 kHz a 375 ms delay at feedback 0.7
+  // lost its echo and read "Dry", and noise bursts through 375 and 625 ms delays read twice their lag
+  for (const rate of [88200, 96000]) {
+    const notes = S.melody(NOTES.map((s, i) => [fromC4(s), i * 0.75, 0.25]), 8, -6, rate);
+    for (const [name, channels] of [['a 375 ms delay', [S.delay(notes, 0.375, 0.7, 8, rate)]], ['a 375 ms ping-pong', S.pingPong(notes, 0.375, 0.7, 8, rate)]]) {
+      const s = spaceOf(channels, rate, 120);
+      const what = `${name} at ${rate} Hz: ${JSON.stringify(s)}`;
+      assert.ok(s.echo && Math.abs(s.echo.ms - 375) <= 5, what);
+      assert.ok(!says(s, 'Dry'), what);
+    }
+  }
+  const rate = 96000;
+  for (const [name, make] of [['snares', (i) => S.burst(0.3, 40, 1, -6, i + 1, rate)], ['hats', (i) => S.burst(0.1, 10, 0.5, -10, i + 1, rate)]]) {
+    const hits = S.every(1, 8, make, rate);
+    for (const ms of [375, 625]) {
+      const s = spaceOf([S.delay(hits, ms / 1000, 0.5, 8, rate)], rate);
+      assert.ok(s.echo && Math.abs(s.echo.ms - ms) <= 5, `${name} once a second through a ${ms} ms delay at 96 kHz: ${JSON.stringify(s)}`);
+    }
+  }
+});
+
+test('sounds that stop at once have no tail width (N7)', () => {
+  // A dry pluck the same in both channels, with a little noise of its own in each (a noise floor, or
+  // dither): the "tails" are that noise, and read 40 dB wider. A sound called dry has no tail to be wide
+  for (const db of [-120, -90]) {
+    const s = spaceOf([S.mix(pluck, S.white(8, db, 1)), S.mix(pluck, S.white(8, db, 2))], SR);
+    const what = `noise at ${db} dBFS: ${JSON.stringify(s)}`;
+    assert.ok(s.decayMs !== null && s.decayMs < 150 && says(s, 'Dry'), what);
+    assert.equal(s.tailWiderDb, null, what);
+    assert.ok(!says(s, 'The tails are wider'), what);
+  }
+});
+
+test('beside an echo, a decay under 150 ms is not given, nor its wet share (N8)', () => {
+  // (the notes stop at once under repeats that ring on: what an agent reads in the data matches the words, which call nothing dry here)
+  for (const [name, channels] of [['a 375 ms delay', [S.delay(pluck, 0.375, 0.5, 8)]], ['a 375 ms ping-pong', S.pingPong(pluck, 0.375, 0.7, 8)]]) {
+    const s = spaceOf(channels, SR, 120);
+    assert.ok(s.echo, `${name}: ${JSON.stringify(s)}`);
+    assert.deepEqual({ decayMs: s.decayMs, wetShare: s.wetShare, tailWiderDb: s.tailWiderDb }, { decayMs: null, wetShare: null, tailWiderDb: null }, name);
+  }
+  // A decay of 150 ms or more beside an echo is still given
+  const eighth = spaceOf([S.delay(pluck, 0.25, 0.5, 6)], SR, 120);
+  assert.ok(eighth.echo && eighth.decayMs >= 150 && eighth.wetShare !== null, JSON.stringify(eighth));
 });

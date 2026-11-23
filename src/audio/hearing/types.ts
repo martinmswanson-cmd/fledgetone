@@ -95,13 +95,13 @@ export interface Pitch {
  * three notes or hits end (a held sound, a riff with no gaps, silence).
  */
 export interface Space {
-  /** The median time, ms, for the level to fall 20 dB from where a note or hit ends */
+  /** The median time, ms, for the level to fall 20 dB from where a note or hit ends; null beside an echo when under 150 ms (the notes' own stop, under repeats that ring on) */
   decayMs: number | null;
-  /** 0 to 1 (2 places): the share of the energy of the notes that end in their tails, after they end, rather than in the direct sound */
+  /** 0 to 1 (2 places): the share of the energy of the notes that end in their tails, after they end, rather than in the direct sound; null beside an echo when the decay is under 150 ms, as the decay is */
   wetShare: number | null;
   /** A clear echo: its delay, ms, how many repeats stand out where it is heard most clearly, and its note value at the known tempo */
   echo: { ms: number; repeats: number; note?: string } | null;
-  /** Side over mid in the tails less side over mid in the direct sound, dB (1 place); null for one channel, when nothing ends, beside an echo, or when the tails are digital silence */
+  /** Side over mid in the tails less side over mid in the direct sound, dB (1 place); null for one channel, when nothing ends, beside an echo, when the decay is under 150 ms (sounds that stop almost at once: no tail to have a width), or when the tails are digital silence */
   tailWiderDb: number | null;
 }
 

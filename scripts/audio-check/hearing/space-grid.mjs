@@ -19,7 +19,9 @@
 //   through the 0.5 s reverb read up to a fifth under their dry reading.
 // Since round 5 (when in doubt the group says less), the sounds that drew false lines:
 // - Echo: delays and ping-pongs write no "Dry" line and give no width beside their echo; different
-//   notes each a step quieter are no echo, and a fading riff of one note still is.
+//   notes each a step quieter are no echo, and a fading riff of one note still is. At 22.05 to 96 kHz,
+//   a 375 ms delay and ping-pong, and noise bursts once a second through 375, 437 and 625 ms delays,
+//   read their own lag (not twice it, and not none).
 // - Toms (one partial, whose reverb tail swells and sags): a fill through long reverbs is not "Long
 //   tails" past 1.5 times its yardstick and is no echo; single toms through reverbs are not "Dry".
 // - Attacks: notes with slow straight attacks read within 35% of their release or nothing, not "Dry".
@@ -193,6 +195,24 @@ if ('echo'.includes(only)) {
   const riff = S.at(4, Array.from({ length: 16 }, (_, i) => [i * 0.25, S.gain(S.melody([[fromC4(-12), 0, 0.25]], 0.25, -6), -3 * i)]));
   const s = spaceOf([riff], SR, 120);
   row('one note fading 3 dB a time', s, s.echo ? '' : 'no echo');
+  // At other rates (since Task 3: the likeness window is a stretch of time, and a repeat's starts at its exact sample)
+  const lagged = (x, ms) => (!x.echo ? 'no echo' : Math.abs(x.echo.ms - ms) > 5 ? `an echo of ${x.echo.ms} ms` : '');
+  for (const rate of [22050, 44100, 88200, 96000]) {
+    const notes = S.melody([0, 4, 7, 12, 9, 5, 2, -1].map((n, i) => [fromC4(n), i * 0.75, 0.25]), 8, -6, rate);
+    const delayed = spaceOf([S.delay(notes, 0.375, 0.7, 8, rate)], rate, 120);
+    row(`delay 375 ms, fb 0.7, ${rate} Hz`, delayed, beside(delayed) || lagged(delayed, 375));
+    const thrown = spaceOf(S.pingPong(notes, 0.375, 0.7, 8, rate), rate, 120);
+    row(`ping-pong 375 ms, fb 0.7, ${rate} Hz`, thrown, beside(thrown) || lagged(thrown, 375));
+  }
+  for (const rate of [44100, 96000]) {
+    for (const [name, make] of [['snare 40', (i) => S.burst(0.3, 40, 1, -6, i + 1, rate)], ['snare 80', (i) => S.burst(0.3, 80, 1, -6, i + 1, rate)], ['hat 10', (i) => S.burst(0.1, 10, 0.5, -10, i + 1, rate)]]) {
+      const hits = S.every(1, 8, make, rate);
+      for (const ms of [375, 437, 625]) {
+        const x = spaceOf([S.delay(hits, ms / 1000, 0.5, 8, rate)], rate);
+        row(`${name} 1/s, ${ms} ms delay, ${rate} Hz`, x, lagged(x, ms));
+      }
+    }
+  }
 }
 
 if ('toms'.includes(only)) {

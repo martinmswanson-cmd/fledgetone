@@ -11,7 +11,8 @@
  * the tail's share are medians over the ends, each counted by the root of its note's energy. When in
  * doubt nothing is said: three ends at least must fall at the decay's rate, the ends that do not may
  * not hold most of what comes after ends, an echo's repeats must sound like what they repeat (and
- * then start no notes of their own, and no width is given beside them). Every
+ * then start no notes of their own, and no width is given beside them, nor a decay that says the
+ * sounds stop at once); sounds that stop at once have no tail width. Every
  * level is relative to the sound itself (a note's own peak and end, the loudest frame), so the reading
  * doesn't depend on how loud it plays. Plain maths on samples, no Web Audio, so Node can test it.
  */
@@ -93,6 +94,8 @@ const LIKE = 0.35;
 const QUICK_MS = 30;
 /** The notes not read as the decay says (no end found, or a tail unlike it) may be this share of the weight of all the notes, at most. */
 const UNREAD = 0.5;
+/** Under this decay, ms, sounds stop almost at once (the words call it "Dry"): such a sound has no tail whose width means anything, and beside an echo it is the repeats that ring on, so neither is given. */
+export const DRY_MS = 150;
 /** Levels are floored this far under the loudest frame, dB. */
 const FLOOR_DB = -120;
 /** Side-over-mid is read no further than this either side of 0 dB (a mono sound has no side at all). */
@@ -116,9 +119,10 @@ const STEP_SPREAD_DB = 3;
 const REPEAT_RANGE_DB = 40;
 /** An echo's first repeat follows this share of the onsets at least (and two of them at least). */
 const ECHO_SHARE = 0.4;
-/** A repeat sounds like what it repeats: their spectra (SPECTRUM samples from the frame, up to SPECTRUM_TOP_HZ) are alike by this at least (1 the same; two different noises come to about 0.8, two toms a fourth apart over their reverbs to 0.9, two different notes less), at the median over the sounds repeated. */
+/** A repeat sounds like what it repeats: their spectra (about SPECTRUM_SECONDS from where each starts, up to SPECTRUM_TOP_HZ) are alike by this at least (1 the same; two different noises come to about 0.8, two toms a fourth apart over their reverbs to 0.9, two different notes less), at the median over the sounds repeated. */
 const ECHO_ALIKE = 0.95;
-const SPECTRUM = 2048;
+/** The spectra's window is the power of two of samples at or above this, seconds (2048 samples at 44.1 and 48 kHz, 1024 at 22.05, 4096 at 88.2 and 96): the same stretch of sound at any rate. */
+const SPECTRUM_SECONDS = 2048 / 48000;
 const SPECTRUM_TOP_HZ = 5000;
 /** A lag within this of a whole multiple of a shorter echo's (in multiples) is that echo heard every so many repeats. */
 const MULTIPLE_TOLERANCE = 0.05;
@@ -613,19 +617,44 @@ function likenessOf(a: Float64Array, b: Float64Array): number {
   return aa > 0 && bb > 0 ? ab / Math.sqrt(aa * bb) : 0;
 }
 
+/** The samples in the spectra's window at `sampleRate`: the power of two at or above SPECTRUM_SECONDS of them. */
+function spectrumSize(sampleRate: number): number {
+  let size = 1;
+  while (size < SPECTRUM_SECONDS * sampleRate - 1e-9) size *= 2;
+  return size;
+}
+
+/** The raised-cosine window of `size` samples the spectra are read through. */
+function spectrumWindow(size: number): Float64Array {
+  return Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * (i + 0.5)) / size));
+}
+
 /**
- * The spectrum of the sound from a frame on: the channels' magnitudes added (so a repeat on the
- * other side still compares), SPECTRUM samples through a raised-cosine window, up to SPECTRUM_TOP_HZ.
+ * The spectrum of the sound from a sample on: the channels' magnitudes added (so a repeat on the
+ * other side still compares), as many samples as `window` has through it, up to SPECTRUM_TOP_HZ.
+ * Two channels go through one transform, the first as its real part and the second as its imaginary,
+ * and are taken apart after it (each a real signal, its spectrum is half of X[k] plus or minus the
+ * conjugate of X[N - k]).
  */
-function spectrumOf(channels: readonly Float32Array[], sampleRate: number, from: number): Float64Array {
-  const top = Math.min(SPECTRUM / 2, Math.round((SPECTRUM_TOP_HZ / sampleRate) * SPECTRUM));
+function spectrumOf(channels: readonly Float32Array[], sampleRate: number, from: number, window: Float64Array): Float64Array {
+  const size = window.length;
+  const top = Math.min(size / 2, Math.round((SPECTRUM_TOP_HZ / sampleRate) * size));
   const out = new Float64Array(top);
-  for (const c of channels) {
-    const re = new Float64Array(SPECTRUM);
-    const im = new Float64Array(SPECTRUM);
-    for (let i = 0; i < SPECTRUM && from + i < c.length; i++) re[i] = from + i < 0 ? 0 : c[from + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * (i + 0.5)) / SPECTRUM));
-    fftInPlace(re, im);
-    for (let k = 1; k < top; k++) out[k] += Math.hypot(re[k], im[k]);
+  const [first, second] = channels;
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  for (let i = Math.max(0, -from); i < size && from + i < first.length; i++) {
+    re[i] = first[from + i] * window[i];
+    if (second) im[i] = second[from + i] * window[i];
+  }
+  fftInPlace(re, im);
+  for (let k = 1; k < top; k++) {
+    if (!second) {
+      out[k] = Math.hypot(re[k], im[k]);
+      continue;
+    }
+    const [r, i, rr, ii] = [re[k], im[k], re[size - k], im[size - k]];
+    out[k] = Math.hypot(r + rr, i - ii) / 2 + Math.hypot(i + ii, r - rr) / 2;
   }
   return out;
 }
@@ -636,7 +665,7 @@ function spectrumOf(channels: readonly Float32Array[], sampleRate: number, from:
  * each a like step quieter than the one before: a repeated note's onsets line up with its lag too,
  * but as loud as the one before, so they are notes, not repeats. Of the lags that are echoes (and not
  * a multiple of a shorter one), the one most onsets are followed by; its repeats, the most that
- * follow any one onset.
+ * follow any one onset. `spectrumAt` gives the spectrum from a frame, whole or not.
  */
 function echoOf(levels: Float64Array, onsets: readonly number[], spectrumAt: (frame: number) => Float64Array, tempoBpm?: number): (NonNullable<Space['echo']> & { lag: number }) | null {
   const n = levels.length;
@@ -692,7 +721,7 @@ function echoOf(levels: Float64Array, onsets: readonly number[], spectrumAt: (fr
     for (const r of alike) repeats = Math.max(repeats, r.count);
     if (alike.length < 2 || alike.length < ECHO_SHARE * events.length || repeats < 2) continue;
     // And the repeats sound like what they repeat: different notes a like step quieter each time are a phrase, not an echo
-    const likeness = events.filter((at) => repeatsAfter(levels, at, lag).count > 0).map((at) => likenessOf(spectrumAt(at), spectrumAt(Math.round(at + lag))));
+    const likeness = events.filter((at) => repeatsAfter(levels, at, lag).count > 0).map((at) => likenessOf(spectrumAt(at), spectrumAt(at + lag)));
     if (median(likeness) < ECHO_ALIKE) continue;
     echoes.push({ lag, share: alike.length / events.length, repeats });
   }
@@ -763,7 +792,18 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
   const levels = Float64Array.from(bright, (e) => Math.max(FLOOR_DB, 10 * Math.log10(e / loudest)));
 
   const onsets = onsetsOf(cut, sampleRate, levels);
-  const found = echoOf(levels, onsets, (frame) => spectrumOf(cut, sampleRate, (frame - 1) * hop), tempoBpm);
+  // The spectrum from a frame on, which may fall between frames (a repeat is placed at its exact sample,
+  // the lag's whole length after its sound's); each made once, as an event is compared with its
+  // repeat at every lag tried
+  const window = spectrumWindow(spectrumSize(sampleRate));
+  const spectra = new Map<number, Float64Array>();
+  const spectrumAt = (frame: number) => {
+    const from = Math.round((frame - 1) * hop);
+    let spectrum = spectra.get(from);
+    if (!spectrum) spectra.set(from, (spectrum = spectrumOf(cut, sampleRate, from, window)));
+    return spectrum;
+  };
+  const found = echoOf(levels, onsets, spectrumAt, tempoBpm);
   let echo: Space['echo'] = null;
   let notes = onsets;
   if (found) {
@@ -843,11 +883,15 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
     unlikeWeights += Math.sqrt(energy);
   }
   if (count < MIN_ENDS || unlikeTails > tails / 2 || unlikeWeights > UNREAD * weights) return { ...none, echo };
+  const decayMs = Math.round(decay);
+  // (beside an echo, a decay under DRY_MS is the notes' own stop, under repeats that ring on: neither it nor the share after it is given)
+  if (echo && decayMs < DRY_MS) return { ...none, echo };
   return {
-    decayMs: Math.round(decay),
+    decayMs,
     wetShare: round2(weightedMedian(shares)),
     echo,
-    // (tails that are digital silence have no width to speak of; nor is a width given beside an echo, where what comes after the notes is repeats, often thrown from side to side)
-    tailWiderDb: side && !echo && width.tailSide + width.tailMid > 0 ? round1(sideOverMidDb(width.tailSide, width.tailMid) - sideOverMidDb(width.directSide, width.directMid)) : null,
+    // (tails that are digital silence have no width to speak of; nor is a width given beside an echo, where what comes after the notes is repeats, often thrown from side to side, nor
+    // when sounds stop almost at once, where the "tail" is a noise floor, dither or the sound's own unlike sides)
+    tailWiderDb: side && !echo && decayMs >= DRY_MS && width.tailSide + width.tailMid > 0 ? round1(sideOverMidDb(width.tailSide, width.tailMid) - sideOverMidDb(width.directSide, width.directMid)) : null,
   };
 }

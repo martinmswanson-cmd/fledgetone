@@ -6,6 +6,7 @@
  */
 import { LOW_SIDE_LIMIT_DB } from '../mixCheck';
 import { MOVEMENT_BANDS } from './movement';
+import { DRY_MS } from './space';
 import type { Fault, Modulation, Place, SoundReport } from './types';
 
 export const one = (x: number) => (Object.is(Math.round(x * 10) / 10, -0) ? 0 : x).toFixed(1);
@@ -88,8 +89,7 @@ const OUT_OF_PHASE = -0.1;
 /** Up to this flatness a sound is pitched enough to have a key and a tuning. */
 const PITCHED_FLATNESS = 0.15;
 
-/** Under this decay, ms, sounds stop almost at once; over LONG_TAIL_MS they ring on. */
-const DRY_MS = 150;
+/** Under DRY_MS (space.ts) sounds stop almost at once; over LONG_TAIL_MS, ms, they ring on. */
 const LONG_TAIL_MS = 1000;
 /** From this wet share on, much of the sound is tail. */
 const MUCH_TAIL = 0.3;
