@@ -6,7 +6,7 @@
 import type { BandSpectrum } from '../mixAnalysis';
 
 /** Each group's rule version; raised whenever that group's numbers or thresholds change. */
-export const HEARING_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1, register: 1 } as const;
+export const HEARING_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1, register: 1, space: 1 } as const;
 export type HearingGroup = keyof typeof HEARING_VERSIONS;
 
 /**
@@ -90,6 +90,22 @@ export interface Pitch {
 }
 
 /**
+ * How the sound sits in a space: how long its sounds ring on after they end, how much of it is tail, a
+ * clear echo, and the width of the tails. Decays, the wet share and the width are null when fewer than
+ * three notes or hits end (a held sound, a riff with no gaps, silence).
+ */
+export interface Space {
+  /** The median time, ms, for the level to fall 20 dB from where a note or hit ends */
+  decayMs: number | null;
+  /** 0 to 1 (2 places): the share of the energy of the notes that end in their tails, after they end, rather than in the direct sound */
+  wetShare: number | null;
+  /** A clear echo: its delay, ms, how many repeats stand out where it is heard most clearly, and its note value at the known tempo */
+  echo: { ms: number; repeats: number; note?: string } | null;
+  /** Side over mid in the tails less side over mid in the direct sound, dB (1 place); null for one channel or when nothing ends */
+  tailWiderDb: number | null;
+}
+
+/**
  * Where the pitched parts sit (a report has none when no pitched part is heard: drums, noise). Hz are
  * of the parts' fundamentals, weighted by their energy.
  */
@@ -161,6 +177,7 @@ export interface SoundReport {
   stereo?: Stereo;
   pitch?: Pitch;
   register?: Register;
+  space?: Space;
   faults: Fault[];
   /**
    * The per-second grids: what the pictures are drawn from and what a stretch of a saved hearing is

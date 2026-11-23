@@ -1,6 +1,6 @@
 /**
- * The sound report of the hearing work: gathers the eight measured groups (tone, texture, movement,
- * dynamics, attack, stereo, pitch, register), the faults and the sound over time (one reading a
+ * The sound report of the hearing work: gathers the nine measured groups (tone, texture, movement,
+ * space, dynamics, attack, stereo, pitch, register), the faults and the sound over time (one reading a
  * second) into one report with its plain-word lines. Plain maths on samples, no Web Audio, so Node
  * can test it.
  */
@@ -12,6 +12,7 @@ import { faultsOf } from './faults';
 import { movementOf } from './movement';
 import { chromaAlong, pitchOf } from './pitch';
 import { registerOf } from './register';
+import { spaceOf } from './space';
 import { stereoOf } from './stereo';
 import { textureOf } from './texture';
 import { toneOf } from './tone';
@@ -33,7 +34,7 @@ export interface HearOptions {
   stretch?: { fromSeconds: number; toSeconds: number };
 }
 
-/** Shorter than this, a sound is too short for the tone, texture, movement, stereo, pitch and register groups. */
+/** Shorter than this, a sound is too short for the tone, texture, movement, space, stereo, pitch and register groups. */
 const MIN_SECONDS = 0.4;
 const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
@@ -132,6 +133,7 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
     report.tone = tone;
     report.texture = textureOf(heard, sampleRate);
     report.movement = movementOf(heard, sampleRate, opts.tempoBpm);
+    report.space = spaceOf(heard, sampleRate, opts.tempoBpm);
     const stereo = stereoOf(heard, sampleRate, tone.spectrum);
     if (stereo) report.stereo = stereo;
     report.pitch = pitchOf(heard, sampleRate, opts.tempoBpm === undefined ? undefined : { bpm: opts.tempoBpm });

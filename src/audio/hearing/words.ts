@@ -1,6 +1,6 @@
 /**
  * The plain-word lines of the hearing sound report: one line for each finding that applies, in the
- * order tone, texture, movement, dynamics, attack, stereo, pitch, register, then one line per
+ * order tone, texture, movement, space, dynamics, attack, stereo, pitch, register, then one line per
  * fault. The lines describe what the numbers say; none of them scores a sound as good or bad. Pure
  * text, no Web Audio, so Node can test it.
  */
@@ -88,13 +88,27 @@ const OUT_OF_PHASE = -0.1;
 /** Up to this flatness a sound is pitched enough to have a key and a tuning. */
 const PITCHED_FLATNESS = 0.15;
 
+/** Under this decay, ms, sounds stop almost at once; over LONG_TAIL_MS they ring on. */
+const DRY_MS = 150;
+const LONG_TAIL_MS = 1000;
+/** From this wet share on, much of the sound is tail. */
+const MUCH_TAIL = 0.3;
+/** From this much wider, dB, the tails are said to be wider than the direct sound. */
+const WIDER_TAILS_DB = 3;
+
+/** A time in ms as a person reads it: "80 ms", "under 10 ms" (finer than the 10 ms frames it is measured on), "1.2 s". */
+function msText(ms: number): string {
+  if (ms < 10) return 'under 10 ms';
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${one(ms / 1000)} s`;
+}
+
 /** A key's short name ("C maj", "A min") written out. */
 const keyText = (name: string) => name.replace(/ maj$/, ' major').replace(/ min$/, ' minor');
 
 /** One line for each finding of the report that applies, then one for each fault. */
 export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
   const out: string[] = [];
-  const { tone, texture, movement, dynamics, attack, stereo, pitch, register } = r;
+  const { tone, texture, movement, space, dynamics, attack, stereo, pitch, register } = r;
 
   if (tone) {
     if (tone.centreHz > 3000) out.push(`The spectral centre sits at ${freqText(tone.centreHz)}: bright.`);
@@ -132,6 +146,17 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
       if (m.band === 'mid' && m.note === '1/4' && m.depthDb >= 3) out.push(`The mid band dips and returns on the beat (${one(m.depthDb)} dB): sidechain pumping and parts played on the beat both read this way.`);
     }
     if (movement.modulations.length === 0 && movement.changeDb < 0.3) out.push('Static: its spectrum barely changes.');
+  }
+
+  if (space) {
+    if (space.decayMs !== null && space.decayMs < DRY_MS) out.push(`Dry: sounds stop almost at once (they fall 20 dB in ${msText(space.decayMs)}).`);
+    else if (space.decayMs !== null && space.decayMs > LONG_TAIL_MS) out.push(`Long tails: sounds ring on, falling 20 dB in ${msText(space.decayMs)}.`);
+    if (space.wetShare !== null && space.wetShare >= MUCH_TAIL) out.push(`Much of it is tail rather than direct sound (wet share ${two(space.wetShare)}).`);
+    if (space.echo) {
+      const { ms, repeats, note } = space.echo;
+      out.push(`An echo every ${Math.round(ms)} ms${note ? ` (${note} notes)` : ''}, ${repeats} repeat${repeats === 1 ? '' : 's'} standing out.`);
+    }
+    if (space.tailWiderDb !== null && space.tailWiderDb >= WIDER_TAILS_DB) out.push(`The tails are wider than the direct sound (${signed(space.tailWiderDb)} dB).`);
   }
 
   if (dynamics) {
