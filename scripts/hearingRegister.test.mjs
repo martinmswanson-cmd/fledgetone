@@ -164,3 +164,53 @@ test('a vowel\'s formant is not read as a part', () => {
   assert.ok(r);
   for (const k of ['highHz', 'topHz']) assert.ok(Math.abs(12 * octavesApart(220, r[k])) <= 1, `${k} ${r[k]} is not within a semitone of A3`);
 });
+
+/** An additive tone on `hz`, 5 ms edges: harmonic k (up to 20 kHz) at amplitude amp(k), each from a phase drawn from `seed` (0: all from sine phase). */
+const tone = (hz, seconds, amp, seed = 0) => {
+  let state = seed >>> 0;
+  const draw = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  const n = Math.round(seconds * SR);
+  const x = new Float32Array(n);
+  for (let k = 1; k * hz < 20000; k++) {
+    const a = amp(k);
+    const phase = seed ? 2 * Math.PI * draw() : 0;
+    if (!a) continue;
+    const w = (2 * Math.PI * k * hz) / SR;
+    for (let i = 0; i < n; i++) x[i] += a * Math.sin(w * i + phase);
+  }
+  const edge = Math.round(0.005 * SR);
+  for (let i = 0; i < Math.min(edge, n); i++) {
+    x[i] *= i / edge;
+    x[n - 1 - i] *= i / edge;
+  }
+  return x;
+};
+const sawAmp = (k) => 1 / k;
+const triangleAmp = (k) => (k % 2 ? 1 / (k * k) : 0);
+
+test('a root, its fifth and its octave read centred on the fifth, the octave not folded into the root', () => {
+  for (const [name, root] of [['C3 G3 C4', -12], ['E2 B2 E3', -20]]) {
+    const fifth = fromC4(root + 7);
+    // Equal saws, the octave starting half a millisecond late
+    const late = S.at(3.5, [[0, S.saw(fromC4(root), 3, -12)], [0, S.saw(fifth, 3, -12)], [0.0005, S.saw(fromC4(root + 12), 3, -12)]]);
+    near(registerOf([late], SR).centreHz, fifth, 0.03 * fifth, `${name}, the octave 0.5 ms late: centreHz`);
+    // Equal saws whose harmonics start from random phases
+    for (const seed of [1, 2, 3]) {
+      const x = S.at(3.5, [0, 7, 12].map((s, j) => [0, tone(fromC4(root + s), 3, sawAmp, 10 * seed + j + 1)]));
+      near(registerOf([x], SR).centreHz, fifth, 0.03 * fifth, `${name}, harmonic phases from seed ${seed}: centreHz`);
+    }
+  }
+});
+
+test('a melody of odd harmonics on a drone\'s overtones reads as a part', () => {
+  // A held C3 saw drone; over it a held G4 (its 3rd harmonic), and a melody G4 C5 E5 G5 E5 C5 G4 C5 (0.5 s a note), triangles, 6 dB under, level with and 6 dB over it (RMS)
+  const drone = atRms(tone(fromC4(-12), 4, sawAmp), -20);
+  const g4 = tone(fromC4(7), 4, triangleAmp);
+  const melody = S.at(4, [7, 12, 16, 19, 16, 12, 7, 12].map((s, i) => [0.5 * i, tone(fromC4(s), 0.5, triangleAmp)]));
+  for (const db of [-6, 0, 6]) {
+    const held = registerOf([S.mix(drone, atRms(g4, -20 + db))], SR);
+    near(held.highHz, fromC4(7), 0.03 * fromC4(7), `held G4 at ${db} dB: highHz`);
+    near(held.topHz, fromC4(7), 0.03 * fromC4(7), `held G4 at ${db} dB: topHz`);
+    near(registerOf([S.mix(drone, atRms(melody, -20 + db))], SR).topHz, fromC4(12), 0.03 * fromC4(12), `the melody at ${db} dB: topHz`);
+  }
+});
