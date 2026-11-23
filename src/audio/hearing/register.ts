@@ -46,6 +46,24 @@ const FLOOR_DB = 40;
 const ROOT_SHARE = 0.03;
 /** A peak starts a part of its own only while this share of its power is not yet some lower part's overtone. */
 const FRESH_SHARE = 0.25;
+/**
+ * A part on a lower part's series (its root that part's 2nd overtone or higher) stands only when it
+ * lifts the lower part's overtones it sits on: over its first SERIES_HARMONICS harmonics, the median
+ * of the power at each over the power the lower part's overtones either side of it hold (which it
+ * does not touch). A real part lifts every overtone it sits on; a room's colouring, a formant or an
+ * echo's comb lifts some and drops others. The median must clear SERIES_DB, a doubling (the part holds
+ * as much there as the overtone it sits on), and SERIES_Z standard errors (a one-sided 5% chance) of
+ * a median of that many lifts that a diffuse reverb's colouring alone gives: its response at one
+ * frequency has an exponentially distributed power, which spreads SERIES_SPREAD_DB (10/ln 10 times
+ * pi/sqrt 6) in dB, and a median of K has a standard error sqrt(pi/2) times that over sqrt K. With
+ * fewer than SERIES_LEAST harmonics to judge by (a root over a third of 5 kHz), a lift can't be told
+ * from a colouring, and the peak stays the lower part's overtone.
+ */
+const SERIES_DB = 3;
+const SERIES_SPREAD_DB = 5.57;
+const SERIES_Z = 1.645;
+const SERIES_HARMONICS = 8;
+const SERIES_LEAST = 3;
 /** Under this share of its frames holding a part, a sound has no register. */
 const MIN_PITCHED_SHARE = 0.05;
 /** A frame holds parts only when they hold this share of its energy (noise has its peaks, but they hold little). */
@@ -149,7 +167,8 @@ function sharesOf(weights: readonly number[], total: number): number[] {
  * semitone of the grid, its strongest peak as a fundamental, with the peaks at its overtones; the one
  * with the most power still unexplained is the next part. Its fundamental is taken out whole, each
  * overtone by as much as the overtones either side of it hold (the smooth series a note's overtones
- * make), so a louder note sitting on one of them keeps the rest.
+ * make), so a louder note sitting on one of them keeps the rest. A candidate rooted on a part's
+ * overtone is a part only if it lifts that part's series (liftsSeries), not just the one overtone.
  */
 function partsOfFrame(power: Float64Array, sampleRate: number, size: number, energy: number): Part[] {
   const half = size / 2;
@@ -242,7 +261,46 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
     candidates.push({ harmonics });
   }
 
+  /** The index of the peak nearest `hz` within `gap` Hz, or -1. */
+  const nearestWithin = (hz: number, gap: number): number => {
+    const i = nearest(hz);
+    return i >= 0 && Math.abs(freqs[i] - hz) <= gap ? i : -1;
+  };
+  /**
+   * Whether `upper`, whose root is the `m`-th harmonic of a part on `f0` Hz, lifts that part's
+   * overtones it sits on: over its first SERIES_HARMONICS harmonics (at least SERIES_LEAST of them
+   * judged), the median of the power there (`left`: its peak, and the lower part's there if apart)
+   * over the power the lower part's overtones either side hold (the mean of their amplitudes,
+   * squared: its own smooth series, off this one's), in dB, clearing the margin for that many.
+   */
+  const liftsSeries = (upper: number[], f0: number, m: number): boolean => {
+    const lifts: number[] = [];
+    for (let k = 1; k <= upper.length && lifts.length < SERIES_HARMONICS; k++) {
+      const j = m * k;
+      const sides: number[] = [];
+      for (const n of [j - 1, j + 1]) {
+        const i = nearestWithin(n * f0, Math.min(f0 / 2, n * f0 * HARMONIC_TOLERANCE));
+        if (i >= 0) sides.push(Math.sqrt(left[i]));
+      }
+      if (sides.length === 0) continue;
+      const side = sides.reduce((x, y) => x + y, 0) / sides.length;
+      const own = upper[k - 1];
+      const theirs = nearestWithin(j * f0, Math.min(f0 / 2, j * f0 * HARMONIC_TOLERANCE));
+      let seen = own >= 0 ? left[own] : 0;
+      if (theirs >= 0 && theirs !== own) seen += left[theirs];
+      // (a peak there that a part picked before has taken whole tells nothing; no peak there, no lift)
+      if (seen > 0) lifts.push(10 * Math.log10(seen / (side * side)));
+      else if (own < 0 && theirs < 0) lifts.push(-Infinity);
+    }
+    if (lifts.length < SERIES_LEAST) return false;
+    const margin = Math.max(SERIES_DB, (SERIES_Z * Math.sqrt(Math.PI / 2) * SERIES_SPREAD_DB) / Math.sqrt(lifts.length));
+    return median(lifts) >= margin;
+  };
+
   const left = Float64Array.from(powers);
+  const blocked = new Uint8Array(candidates.length);
+  /** The peaks that rooted a candidate a part blocked, with that part's place in `parts`. */
+  const overtonesOf: Array<{ part: number; peak: number }> = [];
   const parts: Part[] = [];
   let held = 0;
   let strongest = 0;
@@ -253,7 +311,7 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
     for (let c = 0; c < candidates.length; c++) {
       const { harmonics } = candidates[c];
       const root = harmonics[0];
-      if (!(left[root] > FRESH_SHARE * powers[root])) continue;
+      if (blocked[c] || !(left[root] > FRESH_SHARE * powers[root])) continue;
       let sum = 0;
       for (const i of harmonics) if (i >= 0) sum += left[i];
       if (sum > bestSum && left[root] >= ROOT_SHARE * sum) {
@@ -277,9 +335,6 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
       const expected = sides.reduce((a, b) => a + b, 0) / sides.length;
       return Math.min(left[i], expected * expected);
     });
-    const partEnergy = explained.reduce((a, b) => a + b, 0);
-    if (parts.length === 0) strongest = partEnergy;
-    else if (partEnergy < strongest * keep) break;
     // Its pitch, from its peaks as they were heard
     let pitchSum = 0;
     let weight = 0;
@@ -287,10 +342,34 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
       if (i < 0) return;
       pitchSum += (freqs[i] / (h + 1)) * powers[i];
       weight += powers[i];
-      left[i] -= explained[h];
     });
-    parts.push({ hz: pitchSum / weight, energy: partEnergy });
+    const hz = pitchSum / weight;
+    // A candidate rooted on one of its overtones stands only if it lifts its series (judged before it
+    // takes its share); one that doesn't is no part, and what of the overtone it was rooted on no part
+    // picked later takes is this part's too
+    for (let c = 0; c < candidates.length; c++) {
+      if (c === best || blocked[c]) continue;
+      const upper = candidates[c].harmonics;
+      const h = harmonics.indexOf(upper[0], 1);
+      if (h >= 1 && !liftsSeries(upper, hz, h + 1)) {
+        blocked[c] = 1;
+        overtonesOf.push({ part: parts.length, peak: upper[0] });
+      }
+    }
+    const partEnergy = explained.reduce((a, b) => a + b, 0);
+    if (parts.length === 0) strongest = partEnergy;
+    else if (partEnergy < strongest * keep) break;
+    harmonics.forEach((i, h) => {
+      if (i >= 0) left[i] -= explained[h];
+    });
+    parts.push({ hz, energy: partEnergy });
     held += partEnergy;
+  }
+  for (const { part, peak } of overtonesOf) {
+    if (part >= parts.length || !(left[peak] > 0)) continue;
+    parts[part].energy += left[peak];
+    held += left[peak];
+    left[peak] = 0;
   }
   return held >= FRAME_SHARE * energy ? parts : [];
 }

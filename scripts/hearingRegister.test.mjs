@@ -106,3 +106,61 @@ test('noteName', () => {
   assert.equal(noteName(277.18), 'C#4');
   assert.equal(noteName(55), 'A1');
 });
+
+// A held C4 saw, the space tests' pluck (C4 E4 G4 C5 A4 F4 D4 B3, 0.25 s every 0.75 s), and the rooms
+// they go through: RT 0.3 and 1 s, wet 0.5 and 0.8, seeds 1 to 3 (12 rooms; the pluck the 6 at wet 0.8)
+const heldC4 = S.saw(fromC4(0), 4, -6);
+const pluck = S.melody([0, 4, 7, 12, 9, 5, 2, -1].map((s, i) => [fromC4(s), i * 0.75, 0.25]), 8, -6);
+const ROOMS = [0.3, 1].flatMap((rt) => [0.5, 0.8].flatMap((wet) => [1, 2, 3].map((seed) => ({ rt, wet, seed }))));
+/** Octaves from `a` to `b`. */
+const octavesApart = (a, b) => Math.log2(b / a);
+/** The worst shift, octaves, of each of `keys` over the rooms, from the dry reading of `x` (with `up`, the largest rise). */
+const worstThroughRooms = (x, keys, up = false, rooms = ROOMS) => {
+  const dry = registerOf([x], SR);
+  assert.ok(dry);
+  const worst = Object.fromEntries(keys.map((k) => [k, { shift: 0, room: '' }]));
+  for (const { rt, wet, seed } of rooms) {
+    const r = registerOf([S.reverb(x, rt, wet, seed)], SR);
+    assert.ok(r, `RT ${rt} s wet ${wet} seed ${seed} reads no register`);
+    for (const k of keys) {
+      const shift = octavesApart(dry[k], r[k]);
+      if (up ? shift > worst[k].shift : Math.abs(shift) > Math.abs(worst[k].shift)) worst[k] = { shift, room: `RT ${rt} s wet ${wet} seed ${seed}: ${dry[k]} to ${r[k]}` };
+    }
+  }
+  return worst;
+};
+/** An open "ah" on `hz`: harmonics at 1/k times three resonances (730, 1090 and 2440 Hz) over a little floor, 3 s, peak -6 dB. */
+const ah = (hz) => {
+  const gain = (f) => 0.05 + [[730, 90, 1], [1090, 110, 0.5], [2440, 170, 0.25]].reduce((g, [c, bw, a]) => g + a / Math.sqrt(1 + ((f - c) / (bw / 2)) ** 2), 0);
+  const x = S.mix(...Array.from({ length: Math.floor(8000 / hz) }, (_, i) => S.gain(S.sine((i + 1) * hz, 3, 0), 20 * Math.log10(gain((i + 1) * hz) / (i + 1)))));
+  let peak = 0;
+  for (const v of x) peak = Math.max(peak, Math.abs(v));
+  return S.gain(x, -6 - 20 * Math.log10(peak));
+};
+
+test('a reverb does not lift a held note into its overtones', () => {
+  const worst = worstThroughRooms(heldC4, ['centreHz', 'highHz', 'topHz']);
+  for (const [k, w] of Object.entries(worst)) assert.ok(Math.abs(w.shift) < 0.25, `${k} moves ${w.shift.toFixed(2)} octaves (${w.room})`);
+});
+
+test('a reverb does not lift a plucked melody\'s high or top line', () => {
+  const worst = worstThroughRooms(pluck, ['centreHz', 'highHz', 'topHz'], true, ROOMS.filter((room) => room.wet === 0.8));
+  for (const [k, w] of Object.entries(worst)) assert.ok(w.shift < 0.25, `${k} rises ${w.shift.toFixed(2)} octaves (${w.room})`);
+});
+
+test('a note an octave or a twelfth over another still reads as a part', () => {
+  const saws = new Map([-12, 0, 7, 12].map((s) => [s, S.saw(fromC4(s), 4, -6)]));
+  const pair = (low, high, db = 0) => S.mix(saws.get(low), S.gain(saws.get(high), db));
+  const equal = registerOf([pair(0, 12)], SR);
+  near(equal.lowHz, fromC4(0), 0.03 * fromC4(0), 'C4+C5 lowHz');
+  near(equal.highHz, fromC4(12), 0.03 * fromC4(12), 'C4+C5 highHz');
+  near(registerOf([pair(0, 12, -6)], SR).highHz, fromC4(12), 0.03 * fromC4(12), 'C4 with C5 6 dB under it, highHz');
+  near(registerOf([pair(-12, 7)], SR).highHz, fromC4(7), 0.03 * fromC4(7), 'C3+G4 highHz');
+  near(registerOf([S.reverb(pair(0, 12), 1, 0.5, 1)], SR).highHz, fromC4(12), 0.03 * fromC4(12), 'C4+C5 through a room, highHz');
+});
+
+test('a vowel\'s formant is not read as a part', () => {
+  const r = registerOf([ah(220)], SR);
+  assert.ok(r);
+  for (const k of ['highHz', 'topHz']) assert.ok(Math.abs(12 * octavesApart(220, r[k])) <= 1, `${k} ${r[k]} is not within a semitone of A3`);
+});
