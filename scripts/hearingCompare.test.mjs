@@ -470,9 +470,25 @@ test('wetter and longer reads as space', () => {
   const wet = c.differences.find((d) => d.measure === 'wet share');
   assert.ok(decay && decay.change > 0 && decay.group === 'space', c.differences.map((d) => d.words).join('\n'));
   assert.ok(wet && wet.change > 0 && wet.group === 'space', c.differences.map((d) => d.words).join('\n'));
-  assert.match(decay.words, /^Decay: \d+ ms against \d+ ms \(\d+(\.\d)? times as long\)\.$/);
+  assert.match(decay.words, /^Decay: \d+ ms against (\d+ ms|under 10 ms) \((more than )?\d+(\.\d)? times as long\)\.$/);
   assert.match(wet.words, /^Wet share: \d\.\d\d against \d\.\d\d \(\+\d\.\d\d\)\.$/);
   finite(c);
+});
+
+test('a decay under 10 ms is said as the sound\'s words say it, and the words\' ratio is the change\'s', () => {
+  const now = hear([reverbPluck()]);
+  const decay = (a, b) => compareSound({ ...now, space: { ...now.space, decayMs: a } }, { ...now, space: { ...now.space, decayMs: b } }).differences.find((d) => d.measure === 'decay');
+  // (decays are read on 10 ms frames: under that, the change takes 10 ms, and the words say so)
+  const up = decay(6, 705);
+  assert.equal(up.words, 'Decay: 705 ms against under 10 ms (more than 70 times as long).');
+  near(up.change, Math.log2(70.5), 0.005, 'the change, octaves');
+  const down = decay(705, 6);
+  assert.equal(down.words, 'Decay: under 10 ms against 705 ms (less than 2% as long).');
+  near(down.change, -Math.log2(70.5), 0.005, 'the change, octaves');
+  const plain = decay(40, 320);
+  assert.equal(plain.words, 'Decay: 320 ms against 40 ms (8 times as long).');
+  near(plain.change, 3, 1e-9, 'the change, octaves');
+  assert.equal(decay(8, 9), undefined, 'two decays under 10 ms do not differ');
 });
 
 test('an octave higher reads as register', () => {

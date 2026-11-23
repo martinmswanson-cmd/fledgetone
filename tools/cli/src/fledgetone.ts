@@ -82,8 +82,8 @@ Rendering and listening
   --timeout <s>       Give up after this many seconds (default 600)
   --verbose           Say what the page logs and refuses
   --sound             measure and listen: the sound's character in words (tone, texture,
-                      movement, dynamics, attack, stereo, pitch, faults), worked out on this
-                      computer. Words that describe, never judge
+                      movement, space, dynamics, attack, stereo, pitch, register, faults),
+                      worked out on this computer. Words that describe, never judge
   --pictures <folder> PNG pictures of it written there (spectrogram, stereo, level, spectrum,
                       chroma, close-ups), each listed with what it shows; same names written over
   --close <s|bar.beat> A close-up picture of a moment; again for more. measure: seconds from the

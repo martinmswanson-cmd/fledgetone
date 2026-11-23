@@ -336,7 +336,7 @@ test('listen with a song file: the bars and close-ups are checked before the sou
     // the descriptions use the report's own words
     const { tools } = await client.listTools();
     const hear = tools.find((t) => t.name === 'hear_audio');
-    assert.match(hear.description, /tone, texture, movement, dynamics, attack, stereo, pitch, faults/);
+    assert.match(hear.description, /ten groups \(tone, texture, movement, space, dynamics, attack, stereo, pitch, register, faults\)/);
     assert.doesNotMatch(hear.description, /rhythm|harmony/);
     assert.doesNotMatch(JSON.stringify(tools), /gritty/);
   } finally {

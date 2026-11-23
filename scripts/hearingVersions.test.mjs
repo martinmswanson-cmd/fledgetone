@@ -3,7 +3,7 @@
 // group whose numbers or thresholds change must have its version raised: an older saved hearing is then
 // said to be stale in that group rather than compared as if nothing had moved. This test pins a handful
 // of numbers of each group for one made, fixed sound (a gated saw with noise, a click planted in it,
-// stereo; and, for the space group, a reverb version of it). When a pin fails, the group moved: raise its version and update the pin. Run with `npm test`.
+// stereo; and, for the space group, a reverb version of it and a pluck through two delays). When a pin fails, the group moved: raise its version and update the pin. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,6 +22,7 @@ register(
 
 const { hearSound } = await import('../src/audio/hearing/hearSound.ts');
 const { HEARING_VERSIONS } = await import('../src/audio/hearing/types.ts');
+const { spaceOf } = await import('../src/audio/hearing/space.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 
 // The sound: 4 seconds, a 110 Hz saw gated at 4 Hz (12 dB deep) with its own pink noise in each channel
@@ -149,6 +150,22 @@ test('space: the pinned numbers hold', () => {
   pin('space', 'the reverb version: wetShare', s.wetShare, 0.16, 0.01);
   pin('space', 'the reverb version: tailWiderDb', s.tailWiderDb, 4.6, 0.2);
   same('space', 'the reverb version: echo', s.echo, null);
+  // Delayed versions, so a change to the echo rule trips a pin: a pluck (8 saw notes of 0.25 s, one every 0.75 s, 8 s in
+  // all, as in scripts/hearingSpace.test.mjs) through a 375 ms and a 250 ms delay at feedback 0.5, heard at 120 bpm
+  const fromC4 = (n) => 261.6256 * 2 ** (n / 12);
+  const pluck = S.melody([0, 4, 7, 12, 9, 5, 2, -1].map((n, i) => [fromC4(n), i * 0.75, 0.25]), 8, -6);
+  const delayed = (seconds) => {
+    const x = S.delay(pluck, seconds, 0.5, 8);
+    return spaceOf([x, x], 48000, 120);
+  };
+  // (375 ms, a dotted 1/8: no note value; beside the echo the notes' own stop is under 150 ms, so decay and wet share are null)
+  same('space', 'the 375 ms delay version', delayed(0.375), { decayMs: null, wetShare: null, echo: { ms: 375, repeats: 6 }, tailWiderDb: null });
+  const d = delayed(0.25);
+  pin('space', 'the 250 ms delay version: echo ms', d.echo?.ms, 252, 2);
+  same('space', 'the 250 ms delay version: repeats and note', [d.echo?.repeats, d.echo?.note], [6, '1/8']);
+  pin('space', 'the 250 ms delay version: decayMs (the repeats counted as tail)', d.decayMs, 842, 10);
+  pin('space', 'the 250 ms delay version: wetShare', d.wetShare, 0.16, 0.01);
+  same('space', 'the 250 ms delay version: tailWiderDb', d.tailWiderDb, null);
 });
 
 test('register: the pinned numbers hold', () => {

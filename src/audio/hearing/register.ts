@@ -18,6 +18,8 @@ import type { Register } from './types';
 const MEASURE_RATE = 12000;
 /** The resampling's sinc reaches this many zero crossings each side: flat to 4.9 kHz at 12 kHz, 0.3 dB down at 5.1 kHz. */
 const RESAMPLE_HALF = 12;
+/** The sound resampled to the measuring rate this far or more under the sound itself, dB, holds only the resampling's residue: no register. */
+const RESIDUE_DB = -40;
 /** The range of a part's pitch, Hz (B0 to C8 on the grid). */
 const LOWEST_HZ = 30;
 const HIGHEST_HZ = 4200;
@@ -295,6 +297,13 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
   return held >= FRAME_SHARE * energy ? parts : [];
 }
 
+/** The mean of the squares of `x`. */
+function meanSquare(x: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
+  return x.length > 0 ? sum / x.length : 0;
+}
+
 /**
  * Where the pitched parts of `channels` sit; null when they hold no pitched content (fewer than one
  * frame in twenty has a part: drums, noise, silence).
@@ -304,6 +313,9 @@ export function registerOf(channels: readonly Float32Array[], sampleRate: number
   const mix = analysisMix(channels);
   const rate = Math.min(sampleRate, MEASURE_RATE);
   const x = rate === sampleRate ? mix : resampleOnce(mix, sampleRate, rate, undefined, RESAMPLE_HALF);
+  // A sound with nothing under the measuring rate's half (a tone at 8 kHz alone) leaves only the resampling's residue,
+  // which would read as a note at its alias: when that is RESIDUE_DB or more under the sound, there is no register
+  if (x !== mix && meanSquare(x) <= meanSquare(mix) * 10 ** (RESIDUE_DB / 10)) return null;
   // (the split may work in a fresh array, not in the caller's own channel)
   const harmonic = harmonicPercussive([x], rate).parts([x], x !== channels[0]).harmonic[0];
   const length = harmonic.length;

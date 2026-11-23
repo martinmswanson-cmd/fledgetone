@@ -91,6 +91,8 @@ interface Row {
   changeUnit: string;
   /** For a measure compared as a ratio: how b is said against a ("4 times as long", "25% as many"). */
   ratio?: 'as long' | 'as many';
+  /** A ratio's floor: readings under it are taken as it in the change and the ratio, and said as under it ("under 10 ms"). */
+  floor?: number;
 }
 
 /** A time in whole ms; a pitch as its note name. */
@@ -107,6 +109,19 @@ function ratioWords(a: number, b: number, unit: string): string {
   return `${shown} times ${unit}`;
 }
 
+/**
+ * b against a as a ratio when either is under `floor` (and taken as it): "more than 70 times as long" when a is under
+ * it, "less than 2% as long" when b is; rounded so that what is said holds whatever the reading under the floor was.
+ */
+function flooredRatioWords(a: number, b: number, floor: number, unit: string): string {
+  const fa = Math.max(a, floor);
+  const fb = Math.max(b, floor);
+  if (a >= floor && b >= floor) return ratioWords(fa, fb, unit);
+  const r = fb / fa;
+  if (a < floor) return r >= 10 ? `more than ${Math.floor(r)} times ${unit}` : `more than ${Math.floor(r * 10) / 10} times ${unit}`;
+  return `less than ${Math.ceil(r * 100)}% ${unit}`;
+}
+
 function differenceOf(row: Row): SoundDifference | null {
   const change = row.change ?? row.b - row.a;
   if (!Number.isFinite(change) || !(Math.abs(change) / row.step >= 1)) return null;
@@ -115,8 +130,11 @@ function differenceOf(row: Row): SoundDifference | null {
   const b = round(row.b, row.style.places);
   const rounded = round(change, row.style.changePlaces);
   const signedChange = `${rounded >= 0 ? '+' : '-'}${(row.style.changePlaces === 1 ? one : two)(Math.abs(rounded))}${row.changeUnit ? ` ${row.changeUnit}` : ''}`;
-  const said = row.ratio ? ratioWords(a, b, row.ratio) : signedChange;
-  const words = `${capital(row.measure)}: ${reading(b, row.style, row.kind)} against ${reading(a, row.style, row.kind)} (${said}).`;
+  const floor = row.floor;
+  const said = row.ratio ? (floor ? flooredRatioWords(row.a, row.b, floor, row.ratio) : ratioWords(a, b, row.ratio)) : signedChange;
+  /** A reading as text, said as under the floor when it is (as the sound's own words say it). */
+  const text = (x: number, raw: number) => (floor && raw < floor ? `under ${reading(floor, row.style, row.kind)}` : reading(x, row.style, row.kind));
+  const words = `${capital(row.measure)}: ${text(b, row.b)} against ${text(a, row.a)} (${said}).`;
   return { group: row.group, measure: row.measure, a, b, change: rounded, size: round(size, 1), words };
 }
 
@@ -171,13 +189,16 @@ function plain(group: HearingGroup, measure: string, a: unknown, b: unknown, ste
   return finiteNumber(a) && finiteNumber(b) ? [{ group, measure, a, b, step, style, kind, changeUnit }] : [];
 }
 
-/** A measure compared as a ratio (its change is in doublings, its words say the ratio plainly). */
-function ratio(group: HearingGroup, measure: string, a: unknown, b: unknown, step: number, style: Style, kind: Row['kind'], said: Row['ratio'], floor = 0): Row[] {
+/**
+ * A measure compared as a ratio (its change is in doublings, its words say the ratio plainly), each reading taken as at
+ * least `floor`; with `sayUnder`, a reading under the floor is said as under it and the words' ratio is the floored one.
+ */
+function ratio(group: HearingGroup, measure: string, a: unknown, b: unknown, step: number, style: Style, kind: Row['kind'], said: Row['ratio'], floor = 0, sayUnder = false): Row[] {
   if (!finiteNumber(a) || !finiteNumber(b)) return [];
   const fa = Math.max(a, floor);
   const fb = Math.max(b, floor);
   if (!(fa > 0) || !(fb > 0)) return [];
-  return [{ group, measure, a, b, change: Math.log2(fb / fa), step, style, kind, changeUnit: 'octaves', ratio: said }];
+  return [{ group, measure, a, b, change: Math.log2(fb / fa), step, style, kind, changeUnit: 'octaves', ratio: said, ...(sayUnder && floor > 0 ? { floor } : {}) }];
 }
 
 /** The side and the middle level of `lo` to `hi` Hz, each against the report's whole, dB; null when the report has no spectrum of both. */
@@ -245,7 +266,8 @@ function oneSidedEcho(echo: NonNullable<Space['echo']>, inB: boolean, labels: { 
 /** The space rows: each measure only where both have a number (a null is not none, and not compared); an echo in one only is said once. */
 function spaceRows(x: Space, y: Space, labels: { a: string; b: string }): { rows: Row[]; more: Array<SoundDifference & { _raw: number }> } {
   const rows = [
-    ...ratio('space', 'decay', x.decayMs, y.decayMs, 0.4, MS, 'ms', 'as long', DECAY_FLOOR_MS),
+    // (a decay under the floor is said as the sound's own words say it, "under 10 ms", and the ratio is the change's)
+    ...ratio('space', 'decay', x.decayMs, y.decayMs, 0.4, MS, 'ms', 'as long', DECAY_FLOOR_MS, true),
     ...plain('space', 'wet share', x.wetShare, y.wetShare, 0.1, PLAIN2, 'plain', ''),
     ...ratio('space', 'echo', x.echo?.ms, y.echo?.ms, 0.1, MS, 'ms', 'as long'),
     ...plain('space', 'tail width', x.tailWiderDb, y.tailWiderDb, 2, DB, 'dB', 'dB'),

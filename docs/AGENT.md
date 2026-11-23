@@ -181,12 +181,13 @@ fledgetone measure mix.wav --save mix.hearing.json                   # measureme
 fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --against-to 90
 ```
 
-- `--sound` adds `sound`, the sound report, in eight groups: tone (the spectrum's balance, its
+- `--sound` adds `sound`, the sound report, in ten groups: tone (the spectrum's balance, its
   centre, tilt and roll-off, narrow peaks), texture (tonal or noisy, smooth or rough, percussive,
-  flat tops), movement (change over time, slow wobbles of a band), dynamics (loudness, true peak,
-  crest, range), attack (how often and how fast things start), stereo (correlation, balance,
-  mono loss, width), pitch (tempo, key, tuning, pitch classes) and faults (clicks, clipping, DC
-  offset, hum, digital silence, a channel fault), and one list of plain `words` for them all,
+  flat tops), movement (change over time, slow wobbles of a band), space (how long sounds ring on,
+  how much is tail, a clear echo, the tails' width), dynamics (loudness, true peak, crest,
+  range), attack (how often and how fast things start), stereo (correlation, balance, mono loss,
+  width), pitch (tempo, key, tuning, pitch classes), register (where the pitched parts and the
+  top line sit) and faults (clicks, clipping, DC offset, hum, digital silence, a channel fault), and one list of plain `words` for them all,
   which describe and never judge. The text output prints the words after the usual lines (with
   `--per-track`, each track's own under its line). With any of the hearing
   options (or `--from` / `--to`, or audio other than WAV), `measure --json` is the file's hearing:
@@ -258,7 +259,8 @@ judge it:
 - dynamics: loudness, true peak, crest and loudness range.
 - attack: how many things start each second, how many of them stand out only above 5 kHz
   (`highShare`, 0 to 1: 90% or more of the power each adds, where it stands out, is up there;
-  the words say so when half or more do, at one a second or more:
+  the words say so of a sound of 2 seconds or more that is not a single hit, when half or more
+  of its onsets do and there is at least one a second:
   `100% of its onsets (7.8 a second in all) stand out only above 5 kHz.`), and how fast they start ("busy" and "sparse" are
   said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
   fall and how loud its loudest 10 ms reads).
@@ -267,10 +269,12 @@ judge it:
 - register: where the pitched parts sit. `lowHz`, `centreHz` and `highHz` are the 10th, 50th and
   90th percentiles of the pitch of the pitched energy (of the parts' fundamentals, not their
   overtones); `topHz` is the top line, the highest clear part over time; `octaves` is the share of
-  the pitched energy in each octave from C1 to C8. The words name notes: `Its pitched parts sit
-  between C3 and B3 (132 Hz to 251 Hz), centred near F3.` and `The top line sits around F3.` A
-  sound with no pitched part (noise, noisy drums) has no `register`; a kick or a tom with a clear
-  pitch reads as a pitched part.
+  the pitched energy in each octave from C1 to C8. The words name the nearest note to each
+  reading: `Its pitched parts sit between C3 and B3 (132 Hz to 251 Hz), centred near F3.` and
+  `The top line sits around F3.` A reading lies between the notes played when it falls between
+  two of them (a C major scale can read "centred near F#3"), so a named note need not be one that
+  sounds. A sound with no pitched part (noise, noisy drums) has no `register`; a kick or a tom
+  with a clear pitch, or a snare's body tone, reads as a pitched part.
 - faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
 
 Each fault in `faults` has its `kind`, a `detail` in words, where it is (`seconds`, and `at` with
@@ -335,16 +339,19 @@ depth, and a width is compared only where a side level stands above 50 dB under 
 whole in one of the two. Rise time and onsets are given as a ratio (`4 times as long`).
 
 Space and register are compared where both sounds have a number: a `null` in either is not
-compared. Decay and an echo's time are given as a ratio (`Decay: 705 ms against 6 ms (118 times as
-long).`), wet share and tail width as the difference of the two. An echo only one of the two has
+compared. Decay and an echo's time are given as a ratio (`Decay: 705 ms against under 10 ms (more than
+70 times as long).`), wet share and tail width as the difference of the two. An echo only one of the two has
 is one difference that says which has it, with its time and note value (`Echo: only in echo.wav
 (375 ms).`). The unit of `change` goes by the measure: for decay and an echo heard in both, as
-for rise time and onsets, it is in octaves (doublings of the ratio: 1 is twice as long); for an
+for rise time and onsets, it is in octaves (doublings of the ratio: 1 is twice as long; a decay
+under 10 ms, the frames it is read on, is taken as 10 ms in `change` and in the words' ratio, and
+said as "under 10 ms", as the sound's own words say it); for an
 echo only one has, it is that echo's time in ms; for wet share it is the difference of the two;
 for tail width, dB. Register's centre, low, high and top line are compared in
 octaves (a step is a quarter of an octave) and written as notes (`Register centre: F4 against F3
-(+1.00 octaves).`). A register difference between a wet sound and a dry one mostly reflects the
-room, not the notes: a reverb or a delay lifts the high and top line readings (see below). A stretch
+(+1.00 octaves).`). Between a wet sound and a dry one, a room alone can lift the register's high and top line
+by a step or more, and the centre less often (see below); a difference in centre or low between
+a wet and a dry sound is mostly the notes. A stretch
 of a saved hearing is compared in tone, width and loudness only, and has no faults to compare.
 Like must be compared with like: a
 comparison is fair only between stretches of similar length and of the same kind of material (a
@@ -403,9 +410,10 @@ These are limits of the tool, measured, not advice:
   that could not be timed.
 - A reverb shorter than about 80 ms is not told from the sound itself: a very short room reads as
   part of the notes.
-- An echo is told from a repeated note only when the repeats come without onsets of their own. A
-  note played again more quietly at an even spacing reads the same as an echo, so the line says
-  both. The repeats must match the first sound's spectrum: different notes stepping quieter don't
+- An echo is told by its repeats: each comes a like step quieter than the one before (2 to 24 dB,
+  the steps within 3 dB of each other) and sounds like what it repeats. Whether a repeat has an
+  onset of its own is not looked at, so a note played again more quietly at an even spacing reads
+  the same as an echo, and the line says both. The repeats must match the first sound's spectrum: different notes stepping quieter don't
   read as an echo, and neither do repeats that change sound (a struck piano through a 1/4 delay,
   a delay into a reverb).
 - A delay can be missed, in a dense mix especially, and the sound then reads as whatever its
@@ -434,7 +442,10 @@ These are limits of the tool, measured, not advice:
   its own in each channel widens the tails' reading where the tails are quiet.
 - Register needs pitched sound: it says nothing for noise or noisy drums. A kick or a tom with a
   clear pitch reads as a pitched part (a swept electronic kick reads about 50 to 76 Hz), and so do
-  a voice and low-passed noise under about 100 Hz.
+  a snare's body tone, a voice and low-passed noise under about 100 Hz.
+- Register is measured at 12 kHz, on pitches up to about 4.2 kHz: a tone above 6 kHz alone gives
+  no register, and neither does a pitched part 40 dB or more under sound above 6 kHz (loud hiss or
+  hats).
 - A reverb or a delay can lift the register's high and top line, often by a step or more; on a
   lone held note through a short, wet room, by more than two octaves, and that note's centre by
   an octave (its low can move too). Otherwise the centre moves less often: long tails can move it about half an octave either way on plain melodies, and a

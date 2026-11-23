@@ -116,17 +116,19 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
     than the direct sound. A held sound, or one with fewer than three ends, gives no decay, wet
     share or width (`null`: not read, not none);
   - **dynamics**: loudness, the loudest 3 seconds, true peak, crest and loudness range;
-  - **attack**: how often notes or hits start, how many stand out only above 5 kHz (said when
-    half or more do; over a held sound, a snare or a noise burst whose lower part it masks stands
+  - **attack**: how often notes or hits start, how many stand out only above 5 kHz (said of a
+    sound of 2 seconds or more, not a single hit, when half or more do at one a second or more;
+    over a held sound, a snare or a noise burst whose lower part it masks stands
     out only there too), how fast they rise, and the shape of a single hit;
   - **stereo**: how alike the channels are, the balance between them, what is lost in mono, the
     width of each part of the spectrum, and how wide the low end is;
   - **pitch**: the tempo (and how sure it is), the key, the tuning, and the twelve pitch classes;
-  - **register**: where the pitched parts sit, as notes: low, centre and high (the 10th, 50th and
+  - **register**: where the pitched parts sit, as the nearest notes (a reading between two notes
+    played can name a note that is not one of them): low, centre and high (the 10th, 50th and
     90th percentiles of the pitched energy), the top line (the highest clear part over time) and
     the share in each octave from C1 to C8 ("Its pitched parts sit between C3 and B3 ... centred
-    near F3.", "The top line sits around F3."). Noise and noisy drums have no register; a kick or a tom with a clear pitch reads as a
-    pitched part;
+    near F3.", "The top line sits around F3."). Noise and noisy drums have no register; a kick or a tom with a clear pitch, or a snare's
+    body tone, reads as a pitched part;
   - **faults**: clicks, clipping, a DC offset, hum, digital silence and a channel that is silent
     or much quieter than the other, each with where it is (a moment is written as minutes,
     seconds and hundredths, `0:26.53`) and its size with its unit (a click's jump and clipping's
@@ -161,8 +163,10 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
   step, it says so (or, when one narrow band of the spectrum still does, names that band). What only one of the two has (a band's movement, a width down at the floor)
   is said as that, not compared as a number. Space and register are compared where both have a
   number: decay and an echo's time as a ratio, wet share and tail width as a difference, an echo
-  only one has once (with its time in ms), and register in octaves, written as notes. A register
-  difference between a wet sound and a dry one mostly reflects the room, not the notes. Compare like with like: the same kind of stretch, of a similar
+  only one has once (with its time in ms), and register in octaves, written as notes. A decay under 10 ms is
+  said as "under 10 ms" and taken as 10 ms in the ratio. Between a wet sound and a dry one, a room
+  alone can lift the high and top line by a step or more, and the centre less often; a difference
+  in centre or low is mostly the notes. Compare like with like: the same kind of stretch, of a similar
   length (a short loud stretch reads brighter, louder and more squashed than a whole track, and
   it says so when the lengths differ).
 - `--save <file.json>`: save the hearing: measurements only, never the audio. A saved hearing
@@ -200,8 +204,9 @@ What space and register can't tell (limits of the tool, measured, not advice):
   tail is in ends that could not be timed; tail width is left out whenever the decay is under
   150 ms.
 - A reverb shorter than about 80 ms is not told from the sound itself.
-- An echo is told from a repeated note only when the repeats come without onsets of their own; a
-  note played again more quietly reads the same, so the line says both. Repeats that change sound
+- An echo is told by its repeats each coming a like step quieter (2 to 24 dB) and sounding like
+  what they repeat, not by whether they have onsets of their own; a note played again more quietly
+  reads the same, so the line says both. Repeats that change sound
   (a piano through a delay, a delay into a reverb) are not read as an echo.
 - A delay can be missed, in a dense mix especially (and with short notes, a high cut in the
   repeats or a tempo-synced delay on a plain melody), and the sound then reads as its notes do,
@@ -214,7 +219,9 @@ What space and register can't tell (limits of the tool, measured, not advice):
   long tails; long, wet reverbs (about 3 s or more, mostly wet) can read nothing; a tail of a single
   partial reads unevenly; and noise that differs between the channels counts as tail width.
 - Register needs pitched sound and says nothing for noise or noisy drums. A kick or a tom with a
-  clear pitch reads as a pitched part, and so do a voice and low-passed noise under about 100 Hz.
+  clear pitch reads as a pitched part, and so do a snare's body tone, a voice and low-passed noise
+  under about 100 Hz. A tone above 6 kHz alone, or a pitched part 40 dB or more under sound above
+  6 kHz, gives no register.
 - A reverb or a delay can lift the high and top line, often a step (a quarter of an octave) or
   more; on a lone held note through a short, wet room, more than two octaves, and its centre an
   octave. Otherwise the centre moves less often (about half an octave on melodies with long tails; more than an octave and a half on

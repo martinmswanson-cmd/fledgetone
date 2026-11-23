@@ -18,6 +18,7 @@ register(
 );
 
 const { registerOf } = await import('../src/audio/hearing/register.ts');
+const { hearSound } = await import('../src/audio/hearing/hearSound.ts');
 const { noteName, soundWords } = await import('../src/audio/hearing/words.ts');
 const S = await import('./fixtures/hearingSignals.mjs');
 
@@ -70,6 +71,14 @@ test('drums, noise and silence have no register', () => {
   assert.equal(registerOf([S.every(4, 4, () => S.burst(0.12, 40, 1, -6, 1))], SR), null, 'drums');
   assert.equal(registerOf([S.pink(4, -18, 1)], SR), null, 'pink noise');
   assert.equal(registerOf([new Float32Array(4 * SR)], SR), null, 'silence');
+});
+
+test('a tone with nothing under 6 kHz has no register, not the 12 kHz resampling\'s residue', () => {
+  // (an 8 kHz sine read 4 kHz, B7, and a 9 kHz one gated at 2 Hz read 3 kHz: what the resampling to 12 kHz leaves)
+  assert.equal(registerOf([S.sine(8000, 4, -6)], SR), null, 'an 8 kHz sine');
+  assert.equal(registerOf([S.gate(S.sine(9000, 4, -6), 2, -60)], SR), null, 'a 9 kHz sine gated at 2 Hz');
+  const x = S.sine(8000, 4, -6);
+  assert.equal(hearSound([x, x], SR, { engine: 'test' }).register, undefined, 'through hearSound');
 });
 
 test('register does not change with level', () => {
