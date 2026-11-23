@@ -164,13 +164,15 @@ test('wetter reads at least as wet, and as long (Fix round 1)', () => {
 
 test('a quiet held layer is not a long tail (Fix round 1)', () => {
   const dry = S.melody(NOTES.map((s, i) => [fromC4(s), i * 0.75, 0.25]), 8, -6);
+  // (made once: a saw's every partial up to 24 kHz takes a while)
+  const pad = padOf(8);
   for (const db of [-20, -26]) {
-    const s = spaceOf([S.mix(dry, under(padOf(8), dry, db))], SR);
+    const s = spaceOf([S.mix(dry, under(pad, dry, db))], SR);
     assert.ok(s.decayMs === null || s.decayMs < 150, `a pad ${db} dB under: ${JSON.stringify(s)}`);
     assert.ok(!soundWords({ ...base, space: s }).some((w) => w.startsWith('Long tails')), `${db} dB`);
   }
   const drums = S.every(2, 8, (i) => S.burst(0.3, 40, 1, -6, i + 1));
-  const s = spaceOf([S.mix(drums, under(padOf(8), drums, -16))], SR);
+  const s = spaceOf([S.mix(drums, under(pad, drums, -16))], SR);
   assert.ok(!soundWords({ ...base, space: s }).some((w) => w.startsWith('Long tails')), `drums over a pad: ${JSON.stringify(s)}`);
   for (const db of [-20, -30]) {
     const x = reverbed.get(1);
@@ -182,11 +184,10 @@ test('a quiet held layer is not a long tail (Fix round 1)', () => {
 test('a fading riff is said as either reading (Fix round 1)', () => {
   const riff = S.at(4, Array.from({ length: 16 }, (_, i) => [i * 0.25, S.gain(S.melody([[fromC4(-12), 0, 0.25]], 0.25, -6), -3 * i)]));
   const s = spaceOf([riff], SR, 120);
-  if (s.echo) {
-    const lines = soundWords({ ...base, space: s });
-    const note = s.echo.note ? ` (${s.echo.note} notes)` : '';
-    assert.ok(lines.includes(`Repeats every ${s.echo.ms} ms${note}, ${s.echo.repeats} standing out, each a step quieter: an echo, or a note played again more quietly.`), lines.join(' / '));
-  }
+  assert.ok(s.echo, `a riff fading 3 dB a note: ${JSON.stringify(s)}`);
+  const lines = soundWords({ ...base, space: s });
+  const note = s.echo.note ? ` (${s.echo.note} notes)` : '';
+  assert.ok(lines.includes(`Repeats every ${s.echo.ms} ms${note}, ${s.echo.repeats} standing out, each a step quieter: an echo, or a note played again more quietly.`), lines.join(' / '));
 });
 
 test('a long reverb is timed though the next note comes first (Fix round 2)', () => {
@@ -196,4 +197,45 @@ test('a long reverb is timed though the next note comes first (Fix round 2)', ()
     const s = spaceOf([S.reverb(x, 2, 0.5)], SR);
     assert.ok(s.decayMs !== null && Math.abs(s.decayMs / 667 - 1) <= 0.35, `${name} through a 2 s reverb: ${JSON.stringify(s)}`);
   }
+});
+
+// (the full grids, every seed, are in scripts/audio-check/hearing/space-grid.mjs)
+test('nearly dry reverbs read dry or near RT/3 (Fix round 3)', () => {
+  for (const rt of [0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) {
+    for (const wet of [0.1, 0.15, 0.2, 0.3]) {
+      const x = S.reverb(pluck, rt, wet);
+      const s = spaceOf([x, x], SR);
+      const what = `RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}`;
+      assert.ok(s.decayMs !== null, what);
+      const near = Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35;
+      assert.ok(near || soundWords({ ...base, space: s }).some((w) => w.startsWith('Dry: ')), what);
+    }
+  }
+});
+
+test('wetter never reads much drier, on a grid of wet mixes (Fix round 3)', () => {
+  for (const rt of [1, 2, 3]) {
+    let before = null;
+    for (const wet of [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
+      const x = S.reverb(pluck, rt, wet, 2);
+      const s = spaceOf([x, x], SR);
+      const what = `RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}`;
+      assert.ok(s.decayMs !== null && s.wetShare !== null, what);
+      assert.ok(Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35, what);
+      if (before !== null) assert.ok(s.wetShare >= before - 0.05, `${what}, after ${before}`);
+      before = s.wetShare;
+    }
+  }
+});
+
+test('known limit: a 4 s reverb mixed 0.7 wet or more reads nothing (Fix round 3)', () => {
+  // Over a reverb this loud the notes' starts and ends barely move the level. Pinned as it reads, so
+  // a change shows: at wet 0.6 it is still timed; from 0.7 up, nothing.
+  const at = (wet) => {
+    const x = S.reverb(pluck, 4, wet);
+    return spaceOf([x, x], SR);
+  };
+  const timed = at(0.6);
+  assert.ok(timed.decayMs !== null && Math.abs(timed.decayMs / 1333 - 1) <= 0.35, JSON.stringify(timed));
+  for (const wet of [0.7, 0.8, 0.9]) assert.deepEqual(at(wet), { decayMs: null, wetShare: null, echo: null, tailWiderDb: null }, `wet ${wet}`);
 });

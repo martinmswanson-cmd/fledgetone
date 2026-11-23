@@ -244,35 +244,45 @@ export function melody(notes, seconds, peakDb, sr = SR) {
   return toPeak(at(seconds, pieces, sr), peakDb);
 }
 
+/** The reverbs already worked out, by sound and then by length, seed and rate: a sweep of wet mixes convolves once. */
+const convolved = new WeakMap();
+
 /**
  * `x` through a made reverb: convolved with exponentially decaying noise (from the seeded generator)
  * that falls 60 dB in `rtSeconds` (its RT60) and holds unit energy, then mixed `wet` (0 to 1) with
  * the dry sound: (1 - wet) x + wet (x * noise). As long as `x`; done in the FFT.
  */
 export function reverb(x, rtSeconds, wet, seed = 1, sr = SR) {
-  const length = count(rtSeconds, sr);
-  const noise = gaussian(length, seed);
-  const h = new Float64Array(length);
-  let energy = 0;
-  for (let i = 0; i < length; i++) {
-    h[i] = noise[i] * Math.exp((-Math.log(1000) * i) / (rtSeconds * sr));
-    energy += h[i] * h[i];
+  const key = `${rtSeconds}/${seed}/${sr}`;
+  if (!convolved.has(x)) convolved.set(x, new Map());
+  const done = convolved.get(x);
+  if (!done.has(key)) {
+    const length = count(rtSeconds, sr);
+    const noise = gaussian(length, seed);
+    const h = new Float64Array(length);
+    let energy = 0;
+    for (let i = 0; i < length; i++) {
+      h[i] = noise[i] * Math.exp((-Math.log(1000) * i) / (rtSeconds * sr));
+      energy += h[i] * h[i];
+    }
+    let size = 2;
+    while (size < x.length + length) size *= 2;
+    const [are, aim, bre, bim] = [new Float64Array(size), new Float64Array(size), new Float64Array(size), new Float64Array(size)];
+    are.set(x);
+    bre.set(h);
+    fftInPlace(are, aim);
+    fftInPlace(bre, bim);
+    for (let k = 0; k < size; k++) {
+      const re = are[k] * bre[k] - aim[k] * bim[k];
+      aim[k] = are[k] * bim[k] + aim[k] * bre[k];
+      are[k] = re;
+    }
+    fftInPlace(are, aim, true);
+    const g = energy > 0 ? 1 / Math.sqrt(energy) : 0;
+    done.set(key, Float64Array.from(are.subarray(0, x.length), (v) => v * g));
   }
-  let size = 2;
-  while (size < x.length + length) size *= 2;
-  const [are, aim, bre, bim] = [new Float64Array(size), new Float64Array(size), new Float64Array(size), new Float64Array(size)];
-  are.set(x);
-  bre.set(h);
-  fftInPlace(are, aim);
-  fftInPlace(bre, bim);
-  for (let k = 0; k < size; k++) {
-    const re = are[k] * bre[k] - aim[k] * bim[k];
-    aim[k] = are[k] * bim[k] + aim[k] * bre[k];
-    are[k] = re;
-  }
-  fftInPlace(are, aim, true);
-  const g = energy > 0 ? 1 / Math.sqrt(energy) : 0;
-  return Float32Array.from(x, (v, i) => (1 - wet) * v + wet * g * are[i]);
+  const wetPart = done.get(key);
+  return Float32Array.from(x, (v, i) => (1 - wet) * v + wet * wetPart[i]);
 }
 
 /** `x` with `repeats` echoes of itself, `delaySeconds` apart, each `feedback` times the one before (the first `feedback` times `x`). As long as `x`. */
