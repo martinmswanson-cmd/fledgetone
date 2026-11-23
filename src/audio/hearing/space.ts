@@ -19,7 +19,7 @@ const ONSET_RATE = 16000;
 /** Silence put before the onset mix, samples, so a sound that starts at once has an onset at its start. */
 const PAD = 1024;
 /** An onset starts a note or hit only where the level rises at least this far, dB. */
-const ONSET_RISE_DB = 3;
+const ONSET_RISE_DB = 1;
 /** A segment (a note and what follows it, up to the next onset) starts this many frames before its onset, as the onset is placed a little late. */
 const LEAD = 2;
 /** An end is followed by at least this many frames (300 ms) with no new onset. */
@@ -35,20 +35,19 @@ const NOTE_RANGE_DB = 40;
 const FALL_DB = 20;
 /** A level FALL_DB under the end within this many frames of it is a sound that stops: the fall is timed where it crosses. */
 const QUICK = 3;
-/** A tail's rate of fall is read over at most this much of its fall, dB (under it a recording's noise floor can flatten it). */
-const TAIL_SPAN_DB = 25;
 /** A note or hit has ended by the time its level is this far under its peak, dB ... */
 const END_DB = 10;
 /** ... and its end is where its level steps down most before then, at least this far, dB, read from lines through this many frames either side. */
 const STEP_DB = 1;
 const STEP_FRAMES = 5;
-/** While the step is looked for, levels are held to this far under that, dB (digital silence is -120 dB). */
+/** While the end is looked for, levels are held to this far under that, dB (digital silence is -120 dB). */
 const BODY_SPAN_DB = 20;
+/** Without a step, a knee: the level falls this much faster a frame after it than before, dB (10 dB a second), each line through this many frames at least. */
+const KNEE_SLOPE_DB = 0.1;
+const KNEE_PARTS = 4;
 /** At most this many frames after an end are looked at (3 s). */
 const MAX_TAIL = 300;
-/** A fall that would take longer than this is read as this, ms. */
-const MAX_DECAY_MS = 20000;
-/** Fewer ends than this, and nothing is said of decays, tails and their width. */
+/** Fewer ends than this, or none whose tail is timed, and nothing is said of decays, tails and their width. */
 const MIN_ENDS = 3;
 /** Levels are floored this far under the loudest frame, dB. */
 const FLOOR_DB = -120;
@@ -208,14 +207,29 @@ interface End {
   stop: number;
 }
 
+/** The slope, and the sum of squared misses, of the best line through points `a` to `b` - 1 of running sums (count, x, y, xx, xy, yy). */
+function lineFit(sums: readonly Float64Array[], a: number, b: number): { slope: number; miss: number } {
+  const [n, sx, sy, sxx, sxy, syy] = sums.map((c) => c[b] - c[a]);
+  const vx = sxx - (sx * sx) / n;
+  const cxy = sxy - (sx * sy) / n;
+  const slope = vx > 0 ? cxy / vx : 0;
+  return { slope, miss: Math.max(0, syy - (sy * sy) / n - slope * cxy) };
+}
+
 /**
- * The last frame of a note's direct sound, or null when the level does not fall END_DB under its peak
- * before `stop`, or the end comes after `lastEnd`. Up to where it first falls that far, the frame
- * where the level steps down most: a line is fitted to the STEP_FRAMES levels up to each frame and
- * another to the STEP_FRAMES after it, and the step is how far the second lies under the first between
- * them (a slope alone, a pluck's own fall or its reverb's, makes none; a note cut short over its
- * reverb or into silence does). When no step reaches STEP_DB (a hit that falls along one line from
- * its peak), the last frame before the level is END_DB under the peak.
+ * The last frame of a note's direct sound, or null when there is none with AFTER_END frames after it
+ * (by `lastEnd`). In turn:
+ * - a step: the frame, before the level is first END_DB under the peak, where it steps down most. A
+ *   line is fitted to the STEP_FRAMES levels up to each frame and another to the STEP_FRAMES after it,
+ *   and the step is how far the second lies under the first between them (a slope alone, a pluck's
+ *   own fall or its reverb's, makes none; a note cut short over its reverb or into silence does). At
+ *   least STEP_DB.
+ * - a knee: where the level, from its peak on, best follows two lines, the second falling at least
+ *   KNEE_SLOPE_DB a frame faster than the first (a note held over a heavy reverb, which has no step
+ *   where the note stops: the reverb grows or holds while the note sounds and falls once it stops).
+ * - otherwise (a hit, which falls along one line from its peak, or falls fast and then slower into a
+ *   tail) the last frame before the level is END_DB under the peak.
+ * Levels are held to BODY_SPAN_DB under that, so digital silence is a step of that size and no more.
  */
 function bodyEnd(levels: Float64Array, smooth: Float64Array, peak: number, lastEnd: number, stop: number): number | null {
   const under = smooth[peak] - END_DB;
@@ -226,10 +240,10 @@ function bodyEnd(levels: Float64Array, smooth: Float64Array, peak: number, lastE
       break;
     }
   }
-  if (crossed < 0) return null;
-  // (silence is held at the level the search stops at, so a cut into it is a step of its own size and no more)
   const floor = under - BODY_SPAN_DB;
   const at = (f: number) => Math.max(floor, levels[f]);
+
+  // A step
   const mx = (STEP_FRAMES - 1) / 2;
   const vx = (STEP_FRAMES * (STEP_FRAMES * STEP_FRAMES - 1)) / 12;
   /** The line through the STEP_FRAMES levels from `from`, read `x` frames after `from`. */
@@ -242,16 +256,48 @@ function bodyEnd(levels: Float64Array, smooth: Float64Array, peak: number, lastE
     }
     return sy / STEP_FRAMES + ((sxy - mx * sy) / vx) * (x - mx);
   };
-  let best = crossed - 1;
+  let best = -1;
   let largest = STEP_DB;
-  for (let b = peak + STEP_FRAMES - 1; b < crossed && b <= lastEnd && b + STEP_FRAMES < levels.length; b++) {
+  for (let b = peak + STEP_FRAMES - 1; b < (crossed < 0 ? stop : crossed) && b <= lastEnd && b + STEP_FRAMES < levels.length; b++) {
     const step = lineAt(b - STEP_FRAMES + 1, STEP_FRAMES - 0.5) - lineAt(b + 1, -0.5);
     if (step > largest) {
       largest = step;
       best = b;
     }
   }
-  return best <= lastEnd ? best : null;
+  if (best >= 0) return best;
+
+  // A knee: two lines through the levels from the peak until they are held at the floor (and a few frames of it)
+  let to = Math.min(stop, peak + 1 + MAX_TAIL);
+  for (let g = peak + 1; g < to; g++) {
+    if (levels[g] < floor) {
+      to = Math.min(to, g + KNEE_PARTS);
+      break;
+    }
+  }
+  const count = to - peak;
+  const sums = Array.from({ length: 6 }, () => new Float64Array(count + 1));
+  for (let i = 0; i < count; i++) {
+    const y = at(peak + i);
+    const terms = [1, i, y, i * i, i * y, y * y];
+    for (let t = 0; t < 6; t++) sums[t][i + 1] = sums[t][i] + terms[t];
+  }
+  let knee = -1;
+  let least = Infinity;
+  let steeper = 0;
+  for (let i = KNEE_PARTS - 1; i <= Math.min(lastEnd - peak, count - 1 - KNEE_PARTS); i++) {
+    const body = lineFit(sums, 0, i + 1);
+    const tail = lineFit(sums, i + 1, count);
+    if (body.miss + tail.miss < least) {
+      least = body.miss + tail.miss;
+      knee = i;
+      steeper = body.slope - tail.slope;
+    }
+  }
+  if (knee >= 0 && steeper >= KNEE_SLOPE_DB) return peak + knee;
+
+  // The level END_DB under the peak
+  return crossed >= 0 && crossed - 1 <= lastEnd ? crossed - 1 : null;
 }
 
 /**
@@ -295,37 +341,38 @@ function endsOf(levels: Float64Array, onsets: readonly number[]): End[] {
 }
 
 /**
- * The time a tail takes to fall FALL_DB, frames. When the level is FALL_DB under the end's within
- * QUICK frames of it (a sound that stops), the time it takes to get there, read between two frames.
- * Otherwise FALL_DB over the rate the tail falls at: the slope of the line through its levels, from
- * its second frame (the first can still hold the end of the direct sound) until it has fallen
- * TAIL_SPAN_DB or the next onset comes. null when the tail does not fall.
+ * The time a tail takes to fall FALL_DB, frames, or null when it does not fall that far before the next
+ * onset (or before it settles on a floor of the sound's own: a held layer, noise): such a tail is not
+ * timed. When the level is FALL_DB under the end's within QUICK frames (a sound that stops), the time
+ * it takes to get there, read between two frames. Otherwise FALL_DB over the rate the tail falls at:
+ * the slope of the line through its levels from its second frame (the first can still hold the end of
+ * the direct sound) to where it is FALL_DB under the end.
  */
 function fallFrames(levels: Float64Array, { last, stop }: End): number | null {
   const ref = levels[last];
   const target = ref - FALL_DB;
   const to = Math.min(stop, last + 1 + MAX_TAIL);
-  for (let g = last + 1; g < Math.min(to, last + 1 + QUICK); g++) {
-    if (levels[g] > target) continue;
-    const before = levels[g - 1];
-    const frac = before > levels[g] ? (before - target) / (before - levels[g]) : 1;
-    return Math.max(0, g - last - 1.5 + frac);
-  }
-  const first = last + 2;
-  let end = to;
-  for (let g = first; g < to; g++) {
-    if (levels[g] <= levels[first] - TAIL_SPAN_DB) {
-      end = g + 1;
+  let crossed = -1;
+  for (let g = last + 1; g < to; g++) {
+    if (levels[g] <= target) {
+      crossed = g;
       break;
     }
   }
-  const count = end - first;
-  if (count < 3) return null;
+  if (crossed < 0) return null;
+  const at = (g: number) => {
+    const before = levels[g - 1];
+    const frac = before > levels[g] ? (before - target) / (before - levels[g]) : 1;
+    return Math.max(0, g - last - 1.5 + frac);
+  };
+  const first = last + 2;
+  const count = crossed + 1 - first;
+  if (crossed < last + 1 + QUICK || count < 3) return at(crossed);
   let sx = 0;
   let sy = 0;
   let sxx = 0;
   let sxy = 0;
-  for (let g = first; g < end; g++) {
+  for (let g = first; g <= crossed; g++) {
     const x = g - first;
     sx += x;
     sy += levels[g];
@@ -333,7 +380,7 @@ function fallFrames(levels: Float64Array, { last, stop }: End): number | null {
     sxy += x * levels[g];
   }
   const slope = (count * sxy - sx * sy) / (count * sxx - sx * sx);
-  return slope < 0 ? FALL_DB / -slope : null;
+  return slope < 0 ? FALL_DB / -slope : at(crossed);
 }
 
 /**
@@ -465,8 +512,7 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
   const width = { tailSide: 0, tailMid: 0, directSide: 0, directMid: 0 };
   for (const end of ends) {
     const fall = fallFrames(levels, end);
-    if (fall === null) continue;
-    falls.push(Math.min(fall * FRAME_SECONDS * 1000, MAX_DECAY_MS));
+    if (fall !== null) falls.push(fall * FRAME_SECONDS * 1000);
     for (let f = end.start; f < end.stop; f++) {
       note += total[f];
       if (f > end.last) tail += total[f];
@@ -480,7 +526,8 @@ export function spaceOf(channels: readonly Float32Array[], sampleRate: number, t
       }
     }
   }
-  if (falls.length < MIN_ENDS || !(note > 0)) return { ...none, echo };
+  // (wet share and width need ends enough; all three need a tail that is timed, or the "tails" may be a held layer or noise)
+  if (ends.length < MIN_ENDS || falls.length === 0 || !(note > 0)) return { ...none, echo };
   return {
     decayMs: Math.round(median(falls)),
     wetShare: round2(tail / note),

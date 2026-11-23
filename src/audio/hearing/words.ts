@@ -154,7 +154,8 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
     if (space.wetShare !== null && space.wetShare >= MUCH_TAIL) out.push(`Much of it is tail rather than direct sound (wet share ${two(space.wetShare)}).`);
     if (space.echo) {
       const { ms, repeats, note } = space.echo;
-      out.push(`An echo every ${Math.round(ms)} ms${note ? ` (${note} notes)` : ''}, ${repeats} repeat${repeats === 1 ? '' : 's'} standing out.`);
+      // (a note played again a step quieter each time is the same signal as a delay of it: both readings are said)
+      out.push(`Repeats every ${Math.round(ms)} ms${note ? ` (${note} notes)` : ''}, ${repeats} standing out, each a step quieter: an echo, or a note played again more quietly.`);
     }
     if (space.tailWiderDb !== null && space.tailWiderDb >= WIDER_TAILS_DB) out.push(`The tails are wider than the direct sound (${signed(space.tailWiderDb)} dB).`);
   }

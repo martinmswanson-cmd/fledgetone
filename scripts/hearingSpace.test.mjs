@@ -39,6 +39,12 @@ const NOTES = [0, 4, 7, 12, 9, 5, 2, -1];
 const pluck = S.melody(NOTES.map((s, i) => [fromC4(s), i * 0.75, 0.25]), 8, -6);
 const reverbed = new Map([0.3, 1, 3].map((rt) => [rt, S.reverb(pluck, rt, 0.5)]));
 const spaces = new Map([...reverbed].map(([rt, x]) => [rt, spaceOf([x, x], SR)]));
+/** `x` scaled so its RMS is `db` from `y`'s. */
+const rmsOf = (x) => Math.sqrt(x.reduce((a, v) => a + v * v, 0) / x.length);
+const under = (x, y, db) => S.gain(x, 20 * Math.log10(rmsOf(y) / rmsOf(x)) + db);
+/** A held pad of C3, E3 and G3 saws, `seconds` long. */
+const padOf = (seconds) => S.mix(S.saw(fromC4(-12), seconds, -6), S.saw(fromC4(-8), seconds, -6), S.saw(fromC4(-5), seconds, -6));
+const base = { versions: {}, engine: 'test', settings: { sampleRate: SR }, seconds: 8, channels: 1, silent: false, faults: [] };
 
 test('longer reverb reads longer', () => {
   const [short, one, long] = [0.3, 1, 3].map((rt) => spaces.get(rt));
@@ -118,8 +124,8 @@ test('space words', () => {
   assert.deepEqual(words({ decayMs: 6 }), ['Dry: sounds stop almost at once (they fall 20 dB in under 10 ms).']);
   for (const ms of [150, 400, 1000]) assert.deepEqual(words({ decayMs: ms }), [], `${ms} ms`);
   assert.deepEqual(words({ wetShare: 0.55 }), ['Much of it is tail rather than direct sound (wet share 0.55).']);
-  assert.deepEqual(words({ echo: { ms: 250, repeats: 4, note: '1/8' } }), ['An echo every 250 ms (1/8 notes), 4 repeats standing out.']);
-  assert.deepEqual(words({ echo: { ms: 375, repeats: 3 } }), ['An echo every 375 ms, 3 repeats standing out.']);
+  assert.deepEqual(words({ echo: { ms: 250, repeats: 4, note: '1/8' } }), ['Repeats every 250 ms (1/8 notes), 4 standing out, each a step quieter: an echo, or a note played again more quietly.']);
+  assert.deepEqual(words({ echo: { ms: 375, repeats: 3 } }), ['Repeats every 375 ms, 3 standing out, each a step quieter: an echo, or a note played again more quietly.']);
   assert.deepEqual(words({ tailWiderDb: 4.5 }), ['The tails are wider than the direct sound (+4.5 dB).']);
   assert.deepEqual(words({}), []);
   assert.deepEqual(soundWords(base), []);
@@ -132,10 +138,53 @@ test('space words', () => {
 });
 
 test('the report carries space, and its words', () => {
-  const x = reverbed.get(3);
+  // (a 4 s reverb: its tails fall 20 dB in about 1.3 s)
+  const x = S.reverb(pluck, 4, 0.5);
   const report = hearSound([x, x], SR, { engine: 'test', tempoBpm: 120, along: false });
-  assert.deepEqual(report.space, spaces.get(3));
+  assert.deepEqual(report.space, spaceOf([x, x], SR, 120));
   assert.ok(report.space.decayMs > 1000, JSON.stringify(report.space));
   assert.ok(report.words.includes(`Long tails: sounds ring on, falling 20 dB in ${(report.space.decayMs / 1000).toFixed(1)} s.`), report.words.join(' / '));
   assert.equal(hearSound([x.subarray(0, Math.round(0.3 * SR))], SR, { engine: 'test' }).space, undefined, 'under 0.4 s there is no space group');
+});
+
+test('wetter reads at least as wet, and as long (Fix round 1)', () => {
+  for (const rt of [1, 1.5, 3]) {
+    let before = null;
+    for (const wet of [0.2, 0.5, 0.8]) {
+      const x = S.reverb(pluck, rt, wet);
+      const s = spaceOf([x, x], SR);
+      const what = `RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}`;
+      assert.ok(s.decayMs !== null && s.wetShare !== null, what);
+      assert.ok(Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35, what);
+      if (before !== null) assert.ok(s.wetShare >= before - 0.02, `${what}, after ${before}`);
+      before = s.wetShare;
+    }
+  }
+});
+
+test('a quiet held layer is not a long tail (Fix round 1)', () => {
+  const dry = S.melody(NOTES.map((s, i) => [fromC4(s), i * 0.75, 0.25]), 8, -6);
+  for (const db of [-20, -26]) {
+    const s = spaceOf([S.mix(dry, under(padOf(8), dry, db))], SR);
+    assert.ok(s.decayMs === null || s.decayMs < 150, `a pad ${db} dB under: ${JSON.stringify(s)}`);
+    assert.ok(!soundWords({ ...base, space: s }).some((w) => w.startsWith('Long tails')), `${db} dB`);
+  }
+  const drums = S.every(2, 8, (i) => S.burst(0.3, 40, 1, -6, i + 1));
+  const s = spaceOf([S.mix(drums, under(padOf(8), drums, -16))], SR);
+  assert.ok(!soundWords({ ...base, space: s }).some((w) => w.startsWith('Long tails')), `drums over a pad: ${JSON.stringify(s)}`);
+  for (const db of [-20, -30]) {
+    const x = reverbed.get(1);
+    const noisy = spaceOf([S.mix(x, under(S.pink(8, -20, 3), x, db))], SR);
+    assert.ok(noisy.decayMs === null || Math.abs(noisy.decayMs / 335 - 1) <= 0.35, `pink noise ${db} dB under: ${JSON.stringify(noisy)}`);
+  }
+});
+
+test('a fading riff is said as either reading (Fix round 1)', () => {
+  const riff = S.at(4, Array.from({ length: 16 }, (_, i) => [i * 0.25, S.gain(S.melody([[fromC4(-12), 0, 0.25]], 0.25, -6), -3 * i)]));
+  const s = spaceOf([riff], SR, 120);
+  if (s.echo) {
+    const lines = soundWords({ ...base, space: s });
+    const note = s.echo.note ? ` (${s.echo.note} notes)` : '';
+    assert.ok(lines.includes(`Repeats every ${s.echo.ms} ms${note}, ${s.echo.repeats} standing out, each a step quieter: an echo, or a note played again more quietly.`), lines.join(' / '));
+  }
 });
