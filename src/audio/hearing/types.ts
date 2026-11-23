@@ -6,7 +6,7 @@
 import type { BandSpectrum } from '../mixAnalysis';
 
 /** Each group's rule version; raised whenever that group's numbers or thresholds change. */
-export const HEARING_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1 } as const;
+export const HEARING_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1, register: 1 } as const;
 export type HearingGroup = keyof typeof HEARING_VERSIONS;
 
 /**
@@ -89,6 +89,23 @@ export interface Pitch {
   chroma: number[];
 }
 
+/**
+ * Where the pitched parts sit (a report has none when no pitched part is heard: drums, noise). Hz are
+ * of the parts' fundamentals, weighted by their energy.
+ */
+export interface Register {
+  /** The 10th percentile of the pitched energy's pitch */
+  lowHz: number;
+  /** The 90th percentile */
+  highHz: number;
+  /** The median */
+  centreHz: number;
+  /** The median over time of the highest prominent pitched part; null when no frame has one */
+  topHz: number | null;
+  /** The share of the pitched energy in each octave, C1 to C8 (8 numbers adding to 1, 2 places) */
+  octaves: number[];
+}
+
 export type FaultKind = 'click' | 'clipping' | 'dc' | 'hum' | 'silence' | 'channel';
 
 /**
@@ -143,6 +160,7 @@ export interface SoundReport {
   attack?: Attack;
   stereo?: Stereo;
   pitch?: Pitch;
+  register?: Register;
   faults: Fault[];
   /**
    * The per-second grids: what the pictures are drawn from and what a stretch of a saved hearing is

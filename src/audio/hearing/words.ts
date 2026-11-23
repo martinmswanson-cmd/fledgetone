@@ -1,8 +1,8 @@
 /**
  * The plain-word lines of the hearing sound report: one line for each finding that applies, in the
- * order tone, texture, movement, dynamics, attack, stereo, pitch, then one line per fault. The
- * lines describe what the numbers say; none of them scores a sound as good or bad. Pure text, no
- * Web Audio, so Node can test it.
+ * order tone, texture, movement, dynamics, attack, stereo, pitch, register, then one line per
+ * fault. The lines describe what the numbers say; none of them scores a sound as good or bad. Pure
+ * text, no Web Audio, so Node can test it.
  */
 import { LOW_SIDE_LIMIT_DB } from '../mixCheck';
 import { MOVEMENT_BANDS } from './movement';
@@ -17,6 +17,14 @@ export const percent = (share: number) => `${Math.round(share * 100)}%`;
 export function freqText(hz: number): string {
   const whole = Math.round(hz);
   return whole >= 1000 ? `${(hz / 1000).toFixed(1)} kHz` : `${whole} Hz`;
+}
+
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+/** The nearest equal-tempered note to `hz`, with its octave (A4 = 440 Hz): "C4", "F#5". */
+export function noteName(hz: number): string {
+  const midi = Math.round(69 + 12 * Math.log2(hz / 440));
+  return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
 }
 
 /** A band's range: "40-250 Hz", "250 Hz-4 kHz", "4-16 kHz" */
@@ -86,7 +94,7 @@ const keyText = (name: string) => name.replace(/ maj$/, ' major').replace(/ min$
 /** One line for each finding of the report that applies, then one for each fault. */
 export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
   const out: string[] = [];
-  const { tone, texture, movement, dynamics, attack, stereo, pitch } = r;
+  const { tone, texture, movement, dynamics, attack, stereo, pitch, register } = r;
 
   if (tone) {
     if (tone.centreHz > 3000) out.push(`The spectral centre sits at ${freqText(tone.centreHz)}: bright.`);
@@ -188,6 +196,14 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
     if (pitch.tuningCents !== null && Math.abs(pitch.tuningCents) > 10 && guessed) {
       out.push(`Tuned ${Math.abs(pitch.tuningCents)} cents ${pitch.tuningCents > 0 ? 'sharp' : 'flat'} of A440.`);
     }
+  }
+
+  if (register) {
+    const [low, high] = [noteName(register.lowHz), noteName(register.highHz)];
+    // (one note from low to high is said as one place)
+    if (low === high) out.push(`Its pitched parts sit at ${low} (${freqText(register.centreHz)}).`);
+    else out.push(`Its pitched parts sit between ${low} and ${high} (${freqText(register.lowHz)} to ${freqText(register.highHz)}), centred near ${noteName(register.centreHz)}.`);
+    if (register.topHz !== null) out.push(`The top line sits around ${noteName(register.topHz)}.`);
   }
 
   for (const f of r.faults) out.push(faultWords(f));

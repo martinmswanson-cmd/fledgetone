@@ -222,3 +222,23 @@ export function band(x, loHz, hiHz, sr = SR) {
   fftInPlace(re, im, true);
   return Float32Array.from(re.subarray(0, x.length));
 }
+
+/**
+ * A melody: each `[hz, startSeconds, seconds]` note a band-limited saw that fades from its start (falling
+ * to 1/e, about 9 dB, over its own length, as a plucked note) with 5 ms raised-cosine edges either side;
+ * the whole `seconds` long and peaking at `peakDb`. Overlapping notes add.
+ */
+export function melody(notes, seconds, peakDb, sr = SR) {
+  const edge = Math.max(1, Math.round(0.005 * sr));
+  const pieces = notes.map(([hz, start, length]) => {
+    const x = saw(hz, length, 0, sr);
+    const tau = length * sr;
+    for (let i = 0; i < x.length; i++) {
+      const fromEnd = x.length - 1 - i;
+      const fade = i < edge ? 0.5 - 0.5 * Math.cos((Math.PI * i) / edge) : fromEnd < edge ? 0.5 - 0.5 * Math.cos((Math.PI * fromEnd) / edge) : 1;
+      x[i] *= Math.exp(-i / tau) * fade;
+    }
+    return [start, x];
+  });
+  return toPeak(at(seconds, pieces, sr), peakDb);
+}

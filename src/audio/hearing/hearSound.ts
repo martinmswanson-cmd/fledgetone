@@ -1,7 +1,8 @@
 /**
- * The sound report of the hearing work: gathers the seven measured groups (tone, texture, movement,
- * dynamics, attack, stereo, pitch), the faults and the sound over time (one reading a second) into
- * one report with its plain-word lines. Plain maths on samples, no Web Audio, so Node can test it.
+ * The sound report of the hearing work: gathers the eight measured groups (tone, texture, movement,
+ * dynamics, attack, stereo, pitch, register), the faults and the sound over time (one reading a
+ * second) into one report with its plain-word lines. Plain maths on samples, no Web Audio, so Node
+ * can test it.
  */
 import { createLoudnessAnalyser } from '../loudness';
 import { bandSpectrum } from '../mixAnalysis';
@@ -10,6 +11,7 @@ import { dynamicsOf } from './dynamics';
 import { faultsOf } from './faults';
 import { movementOf } from './movement';
 import { chromaAlong, pitchOf } from './pitch';
+import { registerOf } from './register';
 import { stereoOf } from './stereo';
 import { textureOf } from './texture';
 import { toneOf } from './tone';
@@ -31,7 +33,7 @@ export interface HearOptions {
   stretch?: { fromSeconds: number; toSeconds: number };
 }
 
-/** Shorter than this, a sound is too short for the tone, texture, movement, stereo and pitch groups. */
+/** Shorter than this, a sound is too short for the tone, texture, movement, stereo, pitch and register groups. */
 const MIN_SECONDS = 0.4;
 const round1 = (x: number) => Math.round(x * 10) / 10;
 const round2 = (x: number) => Math.round(x * 100) / 100;
@@ -133,6 +135,8 @@ export function hearSound(channels: readonly Float32Array[], sampleRate: number,
     const stereo = stereoOf(heard, sampleRate, tone.spectrum);
     if (stereo) report.stereo = stereo;
     report.pitch = pitchOf(heard, sampleRate, opts.tempoBpm === undefined ? undefined : { bpm: opts.tempoBpm });
+    const register = registerOf(heard, sampleRate);
+    if (register) report.register = register;
     if (grids) report.along = alongOf(heard, sampleRate);
   }
   return { ...report, words: soundWords(report) };
