@@ -244,3 +244,26 @@ afresh with the commands above, with 17 new agents:
 | 2026-11-21 | 2026.11.18-4, after the review's fixes | sound-17, the heavy song with a boost | Extra energy around 285 to 570 Hz, peaking at +3.0 dB near 403 Hz, in every bar | pass |
 
 The second run: 17 of 17 again, with nothing false on the clean sound or on the heavy song as it is.
+
+When the space and register groups were added, the check was run on the sounds that test them: the
+clean control, the echo, the reverb pair, the melody pair and the onsets pair. The sounds were made
+with the commands above, keeping their numbers in the full sequence, and each was given to a new
+fresh agent:
+
+| Date | Version | Sound | What the agent said | Pass or fail |
+|---|---|---|---|---|
+| 2026-11-23 | this branch, space and register | sound-01, clean.wav | Two steady sines at 220 and 330 Hz over a flat pink-like bed cut at about 16 kHz; no faults, no clipping | pass |
+| 2026-11-23 | this branch, space and register | sound-09, echo.wav | Each note followed by a quieter repeat 375 ms later (a dotted 1/8 at 120 bpm), about 6 repeats, from an echo; the digital silence between notes read as a gate | pass |
+| 2026-11-23 | this branch, space and register | sound-12, wet-pluck.wav against dry-pluck.wav | A long ringing tail: decay 705 ms against 6 ms, wet share 0.20 against 0.02, notes overlapping; top line higher (C5 against F4) | pass |
+| 2026-11-23 | this branch, space and register | sound-13, high-melody.wav against low-melody.wav | The same C major scale exactly one octave higher: every register measure +1.00 octave, top line G4 against G3 | pass |
+| 2026-11-23 | this branch, space and register | sound-14, busy.wav against sparse.wav | The higher melody and 7.8 onsets a second, the onsets put down to the pad's 16 Hz low-band beating and the real rate taken as about 2 a second; the hats not found | fail |
+| 2026-11-23 | this branch, space and register, after the fix | sound-14, busy.wav against sparse.wav (a new fresh agent) | 7.8 sharp onsets a second against none, all above 5 kHz, and the stepped melody over the held chord (the onsets taken for ticks) | pass |
+
+sound-14 first failed because the report did not say where the onsets were: the hats (noise over
+7 kHz) are hidden in the spectrogram under the pad's harmonics, and no line gave the rate or the
+place, so the agent tied the onsets to the pad's beating. The attack group now gives the share of
+onsets that stand out only above 5 kHz (`highShare`), and the words say so when half or more do;
+a new fresh agent then passed it. (It was asked with the line's first wording, "are heard only
+above 5 kHz"; the line now reads "stand out only above 5 kHz", with the same number.)
+
+This run: 5 of 5 after the fix, with nothing false on the clean sound.
