@@ -67,11 +67,11 @@ const SERIES_LEAST = 3;
 /**
  * A dry note's overtones lie on a smooth line (log power against log harmonic number); a room's colouring
  * scatters them by about SERIES_SPREAD_DB. Where the lower parts' overtones off a candidate's series
- * depart from that line by at most SMOOTH_DB (RMS, over at least SMOOTH_LEAST of them), no room has
+ * stray from that line by at most SMOOTH_DB (RMS, over at least SMOOTH_LEAST of them), no room has
  * coloured them, and the candidate also stands when its root alone lifts the overtone it sits on by
- * SERIES_DB and by SMOOTH_Z times that departure: a part whose own overtones miss half of the ones it
+ * SERIES_DB and by SMOOTH_Z times that deviation: a part whose own overtones miss half of the ones it
  * sits on (a triangle's or a square's, with no even harmonics) lifts too few of them for the median.
- * (Over made held notes, melodies and chords, a frame's first part departs a median 0.2 dB dry, and
+ * (Over made held notes, melodies and chords, a frame's first part strays a median 0.2 dB dry, and
  * three quarters of dry frames 1.5 dB or less; through rooms at wet 0.5 and 0.8, 0.7% and 0.3% do.)
  */
 const SMOOTH_DB = 1.5;
@@ -356,7 +356,7 @@ function partsOfFrame(power: Float64Array, sampleRate: number, size: number, ene
   };
   const levels = new Float64Array(MAX_HARMONICS + 1);
   /**
-   * How far part p's series departs from smooth, dB: the RMS, over its harmonics off the multiples of m
+   * How far part p's series strays from smooth, dB: the RMS, over its harmonics off the multiples of m
    * and shared with no other part nor the candidate being judged, of each one's level from the line
    * (log power against log harmonic number) through its neighbours among them; NaN under SMOOTH_LEAST.
    */
