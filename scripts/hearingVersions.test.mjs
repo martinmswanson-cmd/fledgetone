@@ -161,7 +161,7 @@ test('register: the pinned numbers hold', () => {
   pin('register', 'the reverb version: lowHz', v.lowHz, 107, 1);
   pin('register', 'the reverb version: highHz', v.highHz, 110, 1);
   pin('register', 'the reverb version: topHz', v.topHz, 110, 1);
-  pin('register', 'the reverb version: the share in the octave from C2', v.octaves[1], 0.99, 0.01);
+  pin('register', 'the reverb version: the share in the octave from C2', v.octaves[1], 0.97, 0.01);
 });
 
 test('the words of this sound are the ones pinned (a threshold that moves changes them)', () => {
