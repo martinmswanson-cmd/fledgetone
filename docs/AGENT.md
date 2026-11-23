@@ -256,11 +256,10 @@ judge it:
   standing out, each a step quieter: an echo, or a note played again more quietly.`), and wider
   tails from 3 dB.
 - dynamics: loudness, true peak, crest and loudness range.
-- attack: how many things start each second, how many of them are heard only above 5 kHz
-  (`highShare`, 0 to 1: hats, shakers and other short high hits, whose power is almost all up
-  there; the words say so when half or more are, at one a second or more:
-  `100% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other
-  short high hits read this way.`), and how fast they start ("busy" and "sparse" are
+- attack: how many things start each second, how many of them stand out only above 5 kHz
+  (`highShare`, 0 to 1: 90% or more of the power each adds, where it stands out, is up there;
+  the words say so when half or more do, at one a second or more:
+  `100% of its onsets (7.8 a second in all) stand out only above 5 kHz.`), and how fast they start ("busy" and "sparse" are
   said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
   fall and how loud its loudest 10 ms reads).
 - stereo: correlation between the channels, balance, what is lost in mono, width.
@@ -366,6 +365,8 @@ These are limits of the tool, measured, not advice:
 
 - It measures and draws; it does not hear. The words describe (bright, dark, rough, sharp, wide)
   and never say whether something is right for the song.
+- Over a held sound, a hit whose lower part the held sound masks (a snare or a noise burst under a
+  pad) stands out only above 5 kHz too, so `highShare` counts it with high hits such as hats.
 - Onsets a second is approximate: hits faster than about 22 a second are not counted; tonal notes
   over a pad read a little low; an arpeggio over a thick pad can read high; hits folded into a swell
   that is still opening can be missed. "Busy" and "sparse" follow that number.

@@ -1,6 +1,6 @@
 /**
- * How hard a sound starts, for the hearing report: onsets per second, the share of them heard only in
- * the highs (hats and other short high hits), the typical time the level takes to climb from 10% to
+ * How hard a sound starts, for the hearing report: onsets per second, the share of them that stand out
+ * only in the highs, the typical time the level takes to climb from 10% to
  * 90% of an onset's peak, and for a single short hit its rise, its fall to 20 dB under the peak and
  * how loud it hits. Plain maths on samples, no Web Audio, so Node can test it.
  *
@@ -48,7 +48,7 @@ const CHAIN_SPAN_MS = 25;
 const CHAIN_MS = 30;
 /** A narrower band's climb within this of a hit (plus half its own span) is part of it, ms. */
 const SAME_HIT_MS = 25;
-/** A hit is heard only in the highs when HIGH_RISE_SHARE of the power it adds over HIGH_RISE_MS is in the bands from here up, Hz (from 5120 Hz). */
+/** A hit stands out only in the highs when HIGH_RISE_SHARE of the power it adds over HIGH_RISE_MS is in the bands from here up, Hz (from 5120 Hz). */
 const HIGH_ONLY_HZ = 5000;
 const HIGH_RISE_SHARE = 0.9;
 const HIGH_RISE_MS = 10;
@@ -259,11 +259,12 @@ function hitsOf(bands: Band[], lead: number): Climb[][] {
 }
 
 /**
- * Whether the hit `hit` is heard only in the highs: of the power it adds over the HIGH_RISE_MS after it in the bands it
+ * Whether the hit `hit` stands out only in the highs: of the power it adds over the HIGH_RISE_MS after it in the bands it
  * climbed in (each band's mean power then, less its mean over the HOLD_MS before, when more), at least HIGH_RISE_SHARE
- * is in the bands from HIGH_ONLY_HZ up. Over a held sound a hat climbs only there; alone, it climbs over the silence in
- * lower bands too, but adds little in them. A kick, a note or a snare, and even white noise (a fifth of whose power lies
- * under 5 kHz), add more below.
+ * is in the bands from HIGH_ONLY_HZ up. A hat does, alone or over a held sound: alone it climbs over the silence in lower
+ * bands too, but adds little in them. Alone, a kick, a note or a snare, and even white noise (a fifth of whose power lies
+ * under 5 kHz), add more below. Over a held sound that masks a hit's lower part (a snare or a noise burst under a pad),
+ * the hit climbs only in the highs, and stands out only there too.
  */
 function highHit(bands: Band[], hit: Climb[]): boolean {
   const at = hit[0].at;

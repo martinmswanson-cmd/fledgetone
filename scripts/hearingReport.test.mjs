@@ -352,17 +352,31 @@ test('words: attack', () => {
   assert.deepEqual(words({ seconds: 0.08, attack: atk({ onsetsPerSecond: 12.5, riseMs: 1.2, single: { ...single, fall20Ms: NaN } }) }), ['A single hit: rises in 1.2 ms, its loudest 10 ms reads -6.0 dB.']);
 });
 
-test('words: onsets heard only in the highs', () => {
+test('words: onsets that stand out only in the highs', () => {
   // (the reading check's busy.wav: hats on every 1/16 over a pad read 7.8 onsets a second, which no line said, and a
-  // fresh reader took them for the pad's beating; the line says where they are heard)
-  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.75 }) }), ['75% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
-  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.5 }) }), ['50% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
+  // fresh reader took them for the pad's beating; the line says where they stand out, and names no instrument)
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.75 }) }), ['75% of its onsets (7.8 a second in all) stand out only above 5 kHz.']);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.5 }) }), ['50% of its onsets (7.8 a second in all) stand out only above 5 kHz.']);
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.49 }) }), []);
-  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 9.5, highShare: 1 }) }), ['Busy (9.5 onsets a second).', '100% of its onsets (9.5 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 9.5, highShare: 1 }) }), ['Busy (9.5 onsets a second).', '100% of its onsets (9.5 a second in all) stand out only above 5 kHz.']);
   // under one onset a second, under 2 seconds, or from a hearing saved before the share was measured: no line
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 0.9, highShare: 1 }) }), ['Sparse (0.9 onsets a second).']);
   assert.deepEqual(words({ seconds: 1.99, attack: atk({ onsetsPerSecond: 8, highShare: 1 }) }), []);
   assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8 }) }), []);
+});
+
+test('snares and noise bursts over a held pad stand out only above 5 kHz, and the words say just that', () => {
+  // (their lower part is masked by the pad, so they climb only in the highs: the line is true as worded, and names no
+  // instrument, as it would point a reader to hats that are not there)
+  const pad = S.mix(S.saw(130.8, 8, -12), S.saw(164.8, 8, -12), S.saw(196, 8, -12));
+  const snares = S.at(8, Array.from({ length: 16 }, (_, i) => [i / 2 + 0.25, S.tonedSnare(i + 3, 70, -12)]));
+  const bursts = S.every(4, 8, (i) => S.burst(0.2, 50, 0, -12, i));
+  for (const [name, x] of [['snares over a pad', S.mix(pad, snares)], ['noise bursts over a pad', S.mix(pad, bursts)]]) {
+    const r = hear([x, x]);
+    assert.ok(r.attack.highShare >= 0.9, `${name}: ${r.attack.highShare}`);
+    assert.ok(r.words.some((w) => /^\d+% of its onsets \(\d+\.\d a second in all\) stand out only above 5 kHz\.$/.test(w)), `${name}: ${r.words.join('\n')}`);
+    assert.ok(!r.words.some((w) => /hats|shakers|heard only/.test(w)), `${name}: ${r.words.join('\n')}`);
+  }
 });
 
 test('an 80 ms hit reads as a single hit, not as busy', () => {

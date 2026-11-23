@@ -68,9 +68,10 @@ export interface Dynamics {
 export interface Attack {
   onsetsPerSecond: number;
   /**
-   * 0 to 1 (2 places): the share of the onsets heard only above 5 kHz (hats, shakers and other short high
-   * hits): 90% or more of the power each adds is there; absent when there are no onsets, and from a hearing
-   * saved before it was measured
+   * 0 to 1 (2 places): the share of the onsets that stand out only above 5 kHz: 90% or more of the power
+   * each adds, in the bands where it stands out, is there. Hats do, alone or over a held sound; a snare or a
+   * noise burst does alone, but not over a held sound that masks its lower part. Absent when there are no
+   * onsets, and from a hearing saved before it was measured
    */
   highShare?: number;
   riseMs: number | null;

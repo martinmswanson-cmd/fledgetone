@@ -159,11 +159,11 @@ test('high-melody.wav against low-melody.wav: register centre and top line rise 
   }
 });
 
-test('busy.wav: its words say its onsets are heard only in the highs (the reading check\'s miss: the hats were taken for the pad\'s beating)', () => {
+test('busy.wav: its words say its onsets stand out only in the highs (the reading check\'s miss: the hats were taken for the pad\'s beating)', () => {
   const busy = soundOf(entry('busy.wav'));
   assert.ok(busy.attack.highShare >= 0.5, JSON.stringify(busy.attack));
-  assert.ok(busy.words.some((w) => /^\d+% of its onsets \(\d+\.\d a second in all\) are heard only above 5 kHz: /.test(w)), busy.words.join('\n'));
-  assert.ok(!soundOf(entry('sparse.wav')).words.some((w) => /heard only above 5 kHz/.test(w)));
+  assert.ok(busy.words.some((w) => /^\d+% of its onsets \(\d+\.\d a second in all\) stand out only above 5 kHz\.$/.test(w)), busy.words.join('\n'));
+  assert.ok(!soundOf(entry('sparse.wav')).words.some((w) => /only above 5 kHz/.test(w)));
 });
 
 test('busy.wav against sparse.wav: onsets a second rise, and the words name more onsets', () => {

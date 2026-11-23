@@ -220,7 +220,7 @@ test('a kick and hats are counted at the hats\' rate, alone and over a bass, a s
   const a = attackOf([S.mix(S.wobble(55, 150, 3000, 4, SECONDS, -10), groove)], 48000);
   near(a.onsetsPerSecond, 8, 8 * 0.25, 'over a wobble bass'); assert.ok(a.riseMs < 5, `over a wobble bass: rise ${a.riseMs}`);
 });
-test('hats are told as heard only in the highs; kicks, noise bursts and struck notes are not', () => {
+test('hats stand out only in the highs, alone and over a pad; alone, kicks, noise bursts and struck notes do not', () => {
   const pad = S.mix(S.saw(130.8, SECONDS, -12), S.saw(164.8, SECONDS, -12), S.saw(196, SECONDS, -12));
   const hats = S.every(8, SECONDS, hat);
   const share = (x) => attackOf([x], 48000).highShare;

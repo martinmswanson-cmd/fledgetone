@@ -116,9 +116,9 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
     than the direct sound. A held sound, or one with fewer than three ends, gives no decay, wet
     share or width (`null`: not read, not none);
   - **dynamics**: loudness, the loudest 3 seconds, true peak, crest and loudness range;
-  - **attack**: how often notes or hits start, how many are heard only above 5 kHz (hats, shakers
-    and other short high hits; said when half or more are), how fast they rise, and the shape of a
-    single hit;
+  - **attack**: how often notes or hits start, how many stand out only above 5 kHz (said when
+    half or more do; over a held sound, a snare or a noise burst whose lower part it masks stands
+    out only there too), how fast they rise, and the shape of a single hit;
   - **stereo**: how alike the channels are, the balance between them, what is lost in mono, the
     width of each part of the spectrum, and how wide the low end is;
   - **pitch**: the tempo (and how sure it is), the key, the tuning, and the twelve pitch classes;
