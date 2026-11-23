@@ -5,8 +5,8 @@
  */
 import { levelBetween, REGIONS, sumDb, totalBands } from '../mixAnalysis';
 import type { BandSpectrum } from '../mixAnalysis';
-import { freqText, one, placeText, soundWords, two } from './words';
-import type { Dynamics, Fault, FaultKind, HearingGroup, Modulation, SoundReport, Stereo, Tone } from './types';
+import { freqText, noteName, one, placeText, soundWords, two } from './words';
+import type { Dynamics, Fault, FaultKind, HearingGroup, Modulation, Register, SoundReport, Space, Stereo, Tone } from './types';
 
 export interface SoundDifference {
   group: HearingGroup;
@@ -28,7 +28,7 @@ export interface SoundComparison {
   notes: string[];
 }
 
-const GROUPS: HearingGroup[] = ['tone', 'texture', 'movement', 'dynamics', 'attack', 'stereo'];
+const GROUPS: HearingGroup[] = ['tone', 'texture', 'movement', 'space', 'dynamics', 'attack', 'stereo', 'register'];
 const FLOOR_DB = -200;
 const SILENT_DB = -150;
 const WIDTH_FLOOR_DB = -60;
@@ -44,6 +44,8 @@ const BAND_STEP_DB = 1.5;
 const ONE_SIDED_STEPS = 3;
 /** Band and region levels are floored this far under their report's whole, dB: under it is rounding noise, and not a tone. */
 const LEVEL_FLOOR_DB = -70;
+/** Decays are floored at this, ms, before they are compared: they are read on 10 ms frames, and under that they are all alike (sounds that stop). */
+const DECAY_FLOOR_MS = 10;
 
 /** `x` to `places` decimals, rounding away from zero on a tie so that a change and its negation round alike, and never -0. */
 function round(x: number, places: number): number {
@@ -90,6 +92,10 @@ interface Row {
   /** For a measure compared as a ratio: how b is said against a ("4 times as long", "25% as many"). */
   ratio?: 'as long' | 'as many';
 }
+
+/** A time in whole ms; a pitch as its note name. */
+const MS: Style = { places: 0, changePlaces: 2, text: (v) => `${Math.round(v)} ms` };
+const NOTE: Style = { places: 1, changePlaces: 2, text: noteName };
 
 /** b against a as a plain ratio: "4 times as long", "2.5 times as many", "25% as long"; "from none" and "to none" where one is nothing. */
 function ratioWords(a: number, b: number, unit: string): string {
@@ -220,8 +226,49 @@ function oneSided(m: Modulation, inB: boolean, labels: { a: string; b: string })
   };
 }
 
+/** An echo that only one of the two has: one difference that says so, with its time and note value; each repeat that stands out counts a step, up to ONE_SIDED_STEPS. */
+function oneSidedEcho(echo: NonNullable<Space['echo']>, inB: boolean, labels: { a: string; b: string }): SoundDifference & { _raw: number } {
+  const ms = Math.round(echo.ms);
+  const steps = Math.min(ONE_SIDED_STEPS, Math.max(1, echo.repeats));
+  return {
+    group: 'space',
+    measure: 'echo',
+    a: inB ? null : ms,
+    b: inB ? ms : null,
+    change: inB ? ms : -ms,
+    size: round(steps, 1),
+    words: `Echo: only ${inside(inB ? labels.b : labels.a)} (${ms} ms${echo.note ? `, ${echo.note} notes` : ''}).`,
+    _raw: steps,
+  };
+}
+
+/** The space rows: each measure only where both have a number (a null is not none, and not compared); an echo in one only is said once. */
+function spaceRows(x: Space, y: Space, labels: { a: string; b: string }): { rows: Row[]; more: Array<SoundDifference & { _raw: number }> } {
+  const rows = [
+    ...ratio('space', 'decay', x.decayMs, y.decayMs, 0.4, MS, 'ms', 'as long', DECAY_FLOOR_MS),
+    ...plain('space', 'wet share', x.wetShare, y.wetShare, 0.1, PLAIN2, 'plain', ''),
+    ...ratio('space', 'echo', x.echo?.ms, y.echo?.ms, 0.1, MS, 'ms', 'as long'),
+    ...plain('space', 'tail width', x.tailWiderDb, y.tailWiderDb, 2, DB, 'dB', 'dB'),
+  ];
+  const more: Array<SoundDifference & { _raw: number }> = [];
+  if (!x.echo !== !y.echo) more.push(oneSidedEcho((x.echo ?? y.echo)!, !!y.echo, labels));
+  return { rows, more };
+}
+
+/** A pitch compared in octaves and written as its note. */
+const pitchRows = (measure: string, a: unknown, b: unknown): Row[] =>
+  finiteNumber(a) && finiteNumber(b) && a > 0 && b > 0 ? [{ group: 'register', measure, a, b, change: Math.log2(b / a), step: 0.25, style: NOTE, kind: 'Hz', changeUnit: 'octaves' }] : [];
+
 function groupRows(group: HearingGroup, a: SoundReport, b: SoundReport, labels: { a: string; b: string }): { rows: Row[]; spectrum?: SoundComparison['spectrum']; more?: Array<SoundDifference & { _raw: number }> } {
   switch (group) {
+    case 'space':
+      return spaceRows(a.space!, b.space!, labels);
+    case 'register': {
+      const x: Register = a.register!, y: Register = b.register!;
+      return {
+        rows: [...pitchRows('register centre', x.centreHz, y.centreHz), ...pitchRows('register low', x.lowHz, y.lowHz), ...pitchRows('register high', x.highHz, y.highHz), ...pitchRows('top line', x.topHz, y.topHz)],
+      };
+    }
     case 'tone':
       return toneRows(a.tone!, b.tone!);
     case 'texture': {

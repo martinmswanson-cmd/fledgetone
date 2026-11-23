@@ -3,7 +3,7 @@
 // group whose numbers or thresholds change must have its version raised: an older saved hearing is then
 // said to be stale in that group rather than compared as if nothing had moved. This test pins a handful
 // of numbers of each group for one made, fixed sound (a gated saw with noise, a click planted in it,
-// stereo). When a pin fails, the group moved: raise its version and update the pin. Run with `npm test`.
+// stereo; and, for the space group, a reverb version of it). When a pin fails, the group moved: raise its version and update the pin. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,8 +35,15 @@ left[CLICK_AT] += 0.4;
 right[CLICK_AT] += 0.4;
 const report = hearSound([left, right], 48000, { engine: 'pin', tempoBpm: 120 });
 
+// Its reverb version, for the space group: the same saw gated at 2 Hz to silence, with its own pink
+// noise in each channel 44 dB under it, through a 1 s reverb mixed 0.5 wet (a different reverb in each
+// channel). (The sound above through a reverb reads no space at all: its gate shuts only 12 dB, 4 times a
+// second, and the noise is 24 dB under it, so no note's tail falls far enough to be timed.)
+const reverbChannel = (seed) => S.reverb(S.mix(S.gate(S.saw(110, SECONDS, -6), 2, -60), S.pink(SECONDS, -50, seed)), 1, 0.5, seed);
+const reverbReport = hearSound([reverbChannel(1), reverbChannel(2)], 48000, { engine: 'pin', tempoBpm: 120 });
+
 /** The versions these pins were measured at: a group raised past its pin needs its numbers measured again. */
-const PINNED_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1 };
+const PINNED_VERSIONS = { tone: 1, texture: 1, movement: 1, dynamics: 1, attack: 1, stereo: 1, pitch: 1, faults: 1, register: 1, space: 1 };
 
 const what = (group) => `the ${group} group moved: raise HEARING_VERSIONS.${group} in src/audio/hearing/types.ts and update this pin`;
 /** One pinned number of a group. */
@@ -132,6 +139,31 @@ test('faults: the pinned numbers hold', () => {
   same('faults', 'the click, its channel (both: none named)', click.channel, undefined);
 });
 
+test('space: the pinned numbers hold', () => {
+  // (the gated saw has no ends: its gate shuts only 12 dB, so nothing is said of decays)
+  same('space', 'the space of the sound', report.space, { decayMs: null, wetShare: null, echo: null, tailWiderDb: null });
+  const s = reverbReport.space;
+  pin('space', 'the reverb version: decayMs', s.decayMs, 332, 5);
+  pin('space', 'the reverb version: wetShare', s.wetShare, 0.16, 0.01);
+  pin('space', 'the reverb version: tailWiderDb', s.tailWiderDb, 4.6, 0.2);
+  same('space', 'the reverb version: echo', s.echo, null);
+});
+
+test('register: the pinned numbers hold', () => {
+  const r = report.register;
+  pin('register', 'centreHz', r.centreHz, 110, 1);
+  pin('register', 'lowHz', r.lowHz, 110, 1);
+  pin('register', 'highHz', r.highHz, 110, 1);
+  pin('register', 'topHz', r.topHz, 110, 1);
+  same('register', 'octaves', r.octaves, [0, 1, 0, 0, 0, 0, 0, 0]);
+  const v = reverbReport.register;
+  pin('register', 'the reverb version: centreHz', v.centreHz, 110, 1);
+  pin('register', 'the reverb version: lowHz', v.lowHz, 107, 1);
+  pin('register', 'the reverb version: highHz', v.highHz, 110, 1);
+  pin('register', 'the reverb version: topHz', v.topHz, 110, 1);
+  pin('register', 'the reverb version: the share in the octave from C2', v.octaves[1], 0.97, 0.01);
+});
+
 test('the words of this sound are the ones pinned (a threshold that moves changes them)', () => {
   assert.deepEqual(
     report.words,
@@ -148,6 +180,8 @@ test('the words of this sound are the ones pinned (a threshold that moves change
       'The high band (4-16 kHz) moves at 4.0 Hz (1/8 notes), 9.0 dB deep.',
       'Nearly mono (correlation 0.97).',
       'Sounds in A major (or A minor).',
+      'Its pitched parts sit at A2 (110 Hz).',
+      'The top line sits around A2.',
       'A click, a jump of -8.0 dBFS, at 0:02.30.',
     ],
     'the words of the pinned sound changed. If a number or a threshold moved, raise the version of the group whose line it is (HEARING_VERSIONS in src/audio/hearing/types.ts) and update this pin; if only the wording changed, update this pin'

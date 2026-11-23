@@ -240,6 +240,15 @@ test('a stretch clamps its range, writes no minus zero, and refuses nonsense', (
   noMinusZero(s);
 });
 
+/** The equal-tempered note `semitones` from C4. */
+const fromC4 = (semitones) => 261.6256 * 2 ** (semitones / 12);
+// The pluck sound of scripts/hearingSpace.test.mjs (8 short notes, one every 0.75 s, 8 s in all), dry
+// and through a 1 s reverb mixed 0.7 wet (at 0.5 wet its wet share is 0.10 against the dry 0.02: under a step)
+let plucks;
+const dryPluck = () => (plucks ??= S.melody([0, 4, 7, 12, 9, 5, 2, -1].map((n, i) => [fromC4(n), i * 0.75, 0.25]), 8, -6));
+let reverbed;
+const reverbPluck = () => (reverbed ??= S.reverb(dryPluck(), 1, 0.7));
+
 const sounds = {};
 /** The made sound called `name`, built once so its report is measured once. */
 const made = (name) => (sounds[name] ??= levelSounds[name]());
@@ -251,10 +260,15 @@ const levelSounds = {
   'kick and hat over a saw bass': () => [S.mix(S.every(2, 2, () => S.burst(0.2, 80, 1, -6, 1)), S.band(S.every(4, 2, () => S.burst(0.05, 10, 1, -9, 2)), 6000, 16000), S.saw(55, 2, -12))],
   'a pure sine': () => [S.sine(220, 2, -3)],
   'a stereo sound': () => [S.mix(S.saw(110, 2, -6), S.pink(2, -14, 3)), S.mix(S.saw(165, 2, -6), S.pink(2, -14, 4))],
+  'the 1 s reverb pluck sound': () => [reverbPluck()],
 };
 
-/** Sounds that read differently 40 dB down, for a reason outside this task (see the known limits test). */
-const KNOWN_LIMIT_AT_40 = new Set(['a drum pattern', 'a pure sine']);
+/**
+ * Sounds that read differently 40 dB down, for a reason outside this task (see the known limits test;
+ * the reverb pluck sound's loudness reads 39.7 dB down there: much of it is silence between the notes,
+ * and loudness gates out what is under -70 LUFS).
+ */
+const KNOWN_LIMIT_AT_40 = new Set(['a drum pattern', 'a pure sine', 'the 1 s reverb pluck sound']);
 
 for (const name of Object.keys(levelSounds)) {
   test(`level: ${name} turned down differs only in loudness`, () => {
@@ -413,9 +427,10 @@ test('a stretch of a saved hearing gives one note of what cannot be compared, li
   const full = hear([bedOf(4)]);
   const stretch = stretchOf(JSON.parse(JSON.stringify(full)), 0, 4);
   const c = compareSound(stretch, full);
-  assert.deepEqual(c.skipped, ['texture', 'movement', 'attack']);
+  // (space and register since Task 3 of the space and register work: a stretch has neither)
+  assert.deepEqual(c.skipped, ['texture', 'movement', 'space', 'attack', 'register']);
   const said = c.notes.filter((n) => /can't be compared/.test(n));
-  assert.deepEqual(said, ["Compared from saved measurements of a stretch: tone, width and loudness only (texture, movement and attack can't be compared)."]);
+  assert.deepEqual(said, ["Compared from saved measurements of a stretch: tone, width and loudness only (texture, movement, space, attack and register can't be compared)."]);
 });
 
 test('rise time and onsets are given as a plain ratio, and the change of the spectrum over time is named for what it is (M9)', () => {
@@ -445,4 +460,75 @@ test('rise time and onsets are given as a plain ratio, and the change of the spe
   const moved = compareSound(hear(drum), hear(drum.map((ch) => S.gain(ch, -40))));
   assert.ok(moved.differences.some((d) => /^Spectral movement: /.test(d.words)));
   assert.ok(![...moved.differences, ...c.differences].some((d) => /^Change: /.test(d.words)));
+});
+
+// Space and register (Task 3 of the space and register work)
+
+test('wetter and longer reads as space', () => {
+  const c = compareSound(hear([dryPluck()]), hear([reverbPluck()]));
+  const decay = c.differences.find((d) => d.measure === 'decay');
+  const wet = c.differences.find((d) => d.measure === 'wet share');
+  assert.ok(decay && decay.change > 0 && decay.group === 'space', c.differences.map((d) => d.words).join('\n'));
+  assert.ok(wet && wet.change > 0 && wet.group === 'space', c.differences.map((d) => d.words).join('\n'));
+  assert.match(decay.words, /^Decay: \d+ ms against \d+ ms \(\d+(\.\d)? times as long\)\.$/);
+  assert.match(wet.words, /^Wet share: \d\.\d\d against \d\.\d\d \(\+\d\.\d\d\)\.$/);
+  finite(c);
+});
+
+test('an octave higher reads as register', () => {
+  const SCALE = [0, 2, 4, 5, 7, 9, 11, 12];
+  const scale = (octave) => S.melody(SCALE.map((n, i) => [fromC4(n + 12 * octave), i * 0.5, 0.5]), 4, -6);
+  const c = compareSound(hear([scale(0)]), hear([scale(1)]));
+  for (const measure of ['register centre', 'top line']) {
+    const d = c.differences.find((x) => x.measure === measure);
+    assert.ok(d && d.group === 'register', `${measure}: ${c.differences.map((x) => x.words).join('\n')}`);
+    near(d.change, 1, 0.1, measure);
+    assert.match(d.words, /^[A-Z][a-z ]+: [A-G]#?\d against [A-G]#?\d \(\+\d\.\d\d octaves\)\.$/, d.words);
+  }
+  finite(c);
+});
+
+test('an old saved hearing has neither group (Review Focus 4)', () => {
+  const now = hear([reverbPluck()]);
+  assert.ok(now.space && now.register, 'the new hearing has both groups');
+  const old = JSON.parse(JSON.stringify(now));
+  delete old.space;
+  delete old.register;
+  delete old.versions.space;
+  delete old.versions.register;
+  for (const [a, b] of [[old, now], [now, old]]) {
+    const c = compareSound(a, b);
+    for (const group of ['space', 'register']) {
+      assert.ok(c.skipped.includes(group), `${group}: ${c.skipped}`);
+      assert.ok(c.notes.includes(`${group} can't be compared: only one of these has it.`), c.notes.join('\n'));
+    }
+    assert.ok(!c.differences.some((d) => d.group === 'space' || d.group === 'register'));
+    finite(c);
+  }
+});
+
+test('a measure of space is compared only when both have a number; null groups do not throw', () => {
+  const now = hear([reverbPluck()]);
+  const space = (o) => ({ ...now, space: { decayMs: null, wetShare: null, echo: null, tailWiderDb: null, ...o } });
+  // A null on one side is not a difference
+  const c = compareSound(space({ decayMs: 300, wetShare: 0.2, tailWiderDb: 4 }), space({}));
+  assert.deepEqual(c.differences.filter((d) => d.group === 'space'), []);
+  // An echo in one only: one line saying so, its size at most 3
+  const echo = compareSound(space({}), space({ echo: { ms: 250, repeats: 6, note: '1/8' } }));
+  const d = echo.differences.find((x) => x.measure === 'echo');
+  assert.equal(d.words, 'Echo: only in the second (250 ms, 1/8 notes).');
+  assert.ok(d.size > 0 && d.size <= 3, `size ${d.size}`);
+  assert.equal(compareSound(space({ echo: { ms: 375, repeats: 2 } }), space({}), { a: 'before', b: 'after' }).differences.find((x) => x.measure === 'echo').words, 'Echo: only before (375 ms).');
+  // Both: their times, in octaves
+  const both = compareSound(space({ echo: { ms: 250, repeats: 4 } }), space({ echo: { ms: 500, repeats: 4 } })).differences.find((x) => x.measure === 'echo');
+  near(both.change, 1, 1e-9, 'echo');
+  // Tail width, in dB
+  const width = compareSound(space({ decayMs: 300, tailWiderDb: 1 }), space({ decayMs: 300, tailWiderDb: 6 })).differences.find((x) => x.measure === 'tail width');
+  near(width.change, 5, 1e-9, 'tail width');
+  // Null groups (a short sound, no pitched part) on either side
+  for (const o of [{ space: null }, { register: null }, { space: null, register: null }]) {
+    finite(compareSound({ ...now, ...o }, now));
+    finite(compareSound(now, { ...now, ...o }));
+  }
+  finite(compareSound(now, { ...now, register: { ...now.register, topHz: null } }));
 });
