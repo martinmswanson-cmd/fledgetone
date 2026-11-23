@@ -35,6 +35,11 @@ const NOTE_RANGE_DB = 40;
 const FALL_DB = 20;
 /** A level FALL_DB under the end within this many frames of it is a sound that stops: the fall is timed where it crosses. */
 const QUICK = 3;
+/** Otherwise a tail is timed when the line through its levels falls at least this far before the next onset, dB, and the levels miss the line by at most this (root mean square), dB. */
+const TIMED_DB = 10;
+const FIT_DB = 1.5;
+/** ... and its second half falls at least this share as fast as its first. */
+const SETTLE = 0.5;
 /** A note or hit has ended by the time its level is this far under its peak, dB ... */
 const END_DB = 10;
 /** ... and its end is where its level steps down most before then, at least this far, dB, read from lines through this many frames either side. */
@@ -340,13 +345,37 @@ function endsOf(levels: Float64Array, onsets: readonly number[]): End[] {
   return ends;
 }
 
+/** The slope of the line through `levels` from `a` to `b` - 1, a frame, and how far they miss it (root mean square), dB. */
+function slopeOf(levels: Float64Array, a: number, b: number): { slope: number; miss: number } {
+  const n = b - a;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (let g = a; g < b; g++) {
+    const x = g - a;
+    sx += x;
+    sy += levels[g];
+    sxx += x * x;
+    sxy += x * levels[g];
+    syy += levels[g] * levels[g];
+  }
+  const vx = sxx - (sx * sx) / n;
+  const cxy = sxy - (sx * sy) / n;
+  const slope = vx > 0 ? cxy / vx : 0;
+  return { slope, miss: Math.sqrt(Math.max(0, syy - (sy * sy) / n - slope * cxy) / n) };
+}
+
 /**
- * The time a tail takes to fall FALL_DB, frames, or null when it does not fall that far before the next
- * onset (or before it settles on a floor of the sound's own: a held layer, noise): such a tail is not
- * timed. When the level is FALL_DB under the end's within QUICK frames (a sound that stops), the time
- * it takes to get there, read between two frames. Otherwise FALL_DB over the rate the tail falls at:
- * the slope of the line through its levels from its second frame (the first can still hold the end of
- * the direct sound) to where it is FALL_DB under the end.
+ * The time a tail takes to fall FALL_DB, frames, or null when it is not timed. When the level is
+ * FALL_DB under the end's within QUICK frames (a sound that stops), the time it takes to get there,
+ * read between two frames. Otherwise a line is fitted to the tail's levels from its second frame (the
+ * first can still hold the end of the direct sound) to where it is FALL_DB under the end, or to the
+ * next onset: the tail is timed, FALL_DB over its slope, only when the line falls at least TIMED_DB
+ * over those frames, the levels miss it by at most FIT_DB (root mean square), and its second half falls
+ * at least SETTLE as fast as its first. A reverb falls along a line; a held layer or noise under the
+ * notes is flat, or falls and then lies flat, and is not timed.
  */
 function fallFrames(levels: Float64Array, { last, stop }: End): number | null {
   const ref = levels[last];
@@ -359,28 +388,22 @@ function fallFrames(levels: Float64Array, { last, stop }: End): number | null {
       break;
     }
   }
-  if (crossed < 0) return null;
-  const at = (g: number) => {
-    const before = levels[g - 1];
-    const frac = before > levels[g] ? (before - target) / (before - levels[g]) : 1;
-    return Math.max(0, g - last - 1.5 + frac);
-  };
-  const first = last + 2;
-  const count = crossed + 1 - first;
-  if (crossed < last + 1 + QUICK || count < 3) return at(crossed);
-  let sx = 0;
-  let sy = 0;
-  let sxx = 0;
-  let sxy = 0;
-  for (let g = first; g <= crossed; g++) {
-    const x = g - first;
-    sx += x;
-    sy += levels[g];
-    sxx += x * x;
-    sxy += x * levels[g];
+  if (crossed >= 0 && crossed < last + 1 + QUICK) {
+    const before = levels[crossed - 1];
+    const frac = before > levels[crossed] ? (before - target) / (before - levels[crossed]) : 1;
+    return Math.max(0, crossed - last - 1.5 + frac);
   }
-  const slope = (count * sxy - sx * sy) / (count * sxx - sx * sx);
-  return slope < 0 ? FALL_DB / -slope : at(crossed);
+  const first = last + 2;
+  const end = crossed >= 0 ? crossed + 1 : to;
+  const count = end - first;
+  if (count < 3) return null;
+  const whole = slopeOf(levels, first, end);
+  if (!(whole.slope < 0) || -whole.slope * (count - 1) < TIMED_DB || whole.miss > FIT_DB) return null;
+  // (and its second half falls at least SETTLE as fast as its first: a fall onto a floor flattens)
+  const half = first + (count >> 1);
+  if (count >= 2 * KNEE_PARTS && slopeOf(levels, half, end).slope > SETTLE * slopeOf(levels, first, half).slope) return null;
+  const slope = whole.slope;
+  return FALL_DB / -slope;
 }
 
 /**

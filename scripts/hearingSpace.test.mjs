@@ -188,3 +188,12 @@ test('a fading riff is said as either reading (Fix round 1)', () => {
     assert.ok(lines.includes(`Repeats every ${s.echo.ms} ms${note}, ${s.echo.repeats} standing out, each a step quieter: an echo, or a note played again more quietly.`), lines.join(' / '));
   }
 });
+
+test('a long reverb is timed though the next note comes first (Fix round 2)', () => {
+  const longPlucks = S.melody([0, 5, 9, 4].map((s, i) => [fromC4(s), i * 2, 1.5]), 8, -6);
+  const bursts = S.every(1.5, 8, (i) => S.burst(0.5, 100, 2, -6, i + 1));
+  for (const [name, x] of [['long plucks', longPlucks], ['noise bursts', bursts]]) {
+    const s = spaceOf([S.reverb(x, 2, 0.5)], SR);
+    assert.ok(s.decayMs !== null && Math.abs(s.decayMs / 667 - 1) <= 0.35, `${name} through a 2 s reverb: ${JSON.stringify(s)}`);
+  }
+});
