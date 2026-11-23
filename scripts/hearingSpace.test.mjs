@@ -88,6 +88,8 @@ test('wide tails', () => {
   assert.ok(wide.tailWiderDb !== null && wide.tailWiderDb > 6, `decorrelated tails: ${wide.tailWiderDb}`);
   const same = spaceOf([reverbed.get(1), reverbed.get(1)], SR);
   assert.ok(same.tailWiderDb !== null && same.tailWiderDb < 1, `the same tail in both: ${same.tailWiderDb}`);
+  // (Fix round 4: with a dB to spare; it reads 8.0)
+  assert.ok(wide.tailWiderDb >= 7, `decorrelated tails, with a margin: ${wide.tailWiderDb}`);
 });
 
 test('mono, silence and short', () => {
@@ -228,14 +230,97 @@ test('wetter never reads much drier, on a grid of wet mixes (Fix round 3)', () =
   }
 });
 
-test('known limit: a 4 s reverb mixed 0.7 wet or more reads nothing (Fix round 3)', () => {
+test('known limit: a 4 s reverb mixed 0.8 wet or more reads nothing (Fix round 3, moved in round 4)', () => {
   // Over a reverb this loud the notes' starts and ends barely move the level. Pinned as it reads, so
-  // a change shows: at wet 0.6 it is still timed; from 0.7 up, nothing.
+  // a change shows: at wet 0.6 and 0.7 it is still timed (round 3 read nothing at 0.7); from 0.8 up, nothing.
   const at = (wet) => {
     const x = S.reverb(pluck, 4, wet);
     return spaceOf([x, x], SR);
   };
-  const timed = at(0.6);
-  assert.ok(timed.decayMs !== null && Math.abs(timed.decayMs / 1333 - 1) <= 0.35, JSON.stringify(timed));
-  for (const wet of [0.7, 0.8, 0.9]) assert.deepEqual(at(wet), { decayMs: null, wetShare: null, echo: null, tailWiderDb: null }, `wet ${wet}`);
+  for (const wet of [0.6, 0.7]) {
+    const timed = at(wet);
+    assert.ok(timed.decayMs !== null && Math.abs(timed.decayMs / 1333 - 1) <= 0.35, `wet ${wet}: ${JSON.stringify(timed)}`);
+  }
+  for (const wet of [0.8, 0.9]) assert.deepEqual(at(wet), { decayMs: null, wetShare: null, echo: null, tailWiderDb: null }, `wet ${wet}`);
+});
+
+test('wet share does not fall as the mix gets wetter, on other noise seeds (Fix round 4)', () => {
+  // (a row that fell furthest before, RT 2 s on seed 6, from 0.25 to 0.13, and seed 2 again with 0.04 a step, over the wetter mixes, where they fell. Seeds 1 to 6 in full: space-grid.mjs)
+  for (const [rt, seed, step] of [[2, 6, 0.05], [3, 2, 0.04]]) {
+    let before = null;
+    for (const wet of [0.5, 0.6, 0.7, 0.8, 0.9]) {
+      const x = S.reverb(pluck, rt, wet, seed);
+      const s = spaceOf([x, x], SR);
+      const what = `RT ${rt} s, seed ${seed}, wet ${wet}: ${JSON.stringify(s)}`;
+      assert.ok(s.decayMs !== null && Math.abs(s.decayMs / ((rt * 1000) / 3) - 1) <= 0.35, what);
+      if (before !== null) assert.ok(s.wetShare >= before - step - 1e-9, `${what}, after ${before}`);
+      before = s.wetShare;
+    }
+  }
+});
+
+// Drum beats (S.beat): a kick and a snare in turn, with or without a hat twice as often. The full grid,
+// both kits at both rates with and without the hat through 6 reverbs on 3 seeds, is in space-grid.mjs.
+const beats = new Map();
+const beatOf = (kickMs, snareMs, snareSeconds, rate, hat) => {
+  const key = [kickMs, snareMs, snareSeconds, rate, hat].join('/');
+  if (!beats.has(key)) beats.set(key, S.beat(kickMs, snareMs, snareSeconds, rate, hat, 8));
+  return beats.get(key);
+};
+
+test('drum beats, dry and through reverbs (Fix round 4)', () => {
+  let cells = 0;
+  let nulls = 0;
+  for (const [kit, rate, hat, reverbs] of [
+    [[80, 60, 0.3], 2, false, [[0.5, 0.3], [1.5, 0.5]]],
+    [[80, 60, 0.3], 4, true, [[0.8, 0.5]]],
+    [[150, 100, 0.4], 2, true, [[1.5, 0.5]]],
+    [[150, 100, 0.4], 4, false, [[0.5, 0.5], [1.5, 0.5]]],
+  ]) {
+    const x = beatOf(...kit, rate, hat);
+    const name = `kick ${kit[0]}, snare ${kit[1]}, ${rate} a second${hat ? ', hat' : ''}`;
+    const dry = spaceOf([x], SR);
+    // A dry beat is not said to be mostly tail, and its hits' own ring is its decay
+    assert.ok(dry.decayMs !== null && dry.wetShare < 0.3, `${name}, dry: ${JSON.stringify(dry)}`);
+    assert.ok(!soundWords({ ...base, space: dry }).some((w) => w.startsWith('Much of it is tail')), name);
+    assert.ok(Math.abs(dry.decayMs / (kit[1] * 2.3) - 1) <= 0.2, `${name}, dry, against the snare's own fall: ${dry.decayMs}`);
+    const read = [];
+    for (const [rt, wet] of reverbs) {
+      const s = spaceOf([S.reverb(x, rt, wet)], SR);
+      const what = `${name}, RT ${rt} s, wet ${wet}: ${JSON.stringify(s)}, dry ${dry.decayMs}`;
+      cells++;
+      if (s.decayMs === null) nulls++;
+      else {
+        // (the yardstick: the reverb's own fall, or the dry beat's ring when that is longer)
+        assert.ok(Math.abs(s.decayMs / Math.max((rt * 1000) / 3, dry.decayMs) - 1) <= 0.35, what);
+        assert.ok(s.decayMs >= dry.decayMs, what);
+        for (const [rt2, wet2, other] of read) {
+          if (other.wetShare !== null && rt2 <= rt && wet2 <= wet) assert.ok(s.wetShare >= other.wetShare - 0.05 - 1e-9, `${what}, after ${other.wetShare} at ${rt2}/${wet2}`);
+        }
+      }
+      read.push([rt, wet, s]);
+    }
+  }
+  assert.ok(nulls <= cells / 4, `${nulls} of ${cells} reverbed beats read nothing`);
+});
+
+test('known limit: a hat over a hit that falls fast into a quiet long reverb reads short (Fix round 4)', () => {
+  // Snares four a second with hats every 125 ms, through a 1.5 s reverb mixed 0.3: a snare's own fall
+  // takes it 17 dB down before its reverb shows, and the reverb is then seen only in the 80 ms between
+  // hats. Pinned as it reads (275 ms; the reverb alone falls 20 dB in 500 ms, and the same beat
+  // without the hat reads 454 ms), so a change shows.
+  const s = spaceOf([S.reverb(beatOf(80, 60, 0.3, 4, true), 1.5, 0.3)], SR);
+  assert.ok(s.decayMs !== null && s.decayMs >= 250 && s.decayMs < 325, JSON.stringify(s));
+});
+
+test('known limit: hats over hits that ring longer than the reverb read under the dry beat (Fix round 4)', () => {
+  // A snare that rings on for 230 ms of its own, with hats, through a 0.5 s reverb (which falls 20 dB
+  // in 167 ms): each hat's own short reverb tail lies over the snare's ring and falls faster than
+  // it, so the stretches between the hats fall faster than the ring alone. Pinned as it reads (203 ms
+  // against 234 ms dry, 13% under; on the grid's seeds 191 to 226 ms), so a change shows.
+  const x = beatOf(150, 100, 0.4, 2, true);
+  const dry = spaceOf([x], SR);
+  const s = spaceOf([S.reverb(x, 0.5, 0.5)], SR);
+  assert.ok(dry.decayMs !== null && Math.abs(dry.decayMs / 230 - 1) <= 0.05, JSON.stringify(dry));
+  assert.ok(s.decayMs !== null && s.decayMs < dry.decayMs && s.decayMs >= 0.8 * dry.decayMs, `${JSON.stringify(s)} against ${dry.decayMs} dry`);
 });

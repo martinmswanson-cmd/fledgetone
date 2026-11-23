@@ -1,5 +1,5 @@
 // Made test signals for the hearing tests (scripts/hearing*.test.mjs): tones, noise, modulated and
-// gated sounds, bursts, melodies, and the little tools to place, mix, clip, filter, reverberate and
+// gated sounds, bursts, drum beats, melodies, and the little tools to place, mix, clip, filter, reverberate and
 // echo them. Every function returns a Float32Array; noise comes from a seeded generator so a test
 // repeats exactly.
 import { fftInPlace } from '../../src/audio/fft.ts';
@@ -225,6 +225,17 @@ export function band(x, loHz, hiHz, sr = SR) {
 }
 
 /**
+ * A drum beat, `seconds` long: `rate` hits a second, in turn a kick (a 55 Hz sine 0.4 s long, fading with
+ * time constant `kickMs`, peak -3 dB) and a snare (a noise burst `snareSeconds` long, fading with `snareMs`,
+ * peak -6 dB, each from its own seed); with `hat`, a short noise hat (40 ms, time constant 8 ms, peak -14 dB)
+ * twice as often as the hits, the first with the first hit.
+ */
+export function beat(kickMs, snareMs, snareSeconds, rate, hat, seconds, sr = SR) {
+  const hits = every(rate, seconds, (i) => (i % 2 === 0 ? decay(sine(55, 0.4, -3, sr), kickMs, sr) : burst(snareSeconds, snareMs, 1, -6, i + 1, sr)), sr);
+  return hat ? mix(hits, every(rate * 2, seconds, (i) => burst(0.04, 8, 0.5, -14, 200 + i, sr), sr)) : hits;
+}
+
+/**
  * A melody: each `[hz, startSeconds, seconds]` note a band-limited saw that fades from its start (falling
  * to 1/e, about 9 dB, over its own length, as a plucked note) with 5 ms raised-cosine edges either side;
  * the whole `seconds` long and peaking at `peakDb`. Overlapping notes add.
@@ -246,6 +257,8 @@ export function melody(notes, seconds, peakDb, sr = SR) {
 
 /** The reverbs already worked out, by sound and then by length, seed and rate: a sweep of wet mixes convolves once. */
 const convolved = new WeakMap();
+/** The spectra of the sounds reverberated, by sound and then by size: a sweep of reverbs of one sound transforms it once. */
+const spectra = new WeakMap();
 
 /**
  * `x` through a made reverb: convolved with exponentially decaying noise (from the seeded generator)
@@ -267,10 +280,16 @@ export function reverb(x, rtSeconds, wet, seed = 1, sr = SR) {
     }
     let size = 2;
     while (size < x.length + length) size *= 2;
-    const [are, aim, bre, bim] = [new Float64Array(size), new Float64Array(size), new Float64Array(size), new Float64Array(size)];
-    are.set(x);
+    if (!spectra.has(x)) spectra.set(x, new Map());
+    if (!spectra.get(x).has(size)) {
+      const [re, im] = [new Float64Array(size), new Float64Array(size)];
+      re.set(x);
+      fftInPlace(re, im);
+      spectra.get(x).set(size, [re, im]);
+    }
+    const [are, aim] = spectra.get(x).get(size).map((part) => Float64Array.from(part));
+    const [bre, bim] = [new Float64Array(size), new Float64Array(size)];
     bre.set(h);
-    fftInPlace(are, aim);
     fftInPlace(bre, bim);
     for (let k = 0; k < size; k++) {
       const re = are[k] * bre[k] - aim[k] * bim[k];
@@ -282,7 +301,10 @@ export function reverb(x, rtSeconds, wet, seed = 1, sr = SR) {
     done.set(key, Float64Array.from(are.subarray(0, x.length), (v) => v * g));
   }
   const wetPart = done.get(key);
-  return Float32Array.from(x, (v, i) => (1 - wet) * v + wet * wetPart[i]);
+  // (a plain loop: a sweep of mixes makes many of these)
+  const out = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) out[i] = (1 - wet) * x[i] + wet * wetPart[i];
+  return out;
 }
 
 /** `x` with `repeats` echoes of itself, `delaySeconds` apart, each `feedback` times the one before (the first `feedback` times `x`). As long as `x`. */
