@@ -220,6 +220,17 @@ test('a kick and hats are counted at the hats\' rate, alone and over a bass, a s
   const a = attackOf([S.mix(S.wobble(55, 150, 3000, 4, SECONDS, -10), groove)], 48000);
   near(a.onsetsPerSecond, 8, 8 * 0.25, 'over a wobble bass'); assert.ok(a.riseMs < 5, `over a wobble bass: rise ${a.riseMs}`);
 });
+test('hats are told as heard only in the highs; kicks, noise bursts and struck notes are not', () => {
+  const pad = S.mix(S.saw(130.8, SECONDS, -12), S.saw(164.8, SECONDS, -12), S.saw(196, SECONDS, -12));
+  const hats = S.every(8, SECONDS, hat);
+  const share = (x) => attackOf([x], 48000).highShare;
+  for (const [name, x] of [['hats alone', hats], ['hats over a pad', S.mix(pad, hats)], ['hats over a pad, 20 dB quieter', S.gain(S.mix(pad, hats), -20)]])
+    assert.ok(share(x) >= 0.9, `${name}: ${share(x)}`);
+  // (a kick on every second hat: the other three in four are hats alone)
+  near(share(S.mix(pad, kicks(), hats)), 0.75, 0.1, 'kick and hats over a pad');
+  for (const [name, x] of [['noise bursts', hits(4, -6)], ['struck notes on a held saw', S.mix(saw(110, -20), notes(S.saw, 440, 120, -10, 4))], ['kicks', kicks()]])
+    assert.ok(share(x) <= 0.1, `${name}: ${share(x)}`);
+});
 test('a rate that rounds to nothing has no rise', () => {
   for (const [rate, x] of [[0.04, S.at(25, [[10, S.burst(0.2, 50, 0, -6, 1)]])]]) {
     const a = attackOf([x], 48000);

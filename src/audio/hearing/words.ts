@@ -82,6 +82,8 @@ function modulationWords(m: Modulation): string {
   return `The ${m.band} band (${rangeText(lo, hi)}) moves at ${one(m.hz)} Hz${note}, ${one(m.depthDb)} dB deep.`;
 }
 
+/** From this share of its onsets heard only above 5 kHz, the words say where they are heard. */
+const HIGH_ONSETS = 0.5;
 /** Shorter than this, seconds, a sound is not called busy or sparse. */
 const BUSY_MIN_SECONDS = 2;
 /** Under this correlation the channels are more out of phase than in. */
@@ -190,6 +192,10 @@ export function soundWords(r: Omit<SoundReport, 'words'>): string[] {
     if (!hit && r.seconds >= BUSY_MIN_SECONDS) {
       if (attack.onsetsPerSecond > 8) out.push(`Busy (${one(attack.onsetsPerSecond)} onsets a second).`);
       else if (attack.onsetsPerSecond < 1) out.push(`Sparse (${one(attack.onsetsPerSecond)} onsets a second).`);
+      // (where the onsets are heard: hats on every 1/16 over a pad were taken for the pad's beating when no line said so)
+      const high = attack.highShare;
+      if (high !== undefined && high >= HIGH_ONSETS && attack.onsetsPerSecond >= 1)
+        out.push(`${Math.round(100 * high)}% of its onsets (${one(attack.onsetsPerSecond)} a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.`);
     }
   }
 

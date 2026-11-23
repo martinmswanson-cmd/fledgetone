@@ -352,6 +352,19 @@ test('words: attack', () => {
   assert.deepEqual(words({ seconds: 0.08, attack: atk({ onsetsPerSecond: 12.5, riseMs: 1.2, single: { ...single, fall20Ms: NaN } }) }), ['A single hit: rises in 1.2 ms, its loudest 10 ms reads -6.0 dB.']);
 });
 
+test('words: onsets heard only in the highs', () => {
+  // (the reading check's busy.wav: hats on every 1/16 over a pad read 7.8 onsets a second, which no line said, and a
+  // fresh reader took them for the pad's beating; the line says where they are heard)
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.75 }) }), ['75% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.5 }) }), ['50% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8, highShare: 0.49 }) }), []);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 9.5, highShare: 1 }) }), ['Busy (9.5 onsets a second).', '100% of its onsets (9.5 a second in all) are heard only above 5 kHz: hats, shakers and other short high hits read this way.']);
+  // under one onset a second, under 2 seconds, or from a hearing saved before the share was measured: no line
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 0.9, highShare: 1 }) }), ['Sparse (0.9 onsets a second).']);
+  assert.deepEqual(words({ seconds: 1.99, attack: atk({ onsetsPerSecond: 8, highShare: 1 }) }), []);
+  assert.deepEqual(words({ attack: atk({ onsetsPerSecond: 7.8 }) }), []);
+});
+
 test('an 80 ms hit reads as a single hit, not as busy', () => {
   const r = hear([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])]);
   assert.ok(r.attack.single);

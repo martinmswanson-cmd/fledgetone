@@ -116,14 +116,17 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
     than the direct sound. A held sound, or one with fewer than three ends, gives no decay, wet
     share or width (`null`: not read, not none);
   - **dynamics**: loudness, the loudest 3 seconds, true peak, crest and loudness range;
-  - **attack**: how often notes or hits start, how fast they rise, and the shape of a single hit;
+  - **attack**: how often notes or hits start, how many are heard only above 5 kHz (hats, shakers
+    and other short high hits; said when half or more are), how fast they rise, and the shape of a
+    single hit;
   - **stereo**: how alike the channels are, the balance between them, what is lost in mono, the
     width of each part of the spectrum, and how wide the low end is;
   - **pitch**: the tempo (and how sure it is), the key, the tuning, and the twelve pitch classes;
   - **register**: where the pitched parts sit, as notes: low, centre and high (the 10th, 50th and
     90th percentiles of the pitched energy), the top line (the highest clear part over time) and
     the share in each octave from C1 to C8 ("Its pitched parts sit between C3 and B3 ... centred
-    near F3.", "The top line sits around F3."). Drums and noise have no register;
+    near F3.", "The top line sits around F3."). Noise and noisy drums have no register; a kick or a tom with a clear pitch reads as a
+    pitched part;
   - **faults**: clicks, clipping, a DC offset, hum, digital silence and a channel that is silent
     or much quieter than the other, each with where it is (a moment is written as minutes,
     seconds and hundredths, `0:26.53`) and its size with its unit (a click's jump and clipping's
@@ -192,9 +195,10 @@ checked.
 What space and register can't tell (limits of the tool, measured, not advice):
 
 - Space needs notes or hits that end: a held pad gives no decay. When in doubt it says less:
-  beside an echo there is no "Dry" line and no tail width; decay and wet share are left out
-  beside an echo when the notes stop in under 150 ms, and when most of the tail is in ends that
-  could not be timed; tail width is left out whenever the decay is under 150 ms.
+  beside an echo there is no "Dry" line and no tail width, and decay and wet share are left out
+  there when the notes stop in under 150 ms; decay and wet share are left out when most of the
+  tail is in ends that could not be timed; tail width is left out whenever the decay is under
+  150 ms.
 - A reverb shorter than about 80 ms is not told from the sound itself.
 - An echo is told from a repeated note only when the repeats come without onsets of their own; a
   note played again more quietly reads the same, so the line says both. Repeats that change sound
@@ -209,11 +213,11 @@ What space and register can't tell (limits of the tool, measured, not advice):
 - Held and shaped notes with no reverb (struck notes held on, pads with a slow attack) can read
   long tails; long, wet reverbs (about 3 s or more, mostly wet) can read nothing; a tail of a single
   partial reads unevenly; and noise that differs between the channels counts as tail width.
-- Register needs pitched sound and says nothing for drums or noise. A voice counts as a pitched
-  part, and so does low-passed noise under about 100 Hz.
+- Register needs pitched sound and says nothing for noise or noisy drums. A kick or a tom with a
+  clear pitch reads as a pitched part, and so do a voice and low-passed noise under about 100 Hz.
 - A reverb or a delay can lift the high and top line, often a step (a quarter of an octave) or
-  more; on a lone held note through a short, wet room, more than two octaves. The centre moves
-  less often (about half an octave on melodies with long tails; more than an octave and a half on
+  more; on a lone held note through a short, wet room, more than two octaves, and its centre an
+  octave. Otherwise the centre moves less often (about half an octave on melodies with long tails; more than an octave and a half on
   a vowel-like pad through a wet room).
 - A vowel, a formant or a static resonance can read high even dry. Chords over a bass often read
   low (the bass takes the chord's energy where their overtones meet), a root, fifth and octave

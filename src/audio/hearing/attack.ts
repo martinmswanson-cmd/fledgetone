@@ -1,7 +1,8 @@
 /**
- * How hard a sound starts, for the hearing report: onsets per second, the typical time the level
- * takes to climb from 10% to 90% of an onset's peak, and for a single short hit its rise, its fall
- * to 20 dB under the peak and how loud it hits. Plain maths on samples, no Web Audio, so Node can test it.
+ * How hard a sound starts, for the hearing report: onsets per second, the share of them heard only in
+ * the highs (hats and other short high hits), the typical time the level takes to climb from 10% to
+ * 90% of an onset's peak, and for a single short hit its rise, its fall to 20 dB under the peak and
+ * how loud it hits. Plain maths on samples, no Web Audio, so Node can test it.
  *
  * Onsets are found band by band. The sound is split into bands (two octaves from 20 Hz, then
  * octaves), and each band's level is read over a span that suits its width: long in the narrow low
@@ -47,6 +48,10 @@ const CHAIN_SPAN_MS = 25;
 const CHAIN_MS = 30;
 /** A narrower band's climb within this of a hit (plus half its own span) is part of it, ms. */
 const SAME_HIT_MS = 25;
+/** A hit is heard only in the highs when HIGH_RISE_SHARE of the power it adds over HIGH_RISE_MS is in the bands from here up, Hz (from 5120 Hz). */
+const HIGH_ONLY_HZ = 5000;
+const HIGH_RISE_SHARE = 0.9;
+const HIGH_RISE_MS = 10;
 /** At most this many of the strongest onsets are measured for the rise. */
 const MAX_ONSETS = 32;
 /** How far back from an onset the climb may begin, and how long after it the peak may come, ms. */
@@ -253,6 +258,32 @@ function hitsOf(bands: Band[], lead: number): Climb[][] {
   return hits.filter((h, k) => !h.some((c) => c.early) || fallsAfter(bands, h[0].at, k + 1 < hits.length ? hits[k + 1][0].at : frames));
 }
 
+/**
+ * Whether the hit `hit` is heard only in the highs: of the power it adds over the HIGH_RISE_MS after it in the bands it
+ * climbed in (each band's mean power then, less its mean over the HOLD_MS before, when more), at least HIGH_RISE_SHARE
+ * is in the bands from HIGH_ONLY_HZ up. Over a held sound a hat climbs only there; alone, it climbs over the silence in
+ * lower bands too, but adds little in them. A kick, a note or a snare, and even white noise (a fifth of whose power lies
+ * under 5 kHz), add more below.
+ */
+function highHit(bands: Band[], hit: Climb[]): boolean {
+  const at = hit[0].at;
+  let high = 0;
+  let all = 0;
+  for (const b of new Set(hit.map((c) => c.band))) {
+    const { lo, power } = bands[b];
+    const mean = (from: number, to: number) => {
+      let sum = 0;
+      const [a, b] = [Math.max(0, from), Math.min(power.length, to)];
+      for (let i = a; i < b; i++) sum += power[i];
+      return b > a ? sum / (b - a) : 0;
+    };
+    const rise = Math.max(0, mean(at, at + HIGH_RISE_MS) - mean(at - HOLD_MS, at));
+    all += rise;
+    if (lo >= HIGH_ONLY_HZ) high += rise;
+  }
+  return all > 0 && high >= HIGH_RISE_SHARE * all;
+}
+
 /** How `channels` start; silent and empty input give no onsets and nulls. */
 export function attackOf(channels: readonly Float32Array[], sampleRate: number): Attack {
   const none: Attack = { onsetsPerSecond: 0, riseMs: null, single: null };
@@ -290,6 +321,8 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
   });
   const strongest = rises.sort((a, b) => b.over - a.over).slice(0, MAX_ONSETS).map((r) => r.rise);
   const onsetsPerSecond = round1(hits.length / seconds);
+  const highOnly = hits.filter((h) => highHit(bands, h)).length;
+  const highShare = Math.round((100 * highOnly) / hits.length) / 100;
   // (a rate that rounds to nothing has no rise to tell either)
   const riseMs = strongest.length > 0 && onsetsPerSecond > 0 ? round1(median(strongest)) : null;
   let single: Attack['single'] = null;
@@ -301,5 +334,5 @@ export function attackOf(channels: readonly Float32Array[], sampleRate: number):
     const hit = heard.subarray(Math.max(0, Math.round((begin / 1000) * sampleRate)));
     single = { riseMs, fall20Ms: round1(fallMs(env, 20)), peakDb: round1(kPeakDb(hit, sampleRate)) };
   }
-  return { onsetsPerSecond, riseMs, single };
+  return { onsetsPerSecond, highShare, riseMs, single };
 }

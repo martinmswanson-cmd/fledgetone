@@ -108,6 +108,8 @@ test('attack: the pinned numbers hold', () => {
   const a = report.attack;
   pin('attack', 'onsetsPerSecond', a.onsetsPerSecond, 4, 0.1);
   pin('attack', 'riseMs', a.riseMs, 5.5, 0.3);
+  // (added with the share itself, at attack 1: no number of the group moved, and comparisons don't read it)
+  pin('attack', 'highShare', a.highShare, 0, 0.01);
   same('attack', 'single', a.single, null);
 });
 

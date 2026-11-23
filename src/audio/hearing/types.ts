@@ -67,6 +67,12 @@ export interface Dynamics {
 /** How hard the sound starts. */
 export interface Attack {
   onsetsPerSecond: number;
+  /**
+   * 0 to 1 (2 places): the share of the onsets heard only above 5 kHz (hats, shakers and other short high
+   * hits): 90% or more of the power each adds is there; absent when there are no onsets, and from a hearing
+   * saved before it was measured
+   */
+  highShare?: number;
   riseMs: number | null;
   single: { riseMs: number; fall20Ms: number; peakDb: number } | null;
 }

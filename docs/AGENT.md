@@ -256,7 +256,11 @@ judge it:
   standing out, each a step quieter: an echo, or a note played again more quietly.`), and wider
   tails from 3 dB.
 - dynamics: loudness, true peak, crest and loudness range.
-- attack: how many things start each second and how fast they start ("busy" and "sparse" are
+- attack: how many things start each second, how many of them are heard only above 5 kHz
+  (`highShare`, 0 to 1: hats, shakers and other short high hits, whose power is almost all up
+  there; the words say so when half or more are, at one a second or more:
+  `100% of its onsets (7.8 a second in all) are heard only above 5 kHz: hats, shakers and other
+  short high hits read this way.`), and how fast they start ("busy" and "sparse" are
   said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
   fall and how loud its loudest 10 ms reads).
 - stereo: correlation between the channels, balance, what is lost in mono, width.
@@ -266,7 +270,8 @@ judge it:
   overtones); `topHz` is the top line, the highest clear part over time; `octaves` is the share of
   the pitched energy in each octave from C1 to C8. The words name notes: `Its pitched parts sit
   between C3 and B3 (132 Hz to 251 Hz), centred near F3.` and `The top line sits around F3.` A
-  sound with no pitched part (drums, noise) has no `register`.
+  sound with no pitched part (noise, noisy drums) has no `register`; a kick or a tom with a clear
+  pitch reads as a pitched part.
 - faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
 
 Each fault in `faults` has its `kind`, a `detail` in words, where it is (`seconds`, and `at` with
@@ -334,8 +339,10 @@ Space and register are compared where both sounds have a number: a `null` in eit
 compared. Decay and an echo's time are given as a ratio (`Decay: 705 ms against 6 ms (118 times as
 long).`), wet share and tail width as the difference of the two. An echo only one of the two has
 is one difference that says which has it, with its time and note value (`Echo: only in echo.wav
-(375 ms).`); its `change` is that time in ms, while every other change of a time is in octaves
-(doublings), as `changeUnit` says. Register's centre, low, high and top line are compared in
+(375 ms).`). The unit of `change` goes by the measure: for decay and an echo heard in both, as
+for rise time and onsets, it is in octaves (doublings of the ratio: 1 is twice as long); for an
+echo only one has, it is that echo's time in ms; for wet share it is the difference of the two;
+for tail width, dB. Register's centre, low, high and top line are compared in
 octaves (a step is a quarter of an octave) and written as notes (`Register centre: F4 against F3
 (+1.00 octaves).`). A register difference between a wet sound and a dry one mostly reflects the
 room, not the notes: a reverb or a delay lifts the high and top line readings (see below). A stretch
@@ -388,10 +395,10 @@ These are limits of the tool, measured, not advice:
   version changes.
 - Space needs notes or hits that end. A held pad gives no decay, and a sound with fewer than
   three ends that agree gives no decay, wet share or tail width. When in doubt the group says
-  less: beside an echo there is no "Dry" line and no tail width, and decay and wet share are left
-  out when the notes themselves stop in under 150 ms; tail width is left out whenever the decay is
-  under 150 ms (a sound that stops at once has no tail to have a width) and when the tails are
-  digital silence; decay and wet share are left out when most of the tail's energy is in ends
+  less: beside an echo there is no "Dry" line and no tail width, and, beside an echo, decay and
+  wet share are left out when the notes themselves stop in under 150 ms; tail width is left out
+  whenever the decay is under 150 ms (a short, wide stereo room then has no width read either)
+  and when the tails are digital silence; decay and wet share are left out when most of the tail's energy is in ends
   that could not be timed.
 - A reverb shorter than about 80 ms is not told from the sound itself: a very short room reads as
   part of the notes.
@@ -412,7 +419,7 @@ These are limits of the tool, measured, not advice:
   reverb's mix (it stays low, so "Much of it is tail" is not said of drums). A hat over a hit that
   falls fast into a quiet, long reverb reads the decay short, often by a third or more. A hit that
   rings longer than the reverb can read a little under the dry beat. Drum loops with soft extra
-  notes between the hits can read the decay up to about two thirds long. A gated reverb
+  notes between the hits can read the decay up to about two thirds longer than it is. A gated reverb
   reads as dry: the gate's edge is a real stop.
 - Dry drums or hats over parts that fall more slowly (plucks in a reverb, a long ringing low kick)
   read as the drums: often "Dry".
@@ -424,11 +431,12 @@ These are limits of the tool, measured, not advice:
   nothing, and now and then as an echo.
 - Tail width counts noise that differs between the channels as width: a noise floor or dither of
   its own in each channel widens the tails' reading where the tails are quiet.
-- Register needs pitched sound: it says nothing for drums or noise. A voice counts as a pitched
-  part, and so does low-passed noise under about 100 Hz.
+- Register needs pitched sound: it says nothing for noise or noisy drums. A kick or a tom with a
+  clear pitch reads as a pitched part (a swept electronic kick reads about 50 to 76 Hz), and so do
+  a voice and low-passed noise under about 100 Hz.
 - A reverb or a delay can lift the register's high and top line, often by a step or more; on a
-  lone held note through a short, wet room, by more than two octaves. The centre moves less
-  often: long tails can move it about half an octave either way on plain melodies, and a
+  lone held note through a short, wet room, by more than two octaves, and that note's centre by
+  an octave (its low can move too). Otherwise the centre moves less often: long tails can move it about half an octave either way on plain melodies, and a
   vowel-like pad through a wet room can be lifted by more than an octave and a half. An overtone
   that the room's colouring lifts a few dB over its neighbours is read as a note of its own, and
   an echo whose time fits a note's period lifts a run of its overtones (triads through short
