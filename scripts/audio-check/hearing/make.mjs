@@ -1,5 +1,6 @@
 // The reading check's made sounds: one known property planted in each (a click, a resonance, a wobble,
-// a pump, width in one band, clipping, hum, and two pairs: dull and bright, clean and distorted bass),
+// a pump, width in one band, clipping, hum, an echo, and five pairs: dull and bright, clean and distorted
+// bass, a dry and a reverbed pluck, a melody and the same an octave up, a held pad and a busier one),
 // written as 48 kHz, 24-bit stereo WAV files of 8 seconds. expected.json says what each holds; README.md
 // says how an agent is asked to find it. Also exports the 24-bit WAV reader and writer the README's
 // planting script uses.
@@ -121,6 +122,16 @@ function dips(rate, dipDb, backMs) {
 const times = (x, env) => Float32Array.from(x, (v, i) => v * env[i]);
 const both = (x) => [x, Float32Array.from(x)];
 
+/** The equal-tempered note `semitones` from C4, Hz. */
+const fromC4 = (semitones) => 261.6256 * 2 ** (semitones / 12);
+/** The pluck sound (as in scripts/hearingSpace.test.mjs): 8 saw notes of 0.25 s, one every 0.75 s, each fading from its start, then silence. */
+const pluck = () => S.melody([0, 4, 7, 12, 9, 5, 2, -1].map((s, i) => [fromC4(s), i * 0.75, 0.25]), SECONDS, -6);
+/** The C major scale up an octave and back down from `fromSemitones` (from C4), half a second a note: 16 notes, 8 s. */
+const scale = (fromSemitones, peakDb) =>
+  S.melody([0, 2, 4, 5, 7, 9, 11, 12, 12, 11, 9, 7, 5, 4, 2, 0].map((s, i) => [fromC4(s + fromSemitones), i * 0.5, 0.5]), SECONDS, peakDb);
+/** A held pad of C3, E3 and G3 saws, each peaking at -12 dB. */
+const pad = () => S.mix(S.saw(fromC4(-12), SECONDS, -12), S.saw(fromC4(-8), SECONDS, -12), S.saw(fromC4(-5), SECONDS, -12));
+
 /** Each made file's name and its channels. */
 export function madeSounds() {
   return {
@@ -152,6 +163,14 @@ export function madeSounds() {
     'bright.wav': () => [1, 2].map((seed) => S.mix(S.pink(SECONDS, -18, seed), atRms(S.band(S.white(SECONDS, 0, seed + 10), 5000, 16000), -18))),
     'clean-bass.wav': () => both(S.sine(55, SECONDS, -6)),
     'distorted-bass.wav': () => both(S.clip(S.gain(S.sine(55, SECONDS, -6), 18), 0.5)),
+    'echo.wav': () => both(S.delay(pluck(), 0.375, 0.5, 8)),
+    'dry-pluck.wav': () => both(pluck()),
+    'wet-pluck.wav': () => both(S.reverb(pluck(), 2, 0.5)),
+    'low-melody.wav': () => both(scale(-12, -6)),
+    'high-melody.wav': () => both(scale(0, -6)),
+    'sparse.wav': () => both(pad()),
+    // (a hat on every 1/16 note at 120 bpm: 8 a second)
+    'busy.wav': () => both(S.mix(pad(), S.every(8, SECONDS, (i) => S.highHat(300 + i, 10, 0.05, -14)), scale(12, -12))),
   };
 }
 

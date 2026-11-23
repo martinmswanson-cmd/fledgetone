@@ -100,7 +100,7 @@ it, compare it with another sound and save what they heard. All of it is signal 
 computer: nothing is sent anywhere, and no model or outside service is asked.
 
 - `--sound`: the sound report, in plain words after the usual lines (and as `sound` in `--json`).
-  It has eight groups:
+  It has ten groups:
   - **tone**: the balance of the spectrum: each part against the whole, where its centre sits
     (bright or dark), how it tilts, where the top rolls off, sub bass against bass, narrow peaks
     (a resonance, or a held note);
@@ -108,11 +108,22 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
     percussive, and flat tops in the waveform (where it was clipped or limited);
   - **movement**: how much it changes over its length, and slow wobbles in the low, middle or
     high band (how fast, in notes when the tempo is known, and how deep);
+  - **space**: how long its notes and hits ring on after they end (the decay: the time to fall
+    20 dB, said as "Dry" under 150 ms and "Long tails" over a second), how much of it is tail
+    rather than direct sound (the wet share, "Much of it is tail" from 0.3), a clear echo (its
+    time, how many repeats stand out and, at a known tempo, its note value; the words give both
+    readings: "an echo, or a note played again more quietly"), and how much wider the tails are
+    than the direct sound. A held sound, or one with fewer than three ends, gives no decay, wet
+    share or width (`null`: not read, not none);
   - **dynamics**: loudness, the loudest 3 seconds, true peak, crest and loudness range;
   - **attack**: how often notes or hits start, how fast they rise, and the shape of a single hit;
   - **stereo**: how alike the channels are, the balance between them, what is lost in mono, the
     width of each part of the spectrum, and how wide the low end is;
   - **pitch**: the tempo (and how sure it is), the key, the tuning, and the twelve pitch classes;
+  - **register**: where the pitched parts sit, as notes: low, centre and high (the 10th, 50th and
+    90th percentiles of the pitched energy), the top line (the highest clear part over time) and
+    the share in each octave from C1 to C8 ("Its pitched parts sit between C3 and B3 ... centred
+    near F3.", "The top line sits around F3."). Drums and noise have no register;
   - **faults**: clicks, clipping, a DC offset, hum, digital silence and a channel that is silent
     or much quieter than the other, each with where it is (a moment is written as minutes,
     seconds and hundredths, `0:26.53`) and its size with its unit (a click's jump and clipping's
@@ -145,7 +156,10 @@ computer: nothing is sent anywhere, and no model or outside service is asked.
   its notes, the kinds of fault the two do not share (`Clicks: 1 in click.wav (at 0:12.50), none
   in clean.wav.`) and then the differences, largest first; when nothing differs by more than a
   step, it says so (or, when one narrow band of the spectrum still does, names that band). What only one of the two has (a band's movement, a width down at the floor)
-  is said as that, not compared as a number. Compare like with like: the same kind of stretch, of a similar
+  is said as that, not compared as a number. Space and register are compared where both have a
+  number: decay and an echo's time as a ratio, wet share and tail width as a difference, an echo
+  only one has once (with its time in ms), and register in octaves, written as notes. A register
+  difference between a wet sound and a dry one mostly reflects the room, not the notes. Compare like with like: the same kind of stretch, of a similar
   length (a short loud stretch reads brighter, louder and more squashed than a whole track, and
   it says so when the lengths differ).
 - `--save <file.json>`: save the hearing: measurements only, never the audio. A saved hearing
@@ -174,6 +188,37 @@ line); `--json` leaves them out. Mistakes in these options are said in one line 
 time that isn't one, a `--close` outside the bars or past the end of the file, a `--pictures` or
 `--save` place that can't be written to; the file to read against is heard only once the rest is
 checked.
+
+What space and register can't tell (limits of the tool, measured, not advice):
+
+- Space needs notes or hits that end: a held pad gives no decay. When in doubt it says less:
+  beside an echo there is no "Dry" line and no tail width; decay and wet share are left out
+  beside an echo when the notes stop in under 150 ms, and when most of the tail is in ends that
+  could not be timed; tail width is left out whenever the decay is under 150 ms.
+- A reverb shorter than about 80 ms is not told from the sound itself.
+- An echo is told from a repeated note only when the repeats come without onsets of their own; a
+  note played again more quietly reads the same, so the line says both. Repeats that change sound
+  (a piano through a delay, a delay into a reverb) are not read as an echo.
+- A delay can be missed, in a dense mix especially (and with short notes, a high cut in the
+  repeats or a tempo-synced delay on a plain melody), and the sound then reads as its notes do,
+  often "Dry". A delay under about 300 ms can count as tail. A delay on one channel only can read
+  about twice its time.
+- Dense drum loops give no space reading, drum wet share doesn't follow the reverb's mix, a hat
+  over a fast-falling hit reads a long reverb short, and a gated reverb reads as dry. Dry drums
+  over parts that fall more slowly read as the drums.
+- Held and shaped notes with no reverb (struck notes held on, pads with a slow attack) can read
+  long tails; long, wet reverbs (about 3 s or more, mostly wet) can read nothing; a tail of a single
+  partial reads unevenly; and noise that differs between the channels counts as tail width.
+- Register needs pitched sound and says nothing for drums or noise. A voice counts as a pitched
+  part, and so does low-passed noise under about 100 Hz.
+- A reverb or a delay can lift the high and top line, often a step (a quarter of an octave) or
+  more; on a lone held note through a short, wet room, more than two octaves. The centre moves
+  less often (about half an octave on melodies with long tails; more than an octave and a half on
+  a vowel-like pad through a wet room).
+- A vowel, a formant or a static resonance can read high even dry. Chords over a bass often read
+  low (the bass takes the chord's energy where their overtones meet), a root, fifth and octave
+  chord loses its octave about two times in five, a sine an octave over a sine is lost, and a bell
+  reads off its notes.
 
 It hears at most 15 minutes at a time (name a stretch of a longer file with `--from` and `--to`).
 A 4-minute WAV takes about 40 seconds with every picture. Without these options, `measure` and

@@ -27,6 +27,12 @@ const { compareSound } = await import('../src/audio/hearing/compareSound.ts');
 
 const here = new URL('./audio-check/hearing/', import.meta.url);
 const expected = JSON.parse(readFileSync(new URL('expected.json', here), 'utf8'));
+/** The entry of expected.json for `file`, which must be listed there. */
+const entry = (file) => {
+  const e = expected.sounds.find((x) => x.file === file);
+  assert.ok(e, `${file} is listed in expected.json`);
+  return e;
+};
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
 /** A 24-bit PCM WAV's channels, as make.mjs writes them. */
@@ -99,6 +105,14 @@ const checks = {
   },
   clipping: (r) => assert.ok(r.faults.some((f) => f.kind === 'clipping'), JSON.stringify(r.faults)),
   hum: (r, e) => assert.ok(r.faults.some((f) => f.kind === 'hum' && f.value === e.value), JSON.stringify(r.faults)),
+  echo: (r, e) => {
+    const { echo } = r.space;
+    assert.ok(echo, JSON.stringify(r.space));
+    near(echo.ms, e.value, 10, 'the echo, ms');
+    // (a dotted 1/8 at 120 bpm is not one of the note values noteOf names, so none is the right reading)
+    assert.equal(echo.note, undefined, JSON.stringify(echo));
+    assert.ok(r.words.some((w) => w.startsWith(`Repeats every ${e.value} ms`)), r.words.join('\n'));
+  },
 };
 
 for (const e of expected.sounds.filter((x) => x.read === 'alone'))
@@ -118,4 +132,38 @@ test('distorted-bass.wav against clean-bass.wav: roughness or flat tops rise', (
     c.differences.some((d) => /roughness|flat tops/i.test(d.measure) && d.change > 0),
     JSON.stringify(c.differences.map((d) => [d.measure, d.change]))
   );
+});
+
+/** The comparison of the pair whose second file is `file`, read against its first, as the README asks for it. */
+const pairOf = (file) => {
+  const b = entry(file);
+  const a = entry(b.against);
+  return compareSound(soundOf(a), soundOf(b), { a: a.file, b: b.file });
+};
+const changes = (c) => JSON.stringify(c.differences.map((d) => [d.measure, d.change]));
+
+test('wet-pluck.wav against dry-pluck.wav: decay and wet share rise', () => {
+  const c = pairOf('wet-pluck.wav');
+  for (const measure of ['decay', 'wet share']) {
+    const d = c.differences.find((x) => x.group === 'space' && x.measure === measure);
+    assert.ok(d && d.change > 0, `${measure} rises: ${changes(c)}`);
+  }
+});
+
+test('high-melody.wav against low-melody.wav: register centre and top line rise by about an octave', () => {
+  const c = pairOf('high-melody.wav');
+  for (const measure of ['register centre', 'top line']) {
+    const d = c.differences.find((x) => x.group === 'register' && x.measure === measure);
+    assert.ok(d, `${measure}: ${changes(c)}`);
+    near(d.change, 1, 0.1, `${measure}, octaves`);
+  }
+});
+
+test('busy.wav against sparse.wav: onsets a second rise, and the words name more onsets', () => {
+  const c = pairOf('busy.wav');
+  const d = c.differences.find((x) => x.group === 'attack' && x.measure === 'onsets a second');
+  assert.ok(d && d.change > 0, changes(c));
+  const [, busy, sparse] = d.words.match(/^Onsets a second: (\d+\.\d) against (\d+\.\d)\b/) ?? [];
+  assert.ok(Number(busy) > Number(sparse), d.words);
+  assert.ok(soundOf(entry('busy.wav')).attack.onsetsPerSecond > soundOf(entry('sparse.wav')).attack.onsetsPerSecond);
 });

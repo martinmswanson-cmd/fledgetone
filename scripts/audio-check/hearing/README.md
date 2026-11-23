@@ -12,6 +12,10 @@ pictures), and record the run in the table at the end.
 ## The files
 
 - `make.mjs <out folder>`: writes the made sounds (48 kHz, 24-bit stereo WAV, 8 seconds each).
+  Eight are faults or properties heard alone, one is an echo heard alone, and five are pairs, the
+  second heard against the first: dull and bright, clean and distorted bass, a dry pluck and the
+  same through a 2 s reverb (space), a melody and the same an octave up (register), and a held pad
+  and the same with a hat on every 1/16 note and a second melody (onsets).
   It also exports the WAV reader and writer and the click planter that the scripts below use.
 - `expected.json`: for each made sound, what was planted, what is to be found, and how close is a
   pass. A pair's second file is heard against its first.
@@ -82,14 +86,14 @@ fs.writeFileSync(out, JSON.stringify({ opsVersion: 1, ops: [op] }, null, 2) + '\
 node scripts/audio-check/hearing/make.mjs "$CHECK/work/made"
 n=0
 next() { n=$((n + 1)); id=$(printf 'sound-%02d' $n); mkdir -p "$CHECK/$id"; }
-for name in clean click resonance wobble pump side-band clipping hum; do
+for name in clean click resonance wobble pump side-band clipping hum echo; do
   next
   cp "$CHECK/work/made/$name.wav" "$CHECK/work/$id.wav"
-  bpm=""; [ $name = pump ] && bpm="--bpm 120"
+  bpm=""; { [ $name = pump ] || [ $name = echo ]; } && bpm="--bpm 120"
   $FT measure "$CHECK/work/$id.wav" --sound --pictures "$CHECK/$id" $bpm --json > "$CHECK/$id/$id.json"
   key "{\"sound\":\"$id\",\"part\":\"made\",\"file\":\"$name.wav\"}"
 done
-for pair in dull:bright clean-bass:distorted-bass; do
+for pair in dull:bright clean-bass:distorted-bass dry-pluck:wet-pluck low-melody:high-melody sparse:busy; do
   next
   cp "$CHECK/work/made/${pair%%:*}.wav" "$CHECK/work/$id-a.wav"
   cp "$CHECK/work/made/${pair##*:}.wav" "$CHECK/work/$id-b.wav"
@@ -100,6 +104,12 @@ done
 
 For a pair, the agent is given the second sound's hearing, read against the first
 (`sound-NN-b.wav` against `sound-NN-a.wav`).
+
+The echo, the reverb pair and the melody pair are the made sounds of the space and register
+groups. The pluck sounds hold digital silence between their notes, and the report
+lists it: that is true of them, and naming it is not a fail. Through a reverb the register and the
+top line read higher than the notes (a stated limit, in `docs/AGENT.md`), so a rise in them named
+for `wet-pluck.wav` is not a fail either.
 
 ## 2. Starters
 

@@ -7,6 +7,7 @@ second update on the same day gets `-2`, and so on).
 ## Unreleased
 
 - **Your agent can hear more of a sound**: `fledgetone measure` and `fledgetone listen`, and the agent helper's listening, can now describe a sound in plain words: its tone, texture, movement, dynamics, attacks, stereo and pitch, and faults such as clicks, clipping and hum, each with where it is (in a song, by bar and beat). The words describe the sound; they never judge it.
+- **Your agent can hear the room and the register**: the sound report says how long notes ring on after they end, how much of a sound is tail, a clear echo and its time, and where the pitched parts and the top line sit, as notes. Comparisons name those changes too, and the guide for agents says what these readings can't tell.
 - **Pictures of a sound** for an agent to look at: a spectrogram, the stereo side signal, the level, the spectrum, the pitch classes, and a close-up of each fault (the first six) or of any moment asked for. A sound can be read against another sound or a saved hearing (measurements only, never the audio), and a suggestion's before and after are compared and pictured. All of it is worked out on your computer, and nothing is sent anywhere.
 
 ## 2026.11.21-2 — Pigeons video: touch pads and drum pads for fast songs

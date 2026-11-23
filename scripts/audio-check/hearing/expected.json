@@ -82,6 +82,17 @@
       "tolerance": "2 Hz"
     },
     {
+      "file": "echo.wav",
+      "read": "alone",
+      "bpm": 120,
+      "property": "echo",
+      "planted": "the pluck sound of dry-pluck.wav with a 375 ms delay, feedback 0.5, 8 repeats (a dotted 1/8 note at 120 bpm); heard with --bpm 120",
+      "find": "an echo, repeats every 375 ms (a dotted 1/8 note at 120 bpm), each quieter than the one before",
+      "value": 375,
+      "unit": "ms",
+      "tolerance": "10 ms; the repeats named as an echo (or as a note played again more quietly); the digital silence between the notes may be named and is not a fail"
+    },
+    {
       "file": "dull.wav",
       "read": "pair",
       "against": null,
@@ -121,6 +132,69 @@
       "value": -6,
       "unit": "dB full scale, the clipping level",
       "tolerance": "distortion, roughness, clipping or flat tops named; a level, if given, within 1 dB of -6 dB"
+    },
+    {
+      "file": "dry-pluck.wav",
+      "read": "pair",
+      "against": null,
+      "property": "space (the first of the pair)",
+      "planted": "the pluck sound: eight saw notes (C4 E4 G4 C5 A4 F4 D4 B3), 0.25 s each, one every 0.75 s, each fading from its start, then silence to 8 s",
+      "find": "the sound wet-pluck.wav is read against; asked about only as part of the pair",
+      "value": null,
+      "tolerance": null
+    },
+    {
+      "file": "wet-pluck.wav",
+      "read": "pair",
+      "against": "dry-pluck.wav",
+      "property": "space",
+      "planted": "the same pluck sound through a made reverb with a 2 s RT60, mixed half wet",
+      "find": "wet-pluck.wav rings on after its notes end and dry-pluck.wav stops at once: a longer decay, and more of it is tail (a reverb)",
+      "value": 667,
+      "unit": "ms, the decay (the time to fall 20 dB: a third of the reverb's 2 s)",
+      "tolerance": "the longer decay or more tail named; a decay, if given, within 35% of 667 ms (430 to 900 ms); a register or top line said to rise is not a fail (a reverb lifts those readings, a stated limit)"
+    },
+    {
+      "file": "low-melody.wav",
+      "read": "pair",
+      "against": null,
+      "property": "register (the first of the pair)",
+      "planted": "a melody of saw notes, half a second each, up the C major scale from C3 to C4 and back down (16 notes, 8 s), each fading from its start",
+      "find": "the sound high-melody.wav is read against; asked about only as part of the pair",
+      "value": null,
+      "tolerance": null
+    },
+    {
+      "file": "high-melody.wav",
+      "read": "pair",
+      "against": "low-melody.wav",
+      "property": "register",
+      "planted": "the same melody an octave higher (C4 to C5)",
+      "find": "high-melody.wav is the same melody an octave higher: its pitched parts and its top line sit an octave above low-melody.wav's",
+      "value": 1,
+      "unit": "octaves",
+      "tolerance": "higher named, by about an octave (0.75 to 1.25 octaves, or the notes named an octave apart)"
+    },
+    {
+      "file": "sparse.wav",
+      "read": "pair",
+      "against": null,
+      "property": "onsets (the first of the pair)",
+      "planted": "a held pad of C3, E3 and G3 saws, each peaking at -12 dB",
+      "find": "the sound busy.wav is read against; asked about only as part of the pair",
+      "value": null,
+      "tolerance": null
+    },
+    {
+      "file": "busy.wav",
+      "read": "pair",
+      "against": "sparse.wav",
+      "property": "onsets",
+      "planted": "the same pad, with a hat (noise over 7 kHz, 50 ms, peaking at -14 dB) on every 1/16 note at 120 bpm (8 a second) and a second melody over it (the scale from C5 to C6 and back, half a second a note, peaking at -12 dB)",
+      "find": "busy.wav is busier: many more notes or hits start each second (about 8, the hats) than in sparse.wav (a held pad, almost none), and a higher part plays over the pad",
+      "value": 8,
+      "unit": "onsets a second",
+      "tolerance": "more onsets (or busier) named; a rate, if given, within 2 of 8 a second"
     }
   ]
 }

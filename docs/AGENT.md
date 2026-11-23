@@ -234,7 +234,7 @@ returned. `pictures` names a folder inside `--root` (made if it isn't there; a p
 
 ### What the sound report tells
 
-`sound` has eight groups of measures and one list of plain `words` (a line for each finding that
+`sound` has ten groups of measures and one list of plain `words` (a line for each finding that
 applies, in the groups' order, then a line for each fault) that describe the sound and never
 judge it:
 
@@ -244,12 +244,29 @@ judge it:
 - texture: tonal or noisy, smooth or rough, percussive, flat tops. Rough means fast beating
   inside a band: distortion, notes close together and noise all read that way.
 - movement: how the sound changes over time, and slow wobbles of a band, with their rate.
+- space: how the sound sits in a room. `decayMs` is how long its notes and hits ring on after they
+  end (the time, in ms, to fall 20 dB from where one ends); `wetShare` is how much of their energy
+  is in those tails rather than in the direct sound (0 to 1); `echo` is a clear echo, with its time
+  in ms, how many repeats stand out and, when the tempo is known, its note value (`1/8`, `1/4T`
+  and the like; a dotted value has none); `tailWiderDb` is how much wider the tails are than the
+  direct sound, in dB. Decay, wet share and width are `null` when fewer than three notes or hits
+  end (a held pad, a riff with no gaps): `null` means not read, not none. The words say "Dry" when
+  sounds fall 20 dB in under 150 ms, "Long tails" when they take over a second, "Much of it is
+  tail" from a wet share of 0.3, an echo with both of its readings (`Repeats every 375 ms, 6
+  standing out, each a step quieter: an echo, or a note played again more quietly.`), and wider
+  tails from 3 dB.
 - dynamics: loudness, true peak, crest and loudness range.
 - attack: how many things start each second and how fast they start ("busy" and "sparse" are
   said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
   fall and how loud its loudest 10 ms reads).
 - stereo: correlation between the channels, balance, what is lost in mono, width.
 - pitch: tempo, key, tuning and the pitch classes that sound.
+- register: where the pitched parts sit. `lowHz`, `centreHz` and `highHz` are the 10th, 50th and
+  90th percentiles of the pitch of the pitched energy (of the parts' fundamentals, not their
+  overtones); `topHz` is the top line, the highest clear part over time; `octaves` is the share of
+  the pitched energy in each octave from C1 to C8. The words name notes: `Its pitched parts sit
+  between C3 and B3 (132 Hz to 251 Hz), centred near F3.` and `The top line sits around F3.` A
+  sound with no pitched part (drums, noise) has no `register`.
 - faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
 
 Each fault in `faults` has its `kind`, a `detail` in words, where it is (`seconds`, and `at` with
@@ -311,7 +328,17 @@ still stands 1.5 dB or more apart (a narrow boost moves its region little), they
 and its change instead. `spectrum` holds the change of every band. What only one of the two has is not compared as a number: a
 band's movement that one lacks is one difference that says which has it, with its rate and
 depth, and a width is compared only where a side level stands above 50 dB under its sound's
-whole in one of the two. Rise time and onsets are given as a ratio (`4 times as long`). A stretch
+whole in one of the two. Rise time and onsets are given as a ratio (`4 times as long`).
+
+Space and register are compared where both sounds have a number: a `null` in either is not
+compared. Decay and an echo's time are given as a ratio (`Decay: 705 ms against 6 ms (118 times as
+long).`), wet share and tail width as the difference of the two. An echo only one of the two has
+is one difference that says which has it, with its time and note value (`Echo: only in echo.wav
+(375 ms).`); its `change` is that time in ms, while every other change of a time is in octaves
+(doublings), as `changeUnit` says. Register's centre, low, high and top line are compared in
+octaves (a step is a quarter of an octave) and written as notes (`Register centre: F4 against F3
+(+1.00 octaves).`). A register difference between a wet sound and a dry one mostly reflects the
+room, not the notes: a reverb or a delay lifts the high and top line readings (see below). A stretch
 of a saved hearing is compared in tone, width and loudness only, and has no faults to compare.
 Like must be compared with like: a
 comparison is fair only between stretches of similar length and of the same kind of material (a
@@ -359,6 +386,65 @@ These are limits of the tool, measured, not advice:
 - A comparison is level-matched and only fair between like stretches of similar length. A saved
   hearing holds measurements, never audio, and must be made again from the audio when a group's rule
   version changes.
+- Space needs notes or hits that end. A held pad gives no decay, and a sound with fewer than
+  three ends that agree gives no decay, wet share or tail width. When in doubt the group says
+  less: beside an echo there is no "Dry" line and no tail width, and decay and wet share are left
+  out when the notes themselves stop in under 150 ms; tail width is left out whenever the decay is
+  under 150 ms (a sound that stops at once has no tail to have a width) and when the tails are
+  digital silence; decay and wet share are left out when most of the tail's energy is in ends
+  that could not be timed.
+- A reverb shorter than about 80 ms is not told from the sound itself: a very short room reads as
+  part of the notes.
+- An echo is told from a repeated note only when the repeats come without onsets of their own. A
+  note played again more quietly at an even spacing reads the same as an echo, so the line says
+  both. The repeats must match the first sound's spectrum: different notes stepping quieter don't
+  read as an echo, and neither do repeats that change sound (a struck piano through a 1/4 delay,
+  a delay into a reverb).
+- A delay can be missed, in a dense mix especially, and the sound then reads as whatever its
+  notes do, often "Dry": tempo-synced delays on plain melodies are often missed, and so are very
+  short notes through a delay, repeats with a high cut in them, and claps thrown from side to side
+  over a dry beat. A delay under about 300 ms can count as tail (a 250 ms delay at half feedback
+  reads a decay of about 840 ms). A delay heard on one channel only can read about twice its
+  time. The repeat check can drop a real note about 2 dB quieter that falls on a multiple of the
+  echo's time.
+- Dense drum loops give no space reading: toms on every 1/16 note, fast fills, and six or more
+  hits a second through a long reverb mostly read nothing. Drum wet share doesn't follow the
+  reverb's mix (it stays low, so "Much of it is tail" is not said of drums). A hat over a hit that
+  falls fast into a quiet, long reverb reads the decay short, often by a third or more. A hit that
+  rings longer than the reverb can read a little under the dry beat. Drum loops with soft extra
+  notes between the hits can read the decay up to about two thirds long. A gated reverb
+  reads as dry: the gate's edge is a real stop.
+- Dry drums or hats over parts that fall more slowly (plucks in a reverb, a long ringing low kick)
+  read as the drums: often "Dry".
+- Held and shaped notes with no reverb can read as a room: struck notes or chords held on read
+  long tails, and so do pads whose attack takes about 180 ms or more, which can also read as much
+  tail. A slow straight-line release can read "Dry", shorter than it is.
+- Long, wet reverbs can read nothing: from about 3 s, mixed mostly wet.
+- A tail of a single partial (a sine tom) through a reverb reads unevenly: often far off or
+  nothing, and now and then as an echo.
+- Tail width counts noise that differs between the channels as width: a noise floor or dither of
+  its own in each channel widens the tails' reading where the tails are quiet.
+- Register needs pitched sound: it says nothing for drums or noise. A voice counts as a pitched
+  part, and so does low-passed noise under about 100 Hz.
+- A reverb or a delay can lift the register's high and top line, often by a step or more; on a
+  lone held note through a short, wet room, by more than two octaves. The centre moves less
+  often: long tails can move it about half an octave either way on plain melodies, and a
+  vowel-like pad through a wet room can be lifted by more than an octave and a half. An overtone
+  that the room's colouring lifts a few dB over its neighbours is read as a note of its own, and
+  an echo whose time fits a note's period lifts a run of its overtones (triads through short
+  echoes can read their centre up to about an octave high). So a wet sound can read higher than
+  the same notes dry.
+- A vowel, a formant or a static resonance can read high even dry: a sung "ah" reads its high and
+  top line on a formant, and a saw through a resonant low-pass often reads the resonance as a
+  part.
+- Chords over a bass often read low. A chord one to three octaves over a bass can read its centre
+  at the bass when the chord is louder, and its high and top line a step low when it is quieter:
+  the bass takes much of the chord's energy where their overtones meet. Chords of voices with few
+  overtones (a choir on "oo", flutes, soft pads) over a saw bass read low as well. A root, fifth
+  and octave chord loses its octave about two times in five (unless the octave is in phase with
+  the root, the two partly cancel), and its centre then falls to the root. A sine an octave over
+  a sine is lost.
+- Inharmonic sounds such as a bell read off their notes, often well above them.
 - At most 15 minutes are heard at a time (name a stretch), one at a time, 10 a minute, as `listen`
   is limited. The first listen of a song that uses a recorded instrument downloads its recordings,
   as above.
