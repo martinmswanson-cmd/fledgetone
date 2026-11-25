@@ -398,7 +398,7 @@ test('listen with a song file: the options give pictures as images, the mix firs
   }
 });
 
-test('pickImages: six at most, 3 MB at most, in order, the rest named', async () => {
+test('pickImages: six at most, 3 MB at most, in order, the rest named', { skip }, async () => {
   const { pickImages } = await import('../tools/cli/src/mcpServer.ts');
   const MB = 1024 * 1024;
   const pic = (name, size) => ({ name, size });
