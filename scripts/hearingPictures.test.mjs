@@ -1,0 +1,393 @@
+// Unit tests for the hearing report's pictures (src/audio/hearing/pictures.ts) and for hearingOf, which
+// makes the sound report and its set of pictures together (src/audio/hearing/hearingOf.ts), on made
+// signals. Run with `npm test`.
+import { register } from 'node:module';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+
+const P = await import('../src/audio/hearing/pictures.ts');
+const R = await import('../src/audio/hearing/raster.ts');
+const { hearingOf, parseSavedHearing, detailRanges } = await import('../src/audio/hearing/hearingOf.ts');
+const S = await import('./fixtures/hearingSignals.mjs');
+const compare = await import('../src/audio/hearing/compareSound.ts');
+const toneModule = await import('../src/audio/hearing/tone.ts');
+
+const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
+
+const rowBrightness = (p) => Array.from({ length: P.PICTURE.bottom - P.PICTURE.top }, (_, i) => { let s = 0; for (let x = P.PICTURE.left; x < P.PICTURE.right; x += 7) s += R.pixel(p.raster, x, P.PICTURE.top + i).reduce((a, b) => a + b); return s; });
+const colBrightness = (p) => Array.from({ length: P.PICTURE.right - P.PICTURE.left }, (_, i) => { let s = 0; for (let y = P.PICTURE.top; y < P.PICTURE.bottom; y += 5) s += R.pixel(p.raster, P.PICTURE.left + i, y).reduce((a, b) => a + b); return s; });
+const argmax = (a) => a.indexOf(Math.max(...a));
+/** The dB a HEAT colour stands for, by searching the ramp for the nearest colour. */
+const dbOfHeat = (c) => {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i <= 9000; i++) {
+    const t = i / 9000; const r = R.ramp(R.HEAT, t); const d = r.reduce((s, v, k) => s + Math.abs(v - c[k]), 0);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return P.LEVEL_DB.floor + best * (P.LEVEL_DB.top - P.LEVEL_DB.floor);
+};
+const same = (a, b) => a.every((v, i) => v === b[i]);
+
+test('a sine is a bright line at its frequency', () => {
+  const p = P.spectrogramPicture(S.sine(1000, 2, -6), 48000, P.axisFor(0, 2), { name: 'spectrogram', title: 't' });
+  assert.ok(Math.abs(Math.log2(P.hzOfY(P.PICTURE.top + argmax(rowBrightness(p))) / 1000)) < 0.09);
+  assert.equal(p.width, 1500); assert.equal(p.height, 700); assert.equal(p.kind, 'spectrogram');
+});
+test('a click is a bright column at its time', () => {
+  const x = S.sine(200, 2, -40); x[48000] = 1; const axis = P.axisFor(0, 2);
+  const p = P.spectrogramPicture(x, 48000, axis, { name: 's', title: 't' });
+  assert.ok(Math.abs(P.PICTURE.left + argmax(colBrightness(p)) - P.xOfSeconds(1.0, axis)) <= 3);
+});
+test('the frequency scale runs from 20 Hz to 20 kHz', () => { near(P.hzOfY(P.PICTURE.bottom), 20, 0.5); near(P.hzOfY(P.PICTURE.top), 20000, 300); near(P.hzOfY(P.yOfHz(440)), 440, 1); });
+test('a bar axis is labelled in bars, a plain one in time', () => {
+  const bars = Array.from({ length: 8 }, (_, i) => ({ bar: 9 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  const a = P.axisFor(0, 16, bars); assert.equal(a.unit, 'bars'); assert.deepEqual(a.ticks.map((t) => t.label), ['9', '10', '11', '12', '13', '14', '15', '16']);
+  const s = P.axisFor(0, 90); assert.equal(s.unit, 'seconds'); assert.ok(s.ticks.some((t) => t.label === '1:00'));
+});
+test('no difference draws as none', () => {
+  const x = S.pink(2, -18, 1); const p = P.differencePicture(x, x, 48000, P.axisFor(0, 2), 'difference');
+  // inside the played range (column 700 is 0.95 s in; row 300 is about 1 kHz, where the noise is well over -80 dB), the scale's middle exactly
+  const mid = R.ramp(R.DIVERGING, 0.5); const some = R.pixel(p.raster, 700, 300);
+  assert.deepEqual(some, mid); assert.deepEqual(P.divergingStep(0.5), mid);
+});
+test('a boost shows on its side of the scale, at its place', () => {
+  const x = S.pink(2, -18, 1); const y = S.mix(x, S.band(S.pink(2, -12, 2), 2000, 4000));
+  const p = P.differencePicture(x, y, 48000, P.axisFor(0, 2), 'difference'); const more = R.DIVERGING.at(-1);
+  const inBand = R.pixel(p.raster, 700, Math.round(P.yOfHz(2800))); const outside = R.pixel(p.raster, 700, Math.round(P.yOfHz(200)));
+  const toward = (c) => c.reduce((s, v, i) => s - Math.abs(v - more[i]), 0); assert.ok(toward(inBand) > toward(outside));
+});
+test('the set of pictures for 16 bars of a stereo song', () => {
+  const l = S.pink(32, -18, 1), r = S.pink(32, -18, 2); const bars = Array.from({ length: 16 }, (_, i) => ({ bar: 1 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  const h = hearingOf([l, r], 48000, { engine: 't', bars, pictures: true });
+  assert.deepEqual(h.pictures.map((p) => p.name), ['spectrogram', 'spectrogram-bars-1-8', 'spectrogram-bars-9-16', 'stereo', 'level', 'spectrum', 'chroma']);
+  assert.ok(h.pictures.every((p) => p.shows.length > 10));
+});
+test('a fault gets a close-up named for its place; asked moments too', () => {
+  const x = S.mix(S.sine(110, 8, -12), S.sine(440, 8, -18)); x[5 * 48000] += 0.5; const bars = Array.from({ length: 4 }, (_, i) => ({ bar: 9 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  const names = hearingOf([x], 48000, { engine: 't', bars, pictures: true, closeUps: [1.25] }).pictures.map((p) => p.name);
+  assert.ok(names.includes('closeup-bar-11-beat-3')); assert.ok(names.includes('closeup-bar-9-beat-3')); assert.ok(!names.includes('stereo'), 'mono has no stereo picture (Review Focus 1)');
+});
+test('detail ranges: none for 8 bars, groups of 8 after, at most twelve spread evenly; every 30 s without bars (Review Focus 2)', () => {
+  const barsOf = (n) => Array.from({ length: n }, (_, i) => ({ bar: 1 + i, start: i * 2, end: i * 2 + 2, beats: 4 }));
+  assert.deepEqual(detailRanges(0, 16, barsOf(8)), []);
+  assert.deepEqual(detailRanges(0, 18, barsOf(9)), [
+    { fromSeconds: 0, toSeconds: 16, name: 'spectrogram-bars-1-8' },
+    { fromSeconds: 16, toSeconds: 18, name: 'spectrogram-bars-9-9' },
+  ]);
+  const hundred = detailRanges(0, 200, barsOf(100));
+  assert.equal(hundred.length, 12);
+  assert.equal(hundred[0].name, 'spectrogram-bars-1-8'); assert.equal(hundred.at(-1).name, 'spectrogram-bars-97-100');
+  assert.ok(hundred.every((d, i) => i === 0 || d.fromSeconds > hundred[i - 1].fromSeconds), 'in order');
+  assert.deepEqual(hundred.at(-1), { fromSeconds: 192, toSeconds: 200, name: 'spectrogram-bars-97-100' });
+  // only the bars inside the range count
+  assert.deepEqual(detailRanges(16, 34, barsOf(100)).map((d) => d.name), ['spectrogram-bars-9-16', 'spectrogram-bars-17-17']);
+  assert.deepEqual(detailRanges(0, 30), []);
+  assert.deepEqual(detailRanges(0, 31), [
+    { fromSeconds: 0, toSeconds: 30, name: 'spectrogram-0m00-0m30' },
+    { fromSeconds: 30, toSeconds: 31, name: 'spectrogram-0m30-0m31' },
+  ]);
+  const long = detailRanges(0, 400); // 400 s asks for 14; 12 are kept
+  assert.equal(long.length, 12); assert.ok(long.every((d) => /^spectrogram-\d+m\d\d-\d+m\d\d$/.test(d.name)));
+  assert.equal(long[0].name, 'spectrogram-0m00-0m30'); assert.equal(long.at(-1).name, 'spectrogram-6m30-6m40');
+  assert.ok(long.every((d, i) => i === 0 || d.fromSeconds > long[i - 1].fromSeconds), 'in order');
+});
+test('a short hit and silence still get an overview (Review Focus 3)', () => {
+  assert.ok(hearingOf([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])], 48000, { engine: 't', pictures: true }).pictures.some((p) => p.name === 'spectrogram'));
+  assert.deepEqual(hearingOf([new Float32Array(48000)], 48000, { engine: 't', pictures: true }).pictures.map((p) => p.name), ['spectrogram', 'level']);
+});
+test('a saved hearing is recognised, anything else refused', () => {
+  const sound = hearingOf([S.pink(2, -18, 1)], 48000, { engine: 't' }).sound;
+  assert.equal(parseSavedHearing({ fledgetoneHearing: 1, of: 'a.wav', range: { fromSeconds: 0, toSeconds: 2 }, sound }).of, 'a.wav');
+  for (const bad of [null, {}, { fledgetoneHearing: 2, sound }, { fledgetoneHearing: 1 }]) assert.throws(() => parseSavedHearing(bad), /not a saved hearing/);
+});
+test('a saved hearing is checked as far as it is used: its settings, versions and the fields of its grids (M2)', () => {
+  const sound = JSON.parse(JSON.stringify(hearingOf([S.pink(2, -18, 1), S.pink(2, -18, 2)], 48000, { engine: 't' }).sound));
+  const saved = (s) => ({ fledgetoneHearing: 1, of: 'a.wav', range: { fromSeconds: 0, toSeconds: 2 }, sound: s });
+  assert.equal(parseSavedHearing(saved(sound)).sound.along.mid.length, 2);
+  // what passed the first look and then threw "Cannot read properties of undefined (reading 'stretch')"
+  const shallow = { versions: {}, along: {}, seconds: 1, faults: [], words: [] };
+  const without = (key) => { const { [key]: _gone, ...rest } = sound; return rest; };
+  const bad = {
+    'the shallow shape': shallow,
+    'no settings': without('settings'),
+    'settings without a sample rate': { ...sound, settings: {} },
+    'a stretch that is not one': { ...sound, settings: { ...sound.settings, stretch: { fromSeconds: 'x' } } },
+    'versions that are not numbers': { ...sound, versions: { tone: 'one' } },
+    'no grids': without('along'),
+    'empty grids': { ...sound, along: {} },
+    'no step': { ...sound, along: { ...sound.along, stepSeconds: 0 } },
+    'rows that are not arrays': { ...sound, along: { ...sound.along, mid: [1, 2] } },
+    'no loudness rows': { ...sound, along: { ...sound.along, lufs: undefined } },
+    'no channels': without('channels'),
+    'faults that are not faults': { ...sound, faults: ['a click'] },
+  };
+  for (const [name, s] of Object.entries(bad)) assert.throws(() => parseSavedHearing(saved(s)), { message: 'not a saved hearing' }, name);
+  // a stretch's own settings pass, and null loudness rows (too quiet to measure)
+  assert.ok(parseSavedHearing(saved({ ...sound, settings: { ...sound.settings, stretch: { fromSeconds: 10, toSeconds: 12 } }, along: { ...sound.along, lufs: [null, -20] } })));
+});
+test("a narrow peak's frequency is where the power sits in its band, not the band's centre (M10)", () => {
+  const { toneOf } = toneModule;
+  for (const hz of [440, 1000, 3000, 110, 61.74]) {
+    const peak = toneOf([S.mix(S.pink(6, -40, 1), S.sine(hz, 6, -12))], 48000).peaks[0];
+    assert.ok(peak, `a peak at ${hz} Hz`);
+    // (a twenty-fourth of an octave is 2.9%: the band's centre can be 1.5% off, as 440 Hz read "446 Hz")
+    assert.ok(Math.abs(peak.hz / hz - 1) < 0.006, `${hz} Hz reads ${peak.hz} Hz`);
+  }
+  const words = hearingOf([S.mix(S.pink(6, -40, 1), S.sine(440, 6, -12))], 48000, { engine: 't' }).sound.words;
+  assert.ok(words.some((w) => /^A narrow peak at 44[01] Hz /.test(w)), words.join('\n'));
+});
+
+// The controller's additions
+
+test('a sine reads its own peak level in dB through the stepped scale, within 1 dB', () => {
+  for (const hz of [50, 1000, 12000]) for (const db of [-6, -30, -60]) {
+    const p = P.spectrogramPicture(S.sine(hz, 2, db), 48000, P.axisFor(0, 2), { name: 's', title: 't' });
+    const y = P.PICTURE.top + argmax(rowBrightness(p));
+    near(dbOfHeat(R.pixel(p.raster, 735, y)), db, 1, `a sine of ${hz} Hz at ${db} dB`);
+  }
+});
+test('every sample reaches the picture: a short burst between two column centres still lights its column', () => {
+  const sr = 48000; const seconds = 240; const axis = P.axisFor(0, seconds);
+  const columns = P.PICTURE.right - P.PICTURE.left; const perColumn = seconds / columns;
+  const boundary = 600 * perColumn; // the edge between column 599 and 600, half way between their centres
+  const x = S.at(seconds, [[boundary - 0.01, S.gain(S.white(0.02, -12, 3), 0)]], sr);
+  const p = P.spectrogramPicture(x, sr, axis, { name: 's', title: 't' });
+  const col = argmax(colBrightness(p));
+  assert.ok(col === 599 || col === 600, `brightest column ${col}`);
+  assert.ok(colBrightness(p)[col] > colBrightness(p)[300] * 2);
+});
+test('frequencies above half the sample rate are the ground colour', () => {
+  const p = P.spectrogramPicture(S.pink(2, -18, 1, 22050), 22050, P.axisFor(0, 2), { name: 's', title: 't' });
+  assert.ok(same(R.pixel(p.raster, 700, Math.round(P.yOfHz(15000))), R.PAPER));
+  assert.ok(!same(R.pixel(p.raster, 700, Math.round(P.yOfHz(8000))), R.PAPER));
+});
+test('a mono level picture is centred; a stereo one has left above and right below', () => {
+  const mid = (P.PICTURE.top + P.PICTURE.bottom) / 2;
+  const loud = S.sine(1000, 2, -1); // a cycle is shorter than a column, so every column spans the whole swing
+  const mono = P.levelPicture([loud], 48000, P.axisFor(0, 2), [null, null], 'level');
+  const lit = (p, y) => !same(R.pixel(p.raster, 735, y), R.PAPER) && !same(R.pixel(p.raster, 735, y), R.GRID);
+  assert.ok(lit(mono, Math.round(mid) - 100) && lit(mono, Math.round(mid) + 100), 'mono reaches both ways from the centre');
+  const stereo = P.levelPicture([loud, new Float32Array(loud.length)], 48000, P.axisFor(0, 2), [null, null], 'level');
+  const quarter = (P.PICTURE.bottom - P.PICTURE.top) / 4;
+  assert.ok(lit(stereo, Math.round(P.PICTURE.top + quarter - 40)), 'the loud left channel shows above');
+  assert.ok(!lit(stereo, Math.round(P.PICTURE.bottom - quarter - 40)), 'the silent right channel shows nothing below');
+});
+test('NaN and Infinity in the samples draw as the cleaned sound does', () => {
+  const x = S.pink(2, -18, 1); const dirty = Float32Array.from(x); dirty[1000] = NaN; dirty[50000] = Infinity; dirty[70000] = -Infinity;
+  const clean = Float32Array.from(dirty, (v) => (Number.isFinite(v) ? v : 0));
+  const a = hearingOf([dirty], 48000, { engine: 't', pictures: true }).pictures;
+  const b = hearingOf([clean], 48000, { engine: 't', pictures: true }).pictures;
+  assert.deepEqual(a.map((p) => p.name), b.map((p) => p.name));
+  for (let i = 0; i < a.length; i++) assert.ok(same(a[i].raster.data, b[i].raster.data), a[i].name);
+});
+test('an axis of no length, and a very short one, give finite numbers; 0.08 s is ticked in ms', () => {
+  for (const [from, to] of [[3, 3], [3, 2]]) {
+    const a = P.axisFor(from, to);
+    assert.ok(Number.isFinite(P.xOfSeconds(from, a)) && Number.isFinite(P.xOfSeconds(to + 1, a)));
+    assert.ok(a.ticks.every((t) => Number.isFinite(t.seconds)));
+  }
+  const short = P.axisFor(0, 0.08);
+  assert.ok(short.ticks.length >= 3 && short.ticks.every((t) => /ms$|^0$/.test(t.label)), short.ticks.map((t) => t.label).join());
+});
+test('no picture throws on empty or silent audio, and each draws its axes', () => {
+  const empty = new Float32Array(0); const silent = new Float32Array(48000); const axis = P.axisFor(0, 1);
+  const spectrum = { freqs: [100, 1000], mid: [-200, -200], side: [-200, -200] };
+  for (const x of [empty, silent]) {
+    const pictures = [
+      P.spectrogramPicture(x, 48000, axis, { name: 's', title: 't' }),
+      P.spectrogramPicture(x, 48000, axis, { name: 's', title: 't', kind: 'stereo' }),
+      P.levelPicture([x, x], 48000, axis, [], 'level'),
+      P.levelPicture([], 48000, axis, [], 'level'),
+      P.spectrumPicture(spectrum, 'this', null, 'spectrum'),
+      P.chromaPicture([], 1, axis, 'chroma'),
+      P.closeUpPicture([x], 48000, 0.5, 'here', 'closeup'),
+      P.closeUpPicture([], 48000, 0.5, 'here', 'closeup'),
+      P.differencePicture(x, x, 48000, axis, 'difference'),
+    ];
+    for (const p of pictures) {
+      assert.equal(p.raster.width, 1500);
+      assert.ok(same(R.pixel(p.raster, P.PICTURE.left, P.PICTURE.bottom), R.GRID), `${p.name} draws its box`);
+    }
+  }
+});
+test('a short hit gets no spectrum picture; small makes only the overview and the spectrum', () => {
+  const hit = hearingOf([S.at(0.08, [[0.005, S.burst(0.07, 15, 0, -6, 1)]])], 48000, { engine: 't', pictures: true });
+  assert.equal(hit.sound.tone, undefined); assert.ok(!hit.pictures.some((p) => p.name === 'spectrum'));
+  const small = hearingOf([S.pink(3, -18, 1), S.pink(3, -18, 2)], 48000, { engine: 't', pictures: true, small: true, prefix: 'bass-' });
+  assert.deepEqual(small.pictures.map((p) => p.name), ['bass-spectrogram', 'bass-spectrum']);
+});
+test('a small hearing (a track of a per-track listen) has no per-second grids; a full one keeps them', () => {
+  const x = [S.pink(3, -18, 1), S.pink(3, -18, 2)];
+  const small = hearingOf(x, 48000, { engine: 't', small: true });
+  assert.equal('along' in small.sound, false, 'a small hearing computes no grids');
+  assert.ok(small.sound.tone && small.sound.words.length > 0, 'the rest of the report is there');
+  const full = hearingOf(x, 48000, { engine: 't' });
+  assert.equal(full.sound.along.mid.length, 3);
+  const { along: _along, ...rest } = full.sound;
+  assert.deepEqual(small.sound, rest, 'and is otherwise the same report');
+});
+test('the spectrum picture is drawn from the report itself, with what it is set against', () => {
+  const a = [S.pink(3, -18, 1)]; const b = hearingOf([S.pink(3, -24, 2)], 48000, { engine: 't' }).sound;
+  const h = hearingOf(a, 48000, { engine: 't', pictures: true, against: { sound: b, label: 'the reference' } });
+  const drawn = h.pictures.find((p) => p.name === 'spectrum');
+  const again = P.spectrumPicture(h.sound.tone.spectrum, 'this sound', { spectrum: b.tone.spectrum, label: 'the reference' }, 'spectrum', { fromSeconds: 0, toSeconds: 3 });
+  assert.ok(same(drawn.raster.data, again.raster.data));
+  assert.match(drawn.shows, /the reference/);
+});
+test('without pictures, the report is what hearSound gives and nothing is drawn', async () => {
+  const { hearSound } = await import('../src/audio/hearing/hearSound.ts');
+  const x = [S.pink(2, -18, 1)];
+  const h = hearingOf(x, 48000, { engine: 't' });
+  assert.deepEqual(h.pictures, []); assert.deepEqual(h.sound, hearSound(x, 48000, { engine: 't' }));
+});
+test('shows says what a picture is without judging it', () => {
+  const l = S.pink(2, -18, 1), r = S.pink(2, -18, 2);
+  const h = hearingOf([l, r], 48000, { engine: 't', pictures: true, closeUps: [1] });
+  for (const p of [...h.pictures, P.differencePicture(l, r, 48000, P.axisFor(0, 2), 'difference')]) {
+    assert.doesNotMatch(p.shows, /\b(good|bad|too|should)\b/i, p.name);
+    assert.ok(p.shows.split(/\.\s/).length <= 3, `${p.name}: ${p.shows}`);
+  }
+  assert.match(P.differencePicture(l, r, 48000, P.axisFor(0, 2), 'difference').shows, /Red is where the second is louder than the first/);
+});
+
+test('every picture keeps to 256 colours or fewer, and a spectrogram is written as an indexed PNG', async () => {
+  const { encodePng } = await import('../src/audio/hearing/png.ts');
+  const colours = (p) => { const seen = new Set(); const d = p.raster.data; for (let i = 0; i < d.length; i += 3) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]); return seen.size; };
+  const l = S.mix(S.pink(3, -18, 1), S.sine(220, 3, -12)), r = S.mix(S.pink(3, -18, 2), S.sine(330, 3, -20)); l[60000] += 0.5;
+  const h = hearingOf([l, r], 48000, { engine: 't', pictures: true, closeUps: [1.5], against: { sound: hearingOf([S.pink(3, -24, 3)], 48000, { engine: 't' }).sound, label: 'the other' } });
+  const pictures = [...h.pictures, P.differencePicture(l, S.mix(l, S.band(S.pink(3, -12, 4), 2000, 4000)), 48000, P.axisFor(0, 3), 'difference'), P.spectrumPicture(h.sound.tone.spectrum, 'this', null, 'spectrum-alone')];
+  assert.deepEqual([...new Set(pictures.map((p) => p.kind))].sort(), ['chroma', 'closeup', 'difference', 'level', 'spectrogram', 'spectrum', 'stereo']);
+  for (const p of pictures) assert.ok(colours(p) <= 256, `${p.name} has ${colours(p)} colours`);
+  const png = await encodePng(h.pictures[0].raster);
+  assert.equal(png[25], 3, 'colour type 3, indexed');
+});
+test('the grid stays under the data: visible on silence, never in place of a level', () => {
+  const axis = P.axisFor(0, 2); const inside = (p, c) => { let n = 0; for (let y = P.PICTURE.top; y < P.PICTURE.bottom; y++) for (let x = P.PICTURE.left; x < P.PICTURE.right; x++) if (R.pixel(p.raster, x, y).join() === c.join()) n++; return n; };
+  assert.ok(inside(P.spectrogramPicture(new Float32Array(96000), 48000, axis, { name: 's', title: 't' }), R.GRID) > 100, 'the grid shows on silence');
+  const loud = P.spectrogramPicture(S.white(2, -10, 1), 48000, axis, { name: 's', title: 't' });
+  assert.equal(inside(loud, R.GRID), 0, 'no grid dot over the noise');
+});
+
+// A stretch of a file: every time is a time in the file (the final review's I1), and a moment reads the same everywhere (M6)
+
+test('a stretch of a file is told in file time: the fault, the words, the pictures, their names and their ranges', () => {
+  const { stretchOf } = compare;
+  // what the command line cuts from a file for --from 10 --to 20: ten seconds, a click 2.5 s into them (12.5 s into the file)
+  const x = S.mix(S.sine(110, 10, -12), S.sine(440, 10, -18)); x[2.5 * 48000] += 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true, closeUps: [2], stretch: { fromSeconds: 10, toSeconds: 20 } });
+  const click = h.sound.faults.find((f) => f.kind === 'click');
+  near(click.seconds, 12.5, 0.001, 'the click, in the file'); near(click.at.seconds, 12.5, 0.001, 'its place');
+  assert.ok(h.sound.words.some((w) => /^A click, a jump of -?\d+\.\d dBFS, at 0:12\.50\.$/.test(w)), h.sound.words.join('\n'));
+  assert.deepEqual(h.sound.settings.stretch, { fromSeconds: 10, toSeconds: 20 });
+  const names = h.pictures.map((p) => p.name);
+  assert.ok(names.includes('closeup-12.50s') && names.includes('closeup-12.00s'), names.join(' '));
+  const by = (name) => h.pictures.find((p) => p.name === name);
+  assert.deepEqual([by('spectrogram').fromSeconds, by('spectrogram').toSeconds], [10, 20]);
+  assert.match(by('spectrogram').shows, /over 0:10\.0 to 0:20\.0 /);
+  assert.match(by('level').shows, /over 0:10\.0 to 0:20\.0;.* true peak -?\d+\.\d dBTP at 0:1\d\.\d\d\.$/);
+  assert.match(by('spectrum').shows, /over 0:10\.0 to 0:20\.0/);
+  near(by('closeup-12.50s').fromSeconds, 12.425, 0.001); near(by('closeup-12.50s').toSeconds, 12.575, 0.001);
+  assert.match(by('closeup-12.50s').shows, /^The 150 ms round 0:12\.50 \(a click at 0:12\.50\)/);
+  assert.match(by('closeup-12.00s').shows, /^The 150 ms round 0:12\.00 \(0:12\.00\)/);
+  // the axis: ticks on round times of the file, labelled with them, placed in the audio
+  const axis = P.axisFor(0, 10, undefined, 10);
+  assert.equal(P.rangeText(axis), '0:10.0 to 0:20.0');
+  assert.deepEqual(axis.ticks.map((t) => [t.seconds, t.label]).slice(0, 3), [[0, '0:10'], [1, '0:11'], [2, '0:12']]);
+  assert.deepEqual(P.axisFor(0.5, 9.5, undefined, 10.25).ticks[0], { seconds: 0.75, label: '0:11' });
+  // the grids' rows count from the stretch's start, and a stretch of the saved report is asked for in file time
+  assert.equal(h.sound.along.mid.length, 10);
+  const part = stretchOf(h.sound, 12, 18);
+  assert.equal(part.along.mid.length, 6); assert.deepEqual(part.settings.stretch, { fromSeconds: 12, toSeconds: 18, fromSaved: true });
+  assert.deepEqual(part.along.mid[0], h.sound.along.mid[2]);
+  assert.throws(() => stretchOf(h.sound, 2, 8), /that stretch holds nothing/, '2 to 8 s is outside a hearing of 10 to 20 s');
+  assert.equal(stretchOf(h.sound, 0, 100).along.mid.length, 10);
+  // a stretch of that stretch counts from its own start
+  assert.deepEqual(stretchOf(part, 14, 16).along.mid, h.sound.along.mid.slice(4, 6));
+  // long stretches: the details are named by their time in the file
+  assert.deepEqual(detailRanges(0, 61, undefined, 90).map((d) => d.name), ['spectrogram-1m30-2m00', 'spectrogram-2m00-2m30', 'spectrogram-2m30-2m31']);
+});
+test('without a stretch nothing is offset: a whole file, and a song, read as before', () => {
+  const x = S.mix(S.sine(110, 4, -12), S.sine(440, 4, -18)); x[2.5 * 48000] += 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true });
+  near(h.sound.faults[0].seconds, 2.5, 0.001); assert.equal('stretch' in h.sound.settings, false);
+  assert.ok(h.pictures.some((p) => p.name === 'closeup-2.50s'));
+  assert.equal('offsetSeconds' in P.axisFor(0, 4), false);
+});
+test('two clicks 50 ms apart read as two moments, in the words and in the close-ups', () => {
+  const x = S.mix(S.sine(110, 30, -12), S.sine(440, 30, -18)); x[Math.round(26.53 * 48000)] += 0.5; x[Math.round(26.58 * 48000)] -= 0.5;
+  const h = hearingOf([x], 48000, { engine: 't', pictures: true, closeUps: [26.53, 26.58] });
+  const shows = h.pictures.filter((p) => p.kind === 'closeup').map((p) => p.shows.slice(0, 40));
+  assert.ok(shows.some((s) => s.includes('0:26.53')) && shows.some((s) => s.includes('0:26.58')), shows.join(' | '));
+  assert.ok(h.pictures.some((p) => p.name === 'closeup-26.53s') && h.pictures.some((p) => p.name === 'closeup-26.58s'));
+});
+test('channels of unequal length are heard over the shorter, with no sample that is not a number (M4)', () => {
+  const l = S.pink(2, -18, 1), r = S.pink(2.5, -18, 2);
+  const h = hearingOf([l, r], 48000, { engine: 't', pictures: true });
+  const walk = (v, path) => { if (typeof v === 'number') assert.ok(Number.isFinite(v), `${path} is ${v}`); else if (v && typeof v === 'object' && !ArrayBuffer.isView(v)) for (const k of Object.keys(v)) walk(v[k], `${path}.${k}`); };
+  walk(h.sound, 'sound');
+  assert.equal(h.sound.seconds, 2); assert.equal(h.sound.channels, 2);
+  assert.ok(h.sound.stereo && h.sound.tone.spectrum.mid.every(Number.isFinite));
+  assert.equal(hearingOf([r, l], 48000, { engine: 't' }).sound.seconds, 2);
+});
+
+// The spectrum picture's second curve (the final review's I2): like with like, and level-matched
+
+/** For each column of the plot, the rows where a pixel of `colour` shows. */
+const rowsOfColour = (p, colour) => Array.from({ length: P.PICTURE.right - P.PICTURE.left }, (_, i) => {
+  const rows = [];
+  for (let y = P.PICTURE.top; y < P.PICTURE.bottom; y++) { const c = R.pixel(p.raster, P.PICTURE.left + i, y); if (c[0] === colour[0] && c[1] === colour[1] && c[2] === colour[2]) rows.push(y); }
+  return rows;
+});
+/** Per column where the other sound's line shows, how many rows it lies from this sound's (negative: above it). */
+const apart = (p) => {
+  const gold = rowsOfColour(p, P.SPECTRUM_LINES.main), blue = rowsOfColour(p, P.SPECTRUM_LINES.other);
+  return blue.map((rows, i) => (rows.length && gold[i].length ? rows.map((y) => gold[i].reduce((best, g) => (Math.abs(y - g) < Math.abs(best) ? y - g : best), Infinity)).reduce((worst, d) => (Math.abs(d) > Math.abs(worst) ? d : worst), 0) : null));
+};
+const xOfHz = (hz) => Math.round((Math.log10(hz / 20) / 3) * (P.PICTURE.right - P.PICTURE.left));
+
+test('the spectrum picture: a sound against itself 10 dB down draws one curve (both totals, level-matched)', () => {
+  const l = S.pink(4, -18, 1), r = S.pink(4, -18, 2);
+  const a = hearingOf([l, r], 48000, { engine: 't' }).sound, b = hearingOf([S.gain(l, -10), S.gain(r, -10)], 48000, { engine: 't' }).sound;
+  const p = P.spectrumPicture(a.tone.spectrum, 'this sound', { spectrum: b.tone.spectrum, label: 'the other' }, 'spectrum');
+  const d = apart(p).filter((v) => v !== null);
+  assert.ok(Math.max(0, ...d.map(Math.abs)) <= 1, `the other sound's line lies up to ${Math.max(0, ...d.map(Math.abs))} rows from this one's`);
+  assert.ok(rowsOfColour(p, P.SPECTRUM_LINES.main).filter((rows) => rows.length).length > 1000, 'this sound is drawn all across');
+  assert.ok(rowsOfColour(p, P.SPECTRUM_LINES.sides).some((rows) => rows.length), 'and its sides, dimmer');
+  assert.match(p.shows, /level-matched/);
+  assert.match(p.shows, /middle and sides together/);
+  assert.doesNotMatch(p.shows, /\b(good|bad|too|should)\b/i);
+  // the other way round, and against itself: the same
+  assert.ok(apart(P.spectrumPicture(b.tone.spectrum, 'this sound', { spectrum: a.tone.spectrum, label: 'the other' }, 'spectrum')).every((v) => v === null || Math.abs(v) <= 1));
+});
+test('the spectrum picture: a sound against itself with 2 to 4 kHz raised 6 dB differs only there', () => {
+  // (a sound whose weight is low, so the raise does not move its whole level)
+  const make = (seed) => S.mix(S.sine(100, 4, -6), S.pink(4, -30, seed));
+  const l = make(1), r = make(2);
+  const raise = (x) => S.mix(x, S.band(x, 2000, 4000));
+  const a = hearingOf([l, r], 48000, { engine: 't' }).sound, b = hearingOf([raise(l), raise(r)], 48000, { engine: 't' }).sound;
+  const d = apart(P.spectrumPicture(a.tone.spectrum, 'this sound', { spectrum: b.tone.spectrum, label: 'the raised one' }, 'spectrum'));
+  const perDb = (P.PICTURE.bottom - P.PICTURE.top - 1) / 90;
+  for (let hz = 30; hz < 18000; hz *= 1.05) {
+    const v = d[xOfHz(hz)];
+    if (hz < 1500 || hz > 5300) assert.ok(v === null || Math.abs(v) <= 1, `at ${Math.round(hz)} Hz the lines are ${v} rows apart`);
+    else if (hz > 2300 && hz < 3500) assert.ok(v !== null && Math.abs(-v - 6 * perDb) <= 0.7 * perDb, `at ${Math.round(hz)} Hz the raised one is ${v === null ? 'not drawn' : (-v / perDb).toFixed(1)} dB up`);
+  }
+});
+test('the spectrum picture of one sound alone is as it was: its middle and its sides, in dB against full scale', () => {
+  const a = hearingOf([S.pink(3, -18, 1), S.pink(3, -18, 2)], 48000, { engine: 't' }).sound;
+  const p = P.spectrumPicture(a.tone.spectrum, 'this sound', null, 'spectrum');
+  assert.match(p.shows, /the gold line is the middle \(left plus right\), the dim line the sides/);
+  assert.doesNotMatch(p.shows, /level-matched/);
+});

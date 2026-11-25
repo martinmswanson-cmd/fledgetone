@@ -2,8 +2,9 @@
  * A small web server on 127.0.0.1 for the command line's own pages: the renderer's (a headless
  * browser renders songs there: browserRender.ts) and `fledgetone studio`'s (a built copy of the
  * app, for browsers that won't let fledgetone.com reach the helper). It serves files from the
- * folders it's given, by address prefix, and nothing else: no listing, nothing outside those
- * folders (links followed are checked too), only GET and HEAD, and only for its own address (the
+ * folders it's given, by address prefix, and single files each at an address of its own (an audio
+ * file the renderer hears), and nothing else: no listing, nothing outside those folders (links
+ * followed are checked too), only GET and HEAD, and only for its own address (the
  * Host must be 127.0.0.1 or localhost at its port, so a site can't reach it through a name of its
  * own pointed at this computer).
  */
@@ -29,6 +30,8 @@ const TYPES: Record<string, string> = {
   '.wav': 'audio/wav',
   '.flac': 'audio/flac',
   '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.opus': 'audio/ogg',
   '.txt': 'text/plain; charset=utf-8',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
@@ -36,8 +39,8 @@ const TYPES: Record<string, string> = {
   '.sf2': 'application/octet-stream',
 };
 
-/** A folder served under an address prefix ("/" for the top), or one page made in memory. */
-export type Mount = { prefix: string; dir: string; index?: string } | { path: string; body: string | (() => string); type?: string };
+/** A folder served under an address prefix ("/" for the top), one page made in memory, or one local file at one address. */
+export type Mount = { prefix: string; dir: string; index?: string } | { path: string; body: string | (() => string); type?: string } | { path: string; file: string; type?: string };
 
 /** What a request not served from a mount gets (the renderer's recordings fall back this way). */
 export type Fallback = (path: string, query: URLSearchParams) => string | null;
@@ -119,6 +122,17 @@ export class StaticServer {
     let body: string | null = null;
     let type: string | undefined;
     for (const m of this.mounts) {
+      if ('file' in m) {
+        if (path === m.path) {
+          // (only while it is a plain file; else, as anything not here)
+          if (existsSync(m.file) && statSync(m.file).isFile()) {
+            file = m.file;
+            type = m.type;
+          }
+          break;
+        }
+        continue;
+      }
       if ('path' in m) {
         if (path === m.path) {
           body = typeof m.body === 'function' ? m.body() : m.body;
@@ -145,7 +159,7 @@ export class StaticServer {
     }
     if (!file) return deny(404, 'Not here');
     const size = statSync(file).size;
-    res.writeHead(200, { 'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': String(size), 'cache-control': 'no-cache', ...this.opts.headers });
+    res.writeHead(200, { 'content-type': type ?? TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream', 'content-length': String(size), 'cache-control': 'no-cache', ...this.opts.headers });
     if (req.method === 'HEAD') return res.end();
     const stream = createReadStream(file);
     stream.on('error', () => res.destroy());

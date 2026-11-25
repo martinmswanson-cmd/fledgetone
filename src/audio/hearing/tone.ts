@@ -1,0 +1,155 @@
+/**
+ * The balance of a sound's spectrum for the hearing report: the band spectrum, each region against
+ * the whole, where the weight sits (centre, tilt, roll-off), sub bass against bass, and the narrow
+ * peaks that stand out of their surroundings. Plain maths on samples, no Web Audio, so Node can test it.
+ */
+import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../mixAnalysis';
+import { bandEdges, db, framesOf, midOf, sideOf, toBands } from './frames';
+import type { Tone } from './types';
+
+const round1 = (x: number) => Math.round(x * 10) / 10;
+/** With less than this share of its power between 20 Hz and 20 kHz (80 dB under the whole), a sound has no tone to describe. */
+const IN_BAND_FLOOR = 1e-8;
+
+/** The mean power per bin of the middle plus the sides, over frames of `size`. */
+function totalPower(channels: readonly Float32Array[], sampleRate: number, size: number, hop: number): Float64Array {
+  const out = new Float64Array(size / 2 + 1);
+  const parts = [midOf(channels), sideOf(channels)];
+  for (const x of parts) {
+    if (!x) continue;
+    const { power } = framesOf(x, sampleRate, size, hop);
+    for (const frame of power) for (let k = 0; k < out.length; k++) out[k] += frame[k] / power.length;
+  }
+  return out;
+}
+
+/** The balance of the spectrum of some sound. */
+export function toneOf(channels: readonly Float32Array[], sampleRate: number): Tone {
+  // The spectrum, without bands above half the sample rate
+  const full = bandSpectrum(channels, sampleRate);
+  const half = 2 ** (1 / 12);
+  const keep = full.freqs.map((f) => f * half <= (sampleRate / 2) * 1.0001);
+  const pick = (v: readonly number[]) => v.filter((_, i) => keep[i]);
+  const raw = { freqs: pick(full.freqs), mid: pick(full.mid), side: pick(full.side) };
+  const spectrum = { freqs: raw.freqs, mid: raw.mid.map(round1), side: raw.side.map(round1) };
+
+  const bands = totalBands(raw);
+  const total = sumDb(bands);
+
+  // Where the weight sits, from the bins between 20 Hz and 20 kHz
+  const size = 4096;
+  const power = totalPower(channels, sampleRate, size, size / 2);
+  const binHz = sampleRate / size;
+  let sum = 0;
+  let weighted = 0;
+  let all = 0;
+  for (let k = 0; k < power.length; k++) {
+    all += power[k];
+    const f = k * binHz;
+    if (f < 20 || f > 20000) continue;
+    sum += power[k];
+    weighted += power[k] * f;
+  }
+  // Whether anything sounds between 20 Hz and 20 kHz: a steady offset alone has all its power under
+  // them, and what its bands hold is rounding, with no balance, centre or tilt to speak of
+  const sounding = sum > 0 && sum > all * IN_BAND_FLOOR;
+  const regions = REGIONS.map((x) => ({ name: x.name, db: sounding && Number.isFinite(total) ? round1(levelBetween(raw, bands, x.lo, x.hi) - total) : 0 }));
+  let centreHz = 0;
+  let rolloffHz = 0;
+  if (sounding) {
+    centreHz = weighted / sum;
+    let acc = 0;
+    for (let k = 0; k < power.length; k++) {
+      const f = k * binHz;
+      if (f < 20 || f > 20000) continue;
+      acc += power[k];
+      if (acc >= sum * 0.95) {
+        rolloffHz = f;
+        break;
+      }
+    }
+  }
+
+  // Least-squares slope of the bands from 50 Hz to 12 kHz against octaves
+  const xs: number[] = [];
+  const ys: number[] = [];
+  raw.freqs.forEach((f, i) => {
+    if (f >= 50 && f <= 12000) {
+      xs.push(Math.log2(f));
+      ys.push(bands[i]);
+    }
+  });
+  let tilt = 0;
+  if (sounding && xs.length > 1) {
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let num = 0;
+    let den = 0;
+    for (let i = 0; i < xs.length; i++) {
+      num += (xs[i] - mx) * (ys[i] - my);
+      den += (xs[i] - mx) ** 2;
+    }
+    tilt = den > 0 ? num / den : 0;
+  }
+
+  const subVsBassDb = sounding && Number.isFinite(total) ? levelBetween(raw, bands, 20, 60) - levelBetween(raw, bands, 60, 200) : 0;
+
+  return {
+    spectrum,
+    regions,
+    centreHz: Math.round(centreHz),
+    tiltDbPerOctave: round1(tilt),
+    rolloffHz: Math.round(rolloffHz),
+    subVsBassDb: round1(subVsBassDb),
+    peaks: sounding ? peaksOf(channels, sampleRate) : [],
+  };
+}
+
+/**
+ * Where a peak found in the band `lo` to `hi` sits, from the averaged spectrum the band was summed
+ * from: the power-weighted mean frequency of the band's strongest bin and the two either side of it
+ * (a windowed tone's whole peak, which below about 100 Hz is wider than the band), kept within a bin
+ * of the band; the band's centre when it holds no power.
+ */
+function peakHz(power: ArrayLike<number>, sampleRate: number, size: number, lo: number, hi: number): number {
+  const binHz = sampleRate / size;
+  const first = Math.max(1, Math.floor(lo / binHz - 0.5));
+  const last = Math.min(power.length - 1, Math.ceil(hi / binHz + 0.5));
+  let top = first;
+  for (let k = first; k <= last; k++) if (power[k] > power[top]) top = k;
+  let sum = 0;
+  let weighted = 0;
+  for (let k = Math.max(1, top - 2); k <= Math.min(power.length - 1, top + 2); k++) {
+    sum += power[k];
+    weighted += power[k] * k * binHz;
+  }
+  if (!(sum > 0)) return Math.sqrt(lo * hi);
+  return Math.max(lo - binHz, Math.min(hi + binHz, weighted / sum));
+}
+
+/**
+ * Narrow peaks on a 1/24-octave spectrum: local maxima 6 dB or more over their surroundings, at most 5,
+ * largest first. A peak's frequency is where its power sits (peakHz), which for a held note is the
+ * note's own frequency to within a fraction of a bin, where the band's centre can be 1.5% off.
+ */
+function peaksOf(channels: readonly Float32Array[], sampleRate: number): Tone['peaks'] {
+  const size = 16384;
+  const { edges } = bandEdges(24, sampleRate);
+  const power = totalPower(channels, sampleRate, size, size / 2);
+  const levels = Array.from(toBands(power, sampleRate, size, edges), db);
+  const reach = 16; // two thirds of an octave, in bands
+  const found: Array<{ i: number; overDb: number }> = [];
+  for (let i = 1; i < levels.length - 1; i++) {
+    if (!(levels[i] > levels[i - 1] && levels[i] >= levels[i + 1])) continue;
+    const around = levels.slice(Math.max(0, i - reach), i + reach + 1).sort((a, b) => a - b);
+    const mid = around.length >> 1;
+    const median = around.length % 2 ? around[mid] : (around[mid - 1] + around[mid]) / 2;
+    if (levels[i] - median >= 6) found.push({ i, overDb: levels[i] - median });
+  }
+  found.sort((a, b) => b.overDb - a.overDb);
+  const kept: typeof found = [];
+  for (const p of found) {
+    if (kept.length < 5 && kept.every((k) => Math.abs(k.i - p.i) > 4)) kept.push(p); // within a sixth of an octave is one peak
+  }
+  return kept.map((p) => ({ hz: round1(peakHz(power, sampleRate, size, edges[p.i], edges[p.i + 1])), overDb: round1(p.overDb) }));
+}

@@ -31,7 +31,7 @@ browser and save to `.fledgetone.json` files.
 npm install
 npm run dev            # dev server
 npx tsc -b             # type check
-npx oxlint src         # lint (17 known warnings, all only-export-components: files that export a helper next to their component)
+npx oxlint src         # lint (20 known warnings: 17 only-export-components, files that export a helper next to their component, 2 purity and 1 set-state-in-effect)
 npm test               # node --test scripts/*.test.mjs
 npm run build          # production build of the app alone
 npm run build:single   # the one-file build (dist-single/index.html)
@@ -141,6 +141,7 @@ and so on.
 | Shift+letter shortcuts for the tools (plugin browser, tuner, analyser, FX rack, Mixer) | `src/store/toolShortcuts.ts` (the keys and `toolForKey`), handled in `Timeline.tsx`'s key handler, shown by `MenuBar.tsx`; `scripts/toolShortcuts.test.mjs` |
 | A plugin slider's value text | `src/audio/plugins/tidyValue.ts` (only four-place numbers are trimmed; "1/4" and "50 %" stay as the plugin wrote them) |
 | Studio-grade pitch: notes between recordings, tuned pads and keys play a re-pitched copy at rate 1 | `src/audio/samplers/resampler.ts` (Kaiser windowed-sinc polyphase, loops onto whole frames; tested in `scripts/pitchedCopies.test.mjs`), `copyCache.ts` (LRU, pins), `pitchedCopies.ts` (Workers, `copySet`: a render plays only what `TrackInstrument.prepare` made ready), `resampleWorker.ts`; budgets and live planning (`copyAllowed`, `liveCopies`, `wishOf`) in `samplerManager.ts`; `neededPitches` / `trackPlan` in `songSamples.ts`; `prepare` called in `exportWav.ts` before a render |
+| Hearing: the sound report and pictures (a fuller description of a sound, for an agent that can't hear) | Pure, in `src/audio/hearing/`: `hearSound.ts` (the report: `tone.ts`, `texture.ts`, `movement.ts`, `dynamics.ts`, `attack.ts`, `stereo.ts`, `pitch.ts`, `faults.ts`, on the frames of `frames.ts`), `words.ts` (its plain-word lines, places as the agent's bars and quarter beats), `compareSound.ts` (one sound against another or a saved one, level-matched), `hearingOf.ts` (the report with its pictures, and the saved hearing's shape), `pictures.ts`, `raster.ts`, `font5x7.ts`, `png.ts` (the PNG pictures), `types.ts` (the shapes and each group's rule version). Wired into `src/agent/listenReport.ts` and `src/runtime/render.ts` (`hearAudio`); on the command line in `tools/cli/src/hearingCommands.ts`, `commands.ts` (`measure`) and `renderCommands.ts` (`listen`), and the agent helper's `listen` in `mcpServer.ts`. Tests: `scripts/hearing*.test.mjs` (`hearingCheckSet.test.mjs` pins the reading check's made sounds); slower checks and the reading check in `scripts/audio-check/hearing/`; design in `docs/superpowers/specs/2026-11-20-hearing-design.md`; for agents, `docs/AGENT.md` and `tools/cli/README.md` ("Hearing more") |
 
 ### Things that bite
 
@@ -293,6 +294,19 @@ note, the level (dB), spectral centroid (Hz) and the share of energy above 2.5 k
 page scripts the same way for other checks: `lib.js` (prepended) has `mkTrack`, `mkClip`, FFT and
 spectrum helpers. Needs Playwright with Chromium, ffmpeg, Python with numpy. Analyse in Python,
 not in the page: in-page spectra came out wrong before.
+
+To read a sound's character as well as its level (to see what a change did to the tone, the width,
+the attacks or the faults, or where a click is), use the hearing: `fledgetone measure <file>
+--sound --pictures <folder>` on a WAV or MP3, or `fledgetone listen <song> --sound --pictures
+<folder>` on bars of a song (add `--ops` or `--suggestion` for before and after, `--against` to read
+it against another sound or a saved hearing, `--close 9.3` for a close-up of bar 9, beat 3). A
+WAV is heard in Node; a song, and audio of any other type, needs the built runtime and a headless
+browser (`npm run build:runtime`, `FLEDGETONE_BROWSER`). None of it needs the dev server, and it
+describes rather than judges. After a change to anything
+in `src/audio/hearing/`, run the reading check (`scripts/audio-check/hearing/README.md`): made
+sounds, two starters and a heavy test song, each with one thing planted in it, are heard, and each
+hearing alone is given to a fresh agent with one question; it passes when every agent names what
+was planted and none reports something false on the clean sound or the unplanted song.
 
 ## Finished (on the work branch)
 

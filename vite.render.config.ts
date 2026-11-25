@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 
 // The command line's renderer (src/runtime/render.ts) as one ES module: dist-runtime/fledgetone-render.js,
@@ -14,6 +16,9 @@ const noStore: Plugin = {
   },
 };
 
+// The app's version (src/version.ts), as the app's own build gives it (vite.config.ts): a hearing names the engine that made it
+const pkgVersion: string = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).version;
+
 export default defineConfig({
   publicDir: false,
   plugins: [noStore],
@@ -21,6 +26,7 @@ export default defineConfig({
     'process.env.NODE_ENV': JSON.stringify('production'),
     'import.meta.env.VITE_BOS_RUNTIME': JSON.stringify('1'),
     'import.meta.env.VITE_GPL_PLUGINS': JSON.stringify('1'),
+    __APP_VERSION__: JSON.stringify(pkgVersion),
   },
   build: {
     outDir: 'dist-runtime',

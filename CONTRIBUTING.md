@@ -194,7 +194,7 @@ Run all of these before every commit; they must all pass.
 
 ```sh
 npx tsc -b             # type check (what npm run build runs; tsc -p . checks nothing here)
-npx oxlint src         # lint (2 known warnings: Playhead.tsx x2)
+npx oxlint src         # lint (20 known warnings, in src/components and src/pocket)
 npm test               # unit tests (node --test scripts/*.test.mjs)
 npm run build          # production build (what fledgetone.com publishes)
 npm run build:single   # the one-file build (dist-single/index.html)
@@ -228,6 +228,22 @@ APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts
 APP_URL='http://localhost:5200/?studio' node scripts/audio-check/run.cjs scripts/audio-check/reverb-room.js   # a recorded room on a track's Reverb insert: an export, a freeze and live play a made-up room of three clicks as three hits
 node scripts/audio-check/switch-sweep.cjs       # every built-in plugin with presets and Surge XT: presets, undo, redo, Reset all on held notes and bright sounds; the worst burst and click per plugin
 ```
+
+When a change touches anything in `src/audio/hearing/` (the sound report's measures, its words or
+its pictures), run the reading check: made sounds, two starters and a heavy test song, each with
+one known thing planted in it, are heard with `--sound --pictures`, and each hearing alone is given
+to a fresh agent, which must name what was planted (and nothing false on the clean sound and the
+unplanted song). It needs no dev server, only the built command line and a browser for the songs;
+the commands, the question and the table to record each run in are in
+`scripts/audio-check/hearing/README.md`. `node --test scripts/hearingCheckSet.test.mjs` (part of
+`npm test`) checks first that every made sound's report holds what was planted.
+
+When a change moves a group's numbers or the thresholds behind its words (tone, texture, movement,
+space, dynamics, attack, stereo, pitch, register or faults), raise that group's version in `HEARING_VERSIONS`
+(`src/audio/hearing/types.ts`) and update its pin in `scripts/hearingVersions.test.mjs`, which
+fails and names the group when a pinned number moves. A hearing saved at the older version is then
+said to be stale in that group (it can't be compared there until it is made again from its audio)
+instead of being compared as if nothing had changed.
 
 When a change touches a menu, a popover or another popup, run `node scripts/ui-check/popup-tab.cjs`
 (the same dev server): each kind of popup opened with the keyboard and the mouse, left with Tab and

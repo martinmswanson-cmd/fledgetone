@@ -1,7 +1,7 @@
 /**
  * Files for the command line and the agent tools: reading and writing songs (.fledgetone.json),
  * suggestion files, and audio (WAV read and written, MP3 written); and the agent tools' rule that a file must be inside the
- * folder the helper was started for (--root), with a song, suggestion or audio extension.
+ * folder the helper was started for (--root), with a song, suggestion, audio or picture extension.
  */
 import { closeSync, constants, existsSync, fstatSync, ftruncateSync, lstatSync, openSync, readFileSync, realpathSync, statSync, writeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
@@ -100,7 +100,7 @@ export function sameFile(a: string, b: string): boolean {
 }
 
 /** The extensions the agent tools may read or write. */
-export const AGENT_FILE_TYPES = ['.fledgetone.json', '.json', '.wav', '.mp3'];
+export const AGENT_FILE_TYPES = ['.fledgetone.json', '.json', '.wav', '.mp3', '.flac', '.ogg', '.opus', '.m4a', '.aac', '.png'];
 
 /**
  * `file` as an absolute path inside `root`, or an error in plain words: the agent tools reach
@@ -136,6 +136,9 @@ export function fileInRoot(root: string, file: string, opts: { types?: string[];
   return target;
 }
 
+/** A WAV file in a format readWav doesn't read (8-bit, A-law...): the browser's decoder may. */
+export class WavFormatError extends Error {}
+
 /** A WAV file's samples, one Float32Array per channel (PCM 16, 24 or 32 bit, or 32/64-bit float). */
 export function readWav(path: string): { sampleRate: number; channels: Float32Array[] } {
   const buf = readFileSync(path);
@@ -164,7 +167,7 @@ export function readWav(path: string): { sampleRate: number; channels: Float32Ar
   if (!count) throw damaged();
   if (rate < 8000 || rate > 768000) throw new Error(`${basename(path)} says its sample rate is ${rate} Hz: only 8 kHz to 768 kHz can be measured`);
   const bytes = bits / 8;
-  if (!count || !(format === 1 && [16, 24, 32].includes(bits)) && !(format === 3 && [32, 64].includes(bits))) throw new Error(`${basename(path)}: only 16, 24 and 32-bit PCM and float WAV files can be measured`);
+  if (!count || !(format === 1 && [16, 24, 32].includes(bits)) && !(format === 3 && [32, 64].includes(bits))) throw new WavFormatError(`${basename(path)}: only 16, 24 and 32-bit PCM and float WAV files can be measured`);
   const frames = Math.floor(data.length / (bytes * count));
   const channels = Array.from({ length: count }, () => new Float32Array(frames));
   for (let i = 0; i < frames; i++) {

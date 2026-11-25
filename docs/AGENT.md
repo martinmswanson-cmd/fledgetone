@@ -70,7 +70,7 @@ Options of `fledgetone mcp`:
 
 | Option | What it does |
 | --- | --- |
-| `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files (`.json`) and audio (`.wav`, `.mp3`) only. |
+| `--root <folder>` | The only folder the agent's file tools reach (default: the folder it starts in). Songs (`.fledgetone.json`, `.json`), suggestion files and saved hearings (`.json`), audio (`.wav`, `.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) and pictures (`.png`) only. |
 | `--port <n>` | The studio connects on `127.0.0.1:47123`; another port, or `0` for any free one (the pairing message says which). If 47123 is taken by another program, the helper doesn't move to another port by itself: it says so (on stderr, and `connect_studio` answers with what to do), tries 47123 again at each `connect_studio`, and the file tools work meanwhile. A port given with `--port` that's taken stops the helper with an error. |
 | `--dev` | Also let the dev server's pages connect (`localhost:5173` and `5200`). For working on Fledgetone itself. |
 | `--allow-origin <url>` | Also let pages from this exact origin connect (another dev server, a checking script). Can be given more than once. |
@@ -169,9 +169,305 @@ Limits are the live listen's: at most 64 bars or 90 seconds (before and after ea
 render at a time, 10 listens a minute. `render_file` makes at most 10 minutes of audio, never
 writes over a file unless `overwrite: true`, and only `.wav` and `.mp3` files inside `--root`.
 
+On the command line, `fledgetone listen` and `fledgetone measure` (any audio file: `.wav`,
+`.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) can also hear the sound, on your computer and
+with nothing sent anywhere:
+
+```sh
+fledgetone measure mix.wav --sound                                   # its character in words
+fledgetone measure mix.wav --pictures pics --close 1:12              # PNG pictures, a close-up at 1:12
+fledgetone listen song.fledgetone.json --bars 9-16 --pictures pics --close 12.3
+fledgetone measure mix.wav --save mix.hearing.json                   # measurements only, no audio
+fledgetone measure take-2.wav --against mix.hearing.json --against-from 60 --against-to 90
+```
+
+- `--sound` adds `sound`, the sound report, in ten groups: tone (the spectrum's balance, its
+  centre, tilt and roll-off, narrow peaks), texture (tonal or noisy, smooth or rough, percussive,
+  flat tops), movement (change over time, slow wobbles of a band), space (how long sounds ring on,
+  how much is tail, a clear echo, the tails' width), dynamics (loudness, true peak, crest,
+  range), attack (how often and how fast things start), stereo (correlation, balance, mono loss,
+  width), pitch (tempo, key, tuning, pitch classes), register (where the pitched parts and the
+  top line sit) and faults (clicks, clipping, DC offset, hum, digital silence, a channel fault), and one list of plain `words` for them all,
+  which describe and never judge. The text output prints the words after the usual lines (with
+  `--per-track`, each track's own under its line). With any of the hearing
+  options (or `--from` / `--to`, or audio other than WAV), `measure --json` is the file's hearing:
+  `file`, `range`, `seconds`, `channels`, `silent`, the loudness numbers rounded to a tenth,
+  `regions`, a `note` when one is needed, and `sound`, `against` and `pictures` when asked.
+  Without them, `measure --json` on a WAV is as it always was.
+- `--pictures <folder>` writes PNG pictures there (a spectrogram, the stereo side signal, the
+  level, the spectrum, the pitch classes, close-ups of faults and of moments asked for; with a
+  suggestion, the after version's and a picture of the difference). `--json` lists each in
+  `pictures` by `path`, with `shows`: a sentence saying what it shows.
+- `--close`: a close-up. For `measure`, seconds (`90`, `1:30`) from the start of the file; for
+  `listen`, a bar and quarter beat (`12.3`: bar 12, beat 3), counted in bars of four quarter notes
+  whatever the meter. Where the ruler counts otherwise, the words also give its measure and beat.
+- `--against <audio|hearing.json>` adds `against`: this sound read against the other,
+  level-matched, its `differences` largest first and `notes` (read as which against which, and
+  cautions such as different lengths). Compare like with like. With a suggestion, the after
+  version is the one compared; the before and after are compared with each other as well
+  (`difference.sound`).
+- `--save <file.json>` writes a saved hearing: `{ "fledgetoneHearing": 1, "of", "range", "sound" }`,
+  measurements only (with a suggestion, of the after version). A group whose rules have changed since can't be compared, and says so: hear
+  the audio again.
+- At most 15 minutes are heard at a time; `measure --from <s> --to <s>` names a stretch.
+
 The first time a song uses a recorded instrument, its recordings download from fledgetone.com (the
 same files, from the same addresses, the app downloads); they're kept (in `~/.cache/fledgetone`,
 or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reaches nothing else.
+
+## Hearing more than loudness
+
+An agent can't hear. Two tools measure a sound and draw it, so the agent can read what a person
+would listen for: `listen` with a song file (rendered on this computer) and `hear_audio` (an audio
+file in `--root`). Both do it with signal maths on this computer: no model and no outside service
+is involved, and nothing is sent anywhere. The command line does the same (`fledgetone measure` and
+`fledgetone listen`, see [Hearing a song file](#hearing-a-song-file)).
+
+Without the new options `listen` does no new work and gives the report it always gave. `hear_audio`
+and the options of `listen` give the report as text first, which stands alone (every picture is
+named in it with its path relative to `--root`, and what it shows), then up to six pictures as
+image content, at most 3 MB of PNG in all: the spectrogram, the difference if there is one, the
+close-ups, the level picture, the spectrum. Any picture not attached is named in the text
+(`pictureImages.notAttached`). With `sound` and no `pictures`, no file is written and no image is
+returned. `pictures` names a folder inside `--root` (made if it isn't there; a path that leaves
+`--root`, through a link too, is refused) and must be a folder of its own: new, empty or holding only
+`.png` files, since pictures of the same name are written over.
+
+### What the sound report tells
+
+`sound` has ten groups of measures and one list of plain `words` (a line for each finding that
+applies, in the groups' order, then a line for each fault) that describe the sound and never
+judge it:
+
+- tone: the balance of the spectrum, where its weight sits (centre), its tilt and roll-off, and
+  narrow peaks (a held note reads as one too; the words name the three strongest and list the
+  rest). The words are things like bright and dark.
+- texture: tonal or noisy, smooth or rough, percussive, flat tops. Rough means fast beating
+  inside a band: distortion, notes close together and noise all read that way.
+- movement: how the sound changes over time, and slow wobbles of a band, with their rate.
+- space: how the sound sits in a room. `decayMs` is how long its notes and hits ring on after they
+  end (the time, in ms, to fall 20 dB from where one ends); `wetShare` is how much of their energy
+  is in those tails rather than in the direct sound (0 to 1); `echo` is a clear echo, with its time
+  in ms, how many repeats stand out and, when the tempo is known, its note value (`1/8`, `1/4T`
+  and the like; a dotted value has none); `tailWiderDb` is how much wider the tails are than the
+  direct sound, in dB. Decay, wet share and width are `null` when fewer than three notes or hits
+  end (a held pad, a riff with no gaps): `null` means not read, not none. The words say "Dry" when
+  sounds fall 20 dB in under 150 ms, "Long tails" when they take over a second, "Much of it is
+  tail" from a wet share of 0.3, an echo with both of its readings (`Repeats every 375 ms, 6
+  standing out, each a step quieter: an echo, or a note played again more quietly.`), and wider
+  tails from 3 dB.
+- dynamics: loudness, true peak, crest and loudness range.
+- attack: how many things start each second, how many of them stand out only above 5 kHz
+  (`highShare`, 0 to 1: 90% or more of the power each adds, where it stands out, is up there;
+  the words say so of a sound of 2 seconds or more that is not a single hit, when half or more
+  of its onsets do and there is at least one a second:
+  `100% of its onsets (7.8 a second in all) stand out only above 5 kHz.`), and how fast they start ("busy" and "sparse" are
+  said only of a sound of 2 seconds or more; a single short hit gets one line with its rise, its
+  fall and how loud its loudest 10 ms reads).
+- stereo: correlation between the channels, balance, what is lost in mono, width.
+- pitch: tempo, key, tuning and the pitch classes that sound.
+- register: where the pitched parts sit. `lowHz`, `centreHz` and `highHz` are the 10th, 50th and
+  90th percentiles of the pitch of the pitched energy (of the parts' fundamentals, not their
+  overtones); `topHz` is the top line, the highest clear part over time; `octaves` is the share of
+  the pitched energy in each octave from C1 to C8. The words name the nearest note to each
+  reading: `Its pitched parts sit between C3 and B3 (132 Hz to 251 Hz), centred near F3.` and
+  `The top line sits around F3.` A reading lies between the notes played when it falls between
+  two of them (a C major scale can read "centred near F#3"), so a named note need not be one that
+  sounds. A sound with no pitched part (noise, noisy drums) has no `register`; a kick or a tom
+  with a clear pitch, or a snare's body tone, reads as a pitched part.
+- faults: clicks, clipping, DC offset, hum, digital silence, a channel that differs.
+
+Each fault in `faults` has its `kind`, a `detail` in words, where it is (`seconds`, and `at` with
+the bar and beat for a song; `null` for a fault with no place, such as hum) and, for most kinds, a
+`value` whose unit goes by the kind: a click's is the size of its jump from one sample to the
+next, in dBFS; clipping's is its highest peak, in dBFS (with `count`, the number of places it
+clips, `seconds` being the first); a DC offset's is the offset, in dBFS; hum's is its frequency,
+in Hz; a quieter channel's is how far it is under the other, in dB. Digital silence has
+`endSeconds` instead.
+
+For an audio file every time read or given is a time in the file, whatever stretch of it was
+heard: a fault's `seconds`, the words, the pictures' titles, labels and ranges, the close-ups'
+names, `closeUps`, and `againstFromSeconds` and `againstToSeconds` (of a saved hearing as well). The
+answer's `range` is the stretch heard, with `fileSeconds`, the file's length, when a stretch was
+asked for. For a song, places are bars and beats; where seconds appear they are counted from the
+start of the bars heard (a stretch of a hearing saved from a song as well). A moment is written as minutes, seconds and hundredths (`0:26.53`).
+
+### The pictures and their axes
+
+Every picture says what it shows in a `shows` sentence, and has labelled axes and a legend. Levels
+are dB against a full-scale sine (0 dB is the top, -90 dB the bottom).
+
+- `spectrogram`: time left to right, frequency bottom to top on a log scale (20 Hz to 20 kHz),
+  colour is level from dark (-90 dB) through blue, purple, red and orange to pale yellow (0 dB).
+  A range of more than 8 bars, or more than 30 seconds of a file, also gets detail spectrograms
+  of 8 bars or 30 seconds each: at most twelve, spread evenly from the first to the last, so the
+  details of a very long range do not cover all of it (hear a stretch for the rest).
+  `stereo` is the same of the side signal (left minus right): wide sound shows, centred sound
+  doesn't.
+- `level`: the waveform of each channel against time, from -1 to +1, with each second's loudness
+  as a line and the true peak marked.
+- `spectrum`: level against frequency on a log scale; the gold line is the middle, the dim line
+  the sides, in dB against full scale. With `against` it is drawn level-matched, as the
+  comparison is: the gold line is this sound's total (middle and sides together) and the blue
+  line the other sound's total, each against its own whole level (0 dB), so a difference in
+  loudness does not show and a difference in tone does; the dim line is still this sound's sides
+  (`against` makes no difference picture).
+- `chroma`: the twelve pitch classes (C at the bottom to B at the top) against time; brightness is
+  each note's strength.
+- close-ups (`closeUps`, and one for each of the first six faults that have a place): 0.15 seconds round
+  a moment, the waveform above and frequency (log scale) coloured by level below, with time in
+  milliseconds from that moment. For a song file a close-up is a bar and its quarter beat, `"9.3"`
+  (bar 9, beat 3) or `"9"` (its first beat), counted in bars of four quarter notes whatever the
+  meter; for `hear_audio` it is seconds from the start of the file.
+- `difference` (a before-and-after only): frequency against time, colour is the second
+  sound's level minus the first's, red where the second is louder, blue where it is quieter,
+  near-black where they match.
+
+### Comparing
+
+`against` takes an audio file or a saved hearing (a `.json` made by `save`) in `--root`, with
+`againstFromSeconds` and `againstToSeconds` for a stretch of it. The two are level-matched first,
+so the differences are of character and not of volume, and `against` in the answer lists them
+largest first (`differences`) with `notes` saying which was read against which and `faults`, one
+line for each kind of fault the two do not have the same number of (`Clicks: 1 in click.wav (at
+0:12.50), none in clean.wav.`). When nothing differs by more than a step and the faults are the
+same, the notes end by saying so; when no measure does but one sixth-octave band of the spectrum
+still stands 1.5 dB or more apart (a narrow boost moves its region little), they name that band
+and its change instead. `spectrum` holds the change of every band. What only one of the two has is not compared as a number: a
+band's movement that one lacks is one difference that says which has it, with its rate and
+depth, and a width is compared only where a side level stands above 50 dB under its sound's
+whole in one of the two. Rise time and onsets are given as a ratio (`4 times as long`).
+
+Space and register are compared where both sounds have a number: a `null` in either is not
+compared. Decay and an echo's time are given as a ratio (`Decay: 705 ms against under 10 ms (more than
+70 times as long).`), wet share and tail width as the difference of the two. An echo only one of the two has
+is one difference that says which has it, with its time and note value (`Echo: only in echo.wav
+(375 ms).`). The unit of `change` goes by the measure: for decay and an echo heard in both, as
+for rise time and onsets, it is in octaves (doublings of the ratio: 1 is twice as long; a decay
+under 10 ms, the frames it is read on, is taken as 10 ms in `change` and in the words' ratio, and
+said as "under 10 ms", as the sound's own words say it); for an
+echo only one has, it is that echo's time in ms; for wet share it is the difference of the two;
+for tail width, dB. Register's centre, low, high and top line are compared in
+octaves (a step is a quarter of an octave) and written as notes (`Register centre: F4 against F3
+(+1.00 octaves).`). Between a wet sound and a dry one, a room alone can lift the register's high and top line
+by a step or more, and the centre less often (see below); a difference in centre or low between
+a wet and a dry sound is mostly the notes. A stretch
+of a saved hearing is compared in tone, width and loudness only, and has no faults to compare.
+Like must be compared with like: a
+comparison is fair only between stretches of similar length and of the same kind of material (a
+chorus with a chorus, a drum loop with a drum loop). With a suggestion, `listen` compares the after
+version, and the before and after are compared with each other (`difference.sound`).
+
+`save` writes a new `.json` file (one that already exists is never written over) holding the
+measurements, never the audio. Only a saved hearing holds the per-second grids (`sound.along`: the
+spectrum of the middle and the sides, the loudness and the pitch classes of each second, about 2 KB
+a second), which a stretch of it is read from. Replies leave `along` out, of the mix, of each
+track, and of a before and an after. A saved hearing goes stale: when the rules of a group change in a
+later version, that group can't be compared with it, the answer says so, and the hearing must be
+made again from the audio.
+
+### What it can't tell you
+
+These are limits of the tool, measured, not advice:
+
+- It measures and draws; it does not hear. The words describe (bright, dark, rough, sharp, wide)
+  and never say whether something is right for the song.
+- Over a held sound, a hit whose lower part the held sound masks (a snare or a noise burst under a
+  pad) stands out only above 5 kHz too, so `highShare` counts it with high hits such as hats.
+- Onsets a second is approximate: hits faster than about 22 a second are not counted; tonal notes
+  over a pad read a little low; an arpeggio over a thick pad can read high; hits folded into a swell
+  that is still opening can be missed. "Busy" and "sparse" follow that number.
+- A wobble bass with no drum hits reads as slow soft pulses at most; its rate is in the movement
+  group.
+- A mid band that dips and returns on every beat is said as that: sidechain pumping and parts
+  played on the beat both read this way, and the report can't tell them apart.
+- Faults can be missed: a hum within a hertz or two of a loud held bass note, under a walking
+  bassline, or under a loud kick; a click within a fraction of a millisecond of a square wave's own
+  corner; a small click (4 times the level around it) under hiss that is within about 20 dB of
+  the sound it sits in. Dense crackle reads as a few clicks, not hundreds, and kick rolls of ten a second or more
+  can read as a DC offset. Nothing reported is certain to be a fault: a close-up picture is made for
+  each one so it can be looked at.
+- A description does not change with playback level down to about 20 dB quieter. At 40 dB quieter
+  some measures (the roughness of drums, the tilt of a pure tone, movement) shift.
+- A spectrogram's windows are about 85 ms long at 48 kHz (each picture's `shows` gives its own), so a hit is smeared over that long, and a line
+  below about 40 Hz is drawn a few pixels wide. A close-up is fine in time and coarse in pitch.
+  Levels read from colour are within about 1 dB.
+- Key and tempo are estimates; a three-note chord does not settle a key. The words give a key
+  and a tuning only for a pitched sound (flatness of 0.15 or less) whose key is sure enough
+  (confidence of 0.5 or more), so noise gets neither. Give `bpm` to
+  `hear_audio` when the tempo is known. For a song, whose tempo is known and whose key is read
+  from its notes, the words leave both out, and the tuning line with them; the estimates stay
+  in `pitch`.
+- A comparison is level-matched and only fair between like stretches of similar length. A saved
+  hearing holds measurements, never audio, and must be made again from the audio when a group's rule
+  version changes.
+- Space needs notes or hits that end. A held pad gives no decay, and a sound with fewer than
+  three ends that agree gives no decay, wet share or tail width. When in doubt the group says
+  less: beside an echo there is no "Dry" line and no tail width, and, beside an echo, decay and
+  wet share are left out when the notes themselves stop in under 150 ms; tail width is left out
+  whenever the decay is under 150 ms (a short, wide stereo room then has no width read either)
+  and when the tails are digital silence; decay and wet share are left out when most of the tail's energy is in ends
+  that could not be timed.
+- A reverb shorter than about 80 ms is not told from the sound itself: a very short room reads as
+  part of the notes.
+- An echo is told by its repeats: each comes a like step quieter than the one before (2 to 24 dB,
+  the steps within 3 dB of each other) and sounds like what it repeats. Whether a repeat has an
+  onset of its own is not looked at, so a note played again more quietly at an even spacing reads
+  the same as an echo, and the line says both. The repeats must match the first sound's spectrum: different notes stepping quieter don't
+  read as an echo, and neither do repeats that change sound (a struck piano through a 1/4 delay,
+  a delay into a reverb).
+- A delay can be missed, in a dense mix especially, and the sound then reads as whatever its
+  notes do, often "Dry": tempo-synced delays on plain melodies are often missed, and so are very
+  short notes through a delay, repeats with a high cut in them, and claps thrown from side to side
+  over a dry beat. A delay under about 300 ms can count as tail (a 250 ms delay at half feedback
+  reads a decay of about 840 ms). A delay heard on one channel only can read about twice its
+  time. The repeat check can drop a real note about 2 dB quieter that falls on a multiple of the
+  echo's time.
+- Dense drum loops give no space reading: toms on every 1/16 note, fast fills, and six or more
+  hits a second through a long reverb mostly read nothing. Drum wet share doesn't follow the
+  reverb's mix (it stays low, so "Much of it is tail" is not said of drums). A hat over a hit that
+  falls fast into a quiet, long reverb reads the decay short, often by a third or more. A hit that
+  rings longer than the reverb can read a little under the dry beat. Drum loops with soft extra
+  notes between the hits can read the decay up to about two thirds longer than it is. A gated reverb
+  reads as dry: the gate's edge is a real stop.
+- Dry drums or hats over parts that fall more slowly (plucks in a reverb, a long ringing low kick)
+  read as the drums: often "Dry".
+- Held and shaped notes with no reverb can read as a room: struck notes or chords held on read
+  long tails, and so do pads whose attack takes about 180 ms or more, which can also read as much
+  tail. A slow straight-line release can read "Dry", shorter than it is.
+- Long, wet reverbs can read nothing: from about 3 s, mixed mostly wet.
+- A tail of a single partial (a sine tom) through a reverb reads unevenly: often far off or
+  nothing, and now and then as an echo.
+- Tail width counts noise that differs between the channels as width: a noise floor or dither of
+  its own in each channel widens the tails' reading where the tails are quiet.
+- Register needs pitched sound: it says nothing for noise or noisy drums. A kick or a tom with a
+  clear pitch reads as a pitched part (a swept electronic kick reads about 50 to 76 Hz), and so do
+  a snare's body tone, a voice and low-passed noise under about 100 Hz.
+- Register is measured at 12 kHz, on pitches up to about 4.2 kHz: a tone above 6 kHz alone gives
+  no register, and neither does a pitched part 40 dB or more under sound above 6 kHz (loud hiss or
+  hats).
+- A reverb or a delay can lift the register's high and top line, often by a step or more; on a
+  lone held note through a short, wet room, by more than two octaves, and that note's centre by
+  an octave (its low can move too). Otherwise the centre moves less often: long tails can move it about half an octave either way on plain melodies, and a
+  vowel-like pad through a wet room can be lifted by more than an octave and a half. An overtone
+  that the room's colouring lifts a few dB over its neighbours is read as a note of its own, and
+  an echo whose time fits a note's period lifts a run of its overtones (triads through short
+  echoes can read their centre up to about an octave high). So a wet sound can read higher than
+  the same notes dry.
+- A vowel, a formant or a static resonance can read high even dry: a sung "ah" reads its high and
+  top line on a formant, and a saw through a resonant low-pass often reads the resonance as a
+  part.
+- Chords over a bass often read low. A chord one to three octaves over a bass can read its centre
+  at the bass when the chord is louder, and its high and top line a step low when it is quieter:
+  the bass takes much of the chord's energy where their overtones meet. Chords of voices with few
+  overtones (a choir on "oo", flutes, soft pads) over a saw bass read low as well. A root, fifth
+  and octave chord loses its octave about two times in five (unless the octave is in phase with
+  the root, the two partly cancel), and its centre then falls to the root. A sine an octave over
+  a sine is lost.
+- Inharmonic sounds such as a bell read off their notes, often well above them.
+- At most 15 minutes are heard at a time (name a stretch), one at a time, 10 a minute, as `listen`
+  is limited. The first listen of a song that uses a recorded instrument downloads its recordings,
+  as above.
 
 ## The tools
 
@@ -186,6 +482,8 @@ or `FLEDGETONE_CACHE`) so they download once. The browser the helper starts reac
 | `wait_for_changes {since?, timeoutSeconds?}` | Waits (up to 25 seconds) for an edit, a selection, a suggestion accepted or dismissed, or a message from you (`user_message`). The helper keeps the last 200 events, and your messages apart from them (an edit never pushes one out); if some after `since` were dropped unread, the answer has `missed: true` and a hint: call `get_messages` and answer its `unanswered` |
 | `listen {fromBar, toBar, suggestionId? \| ops?}` | Renders up to 64 bars (90 seconds) in the studio and measures it: loudness, true peak, balance, findings. Notes held into the range are heard, as the song plays them, and so is the release of one that ends just before it (it renders from up to 8 bars earlier and measures only the range, what the master's limiter and clipper did included; a note the sustain pedal holds counts, one a trim hides doesn't). One at a time, 10 a minute, never while the song plays ("busy", also when Play is pressed during one), and only if you allow listening |
 | `listen {file, fromBar, toBar, perTrack?, suggestion? \| ops?}` | The same for a song file, rendered on your computer with no studio open, bar by bar, with each track's own with `perTrack`, and before and after with a suggestion file or ops (see [Hearing a song file](#hearing-a-song-file)) |
+| `listen {file, fromBar, toBar, sound?, pictures?, closeUps?, against?, againstFromSeconds?, againstToSeconds?, save?}` | With a song file, the same, and the sound heard as well (it writes only when `pictures` or `save` is given): its character in words (`sound`), pictures written to a folder in `--root` (`pictures`) and returned as images (up to six, 3 MB in all, the rest named in the text), moments close up (`closeUps`: `"9.3"` is bar 9, quarter beat 3), the sound read against an audio file or a saved hearing (`against`, and its stretch), and the hearing saved (`save`, a new `.json` file). Not for the studio's live listen (see [Hearing more than loudness](#hearing-more-than-loudness)) |
+| `hear_audio {file, fromSeconds?, toSeconds?, sound?, pictures?, closeUps?, bpm?, against?, againstFromSeconds?, againstToSeconds?, save?}` | Measures an audio file in `--root` (`.wav`, `.mp3`, `.flac`, `.ogg`, `.opus`, `.m4a`, `.aac`) and describes its sound in words (`sound`, on unless `false`), with pictures as for `listen`, `closeUps` in seconds, and `bpm` when the tempo is known. At most 15 minutes at a time; it shares `listen`'s one-at-a-time rule and rate limit |
 | `render_file {file, out, fromBar?, toBar?, format?, sampleRate?, bitDepth?, overwrite?}` | Writes a song file (or bars of it) as a WAV or MP3 file in the working folder, as Export makes it, with its length, loudness and true peak |
 | `suggest {title, explanation, ops, focus?}` | A suggestion on your panel (live), or with `file` and `out` a suggestion file (the answer gives `regions`, where its changes are heard). At most 5 waiting, one every 3 seconds, 500 ops, 5000 added notes. Its before-and-after plays every place its changes are heard (see [What a suggestion's before-and-after plays](#what-a-suggestions-before-and-after-plays)). `focus` (`{fromBar, toBar}`) is bars you'd like heard as well: played along with them if it fits, never instead of them. Ops that change nothing are refused: "These changes leave the song as it is." (live, the error `no_change`), and no card appears |
 | `preview_suggestion {ops, file?}` | A dry run: what the ops would change, warnings, errors |

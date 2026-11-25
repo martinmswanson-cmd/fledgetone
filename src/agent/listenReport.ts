@@ -5,11 +5,18 @@
  * and the song with a suggestion), bar by bar, so an agent can tell where a change is heard: the
  * level of what changed in each bar (barDifferences, from the two renders' samples) and the bars
  * that sound different (changedRegions), which the studio also uses to find where a suggestion is
- * heard (whereHeard.ts). Pure: the rendering and measuring are the runtime's (src/runtime/render.ts)
- * and the studio's.
+ * heard (whereHeard.ts). When asked, a listen also carries the hearing work's sound report and
+ * pictures (kept in the renderer's page as PNGs), and an audio file can be heard the same way
+ * (AudioHearing). Pure: the rendering and measuring are the runtime's (src/runtime/render.ts) and
+ * the studio's.
  */
 import type { MasterStats } from '../audio/effects/masterAfter';
 import type { Finding } from '../audio/mixCheck';
+import type { SoundComparison } from '../audio/hearing/compareSound';
+import { MAX_HEAR_SECONDS } from '../audio/hearing/hearingOf';
+import type { PictureInfo } from '../audio/hearing/pictures';
+import type { Place, SoundReport } from '../audio/hearing/types';
+import { barToSeconds, meterAt, secondsToBar, toMeasureBeat, type MeterMap, type Tempo } from '../audio/tempoMap';
 import { maxOf } from '../support/minMax';
 
 /** A number rounded to a tenth of a dB, or null for none (silence: -Infinity). */
@@ -25,6 +32,12 @@ export interface ListenMix {
   master: { limiterMaxGrDb: number | null; clipperMaxDb: number | null };
 }
 
+/** A picture kept in the renderer's page as a PNG file: read with the renderer's take(id, bytes). */
+export interface KeptPicture extends PictureInfo {
+  id: string;
+  bytes: number;
+}
+
 export interface ListenTrack {
   id: string;
   name: string;
@@ -32,6 +45,9 @@ export interface ListenTrack {
   truePeakDbtp: number | null;
   crestDb: number | null;
   regions: Array<{ name: string; db: number }>;
+  /** The stem's sound report (a small hearing), when asked. */
+  sound?: SoundReport;
+  pictures?: KeptPicture[];
 }
 
 /** One bar's loudness (a bar cut short by the range's end measures what there is of it). */
@@ -53,6 +69,92 @@ export interface ListenReport {
   checks?: Array<Pick<Finding, 'id' | 'level' | 'title' | 'detail' | 'trackIds'>>;
   /** In plain words, worst first. */
   findings: string[];
+  /** The hearing work's sound report of the mix, when asked. */
+  sound?: SoundReport;
+  /** Its pictures, when asked. */
+  pictures?: KeptPicture[];
+  /** The sound read against another sound report given with the listen. */
+  against?: SoundComparison;
+}
+
+/**
+ * An audio file heard: its stretch, its loudness as a listen measures a mix, and, when asked, its
+ * sound report and pictures. Every time in it is a time in the file, whatever stretch was heard.
+ */
+export interface AudioHearing {
+  file: string;
+  range: { fromSeconds: number; toSeconds: number };
+  /** The whole file's length, when a stretch of it was asked for. */
+  fileSeconds?: number;
+  seconds: number;
+  channels: number;
+  silent: boolean;
+  lufs: number | null;
+  shortTermMaxLufs: number | null;
+  truePeakDbtp: number | null;
+  crestDb: number | null;
+  regions: Array<{ name: string; db: number }>;
+  /** What was done to measure it (resampled, or only its first two channels). */
+  note?: string;
+  sound?: SoundReport;
+  pictures?: KeptPicture[];
+  against?: SoundComparison;
+}
+
+/** Faults are placed to the ms, so a moment this close before a beat counts as on it (as hearingOf's own placing does). */
+const PLACE_ROUNDING = 0.0005;
+
+/**
+ * How a listen of bars [fromBar, toBar) names the place `seconds` after fromBar: `bar` is the whole
+ * bar of four quarter notes that holds it (the agent's bars, whatever the meter) and `beat` its
+ * quarter-note beat, 1 to 4, from that bar's start. Where the musician's ruler counts otherwise (a
+ * meter other than 4/4 there, or measures out of line with bars after a meter change), `ruler` is
+ * the measure and beat it shows (toMeasureBeat, as the studio's own bar names count them).
+ */
+export function songPlaces(tempo: Tempo, meter: MeterMap, fromBar: number, toBar: number): (seconds: number) => Place {
+  const t0 = barToSeconds(fromBar, tempo);
+  return (seconds) => {
+    // (a moment at the range's very end is placed in its last bar)
+    const at = Math.min(Math.max(fromBar, secondsToBar(t0 + seconds + PLACE_ROUNDING, tempo)), toBar - 1e-6);
+    const bar = Math.floor(at + 1e-9);
+    const beat = Math.min(4, 1 + Math.floor((at - bar) * 4 + 1e-9));
+    const ruler = toMeasureBeat(at, meter);
+    const there = meterAt(at, meter);
+    const same = there.num === 4 && there.den === 4 && ruler.measure === bar && ruler.beat === beat;
+    return same ? { seconds, bar, beat } : { seconds, bar, beat, ruler: { measure: ruler.measure, beat: ruler.beat } };
+  };
+}
+
+/**
+ * What a WAV file's header says (null for any other file): its sample rate, and its length in seconds
+ * from the data chunk's size and the byte rate (null when the header doesn't say it: a stream's
+ * unknown size, or no data chunk in the bytes given).
+ */
+export function wavHeader(bytes: ArrayBuffer | Uint8Array): { sampleRate: number; seconds: number | null } | null {
+  const v = bytes instanceof Uint8Array ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength) : new DataView(bytes);
+  const tag = (at: number) => String.fromCharCode(v.getUint8(at), v.getUint8(at + 1), v.getUint8(at + 2), v.getUint8(at + 3));
+  if (v.byteLength < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null;
+  let sampleRate: number | null = null;
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= v.byteLength; ) {
+    const size = v.getUint32(at + 4, true);
+    if (tag(at) === 'fmt ' && at + 20 <= v.byteLength) {
+      sampleRate = v.getUint32(at + 12, true);
+      byteRate = v.getUint32(at + 16, true);
+    } else if (tag(at) === 'data') {
+      if (sampleRate === null) return null;
+      return { sampleRate, seconds: byteRate > 0 && size > 0 && size !== 0xffffffff ? size / byteRate : null };
+    }
+    at += 8 + size + (size % 2);
+  }
+  return sampleRate === null ? null : { sampleRate, seconds: null };
+}
+
+/** Why a stretch of `seconds` is too long to hear at once (over MAX_HEAR_SECONDS), or null. */
+export function tooLongToHear(seconds: number): string | null {
+  if (!(seconds > MAX_HEAR_SECONDS)) return null;
+  const whole = Math.round(seconds);
+  return `At most ${MAX_HEAR_SECONDS / 60} minutes at a time (this is ${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}); name a stretch.`;
 }
 
 /** What a listen measured of the mix, before rounding (as listen.ts measureRender gives it). */
@@ -134,17 +236,33 @@ export interface ListenComparison {
     changedBars: { fromBar: number; toBar: number } | null;
     /** In plain words. */
     summary: string[];
+    /** The after version's sound against the before's (when both were heard). */
+    sound?: SoundComparison;
+    /** The difference picture of the two mixes. */
+    pictures?: KeptPicture[];
   };
 }
+
+/** How many of a sound comparison's differences a before-and-after's summary gives in words. */
+const SUMMARY_DIFFERENCES = 5;
 
 const minus = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : tenth(a - b));
 
 /**
  * The difference between two listens of the same bars: `before` (the song) and `after` (with a
  * suggestion). `differenceDb` is each bar's level of after minus before (see CompareBar), measured
- * by the caller from the two renders.
+ * by the caller from the two renders. `sound`: the two versions' sound reports compared (and its
+ * pictures), put on the difference; the summary ends with the kinds of fault the two do not share
+ * and the sound's first differences in words, each region given once.
  */
-export function compareListens(before: ListenReport, after: ListenReport, differenceDb: ReadonlyArray<number | null | 'tempo'>, pairedLufs?: number | null, trackPaired?: ReadonlyMap<string, number | null>): ListenComparison {
+export function compareListens(
+  before: ListenReport,
+  after: ListenReport,
+  differenceDb: ReadonlyArray<number | null | 'tempo'>,
+  pairedLufs?: number | null,
+  trackPaired?: ReadonlyMap<string, number | null>,
+  sound?: { comparison: SoundComparison; pictures: KeptPicture[] }
+): ListenComparison {
   const bars: CompareBar[] = before.bars.map((b, i) => {
     const a = after.bars[i];
     const d = differenceDb[i];
@@ -192,7 +310,15 @@ export function compareListens(before: ListenReport, after: ListenReport, differ
   if (mix.truePeakDbtp !== null && Math.abs(mix.truePeakDbtp) >= 0.1) summary.push(`The true peak moves ${mix.truePeakDbtp > 0 ? 'up' : 'down'} ${Math.abs(mix.truePeakDbtp).toFixed(1)} dB, to ${after.mix.truePeakDbtp} dBTP.`);
   for (const r of mix.regions) if (Math.abs(r.db) >= 1) summary.push(`${r.name}: ${r.db > 0 ? '+' : ''}${r.db.toFixed(1)} dB against the whole.`);
   for (const t of tracks ?? []) if (t.lufs !== null && Math.abs(t.lufs) >= 0.5) summary.push(`"${t.name}" is ${Math.abs(t.lufs).toFixed(1)} LU ${t.lufs > 0 ? 'louder' : 'quieter'}.`);
-  return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary } };
+  if (sound) {
+    // The kinds of fault the two do not share, then the largest differences of the sound: each region
+    // once (a region the balance above already gives is not said again from the sound report)
+    summary.push(...(sound.comparison.faults ?? []));
+    const saidRegions = new Set(mix.regions.filter((r) => Math.abs(r.db) >= 1).map((r) => r.name));
+    for (const d of sound.comparison.differences.filter((x) => !(x.group === 'tone' && saidRegions.has(x.measure))).slice(0, SUMMARY_DIFFERENCES)) summary.push(d.words);
+  }
+  const heard = sound ? { sound: sound.comparison, ...(sound.pictures.length ? { pictures: sound.pictures } : {}) } : {};
+  return { before, after, difference: { mix, ...(tracks ? { tracks } : {}), bars, changedBars, summary, ...heard } };
 }
 
 /** Where a bar lies in a render: seconds from the render's start, end not included. */

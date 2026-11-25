@@ -1,11 +1,14 @@
 /**
  * The command line's commands (all but `mcp`): reading a song (info, notes, check), comparing two
  * (diff), the app's lists (list), making one from a starter (new), applying a suggestion file
- * (apply), measuring a WAV file's loudness (measure), and share links (link, from-link). Each
- * writes to stdout and returns the exit code: 0 done, 1 done with something to fix or refused,
- * 2 a mistake in the command or an unreadable file.
+ * (apply), measuring an audio file's loudness and, when asked, hearing it (measure: its sound in
+ * words, pictures of it, a comparison with another sound or a saved hearing, a saved hearing; a WAV
+ * in Node, other audio in the headless browser), and share links (link, from-link). Each writes to
+ * stdout and returns the exit code: 0 done, 1 done with something to fix or refused, 2 a mistake in
+ * the command or an unreadable file.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
+import { basename } from 'node:path';
 import { createStarter, isStarterId, STARTERS } from '../../../src/store/starters';
 import { parseProject, serializeProject, unreadWords, type ProjectSnapshot } from '../../../src/store/project';
 import { SONG_CAPS } from '../../../src/store/songCaps';
@@ -16,13 +19,13 @@ import { applyOps } from '../../../src/agent/ops';
 import { classifySuggestion, parseSuggestionFile } from '../../../src/agent/suggestion';
 import { fingerprint, firstDifference, stableJson } from '../../../src/agent/fingerprint';
 import { listInserts, listInstruments, listMaster, listParams, listPresets, listStarters } from '../../../src/agent/catalog';
-import { createLoudnessAnalyser, shortTermWindowFull } from '../../../src/audio/loudness';
-import { bandSpectrum, levelBetween, REGIONS, sumDb, totalBands } from '../../../src/audio/mixAnalysis';
-import { readJson, readSong, readWav, sameFile, writeSong } from './files';
+import { readJson, readSong, readWav, sameFile, WavFormatError, writeSong } from './files';
+import { browserOptions, hearAudioFile, hearingLines, hearPlan, isWav, measureAudio, UsageError, withoutGrids, type Flags } from './hearingCommands';
 import { APP_VERSION } from './meta';
 import { printErr, printOut } from './print';
 
-export type Flags = Record<string, string | string[] | boolean | undefined>;
+export { AUDIO_TYPES, againstOf, hearAudioFile, hearingFlags, hearingLines, hearPlan, measureAudio, secondsArg, takePictures, UsageError, withoutGrids, writePictures } from './hearingCommands';
+export type { Flags, HeardFile, HearingFlags, HearPlan, WrittenPicture } from './hearingCommands';
 type Out = (text: string) => void;
 
 const say: Out = printOut;
@@ -35,9 +38,6 @@ export const loudnessText = (lufs: number | null, shortTermMax: number | null, s
   lufs !== null && Number.isFinite(lufs) ? `Loudness ${r1(lufs)} LUFS (${loudestText(shortTermMax, seconds)})` : seconds < 0.4 ? 'Too short to measure loudness (under 0.4 seconds)' : 'Too quiet to measure loudness';
 export const loudestText = (v: number | null, seconds: number) => (v === null && seconds < 3 ? 'too short for the loudest 3 seconds: under 3 seconds long' : `loudest 3 seconds ${v === null ? '-' : r1(v)}${v !== null && Number.isFinite(v) ? ' LUFS' : ''}`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
-
-/** A command's mistake: said on stderr, exit code 2. */
-export class UsageError extends Error {}
 
 const need = (v: string | undefined, what: string): string => {
   if (!v) throw new UsageError(`missing ${what}`);
@@ -312,81 +312,46 @@ export function apply(args: string[], flags: Flags): number {
   return 0;
 }
 
-/**
- * Loudness and balance of rendered audio: what `measure` prints. Mono is measured as one channel
- * (as BS.1770 does: not as the same sound twice, which reads 3 dB louder); of more than two
- * channels only the first two are measured, and `note` says so. Silence has no balance.
- */
-export function measureAudio(channels: Float32Array[], sampleRate: number) {
-  if (!(sampleRate >= 8000)) throw new UsageError(`a sample rate of ${sampleRate} Hz can't be measured (8 kHz and up)`);
-  const used = channels.slice(0, 2);
-  const left = used[0] ?? new Float32Array(0);
-  const right = used[1] ?? new Float32Array(left.length);
-  const notes: string[] = [];
-  if (channels.length > 2) notes.push(`only the first two of its ${channels.length} channels were measured (as left and right)`);
-  const analyser = createLoudnessAnalyser(sampleRate);
-  // Fed in tenths of a second, so the loudest 3 seconds (short-term) can be read on the way
-  const hop = Math.max(1, Math.round(sampleRate / 10));
-  // (only whole 3-second windows count: null for audio shorter than 3 seconds)
-  let shortTermMax: number | null = null;
-  for (let i = 0; i < left.length; i += hop) {
-    const n = Math.min(hop, left.length - i);
-    analyser.feed(left.subarray(i, i + n), right.subarray(i, i + n), n);
-    if (!shortTermWindowFull(i + n, sampleRate)) continue;
-    const now = analyser.read().shortTerm;
-    if (shortTermMax === null || now > shortTermMax) shortTermMax = now;
-  }
-  const reading = analyser.read();
-  let peak = 0;
-  let sum = 0;
-  for (const ch of used) for (const v of ch) {
-    const a = Math.abs(v);
-    if (a > peak) peak = a;
-    sum += v * v;
-  }
-  const silent = peak === 0;
-  if (!left.length) notes.push('it holds no audio');
-  else if (silent) notes.push('it is silent');
-  else if (left.length < sampleRate * 0.4) notes.push('it is shorter than 0.4 seconds, too short for a loudness reading');
-  const rmsDb = 10 * Math.log10(sum / Math.max(1, used.length * left.length));
-  const peakDb = 20 * Math.log10(peak);
-  let regions: Array<{ name: string; db: number }> = [];
-  // (under 0.4 seconds the balance means nothing: too few windows to average)
-  if (!silent && left.length >= sampleRate * 0.4) {
-    const spectrum = bandSpectrum(used, sampleRate);
-    const bands = totalBands(spectrum);
-    const total = sumDb(bands);
-    if (Number.isFinite(total)) regions = REGIONS.map((x) => ({ name: x.name, db: Math.round((levelBetween(spectrum, bands, x.lo, x.hi) - total) * 10) / 10 }));
-  }
-  return {
-    seconds: Math.round((left.length / sampleRate) * 100) / 100,
-    channels: channels.length,
-    silent,
-    lufs: reading.integrated,
-    shortTermMaxLufs: shortTermMax,
-    truePeakDbtp: reading.truePeakMax,
-    crestDb: silent ? null : peakDb - rmsDb,
-    regions,
-    ...(notes.length ? { note: notes.join('; ') } : {}),
-  };
+/** What `measure` prints of a file's loudness and balance, as it always has. */
+function measureText(
+  path: string,
+  m: { seconds: number; channels: number; silent: boolean; lufs: number | null; shortTermMaxLufs: number | null; truePeakDbtp: number | null; crestDb: number | null; regions: Array<{ name: string; db: number }>; note?: string; range?: { fromSeconds: number; toSeconds: number }; fileSeconds?: number }
+): string[] {
+  const note = m.note?.replace(/\.$/, '');
+  // (a stretch of the file is said as one, in the file's own time: "0:10 to 0:20 of 1:00")
+  const length = m.range && m.fileSeconds !== undefined ? `${clock(m.range.fromSeconds)} to ${clock(m.range.toSeconds)} of ${clock(m.fileSeconds)}` : clock(m.seconds);
+  if (m.silent) return [`${path}: ${length}, silent: nothing to measure.`, ...(note ? [`(${note})`] : [])];
+  return [
+    `${path}: ${length}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
+    `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp ?? -Infinity)} dBTP, crest ${r1(m.crestDb!)} dB`,
+    ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
+    ...(note ? [`(Note: ${note}.)`] : []),
+  ];
 }
 
-export function measure(args: string[], flags: Flags): number {
-  const path = need(args[0], 'the WAV file');
-  if (!/\.wav$/i.test(path)) throw new UsageError('measure reads WAV files (export one from Fledgetone)');
-  const { sampleRate, channels } = readWav(path);
-  const m = measureAudio(channels, sampleRate);
-  if (flags.json) json(m);
-  else if (m.silent) say([`${path}: ${clock(m.seconds)}, silent: nothing to measure.`, ...(m.note ? [`(${m.note})`] : [])].join('\n'));
-  else
-    say(
-      [
-        `${path}: ${clock(m.seconds)}, ${m.channels === 1 ? 'mono' : `${m.channels} channels`}`,
-        `${loudnessText(m.lufs, m.shortTermMaxLufs, m.seconds)}, true peak ${r1(m.truePeakDbtp)} dBTP, crest ${r1(m.crestDb!)} dB`,
-        ...(m.regions.length ? ['Balance (each part of the spectrum against the whole):', ...m.regions.map((x) => `  ${x.name.padEnd(26)} ${db(x.db)}`)] : []),
-        ...(m.note ? [`(Note: ${m.note}.)`] : []),
-      ].join('\n')
-    );
+export async function measure(args: string[], flags: Flags): Promise<number> {
+  const plan = hearPlan(args, flags);
+  if (!existsSync(plan.file) || !statSync(plan.file).isFile()) throw new Error(`can't read ${plan.file}`);
+  // A whole WAV, not heard: measured as it always was
+  if (!plan.sound && plan.fromSeconds === undefined && plan.toSeconds === undefined && isWav(plan.file)) {
+    let wav;
+    try {
+      wav = readWav(plan.file);
+    } catch (err) {
+      if (!(err instanceof WavFormatError)) throw err;
+    }
+    if (wav) {
+      const m = measureAudio(wav.channels, wav.sampleRate);
+      if (flags.json) json(m);
+      else say(measureText(plan.file, m).join('\n'));
+      return 0;
+    }
+  }
+  const heard = await hearAudioFile(plan, browserOptions(flags, 'Hearing'));
+  // (what was written is in the result already: the pictures by path, the saved file as asked)
+  // (and the per-second grids are for a saved hearing and the pictures: --json leaves them out)
+  if (flags.json) json(withoutGrids({ ...heard, written: undefined }));
+  else say([...measureText(plan.file, heard), ...hearingLines(heard, plan.against && basename(plan.against)), ...(plan.save ? [`Saved the hearing in ${plan.save}.`] : [])].join('\n'));
   return 0;
 }
 

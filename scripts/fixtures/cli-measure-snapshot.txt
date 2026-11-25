@@ -1,0 +1,10 @@
+sine.wav: 0:02, 2 channels
+Loudness -6.0 LUFS (too short for the loudest 3 seconds: under 3 seconds long), true peak -6.0 dBTP, crest 3.0 dB
+Balance (each part of the spectrum against the whole):
+  sub bass (under 60 Hz)     -119.8 dB
+  bass (60-200 Hz)           -113.9 dB
+  low mids (200-500 Hz)      -103.0 dB
+  mids (500 Hz-2 kHz)        0.0 dB
+  upper mids (2-5 kHz)       -98.0 dB
+  presence (5-10 kHz)        -95.8 dB
+  air (over 10 kHz)          -95.2 dB
