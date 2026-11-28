@@ -4,10 +4,6 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## 2026.11.28 — The website footer no longer names its host
-
-- **On the website**: the "This site is powered by Netlify" line is gone from the bottom of every page; the footer keeps "Made by Martin Swanson".
-
 ## 2026.11.22 — Pigeons video: a steady camera in slow songs, and a zoom-out to show every note
 
 - **Pigeons video: the camera no longer jerks in slow songs.** In music with long held notes (a slow piano piece, pads) a chord stopped counting toward where the camera looks eight seconds after it started, all at once, even if it had only just ended: the camera jumped up to a key's width in one frame, again and again. Every note now fades out of the camera's aim, however long it is, so the camera drifts smoothly.
